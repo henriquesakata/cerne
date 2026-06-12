@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -107,7 +108,7 @@ func validateModule(module string, modules []string) error {
 
 // featureDocPath returns the backend path of a feature lifecycle document.
 func featureDocPath(repoDir, id, filename string) string {
-	return filepath.Join(repoDir, "content", "features", id, filename)
+	return app.FeatureDocPath(repoDir, id, filename)
 }
 
 // writeSpecStub creates content/features/<id>/spec.md with the placeholder
