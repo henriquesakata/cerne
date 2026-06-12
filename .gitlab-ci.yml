@@ -1,0 +1,7 @@
+image: golang:1.26
+stages: [test]
+test:
+  stage: test
+  script:
+    - go vet ./...
+    - go test ./... -count=1
