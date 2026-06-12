@@ -1,0 +1,12 @@
+# cerne dogfooding: a materialização nunca é versionada (o docs.lock sim)
+.docs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# build (stack a definir no plan.md)
+/dist/
+/target/
+/bin/
+node_modules/
