@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -54,7 +54,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		return err
 	}
 
-	projectID := slugify(name)
+	projectID := slug.Make(name)
 	if projectID == "" {
 		return fmt.Errorf("project name %q yields an empty project id", name)
 	}
@@ -122,17 +122,4 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	fmt.Fprintln(out, "  - add .docs/ to your project's .gitignore (cerne never edits it for you)")
 	fmt.Fprintln(out, "  - commit .cernerc and docs.lock to your project repository")
 	return nil
-}
-
-// slugify lowercases name, maps spaces to "-" and strips every rune
-// outside [a-z0-9-].
-func slugify(name string) string {
-	s := strings.ReplaceAll(strings.ToLower(name), " ", "-")
-	var b strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
