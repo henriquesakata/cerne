@@ -14,6 +14,11 @@ var (
 )
 
 // CheckGate verifies the document required by action exists in docs.
+//
+// Gates are per-action: each action checks only its own required document.
+// Cumulative document state is enforced by the state machine itself —
+// reaching complete requires having passed the approve and start gates —
+// not by CheckGate.
 func CheckGate(action Action, docs DocSet) error {
 	switch action {
 	case ActionApprove:

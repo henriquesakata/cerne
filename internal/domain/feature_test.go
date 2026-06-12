@@ -43,3 +43,13 @@ func TestFeatureTransitions(t *testing.T) {
 		})
 	}
 }
+
+func TestTransitionUnknownState(t *testing.T) {
+	_, err := Transition("bogus", ActionApprove)
+	if !errors.Is(err, ErrUnknownState) {
+		t.Fatalf("err = %v, want errors.Is ErrUnknownState", err)
+	}
+	if errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("err = %v, must not be ErrInvalidTransition", err)
+	}
+}

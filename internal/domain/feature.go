@@ -27,8 +27,11 @@ const (
 	ActionSupersede Action = "supersede"
 )
 
-// ErrInvalidTransition is the sentinel for any disallowed state/action pair.
+// ErrInvalidTransition is the sentinel for a disallowed action on a known state.
 var ErrInvalidTransition = errors.New("invalid transition")
+
+// ErrUnknownState is the sentinel for a state absent from the transition table.
+var ErrUnknownState = errors.New("unknown state")
 
 var transitions = map[FeatureState]map[Action]FeatureState{
 	StateCandidate: {
@@ -47,13 +50,21 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 	StateImplemented: {
 		ActionSupersede: StateSuperseded,
 	},
+	// Terminal states: explicitly present with no actions, so they report
+	// ErrInvalidTransition rather than ErrUnknownState.
+	StateRejected:   {},
+	StateSuperseded: {},
 }
 
 // Transition returns the state reached by applying action to from.
 func Transition(from FeatureState, action Action) (FeatureState, error) {
-	to, ok := transitions[from][action]
+	actions, ok := transitions[from]
 	if !ok {
-		return "", fmt.Errorf("%w: %s from %s", ErrInvalidTransition, action, from)
+		return "", fmt.Errorf("%w: %s", ErrUnknownState, from)
+	}
+	to, ok := actions[action]
+	if !ok {
+		return "", fmt.Errorf("%w: cannot %s from %s", ErrInvalidTransition, action, from)
 	}
 	return to, nil
 }

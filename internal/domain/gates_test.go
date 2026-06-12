@@ -16,6 +16,7 @@ func TestCheckGate(t *testing.T) {
 		{"approve without spec", ActionApprove, DocSet{}, ErrGateSpecRequired},
 		{"start with plan", ActionStart, DocSet{HasPlan: true}, nil},
 		{"start without plan", ActionStart, DocSet{HasSpec: true}, ErrGatePlanRequired},
+		{"start with no docs at all", ActionStart, DocSet{}, ErrGatePlanRequired},
 		{"complete with result", ActionComplete, DocSet{HasResult: true}, nil},
 		{"complete without result", ActionComplete, DocSet{HasSpec: true, HasPlan: true}, ErrGateResultRequired},
 		{"reject never requires docs", ActionReject, DocSet{}, nil},
