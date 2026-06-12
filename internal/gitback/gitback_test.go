@@ -141,6 +141,58 @@ func TestDeletionPropagates(t *testing.T) {
 	}
 }
 
+func TestRemoteHeadSHA(t *testing.T) {
+	origin, clone1, sha := fixture(t)
+	got, err := RemoteHeadSHA(clone1)
+	if err != nil {
+		t.Fatalf("RemoteHeadSHA: %v", err)
+	}
+	if got != sha {
+		t.Fatalf("RemoteHeadSHA = %q, want %q", got, sha)
+	}
+
+	// A second clone pushes: RemoteHeadSHA sees the new remote head while
+	// the local HEAD of clone1 stays behind (no fetch/pull side effect).
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	writeFile(t, clone2, "other.txt", "from clone2")
+	sha2, err := CommitAndPush(clone2, "external change")
+	if err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	got, err = RemoteHeadSHA(clone1)
+	if err != nil {
+		t.Fatalf("RemoteHeadSHA after external push: %v", err)
+	}
+	if got != sha2 {
+		t.Fatalf("RemoteHeadSHA = %q, want remote head %q", got, sha2)
+	}
+	localHead, err := HeadSHA(clone1)
+	if err != nil {
+		t.Fatalf("HeadSHA clone1: %v", err)
+	}
+	if localHead != sha {
+		t.Fatalf("clone1 HEAD = %q, want unchanged %q (RemoteHeadSHA must not pull)", localHead, sha)
+	}
+}
+
+func TestRemoteHeadSHAEmptyRemote(t *testing.T) {
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := InitBare(origin); err != nil {
+		t.Fatalf("InitBare: %v", err)
+	}
+	workdir := filepath.Join(t.TempDir(), "clone")
+	if err := Clone(origin, workdir); err != nil {
+		t.Fatalf("Clone empty: %v", err)
+	}
+	_, err := RemoteHeadSHA(workdir)
+	if !errors.Is(err, ErrNoCommits) {
+		t.Fatalf("RemoteHeadSHA err = %v, want ErrNoCommits", err)
+	}
+}
+
 func TestHeadSHAUnborn(t *testing.T) {
 	origin := filepath.Join(t.TempDir(), "origin.git")
 	if err := InitBare(origin); err != nil {

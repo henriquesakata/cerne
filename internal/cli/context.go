@@ -17,9 +17,11 @@ type projCtx struct {
 	repoDir string // cached backend clone
 }
 
-// resolveProject locates the cerne project from startDir (cwd when empty)
-// and refreshes the cached backend clone from origin.
-func resolveProject(startDir string) (projCtx, error) {
+// resolvePaths locates the cerne project from startDir (cwd when empty)
+// without touching origin; the cached backend clone is used as-is. Commands
+// that must inspect the remote before syncing (push drift detection) start
+// here instead of resolveProject.
+func resolvePaths(startDir string) (projCtx, error) {
 	if startDir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -41,10 +43,20 @@ func resolveProject(startDir string) (projCtx, error) {
 	} else if err != nil {
 		return projCtx{}, err
 	}
-	if err := gitback.Pull(repoDir); err != nil {
-		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and run 'cerne init' to force a fresh clone): %w", repoDir, err)
-	}
 	return projCtx{cfg: cfg, projDir: projDir, repoDir: repoDir}, nil
+}
+
+// resolveProject locates the cerne project from startDir (cwd when empty)
+// and refreshes the cached backend clone from origin.
+func resolveProject(startDir string) (projCtx, error) {
+	ctx, err := resolvePaths(startDir)
+	if err != nil {
+		return projCtx{}, err
+	}
+	if err := gitback.Pull(ctx.repoDir); err != nil {
+		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and run 'cerne init' to force a fresh clone): %w", ctx.repoDir, err)
+	}
+	return ctx, nil
 }
 
 // updateLockSnapshot rewrites docs.lock with sha as the backend snapshot,

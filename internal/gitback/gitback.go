@@ -116,6 +116,33 @@ func Pull(workdir string) error {
 	return err
 }
 
+// RemoteHeadSHA returns the commit hex origin's main branch points at,
+// without fetching or touching the local worktree; ErrNoCommits when the
+// remote has no main branch yet.
+func RemoteHeadSHA(workdir string) (string, error) {
+	repo, err := git.PlainOpen(workdir)
+	if err != nil {
+		return "", err
+	}
+	remote, err := repo.Remote(remoteName)
+	if err != nil {
+		return "", err
+	}
+	refs, err := remote.List(&git.ListOptions{})
+	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, ref := range refs {
+		if ref.Name() == mainBranch {
+			return ref.Hash().String(), nil
+		}
+	}
+	return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
+}
+
 // HeadSHA returns the current HEAD commit hex of workdir; ErrNoCommits when unborn.
 func HeadSHA(workdir string) (string, error) {
 	repo, err := git.PlainOpen(workdir)
