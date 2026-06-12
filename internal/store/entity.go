@@ -101,10 +101,14 @@ func LoadAllReferences(backendDir string) ([]Reference, error) {
 	return loadAllEntities[Reference](backendDir, referencesSubdir)
 }
 
-// saveEntity writes the entity as pretty-printed JSON (2-space indent,
-// trailing newline) atomically: temp file in the same dir, then rename.
+// saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.
 func saveEntity(backendDir, subdir, id string, e any) error {
-	dir := filepath.Join(backendDir, filepath.FromSlash(subdir))
+	return writeJSONFile(filepath.Join(backendDir, filepath.FromSlash(subdir)), id+".json", e)
+}
+
+// writeJSONFile writes e as pretty-printed JSON (2-space indent, trailing
+// newline) atomically: temp file in the same dir, then rename.
+func writeJSONFile(dir, filename string, e any) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -113,7 +117,7 @@ func saveEntity(backendDir, subdir, id string, e any) error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp, err := os.CreateTemp(dir, id+".*.tmp")
+	tmp, err := os.CreateTemp(dir, filename+".*.tmp")
 	if err != nil {
 		return err
 	}
@@ -126,7 +130,7 @@ func saveEntity(backendDir, subdir, id string, e any) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, id+".json")); err != nil {
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, filename)); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
