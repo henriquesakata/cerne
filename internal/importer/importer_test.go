@@ -31,6 +31,7 @@ func TestScanHubTree(t *testing.T) {
 		{"decision", "docs/architecture/adr/adr-001-database-per-service.md", "active", "", "ADR-001 — Database per service", []string{"doc.md"}},
 		{"decision", "docs/architecture/adr/adr-002-monolith-auth.md", "superseded", "", "ADR-002 — Autenticação no monólito", []string{"doc.md"}},
 		{"reference", "docs/architecture/overview.md", "current", "", "Overview", []string{"doc.md"}},
+		{"reference", "docs/planning/features.md", "current", "", "Features", []string{"doc.md"}},
 		{"reference", "docs/runbooks/dev-setup.md", "current", "", "Setup de desenvolvimento", []string{"doc.md"}},
 	}
 	if len(cands) != len(want) {
@@ -85,12 +86,12 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if sum.Features != 4 || sum.Decisions != 2 || sum.References != 2 {
-		t.Fatalf("Summary counts = %+v, want 4 features, 2 decisions, 2 references", sum)
+	if sum.Features != 4 || sum.Decisions != 2 || sum.References != 3 {
+		t.Fatalf("Summary counts = %+v, want 4 features, 2 decisions, 3 references", sum)
 	}
 	wantByState := map[string]int{
 		"implemented": 1, "candidate": 1, "superseded": 2, "in_development": 1,
-		"active": 1, "current": 2,
+		"active": 1, "current": 3,
 	}
 	for state, n := range wantByState {
 		if sum.ByState[state] != n {
@@ -150,8 +151,11 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAllReferences: %v", err)
 	}
-	if len(references) != 2 || references[0].ID != "R-0001" || references[1].ID != "R-0002" {
-		t.Fatalf("references = %+v, want R-0001 and R-0002", references)
+	if len(references) != 3 || references[0].ID != "R-0001" || references[1].ID != "R-0002" || references[2].ID != "R-0003" {
+		t.Fatalf("references = %+v, want R-0001, R-0002 and R-0003", references)
+	}
+	if references[1].Title != "Features" {
+		t.Fatalf("references[1].Title = %q, want Features (docs/planning sorted between architecture and runbooks)", references[1].Title)
 	}
 	for _, r := range references {
 		if r.State != domain.ReferenceCurrent {
@@ -176,11 +180,11 @@ func TestApplyHubTree(t *testing.T) {
 
 	// Frontmatter inject branch: source file already has a frontmatter block;
 	// cerne_id and imported_from become the first keys, existing keys stay.
-	ref, err := os.ReadFile(filepath.Join(repoDir, "content", "references", "R-0002.md"))
+	ref, err := os.ReadFile(filepath.Join(repoDir, "content", "references", "R-0003.md"))
 	if err != nil {
 		t.Fatalf("imported reference: %v", err)
 	}
-	wantRefPrefix := "---\ncerne_id: R-0002\nimported_from: docs/runbooks/dev-setup.md\ntags: runbook\n---\n\n# Setup de desenvolvimento"
+	wantRefPrefix := "---\ncerne_id: R-0003\nimported_from: docs/runbooks/dev-setup.md\ntags: runbook\n---\n\n# Setup de desenvolvimento"
 	if !strings.HasPrefix(string(ref), wantRefPrefix) {
 		t.Errorf("imported reference frontmatter not injected as first keys:\n%s", ref)
 	}
@@ -189,8 +193,8 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadEvents: %v", err)
 	}
-	if len(events) != 8 {
-		t.Fatalf("events = %d, want 8", len(events))
+	if len(events) != 9 {
+		t.Fatalf("events = %d, want 9", len(events))
 	}
 	wantEvents := []struct{ entityID, evType, source string }{
 		{"F-0001", "feature.imported", "docs/process/cases/0001_login-google/"},
@@ -200,7 +204,8 @@ func TestApplyHubTree(t *testing.T) {
 		{"D-0001", "decision.imported", "docs/architecture/adr/adr-001-database-per-service.md"},
 		{"D-0002", "decision.imported", "docs/architecture/adr/adr-002-monolith-auth.md"},
 		{"R-0001", "reference.imported", "docs/architecture/overview.md"},
-		{"R-0002", "reference.imported", "docs/runbooks/dev-setup.md"},
+		{"R-0002", "reference.imported", "docs/planning/features.md"},
+		{"R-0003", "reference.imported", "docs/runbooks/dev-setup.md"},
 	}
 	for i, w := range wantEvents {
 		ev := events[i]

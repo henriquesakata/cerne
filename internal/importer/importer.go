@@ -207,12 +207,12 @@ func scanDecisions(root string) ([]Candidate, error) {
 	return cands, nil
 }
 
-// scanReferences maps docs/runbooks/*.md and docs/architecture/*.md (the
-// adr/ subdir is excluded by the non-recursive listing) to reference
-// candidates, alphabetical by rel path.
+// scanReferences maps docs/runbooks/*.md, docs/planning/*.md and
+// docs/architecture/*.md (subdirs like adr/ are excluded by the
+// non-recursive listing) to reference candidates, alphabetical by rel path.
 func scanReferences(root string) ([]Candidate, error) {
 	var sources []string
-	for _, relDir := range []string{"docs/architecture", "docs/runbooks"} {
+	for _, relDir := range []string{"docs/architecture", "docs/planning", "docs/runbooks"} {
 		names, err := readDirNames(filepath.Join(root, filepath.FromSlash(relDir)), false)
 		if err != nil {
 			return nil, err
