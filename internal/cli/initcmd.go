@@ -67,7 +67,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil {
 		// Cache already holds a clone of this project's backend: refresh it.
 		if err := gitback.Pull(repoDir); err != nil {
-			return err
+			return fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory to force a fresh clone): %w", repoDir, err)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
