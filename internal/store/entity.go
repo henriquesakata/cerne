@@ -1,0 +1,177 @@
+// Package store persists cerne entities as pretty-printed JSON files
+// inside a backend directory tree.
+package store
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+)
+
+// ErrNotFound is the sentinel for an entity file missing from the backend.
+var ErrNotFound = errors.New("entity not found")
+
+// Feature is the persisted form of a feature entity.
+type Feature struct {
+	ID           string              `json:"id"`
+	Title        string              `json:"title"`
+	Module       string              `json:"module"`
+	State        domain.FeatureState `json:"state"`
+	SupersededBy string              `json:"superseded_by,omitempty"`
+	Reason       string              `json:"reason,omitempty"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+}
+
+// Decision is the persisted form of a decision entity.
+type Decision struct {
+	ID           string               `json:"id"`
+	Title        string               `json:"title"`
+	State        domain.DecisionState `json:"state"`
+	SupersededBy string               `json:"superseded_by,omitempty"`
+	Reason       string               `json:"reason,omitempty"`
+	CreatedAt    time.Time            `json:"created_at"`
+	UpdatedAt    time.Time            `json:"updated_at"`
+}
+
+// Reference is the persisted form of a reference entity.
+type Reference struct {
+	ID        string                `json:"id"`
+	Title     string                `json:"title"`
+	State     domain.ReferenceState `json:"state"`
+	CreatedAt time.Time             `json:"created_at"`
+	UpdatedAt time.Time             `json:"updated_at"`
+}
+
+const (
+	featuresSubdir   = "entities/features"
+	decisionsSubdir  = "entities/decisions"
+	referencesSubdir = "entities/references"
+)
+
+// SaveFeature writes the feature to entities/features/<ID>.json.
+func SaveFeature(backendDir string, f Feature) error {
+	return saveEntity(backendDir, featuresSubdir, f.ID, f)
+}
+
+// LoadFeature reads one feature by id; ErrNotFound when the file is missing.
+func LoadFeature(backendDir, id string) (Feature, error) {
+	return loadEntity[Feature](backendDir, featuresSubdir, id)
+}
+
+// LoadAllFeatures returns all features sorted by ID ascending.
+func LoadAllFeatures(backendDir string) ([]Feature, error) {
+	return loadAllEntities[Feature](backendDir, featuresSubdir)
+}
+
+// SaveDecision writes the decision to entities/decisions/<ID>.json.
+func SaveDecision(backendDir string, d Decision) error {
+	return saveEntity(backendDir, decisionsSubdir, d.ID, d)
+}
+
+// LoadDecision reads one decision by id; ErrNotFound when the file is missing.
+func LoadDecision(backendDir, id string) (Decision, error) {
+	return loadEntity[Decision](backendDir, decisionsSubdir, id)
+}
+
+// LoadAllDecisions returns all decisions sorted by ID ascending.
+func LoadAllDecisions(backendDir string) ([]Decision, error) {
+	return loadAllEntities[Decision](backendDir, decisionsSubdir)
+}
+
+// SaveReference writes the reference to entities/references/<ID>.json.
+func SaveReference(backendDir string, r Reference) error {
+	return saveEntity(backendDir, referencesSubdir, r.ID, r)
+}
+
+// LoadReference reads one reference by id; ErrNotFound when the file is missing.
+func LoadReference(backendDir, id string) (Reference, error) {
+	return loadEntity[Reference](backendDir, referencesSubdir, id)
+}
+
+// LoadAllReferences returns all references sorted by ID ascending.
+func LoadAllReferences(backendDir string) ([]Reference, error) {
+	return loadAllEntities[Reference](backendDir, referencesSubdir)
+}
+
+// saveEntity writes the entity as pretty-printed JSON (2-space indent,
+// trailing newline) atomically: temp file in the same dir, then rename.
+func saveEntity(backendDir, subdir, id string, e any) error {
+	dir := filepath.Join(backendDir, filepath.FromSlash(subdir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(e, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp, err := os.CreateTemp(dir, id+".*.tmp")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, id+".json")); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return nil
+}
+
+func loadEntity[T any](backendDir, subdir, id string) (T, error) {
+	var e T
+	data, err := os.ReadFile(filepath.Join(backendDir, filepath.FromSlash(subdir), id+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return e, fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	if err != nil {
+		return e, err
+	}
+	if err := json.Unmarshal(data, &e); err != nil {
+		return e, err
+	}
+	return e, nil
+}
+
+func loadAllEntities[T any](backendDir, subdir string) ([]T, error) {
+	dir := filepath.Join(backendDir, filepath.FromSlash(subdir))
+	dirEntries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return []T{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(dirEntries))
+	for _, de := range dirEntries {
+		if de.IsDir() || !strings.HasSuffix(de.Name(), ".json") {
+			continue
+		}
+		ids = append(ids, strings.TrimSuffix(de.Name(), ".json"))
+	}
+	sort.Strings(ids)
+	entities := make([]T, 0, len(ids))
+	for _, id := range ids {
+		e, err := loadEntity[T](backendDir, subdir, id)
+		if err != nil {
+			return nil, err
+		}
+		entities = append(entities, e)
+	}
+	return entities, nil
+}
