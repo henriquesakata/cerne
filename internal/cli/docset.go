@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"strings"
@@ -45,6 +46,10 @@ func isRealDoc(path string) (bool, error) {
 // its stub: ignoring the leading frontmatter block, blank lines, the first
 // "#" heading and stub placeholder lines, at least one line remains.
 func hasRealContent(data []byte) bool {
+	// Editors on Windows may prepend a UTF-8 BOM; without stripping it the
+	// frontmatter delimiter on line 1 would not match and a stub would
+	// wrongly count as real content.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	lines := strings.Split(string(data), "\n")
 	// Skip a leading frontmatter block delimited by "---" lines.
 	start := 0

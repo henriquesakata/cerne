@@ -20,6 +20,9 @@ func TestHasRealContent(t *testing.T) {
 		{"frontmatter heading and body", "---\ncerne_id: F-0001\n---\n\n# Login\n\nCritérios de aceite definidos.\n", true},
 		{"second heading counts as content", "# Login\n\n## Objetivo\n", true},
 		{"body without heading", "Só texto direto.\n", true},
+		{"spec stub with utf-8 bom", "\xef\xbb\xbf" + specStub, false},
+		{"crlf spec stub", "---\r\ncerne_id: F-0001\r\n---\r\n\r\n# Login\r\n\r\n> Spec pendente — escreva.\r\n", false},
+		{"crlf real body", "# Login\r\n\r\nCritérios definidos.\r\n", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
