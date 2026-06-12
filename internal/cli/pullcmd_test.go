@@ -66,6 +66,43 @@ func TestPullGoldenPath(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Fatalf("output missing summary %q:\n%s", want, out)
 	}
+
+	// pull is the index sync point: index.db exists next to repo/.
+	if _, err := os.Stat(indexPathFor(repoDir)); err != nil {
+		t.Fatalf("index.db missing after pull: %v", err)
+	}
+}
+
+func TestPullRebuildsIndex(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Parcelamento", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas."))
+	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("first pull: %v\noutput: %s", err, out)
+	}
+
+	// New content after the first pull: the next pull must refresh the index.
+	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Cronograma faseado de entrega."))
+	if _, err := gitback.CommitAndPush(repoDir, "plan F-0001"); err != nil {
+		t.Fatalf("CommitAndPush plan: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("second pull: %v\noutput: %s", err, out)
+	}
+
+	out, err := execCerne(t, "search", "cronograma", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("search: %v\noutput: %s", err, out)
+	}
+	if strings.Contains(out, "Construindo índice...") {
+		t.Fatalf("search rebuilt the index, want pull to have done it:\n%s", out)
+	}
+	if !strings.Contains(out, "F-0001 [feature/plan] candidate — Parcelamento") {
+		t.Fatalf("missing plan hit indexed by pull:\n%s", out)
+	}
 }
 
 func TestPullScopeFilters(t *testing.T) {

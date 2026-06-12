@@ -19,5 +19,6 @@ func Root() *cobra.Command {
 	root.AddCommand(newPushCmd())
 	root.AddCommand(newImportCmd())
 	root.AddCommand(newLintCmd())
+	root.AddCommand(newSearchCmd())
 	return root
 }

@@ -19,3 +19,14 @@ func CacheDir(projectID string) (string, error) {
 	}
 	return filepath.Join(root, "cerne", projectID), nil
 }
+
+// IndexPath returns the project's local search index database path:
+// <CacheDir(projectID)>/index.db — a sibling of the repo/ clone, never
+// inside it, so the index is rebuildable without dirtying the backend.
+func IndexPath(projectID string) (string, error) {
+	dir, err := CacheDir(projectID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "index.db"), nil
+}

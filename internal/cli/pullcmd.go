@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/index"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
 )
@@ -54,6 +55,14 @@ func runPull(cmd *cobra.Command, dir, scope string) error {
 	lock.Snapshot = head
 	lock.Materialized = manifest
 	if err := project.SaveLock(ctx.projDir, lock); err != nil {
+		return err
+	}
+	// pull is the sync point: refresh the local search index alongside .docs/.
+	dbPath, err := project.IndexPath(ctx.cfg.ProjectID)
+	if err != nil {
+		return err
+	}
+	if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
 		return err
 	}
 	nFeatures, nDecisions, nReferences := countManifest(manifest)
