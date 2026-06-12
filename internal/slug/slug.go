@@ -3,10 +3,22 @@ package slug
 
 import "strings"
 
-// Make lowercases name, maps spaces to "-" and strips every rune
-// outside [a-z0-9-].
+// diacritics maps accented Latin runes to their ASCII base so pt-BR titles
+// keep their letters in slugs ("Consolidação" -> "consolidacao").
+var diacritics = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a",
+	"é", "e", "è", "e", "ê", "e", "ë", "e",
+	"í", "i", "ì", "i", "î", "i", "ï", "i",
+	"ó", "o", "ò", "o", "ô", "o", "õ", "o", "ö", "o",
+	"ú", "u", "ù", "u", "û", "u", "ü", "u",
+	"ç", "c", "ñ", "n",
+)
+
+// Make lowercases name, transliterates Latin diacritics, maps spaces to "-"
+// and strips every remaining rune outside [a-z0-9-].
 func Make(name string) string {
-	s := strings.ReplaceAll(strings.ToLower(name), " ", "-")
+	s := diacritics.Replace(strings.ToLower(name))
+	s = strings.ReplaceAll(s, " ", "-")
 	var b strings.Builder
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {

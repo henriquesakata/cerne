@@ -11,9 +11,11 @@ func TestMake(t *testing.T) {
 		{"lowercases", "Cerne", "cerne"},
 		{"spaces to hyphens", "My Project", "my-project"},
 		{"keeps digits and hyphens", "v2 multi-tenant", "v2-multi-tenant"},
-		{"strips runes outside a-z0-9 hyphen", "Decisão: usar Postgres!", "deciso-usar-postgres"},
+		{"transliterates diacritics", "Decisão: usar Postgres!", "decisao-usar-postgres"},
+		{"pt-br title keeps letters", "Consolidação de defaults obrigatórios", "consolidacao-de-defaults-obrigatorios"},
+		{"uppercase accents transliterate via lowercase", "ÇÃO Édipo", "cao-edipo"},
 		{"empty input", "", ""},
-		{"only stripped runes", "ãç!?", ""},
+		{"only stripped runes", "!?§", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
