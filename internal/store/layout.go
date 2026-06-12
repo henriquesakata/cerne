@@ -175,5 +175,8 @@ func NextID(backendDir, prefix string) (string, error) {
 			maxNum = n
 		}
 	}
+	if maxNum >= 9999 {
+		return "", fmt.Errorf("id sequence exhausted for prefix %q", prefix)
+	}
 	return fmt.Sprintf("%s-%04d", prefix, maxNum+1), nil
 }
