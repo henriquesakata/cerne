@@ -1,0 +1,230 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
+)
+
+// newFeature creates a feature via the CLI and returns its expected ID.
+func newFeature(t *testing.T, projDir, title string, seq int) string {
+	t.Helper()
+	out, err := execCerne(t, "feature", "new", title, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature new %q: %v\noutput: %s", title, err, out)
+	}
+	return fmt.Sprintf("F-%04d", seq)
+}
+
+// writeDoc writes a feature lifecycle document straight into the backend clone.
+func writeDoc(t *testing.T, repoDir, id, filename, content string) {
+	t.Helper()
+	dir := filepath.Join(repoDir, "content", "features", id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile %s: %v", filename, err)
+	}
+}
+
+func realDoc(id, body string) string {
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n"
+}
+
+func TestTransitionFullLifecycle(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+
+	// approve while the spec is still the stub: gate error with hint.
+	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err == nil {
+		t.Fatalf("approve with stub spec succeeded\noutput: %s", out)
+	}
+	if !strings.Contains(err.Error(), "spec") || !strings.Contains(err.Error(), "spec.md") {
+		t.Fatalf("gate error %q does not mention spec / spec.md", err)
+	}
+	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateCandidate {
+		t.Fatalf("state after failed gate = %s, want candidate", f.State)
+	}
+
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	out, err = execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("approve: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "candidate") || !strings.Contains(out, "approved") {
+		t.Fatalf("approve output missing old→new state:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.State != domain.StateApproved {
+		t.Fatalf("state = %s, want approved", f.State)
+	}
+	if !f.UpdatedAt.After(f.CreatedAt) {
+		t.Fatalf("UpdatedAt = %v not after CreatedAt = %v", f.UpdatedAt, f.CreatedAt)
+	}
+
+	// lock snapshot tracks the pushed origin HEAD after a transition.
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	originHead, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	if lock.Snapshot != originHead {
+		t.Fatalf("lock.Snapshot = %s, want origin HEAD %s", lock.Snapshot, originHead)
+	}
+
+	// start gated on a real plan.
+	if _, err := execCerne(t, "feature", "start", id, "--dir", projDir); err == nil || !strings.Contains(err.Error(), "plan.md") {
+		t.Fatalf("start without plan err = %v, want plan.md gate error", err)
+	}
+	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar."))
+	if out, err := execCerne(t, "feature", "start", id, "--dir", projDir); err != nil {
+		t.Fatalf("start: %v\noutput: %s", err, out)
+	}
+
+	// complete gated on a real result.
+	if _, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err == nil || !strings.Contains(err.Error(), "result.md") {
+		t.Fatalf("complete without result err = %v, want result.md gate error", err)
+	}
+	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Entregue conforme o plano."))
+	if out, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
+		t.Fatalf("complete: %v\noutput: %s", err, out)
+	}
+	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateImplemented {
+		t.Fatalf("state = %s, want implemented", f.State)
+	}
+
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	var types []string
+	for _, ev := range events {
+		types = append(types, ev.Type)
+	}
+	want := []string{"feature.created", "feature.approved", "feature.started", "feature.completed"}
+	if strings.Join(types, ",") != strings.Join(want, ",") {
+		t.Fatalf("event types = %v, want %v", types, want)
+	}
+}
+
+func TestTransitionFlagRules(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	id2 := newFeature(t, projDir, "Feature B", 2)
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"approve with reason", []string{"feature", "approve", id, "--reason", "x"}, "--by/--reason"},
+		{"approve with by", []string{"feature", "approve", id, "--by", id2}, "--by/--reason"},
+		{"start with reason", []string{"feature", "start", id, "--reason", "x"}, "--by/--reason"},
+		{"complete with by", []string{"feature", "complete", id, "--by", id2}, "--by/--reason"},
+		{"reject without reason", []string{"feature", "reject", id}, "--reason"},
+		{"reject with by", []string{"feature", "reject", id, "--reason", "x", "--by", id2}, "--by"},
+		{"supersede without by", []string{"feature", "supersede", id, "--reason", "x"}, "--by"},
+		{"supersede without reason", []string{"feature", "supersede", id, "--by", id2}, "--reason"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append(tt.args, "--dir", projDir)
+			out, err := execCerne(t, args...)
+			if err == nil {
+				t.Fatalf("command succeeded, want error mentioning %q\noutput: %s", tt.wantErr, out)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error %q does not mention %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTransitionReject(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+
+	out, err := execCerne(t, "feature", "reject", id, "--reason", "fora de escopo", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("reject: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "candidate") || !strings.Contains(out, "rejected") {
+		t.Fatalf("reject output missing old→new state:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.State != domain.StateRejected || f.Reason != "fora de escopo" {
+		t.Fatalf("feature = %+v, want rejected with reason", f)
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := events[len(events)-1]
+	if last.Type != "feature.rejected" || last.Payload["reason"] != "fora de escopo" {
+		t.Fatalf("last event = %+v, want feature.rejected with reason payload", last)
+	}
+}
+
+func TestTransitionSupersede(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	id2 := newFeature(t, projDir, "Feature B", 2)
+
+	// --by self is rejected.
+	if _, err := execCerne(t, "feature", "supersede", id, "--by", id, "--reason", "dup", "--dir", projDir); err == nil {
+		t.Fatalf("supersede --by self succeeded, want error")
+	}
+	// --by must exist in the backend.
+	if _, err := execCerne(t, "feature", "supersede", id, "--by", "F-9999", "--reason", "dup", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "F-9999") {
+		t.Fatalf("supersede --by nonexistent err = %v, want error naming F-9999", err)
+	}
+
+	out, err := execCerne(t, "feature", "supersede", id, "--by", id2, "--reason", "duplicada da Feature B", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("supersede: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "superseded") {
+		t.Fatalf("supersede output missing new state:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.State != domain.StateSuperseded || f.SupersededBy != id2 || f.Reason != "duplicada da Feature B" {
+		t.Fatalf("feature = %+v, want superseded by %s with reason", f, id2)
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := events[len(events)-1]
+	if last.Type != "feature.superseded" || last.Payload["by"] != id2 || last.Payload["reason"] != "duplicada da Feature B" {
+		t.Fatalf("last event = %+v, want feature.superseded with by/reason payload", last)
+	}
+}
+
+func TestTransitionMissingFeature(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	_, err := execCerne(t, "feature", "approve", "F-9999", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "F-9999") {
+		t.Fatalf("approve missing feature err = %v, want error naming F-9999", err)
+	}
+}
