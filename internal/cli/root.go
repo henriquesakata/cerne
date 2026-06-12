@@ -18,5 +18,6 @@ func Root() *cobra.Command {
 	root.AddCommand(newPullCmd())
 	root.AddCommand(newPushCmd())
 	root.AddCommand(newImportCmd())
+	root.AddCommand(newLintCmd())
 	return root
 }
