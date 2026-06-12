@@ -137,6 +137,106 @@ func TestRunFindings(t *testing.T) {
 	}
 }
 
+// seedImportedBackend builds a backend whose terminal entities carry content
+// docs with imported_from frontmatter, so ref-to-superseded must also match
+// the ORIGINAL identifiers, not only the cerne ID/title:
+//   - F-0090 imported from a case dir → needles "0090_plugin-autonomous-agent"
+//     and "case 0090". F-0091's spec mentions BOTH forms (single deduped
+//     finding, folder-name detail); F-0092's spec mentions only "case 0090".
+//   - D-0045 imported from an ADR file → needles
+//     "adr-045-identity-as-library-baseline" and "adr-045"; F-0092's spec
+//     hits the short form.
+//   - R-0050 obsolete, imported from another shape (docs/planning/
+//     roadmap-2024.md) → needle "roadmap-2024"; F-0091's spec hits it.
+//   - R-0051 imported from docs/notes/ab.md → needle "ab" dropped by the
+//     min-length guard; F-0093's spec mentions "ab" and stays silent.
+//   - F-0094 terminal with a content doc WITHOUT frontmatter → no imported
+//     needles, unchanged behavior.
+//   - F-0093's spec mentions "case 00901" → word boundary, no match.
+func seedImportedBackend(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	now := time.Now().UTC()
+
+	features := []store.Feature{
+		{ID: "F-0090", Title: "Agente autônomo", State: domain.StateSuperseded, SupersededBy: "F-0091"},
+		{ID: "F-0091", Title: "Plataforma de agentes", State: domain.StateCandidate},
+		{ID: "F-0092", Title: "Relatório de uso", State: domain.StateCandidate},
+		{ID: "F-0093", Title: "Limites de uso", State: domain.StateCandidate},
+		{ID: "F-0094", Title: "Painel antigo", State: domain.StateSuperseded},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(dir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	d := store.Decision{ID: "D-0045", Title: "Identity como biblioteca", State: domain.DecisionSuperseded, SupersededBy: "D-0046", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveDecision(dir, d); err != nil {
+		t.Fatalf("SaveDecision %s: %v", d.ID, err)
+	}
+	references := []store.Reference{
+		{ID: "R-0050", Title: "Roadmap antigo", State: domain.ReferenceObsolete},
+		{ID: "R-0051", Title: "Notas curtas", State: domain.ReferenceObsolete},
+	}
+	for _, r := range references {
+		r.CreatedAt, r.UpdatedAt = now, now
+		if err := store.SaveReference(dir, r); err != nil {
+			t.Fatalf("SaveReference %s: %v", r.ID, err)
+		}
+	}
+
+	writeDoc(t, dir, "content/features/F-0090/spec.md",
+		"---\ncerne_id: F-0090\nimported_from: docs/process/cases/0090_plugin-autonomous-agent/\n---\n\n# Agente autônomo\n\nHistórico.\n")
+	writeDoc(t, dir, "content/decisions/D-0045.md",
+		"---\ncerne_id: D-0045\nimported_from: docs/architecture/adr/adr-045-identity-as-library-baseline.md\n---\n\n# Identity como biblioteca\n\nHistórico.\n")
+	writeDoc(t, dir, "content/references/R-0050.md",
+		"---\ncerne_id: R-0050\nimported_from: docs/planning/roadmap-2024.md\n---\n\n# Roadmap antigo\n\nHistórico.\n")
+	writeDoc(t, dir, "content/references/R-0051.md",
+		"---\ncerne_id: R-0051\nimported_from: docs/notes/ab.md\n---\n\n# Notas curtas\n\nHistórico.\n")
+	writeDoc(t, dir, "content/features/F-0094/spec.md",
+		"# Painel antigo\n\nSem frontmatter.\n")
+
+	writeDoc(t, dir, "content/features/F-0091/spec.md",
+		"---\ncerne_id: F-0091\n---\n\n# Plataforma de agentes\n\n"+
+			"Evolui o 0090_plugin-autonomous-agent (case 0090) sem depender do roadmap-2024.\n")
+	writeDoc(t, dir, "content/features/F-0092/spec.md",
+		"---\ncerne_id: F-0092\n---\n\n# Relatório de uso\n\n"+
+			"Decisão herdada do adr-045; escopo original no case 0090.\n")
+	writeDoc(t, dir, "content/features/F-0093/spec.md",
+		"---\ncerne_id: F-0093\n---\n\n# Limites de uso\n\n"+
+			"Ver case 00901 e o plano ab para detalhes.\n")
+	return dir
+}
+
+func TestRunImportedFromNeedles(t *testing.T) {
+	dir := seedImportedBackend(t)
+
+	got, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := []Finding{
+		{Rule: RuleRefToSuperseded, Entity: "F-0091", File: "content/features/F-0091/spec.md",
+			Detail: `menciona 0090_plugin-autonomous-agent (F-0090 "Agente autônomo") que está superseded — use F-0091`},
+		{Rule: RuleRefToSuperseded, Entity: "F-0091", File: "content/features/F-0091/spec.md",
+			Detail: `menciona roadmap-2024 (R-0050 "Roadmap antigo") que está obsolete`},
+		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
+			Detail: `menciona adr-045 (D-0045 "Identity como biblioteca") que está superseded — use D-0046`},
+		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
+			Detail: `menciona case 0090 (F-0090 "Agente autônomo") que está superseded — use F-0091`},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if !reflect.DeepEqual(got[i], want[i]) {
+			t.Errorf("finding[%d] =\n  %+v\nwant\n  %+v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestRunCleanBackend(t *testing.T) {
 	dir := t.TempDir()
 	if err := store.InitLayout(dir, store.Project{Name: "demo"}); err != nil {

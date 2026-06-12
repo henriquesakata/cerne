@@ -11,6 +11,27 @@ import (
 // lifecycle documents; a document whose body is only these is still a stub.
 var stubPrefixes = []string{"> Spec pendente", "> Plano pendente", "> Resultado pendente"}
 
+// FrontmatterValue returns the value of key inside the leading "---"
+// delimited frontmatter block of data; "" when the block or the key is
+// absent. A UTF-8 BOM before the block is tolerated.
+func FrontmatterValue(data []byte, key string) string {
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return ""
+	}
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			return ""
+		}
+		if v, ok := strings.CutPrefix(trimmed, key+":"); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
 // HasRealContent reports whether a lifecycle document carries content beyond
 // its stub: ignoring the leading frontmatter block, blank lines, the first
 // "#" heading and stub placeholder lines, at least one line remains.

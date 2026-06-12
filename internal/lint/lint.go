@@ -63,13 +63,24 @@ var liveFeatureStates = map[domain.FeatureState]bool{
 }
 
 // needle is one terminal entity scanned docs must not mention. Matching is a
-// case-insensitive word-boundary substring on the ID and, for features with
-// a title of at least minTitleNeedleLen runes, on the title. One finding per
-// (doc, needle) pair: ID and title hits of the same entity collapse into a
-// single finding sharing the ID-based detail.
+// case-insensitive word-boundary substring on the ID, for features with a
+// title of at least minTitleNeedleLen runes on the title, and on the original
+// identifiers derived from the imported_from frontmatter of the entity's
+// content doc. One finding per (doc, needle) pair: every hit of the same
+// entity collapses into a single finding keeping the strongest detail —
+// ID/title hits share the ID-based detail; imported hits fall back to the
+// first matching original identifier.
 type needle struct {
 	id, title, state, use string
 	rxID, rxTitle         *regexp.Regexp
+	imported              []importedNeedle
+}
+
+// importedNeedle is one original identifier (pre-import) of a terminal
+// entity, e.g. "case 0090" or "adr-045".
+type importedNeedle struct {
+	text string
+	rx   *regexp.Regexp
 }
 
 // scannedDoc is one live-entity content document subject to the text rules.
@@ -100,7 +111,10 @@ func Run(repoDir string) ([]Finding, error) {
 		return nil, err
 	}
 
-	needles := buildNeedles(features, decisions, references)
+	needles, err := buildNeedles(repoDir, features, decisions, references)
+	if err != nil {
+		return nil, err
+	}
 	docs, err := scannedDocs(repoDir, features, decisions, references)
 	if err != nil {
 		return nil, err
@@ -147,7 +161,10 @@ func Run(repoDir string) ([]Finding, error) {
 
 // buildNeedles collects every terminal entity scanned docs must not mention:
 // superseded/rejected features, superseded decisions and obsolete references.
-func buildNeedles(features []store.Feature, decisions []store.Decision, references []store.Reference) []needle {
+// Each needle also carries the original identifiers derived from the
+// imported_from frontmatter of the entity's content doc (the spec for
+// features), when present.
+func buildNeedles(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]needle, error) {
 	var needles []needle
 	for _, f := range features {
 		if f.State != domain.StateSuperseded && f.State != domain.StateRejected {
@@ -157,21 +174,91 @@ func buildNeedles(features []store.Feature, decisions []store.Decision, referenc
 		if utf8.RuneCountInString(f.Title) >= minTitleNeedleLen {
 			n.rxTitle = wordRx(f.Title)
 		}
+		var err error
+		if n.imported, err = importedNeedles(repoDir, "content/features/"+f.ID+"/spec.md"); err != nil {
+			return nil, err
+		}
 		needles = append(needles, n)
 	}
 	for _, d := range decisions {
 		if d.State != domain.DecisionSuperseded {
 			continue
 		}
-		needles = append(needles, needle{id: d.ID, title: d.Title, state: string(d.State), use: d.SupersededBy, rxID: wordRx(d.ID)})
+		n := needle{id: d.ID, title: d.Title, state: string(d.State), use: d.SupersededBy, rxID: wordRx(d.ID)}
+		var err error
+		if n.imported, err = importedNeedles(repoDir, "content/decisions/"+d.ID+".md"); err != nil {
+			return nil, err
+		}
+		needles = append(needles, n)
 	}
 	for _, r := range references {
 		if r.State != domain.ReferenceObsolete {
 			continue
 		}
-		needles = append(needles, needle{id: r.ID, title: r.Title, state: string(r.State), rxID: wordRx(r.ID)})
+		n := needle{id: r.ID, title: r.Title, state: string(r.State), rxID: wordRx(r.ID)}
+		var err error
+		if n.imported, err = importedNeedles(repoDir, "content/references/"+r.ID+".md"); err != nil {
+			return nil, err
+		}
+		needles = append(needles, n)
 	}
-	return needles
+	return needles, nil
+}
+
+// importedNeedles reads the imported_from frontmatter of the terminal
+// entity's content doc at rel and compiles the derived original identifiers;
+// nil when the doc, the frontmatter or the key is absent.
+func importedNeedles(repoDir, rel string) ([]importedNeedle, error) {
+	data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	source := doccheck.FrontmatterValue(data, "imported_from")
+	if source == "" {
+		return nil, nil
+	}
+	var ins []importedNeedle
+	for _, text := range deriveImportedNeedles(source) {
+		if utf8.RuneCountInString(text) < minTitleNeedleLen {
+			continue
+		}
+		ins = append(ins, importedNeedle{text: text, rx: wordRx(text)})
+	}
+	return ins, nil
+}
+
+var (
+	// reImportedCaseDir matches the folder name of an imported case dir
+	// (NNNN_kebab-name), capturing the leading number.
+	reImportedCaseDir = regexp.MustCompile(`^(\d+)_.+$`)
+	// reImportedADR matches an imported ADR filename without extension,
+	// capturing the short form prefix through the number ("adr-045").
+	reImportedADR = regexp.MustCompile(`^(adr-\d+)-.+$`)
+)
+
+// deriveImportedNeedles maps an imported_from source path to the original
+// identifiers other docs may use to mention it:
+//   - case dir ".../0090_plugin-autonomous-agent/" → the folder name and
+//     "case 0090";
+//   - ADR file ".../adr-045-xyz.md" → the bare filename without extension
+//     and "adr-045";
+//   - anything else → the filename without extension.
+func deriveImportedNeedles(source string) []string {
+	base := path.Base(strings.TrimSuffix(source, "/"))
+	if strings.HasSuffix(source, "/") {
+		if m := reImportedCaseDir.FindStringSubmatch(base); m != nil {
+			return []string{base, "case " + m[1]}
+		}
+		return []string{base}
+	}
+	name := strings.TrimSuffix(base, path.Ext(base))
+	if m := reImportedADR.FindStringSubmatch(name); m != nil {
+		return []string{name, m[1]}
+	}
+	return []string{name}
 }
 
 // wordRx compiles a case-insensitive word-boundary matcher for the literal s.
@@ -233,14 +320,28 @@ func scannedDocs(repoDir string, features []store.Feature, decisions []store.Dec
 	return docs, nil
 }
 
-// refFindings reports the terminal entities the document mentions.
+// refFindings reports the terminal entities the document mentions. All hits
+// of the same entity collapse into one finding: an ID or title hit keeps the
+// ID-based detail; otherwise the first matching imported identifier names
+// the mention.
 func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 	var findings []Finding
 	for _, n := range needles {
-		if !n.rxID.MatchString(text) && (n.rxTitle == nil || !n.rxTitle.MatchString(text)) {
+		var detail string
+		switch {
+		case n.rxID.MatchString(text) || (n.rxTitle != nil && n.rxTitle.MatchString(text)):
+			detail = fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, n.state)
+		default:
+			for _, in := range n.imported {
+				if in.rx.MatchString(text) {
+					detail = fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, n.state)
+					break
+				}
+			}
+		}
+		if detail == "" {
 			continue
 		}
-		detail := fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, n.state)
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
