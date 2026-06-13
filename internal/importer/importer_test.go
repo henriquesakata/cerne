@@ -35,7 +35,14 @@ func TestScanHubTree(t *testing.T) {
 		{"decision", "docs/architecture/adr/adr-001-database-per-service.md", "active", "", "ADR-001 — Database per service", []string{"doc.md"}},
 		{"decision", "docs/architecture/adr/adr-002-monolith-auth.md", "superseded", "", "ADR-002 — Autenticação no monólito", []string{"doc.md"}},
 		{"reference", "docs/architecture/overview.md", "current", "", "Overview", []string{"doc.md"}},
+		{"reference", "docs/compliance/lgpd.md", "current", "", "LGPD", []string{"doc.md"}},
+		{"reference", "docs/design-system/tokens.md", "current", "", "Design tokens", []string{"doc.md"}},
+		{"reference", "docs/finance/model.md", "current", "", "Modelo financeiro", []string{"doc.md"}},
+		{"reference", "docs/identity/roles.md", "current", "", "Roles", []string{"doc.md"}},
 		{"reference", "docs/planning/features.md", "current", "", "Features", []string{"doc.md"}},
+		{"reference", "docs/plans/2026-q1.md", "current", "", "Plano Q1 2026", []string{"doc.md"}},
+		{"reference", "docs/plugins/registry.md", "current", "", "Plugin registry", []string{"doc.md"}},
+		{"reference", "docs/review/review-2026-04.md", "current", "", "Review 2026-04", []string{"doc.md"}},
 		{"reference", "docs/runbooks/dev-setup.md", "current", "", "Setup de desenvolvimento", []string{"doc.md"}},
 	}
 	if len(cands) != len(want) {
@@ -125,16 +132,16 @@ func TestApplyHubTree(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 
-	sum, err := Apply(repoDir, cands, "importer-test")
+	sum, err := Apply(repoDir, cands, "importer-test", ApplyOptions{SrcRoot: hubtree})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if sum.Features != 6 || sum.Decisions != 2 || sum.References != 3 {
-		t.Fatalf("Summary counts = %+v, want 6 features, 2 decisions, 3 references", sum)
+	if sum.Features != 6 || sum.Decisions != 2 || sum.References != 10 {
+		t.Fatalf("Summary counts = %+v, want 6 features, 2 decisions, 10 references", sum)
 	}
 	wantByState := map[string]int{
 		"implemented": 1, "candidate": 3, "superseded": 2, "in_development": 1,
-		"active": 1, "current": 3,
+		"active": 1, "current": 10,
 	}
 	for state, n := range wantByState {
 		if sum.ByState[state] != n {
@@ -198,11 +205,11 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAllReferences: %v", err)
 	}
-	if len(references) != 3 || references[0].ID != "R-0001" || references[1].ID != "R-0002" || references[2].ID != "R-0003" {
-		t.Fatalf("references = %+v, want R-0001, R-0002 and R-0003", references)
+	if len(references) != 10 || references[0].ID != "R-0001" || references[9].ID != "R-0010" {
+		t.Fatalf("references = %+v, want R-0001..R-0010", references)
 	}
-	if references[1].Title != "Features" {
-		t.Fatalf("references[1].Title = %q, want Features (docs/planning sorted between architecture and runbooks)", references[1].Title)
+	if references[1].Title != "LGPD" {
+		t.Fatalf("references[1].Title = %q, want LGPD (docs/compliance sorts right after docs/architecture)", references[1].Title)
 	}
 	for _, r := range references {
 		if r.State != domain.ReferenceCurrent {
@@ -227,11 +234,11 @@ func TestApplyHubTree(t *testing.T) {
 
 	// Frontmatter inject branch: source file already has a frontmatter block;
 	// cerne_id and imported_from become the first keys, existing keys stay.
-	ref, err := os.ReadFile(filepath.Join(repoDir, "content", "references", "R-0003.md"))
+	ref, err := os.ReadFile(filepath.Join(repoDir, "content", "references", "R-0010.md"))
 	if err != nil {
 		t.Fatalf("imported reference: %v", err)
 	}
-	wantRefPrefix := "---\ncerne_id: R-0003\nimported_from: docs/runbooks/dev-setup.md\ntags: runbook\n---\n\n# Setup de desenvolvimento"
+	wantRefPrefix := "---\ncerne_id: R-0010\nimported_from: docs/runbooks/dev-setup.md\ntags: runbook\n---\n\n# Setup de desenvolvimento"
 	if !strings.HasPrefix(string(ref), wantRefPrefix) {
 		t.Errorf("imported reference frontmatter not injected as first keys:\n%s", ref)
 	}
@@ -240,8 +247,8 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadEvents: %v", err)
 	}
-	if len(events) != 11 {
-		t.Fatalf("events = %d, want 11", len(events))
+	if len(events) != 18 {
+		t.Fatalf("events = %d, want 18", len(events))
 	}
 	wantEvents := []struct{ entityID, evType, source string }{
 		{"F-0001", "feature.imported", "docs/process/cases/0001_login-google/"},
@@ -253,14 +260,69 @@ func TestApplyHubTree(t *testing.T) {
 		{"D-0001", "decision.imported", "docs/architecture/adr/adr-001-database-per-service.md"},
 		{"D-0002", "decision.imported", "docs/architecture/adr/adr-002-monolith-auth.md"},
 		{"R-0001", "reference.imported", "docs/architecture/overview.md"},
-		{"R-0002", "reference.imported", "docs/planning/features.md"},
-		{"R-0003", "reference.imported", "docs/runbooks/dev-setup.md"},
+		{"R-0002", "reference.imported", "docs/compliance/lgpd.md"},
+		{"R-0003", "reference.imported", "docs/design-system/tokens.md"},
+		{"R-0004", "reference.imported", "docs/finance/model.md"},
+		{"R-0005", "reference.imported", "docs/identity/roles.md"},
+		{"R-0006", "reference.imported", "docs/planning/features.md"},
+		{"R-0007", "reference.imported", "docs/plans/2026-q1.md"},
+		{"R-0008", "reference.imported", "docs/plugins/registry.md"},
+		{"R-0009", "reference.imported", "docs/review/review-2026-04.md"},
+		{"R-0010", "reference.imported", "docs/runbooks/dev-setup.md"},
 	}
 	for i, w := range wantEvents {
 		ev := events[i]
 		if ev.EntityID != w.entityID || ev.Type != w.evType || ev.Payload["source"] != w.source || ev.Actor != "importer-test" {
 			t.Errorf("events[%d] = %+v, want %s %s source %q actor importer-test", i, ev, w.entityID, w.evType, w.source)
 		}
+	}
+}
+
+func TestApplyRewritesCrossLinks(t *testing.T) {
+	root := t.TempDir()
+	repoDir := t.TempDir()
+	if err := store.InitLayout(repoDir, store.Project{Name: "demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	src := func(rel, body string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src("docs/architecture/adr/adr-001-db.md", "# ADR-001 — Banco por serviço\n\nDecidido.\n")
+	// A case spec referencing the ADR by wikilink and by inline relative link,
+	// plus a forward reference to a later case (resolves via the first pass).
+	src("docs/process/cases/0001_login/spec.md",
+		"# Login\n\nver [[adr-001-db]] e [a decisão](../../architecture/adr/adr-001-db.md);\nantecipa [[../0002_logout/spec]].\n")
+	src("docs/process/cases/0002_logout/spec.md", "# Logout\n\nEncerramento.\n")
+
+	cands, err := Scan(root, nil)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if _, err := Apply(repoDir, cands, "test", ApplyOptions{SrcRoot: root}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil {
+		t.Fatalf("read F-0001 spec: %v", err)
+	}
+	for _, want := range []string{
+		"[ADR-001 — Banco por serviço](../../decisions/D-0001.md)", // wikilink → entity title
+		"[a decisão](../../decisions/D-0001.md)",                   // inline relative link
+		"[Logout](../F-0002/spec.md)",                              // forward case reference
+	} {
+		if !strings.Contains(string(spec), want) {
+			t.Errorf("rewritten spec missing %q:\n%s", want, spec)
+		}
+	}
+	if strings.Contains(string(spec), "[[") {
+		t.Errorf("spec still has an unresolved wikilink:\n%s", spec)
 	}
 }
 
@@ -286,7 +348,7 @@ func TestApplyContinuesIDSequence(t *testing.T) {
 		Files:  map[string]string{"spec.md": specPath},
 		Source: "docs/process/cases/0004_nova/",
 	}}
-	sum, err := Apply(repoDir, cands, "importer-test")
+	sum, err := Apply(repoDir, cands, "importer-test", ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

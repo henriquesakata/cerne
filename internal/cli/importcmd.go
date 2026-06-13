@@ -63,13 +63,31 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 	if err != nil {
 		return err
 	}
+	// Idempotency: skip documents already imported (matched by imported_from)
+	// and historical seeds already declared (matched by name), so re-running
+	// import brings in only what was added since the last run.
+	imported, err := importer.ImportedSources(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	cands, skipped := importer.Unimported(cands, imported)
+	seeds, seedSkipped, err := unseededHistoricals(ctx.repoDir, seeds)
+	if err != nil {
+		return err
+	}
+	skipped += seedSkipped
+
 	out := cmd.OutOrStdout()
 	if len(cands) == 0 && len(seeds) == 0 {
-		fmt.Fprintln(out, "Nada para importar.")
+		if skipped > 0 {
+			fmt.Fprintf(out, "Tudo já importado (%d documento(s) já no backend).\n", skipped)
+		} else {
+			fmt.Fprintln(out, "Nada para importar.")
+		}
 		return nil
 	}
 	if !yes {
-		printImportPlan(out, cands, seeds)
+		printImportPlan(out, cands, seeds, skipped)
 		return nil
 	}
 
@@ -81,7 +99,16 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 		}
 	}
 
-	sum, err := importer.Apply(ctx.repoDir, cands, eventActor())
+	// Permalink source-code references to the source repo's blob, pinned at
+	// its current HEAD. Left disabled when root is not a git checkout or its
+	// remote host is unrecognised, in which case code refs stay as written.
+	opts := importer.ApplyOptions{SrcRoot: root}
+	if url, err := gitback.RemoteURL(root); err == nil {
+		if sha, err := gitback.HeadSHA(root); err == nil {
+			opts.BlobBase = importer.BlobBase(url, sha)
+		}
+	}
+	sum, err := importer.Apply(ctx.repoDir, cands, eventActor(), opts)
 	if err != nil {
 		return err
 	}
@@ -103,9 +130,34 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 	return nil
 }
 
+// unseededHistoricals drops seeds whose name already exists as a historical
+// entity in the backend, so a re-run does not duplicate them; returns the kept
+// seeds and the skipped count.
+func unseededHistoricals(repoDir string, seeds []importer.HistoricalSeed) ([]importer.HistoricalSeed, int, error) {
+	existing, err := store.LoadAllHistoricals(repoDir)
+	if err != nil {
+		return nil, 0, err
+	}
+	byName := make(map[string]bool, len(existing))
+	for _, h := range existing {
+		byName[h.Name] = true
+	}
+	var kept []importer.HistoricalSeed
+	skipped := 0
+	for _, s := range seeds {
+		if byName[s.Name] {
+			skipped++
+			continue
+		}
+		kept = append(kept, s)
+	}
+	return kept, skipped, nil
+}
+
 // printImportPlan writes the dry-run report: per-kind totals with a state
-// breakdown, a sample of the candidates and the --yes hint.
-func printImportPlan(w io.Writer, cands []importer.Candidate, seeds []importer.HistoricalSeed) {
+// breakdown, a sample of the candidates and the --yes hint. skipped is the
+// number of already-imported documents and seeds omitted from the plan.
+func printImportPlan(w io.Writer, cands []importer.Candidate, seeds []importer.HistoricalSeed, skipped int) {
 	counts := map[string]map[string]int{} // kind -> state -> count
 	for _, c := range cands {
 		if counts[c.Kind] == nil {
@@ -114,6 +166,9 @@ func printImportPlan(w io.Writer, cands []importer.Candidate, seeds []importer.H
 		counts[c.Kind][c.State]++
 	}
 	fmt.Fprintln(w, "Plano de importação (dry-run):")
+	if skipped > 0 {
+		fmt.Fprintf(w, "  Já importados (pulados): %d\n", skipped)
+	}
 	fmt.Fprintf(w, "  Features: %d%s\n", kindTotal(counts["feature"]), stateBreakdown(counts["feature"], planFeatureStates))
 	fmt.Fprintf(w, "  Decisões: %d%s\n", kindTotal(counts["decision"]), stateBreakdown(counts["decision"], planDecisionStates))
 	fmt.Fprintf(w, "  Referências: %d\n", kindTotal(counts["reference"]))
