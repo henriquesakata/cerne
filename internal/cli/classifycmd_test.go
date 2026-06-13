@@ -203,3 +203,100 @@ func TestClassifyYes(t *testing.T) {
 		t.Fatalf("origin HEAD changed on idempotent re-run: %s -> %s", originHead, headAfter2)
 	}
 }
+
+func TestClassifyManualAssign(t *testing.T) {
+	projDir, origin, repoDir := seedClassifyBackend(t)
+
+	// F-0003 is module-less and cross-cutting (the heuristic skips it); manual
+	// assignment overrides that with an explicit, precise module.
+	out, err := execCerne(t, "classify", "F-0003", "--module", "identity", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("manual classify: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0003 → identity.") {
+		t.Fatalf("output missing manual confirmation:\n%s", out)
+	}
+
+	f, err := store.LoadFeature(repoDir, "F-0003")
+	if err != nil {
+		t.Fatalf("LoadFeature F-0003: %v", err)
+	}
+	if f.Module != "identity" {
+		t.Fatalf("F-0003.Module = %q, want identity", f.Module)
+	}
+
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := events[len(events)-1]
+	if last.Type != "feature.classified" || last.EntityID != "F-0003" ||
+		last.Payload["module"] != "identity" || last.Payload["source"] != "manual" {
+		t.Fatalf("last event = %+v, want feature.classified F-0003 module identity source manual", last)
+	}
+
+	originHead, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if lock.Snapshot != originHead {
+		t.Fatalf("lock.Snapshot = %s, want pushed origin HEAD %s", lock.Snapshot, originHead)
+	}
+}
+
+func TestClassifyManualUnknownModule(t *testing.T) {
+	projDir, _, repoDir := seedClassifyBackend(t)
+	_, err := execCerne(t, "classify", "F-0003", "--module", "marketing", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("manual classify with undeclared module succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "marketing") || !strings.Contains(err.Error(), "finance") {
+		t.Fatalf("error %q should name the bad module and the declared ones", err)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0003")
+	if err != nil {
+		t.Fatalf("LoadFeature F-0003: %v", err)
+	}
+	if f.Module != "" {
+		t.Fatalf("F-0003.Module = %q after failed manual assign, want unchanged empty", f.Module)
+	}
+}
+
+func TestClassifyManualUnknownID(t *testing.T) {
+	projDir, _, _ := seedClassifyBackend(t)
+	_, err := execCerne(t, "classify", "F-9999", "--module", "finance", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("manual classify of unknown id succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "F-9999") {
+		t.Fatalf("error %q should name the missing id", err)
+	}
+}
+
+func TestClassifyManualReclassifiesModuled(t *testing.T) {
+	// Manual mode is precise and allowed to reclassify an already-moduled
+	// feature (unlike the backfill, which never touches moduled features).
+	projDir, _, repoDir := seedClassifyBackend(t)
+	if _, err := execCerne(t, "classify", "F-0005", "--module", "identity", "--dir", projDir); err != nil {
+		t.Fatalf("manual reclassify: %v", err)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0005")
+	if err != nil {
+		t.Fatalf("LoadFeature F-0005: %v", err)
+	}
+	if f.Module != "identity" {
+		t.Fatalf("F-0005.Module = %q, want identity (reclassified from finance)", f.Module)
+	}
+}
+
+func TestClassifyManualRequiresModuleFlag(t *testing.T) {
+	projDir, _, _ := seedClassifyBackend(t)
+	_, err := execCerne(t, "classify", "F-0003", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("manual classify without --module succeeded, want error")
+	}
+}
