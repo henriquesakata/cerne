@@ -26,9 +26,46 @@ type Config struct {
 }
 
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
-// here — a future BYO-key mode reads its key from the environment.
+// here: in byo-key mode the API key is read from the environment variable
+// named by KeyEnv — only the NAME is persisted, never the value.
 type LLMConfig struct {
-	Mode string `toml:"mode"` // "delegation" (default when empty); "byo-key" reserved
+	Mode      string `toml:"mode"`       // "delegation" (default when empty) | "byo-key"
+	Provider  string `toml:"provider"`   // byo-key provider; default "anthropic"
+	Model     string `toml:"model"`      // model id; default "claude-opus-4-8"
+	KeyEnv    string `toml:"key_env"`    // env var NAME holding the key; default "CERNE_LLM_API_KEY"
+	BaseURL   string `toml:"base_url"`   // API base URL; default "https://api.anthropic.com"
+	MaxTokens int    `toml:"max_tokens"` // max output tokens; default 8000
+}
+
+// LLM defaults applied by withDefaults when a byo-key field is empty/zero.
+const (
+	defaultLLMProvider  = "anthropic"
+	defaultLLMModel     = "claude-opus-4-8"
+	defaultLLMKeyEnv    = "CERNE_LLM_API_KEY"
+	defaultLLMBaseURL   = "https://api.anthropic.com"
+	defaultLLMMaxTokens = 8000
+)
+
+// WithDefaults returns a copy with each empty/zero byo-key field filled by its
+// default. Mode is left untouched (llm.ResolveMode owns that fallback). It is
+// exported so the llm package can normalize a config before building a provider.
+func (c LLMConfig) WithDefaults() LLMConfig {
+	if c.Provider == "" {
+		c.Provider = defaultLLMProvider
+	}
+	if c.Model == "" {
+		c.Model = defaultLLMModel
+	}
+	if c.KeyEnv == "" {
+		c.KeyEnv = defaultLLMKeyEnv
+	}
+	if c.BaseURL == "" {
+		c.BaseURL = defaultLLMBaseURL
+	}
+	if c.MaxTokens == 0 {
+		c.MaxTokens = defaultLLMMaxTokens
+	}
+	return c
 }
 
 // SaveConfig writes <dir>/.cernerc as TOML.
