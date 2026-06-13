@@ -36,6 +36,12 @@ func New(repoDir, projDir string) http.Handler {
 	mux.HandleFunc("PUT /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
 		handleArtifactPut(w, r, repoDir, projDir, r.PathValue("featureID"), r.PathValue("name"))
 	})
+	mux.HandleFunc("GET /api/decisions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		handleDecisionDetail(w, repoDir, r.PathValue("id"))
+	})
+	mux.HandleFunc("GET /api/references/{id}", func(w http.ResponseWriter, r *http.Request) {
+		handleReferenceDetail(w, repoDir, r.PathValue("id"))
+	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
 	})
@@ -154,6 +160,69 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 		})
 	}
 	return artifacts, nil
+}
+
+// decisionDetailResponse is the GET /api/decisions/{id} payload: the entity
+// plus its content document (empty when the doc file is absent).
+type decisionDetailResponse struct {
+	Decision store.Decision `json:"decision"`
+	Doc      string         `json:"doc"`
+}
+
+func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
+	d, err := store.LoadDecision(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("decisão não encontrada"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	doc, err := readContentDoc(repoDir, "decisions", id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc})
+}
+
+// referenceDetailResponse is the GET /api/references/{id} payload.
+type referenceDetailResponse struct {
+	Reference store.Reference `json:"reference"`
+	Doc       string          `json:"doc"`
+}
+
+func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
+	ref, err := store.LoadReference(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("referência não encontrada"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	doc, err := readContentDoc(repoDir, "references", id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, referenceDetailResponse{Reference: ref, Doc: doc})
+}
+
+// readContentDoc reads content/<kind>/<id>.md (decisions, references); ""
+// when the file is absent, mirroring how the materializer and index treat a
+// missing content document.
+func readContentDoc(repoDir, kind, id string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.

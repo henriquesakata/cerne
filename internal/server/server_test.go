@@ -81,6 +81,19 @@ func realDoc(id, body string) string {
 	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n"
 }
 
+// writeContentDoc writes a decision/reference content doc at
+// content/<kind>/<id>.md (kind is "decisions" or "references").
+func writeContentDoc(t *testing.T, repoDir, kind, id, content string) {
+	t.Helper()
+	dir := filepath.Join(repoDir, "content", kind)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile %s: %v", id, err)
+	}
+}
+
 // doJSON performs a request against the handler and decodes the JSON body.
 func doJSON(t *testing.T, h http.Handler, method, target, body string, out any) *httptest.ResponseRecorder {
 	t.Helper()
@@ -219,6 +232,80 @@ func TestFeatureDetailNotFound(t *testing.T) {
 	}
 	if got["error"] != "feature não encontrada" {
 		t.Fatalf("error = %q, want %q", got["error"], "feature não encontrada")
+	}
+}
+
+func TestDecisionDetail(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Decisão X", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	doc := realDoc("D-0001", "Contexto e consequência da decisão.")
+	writeContentDoc(t, repoDir, "decisions", "D-0001", doc)
+
+	var got struct {
+		Decision store.Decision `json:"decision"`
+		Doc      string         `json:"doc"`
+	}
+	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/decisions/D-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Decision.ID != "D-0001" || got.Decision.State != domain.DecisionActive {
+		t.Fatalf("decision = %+v, want active D-0001", got.Decision)
+	}
+	if got.Doc != doc {
+		t.Fatalf("doc = %q, want the decision content markdown", got.Doc)
+	}
+}
+
+func TestDecisionDetailNotFound(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/decisions/D-9999", "", &got)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] != "decisão não encontrada" {
+		t.Fatalf("error = %q, want %q", got["error"], "decisão não encontrada")
+	}
+}
+
+func TestReferenceDetail(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveReference(repoDir, store.Reference{ID: "R-0001", Title: "Referência Y", State: domain.ReferenceCurrent, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveReference: %v", err)
+	}
+	doc := realDoc("R-0001", "Link e resumo da referência.")
+	writeContentDoc(t, repoDir, "references", "R-0001", doc)
+
+	var got struct {
+		Reference store.Reference `json:"reference"`
+		Doc       string          `json:"doc"`
+	}
+	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/references/R-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Reference.ID != "R-0001" || got.Reference.State != domain.ReferenceCurrent {
+		t.Fatalf("reference = %+v, want current R-0001", got.Reference)
+	}
+	if got.Doc != doc {
+		t.Fatalf("doc = %q, want the reference content markdown", got.Doc)
+	}
+}
+
+func TestReferenceDetailNotFound(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/references/R-9999", "", &got)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] != "referência não encontrada" {
+		t.Fatalf("error = %q, want %q", got["error"], "referência não encontrada")
 	}
 }
 
