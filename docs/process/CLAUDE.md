@@ -14,6 +14,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0008](cases/0008_cache-auto-recreate/spec.md) | Cache clone auto-recreate (no init dead-end) | Done |
 | [0009](cases/0009_byo-key-provider/spec.md) | BYO-key LLM provider (`compile`/`ask` standalone) | Done |
 | [0010](cases/0010_release-pipeline/spec.md) | Release pipeline (ldflags version, cross-compile, GitLab CI) | Done |
+| [0011](cases/0011_decision-authoring/spec.md) | Native decision authoring (`decision new`/`substituir`) + `feature supersede`→`substituir` rename | Implemented — 361 verdes; aguardando revisão |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
