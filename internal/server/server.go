@@ -31,6 +31,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("GET /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
 		handleFeatureDetail(w, repoDir, r.PathValue("id"))
 	})
+	mux.HandleFunc("POST /api/features", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateFeature(w, r, repoDir, projDir)
+	})
 	mux.HandleFunc("POST /api/features/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
 		handleTransition(w, r, repoDir, projDir, r.PathValue("id"))
 	})
@@ -348,6 +351,33 @@ func handleEvents(w http.ResponseWriter, repoDir string) {
 		events[i], events[j] = events[j], events[i]
 	}
 	writeJSON(w, http.StatusOK, eventsResponse{Events: events})
+}
+
+// createFeatureRequest is the POST /api/features body.
+type createFeatureRequest struct {
+	Title  string `json:"title"`
+	Module string `json:"module"`
+}
+
+// createFeatureResponse is the POST /api/features 201 payload.
+type createFeatureResponse struct {
+	Feature store.Feature `json:"feature"`
+}
+
+func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	var req createFeatureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module)
+	if err != nil {
+		// Validation/module failures surface as 422 with the same pt-BR
+		// message the CLI prints, matching handleTransition.
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, createFeatureResponse{Feature: f})
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.

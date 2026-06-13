@@ -578,3 +578,43 @@ func TestEventsEndpointEmpty(t *testing.T) {
 		t.Fatalf("empty events not serialized as []:\n%s", rec.Body.String())
 	}
 }
+
+func TestCreateFeatureEndpoint(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // no declared modules → module optional
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features",
+		`{"title":"Nova feature da UI"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Feature.ID == "" || got.Feature.Title != "Nova feature da UI" || got.Feature.State != domain.StateCandidate {
+		t.Fatalf("feature = %+v, want a candidate with the given title", got.Feature)
+	}
+	if f, err := store.LoadFeature(repoDir, got.Feature.ID); err != nil || f.State != domain.StateCandidate {
+		t.Fatalf("not persisted: %+v %v", f, err)
+	}
+}
+
+func TestCreateFeatureEndpointEmptyTitle(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features", `{"title":"  "}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] == "" {
+		t.Fatalf("want pt-BR error message")
+	}
+}
+
+func TestCreateFeatureEndpointInvalidBody(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features", `{not json`, &got)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+}
