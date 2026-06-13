@@ -15,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/ui"
@@ -47,6 +48,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	})
 	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
 		handleSearch(w, r, repoDir, projectID)
+	})
+	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
+		handleLint(w, repoDir)
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
@@ -294,6 +298,34 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 		}
 	}
 	writeJSON(w, http.StatusOK, searchResponse{Results: hits})
+}
+
+// lintFinding is one lint problem in the API's snake_case contract,
+// projected from lint.Finding (which carries no JSON tags).
+type lintFinding struct {
+	Rule   string `json:"rule"`
+	Entity string `json:"entity,omitempty"`
+	File   string `json:"file,omitempty"`
+	Detail string `json:"detail"`
+}
+
+// lintResponse is the GET /api/lint payload; findings come already ordered
+// by lint.RuleOrder.
+type lintResponse struct {
+	Findings []lintFinding `json:"findings"`
+}
+
+func handleLint(w http.ResponseWriter, repoDir string) {
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	out := make([]lintFinding, len(findings))
+	for i, f := range findings {
+		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail}
+	}
+	writeJSON(w, http.StatusOK, lintResponse{Findings: out})
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.

@@ -482,3 +482,50 @@ func TestSearchEndpointEmptyQuery(t *testing.T) {
 		t.Fatalf("body = %v, want pt-BR error message", got)
 	}
 }
+
+func TestLintEndpoint(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	// An approved feature with no real spec.md is a missing-gate-doc finding.
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateApproved)
+
+	var got struct {
+		Findings []struct {
+			Rule   string `json:"rule"`
+			Entity string `json:"entity"`
+			Detail string `json:"detail"`
+		} `json:"findings"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/lint", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	found := false
+	for _, f := range got.Findings {
+		if f.Rule == "missing-gate-doc" && f.Entity == "F-0001" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("findings = %+v, want a missing-gate-doc for F-0001", got.Findings)
+	}
+}
+
+func TestLintEndpointClean(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	// A candidate with a real spec leaves nothing stale.
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real."))
+
+	var got struct {
+		Findings []struct {
+			Rule string `json:"rule"`
+		} `json:"findings"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/lint", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none on a clean backend", got.Findings)
+	}
+}
