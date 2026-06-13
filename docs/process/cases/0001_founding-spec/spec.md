@@ -35,7 +35,7 @@ O problema não é específico do hub: **qualquer projeto que use IA no desenvol
 
 - O repositório do usuário ganha uma pasta **`.docs/` materializada e gitignored** contendo *apenas o estado vigente*: specs ativas, ADRs ativas, references vigentes e uma wiki compilada. É o que agentes leem — nativamente, sem protocolo.
 - O **histórico completo** mora no backend do cerne (v1: um repositório git separado), com busca full-text local.
-- **Transições de estado** (aprovar, rejeitar, supersedir) são operações validadas da ferramenta — nunca edição de texto.
+- **Transições de estado** (aprovar, rejeitar, substituir) são operações validadas da ferramenta — nunca edição de texto.
 - Um **`docs.lock` commitado** amarra cada estado do código ao snapshot de docs correspondente.
 
 Públicos: times que desenvolvem com agentes (Claude Code, Cursor, etc.) **e** criadores não-técnicos/amadores — para estes, o fluxo opinativo da ferramenta É o guia metodológico ("sua spec foi aprovada; o próximo passo é o plano").
@@ -66,9 +66,9 @@ Seis tipos de entidade. Todas têm **ID estável** e **status como dado** (nunca
 | Entidade | Papel | Estados |
 |---|---|---|
 | **Project** | Raiz; define módulos/escopos (ex.: finance, identity) | — |
-| **Feature** | Entidade central (work item) | `candidata → aprovada → em-desenvolvimento → implementada`; terminais alternativos: `rejeitada`, `supersedida` |
+| **Feature** | Entidade central (work item) | `candidata → aprovada → em-desenvolvimento → implementada`; terminais alternativos: `rejeitada`, `substituída` |
 | **Document** | Spec, plano ou resultado — sempre pertence a uma Feature (são estágios dela) | derivado do estado da Feature |
-| **Decision (ADR)** | Decisão arquitetural | `ativa / supersedida` |
+| **Decision (ADR)** | Decisão arquitetural | `ativa / substituída` |
 | **Reference** | Arquitetura, runbooks, guias | `vigente / obsoleto` |
 | **Artifact** | Diagramas `.excalidraw`, imagens — anexados a Documents | — |
 
@@ -82,7 +82,7 @@ Seis tipos de entidade. Todas têm **ID estável** e **status como dado** (nunca
 
 **Log de eventos append-only:** toda transição vira evento (`feature.approved`, `feature.superseded`, `adr.superseded`, …). O log alimenta:
 
-1. **Lint determinístico** — "Bills foi supersedida → N páginas a referenciam → flagrar". Sem LLM.
+1. **Lint determinístico** — "Bills foi substituída → N páginas a referenciam → flagrar". Sem LLM.
 2. **Invalidação de wiki** — páginas compiladas afetadas são marcadas sujas para recompilação.
 
 ---
@@ -146,8 +146,8 @@ O `docs.lock` é a correção do maior risco do modelo "docs fora do git": sem e
 | `cerne status` | tabela de features por estado |
 | `cerne feature new "título"` | cria Feature `candidata` |
 | `cerne feature approve F-042` | valida gate (spec existe?), registra evento |
-| `cerne feature supersede F-007 --by F-042 --reason "..."` | supersedência estruturada |
-| `cerne lint [--fix-tasks]` | relatório determinístico: referências a supersedidos, links quebrados, órfãos, gates pendentes; `--fix-tasks` emite tarefas para o agente hospedeiro executar |
+| `cerne feature supersede F-007 --by F-042 --reason "..."` | substituição estruturada |
+| `cerne lint [--fix-tasks]` | relatório determinístico: referências a substituídos, links quebrados, órfãos, gates pendentes; `--fix-tasks` emite tarefas para o agente hospedeiro executar |
 | `cerne search "query"` | FTS local sobre o histórico completo |
 | `cerne ui` | abre dashboard local |
 
@@ -182,7 +182,7 @@ O `docs.lock` é a correção do maior risco do modelo "docs fora do git": sem e
 
 ## Critérios de sucesso
 
-1. **Teste de aceitação real — `cerne import` do Rockt Hub:** importa 241 cases + 46 ADRs propondo mapeamento correto; o lint flagra, sem intervenção, as referências a Bills/Investments como entidades supersedidas (o bug real do `features.md`).
+1. **Teste de aceitação real — `cerne import` do Rockt Hub:** importa 241 cases + 46 ADRs propondo mapeamento correto; o lint flagra, sem intervenção, as referências a Bills/Investments como entidades substituídas (o bug real do `features.md`).
 2. **Redução de contexto:** agente no hub passa de ~1.000 arquivos visíveis para dezenas (features ativas + ADRs ativas + references vigentes). O caso "agente cita Bills como módulo vivo" morre por construção.
 3. **`cerne status` responde em 1 comando** o que hoje exige ler dezenas de arquivos.
 4. **Golden path e2e:** `init → feature new → push spec → approve → pull` funciona num repo virgem em < 5 minutos, sem LLM e sem infra além de um repo git para backend.

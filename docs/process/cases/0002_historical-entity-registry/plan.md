@@ -128,7 +128,7 @@ Evento: `domain.NewEvent(id, "historical.recorded", map[string]string{"name":...
 cerne retire <name> --by <id|label> --reason <texto> [--alias <a>]... [--imported-from <orig>] [--dir <path>]
 ```
 - `--alias` é `StringArray` (repetível). Resolve contexto do projeto (como os demais comandos), chama `app.RecordHistorical`.
-- Strings/erros de usuário em **pt-BR**: sucesso `"%s registrada como histórica (supersedida por %s)."`; faltando `--by`/`--reason` → mensagens pt-BR; alias curto → traduz `ErrAliasTooShort` para `"alias '%s' muito curto (mínimo %d caracteres)"`.
+- Strings/erros de usuário em **pt-BR**: sucesso `"%s registrada como histórica (substituída por %s)."`; faltando `--by`/`--reason` → mensagens pt-BR; alias curto → traduz `ErrAliasTooShort` para `"alias '%s' muito curto (mínimo %d caracteres)"`.
 
 **Step 1 — teste CLI** (`cmd.SetArgs`, backend bare em `t.TempDir()`): retire feliz cria `H-0001`; sem `--reason` → erro; `--alias abc` (curto) → erro `errors.Is`-pinável na camada app.
 
@@ -183,7 +183,7 @@ func LoadHistoricalSeed(root string) ([]HistoricalSeed, error) // lê filepath.J
 
 **Files:** Modify `internal/cli/statuscmd.go`, test
 
-`status` default **não** muda (só estados ativos). `status --all` ganha seção pt-BR **"Históricas"** listando `H-NNNN — Name (supersedida por X)`. `--json` inclui array `historicals`.
+`status` default **não** muda (só estados ativos). `status --all` ganha seção pt-BR **"Históricas"** listando `H-NNNN — Name (substituída por X)`. `--json` inclui array `historicals`.
 
 **Commit:** `feat(cli): list historical entities under status --all`
 

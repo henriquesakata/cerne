@@ -31,7 +31,7 @@ Rodada contra o **Rockt Hub real** (~1.029 arquivos md):
 3. **`cerne status` em 1 comando** ✅ — 6 em desenvolvimento / 15 candidatas / 285 implementadas, instantâneo.
 4. **Golden path e2e** ✅ — `init → feature new → push spec → approve → pull` coberto por teste automatizado, sem LLM e sem infra além de um git bare.
 5. **Rastreabilidade** ✅ — `docs.lock.snapshot` == HEAD do backend verificado em todos os fluxos.
-6. **Lint determinístico** ✅ com nuance — **204 problemas em 0,5s**: 18 ref-to-superseded (ADRs ativas citando case 0090 e ADR-045 supersedidos pelos identificadores originais), 25 links quebrados, 161 cases "implemented" sem result.md real. **Nuance Bills/Investments:** a absorção precede a convenção de cases do hub — não existe case "Bills" para virar entidade supersedida, então não há needle para flagrar as menções em `features.md`/`R-0010`. O *mecanismo* está provado (18 achados reais); o caso específico exige registro histórico de entidades (ver Pendências).
+6. **Lint determinístico** ✅ com nuance — **204 problemas em 0,5s**: 18 ref-to-superseded (ADRs ativas citando case 0090 e ADR-045 substituídos pelos identificadores originais), 25 links quebrados, 161 cases "implemented" sem result.md real. **Nuance Bills/Investments:** a absorção precede a convenção de cases do hub — não existe case "Bills" para virar entidade substituída, então não há needle para flagrar as menções em `features.md`/`R-0010`. O *mecanismo* está provado (18 achados reais); o caso específico exige registro histórico de entidades (ver Pendências).
 
 ## Decisões tomadas durante a implementação
 

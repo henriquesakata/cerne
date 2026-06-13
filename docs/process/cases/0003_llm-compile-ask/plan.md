@@ -118,7 +118,7 @@ func ResolveMode(m string) string // "" -> ModeDelegation
 - **Delegação (default):** imprime o prompt montado no stdout (o agente responde inline).
 - **Síncrono (fake):** `Provider.Complete` → imprime resposta + citações.
 
-**Step 1 — teste CLI:** com fake, `ask` imprime resposta citando as fontes; sem `--history` nenhuma fonte terminal aparece no prompt; com `--history`, supersedida aparece **marcada** como tal (nunca como vigente).
+**Step 1 — teste CLI:** com fake, `ask` imprime resposta citando as fontes; sem `--history` nenhuma fonte terminal aparece no prompt; com `--history`, substituída aparece **marcada** como tal (nunca como vigente).
 
 **Commit:** `feat(cli): cerne ask (current-first retrieval, state-tagged, --history)`
 
@@ -130,7 +130,7 @@ func ResolveMode(m string) string // "" -> ModeDelegation
 
 **Files:** Modify `internal/lint/lint.go` (+ teste)
 
-**Step 1 — teste:** página de wiki com `sources: [F-9999]` (inexistente) ⇒ finding `wiki-source-unknown`; página de wiki citando uma entidade supersedida ⇒ `ref-to-superseded` (páginas de wiki entram em `scannedDocs`).
+**Step 1 — teste:** página de wiki com `sources: [F-9999]` (inexistente) ⇒ finding `wiki-source-unknown`; página de wiki citando uma entidade substituída ⇒ `ref-to-superseded` (páginas de wiki entram em `scannedDocs`).
 
 **Step 3:** nova regra + constante `RuleWikiSourceUnknown` no `RuleOrder`; incluir `content/wiki/**` (ou a projeção) nos docs escaneados pelas regras de texto.
 

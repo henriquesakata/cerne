@@ -45,7 +45,7 @@ func TestStatusDefault(t *testing.T) {
 	}
 
 	// Superseded and rejected hidden by default.
-	for _, banned := range []string{"F-0005", "F-0006", "SUPERSEDIDAS", "REJEITADAS"} {
+	for _, banned := range []string{"F-0005", "F-0006", "SUBSTITUÍDAS", "REJEITADAS"} {
 		if strings.Contains(out, banned) {
 			t.Fatalf("default output contains %q, want hidden:\n%s", banned, out)
 		}
@@ -94,7 +94,7 @@ func TestStatusAll(t *testing.T) {
 
 	headers := []string{
 		"EM DESENVOLVIMENTO (1)", "APROVADAS (1)", "CANDIDATAS (1)",
-		"IMPLEMENTADAS (1)", "SUPERSEDIDAS (1)", "REJEITADAS (1)",
+		"IMPLEMENTADAS (1)", "SUBSTITUÍDAS (1)", "REJEITADAS (1)",
 	}
 	prev := -1
 	for _, h := range headers {

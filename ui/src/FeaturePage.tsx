@@ -216,17 +216,17 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   candidate: [
     { action: 'approve', label: 'Aprovar', form: 'none' },
     { action: 'reject', label: 'Rejeitar', form: 'reason' },
-    { action: 'supersede', label: 'Supersedir', form: 'supersede' },
+    { action: 'supersede', label: 'Substituir', form: 'supersede' },
   ],
   approved: [
     { action: 'start', label: 'Iniciar', form: 'none' },
-    { action: 'supersede', label: 'Supersedir', form: 'supersede' },
+    { action: 'supersede', label: 'Substituir', form: 'supersede' },
   ],
   in_development: [
     { action: 'complete', label: 'Concluir', form: 'none' },
-    { action: 'supersede', label: 'Supersedir', form: 'supersede' },
+    { action: 'supersede', label: 'Substituir', form: 'supersede' },
   ],
-  implemented: [{ action: 'supersede', label: 'Supersedir', form: 'supersede' }],
+  implemented: [{ action: 'supersede', label: 'Substituir', form: 'supersede' }],
   rejected: [],
   superseded: [],
 }

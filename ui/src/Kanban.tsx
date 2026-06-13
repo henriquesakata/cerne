@@ -20,7 +20,7 @@ const COLUMN_LABELS: Record<FeatureState, string> = {
   approved: 'Aprovadas',
   candidate: 'Candidatas',
   implemented: 'Implementadas',
-  superseded: 'Supersedidas',
+  superseded: 'Substituídas',
   rejected: 'Rejeitadas',
 }
 

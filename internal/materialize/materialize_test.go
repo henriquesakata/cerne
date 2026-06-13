@@ -254,7 +254,7 @@ func TestMaterializeContextGolden(t *testing.T) {
 	want := `# Demo — estado atual
 
 > Gerado por cerne. Não edite: rode 'cerne pull' para atualizar.
-> Histórico e documentos supersedidos: 'cerne search'.
+> Histórico e documentos substituídos: 'cerne search'.
 
 ## Features
 

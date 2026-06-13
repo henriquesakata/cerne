@@ -32,8 +32,8 @@ Dois comandos novos, opcionais, sobre uma interface de provider plugável cujo *
 2. `compile` (delegação, default) num projeto multi-módulo escreve prompt-bundles **só** dos módulos sujos; `--ingest` carimba proveniência e commita; re-rodar sem mudança ⇒ "nada sujo"; `--force` recompila tudo.
 3. Com **provider fake** (teste), `compile` gera páginas ponta-a-ponta de forma determinística; mudar 1 entidade marca **exatamente** o módulo dela como sujo (input-hash).
 4. `ask` (delegação) imprime um prompt montado com a pergunta + fontes **marcadas por estado** + instrução de citação; default exclui terminais; `--history` inclui (marcados). Com fake, devolve resposta canônica citando fontes.
-5. `ask` **nunca** apresenta entidade supersedida como vigente (o estado viaja com cada trecho).
-6. `lint` flagra página de wiki cujo `sources` aponta entidade inexistente e link de wiki para entidade supersedida.
+5. `ask` **nunca** apresenta entidade substituída como vigente (o estado viaja com cada trecho).
+6. `lint` flagra página de wiki cujo `sources` aponta entidade inexistente e link de wiki para entidade substituída.
 
 ---
 
@@ -114,7 +114,7 @@ cerne ask "<pergunta>" [--history]
 
 ### Lint — regras de wiki
 
-Estende `internal/lint`: (a) `wiki-source-unknown` — `sources` do frontmatter que não resolve a uma entidade existente; (b) páginas de wiki entram no escopo das regras de texto já existentes (`ref-to-superseded`, `broken-link`), pegando link de wiki para entidade supersedida.
+Estende `internal/lint`: (a) `wiki-source-unknown` — `sources` do frontmatter que não resolve a uma entidade existente; (b) páginas de wiki entram no escopo das regras de texto já existentes (`ref-to-superseded`, `broken-link`), pegando link de wiki para entidade substituída.
 
 ---
 

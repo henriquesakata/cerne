@@ -18,7 +18,7 @@
 go build -o cerne.exe ./cmd/cerne     # build the binary (UI is embedded via go:embed)
 go vet ./... && go test ./... -count=1 # full suite — currently 235 tests, must stay green
 go test ./internal/<pkg>/ -run TestX -v # focused
-cd ui && npm install && npm run build  # rebuild the React UI; commit ui/dist (it is embedded)
+cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (embedded). npm ci (not install) = exact lockfile → reproducible dist
 ```
 
 - CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`.

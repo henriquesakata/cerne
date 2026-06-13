@@ -28,8 +28,8 @@ Os 7 milestones do [plan.md](plan.md), em TDD estrito, um commit por preocupaç�
 2. **`compile` incremental** ✅ — `TestCompileDelegationFlow`: prepara só páginas sujas, `--ingest` carimba+commita, re-rodar ⇒ "Nada a recompilar"; `TestCompileForceRecompiles` cobre `--force`.
 3. **Dirty exato por input-hash** ✅ — `internal/compile.TestDirtyTracking`: editar 1 feature suja só o módulo dela.
 4. **`ask` monta prompt marcado, `--history` opt-in** ✅ — `internal/ask` + `TestAskDelegationPrintsPrompt`: default exclui terminais; `--history` inclui marcados.
-5. **`ask` nunca trata supersedido como vigente** ✅ — `TestRetrieveHistoryIncludesTerminalTagged`: o estado viaja em todo `Snippet`.
-6. **lint da wiki** ✅ — `TestLintWikiRules`: `sources` inexistente ⇒ `wiki-source-unknown`; menção a entidade supersedida na página ⇒ `ref-to-superseded`.
+5. **`ask` nunca trata substituído como vigente** ✅ — `TestRetrieveHistoryIncludesTerminalTagged`: o estado viaja em todo `Snippet`.
+6. **lint da wiki** ✅ — `TestLintWikiRules`: `sources` inexistente ⇒ `wiki-source-unknown`; menção a entidade substituída na página ⇒ `ref-to-superseded`.
 
 **Pendente (1 passo manual, não rodável nesta sessão):** dogfood real — `cerne import` do próprio repo cerne (ou do hub) num backend, `cerne compile` (este agente processa os prompts de `.docs/wiki/.pending/`) e `cerne ask`, anexando a wiki gerada e a resposta. Os caminhos determinísticos (page-set, dirty, retrieval, lint) já estão cobertos por teste; falta só ver a síntese real.
 

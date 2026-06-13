@@ -86,7 +86,7 @@ export const STATE_LABELS: Record<FeatureState, string> = {
   in_development: 'Em desenvolvimento',
   implemented: 'Implementada',
   rejected: 'Rejeitada',
-  superseded: 'Supersedida',
+  superseded: 'Substituída',
 }
 
 async function errorMessage(r: Response): Promise<string> {

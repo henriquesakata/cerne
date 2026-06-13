@@ -6,7 +6,7 @@
 
 ## O problema
 
-Documentação de projeto é append-only: specs, planos, ADRs e resultados se acumulam, e nada distingue mecanicamente o documento que vale hoje daquele que foi rejeitado ou supersedido há seis meses. Agentes de IA leem tudo com o mesmo peso — e citam estruturas que não existem mais.
+Documentação de projeto é append-only: specs, planos, ADRs e resultados se acumulam, e nada distingue mecanicamente o documento que vale hoje daquele que foi rejeitado ou substituído há seis meses. Agentes de IA leem tudo com o mesmo peso — e citam estruturas que não existem mais.
 
 ## A tese
 
