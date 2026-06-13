@@ -40,14 +40,20 @@ type httpProvider struct {
 }
 
 // NewProvider builds the configured Provider. It applies LLMConfig defaults
-// first. In delegation mode it returns ErrNoProviderForDelegation (no provider
-// exists there). For byo-key it supports only provider "anthropic" (any other
-// value errors, naming it), reads the API key from os.Getenv(cfg.KeyEnv)
-// (ErrAPIKeyMissing when empty), and returns an *httpProvider.
+// first, then routes on the resolved mode:
+//   - delegation: ErrNoProviderForDelegation (no provider exists there);
+//   - claude-cli: an *cliProvider shelling to cfg.ClaudeBin via the real
+//     exec runner — NO API key is read (auth is the Claude Code subscription);
+//   - byo-key (default for any other mode): only provider "anthropic" (any
+//     other value errors, naming it), reads the API key from os.Getenv(cfg.KeyEnv)
+//     (ErrAPIKeyMissing when empty), and returns an *httpProvider.
 func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	cfg = cfg.WithDefaults()
-	if ResolveMode(cfg.Mode) == ModeDelegation {
+	switch ResolveMode(cfg.Mode) {
+	case ModeDelegation:
 		return nil, ErrNoProviderForDelegation
+	case ModeClaudeCLI:
+		return &cliProvider{bin: cfg.ClaudeBin, run: execRun}, nil
 	}
 	if cfg.Provider != providerAnthropic {
 		return nil, fmt.Errorf("provider LLM %q não suportado (apenas %q)", cfg.Provider, providerAnthropic)
