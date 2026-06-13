@@ -114,10 +114,10 @@ func ValidateTransitionFlags(action domain.Action, by, reason string) error {
 	switch action {
 	case domain.ActionSupersede:
 		if by == "" {
-			return fmt.Errorf("--by é obrigatório para supersede")
+			return fmt.Errorf("--by é obrigatório para a substituição")
 		}
 		if reason == "" {
-			return fmt.Errorf("--reason é obrigatório para supersede")
+			return fmt.Errorf("--reason é obrigatório para a substituição")
 		}
 	case domain.ActionReject:
 		if by != "" {

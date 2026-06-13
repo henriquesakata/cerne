@@ -138,8 +138,8 @@ func TestTransitionFlagRules(t *testing.T) {
 		{"complete with by", []string{"feature", "complete", id, "--by", id2}, "--by/--reason"},
 		{"reject without reason", []string{"feature", "reject", id}, "--reason"},
 		{"reject with by", []string{"feature", "reject", id, "--reason", "x", "--by", id2}, "--by"},
-		{"supersede without by", []string{"feature", "supersede", id, "--reason", "x"}, "--by"},
-		{"supersede without reason", []string{"feature", "supersede", id, "--by", id2}, "--reason"},
+		{"substituir without by", []string{"feature", "substituir", id, "--reason", "x"}, "--by"},
+		{"substituir without reason", []string{"feature", "substituir", id, "--by", id2}, "--reason"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -183,26 +183,26 @@ func TestTransitionReject(t *testing.T) {
 	}
 }
 
-func TestTransitionSupersede(t *testing.T) {
+func TestTransitionSubstituir(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)
 	id2 := newFeature(t, projDir, "Feature B", 2)
 
 	// --by self is rejected.
-	if _, err := execCerne(t, "feature", "supersede", id, "--by", id, "--reason", "dup", "--dir", projDir); err == nil {
-		t.Fatalf("supersede --by self succeeded, want error")
+	if _, err := execCerne(t, "feature", "substituir", id, "--by", id, "--reason", "dup", "--dir", projDir); err == nil {
+		t.Fatalf("substituir --by self succeeded, want error")
 	}
 	// --by must exist in the backend.
-	if _, err := execCerne(t, "feature", "supersede", id, "--by", "F-9999", "--reason", "dup", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "F-9999") {
-		t.Fatalf("supersede --by nonexistent err = %v, want error naming F-9999", err)
+	if _, err := execCerne(t, "feature", "substituir", id, "--by", "F-9999", "--reason", "dup", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "F-9999") {
+		t.Fatalf("substituir --by nonexistent err = %v, want error naming F-9999", err)
 	}
 
-	out, err := execCerne(t, "feature", "supersede", id, "--by", id2, "--reason", "duplicada da Feature B", "--dir", projDir)
+	out, err := execCerne(t, "feature", "substituir", id, "--by", id2, "--reason", "duplicada da Feature B", "--dir", projDir)
 	if err != nil {
-		t.Fatalf("supersede: %v\noutput: %s", err, out)
+		t.Fatalf("substituir: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "superseded") {
-		t.Fatalf("supersede output missing new state:\n%s", out)
+		t.Fatalf("substituir output missing new state:\n%s", out)
 	}
 	f, err := store.LoadFeature(repoDir, id)
 	if err != nil {

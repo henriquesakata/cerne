@@ -21,7 +21,7 @@ var transitionSpecs = []transitionSpec{
 	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject},
 	{"start", "Start development (requires a real plan)", domain.ActionStart},
 	{"complete", "Complete development (requires a real result)", domain.ActionComplete},
-	{"supersede", "Supersede a feature by another one (requires --by and --reason)", domain.ActionSupersede},
+	{"substituir", "Substituir uma feature por outra (requer --by e --reason)", domain.ActionSupersede},
 }
 
 func newTransitionCmds(dir *string) []*cobra.Command {
@@ -36,8 +36,8 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 				return runTransition(cmd, *dir, ts.action, args[0], by, reason)
 			},
 		}
-		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (supersede only)")
-		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject and supersede)")
+		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
+		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject and substituir)")
 		cmds = append(cmds, cmd)
 	}
 	return cmds
