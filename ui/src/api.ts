@@ -123,6 +123,10 @@ export async function fetchArtifactJSON(
   return await r.text()
 }
 
+// fetchArtifactText é um alias para .mmd (texto Mermaid): o endpoint serve
+// o arquivo bruto, então o mesmo fetch atende JSON e texto plano.
+export const fetchArtifactText = fetchArtifactJSON
+
 export type SaveOutcome = { ok: true } | { ok: false; error: string }
 
 // putArtifact cria ou atualiza um artefato .excalidraw no backend

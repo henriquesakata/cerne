@@ -20,27 +20,33 @@ export default function DiagramPanel({
   featureId,
   name,
   isNew,
+  initialScene,
   onClose,
   onSaved,
 }: {
   featureId: string
   name: string
   isNew: boolean
+  // Cena inicial pronta (ex.: conversão Mermaid→Excalidraw). Quando presente,
+  // o painel não busca o artefato: abre direto com esta cena, já "alterada"
+  // para o usuário poder salvar o novo .excalidraw.
+  initialScene?: ExcalidrawInitialDataState
   onClose: () => void
   onSaved: () => void
 }) {
   const [scene, setScene] = useState<ExcalidrawInitialDataState | null>(
-    isNew ? {} : null,
+    initialScene ?? (isNew ? {} : null),
   )
   const [msg, setMsg] = useState<Msg | null>(null)
-  const [dirty, setDirty] = useState(false)
+  const [dirty, setDirty] = useState(initialScene != null)
   const [busy, setBusy] = useState(false)
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   // Versão da cena no último load/save: base do flag "alterado".
   const savedVersionRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (isNew) return
+    // Cena nova vazia ou já fornecida (conversão): nada a buscar.
+    if (isNew || initialScene != null) return
     fetchArtifactJSON(featureId, name)
       .then((text) => {
         const parsed = JSON.parse(text) as ExcalidrawInitialDataState
@@ -56,7 +62,7 @@ export default function DiagramPanel({
           text: `Erro ao carregar o diagrama: ${e instanceof Error ? e.message : String(e)}`,
         }),
       )
-  }, [featureId, name, isNew])
+  }, [featureId, name, isNew, initialScene])
 
   const save = () => {
     const api = apiRef.current
@@ -107,7 +113,13 @@ export default function DiagramPanel({
             langCode="pt-BR"
             excalidrawAPI={(api) => {
               apiRef.current = api
-              savedVersionRef.current = getSceneVersion(api.getSceneElements())
+              // Cena convertida (Mermaid→Excalidraw) começa "alterada" para
+              // permitir salvar o novo .excalidraw: -1 nunca casa com uma
+              // versão real, então o onChange mantém dirty=true até o save.
+              savedVersionRef.current =
+                initialScene != null
+                  ? -1
+                  : getSceneVersion(api.getSceneElements())
             }}
             onChange={(elements) => {
               if (savedVersionRef.current === null) return

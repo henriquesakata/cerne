@@ -1,6 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
+import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types'
 import {
+  fetchArtifactText,
   fetchFeature,
   postTransition,
   saveFeatureDoc,
@@ -11,9 +13,10 @@ import {
   type TransitionResult,
 } from './api'
 
-// Carregado sob demanda: o bundle do Excalidraw só chega ao navegador
-// quando o usuário abre um diagrama.
+// Carregados sob demanda: os bundles do Excalidraw e do mermaid só chegam ao
+// navegador quando o usuário abre um diagrama (cada um no seu chunk lazy).
 const DiagramPanel = lazy(() => import('./DiagramPanel'))
+const MermaidView = lazy(() => import('./MermaidView'))
 
 type DocTab = 'spec' | 'plan' | 'result'
 
@@ -35,7 +38,41 @@ function diagramFilename(input: string): string {
   return slug === '' ? '' : `${slug}.excalidraw`
 }
 
-type OpenDiagram = { name: string; isNew: boolean }
+// excalidrawSiblingName troca o sufixo .mmd por .excalidraw (o diagrama
+// editável é um irmão do .mmd gerado).
+function excalidrawSiblingName(mmdName: string): string {
+  return mmdName.replace(/\.mmd$/, '') + '.excalidraw'
+}
+
+// OpenDiagram é o diagrama aberto em tela cheia: 'mermaid' renderiza um .mmd;
+// 'excalidraw' abre o editor (artefato existente, novo vazio, ou cena já
+// convertida de Mermaid).
+type OpenDiagram =
+  | { mode: 'mermaid'; name: string }
+  | {
+      mode: 'excalidraw'
+      name: string
+      isNew: boolean
+      initialScene?: ExcalidrawInitialDataState
+    }
+
+// convertMermaidToScene converte o texto Mermaid numa cena do Excalidraw.
+// Importa as duas libs dinamicamente (ficam em chunks lazy) e usa a API
+// oficial: parseMermaidToExcalidraw → convertToExcalidrawElements.
+async function convertMermaidToScene(
+  mermaidText: string,
+): Promise<ExcalidrawInitialDataState> {
+  const [{ parseMermaidToExcalidraw }, { convertToExcalidrawElements }] =
+    await Promise.all([
+      import('@excalidraw/mermaid-to-excalidraw'),
+      import('@excalidraw/excalidraw'),
+    ])
+  const { elements, files } = await parseMermaidToExcalidraw(mermaidText)
+  return {
+    elements: convertToExcalidrawElements(elements, { regenerateIds: true }),
+    files,
+  }
+}
 
 export default function FeaturePage({ id }: { id: string }) {
   const [detail, setDetail] = useState<FeatureDetail | null>(null)
@@ -43,6 +80,9 @@ export default function FeaturePage({ id }: { id: string }) {
   const [tab, setTab] = useState<DocTab>('spec')
   const [notice, setNotice] = useState<string | null>(null)
   const [diagram, setDiagram] = useState<OpenDiagram | null>(null)
+  // Conversão Mermaid→Excalidraw em andamento (texto bruto) / falha.
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState<string | null>(null)
 
   const load = useCallback(() => {
     fetchFeature(id)
@@ -51,6 +91,34 @@ export default function FeaturePage({ id }: { id: string }) {
         setError(e instanceof Error ? e.message : String(e)),
       )
   }, [id])
+
+  // editAsExcalidraw converte um diagrama Mermaid (já aberto no MermaidView) e
+  // abre o editor com a cena resultante, salvando como <base>.excalidraw.
+  const editAsExcalidraw = useCallback(
+    (mermaidName: string, mermaidText: string) => {
+      setConverting(true)
+      setConvertError(null)
+      convertMermaidToScene(mermaidText)
+        .then((scene) => {
+          setConverting(false)
+          setDiagram({
+            mode: 'excalidraw',
+            name: excalidrawSiblingName(mermaidName),
+            isNew: true,
+            initialScene: scene,
+          })
+        })
+        .catch((e: unknown) => {
+          setConverting(false)
+          setConvertError(
+            `Não foi possível converter o diagrama para Excalidraw: ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          )
+        })
+    },
+    [],
+  )
 
   useEffect(() => {
     load()
@@ -80,16 +148,35 @@ export default function FeaturePage({ id }: { id: string }) {
       </header>
       {diagram ? (
         <Suspense fallback={<p className="status">Carregando…</p>}>
-          <DiagramPanel
-            featureId={f.id}
-            name={diagram.name}
-            isNew={diagram.isNew}
-            onClose={() => {
-              setDiagram(null)
-              load()
-            }}
-            onSaved={load}
-          />
+          {diagram.mode === 'mermaid' ? (
+            <>
+              {convertError && <p className="form-error">{convertError}</p>}
+              {converting && (
+                <p className="status">Convertendo para Excalidraw…</p>
+              )}
+              <MermaidView
+                featureId={f.id}
+                name={diagram.name}
+                onClose={() => {
+                  setDiagram(null)
+                  setConvertError(null)
+                }}
+                onEdit={(text) => editAsExcalidraw(diagram.name, text)}
+              />
+            </>
+          ) : (
+            <DiagramPanel
+              featureId={f.id}
+              name={diagram.name}
+              isNew={diagram.isNew}
+              initialScene={diagram.initialScene}
+              onClose={() => {
+                setDiagram(null)
+                load()
+              }}
+              onSaved={load}
+            />
+          )}
         </Suspense>
       ) : (
         <div className="feature-body">
@@ -226,7 +313,17 @@ function DiagramsSection({
     if (filename === '') return
     setNaming(false)
     setNewName('')
-    onOpen({ name: filename, isNew: true })
+    onOpen({ mode: 'excalidraw', name: filename, isNew: true })
+  }
+
+  // openArtifact ramifica por extensão: .mmd abre o MermaidView (render);
+  // qualquer outro (.excalidraw) abre o editor existente.
+  const openArtifact = (name: string) => {
+    if (name.endsWith('.mmd')) {
+      onOpen({ mode: 'mermaid', name })
+    } else {
+      onOpen({ mode: 'excalidraw', name, isNew: false })
+    }
   }
 
   return (
@@ -234,16 +331,26 @@ function DiagramsSection({
       <h2>Diagramas</h2>
       {artifacts.length > 0 && (
         <ul>
-          {artifacts.map((a) => (
-            <li key={a.path}>
-              <button
-                className="diagram-link"
-                onClick={() => onOpen({ name: a.name, isNew: false })}
-              >
-                {a.name}
-              </button>
-            </li>
-          ))}
+          {artifacts.map((a) => {
+            const isMermaid = a.name.endsWith('.mmd')
+            return (
+              <li key={a.path}>
+                <button
+                  className="diagram-link"
+                  onClick={() => openArtifact(a.name)}
+                >
+                  {a.name}
+                </button>
+                <span
+                  className={`diagram-tag diagram-tag-${
+                    isMermaid ? 'mermaid' : 'excalidraw'
+                  }`}
+                >
+                  {isMermaid ? 'mermaid' : 'excalidraw'}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
       {naming ? (

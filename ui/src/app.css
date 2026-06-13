@@ -378,6 +378,49 @@ h2 {
   overflow: hidden;
 }
 
+/* ---- diagramas Mermaid (render + erro) ---- */
+
+.mermaid-view {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  border: 1px solid #e6e1d8;
+  border-radius: 8px;
+  background: #fff;
+  overflow: auto;
+}
+
+.mermaid-view svg { max-width: 100%; height: auto; }
+
+.mermaid-error pre {
+  margin-top: 0.6rem;
+  background: #f3efe7;
+  border: 1px solid #e6e1d8;
+  border-radius: 6px;
+  padding: 0.7rem;
+  overflow-x: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+}
+
+/* etiqueta de tipo na lista de diagramas */
+.artifacts li { display: flex; align-items: center; gap: 0.4rem; }
+
+.diagram-tag {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.02rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid #d8d2c6;
+  color: #5c635e;
+  background: #f3efe7;
+}
+
+.diagram-tag-mermaid { background: #e7f0e4; border-color: #bcd4b4; color: #2c5e2e; }
+.diagram-tag-excalidraw { background: #ece4f5; border-color: #d2c2e8; color: #5b3d8a; }
+
 /* ---- shell de navegação ---- */
 
 .nav {
