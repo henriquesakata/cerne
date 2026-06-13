@@ -106,7 +106,7 @@ func TestImportYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import --yes: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Importado: 2 features, 1 decisões, 1 referências (snapshot ") {
+	if !strings.Contains(out, "Importado: 2 features, 1 decisões, 1 referências, 0 históricas (snapshot ") {
 		t.Fatalf("output missing import confirmation:\n%s", out)
 	}
 

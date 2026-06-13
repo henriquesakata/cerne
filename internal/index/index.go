@@ -156,6 +156,10 @@ func collectRows(repoDir string) ([]row, error) {
 	if err != nil {
 		return nil, err
 	}
+	historicals, err := store.LoadAllHistoricals(repoDir)
+	if err != nil {
+		return nil, err
+	}
 
 	var rows []row
 	for _, f := range features {
@@ -202,6 +206,13 @@ func collectRows(repoDir string) ([]row, error) {
 			r.doc, r.body = "doc", body
 		}
 		rows = append(rows, r)
+	}
+	for _, h := range historicals {
+		// Historical entities have no content doc; their aliases and reason
+		// form the searchable body so the index is the door to them.
+		body := strings.TrimSpace(strings.Join(h.Aliases, " ") + " " + h.Reason)
+		rows = append(rows, row{entityID: h.ID, kind: "historical", state: string(h.State),
+			title: h.Name, body: body, supersededBy: h.SupersededBy})
 	}
 	return rows, nil
 }
