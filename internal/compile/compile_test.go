@@ -87,6 +87,20 @@ func TestPagesMultiModule(t *testing.T) {
 	}
 }
 
+func TestPagesIncludesImplemented(t *testing.T) {
+	dir := seedBackend(t, "finance")
+	addFeature(t, dir, "F-0001", "finance", domain.StateImplemented, "# F-0001\n\nEntregue.\n")
+
+	pages, err := Pages(dir)
+	if err != nil {
+		t.Fatalf("Pages: %v", err)
+	}
+	fin, ok := pageByName(pages, "finance")
+	if !ok || len(fin.Sources) != 1 || fin.Sources[0].ID != "F-0001" {
+		t.Fatalf("finance page = %+v, want implemented F-0001 as source", fin)
+	}
+}
+
 func TestPagesNoModules(t *testing.T) {
 	dir := seedBackend(t)
 	addFeature(t, dir, "F-0001", "", domain.StateCandidate, "# F-0001\n\nspec.\n")

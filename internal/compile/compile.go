@@ -37,10 +37,15 @@ type Page struct {
 	Sources []EntitySource
 }
 
-var liveFeatureStates = map[domain.FeatureState]bool{
+// wikiSourceStates are the feature states that feed the wiki. Unlike lint /
+// materialize (which target the current-work view and exclude implemented),
+// the wiki must synthesize the DELIVERED system, so implemented is included.
+// This set is local to package compile.
+var wikiSourceStates = map[domain.FeatureState]bool{
 	domain.StateCandidate:     true,
 	domain.StateApproved:      true,
 	domain.StateInDevelopment: true,
+	domain.StateImplemented:   true,
 }
 
 // Pages computes the deterministic page set for the backend at repoDir: one
@@ -75,7 +80,7 @@ func Pages(repoDir string) ([]Page, error) {
 	for _, m := range proj.Modules {
 		var srcs []EntitySource
 		for _, f := range features {
-			if liveFeatureStates[f.State] && f.Module == m {
+			if wikiSourceStates[f.State] && f.Module == m {
 				srcs = append(srcs, featureSource(repoDir, f))
 			}
 		}
@@ -95,7 +100,7 @@ func Pages(repoDir string) ([]Page, error) {
 		}
 	}
 	for _, f := range features {
-		if liveFeatureStates[f.State] && !moduleSet[f.Module] {
+		if wikiSourceStates[f.State] && !moduleSet[f.Module] {
 			proje = append(proje, featureSource(repoDir, f))
 		}
 	}
