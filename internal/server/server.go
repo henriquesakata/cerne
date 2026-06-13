@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,12 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	})
 	mux.HandleFunc("POST /api/ask", func(w http.ResponseWriter, r *http.Request) {
 		handleAsk(w, r, repoDir, projDir, projectID)
+	})
+	mux.HandleFunc("GET /api/wiki", func(w http.ResponseWriter, r *http.Request) {
+		handleWikiIndex(w, repoDir)
+	})
+	mux.HandleFunc("GET /api/wiki/{rel...}", func(w http.ResponseWriter, r *http.Request) {
+		handleWikiPage(w, repoDir, r.PathValue("rel"))
 	})
 	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
 		handleLint(w, repoDir)
@@ -400,6 +407,99 @@ func handleAsk(w http.ResponseWriter, r *http.Request, repoDir, projDir, project
 		return
 	}
 	writeJSON(w, http.StatusOK, askResponse{Answered: true, Answer: answer, Sources: sources})
+}
+
+// wikiPageRef is one compiled wiki page in the index: its canonical name and
+// the rel used to fetch it (GET /api/wiki/<rel>).
+type wikiPageRef struct {
+	Name string `json:"name"`
+	Rel  string `json:"rel"`
+}
+
+// wikiIndexResponse is the GET /api/wiki payload: the compiled pages that exist
+// on disk, so the human browses what `cerne compile` actually produced.
+type wikiIndexResponse struct {
+	Pages []wikiPageRef `json:"pages"`
+}
+
+// wikiPageResponse is the GET /api/wiki/<rel> payload: the synthesis body with
+// the provenance frontmatter stripped.
+type wikiPageResponse struct {
+	Rel  string `json:"rel"`
+	Body string `json:"body"`
+}
+
+// safeWikiRel guards path traversal for serving wiki pages by relative path:
+// non-empty, no "..", no backslash, no absolute or hidden segment. Allows a
+// single "modules/" nesting (e.g. "modules/finance").
+func safeWikiRel(rel string) bool {
+	if rel == "" || strings.Contains(rel, "..") || strings.ContainsRune(rel, '\\') || strings.HasPrefix(rel, "/") {
+		return false
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == "" || strings.HasPrefix(seg, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+// handleWikiIndex lists the compiled pages under content/wiki/ — the top-level
+// pages (project/decisions/references) and the nested modules/ pages — so the
+// human can browse the synthesis. An absent wiki dir is an empty list, not an
+// error.
+func handleWikiIndex(w http.ResponseWriter, repoDir string) {
+	wikiDir := filepath.Join(repoDir, "content", "wiki")
+	pages := []wikiPageRef{}
+	entries, err := os.ReadDir(wikiDir)
+	if errors.Is(err, os.ErrNotExist) {
+		writeJSON(w, http.StatusOK, wikiIndexResponse{Pages: pages})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			if name != "modules" {
+				continue
+			}
+			mods, err := os.ReadDir(filepath.Join(wikiDir, "modules"))
+			if err != nil {
+				continue
+			}
+			for _, m := range mods {
+				if !m.IsDir() && strings.HasSuffix(m.Name(), ".md") {
+					base := strings.TrimSuffix(m.Name(), ".md")
+					pages = append(pages, wikiPageRef{Name: base, Rel: "modules/" + base})
+				}
+			}
+			continue
+		}
+		if strings.HasSuffix(name, ".md") {
+			base := strings.TrimSuffix(name, ".md")
+			pages = append(pages, wikiPageRef{Name: base, Rel: base})
+		}
+	}
+	sort.Slice(pages, func(i, j int) bool { return pages[i].Rel < pages[j].Rel })
+	writeJSON(w, http.StatusOK, wikiIndexResponse{Pages: pages})
+}
+
+// handleWikiPage serves one compiled page body (frontmatter stripped) by its
+// relative path, guarding traversal via safeWikiRel.
+func handleWikiPage(w http.ResponseWriter, repoDir, rel string) {
+	if !safeWikiRel(rel) {
+		writeJSON(w, http.StatusBadRequest, errorBody("caminho de página inválido"))
+		return
+	}
+	body, ok := ask.ReadWikiPage(repoDir, rel)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errorBody("página de wiki não encontrada"))
+		return
+	}
+	writeJSON(w, http.StatusOK, wikiPageResponse{Rel: rel, Body: body})
 }
 
 // lintFinding is one lint problem in the API's snake_case contract,

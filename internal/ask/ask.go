@@ -130,14 +130,26 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 	return append(snips, entitySnips...), nil
 }
 
-// readWiki loads a compiled page (rel without extension, e.g. "project" or
-// "modules/finance"), stripping its provenance frontmatter from the body.
-func readWiki(repoDir, rel string) (Snippet, bool) {
+// ReadWikiPage loads a compiled page body (rel without extension, e.g.
+// "project" or "modules/finance"), stripping its provenance frontmatter. ok is
+// false when the page does not exist. Exported so the server can serve the same
+// pages the ask retrieval reads.
+func ReadWikiPage(repoDir, rel string) (string, bool) {
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", "wiki", filepath.FromSlash(rel)+".md"))
 	if err != nil {
+		return "", false
+	}
+	return stripFrontmatter(string(data)), true
+}
+
+// readWiki loads a compiled page (rel without extension, e.g. "project" or
+// "modules/finance") as a state-tagged Snippet for the prompt.
+func readWiki(repoDir, rel string) (Snippet, bool) {
+	body, ok := ReadWikiPage(repoDir, rel)
+	if !ok {
 		return Snippet{}, false
 	}
-	return Snippet{Source: "wiki:" + rel, Kind: "wiki", State: "current", Text: stripFrontmatter(string(data))}, true
+	return Snippet{Source: "wiki:" + rel, Kind: "wiki", State: "current", Text: body}, true
 }
 
 // stripFrontmatter removes a leading "---" block so the synthesis body alone
