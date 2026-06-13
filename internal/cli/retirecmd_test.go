@@ -54,6 +54,53 @@ func TestRetire(t *testing.T) {
 	}
 }
 
+func TestRetireIsIdempotent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+
+	out, err := execCerne(t, "retire", "Bills",
+		"--by", "Finance", "--reason", "absorvido pelo Finance",
+		"--alias", "bills", "--alias", "boletos", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("first retire: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "H-0001 registrada") {
+		t.Fatalf("first retire output missing 'registrada':\n%s", out)
+	}
+
+	// Re-retire the same name (different case, an extra alias). Must update
+	// H-0001 in place, not create H-0002, and report the update.
+	out, err = execCerne(t, "retire", "BILLS",
+		"--by", "Finance", "--reason", "absorvido pelo Finance",
+		"--alias", "cobranca", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("second retire: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "H-0001 atualizada") {
+		t.Fatalf("second retire output missing 'atualizada':\n%s", out)
+	}
+
+	all, err := store.LoadAllHistoricals(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllHistoricals: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("got %d historicals after double retire, want 1: %+v", len(all), all)
+	}
+	// Original casing preserved on update; the new alias was unioned in.
+	if all[0].ID != "H-0001" || all[0].Name != "BILLS" {
+		t.Fatalf("entity = %+v, want H-0001 named BILLS", all[0])
+	}
+	want := []string{"bills", "boletos", "cobranca"}
+	if len(all[0].Aliases) != len(want) {
+		t.Fatalf("aliases = %v, want %v", all[0].Aliases, want)
+	}
+	for i, a := range want {
+		if all[0].Aliases[i] != a {
+			t.Fatalf("aliases = %v, want %v", all[0].Aliases, want)
+		}
+	}
+}
+
 func TestRetireRequiresReason(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	if _, err := execCerne(t, "retire", "Bills", "--by", "Finance", "--dir", projDir); err == nil {
