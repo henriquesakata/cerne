@@ -225,3 +225,43 @@ export async function fetchEvents(): Promise<LifecycleEvent[]> {
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { events: LifecycleEvent[] }).events
 }
+
+// ---- autoria e gestão de features (case 0012) ----
+
+export type CreateOutcome =
+  | { ok: true; feature: Feature }
+  | { ok: false; error: string }
+
+// createFeature cria uma feature candidata (POST /api/features); o servidor
+// faz commit+push e atualiza o snapshot do docs.lock.
+export async function createFeature(
+  title: string,
+  module: string,
+): Promise<CreateOutcome> {
+  const r = await fetch('/api/features', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, module }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true, feature: ((await r.json()) as { feature: Feature }).feature }
+}
+
+// saveFeatureDoc grava um doc de ciclo de vida (spec|plan|result) como
+// markdown bruto; o servidor faz commit+push e atualiza o lock.
+export async function saveFeatureDoc(
+  id: string,
+  doc: string,
+  content: string,
+): Promise<SaveOutcome> {
+  const r = await fetch(
+    `/api/features/${encodeURIComponent(id)}/docs/${encodeURIComponent(doc)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/markdown' },
+      body: content,
+    },
+  )
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
