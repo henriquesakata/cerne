@@ -1,8 +1,8 @@
 # Case 0005 — Usabilidade da wiki e do `ask` (follow-up do 0003)
 
-tags: #spec #cerne #stub #llm #wiki #compile #ask
+tags: #spec #cerne #llm #wiki #compile #ask
 
-**Status:** Draft (stub — precisa de rodada de brainstorming para fechar decisões)
+**Status:** Done — A/B/C implementados e verificados no corpus do hub (2026-06-13); ver [result.md](result.md). Descoberta no dogfood (página `project` com muitas features sem módulo) extraída para o **case 0006**.
 **Tipo:** Correção de usabilidade da camada LLM (case 0003). É o "case 0003.1" antecipado no [result.md do 0003](../0003_llm-compile-ask/result.md).
 **Origem:** Revisão do case 0003 (2026-06-13). A camada está **fiel à spec e test-green**, mas o dogfood revelou que ela **não entrega valor num projeto maduro**. Os 3 achados abaixo foram **confirmados em código** durante a revisão.
 
@@ -31,34 +31,25 @@ Bônus de dívida (case 0003): o caminho síncrono `Provider.Complete` foi remov
 
 ---
 
-## Direção a explorar (alternativas — decidir no brainstorming)
+## Decisões tomadas (2026-06-13)
 
-**A — incluir `implemented` nas fontes da wiki:** introduzir um conjunto `wikiSourceStates` (live + implemented) distinto do `liveFeatureStates` de lint/materialize. Cuidado: combina com o problema B (mais fontes ⇒ prompt maior).
+| Fix | Decisão | Consequência |
+|---|---|---|
+| **A — implemented na wiki** | Conjunto **`wikiSourceStates`** local ao pacote `compile` = candidate/approved/in_development/**implemented** (sem terminais) | A wiki passa a sintetizar o sistema entregue; `materialize`/`lint` **inalterados** (seguem excluindo implemented na visão de trabalho-em-curso) |
+| **B — chunking** | **Excerpt limitado por fonte** (`maxSourceExcerptChars = 800`, corte em fronteira de runa/linha + marcador `…(conteúdo truncado)`) no `BuildPagePrompt`. `input_hash` **continua sobre o conteúdo integral** | Prompt do `project` caiu de ~33k para ~7,5k linhas (-77%); páginas por módulo bem dimensionadas. **Split de páginas NÃO foi feito** (ver descoberta → 0006) |
+| **C — keywords no `ask`** | **Determinística**: tokeniza (unicode), lowercase, descarta stopwords pt-BR/en + termos < 3 runas, dedup, **OR-join**; sem termo ⇒ usa a query original | Recall de pergunta NL passou de ~zero para alto; sem LLM, testável; sem 2 fases |
 
-**B — chunking/sumarização:**
-1. **Split da página `project`**: separar em página de decisões + página de referências (cada uma já menor).
-2. **Map-reduce / pré-sumário por entidade**: compilar um resumo curto por entidade primeiro, depois sintetizar a página a partir dos resumos (hierárquico). A wiki por módulo já "chunka" features por módulo — falta o mesmo para o transversal.
-3. **Cap + paginação**: limite de tamanho por prompt com continuação.
-
-**C — extração de keywords no `ask`:**
-1. **Determinística**: remoção de stopwords (pt-BR/en) + extração de termos salientes, OR-join no FTS.
-2. **Delegada ao agente**: `ask` em duas fases (agente extrai keywords / reformula a query) — coerente com o modelo de delegação do 0003.
-3. **Expansão de query FTS** (prefix/OR) sobre os termos.
+**Dívida do caminho síncrono / BYO-key:** mantida fora de escopo. Os testes usam o `Fake`; o caminho `Provider.Complete` segue exercido só por ele.
 
 ---
 
-## Questões em aberto
+## Verificação (corpus real do hub)
 
-1. Incluir `implemented` agrava B em quanto? A e B precisam ser resolvidos juntos?
-2. Estratégia de chunking: split de páginas (simples) vs map-reduce (melhor síntese, mais chamadas)?
-3. Extração de keywords determinística vs delegada — e o `ask` vira duas fases?
-4. Para testar as correções de forma determinística, vale **ressuscitar o caminho síncrono `Provider.Complete`** (com o `Fake`)? Isso reabre a dívida do BYO-key — talvez este case também feche o "pluggable" de ponta a ponta.
-5. A wiki deve ter páginas temáticas transversais (deferred do 0003) ou só módulos + project?
+Clone bare local do `hub-docs`, `cerne compile --force`:
+- Páginas por módulo: finance 895 / identity 526 / marketplace 280 linhas — **úteis**.
+- `ask "por que os módulos bills e investments foram absorvidos pelo finance" --history` → recuperou F-0021 (Finance Consolidation Bills+Investments), F-0025/F-0123/R-0003/D-0008 — **recall alto** (era ~zero).
+- Página `project`: 7,5k linhas / **346 fontes** (44 decisões + 66 referências + 236 features **sem módulo**, 217 delas implemented). Bounded, mas grande.
 
----
+## Descoberta → case 0006
 
-## Próximos passos
-
-1. **Brainstorming** para fechar A/B/C e decidir se o caminho síncrono volta.
-2. `plan.md` (TDD): provavelmente `wikiSourceStates` (A) → chunking do compile (B) → keyword extraction no ask (C) → re-dogfood no hub.
-3. `result.md`.
+O dogfood respondeu a pergunta em aberto "A agrava B?": **sim**, porque o hub não atribui módulo aos cases raiz (`docs/process/cases/`), então 236 features caem todas na página `project`. Isso é **granularidade de página / modelagem de módulo**, distinto de A/B/C — extraído para o [case 0006](../0006_wiki-page-granularity/spec.md): split de decisões/referências + tratamento de entidades sem módulo (split vs inferência de módulo vs não-sintetizar). Páginas por módulo e `ask` já são usáveis; o overview transversal espera o 0006.
