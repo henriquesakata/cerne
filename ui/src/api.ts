@@ -269,3 +269,53 @@ export async function saveFeatureDoc(
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true }
 }
+
+// ---- perguntar à wiki + navegar a síntese (case 0017) ----
+
+// AskSource é uma fonte recuperada (sem o texto cru; a UI lincka pelo source).
+export type AskSource = {
+  source: string // ID da entidade, ou "wiki:<rel>" para uma página compilada
+  kind: string // feature | decision | reference | wiki
+  state: string // estado do ciclo de vida; "current" para wiki
+}
+
+// AskAnswer espelha o payload de POST /api/ask. answered é false no modo
+// delegação (sem provider para responder ao humano): as fontes vêm mesmo assim,
+// nunca uma resposta inventada.
+export type AskAnswer = {
+  answered: boolean
+  needs_provider?: boolean
+  answer?: string
+  sources: AskSource[]
+}
+
+// ask pergunta em linguagem natural sobre o estado vigente; a resposta vem do
+// provider configurado no .cernerc (lido a cada request → hot-reload).
+export async function ask(query: string, history: boolean): Promise<AskAnswer> {
+  const r = await fetch('/api/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, history }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as AskAnswer
+}
+
+export type WikiPageRef = { name: string; rel: string }
+
+export async function fetchWikiIndex(): Promise<WikiPageRef[]> {
+  const r = await fetch('/api/wiki')
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { pages: WikiPageRef[] }).pages
+}
+
+export type WikiPage = { rel: string; body: string }
+
+export async function fetchWikiPage(rel: string): Promise<WikiPage> {
+  // rel pode ter barra ("modules/<x>"): codifica cada segmento, mantém a barra
+  // (a rota é /api/wiki/{rel...}, que casa múltiplos segmentos).
+  const path = rel.split('/').map(encodeURIComponent).join('/')
+  const r = await fetch(`/api/wiki/${path}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as WikiPage
+}

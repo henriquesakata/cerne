@@ -5,6 +5,8 @@ import Nav from './Nav'
 import Decisions, { DecisionDetail } from './Decisions'
 import References, { ReferenceDetail } from './References'
 import Search from './Search'
+import Ask from './Ask'
+import Wiki, { WikiPageView } from './Wiki'
 import Lint from './Lint'
 import History from './History'
 import Manage from './Manage'
@@ -40,8 +42,12 @@ function Routed({ hash }: { hash: string }) {
   if (decision) return <DecisionDetail key={decision[1]} id={decodeURIComponent(decision[1])} />
   const reference = /^#\/r\/(.+)$/.exec(hash)
   if (reference) return <ReferenceDetail key={reference[1]} id={decodeURIComponent(reference[1])} />
+  const wikiPage = /^#\/wiki\/(.+)$/.exec(hash)
+  if (wikiPage) return <WikiPageView key={wikiPage[1]} rel={decodeURIComponent(wikiPage[1])} />
   if (hash === '#/decisions') return <Decisions />
   if (hash === '#/references') return <References />
+  if (hash === '#/wiki') return <Wiki />
+  if (hash === '#/ask') return <Ask />
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />
   if (hash === '#/history') return <History />
