@@ -222,12 +222,28 @@ func scanDecisions(root string) ([]Candidate, error) {
 	return cands, nil
 }
 
-// scanReferences maps docs/runbooks/*.md, docs/planning/*.md and
-// docs/architecture/*.md (subdirs like adr/ are excluded by the
-// non-recursive listing) to reference candidates, alphabetical by rel path.
+// referenceDirs are the documentation folders mapped to reference candidates.
+// Each is listed non-recursively, so nested folders (e.g. architecture/adr,
+// which becomes decisions) are excluded. docs/process (cases → features) and
+// top-level docs/*.md (e.g. the AI-facing CLAUDE.md) are intentionally absent.
+var referenceDirs = []string{
+	"docs/architecture",
+	"docs/compliance",
+	"docs/design-system",
+	"docs/finance",
+	"docs/identity",
+	"docs/planning",
+	"docs/plans",
+	"docs/plugins",
+	"docs/review",
+	"docs/runbooks",
+}
+
+// scanReferences maps the *.md files directly under each referenceDirs entry
+// to reference candidates, alphabetical by rel path.
 func scanReferences(root string) ([]Candidate, error) {
 	var sources []string
-	for _, relDir := range []string{"docs/architecture", "docs/planning", "docs/runbooks"} {
+	for _, relDir := range referenceDirs {
 		names, err := readDirNames(filepath.Join(root, filepath.FromSlash(relDir)), false)
 		if err != nil {
 			return nil, err
