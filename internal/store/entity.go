@@ -50,10 +50,27 @@ type Reference struct {
 	UpdatedAt time.Time             `json:"updated_at"`
 }
 
+// Historical is the persisted form of a historical entity: something that
+// existed and was superseded/absorbed before it ever had its own spec/case.
+// It is born terminal (State is always domain.StateSuperseded) and carries the
+// original identifiers as Aliases so the lint can flag live mentions. SupersededBy
+// is polymorphic: a cerne ID (e.g. F-0123) or a free label (e.g. "Finance").
+type Historical struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Aliases      []string            `json:"aliases,omitempty"`
+	SupersededBy string              `json:"superseded_by"`
+	Reason       string              `json:"reason"`
+	State        domain.FeatureState `json:"state"`
+	ImportedFrom string              `json:"imported_from,omitempty"`
+	CreatedAt    time.Time           `json:"created_at"`
+}
+
 const (
-	featuresSubdir   = "entities/features"
-	decisionsSubdir  = "entities/decisions"
-	referencesSubdir = "entities/references"
+	featuresSubdir    = "entities/features"
+	decisionsSubdir   = "entities/decisions"
+	referencesSubdir  = "entities/references"
+	historicalsSubdir = "entities/historicals"
 )
 
 // SaveFeature writes the feature to entities/features/<ID>.json.
@@ -99,6 +116,21 @@ func LoadReference(backendDir, id string) (Reference, error) {
 // LoadAllReferences returns all references sorted by ID ascending.
 func LoadAllReferences(backendDir string) ([]Reference, error) {
 	return loadAllEntities[Reference](backendDir, referencesSubdir)
+}
+
+// SaveHistorical writes the historical entity to entities/historicals/<ID>.json.
+func SaveHistorical(backendDir string, h Historical) error {
+	return saveEntity(backendDir, historicalsSubdir, h.ID, h)
+}
+
+// LoadHistorical reads one historical entity by id; ErrNotFound when missing.
+func LoadHistorical(backendDir, id string) (Historical, error) {
+	return loadEntity[Historical](backendDir, historicalsSubdir, id)
+}
+
+// LoadAllHistoricals returns all historical entities sorted by ID ascending.
+func LoadAllHistoricals(backendDir string) ([]Historical, error) {
+	return loadAllEntities[Historical](backendDir, historicalsSubdir)
 }
 
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.
