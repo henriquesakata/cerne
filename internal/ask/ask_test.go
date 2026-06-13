@@ -93,6 +93,51 @@ func TestRetrieveHistoryIncludesTerminalTagged(t *testing.T) {
 	}
 }
 
+func TestExtractKeywords(t *testing.T) {
+	got := extractKeywords("Por que abandonamos o módulo de pagamentos?")
+	for _, want := range []string{"pagamentos", "abandonamos", "módulo"} {
+		if !contains(got, want) {
+			t.Fatalf("extractKeywords = %q, missing %q", got, want)
+		}
+	}
+	for _, stop := range []string{"por", "que", " o ", "de"} {
+		if contains(got, stop) {
+			t.Fatalf("extractKeywords = %q, leaked stopword %q", got, stop)
+		}
+	}
+	if !contains(got, " OR ") {
+		t.Fatalf("extractKeywords = %q, want OR-joined terms", got)
+	}
+}
+
+func TestExtractKeywordsAllStopwords(t *testing.T) {
+	q := "por que o que de"
+	if got := extractKeywords(q); got != q {
+		t.Fatalf("extractKeywords(all-stopwords) = %q, want original %q", got, q)
+	}
+}
+
+func TestRetrieveNaturalLanguageQuestion(t *testing.T) {
+	repoDir, dbPath := seed(t)
+	// A natural-language question whose tokens, taken literally as an FTS AND
+	// query, would not all co-occur in any document — only keyword extraction
+	// (boletos OR ...) recovers the relevant F-0001.
+	nl := "Por que será que abandonamos os boletos no sistema?"
+	snips, err := Retrieve(repoDir, dbPath, nl, false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	var found bool
+	for _, s := range snips {
+		if s.Source == "F-0001" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("NL question did not recover F-0001 via keyword extraction: %+v", snips)
+	}
+}
+
 func TestBuildAskPrompt(t *testing.T) {
 	prompt := BuildAskPrompt("por que abandonamos boletos?", []Snippet{
 		{Source: "F-0002", Kind: "feature", State: "superseded", Text: "boletos antigos"},
