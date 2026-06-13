@@ -32,7 +32,7 @@ func TestArtifactGet(t *testing.T) {
 	writeArtifact(t, repoDir, "F-0001", "seq.excalidraw", sceneA)
 
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir).ServeHTTP(rec,
+	New(repoDir, projDir, "").ServeHTTP(rec,
 		httptest.NewRequest(http.MethodGet, "/api/artifacts/F-0001/seq.excalidraw", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
@@ -48,7 +48,7 @@ func TestArtifactGet(t *testing.T) {
 func TestArtifactGetNotFound(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/artifacts/F-0001/nope.excalidraw", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/artifacts/F-0001/nope.excalidraw", "", &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -61,7 +61,7 @@ func TestArtifactGetTraversalRejected(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	// Plant a file OUTSIDE the feature's artifact dir; traversal must never reach it.
 	writeArtifact(t, repoDir, ".", "secret.excalidraw", `{"leak":true}`)
-	h := New(repoDir, projDir)
+	h := New(repoDir, projDir, "")
 
 	for _, target := range []string{
 		"/api/artifacts/F-0001/..%2Fsecret.excalidraw",
@@ -85,7 +85,7 @@ func TestArtifactPutCreateAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HeadSHA origin: %v", err)
 	}
-	h := New(repoDir, projDir)
+	h := New(repoDir, projDir, "")
 
 	// Create: PUT on a nonexistent name writes the file, pushes, updates the lock.
 	var got struct {
@@ -151,7 +151,7 @@ func TestArtifactPutInvalidJSON(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeatureForArtifacts(t, repoDir)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPut, "/api/artifacts/F-0001/seq.excalidraw", `{not json`, &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/seq.excalidraw", `{not json`, &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
@@ -164,7 +164,7 @@ func TestArtifactPutBadExtension(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeatureForArtifacts(t, repoDir)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPut, "/api/artifacts/F-0001/diagrama.png", `{}`, &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/diagrama.png", `{}`, &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
@@ -176,7 +176,7 @@ func TestArtifactPutBadExtension(t *testing.T) {
 func TestArtifactPutUnknownFeature(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPut, "/api/artifacts/F-9999/seq.excalidraw", `{}`, &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-9999/seq.excalidraw", `{}`, &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -189,7 +189,7 @@ func TestArtifactPutTraversalRejected(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeatureForArtifacts(t, repoDir)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPut, "/api/artifacts/F-0001/..%2Fevil.excalidraw", `{}`, &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/..%2Fevil.excalidraw", `{}`, &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}

@@ -132,7 +132,7 @@ func TestStateEndpoint(t *testing.T) {
 		Decisions  []store.Decision  `json:"decisions"`
 		References []store.Reference `json:"references"`
 	}
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/state", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -157,7 +157,7 @@ func TestStateEndpointNoModules(t *testing.T) {
 		t.Fatalf("InitLayout: %v", err)
 	}
 	rec := httptest.NewRecorder()
-	New(repoDir, t.TempDir()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	New(repoDir, t.TempDir(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/state", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -193,7 +193,7 @@ func TestFeatureDetail(t *testing.T) {
 			Path string `json:"path"`
 		} `json:"artifacts"`
 	}
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/features/F-0001", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -214,7 +214,7 @@ func TestFeatureDetailNoArtifactsDir(t *testing.T) {
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
 
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/features/F-0001", nil))
+	New(repoDir, projDir, "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/features/F-0001", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -226,7 +226,7 @@ func TestFeatureDetailNoArtifactsDir(t *testing.T) {
 func TestFeatureDetailNotFound(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/features/F-9999", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-9999", "", &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -248,7 +248,7 @@ func TestDecisionDetail(t *testing.T) {
 		Decision store.Decision `json:"decision"`
 		Doc      string         `json:"doc"`
 	}
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/decisions/D-0001", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/decisions/D-0001", "", &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -263,7 +263,7 @@ func TestDecisionDetail(t *testing.T) {
 func TestDecisionDetailNotFound(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/decisions/D-9999", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/decisions/D-9999", "", &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -285,7 +285,7 @@ func TestReferenceDetail(t *testing.T) {
 		Reference store.Reference `json:"reference"`
 		Doc       string          `json:"doc"`
 	}
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/references/R-0001", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/references/R-0001", "", &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -300,7 +300,7 @@ func TestReferenceDetail(t *testing.T) {
 func TestReferenceDetailNotFound(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/references/R-9999", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/references/R-9999", "", &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -314,7 +314,7 @@ func TestTransitionApprove(t *testing.T) {
 	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real descrito aqui."))
 
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPost, "/api/features/F-0001/transition",
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition",
 		`{"action":"approve"}`, &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
@@ -356,7 +356,7 @@ func TestTransitionGateFailure(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPost, "/api/features/F-0001/transition",
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition",
 		`{"action":"approve"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
@@ -372,7 +372,7 @@ func TestTransitionGateFailure(t *testing.T) {
 func TestTransitionUnknownFeature(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPost, "/api/features/F-9999/transition",
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-9999/transition",
 		`{"action":"approve"}`, &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
@@ -386,13 +386,13 @@ func TestTransitionInvalidBody(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodPost, "/api/features/F-0001/transition",
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition",
 		`{not json`, &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid JSON status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
 
-	rec = doJSON(t, New(repoDir, projDir), http.MethodPost, "/api/features/F-0001/transition",
+	rec = doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition",
 		`{"action":"explode"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown action status = %d, want 422; body: %s", rec.Code, rec.Body.String())
@@ -404,7 +404,7 @@ func TestTransitionInvalidBody(t *testing.T) {
 
 func TestStaticIndexAndSPAFallback(t *testing.T) {
 	repoDir, projDir := newBackend(t)
-	h := New(repoDir, projDir)
+	h := New(repoDir, projDir, "")
 
 	for _, target := range []string{"/", "/features/F-0001"} {
 		rec := httptest.NewRecorder()
@@ -424,11 +424,61 @@ func TestStaticIndexAndSPAFallback(t *testing.T) {
 func TestAPIUnknownRouteIsJSON404(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir), http.MethodGet, "/api/nope", "", &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/nope", "", &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
 	if got["error"] == "" {
 		t.Fatalf("body = %v, want JSON error message", got)
+	}
+}
+
+func TestSearchEndpoint(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir()) // index.db lands under a temp dir
+	now := time.Now().UTC()
+	// A superseded feature: search must reach history, with the successor shown.
+	f := store.Feature{ID: "F-0001", Title: "Boletos recorrentes", State: domain.StateSuperseded, SupersededBy: "F-0002", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Pagamento de boletos mensais no satélite."))
+
+	var got struct {
+		Results []struct {
+			EntityID     string `json:"entity_id"`
+			Kind         string `json:"kind"`
+			State        string `json:"state"`
+			SupersededBy string `json:"superseded_by"`
+		} `json:"results"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-search"), http.MethodGet, "/api/search?q=boletos", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	found := false
+	for _, r := range got.Results {
+		if r.EntityID == "F-0001" {
+			found = true
+			if r.Kind != "feature" || r.State != "superseded" || r.SupersededBy != "F-0002" {
+				t.Fatalf("hit = %+v, want superseded feature F-0001 → F-0002", r)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("F-0001 not found in results for 'boletos': %+v", got.Results)
+	}
+}
+
+func TestSearchEndpointEmptyQuery(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "proj-search"), http.MethodGet, "/api/search?q=", "", &got)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] == "" {
+		t.Fatalf("body = %v, want pt-BR error message", got)
 	}
 }

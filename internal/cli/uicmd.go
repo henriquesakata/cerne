@@ -33,5 +33,5 @@ func runUI(cmd *cobra.Command, dir string, port int) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "UI local em http://localhost:%d (Ctrl+C para sair)\n", port)
-	return http.ListenAndServe(fmt.Sprintf("localhost:%d", port), server.New(ctx.repoDir, ctx.projDir))
+	return http.ListenAndServe(fmt.Sprintf("localhost:%d", port), server.New(ctx.repoDir, ctx.projDir, ctx.cfg.ProjectID))
 }

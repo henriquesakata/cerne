@@ -9,17 +9,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/ui"
 )
 
 // New returns the http.Handler serving /api/* JSON endpoints and the
 // embedded UI (SPA fallback to index.html) for everything else.
-func New(repoDir, projDir string) http.Handler {
+func New(repoDir, projDir, projectID string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		handleState(w, repoDir)
@@ -41,6 +44,9 @@ func New(repoDir, projDir string) http.Handler {
 	})
 	mux.HandleFunc("GET /api/references/{id}", func(w http.ResponseWriter, r *http.Request) {
 		handleReferenceDetail(w, repoDir, r.PathValue("id"))
+	})
+	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
+		handleSearch(w, r, repoDir, projectID)
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
@@ -223,6 +229,71 @@ func readContentDoc(repoDir, kind, id string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// searchHit is one full-text search result in the API's snake_case contract,
+// projected from index.Result (which carries no JSON tags).
+type searchHit struct {
+	EntityID     string `json:"entity_id"`
+	Kind         string `json:"kind"`
+	Doc          string `json:"doc"`
+	State        string `json:"state"`
+	Title        string `json:"title"`
+	Snippet      string `json:"snippet"`
+	SupersededBy string `json:"superseded_by,omitempty"`
+}
+
+// searchResponse is the GET /api/search payload.
+type searchResponse struct {
+	Results []searchHit `json:"results"`
+}
+
+func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("informe o termo de busca (parâmetro q)"))
+		return
+	}
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	dbPath, err := project.IndexPath(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// Offline by design: build the index on first use from the cached clone,
+	// never the remote — 'cerne pull' is the sync point (mirrors searchcmd).
+	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+		if err := index.Rebuild(repoDir, dbPath); err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+	} else if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	results, err := index.Search(dbPath, query, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	hits := make([]searchHit, len(results))
+	for i, res := range results {
+		hits[i] = searchHit{
+			EntityID:     res.EntityID,
+			Kind:         res.Kind,
+			Doc:          res.Doc,
+			State:        res.State,
+			Title:        res.Title,
+			Snippet:      res.Snippet,
+			SupersededBy: res.SupersededBy,
+		}
+	}
+	writeJSON(w, http.StatusOK, searchResponse{Results: hits})
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.
