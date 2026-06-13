@@ -20,6 +20,7 @@ func newSpecCmd() *cobra.Command {
 		Short: "Author a feature's spec (LLM layer)",
 	}
 	cmd.AddCommand(newSpecDraftCmd())
+	cmd.AddCommand(newSpecDiagramCmd())
 	return cmd
 }
 
