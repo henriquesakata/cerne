@@ -4,7 +4,7 @@ tags: #spec #cerne #domain #lint #import
 
 **Status:** Draft — spec fechada via brainstorming (2026-06-13); pronta para `plan.md`.
 **Tipo:** Extensão do modelo de domínio (novo `Kind`) + store + lint + import/CLI.
-**Origem:** Pendência nº 1 do [result.md do case 0001](../0001_founding-spec/result.md). Surgiu da rodada de aceitação real contra o Rockt Hub (2026-06-12): o lint flagrou 18 referências reais a entidades supersedidas, mas **não** flagrou as menções a "Bills"/"Investments" — porque a absorção desses módulos pelo Finance **precede** a convenção de cases do hub, então não existe entidade `cerne` para supersedir e, sem entidade, não há needle para o lint casar.
+**Origem:** Pendência nº 1 do [result.md do case 0001](../0001_founding-spec/result.md). Surgiu da rodada de aceitação real contra o Rockt Hub (2026-06-12): o lint flagrou 18 referências reais a entidades substituídas, mas **não** flagrou as menções a "Bills"/"Investments" — porque a absorção desses módulos pelo Finance **precede** a convenção de cases do hub, então não existe entidade `cerne` para substituir e, sem entidade, não há needle para o lint casar.
 
 ---
 
@@ -14,9 +14,9 @@ O lint `ref-to-superseded` (regra determinística do case 0001) só consegue fla
 1. existe uma entidade `cerne` (Feature/Decision/Reference) com estado terminal (`superseded`/`rejected`/`obsolete`), e
 2. essa entidade tem needles deriváveis (ID `cerne`, título ≥ 4 chars, ou identificadores originais via `imported_from`).
 
-Quando algo foi **absorvido/descontinuado antes de existir documentação importável** (caso Bills → Finance, Investments → Finance), não há entidade para registrar a supersedência. As menções vivas (`docs/planning/features.md` ainda lista Bills/Investments como módulos; `R-0010` desenha `bills_db`/`investments_db` na arquitetura) passam despercebidas — exatamente o tipo de obsolescência que o produto promete pegar.
+Quando algo foi **absorvido/descontinuado antes de existir documentação importável** (caso Bills → Finance, Investments → Finance), não há entidade para registrar a substituição. As menções vivas (`docs/planning/features.md` ainda lista Bills/Investments como módulos; `R-0010` desenha `bills_db`/`investments_db` na arquitetura) passam despercebidas — exatamente o tipo de obsolescência que o produto promete pegar.
 
-Generalizando: **falta um caminho para declarar "a entidade X existiu e foi supersedida/absorvida por Y", mesmo quando X nunca teve spec/case próprio.**
+Generalizando: **falta um caminho para declarar "a entidade X existiu e foi substituída/absorvida por Y", mesmo quando X nunca teve spec/case próprio.**
 
 ---
 
@@ -26,7 +26,7 @@ Permitir registrar entidades **históricas** (existiram, foram absorvidas/descon
 
 **Critério de aceite** (fecha o critério nº 1 do case 0001 por completo):
 
-1. Após registrar Bills e Investments como entidades históricas supersedidas pelo Finance (aliases `bills`/`boletos`, `investments`/`investimentos`), `cerne lint` no hub flagra as menções em `features.md` e em `R-0010` como `ref-to-superseded`.
+1. Após registrar Bills e Investments como entidades históricas substituídas pelo Finance (aliases `bills`/`boletos`, `investments`/`investimentos`), `cerne lint` no hub flagra as menções em `features.md` e em `R-0010` como `ref-to-superseded`.
 2. Entidades históricas **não** aparecem na materialização `.docs/` (são history), mas **aparecem** em `cerne search` e `cerne status --all`.
 3. Registro via comando avulso (`cerne retire`) **e** via seed em lote (`historical.toml` lido pelo `import`) produzem entidades idênticas (mesmo caminho de domínio).
 4. Suíte verde, `go vet` limpo; cobertura nova por testes table-driven com erros pinados via `errors.Is`.
@@ -60,7 +60,7 @@ Campos (JSON, persistido pelo `store` como as demais entidades):
 | `name` | string | nome original (ex.: `Bills`); serve de needle (título) no lint |
 | `aliases` | `[]string` | identificadores originais (ex.: `bills`, `boletos`); cada um needle adicional |
 | `superseded_by` | string | **polimórfico**: ID `cerne` (ex.: `F-0123`) ou label livre (ex.: `Finance`) |
-| `reason` | string | por que foi absorvido/descontinuado (obrigatório — é uma supersedência) |
+| `reason` | string | por que foi absorvido/descontinuado (obrigatório — é uma substituição) |
 | `state` | string | sempre `superseded` (nasce terminal) |
 | `imported_from` | string | opcional; proveniência (id/origem no doc tree legado) |
 | `created_at` | time | como nas demais entidades |

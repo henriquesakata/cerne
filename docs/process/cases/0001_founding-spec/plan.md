@@ -240,7 +240,7 @@ Round-trip TOML/JSON conforme decisão 5; `LoadConfig` sobe diretórios até ach
 
 **Files:** Create: `internal/cli/status.go` + teste
 
-Tabela por estado (ordem: in_development, approved, candidate, implemented; supersedidas/rejeitadas só com `--all`). Saída estável (testável por string). `--json` para consumo por agentes. Commit `feat(cli): status table`.
+Tabela por estado (ordem: in_development, approved, candidate, implemented; substituídas/rejeitadas só com `--all`). Saída estável (testável por string). `--json` para consumo por agentes. Commit `feat(cli): status table`.
 
 ---
 
@@ -250,7 +250,7 @@ Tabela por estado (ordem: in_development, approved, candidate, implemented; supe
 
 **Files:** Create: `internal/materialize/materialize.go`, `internal/cli/pull.go` + testes
 
-**Comportamento:** `Pull(projectDir, scope)` → git pull do backend; projeta para `.docs/`: `current/features/<id>-<slug>/{spec,plan}.md` **só** de features `candidate|approved|in_development` (implementadas: nada — promoção na conclusão), `current/decisions/` só `active`, `current/references/` só `current`; gera `CONTEXT.md` (template Go `text/template`: resumo, tabela de features por estado, ponteiros relativos); grava manifest de hashes no lock. `--scope` filtra por módulo. **Teste-chave:** feature supersedida **desaparece** da materialização no pull seguinte. Commit `feat(materialize): pull with current-state projection and CONTEXT.md`.
+**Comportamento:** `Pull(projectDir, scope)` → git pull do backend; projeta para `.docs/`: `current/features/<id>-<slug>/{spec,plan}.md` **só** de features `candidate|approved|in_development` (implementadas: nada — promoção na conclusão), `current/decisions/` só `active`, `current/references/` só `current`; gera `CONTEXT.md` (template Go `text/template`: resumo, tabela de features por estado, ponteiros relativos); grava manifest de hashes no lock. `--scope` filtra por módulo. **Teste-chave:** feature substituída **desaparece** da materialização no pull seguinte. Commit `feat(materialize): pull with current-state projection and CONTEXT.md`.
 
 ### Task 4.2: `cerne push`
 
@@ -300,7 +300,7 @@ Manual (documentado em `result.md` quando rodar): `cerne init` num clone do hub 
 
 **Files:** Create: `internal/index/index.go`, `internal/cli/search.go` + testes
 
-`go get modernc.org/sqlite`. `Rebuild(backendDir, dbPath)` → tabela FTS5 `docs(entity_id, kind, state, title, body)` com **todo o histórico** (inclusive supersedidos — busca é a porta do histórico). `cerne search "query"` → top 10 com snippet e estado (supersedido aparece **rotulado**: `[superseded por F-0042]`). Rebuild automático no pull se SHA mudou. Commit `feat(index): sqlite fts5 search over full history`.
+`go get modernc.org/sqlite`. `Rebuild(backendDir, dbPath)` → tabela FTS5 `docs(entity_id, kind, state, title, body)` com **todo o histórico** (inclusive substituídos — busca é a porta do histórico). `cerne search "query"` → top 10 com snippet e estado (substituído aparece **rotulado**: `[superseded por F-0042]`). Rebuild automático no pull se SHA mudou. Commit `feat(index): sqlite fts5 search over full history`.
 
 ### Task 6.2: UI scaffold + embed
 
@@ -312,7 +312,7 @@ Manual (documentado em `result.md` quando rodar): `cerne init` num clone do hub 
 
 **Files:** Create: `ui/src/Kanban.tsx`, `ui/src/FeaturePage.tsx`, etc.
 
-Colunas por estado (labels pt-BR), card → página da feature (spec/plan/result renderizados com `react-markdown`, diff fica para v1.1), botões Aprovar/Rejeitar/Supersedir com motivo obrigatório → `POST /transition`. Sem framework de estado (fetch + useState). Commit `feat(ui): kanban and feature review page`.
+Colunas por estado (labels pt-BR), card → página da feature (spec/plan/result renderizados com `react-markdown`, diff fica para v1.1), botões Aprovar/Rejeitar/Substituir com motivo obrigatório → `POST /transition`. Sem framework de estado (fetch + useState). Commit `feat(ui): kanban and feature review page`.
 
 ### Task 6.4: Excalidraw embarcado
 
