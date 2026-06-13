@@ -12,8 +12,6 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -103,16 +101,7 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
 		return out, err
 	}
-	sha, err := gitback.CommitAndPush(repoDir, fmt.Sprintf("cerne: %s %s", action, id))
-	if err != nil {
-		return out, err
-	}
-	lock, err := project.LoadLock(projDir)
-	if err != nil {
-		return out, err
-	}
-	lock.Snapshot = sha
-	if err := project.SaveLock(projDir, lock); err != nil {
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: %s %s", action, id)); err != nil {
 		return out, err
 	}
 	return TransitionOutcome{ID: id, From: oldState, To: newState}, nil

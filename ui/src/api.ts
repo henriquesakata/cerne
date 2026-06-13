@@ -111,6 +111,39 @@ export async function fetchFeature(id: string): Promise<FeatureDetail> {
   return (await r.json()) as FeatureDetail
 }
 
+// fetchArtifactJSON devolve o conteúdo bruto (texto) de um artefato .excalidraw.
+export async function fetchArtifactJSON(
+  featureId: string,
+  name: string,
+): Promise<string> {
+  const r = await fetch(
+    `/api/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
+  )
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return await r.text()
+}
+
+export type SaveOutcome = { ok: true } | { ok: false; error: string }
+
+// putArtifact cria ou atualiza um artefato .excalidraw no backend
+// (o servidor faz commit+push e atualiza o snapshot do docs.lock).
+export async function putArtifact(
+  featureId: string,
+  name: string,
+  json: string,
+): Promise<SaveOutcome> {
+  const r = await fetch(
+    `/api/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: json,
+    },
+  )
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
+
 export type TransitionOutcome =
   | { ok: true; data: TransitionResult }
   | { ok: false; error: string }

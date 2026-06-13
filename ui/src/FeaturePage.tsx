@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   fetchFeature,
@@ -9,6 +9,10 @@ import {
   type TransitionAction,
   type TransitionResult,
 } from './api'
+
+// Carregado sob demanda: o bundle do Excalidraw só chega ao navegador
+// quando o usuário abre um diagrama.
+const DiagramPanel = lazy(() => import('./DiagramPanel'))
 
 type DocTab = 'spec' | 'plan' | 'result'
 
@@ -22,11 +26,26 @@ function availableTabs(detail: FeatureDetail): DocTab[] {
   return (['spec', 'plan', 'result'] as const).filter((t) => detail.docs[t] !== '')
 }
 
+// diagramFilename normaliza o nome digitado para slug + sufixo .excalidraw.
+function diagramFilename(input: string): string {
+  const slug = input
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\.excalidraw$/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug === '' ? '' : `${slug}.excalidraw`
+}
+
+type OpenDiagram = { name: string; isNew: boolean }
+
 export default function FeaturePage({ id }: { id: string }) {
   const [detail, setDetail] = useState<FeatureDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<DocTab | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [diagram, setDiagram] = useState<OpenDiagram | null>(null)
 
   const load = useCallback(() => {
     fetchFeature(id)
@@ -69,51 +88,120 @@ export default function FeaturePage({ id }: { id: string }) {
         {f.reason && <p className="feature-note">Motivo: {f.reason}</p>}
         {notice && <p className="notice">{notice}</p>}
       </header>
-      <div className="feature-body">
-        <section className="docs">
-          {tabs.length === 0 ? (
-            <p className="muted">Sem documentos ainda.</p>
-          ) : (
-            <>
-              <nav className="tabs">
-                {tabs.map((t) => (
-                  <button
-                    key={t}
-                    className={t === tab ? 'tab active' : 'tab'}
-                    onClick={() => setTab(t)}
-                  >
-                    {TAB_LABELS[t]}
-                  </button>
-                ))}
-              </nav>
-              <article className="doc">
-                {tab && <ReactMarkdown>{detail.docs[tab]}</ReactMarkdown>}
-              </article>
-            </>
-          )}
-        </section>
-        <aside className="side">
-          <ActionsPanel
-            id={f.id}
-            state={f.state}
-            onDone={(r: TransitionResult) => {
-              setNotice(`${STATE_LABELS[r.from]} → ${STATE_LABELS[r.to]}`)
+      {diagram ? (
+        <Suspense fallback={<p className="status">Carregando…</p>}>
+          <DiagramPanel
+            featureId={f.id}
+            name={diagram.name}
+            isNew={diagram.isNew}
+            onClose={() => {
+              setDiagram(null)
               load()
             }}
+            onSaved={load}
           />
-          {detail.artifacts.length > 0 && (
-            <section className="artifacts">
-              <h2>Diagramas</h2>
-              <ul>
-                {detail.artifacts.map((a) => (
-                  <li key={a.path}>{a.name}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </aside>
-      </div>
+        </Suspense>
+      ) : (
+        <div className="feature-body">
+          <section className="docs">
+            {tabs.length === 0 ? (
+              <p className="muted">Sem documentos ainda.</p>
+            ) : (
+              <>
+                <nav className="tabs">
+                  {tabs.map((t) => (
+                    <button
+                      key={t}
+                      className={t === tab ? 'tab active' : 'tab'}
+                      onClick={() => setTab(t)}
+                    >
+                      {TAB_LABELS[t]}
+                    </button>
+                  ))}
+                </nav>
+                <article className="doc">
+                  {tab && <ReactMarkdown>{detail.docs[tab]}</ReactMarkdown>}
+                </article>
+              </>
+            )}
+          </section>
+          <aside className="side">
+            <ActionsPanel
+              id={f.id}
+              state={f.state}
+              onDone={(r: TransitionResult) => {
+                setNotice(`${STATE_LABELS[r.from]} → ${STATE_LABELS[r.to]}`)
+                load()
+              }}
+            />
+            <DiagramsSection
+              artifacts={detail.artifacts}
+              onOpen={(d) => setDiagram(d)}
+            />
+          </aside>
+        </div>
+      )}
     </main>
+  )
+}
+
+function DiagramsSection({
+  artifacts,
+  onOpen,
+}: {
+  artifacts: FeatureDetail['artifacts']
+  onOpen: (d: OpenDiagram) => void
+}) {
+  const [naming, setNaming] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  const create = () => {
+    const filename = diagramFilename(newName)
+    if (filename === '') return
+    setNaming(false)
+    setNewName('')
+    onOpen({ name: filename, isNew: true })
+  }
+
+  return (
+    <section className="artifacts">
+      <h2>Diagramas</h2>
+      {artifacts.length > 0 && (
+        <ul>
+          {artifacts.map((a) => (
+            <li key={a.path}>
+              <button
+                className="diagram-link"
+                onClick={() => onOpen({ name: a.name, isNew: false })}
+              >
+                {a.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {naming ? (
+        <form
+          className="diagram-name-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            create()
+          }}
+        >
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="nome-do-diagrama"
+            autoFocus
+          />
+          <button type="submit" disabled={diagramFilename(newName) === ''}>
+            Criar
+          </button>
+        </form>
+      ) : (
+        <button onClick={() => setNaming(true)}>Novo diagrama</button>
+      )}
+    </section>
   )
 }
 

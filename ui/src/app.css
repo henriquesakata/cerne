@@ -229,3 +229,85 @@ h2 {
 }
 
 .form-error { margin: 0.6rem 0 0; font-size: 0.85rem; }
+
+/* ---- diagramas (Excalidraw) ---- */
+
+.artifacts li { margin: 0.15rem 0; }
+
+.diagram-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.88rem;
+  color: #1d4f82;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.artifacts > button,
+.diagram-name-form button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.artifacts > button { margin-top: 0.6rem; }
+
+.artifacts > button:hover,
+.diagram-name-form button:hover:not(:disabled) { background: #ece9e2; }
+.diagram-name-form button:disabled { opacity: 0.6; cursor: default; }
+
+.diagram-name-form { display: flex; gap: 0.4rem; margin-top: 0.6rem; }
+
+.diagram-name-form input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d8d2c6;
+  border-radius: 6px;
+  background: #fff;
+  min-width: 0;
+  flex: 1;
+}
+
+.diagram-panel { margin-top: 1.25rem; }
+
+.diagram-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.diagram-toolbar h2 { margin: 0; font-size: 1rem; font-family: ui-monospace, monospace; }
+
+.diagram-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.diagram-controls .notice,
+.diagram-controls .form-error { margin: 0; }
+
+.diagram-controls button {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.diagram-controls button:hover:not(:disabled) { background: #ece9e2; }
+.diagram-controls button:disabled { opacity: 0.6; cursor: default; }
+
+.diagram-canvas {
+  height: 70vh;
+  border: 1px solid #e6e1d8;
+  border-radius: 8px;
+  overflow: hidden;
+}

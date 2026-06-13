@@ -30,6 +30,12 @@ func New(repoDir, projDir string) http.Handler {
 	mux.HandleFunc("POST /api/features/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
 		handleTransition(w, r, repoDir, projDir, r.PathValue("id"))
 	})
+	mux.HandleFunc("GET /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
+		handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
+	})
+	mux.HandleFunc("PUT /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
+		handleArtifactPut(w, r, repoDir, projDir, r.PathValue("featureID"), r.PathValue("name"))
+	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
 	})
