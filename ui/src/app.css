@@ -174,6 +174,72 @@ h2 {
 
 .doc pre code { padding: 0; background: none; }
 
+/* prosa renderizada do markdown: títulos, listas, citações, links, tabelas.
+   Sem isto, a regra global de h2 (rótulo cinza maiúsculo) vazaria para os
+   títulos do doc, e tabelas/listas ficariam sem estilo. */
+.doc > :first-child { margin-top: 0; }
+.doc > :last-child { margin-bottom: 0; }
+
+.doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+  font-weight: 600;
+  color: #1f2421;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.doc h1 { font-size: 1.5rem; padding-bottom: 0.3em; border-bottom: 1px solid #e6e1d8; }
+.doc h2 { font-size: 1.25rem; padding-bottom: 0.3em; border-bottom: 1px solid #e6e1d8; }
+.doc h3 { font-size: 1.1rem; }
+.doc h4 { font-size: 1rem; }
+.doc h5 { font-size: 0.92rem; }
+.doc h6 { font-size: 0.85rem; color: #5c635e; }
+
+.doc p { margin: 0 0 0.85em; }
+
+.doc ul, .doc ol { margin: 0 0 0.85em; padding-left: 1.5rem; }
+.doc li { margin: 0.2em 0; }
+.doc li > ul, .doc li > ol { margin: 0.2em 0; }
+
+.doc blockquote {
+  margin: 0 0 0.85em;
+  padding: 0.2rem 0 0.2rem 1rem;
+  border-left: 3px solid #d8d2c6;
+  color: #5c635e;
+}
+
+.doc a { color: #1d4f82; text-decoration: none; }
+.doc a:hover { text-decoration: underline; }
+
+.doc hr { border: none; border-top: 1px solid #e6e1d8; margin: 1.5em 0; }
+
+.doc img { max-width: 100%; height: auto; }
+
+.doc strong { font-weight: 600; }
+
+/* tabelas (GFM via remark-gfm) */
+.doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 0.85em;
+  font-size: 0.9rem;
+}
+
+.doc th, .doc td {
+  border: 1px solid #e0dacf;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc th { background: #f3efe7; font-weight: 600; }
+.doc tbody tr:nth-child(2n) td { background: #faf8f3; }
+
+/* listas de tarefas (GFM): esconde o marcador e alinha a checkbox */
+.doc ul:has(> li > input[type='checkbox']) { list-style: none; padding-left: 0.4rem; }
+.doc li > input[type='checkbox'] { margin-right: 0.4rem; }
+
 /* ---- painel de ações ---- */
 
 .actions, .artifacts {

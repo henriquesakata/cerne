@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import Markdown from './Markdown'
 import {
   fetchDecision,
   fetchState,
@@ -100,7 +100,7 @@ export function DecisionDetail({ id }: { id: string }) {
       </header>
       <article className="doc">
         {data.doc ? (
-          <ReactMarkdown>{data.doc}</ReactMarkdown>
+          <Markdown>{data.doc}</Markdown>
         ) : (
           <p className="muted">Sem documento de conteúdo.</p>
         )}

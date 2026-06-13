@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import Markdown from './Markdown'
 import {
   fetchFeature,
   postTransition,
@@ -204,7 +204,7 @@ function DocEditor({
         <p className="muted">Vazio — clique em Editar para escrever.</p>
       ) : (
         <article className="doc">
-          <ReactMarkdown>{content}</ReactMarkdown>
+          <Markdown>{content}</Markdown>
         </article>
       )}
     </div>
