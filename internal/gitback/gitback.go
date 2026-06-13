@@ -187,6 +187,24 @@ func RemoteHeadSHA(workdir string) (string, error) {
 	return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
 }
 
+// RemoteURL returns the configured URL of origin in workdir; an error when the
+// directory is not a git repository or has no origin remote.
+func RemoteURL(workdir string) (string, error) {
+	repo, err := git.PlainOpen(workdir)
+	if err != nil {
+		return "", err
+	}
+	remote, err := repo.Remote(remoteName)
+	if err != nil {
+		return "", err
+	}
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", fmt.Errorf("remote %q has no URL", remoteName)
+	}
+	return urls[0], nil
+}
+
 // HeadSHA returns the current HEAD commit hex of workdir; ErrNoCommits when unborn.
 func HeadSHA(workdir string) (string, error) {
 	repo, err := git.PlainOpen(workdir)

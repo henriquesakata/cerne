@@ -132,7 +132,7 @@ func TestApplyHubTree(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 
-	sum, err := Apply(repoDir, cands, "importer-test")
+	sum, err := Apply(repoDir, cands, "importer-test", ApplyOptions{SrcRoot: hubtree})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -278,6 +278,54 @@ func TestApplyHubTree(t *testing.T) {
 	}
 }
 
+func TestApplyRewritesCrossLinks(t *testing.T) {
+	root := t.TempDir()
+	repoDir := t.TempDir()
+	if err := store.InitLayout(repoDir, store.Project{Name: "demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	src := func(rel, body string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src("docs/architecture/adr/adr-001-db.md", "# ADR-001 — Banco por serviço\n\nDecidido.\n")
+	// A case spec referencing the ADR by wikilink and by inline relative link,
+	// plus a forward reference to a later case (resolves via the first pass).
+	src("docs/process/cases/0001_login/spec.md",
+		"# Login\n\nver [[adr-001-db]] e [a decisão](../../architecture/adr/adr-001-db.md);\nantecipa [[../0002_logout/spec]].\n")
+	src("docs/process/cases/0002_logout/spec.md", "# Logout\n\nEncerramento.\n")
+
+	cands, err := Scan(root, nil)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if _, err := Apply(repoDir, cands, "test", ApplyOptions{SrcRoot: root}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil {
+		t.Fatalf("read F-0001 spec: %v", err)
+	}
+	for _, want := range []string{
+		"[ADR-001 — Banco por serviço](../../decisions/D-0001.md)", // wikilink → entity title
+		"[a decisão](../../decisions/D-0001.md)",                   // inline relative link
+		"[Logout](../F-0002/spec.md)",                              // forward case reference
+	} {
+		if !strings.Contains(string(spec), want) {
+			t.Errorf("rewritten spec missing %q:\n%s", want, spec)
+		}
+	}
+	if strings.Contains(string(spec), "[[") {
+		t.Errorf("spec still has an unresolved wikilink:\n%s", spec)
+	}
+}
+
 func TestApplyContinuesIDSequence(t *testing.T) {
 	repoDir := t.TempDir()
 	if err := store.InitLayout(repoDir, store.Project{Name: "demo"}); err != nil {
@@ -300,7 +348,7 @@ func TestApplyContinuesIDSequence(t *testing.T) {
 		Files:  map[string]string{"spec.md": specPath},
 		Source: "docs/process/cases/0004_nova/",
 	}}
-	sum, err := Apply(repoDir, cands, "importer-test")
+	sum, err := Apply(repoDir, cands, "importer-test", ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

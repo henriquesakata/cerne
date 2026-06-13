@@ -99,7 +99,16 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 		}
 	}
 
-	sum, err := importer.Apply(ctx.repoDir, cands, eventActor())
+	// Permalink source-code references to the source repo's blob, pinned at
+	// its current HEAD. Left disabled when root is not a git checkout or its
+	// remote host is unrecognised, in which case code refs stay as written.
+	opts := importer.ApplyOptions{SrcRoot: root}
+	if url, err := gitback.RemoteURL(root); err == nil {
+		if sha, err := gitback.HeadSHA(root); err == nil {
+			opts.BlobBase = importer.BlobBase(url, sha)
+		}
+	}
+	sum, err := importer.Apply(ctx.repoDir, cands, eventActor(), opts)
 	if err != nil {
 		return err
 	}

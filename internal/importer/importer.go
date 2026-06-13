@@ -301,118 +301,140 @@ func readDirNames(dir string, dirsOnly bool) ([]string, error) {
 	return names, nil
 }
 
+// ApplyOptions tunes Apply's link rewriting. SrcRoot is the source tree root,
+// used to verify that source-code references still exist; BlobBase is the
+// blob-URL prefix those references are permalinked to. Both empty leaves
+// source-code references untouched.
+type ApplyOptions struct {
+	SrcRoot  string
+	BlobBase string
+}
+
 // Apply persists the candidates into the backend at repoDir: sequential IDs
-// per kind (continuing any existing sequence), entity JSON, content files
-// with cerne_id/imported_from frontmatter, and one <kind>.imported event
-// each. No git interaction happens here.
-func Apply(repoDir string, cands []Candidate, actor string) (Summary, error) {
+// per kind (continuing any existing sequence), entity JSON, one
+// <kind>.imported event each, and content files with cerne_id/imported_from
+// frontmatter whose cross-references are rewritten to resolve in the backend
+// (see relink.go). IDs are assigned in a first pass so links between freshly
+// imported documents resolve regardless of import order. No git interaction
+// happens here.
+func Apply(repoDir string, cands []Candidate, actor string, opts ApplyOptions) (Summary, error) {
 	sum := Summary{ByState: map[string]int{}}
 	now := time.Now().UTC()
+	idx := NewLinkIndex()
+	type placement struct {
+		cand Candidate
+		id   string
+		docs []docTarget
+	}
+	var places []placement
 	for _, c := range cands {
-		var id string
-		var err error
-		switch c.Kind {
-		case "feature":
-			id, err = applyFeature(repoDir, c, now)
-			sum.Features++
-		case "decision":
-			id, err = applyDecision(repoDir, c, now)
-			sum.Decisions++
-		case "reference":
-			id, err = applyReference(repoDir, c, now)
-			sum.References++
-		default:
-			return Summary{}, fmt.Errorf("unknown candidate kind %q (source %s)", c.Kind, c.Source)
-		}
+		id, docs, err := assignEntity(repoDir, c, now)
 		if err != nil {
 			return Summary{}, err
+		}
+		switch c.Kind {
+		case "feature":
+			sum.Features++
+		case "decision":
+			sum.Decisions++
+		case "reference":
+			sum.References++
 		}
 		ev := domain.NewEvent(id, c.Kind+".imported", map[string]string{"source": c.Source}, actor)
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return Summary{}, err
 		}
 		sum.ByState[c.State]++
+		idx.Add(c, id)
+		places = append(places, placement{c, id, docs})
+	}
+	pb := PermalinkBase{BlobBase: opts.BlobBase, SrcRoot: opts.SrcRoot}
+	for _, p := range places {
+		for _, d := range p.docs {
+			if err := copyDoc(d.src, d.dst, p.id, p.cand.Source, d.contentRel, idx, pb); err != nil {
+				return Summary{}, err
+			}
+		}
 	}
 	return sum, nil
 }
 
-func applyFeature(repoDir string, c Candidate, now time.Time) (string, error) {
-	id, err := store.NextID(repoDir, "F")
-	if err != nil {
-		return "", err
-	}
-	f := store.Feature{
-		ID:        id,
-		Title:     c.Title,
-		Module:    c.Module,
-		State:     domain.FeatureState(c.State),
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if f.State == domain.StateSuperseded {
-		f.Reason = supersededImportReason
-	}
-	if err := store.SaveFeature(repoDir, f); err != nil {
-		return "", err
-	}
-	for _, name := range featureDocNames {
-		src, ok := c.Files[name]
-		if !ok {
-			continue
+// docTarget is one content document to write: source and destination absolute
+// paths, plus the backend-relative slash path that anchors its relative links.
+type docTarget struct {
+	src, dst, contentRel string
+}
+
+// assignEntity allocates the next id for c's kind, persists the entity JSON and
+// returns the content documents to copy. Document bodies are untouched here so
+// Apply can copy them in a second pass with the full link index built.
+func assignEntity(repoDir string, c Candidate, now time.Time) (string, []docTarget, error) {
+	switch c.Kind {
+	case "feature":
+		id, err := store.NextID(repoDir, "F")
+		if err != nil {
+			return "", nil, err
 		}
-		dst := filepath.Join(repoDir, "content", "features", id, name)
-		if err := copyDoc(src, dst, id, c.Source); err != nil {
-			return "", err
+		f := store.Feature{ID: id, Title: c.Title, Module: c.Module, State: domain.FeatureState(c.State), CreatedAt: now, UpdatedAt: now}
+		if f.State == domain.StateSuperseded {
+			f.Reason = supersededImportReason
 		}
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", nil, err
+		}
+		var docs []docTarget
+		for _, name := range featureDocNames {
+			src, ok := c.Files[name]
+			if !ok {
+				continue
+			}
+			docs = append(docs, docTarget{
+				src:        src,
+				dst:        filepath.Join(repoDir, "content", "features", id, name),
+				contentRel: "content/features/" + id + "/" + name,
+			})
+		}
+		return id, docs, nil
+	case "decision":
+		id, err := store.NextID(repoDir, "D")
+		if err != nil {
+			return "", nil, err
+		}
+		d := store.Decision{ID: id, Title: c.Title, State: domain.DecisionState(c.State), CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", nil, err
+		}
+		return id, []docTarget{{
+			src:        c.Files["doc.md"],
+			dst:        filepath.Join(repoDir, "content", "decisions", id+".md"),
+			contentRel: "content/decisions/" + id + ".md",
+		}}, nil
+	case "reference":
+		id, err := store.NextID(repoDir, "R")
+		if err != nil {
+			return "", nil, err
+		}
+		r := store.Reference{ID: id, Title: c.Title, State: domain.ReferenceState(c.State), CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", nil, err
+		}
+		return id, []docTarget{{
+			src:        c.Files["doc.md"],
+			dst:        filepath.Join(repoDir, "content", "references", id+".md"),
+			contentRel: "content/references/" + id + ".md",
+		}}, nil
 	}
-	return id, nil
+	return "", nil, fmt.Errorf("unknown candidate kind %q (source %s)", c.Kind, c.Source)
 }
 
-func applyDecision(repoDir string, c Candidate, now time.Time) (string, error) {
-	id, err := store.NextID(repoDir, "D")
-	if err != nil {
-		return "", err
-	}
-	d := store.Decision{
-		ID:        id,
-		Title:     c.Title,
-		State:     domain.DecisionState(c.State),
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := store.SaveDecision(repoDir, d); err != nil {
-		return "", err
-	}
-	dst := filepath.Join(repoDir, "content", "decisions", id+".md")
-	return id, copyDoc(c.Files["doc.md"], dst, id, c.Source)
-}
-
-func applyReference(repoDir string, c Candidate, now time.Time) (string, error) {
-	id, err := store.NextID(repoDir, "R")
-	if err != nil {
-		return "", err
-	}
-	r := store.Reference{
-		ID:        id,
-		Title:     c.Title,
-		State:     domain.ReferenceState(c.State),
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := store.SaveReference(repoDir, r); err != nil {
-		return "", err
-	}
-	dst := filepath.Join(repoDir, "content", "references", id+".md")
-	return id, copyDoc(c.Files["doc.md"], dst, id, c.Source)
-}
-
-// copyDoc copies src to dst verbatim except for the cerne_id/imported_from
-// frontmatter injection.
-func copyDoc(src, dst, id, source string) error {
+// copyDoc reads src, rewrites its cross-references for the backend, and writes
+// it to dst with cerne_id/imported_from frontmatter injected.
+func copyDoc(src, dst, id, source, contentRel string, idx *LinkIndex, pb PermalinkBase) error {
 	body, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
+	body = rewriteLinks(body, source, contentRel, idx, pb)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
