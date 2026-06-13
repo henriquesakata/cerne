@@ -35,6 +35,7 @@ type LLMConfig struct {
 	KeyEnv    string `toml:"key_env"`    // env var NAME holding the key; default "CERNE_LLM_API_KEY"
 	BaseURL   string `toml:"base_url"`   // API base URL; default "https://api.anthropic.com"
 	MaxTokens int    `toml:"max_tokens"` // max output tokens; default 8000
+	ClaudeBin string `toml:"claude_bin"` // claude-cli binary path; default "claude"
 }
 
 // LLM defaults applied by withDefaults when a byo-key field is empty/zero.
@@ -44,6 +45,7 @@ const (
 	defaultLLMKeyEnv    = "CERNE_LLM_API_KEY"
 	defaultLLMBaseURL   = "https://api.anthropic.com"
 	defaultLLMMaxTokens = 8000
+	defaultLLMClaudeBin = "claude"
 )
 
 // WithDefaults returns a copy with each empty/zero byo-key field filled by its
@@ -64,6 +66,9 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 	}
 	if c.MaxTokens == 0 {
 		c.MaxTokens = defaultLLMMaxTokens
+	}
+	if c.ClaudeBin == "" {
+		c.ClaudeBin = defaultLLMClaudeBin
 	}
 	return c
 }

@@ -17,7 +17,8 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0011](cases/0011_ui-read-pages/spec.md) | UI nav shell + read pages (decisions, references, search, lint, history) | Done |
 | [0012](cases/0012_feature-authoring-ui/spec.md) | Feature authoring & management in the UI (create/edit/"remove") | Done (stacked on 0011) |
 | [0013](cases/0013_ui-open-browser/spec.md) | `cerne ui` opens the browser (default; `--no-browser`) | Done |
-| [0014](cases/0014_decision-authoring/spec.md) | Native decision authoring (`decision new`/`substituir`) + `feature supersede`→`substituir` rename | Implemented — 361 verdes; aguardando revisão |
+| [0014](cases/0014_claude-cli-provider/spec.md) | `claude-cli` provider (subscription) + `cerne spec draft` | Done |
+| [0015](cases/0015_decision-authoring/spec.md) | Native decision authoring (`decision new`/`substituir`) + `feature supersede`→`substituir` rename | Implemented — suíte verde; aguardando revisão |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

@@ -1,4 +1,4 @@
-# Resultado — Case 0014 (autoria nativa de decisions)
+# Resultado — Case 0015 (autoria nativa de decisions)
 
 **Status:** Implementado e verificado (2026-06-13) — suíte 361 testes verdes, `go vet` limpo. Aguardando revisão/merge.
 

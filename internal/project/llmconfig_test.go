@@ -48,7 +48,8 @@ func TestLoadConfigLLMByoKeyRoundTrip(t *testing.T) {
 		"model = \"claude-opus-4-8\"\n" +
 		"key_env = \"MY_KEY\"\n" +
 		"base_url = \"http://proxy.local\"\n" +
-		"max_tokens = 1234\n"
+		"max_tokens = 1234\n" +
+		"claude_bin = \"/opt/claude\"\n"
 	if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte(body), 0o644); err != nil {
 		t.Fatalf("write .cernerc: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestLoadConfigLLMByoKeyRoundTrip(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	want := LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: "claude-opus-4-8",
-		KeyEnv: "MY_KEY", BaseURL: "http://proxy.local", MaxTokens: 1234}
+		KeyEnv: "MY_KEY", BaseURL: "http://proxy.local", MaxTokens: 1234, ClaudeBin: "/opt/claude"}
 	if cfg.LLM != want {
 		t.Fatalf("LLM = %+v, want %+v", cfg.LLM, want)
 	}
@@ -68,15 +69,25 @@ func TestLoadConfigLLMByoKeyRoundTrip(t *testing.T) {
 func TestLLMConfigWithDefaults(t *testing.T) {
 	got := LLMConfig{Mode: "byo-key"}.WithDefaults()
 	want := LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: "claude-opus-4-8",
-		KeyEnv: "CERNE_LLM_API_KEY", BaseURL: "https://api.anthropic.com", MaxTokens: 8000}
+		KeyEnv: "CERNE_LLM_API_KEY", BaseURL: "https://api.anthropic.com", MaxTokens: 8000,
+		ClaudeBin: "claude"}
 	if got != want {
 		t.Fatalf("withDefaults() on empty = %+v, want %+v", got, want)
 	}
 
 	custom := LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: "claude-x",
-		KeyEnv: "MY_KEY", BaseURL: "http://proxy.local", MaxTokens: 42}
+		KeyEnv: "MY_KEY", BaseURL: "http://proxy.local", MaxTokens: 42, ClaudeBin: "/opt/claude"}
 	if got := custom.WithDefaults(); got != custom {
 		t.Fatalf("withDefaults() overrode explicit values: %+v, want %+v", got, custom)
+	}
+}
+
+// TestLLMConfigClaudeBinDefault checks claude_bin defaults to "claude" for the
+// claude-cli provider when the field is empty.
+func TestLLMConfigClaudeBinDefault(t *testing.T) {
+	got := LLMConfig{Mode: "claude-cli"}.WithDefaults()
+	if got.ClaudeBin != "claude" {
+		t.Fatalf("ClaudeBin default = %q, want \"claude\"", got.ClaudeBin)
 	}
 }
 
