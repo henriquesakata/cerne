@@ -40,11 +40,33 @@ func resolvePaths(startDir string) (projCtx, error) {
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); errors.Is(err, os.ErrNotExist) {
-		return projCtx{}, fmt.Errorf("cached backend clone missing at %s (run 'cerne init' again to recreate it)", repoDir)
+		// The cache is a derived artifact (clone + index), reconstructible from
+		// the committed .cernerc backend. Recreate it instead of dead-ending the
+		// user into 'cerne init', which refuses on an initialized project.
+		if err := recreateCache(cacheDir, repoDir, cfg.Backend); err != nil {
+			return projCtx{}, err
+		}
 	} else if err != nil {
 		return projCtx{}, err
 	}
 	return projCtx{cfg: cfg, projDir: projDir, repoDir: repoDir}, nil
+}
+
+// recreateCache re-clones the backend into repoDir when the cached clone is
+// missing. A partial repoDir is wiped first; the notice goes to stderr so it
+// never pollutes machine-readable stdout (e.g. `status --json`).
+func recreateCache(cacheDir, repoDir, backend string) error {
+	if err := os.RemoveAll(repoDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "cerne: clone de cache ausente — recriando de %s...\n", backend)
+	if err := gitback.Clone(backend, repoDir); err != nil {
+		return fmt.Errorf("recriando o clone de cache de %s falhou: %w", backend, err)
+	}
+	return nil
 }
 
 // resolveProject locates the cerne project from startDir (cwd when empty)
@@ -55,7 +77,7 @@ func resolveProject(startDir string) (projCtx, error) {
 		return projCtx{}, err
 	}
 	if err := gitback.Pull(ctx.repoDir); err != nil {
-		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and run 'cerne init' to force a fresh clone): %w", ctx.repoDir, err)
+		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and re-run the command to force a fresh clone): %w", ctx.repoDir, err)
 	}
 	return ctx, nil
 }
