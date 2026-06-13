@@ -71,8 +71,9 @@ func extractKeywords(query string) string {
 
 // Retrieve gathers context for the query: the FTS index hits (current-first;
 // terminal entities only when history is true) plus the compiled wiki pages
-// relevant to the hits — the project page and the module pages of the feature
-// hits. Every snippet carries its state.
+// relevant to the hits — the project page (when present), the decisions page
+// when any hit is a decision, the references page when any hit is a reference,
+// and the module pages of the feature hits. Every snippet carries its state.
 func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet, error) {
 	q := extractKeywords(query)
 	hits, err := index.Search(dbPath, q, limit)
@@ -82,22 +83,39 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 
 	var entitySnips []Snippet
 	modules := map[string]bool{}
+	var sawDecision, sawReference bool
 	for _, h := range hits {
 		if !history && terminalStates[h.State] {
 			continue
 		}
 		entitySnips = append(entitySnips, Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet})
-		if h.Kind == "feature" {
+		switch h.Kind {
+		case "feature":
 			if f, err := store.LoadFeature(repoDir, h.EntityID); err == nil && f.Module != "" {
 				modules[f.Module] = true
 			}
+		case "decision":
+			sawDecision = true
+		case "reference":
+			sawReference = true
 		}
 	}
 
-	// Wiki context first (high-level synthesis), then the entity hits.
+	// Wiki context first (high-level synthesis), then the entity hits. Order
+	// among wiki pages: project (when present), decisions, references, modules.
 	var snips []Snippet
 	if s, ok := readWiki(repoDir, "project"); ok {
 		snips = append(snips, s)
+	}
+	if sawDecision {
+		if s, ok := readWiki(repoDir, "decisions"); ok {
+			snips = append(snips, s)
+		}
+	}
+	if sawReference {
+		if s, ok := readWiki(repoDir, "references"); ok {
+			snips = append(snips, s)
+		}
 	}
 	mods := make([]string, 0, len(modules))
 	for m := range modules {

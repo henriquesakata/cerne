@@ -93,6 +93,94 @@ func TestRetrieveHistoryIncludesTerminalTagged(t *testing.T) {
 	}
 }
 
+// seedWithCrossCutting builds a backend with a feature, an active decision and
+// a current reference (all with searchable content), plus compiled wiki pages
+// for modules/finance, decisions and references. Returns the repo and db paths.
+func seedWithCrossCutting(t *testing.T) (repoDir, dbPath string) {
+	t.Helper()
+	repoDir = t.TempDir()
+	if err := store.InitLayout(repoDir, store.Project{Name: "Demo", Modules: []string{"finance"}}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	now := time.Unix(0, 0).UTC()
+
+	feat := store.Feature{ID: "F-0001", Title: "Boletos", Module: "finance", State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveFeature(repoDir, feat); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	dec := store.Decision{ID: "D-0001", Title: "Gateway de pagamento", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveDecision(repoDir, dec); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	ref := store.Reference{ID: "R-0001", Title: "Runbook de deploy", State: domain.ReferenceCurrent, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveReference(repoDir, ref); err != nil {
+		t.Fatalf("SaveReference: %v", err)
+	}
+
+	writeFile := func(rel, body string) {
+		p := filepath.Join(repoDir, filepath.FromSlash(rel))
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	writeFile("content/features/F-0001/spec.md", "# F-0001\n\nFeature de boletos no finance.\n")
+	writeFile("content/decisions/D-0001.md", "# D-0001\n\nAdotamos um gateway dedicado.\n")
+	writeFile("content/references/R-0001.md", "# R-0001\n\nProcedimento de implantacao.\n")
+	// Compiled wiki pages (with provenance frontmatter), as cerne compile writes.
+	writeFile("content/wiki/modules/finance.md", "---\ncerne_wiki: finance\n---\n\n# Finance\n\nSíntese do finance.\n")
+	writeFile("content/wiki/decisions.md", "---\ncerne_wiki: decisions\n---\n\n# Decisões\n\nSíntese das decisões ativas.\n")
+	writeFile("content/wiki/references.md", "---\ncerne_wiki: references\n---\n\n# Referências\n\nSíntese das referências vigentes.\n")
+
+	dbPath = filepath.Join(t.TempDir(), "index.db")
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	return repoDir, dbPath
+}
+
+func hasSnippet(snips []Snippet, source string) bool {
+	for _, s := range snips {
+		if s.Source == source {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRetrievePullsDecisionsAndReferencesPages(t *testing.T) {
+	repoDir, dbPath := seedWithCrossCutting(t)
+	// A query that hits the decision (gateway) and the reference (runbook).
+	snips, err := Retrieve(repoDir, dbPath, "gateway runbook", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if !hasSnippet(snips, "wiki:decisions") {
+		t.Fatalf("decision hit did not pull wiki:decisions: %+v", snips)
+	}
+	if !hasSnippet(snips, "wiki:references") {
+		t.Fatalf("reference hit did not pull wiki:references: %+v", snips)
+	}
+}
+
+func TestRetrieveFeatureOnlyHitsSkipCrossCuttingPages(t *testing.T) {
+	repoDir, dbPath := seedWithCrossCutting(t)
+	// A query that hits only the feature: no decision/reference pages pulled.
+	snips, err := Retrieve(repoDir, dbPath, "boletos", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if !hasSnippet(snips, "wiki:modules/finance") {
+		t.Fatalf("feature hit did not pull its module page: %+v", snips)
+	}
+	if hasSnippet(snips, "wiki:decisions") {
+		t.Fatalf("feature-only query wrongly pulled wiki:decisions: %+v", snips)
+	}
+	if hasSnippet(snips, "wiki:references") {
+		t.Fatalf("feature-only query wrongly pulled wiki:references: %+v", snips)
+	}
+}
+
 func TestExtractKeywords(t *testing.T) {
 	got := extractKeywords("Por que abandonamos o módulo de pagamentos?")
 	for _, want := range []string{"pagamentos", "abandonamos", "módulo"} {
