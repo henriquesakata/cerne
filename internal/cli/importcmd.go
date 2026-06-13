@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/importer"
 )
@@ -52,21 +54,38 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 	if err != nil {
 		return err
 	}
+	seeds, err := importer.LoadHistoricalSeed(root)
+	if err != nil {
+		return err
+	}
 	out := cmd.OutOrStdout()
-	if len(cands) == 0 {
+	if len(cands) == 0 && len(seeds) == 0 {
 		fmt.Fprintln(out, "Nada para importar.")
 		return nil
 	}
 	if !yes {
-		printImportPlan(out, cands)
+		printImportPlan(out, cands, seeds)
 		return nil
+	}
+
+	// Pre-validate the whole seed so a malformed entry aborts before any
+	// write — the historicals apply atomically alongside the scanned docs.
+	for _, s := range seeds {
+		if err := domain.ValidateHistorical(s.Name, s.SupersededBy, s.Reason, s.Aliases); err != nil {
+			return fmt.Errorf("historical.toml (%s): %w", s.Name, err)
+		}
 	}
 
 	sum, err := importer.Apply(ctx.repoDir, cands, eventActor())
 	if err != nil {
 		return err
 	}
-	total := sum.Features + sum.Decisions + sum.References
+	for _, s := range seeds {
+		if _, err := app.SaveHistoricalEntity(ctx.repoDir, s.Name, s.SupersededBy, s.Reason, s.Aliases, "", "import"); err != nil {
+			return err
+		}
+	}
+	total := sum.Features + sum.Decisions + sum.References + len(seeds)
 	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import %d documento(s)", total))
 	if err != nil {
 		return err
@@ -74,14 +93,14 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 	if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Importado: %d features, %d decisões, %d referências (snapshot %s).\n",
-		sum.Features, sum.Decisions, sum.References, shortSHA(sha))
+	fmt.Fprintf(out, "Importado: %d features, %d decisões, %d referências, %d históricas (snapshot %s).\n",
+		sum.Features, sum.Decisions, sum.References, len(seeds), shortSHA(sha))
 	return nil
 }
 
 // printImportPlan writes the dry-run report: per-kind totals with a state
 // breakdown, a sample of the candidates and the --yes hint.
-func printImportPlan(w io.Writer, cands []importer.Candidate) {
+func printImportPlan(w io.Writer, cands []importer.Candidate, seeds []importer.HistoricalSeed) {
 	counts := map[string]map[string]int{} // kind -> state -> count
 	for _, c := range cands {
 		if counts[c.Kind] == nil {
@@ -93,9 +112,13 @@ func printImportPlan(w io.Writer, cands []importer.Candidate) {
 	fmt.Fprintf(w, "  Features: %d%s\n", kindTotal(counts["feature"]), stateBreakdown(counts["feature"], planFeatureStates))
 	fmt.Fprintf(w, "  Decisões: %d%s\n", kindTotal(counts["decision"]), stateBreakdown(counts["decision"], planDecisionStates))
 	fmt.Fprintf(w, "  Referências: %d\n", kindTotal(counts["reference"]))
+	fmt.Fprintf(w, "  Históricas: %d\n", len(seeds))
 	fmt.Fprintln(w, "Amostra:")
 	for _, line := range sampleLines(cands) {
 		fmt.Fprintln(w, line)
+	}
+	for _, s := range seeds {
+		fmt.Fprintf(w, "  H? %s → historical superseded_by %s\n", s.Name, s.SupersededBy)
 	}
 	fmt.Fprintln(w, "Rode com --yes para aplicar.")
 }

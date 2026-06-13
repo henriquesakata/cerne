@@ -113,8 +113,12 @@ func Run(repoDir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
+	historicals, err := store.LoadAllHistoricals(repoDir)
+	if err != nil {
+		return nil, err
+	}
 
-	needles, err := buildNeedles(repoDir, features, decisions, references)
+	needles, err := buildNeedles(repoDir, features, decisions, references, historicals)
 	if err != nil {
 		return nil, err
 	}
@@ -174,11 +178,12 @@ func Run(repoDir string) ([]Finding, error) {
 }
 
 // buildNeedles collects every terminal entity scanned docs must not mention:
-// superseded/rejected features, superseded decisions and obsolete references.
-// Each needle also carries the original identifiers derived from the
-// imported_from frontmatter of the entity's content doc (the spec for
-// features), when present.
-func buildNeedles(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]needle, error) {
+// superseded/rejected features, superseded decisions, obsolete references and
+// historical entities. Each needle also carries the original identifiers
+// derived from the imported_from frontmatter of the entity's content doc (the
+// spec for features), when present; for historical entities the declared
+// aliases play that role.
+func buildNeedles(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, historicals []store.Historical) ([]needle, error) {
 	var needles []needle
 	for _, f := range features {
 		if f.State != domain.StateSuperseded && f.State != domain.StateRejected {
@@ -213,6 +218,22 @@ func buildNeedles(repoDir string, features []store.Feature, decisions []store.De
 		var err error
 		if n.imported, err = importedNeedles(repoDir, "content/references/"+r.ID+".md"); err != nil {
 			return nil, err
+		}
+		needles = append(needles, n)
+	}
+	for _, h := range historicals {
+		// A historical entity is born terminal; no content doc, so its
+		// aliases (validated >= MinAliasLen at creation) are the imported-style
+		// identifiers live docs must not mention.
+		n := needle{id: h.ID, title: h.Name, state: string(h.State), use: h.SupersededBy, rxID: wordRx(h.ID)}
+		if utf8.RuneCountInString(h.Name) >= minTitleNeedleLen {
+			n.rxTitle = wordRx(h.Name)
+		}
+		for _, alias := range h.Aliases {
+			if utf8.RuneCountInString(alias) < minTitleNeedleLen {
+				continue
+			}
+			n.imported = append(n.imported, importedNeedle{text: alias, rx: wordRx(alias)})
 		}
 		needles = append(needles, n)
 	}

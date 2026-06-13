@@ -58,17 +58,22 @@ func runStatus(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	historicals, err := store.LoadAllHistoricals(ctx.repoDir)
+	if err != nil {
+		return err
+	}
 	out := cmd.OutOrStdout()
 
 	if asJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Features []store.Feature `json:"features"`
-		}{features})
+			Features    []store.Feature    `json:"features"`
+			Historicals []store.Historical `json:"historicals"`
+		}{features, historicals})
 	}
 
-	if len(features) == 0 {
+	if len(features) == 0 && !(all && len(historicals) > 0) {
 		fmt.Fprintln(out, "Nenhuma feature ainda. Crie a primeira com 'cerne feature new'.")
 		return nil
 	}
@@ -111,6 +116,19 @@ func runStatus(cmd *cobra.Command, dir string, all, asJSON bool) error {
 		fmt.Fprintln(out)
 	}
 	fmt.Fprintf(out, "Total: %d feature(s)\n", total)
+
+	// Historical entities are terminal by definition; they only show under
+	// --all, in their own section after the feature totals.
+	if all && len(historicals) > 0 {
+		fmt.Fprintf(out, "\nHISTÓRICAS (%d)\n", len(historicals))
+		for _, h := range historicals {
+			line := "  " + h.ID + "  " + h.Name
+			if h.SupersededBy != "" {
+				line += " → " + h.SupersededBy
+			}
+			fmt.Fprintln(out, line)
+		}
+	}
 	return nil
 }
 

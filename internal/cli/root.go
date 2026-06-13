@@ -14,6 +14,7 @@ func Root() *cobra.Command {
 	}
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newFeatureCmd())
+	root.AddCommand(newRetireCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newPullCmd())
 	root.AddCommand(newPushCmd())
