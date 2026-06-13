@@ -1,8 +1,8 @@
 # Case 0006 — Granularidade da wiki para entidades sem módulo
 
-tags: #spec #cerne #stub #llm #wiki #compile
+tags: #spec #cerne #llm #wiki #compile
 
-**Status:** Draft (stub — precisa de rodada de brainstorming para fechar decisões)
+**Status:** Done — implementado e verificado no corpus do hub (2026-06-13); ver [result.md](result.md)
 **Tipo:** Granularidade de página da wiki (compile) + modelagem de módulo. Follow-up do case 0005.
 **Origem:** Dogfood do case 0005 (2026-06-13). Com `implemented` incluído na wiki (Fix A do 0005) e o excerpt limitado (Fix B), a página transversal `project` do hub ainda ficou com **346 fontes** (7,5k linhas) — grande demais para uma síntese boa.
 
@@ -33,28 +33,22 @@ Wiki **usável** mesmo em projetos com muitas entidades sem módulo:
 
 ---
 
-## Direção a explorar (alternativas — decidir no brainstorming)
+## Decisões tomadas (2026-06-13)
 
-1. **Split das páginas transversais** (a opção B1 que ficou de fora do 0005): `content/wiki/decisions.md` (decisões ativas) + `content/wiki/references.md` (referências vigentes), tirando-as do `project`. Resolve 110 das 346 fontes. Toca `compile.Pages()`, o frontmatter (`cerne_wiki: decisions|references`), o `ask.Retrieve` (passar a ler essas páginas quando houver hit de decisão/referência) e o lint de wiki (genérico — deve validar sem mudança).
-2. **Tratamento de features sem módulo** (o grosso — 236):
-   - (a) **Inferência de módulo no import**: derivar módulo dos cases raiz (por tag, área, ou heurística) — empurra o problema para a modelagem; muitos cases raiz são genuinamente transversais.
-   - (b) **Não sintetizar features sem módulo** num projeto grande: ficam no `CONTEXT.md` (índice determinístico) + `search`, mas sem página de wiki; fallback de "sintetizar todas no project" só quando são poucas (projeto pequeno/sem módulos).
-   - (c) **Bucket "uncategorized"** paginado por faixa de ID.
-3. **Map-reduce / pré-sumário por entidade** (a opção B2 do 0005): resumo curto por entidade antes da síntese da página — melhora qualquer página grande, ao custo de mais chamadas LLM.
+Princípio: **a wiki sintetiza agrupamentos coerentes (módulos) + as camadas transversais (decisões, referências).** Um amontoado de cases raiz desconexos não é coerente — sintetizá-lo (mesmo paginado) produz ruído. A *cobertura completa* já é papel do `CONTEXT.md` (índice determinístico) + `search`; a wiki é a camada de *síntese*.
 
----
+| Fork | Decisão | Consequência |
+|---|---|---|
+| **Páginas transversais** | **Split**: `content/wiki/decisions.md` (decisões ativas) + `content/wiki/references.md` (referências vigentes), fora do `project` | Cada uma focada e limitada (44 / 66 fontes no hub) |
+| **Features sem módulo** | Projeto **com** módulos ⇒ **não sintetizadas** na wiki (cobertas por `CONTEXT.md`/`search`); `compile` imprime **nota com a contagem** (sem drop silencioso). Projeto **sem** módulos ⇒ fallback original: `project.md` com todas as features | Toda página gerada vira coerente; o hub para de despejar 236 fontes; transparência sobre o que não entrou |
+| **`ask`** | Passa a ler `decisions.md`/`references.md` quando há hit do tipo, além de `project` + páginas de módulo | Recuperação cobre as novas páginas |
+| **Inferência de módulo** | **Fora de escopo** → case 0007 | É modelagem/heurística (case-name→módulo), não granularidade; arriscado para cravar aqui |
+| **Map-reduce** | Fora de escopo | O split já basta para tornar as transversais usáveis; map-reduce reabre a dívida do caminho síncrono |
 
-## Questões em aberto
-
-1. Split de decisões/referências: o `ask` deve sempre incluir essas páginas, ou só quando houver hit do tipo?
-2. Features sem módulo: inferir módulo (onde?), não-sintetizar, ou bucket? Qual o comportamento para projeto **sem módulos declarados** (hoje: tudo no project)?
-3. O page-set deixa de ser puramente derivado de `project.json.modules` — como manter determinismo do dirty-tracking?
-4. Vale acoplar com a dívida do 0005 (caminho síncrono/BYO-key) para validar map-reduce de ponta a ponta?
+Determinismo do dirty-tracking preservado: o page-set continua derivado de `project.json.modules` + as páginas fixas (`decisions`, `references`, e `project` só no modo sem-módulos); cada página com seu `input_hash`.
 
 ---
 
-## Próximos passos
+## Verificação (corpus real do hub)
 
-1. **Brainstorming** para escolher split + política de features sem módulo.
-2. `plan.md` (TDD): page-set (split) → política de module-less → `ask.Retrieve` → re-dogfood no hub (medir o tamanho das páginas transversais).
-3. `result.md`.
+Clone bare local do `hub-docs`, `cerne compile --force` (resultados no [result.md](result.md)): `decisions.md` e `references.md` passam a ser páginas próprias e limitadas; as 236 features sem módulo deixam de inflar o `project` (nota de contagem impressa); páginas por módulo inalteradas; `ask` lê as novas páginas.

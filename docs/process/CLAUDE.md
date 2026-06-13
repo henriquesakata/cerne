@@ -9,7 +9,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0003](cases/0003_llm-compile-ask/spec.md) | LLM layer — `compile` + `ask` (v1.5) | Implemented (usable-on-mature-project fixes → 0005) |
 | [0004](cases/0004_historical-registry-idempotency/spec.md) | Historical registry idempotency (dedup) | Done |
 | [0005](cases/0005_wiki-ask-usability/spec.md) | Wiki + `ask` usability (0003 follow-up) | Done (A/B/C; granularity → 0006) |
-| [0006](cases/0006_wiki-page-granularity/spec.md) | Wiki page granularity for module-less entities | Draft (stub) |
+| [0006](cases/0006_wiki-page-granularity/spec.md) | Wiki page granularity for module-less entities | Done (module inference → 0007) |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
