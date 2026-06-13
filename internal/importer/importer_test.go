@@ -15,7 +15,7 @@ import (
 const hubtree = "testdata/hubtree"
 
 func TestScanHubTree(t *testing.T) {
-	cands, err := Scan(hubtree)
+	cands, err := Scan(hubtree, []string{"finance", "identity"})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -27,6 +27,10 @@ func TestScanHubTree(t *testing.T) {
 		{"feature", "docs/process/cases/0001_login-google/", "implemented", "", "Login com Google", []string{"plan.md", "result.md", "spec.md"}},
 		{"feature", "docs/process/cases/0002_export-csv/", "candidate", "", "Export csv", []string{"spec.md"}},
 		{"feature", "docs/process/cases/0003_old-billing/", "superseded", "", "Cobrança antiga", []string{"spec.md"}},
+		// Root case whose folder names a single declared module → inferred at scan.
+		{"feature", "docs/process/cases/0004_finance-reporting/", "candidate", "finance", "Relatórios financeiros", []string{"spec.md"}},
+		// Root case whose folder names TWO declared modules → ambiguous, stays module-less.
+		{"feature", "docs/process/cases/0005_finance-identity-merge/", "candidate", "", "Fusão finance e identity", []string{"spec.md"}},
 		{"feature", "apps/finance/docs/process/cases/0001_extrato/", "in_development", "finance", "Extrato consolidado", []string{"plan.md", "spec.md"}},
 		{"decision", "docs/architecture/adr/adr-001-database-per-service.md", "active", "", "ADR-001 — Database per service", []string{"doc.md"}},
 		{"decision", "docs/architecture/adr/adr-002-monolith-auth.md", "superseded", "", "ADR-002 — Autenticação no monólito", []string{"doc.md"}},
@@ -62,8 +66,47 @@ func TestScanHubTree(t *testing.T) {
 	}
 }
 
+func TestScanInfersModuleForRootCases(t *testing.T) {
+	// Root cases (no path module) get a module inferred from folder/tags when a
+	// single declared module matches; apps/<app> cases keep their path module.
+	cands, err := Scan(hubtree, []string{"finance", "identity"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	bySource := map[string]Candidate{}
+	for _, c := range cands {
+		bySource[c.Source] = c
+	}
+	if got := bySource["docs/process/cases/0004_finance-reporting/"].Module; got != "finance" {
+		t.Errorf("0004_finance-reporting module = %q, want finance (single-match inference)", got)
+	}
+	if got := bySource["docs/process/cases/0005_finance-identity-merge/"].Module; got != "" {
+		t.Errorf("0005_finance-identity-merge module = %q, want empty (ambiguous, two modules)", got)
+	}
+	if got := bySource["docs/process/cases/0001_login-google/"].Module; got != "" {
+		t.Errorf("0001_login-google module = %q, want empty (no module signal)", got)
+	}
+	if got := bySource["apps/finance/docs/process/cases/0001_extrato/"].Module; got != "finance" {
+		t.Errorf("apps/finance extrato module = %q, want finance (path module preserved)", got)
+	}
+}
+
+func TestScanWithoutModulesLeavesRootCasesModuleLess(t *testing.T) {
+	// With no declared modules the inference has nothing to match: root cases
+	// stay module-less, exactly as before this feature.
+	cands, err := Scan(hubtree, nil)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, c := range cands {
+		if c.Kind == "feature" && strings.HasPrefix(c.Source, "docs/process/cases/") && c.Module != "" {
+			t.Errorf("root case %s got module %q with no declared modules, want empty", c.Source, c.Module)
+		}
+	}
+}
+
 func TestScanRootWithoutDocs(t *testing.T) {
-	cands, err := Scan(t.TempDir())
+	cands, err := Scan(t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("Scan on empty root: %v", err)
 	}
@@ -74,10 +117,10 @@ func TestScanRootWithoutDocs(t *testing.T) {
 
 func TestApplyHubTree(t *testing.T) {
 	repoDir := t.TempDir()
-	if err := store.InitLayout(repoDir, store.Project{Name: "demo"}); err != nil {
+	if err := store.InitLayout(repoDir, store.Project{Name: "demo", Modules: []string{"finance", "identity"}}); err != nil {
 		t.Fatalf("InitLayout: %v", err)
 	}
-	cands, err := Scan(hubtree)
+	cands, err := Scan(hubtree, []string{"finance", "identity"})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -86,11 +129,11 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if sum.Features != 4 || sum.Decisions != 2 || sum.References != 3 {
-		t.Fatalf("Summary counts = %+v, want 4 features, 2 decisions, 3 references", sum)
+	if sum.Features != 6 || sum.Decisions != 2 || sum.References != 3 {
+		t.Fatalf("Summary counts = %+v, want 6 features, 2 decisions, 3 references", sum)
 	}
 	wantByState := map[string]int{
-		"implemented": 1, "candidate": 1, "superseded": 2, "in_development": 1,
+		"implemented": 1, "candidate": 3, "superseded": 2, "in_development": 1,
 		"active": 1, "current": 3,
 	}
 	for state, n := range wantByState {
@@ -103,8 +146,8 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAllFeatures: %v", err)
 	}
-	if len(features) != 4 {
-		t.Fatalf("features = %d, want 4", len(features))
+	if len(features) != 6 {
+		t.Fatalf("features = %d, want 6", len(features))
 	}
 	wantFeatures := []struct {
 		id     string
@@ -115,7 +158,11 @@ func TestApplyHubTree(t *testing.T) {
 		{"F-0001", domain.StateImplemented, "", "Login com Google"},
 		{"F-0002", domain.StateCandidate, "", "Export csv"},
 		{"F-0003", domain.StateSuperseded, "", "Cobrança antiga"},
-		{"F-0004", domain.StateInDevelopment, "finance", "Extrato consolidado"},
+		// 0004_finance-reporting: single-module folder token → inferred finance.
+		{"F-0004", domain.StateCandidate, "finance", "Relatórios financeiros"},
+		// 0005_finance-identity-merge: two module tokens → ambiguous, module-less.
+		{"F-0005", domain.StateCandidate, "", "Fusão finance e identity"},
+		{"F-0006", domain.StateInDevelopment, "finance", "Extrato consolidado"},
 	}
 	for i, w := range wantFeatures {
 		f := features[i]
@@ -193,14 +240,16 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadEvents: %v", err)
 	}
-	if len(events) != 9 {
-		t.Fatalf("events = %d, want 9", len(events))
+	if len(events) != 11 {
+		t.Fatalf("events = %d, want 11", len(events))
 	}
 	wantEvents := []struct{ entityID, evType, source string }{
 		{"F-0001", "feature.imported", "docs/process/cases/0001_login-google/"},
 		{"F-0002", "feature.imported", "docs/process/cases/0002_export-csv/"},
 		{"F-0003", "feature.imported", "docs/process/cases/0003_old-billing/"},
-		{"F-0004", "feature.imported", "apps/finance/docs/process/cases/0001_extrato/"},
+		{"F-0004", "feature.imported", "docs/process/cases/0004_finance-reporting/"},
+		{"F-0005", "feature.imported", "docs/process/cases/0005_finance-identity-merge/"},
+		{"F-0006", "feature.imported", "apps/finance/docs/process/cases/0001_extrato/"},
 		{"D-0001", "decision.imported", "docs/architecture/adr/adr-001-database-per-service.md"},
 		{"D-0002", "decision.imported", "docs/architecture/adr/adr-002-monolith-auth.md"},
 		{"R-0001", "reference.imported", "docs/architecture/overview.md"},

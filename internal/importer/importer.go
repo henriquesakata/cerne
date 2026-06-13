@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/classify"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -51,12 +52,16 @@ type Summary struct {
 // cases (app alphabetical, then number), then ADRs by number, then
 // references alphabetical by path. Case folders without a spec.md are
 // skipped entirely.
-func Scan(rootDir string) ([]Candidate, error) {
+//
+// modules are the project's declared modules: root cases (no path module) get a
+// module inferred from their folder name and spec tags when exactly one matches
+// (classify.InferModule); apps/<app> cases keep their path module regardless.
+func Scan(rootDir string, modules []string) ([]Candidate, error) {
 	root, err := filepath.Abs(rootDir)
 	if err != nil {
 		return nil, err
 	}
-	cands, err := scanCases(root, "docs/process/cases", "")
+	cands, err := scanCases(root, "docs/process/cases", "", modules)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +70,7 @@ func Scan(rootDir string) ([]Candidate, error) {
 		return nil, err
 	}
 	for _, app := range apps {
-		appCands, err := scanCases(root, "apps/"+app+"/docs/process/cases", app)
+		appCands, err := scanCases(root, "apps/"+app+"/docs/process/cases", app, modules)
 		if err != nil {
 			return nil, err
 		}
@@ -84,8 +89,11 @@ func Scan(rootDir string) ([]Candidate, error) {
 }
 
 // scanCases maps every NNNN_name folder under <root>/<relCases> that has a
-// spec.md to a feature candidate with the given module.
-func scanCases(root, relCases, module string) ([]Candidate, error) {
+// spec.md to a feature candidate with the given module. When module is empty
+// (root cases) it infers one from the folder name and spec tags via
+// classify.InferModule against the declared modules; a non-empty module (an
+// apps/<app> case) is always preserved as-is.
+func scanCases(root, relCases, module string, modules []string) ([]Candidate, error) {
 	dir := filepath.Join(root, filepath.FromSlash(relCases))
 	names, err := readDirNames(dir, true)
 	if err != nil {
@@ -140,13 +148,20 @@ func scanCases(root, relCases, module string) ([]Candidate, error) {
 		if title == "" {
 			title = humanize(cd.shortName)
 		}
+		source := relCases + "/" + cd.name + "/"
+		caseModule := module
+		if caseModule == "" {
+			if inferred, ok := classify.InferModule(source, string(specBody), modules); ok {
+				caseModule = inferred
+			}
+		}
 		cands = append(cands, Candidate{
 			Kind:   "feature",
 			Title:  title,
-			Module: module,
+			Module: caseModule,
 			State:  featureState(specBody, hasPlan, hasResult),
 			Files:  files,
-			Source: relCases + "/" + cd.name + "/",
+			Source: source,
 		})
 	}
 	return cands, nil
