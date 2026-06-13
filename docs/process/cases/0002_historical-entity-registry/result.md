@@ -43,7 +43,7 @@ Os 6 milestones do [plan.md](plan.md), em TDD estrito (teste vermelho → verde 
 
 ## Pendências e dívidas (para os próximos cases)
 
-1. **Aceitação real no hub** (acima) — único passo que falta para declarar o critério nº 1 do case 0001 100% fechado.
+1. ✅ **Aceitação real no hub** — feita em 2026-06-13 (ver § Dogfood real abaixo); critério nº 1 do case 0001 fechado.
 2. **Seed sem idempotência**: rodar `import` 2× com o mesmo `historical.toml` cria `H-` duplicados (o dry-run mostra o que será criado, mas não há dedup por `name`). Candidato a follow-up: dedup por nome/alias.
 3. **`Historical.State` como `domain.FeatureState`**: abuso de tipo aceito por reuso; extrair um `domain.EntityState` se incomodar.
 4. **Deferred da spec, intactos**: `cerne lint --history-gaps` (descoberta de candidatos); config de alias em `.cernerc` (min-length/denylist) — `MinAliasLen` segue hardcoded em 5; wiki-links `[[nota]]` no lint (pendência nº 2 do case 0001).
@@ -54,8 +54,17 @@ Os 6 milestones do [plan.md](plan.md), em TDD estrito (teste vermelho → verde 
 - **Tocados**: `internal/store/{entity,layout}.go` (struct + `H-` + subdir), `internal/lint/lint.go` (`buildNeedles`+`Run`), `internal/cli/{root,importcmd,statuscmd}.go`, `internal/index/index.go` (`collectRows`).
 - Sem dependências novas.
 
+## Dogfood real no hub (2026-06-13)
+
+Rodado contra um **clone bare local** do backend `hub-docs` (308 features / 45 ADRs / 66 refs), sem tocar o GitLab.
+
+- `cerne lint` baseline: **204** achados (18 ref-to-superseded, 25 broken-link, 161 missing-gate-doc) — idêntico ao case 0001.
+- Após `cerne retire "Bills" --by Finance --alias bills --alias boletos` (e idem Investments): ref-to-superseded **18 → 89** (+71), total 275.
+- **Alvos do critério atingidos:** `R-0010` (arquitetura — diagrama com as caixas `Bills`/`Investments`) e `R-0023` ("Features — Rockt Hub"). Amostras confirmam matches genuínos, ex.: ADR `D-0001` — "Independent feature apps (Finance, Bills, Investments)". **Critério nº 1 do case 0001 fechado.**
+- Distribuição: 71 achados em 37 arquivos (26 decisões, 36 refs, 8 features). Aliases "bills"/"investments" são palavras comuns → parte pode ser falso-positivo (ex.: "boletos" como feature viva do Finance). Curadoria manual dos achados é o passo seguinte; reforça o risco de ruído de alias já previsto na spec.
+
 ## Próximos passos sugeridos
 
-1. Rodar a aceitação real no hub (pendência 1) e anexar os números aqui.
+1. Curar os 71 achados no hub (separar referências reais a módulo morto de usos vivos do termo).
 2. Avaliar dedup de seed (pendência 2) se o onboarding de legado for recorrente.
 3. Seguir para o case 0003 (LLM: `compile`/`ask`).
