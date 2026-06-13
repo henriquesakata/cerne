@@ -24,12 +24,13 @@
 - `go vet ./...` limpo; `go test ./... -count=1` = **378 passando** (21 pacotes); `tsc --noEmit` limpo.
 - **Caminho de escrita coberto end-to-end** pelos testes de handler/core: `TestCreateFeature`/`TestCreateFeatureEndpoint` (persiste + push + lock + evento `feature.created`), `TestSaveFeatureDoc` (grava + no-op idêntico), `TestFeatureDocPut` (grava spec real → o gate de `approve` passa via o endpoint de transição).
 - **Renderização das 3 telas verificada no hub** (read-only, via inspeção do DOM — sem mutação): Gestão (filtros com contagens reais: Todas 308 · Candidata 15 · …, 308 linhas, botões Aprovar/Concluir, "+ Nova feature"); Nova feature (input título + select de módulo + "Criar (candidata)"); página da feature com as 3 abas (Spec/Plano/Resultado) + botão Editar. Nav destaca "Gestão". Zero erros de console.
+- **Round-trip de escrita completo verificado no navegador**, num backend descartável (origin git local, `CERNE_CACHE_DIR` isolado): pelo `cerne ui`, criei F-0001 → escrevi a spec (Editar → Salvar) → **aprovei** (o gate passou só por causa da spec real) → criei F-0002 → **substituí** F-0001 por F-0002. O git do backend registrou um commit por ação (`create F-0001` · `update F-0001/spec.md` · `approve F-0001` · `create F-0002` · `supersede F-0001`), o `docs.lock` acompanhou o HEAD do origin a cada passo, e o estado final ficou F-0001 `superseded → F-0002`, F-0002 `candidate`. Sem tocar no hub.
 
 ---
 
 ## Notas / débitos
 
-- **Round-trip de escrita ao vivo não foi rodado contra o hub** — criar/aprovar/supersedir mutaria e daria push no `hub-docs` real. O caminho está coberto pelos testes de integração Go; o teste de escrita no navegador deve usar um backend descartável (ou o próprio usuário num projeto de teste).
+- O round-trip acima foi num **backend descartável**, não no hub real (criar/aprovar/substituir mutaria e daria push no `hub-docs`).
 - **"Encerrar"** (reject/supersede) abre na página da feature, onde o form de motivo/sucessor já existe, em vez de duplicar o form por linha na tabela — v1.
 - **Sem hard-delete** (decisão do case): remover = reject/supersede; histórico preservado (append-only).
 - Numerado **0012** (stacked sobre o 0011); reconferir na entrega como no 0011.
