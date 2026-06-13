@@ -5,7 +5,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | Case | Title | Status |
 |---|---|---|
 | [0001](cases/0001_founding-spec/spec.md) | Founding spec — product, architecture and v1 cut | Done (v0.2.0) |
-| [0002](cases/0002_historical-entity-registry/spec.md) | Historical entity registry (Bills/Investments gap) | Draft (stub) |
+| [0002](cases/0002_historical-entity-registry/spec.md) | Historical entity registry (Bills/Investments gap) | Draft (spec) |
 | [0003](cases/0003_llm-compile-ask/spec.md) | LLM layer — `compile` + `ask` (v1.5) | Draft (stub) |
 
 Conventions (inherited from the methodology cerne itself formalizes):
