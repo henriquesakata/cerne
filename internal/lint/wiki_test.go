@@ -67,6 +67,52 @@ func TestLintWikiRules(t *testing.T) {
 	}
 }
 
+// The wiki-source-unknown rule is page-name agnostic: it must flag a bogus
+// source on the cross-cutting decisions/references pages introduced by case
+// 0006 exactly as it does on the project/module pages.
+func TestLintWikiRuleCoversDecisionsReferencesPages(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo", Modules: []string{"finance"}}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	write := func(rel, body string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("content/wiki/decisions.md",
+		wiki.RenderProvenance(wiki.Provenance{Page: "decisions", Sources: []string{"D-9999"}, CompiledFrom: "x", InputHash: "y"})+
+			"\n# Decisões\n\nSíntese.\n")
+	write("content/wiki/references.md",
+		wiki.RenderProvenance(wiki.Provenance{Page: "references", Sources: []string{"R-8888"}, CompiledFrom: "x", InputHash: "y"})+
+			"\n# Referências\n\nSíntese.\n")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	unknown := byRule(findings, RuleWikiSourceUnknown)
+	var sawDecisions, sawReferences bool
+	for _, f := range unknown {
+		if f.File == "content/wiki/decisions.md" && contains(f.Detail, "D-9999") {
+			sawDecisions = true
+		}
+		if f.File == "content/wiki/references.md" && contains(f.Detail, "R-8888") {
+			sawReferences = true
+		}
+	}
+	if !sawDecisions {
+		t.Fatalf("bogus source on decisions.md not flagged: %+v", unknown)
+	}
+	if !sawReferences {
+		t.Fatalf("bogus source on references.md not flagged: %+v", unknown)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
