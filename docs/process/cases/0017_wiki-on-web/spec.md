@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #ui #ask #wiki #llm
 
-**Status:** Draft (2026-06-13)
+**Status:** Done (2026-06-13) — ver [result.md](result.md)
 **Tipo:** Endpoints de servidor (`/api/ask`, `/api/wiki`) + páginas web (Perguntar, Wiki) + threading da config de LLM no servidor.
 **Origem:** Pedido do usuário: _"gostaria que o CLI fosse a interface para o agente de IA e as páginas web a interface para humanos. As perguntas pra Wiki, seriam possível ver pela web?"_ — formalizar a divisão **CLI = agente / web = humano** e trazer a camada de IA (perguntar + ler a wiki) para o humano no navegador.
 
