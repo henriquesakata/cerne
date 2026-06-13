@@ -11,6 +11,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0005](cases/0005_wiki-ask-usability/spec.md) | Wiki + `ask` usability (0003 follow-up) | Done (A/B/C; granularity → 0006) |
 | [0006](cases/0006_wiki-page-granularity/spec.md) | Wiki page granularity for module-less entities | Done (module inference → 0007) |
 | [0007](cases/0007_module-inference/spec.md) | Module inference/assignment (`classify` + import) | Done |
+| [0008](cases/0008_cache-auto-recreate/spec.md) | Cache clone auto-recreate (no init dead-end) | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
