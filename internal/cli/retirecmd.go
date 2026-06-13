@@ -23,7 +23,7 @@ func newRetireCmd() *cobra.Command {
 		Use:   "retire <name>",
 		Short: "Register a historical entity superseded before it had its own case",
 		Long: "Registra uma entidade que existiu e foi absorvida/descontinuada antes " +
-			"de ter spec/case próprio (ex.: um módulo legado). Nasce supersedida; os " +
+			"de ter spec/case próprio (ex.: um módulo legado). Nasce substituída; os " +
 			"aliases declarados passam a ser flagrados pelo lint em documentos vigentes.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -31,7 +31,7 @@ func newRetireCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&by, "by", "", "sucessor que absorveu a entidade (ID cerne ou rótulo, ex.: Finance)")
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da supersedência/absorção")
+	cmd.Flags().StringVar(&reason, "reason", "", "motivo da substituição/absorção")
 	cmd.Flags().StringArrayVar(&aliases, "alias", nil, fmt.Sprintf("identificador original a flagrar (repetível, mínimo %d caracteres)", domain.MinAliasLen))
 	cmd.Flags().StringVar(&importedFrom, "imported-from", "", "proveniência opcional (caminho/id na árvore legada)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -62,9 +62,9 @@ func runRetire(cmd *cobra.Command, dir, name, by, reason string, aliases []strin
 		return err
 	}
 	if created {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s registrada como histórica (supersedida por %s).\n", h.ID, by)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s registrada como histórica (substituída por %s).\n", h.ID, by)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s atualizada (já existia como histórica, supersedida por %s).\n", h.ID, by)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s atualizada (já existia como histórica, substituída por %s).\n", h.ID, by)
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ var statusDefaultGroups = []statusGroup{
 }
 
 var statusTerminalGroups = []statusGroup{
-	{domain.StateSuperseded, "SUPERSEDIDAS"},
+	{domain.StateSuperseded, "SUBSTITUÍDAS"},
 	{domain.StateRejected, "REJEITADAS"},
 }
 

@@ -45,7 +45,7 @@ var materializedStates = map[domain.FeatureState]bool{
 const contextTemplate = `# {{.ProjectName}} — estado atual
 
 > Gerado por cerne. Não edite: rode 'cerne pull' para atualizar.
-> Histórico e documentos supersedidos: 'cerne search'.
+> Histórico e documentos substituídos: 'cerne search'.
 
 ## Features
 

@@ -129,8 +129,8 @@ func TestApplyHubTree(t *testing.T) {
 			t.Errorf("features[%d].CreatedAt location = %v, want UTC", i, f.CreatedAt.Location())
 		}
 	}
-	if features[2].Reason != "importado como supersedido" || features[2].SupersededBy != "" {
-		t.Errorf("superseded feature = %+v, want Reason 'importado como supersedido' and empty SupersededBy", features[2])
+	if features[2].Reason != "importado como substituído" || features[2].SupersededBy != "" {
+		t.Errorf("superseded feature = %+v, want Reason 'importado como substituído' and empty SupersededBy", features[2])
 	}
 	if features[0].Reason != "" {
 		t.Errorf("implemented feature Reason = %q, want empty", features[0].Reason)

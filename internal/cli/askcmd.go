@@ -22,7 +22,7 @@ func newAskCmd() *cobra.Command {
 		Short: "Q&A over current state, diving into history (LLM layer)",
 		Long: "Monta o contexto (wiki + índice FTS), vigente-primeiro, cada fonte marcada por " +
 			"estado. No modo delegação (default) imprime o prompt montado para o agente hospedeiro " +
-			"responder inline. Use --history para incluir entidades supersedidas/obsoletas (marcadas).",
+			"responder inline. Use --history para incluir entidades substituídas/obsoletas (marcadas).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAsk(cmd, dir, args[0], history)
