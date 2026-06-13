@@ -1,10 +1,10 @@
-# Case 0009 — UI: navegação + páginas de leitura (decisions, references, busca, lint, history)
+# Case 0011 — UI: navegação + páginas de leitura (decisions, references, busca, lint, history)
 
 tags: #spec #cerne #ui #server
 
 **Status:** Spec (rascunho — pré-plan.md, 2026-06-13)
 **Tipo:** App shell de navegação (frontend) + 3 endpoints de leitura novos no servidor (search, lint, history) + 2 páginas que reaproveitam dados já existentes (decisions, references).
-**Origem:** Observação do usuário ao rodar `cerne ui`: só o kanban e a página da feature existem. O backend já guarda decisions, references, busca full-text sobre todo o histórico, lint determinístico e o log de eventos — tudo alcançável pela CLI, nada pela UI. Este case torna o resto do backend **visível** na UI. (Renumerado de 0008 → 0009: o 0008 foi ocupado por `cache-auto-recreate` em paralelo.)
+**Origem:** Observação do usuário ao rodar `cerne ui`: só o kanban e a página da feature existem. O backend já guarda decisions, references, busca full-text sobre todo o histórico, lint determinístico e o log de eventos — tudo alcançável pela CLI, nada pela UI. Este case torna o resto do backend **visível** na UI. (Renumerado para 0011 na entrega: 0008–0010 foram ocupados por cases de worktrees paralelos — `cache-auto-recreate`, `byo-key-provider`, `release-pipeline`.)
 
 ---
 
@@ -14,7 +14,7 @@ A UI hoje é kanban + página da feature, e só. [`ui/src/App.tsx`](../../../../
 
 1. **decisions e references já viajam no `GET /api/state`** ([`internal/server/server.go`](../../../../internal/server/server.go), `stateResponse`), mas o frontend descarta os dois campos — a informação chega no navegador e é jogada fora.
 2. **Busca, lint e histórico** existem como comandos (`cerne search`, `cerne lint`, e o event log via `store.ReadEvents`) mas não têm endpoint HTTP nem página.
-3. **Sem um shell de navegação, nenhuma página nova é alcançável** — esse é o pré-requisito compartilhado de tudo aqui (e do [case 0010](../0010_feature-authoring-ui/spec.md)).
+3. **Sem um shell de navegação, nenhuma página nova é alcançável** — esse é o pré-requisito compartilhado de tudo aqui (e do [case 0012](../0012_feature-authoring-ui/spec.md)).
 
 O efeito prático: quem usa a UI acredita que o cerne "só tem kanban", quando na verdade o núcleo determinístico inteiro está pronto e invisível.
 
@@ -82,7 +82,7 @@ Rodar `cerne ui` contra o clone do hub e, no navegador: (a) decisions/references
 
 ## Fora de escopo
 
-- **Transicionar/editar** decisions e references pela UI (aqui são read-only; o ciclo delas segue na CLI). Autoria de features é o [case 0010](../0010_feature-authoring-ui/spec.md).
+- **Transicionar/editar** decisions e references pela UI (aqui são read-only; o ciclo delas segue na CLI). Autoria de features é o [case 0012](../0012_feature-authoring-ui/spec.md).
 - Auto-refresh do índice de busca a cada mutação (mantém `cerne pull` como ponto de sync).
 - Filtro de histórico por entidade / visão de diff.
 - Páginas de wiki/`compile`/`ask` (camada LLM — território do [case 0003](../0003_llm-compile-ask/spec.md)).

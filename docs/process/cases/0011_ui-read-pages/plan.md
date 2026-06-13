@@ -1,4 +1,4 @@
-# Plano — Case 0009 (UI: nav shell + páginas de leitura)
+# Plano — Case 0011 (UI: nav shell + páginas de leitura)
 
 **Goal:** Expor decisions, references, busca full-text, lint e o event log na UI, atrás de um shell de navegação, reusando o núcleo determinístico existente. Backend primeiro (testável em Go, TDD), depois frontend (sem framework de teste JS no projeto — verificado por build + checagem manual no hub, como o kanban/feature atuais).
 

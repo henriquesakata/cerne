@@ -161,7 +161,7 @@ export async function postTransition(
   return { ok: true, data: (await r.json()) as TransitionResult }
 }
 
-// ---- páginas de leitura (case 0009) ----
+// ---- páginas de leitura (case 0011) ----
 
 export type DecisionDetail = { decision: Decision; doc: string }
 export type ReferenceDetail = { reference: Reference; doc: string }

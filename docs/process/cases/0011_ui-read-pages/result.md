@@ -1,7 +1,7 @@
-# Resultado — Case 0009 (UI: nav shell + páginas de leitura)
+# Resultado — Case 0011 (UI: nav shell + páginas de leitura)
 
 **Status:** Done — implementado e verificado no corpus real do hub (2026-06-13).
-**Commits:** 6 de implementação (4 de servidor + 1 de frontend + 1 de rebuild do dist), sobre o `docs(cerne): open cases 0009/0010`.
+**Commits:** 6 de implementação (4 de servidor + 1 de frontend + 1 de rebuild do dist), sobre o commit de abertura dos cases.
 
 ---
 
@@ -39,8 +39,8 @@ Todos os 7 critérios de aceite da [spec](spec.md) atendidos.
 - **Sem testes unitários de JS** no projeto: o frontend foi verificado por `tsc` + inspeção do DOM ao vivo (o screenshot do preview MCP travou — limitação do mecanismo de captura no ambiente, não do código; o `eval` respondia na hora com o DOM correto).
 - Índice de busca **não** auto-atualiza a cada mutação — `cerne pull` segue o ponto de sync (decisão da spec).
 - Decisões/referências são **read-only** na UI; o ciclo delas continua na CLI.
-- Numerado **0009** (a spec nasceu como 0008, mas `0008_cache-auto-recreate` ocupou o número em paralelo; reconciliado contra `origin/main` antes de implementar).
+- Numerado **0011** na entrega: 0008–0010 foram ocupados por cases de worktrees paralelos (`cache-auto-recreate`, `byo-key-provider`, `release-pipeline`); rebasado em `origin/main` e renumerado no push.
 
 ## Próximo
 
-[Case 0010](../0010_feature-authoring-ui/spec.md) — autoria e gestão de features na UI (criar/editar spec/encerrar), que depende deste shell de navegação.
+[Case 0012](../0012_feature-authoring-ui/spec.md) — autoria e gestão de features na UI (criar/editar spec/encerrar), que depende deste shell de navegação.

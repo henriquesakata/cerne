@@ -1,10 +1,10 @@
-# Case 0010 — Gestão e autoria de features na UI
+# Case 0012 — Gestão e autoria de features na UI
 
 tags: #spec #cerne #ui #server #app
 
 **Status:** Spec (rascunho — pré-plan.md, 2026-06-13)
 **Tipo:** Autoria (criar feature + editar spec/plan/result na UI) + superfície de gestão por estado, com 2 operações de escrita novas no servidor, reusando o core compartilhado em `internal/app`.
-**Origem:** Pedido do usuário: uma página para **cadastrar/editar/remover** features, com controle maior sobre as criadas/aprovadas/pendentes/rejeitadas — "a feature que gera a spec". **Depende do [case 0009](../0009_ui-read-pages/spec.md)** (shell de navegação): a página de gestão é uma entrada da nav.
+**Origem:** Pedido do usuário: uma página para **cadastrar/editar/remover** features, com controle maior sobre as criadas/aprovadas/pendentes/rejeitadas — "a feature que gera a spec". **Depende do [case 0011](../0011_ui-read-pages/spec.md)** (shell de navegação): a página de gestão é uma entrada da nav.
 
 ---
 
@@ -78,7 +78,7 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error
 
 - **Nova feature**: form (entrada na nav/kanban "Nova feature") → `POST` → redireciona a `#/f/<novo-id>`.
 - **Página da feature** ([`FeaturePage.tsx`](../../../../ui/src/FeaturePage.tsx)): abas de doc viram editáveis (toggle editar/salvar, preview); sinaliza stub.
-- **Gestão**: nova página/tabela (rota na nav do [case 0009](../0009_ui-read-pages/spec.md)) com filtro por estado e ações inline reusando `postTransition`; "Encerrar" abre o form de reject/supersede.
+- **Gestão**: nova página/tabela (rota na nav do [case 0011](../0011_ui-read-pages/spec.md)) com filtro por estado e ações inline reusando `postTransition`; "Encerrar" abre o form de reject/supersede.
 - **`api.ts`**: `createFeature`, `saveFeatureDoc` + tipos.
 
 ---
@@ -92,7 +92,7 @@ Contra um clone de teste/hub: criar uma feature na UI → escrever a spec → ap
 ## Fora de escopo
 
 - **Hard delete / `git rm`** de entidades (rejeitado por design — append-only).
-- Editar docs de decisions/references (o [case 0009](../0009_ui-read-pages/spec.md) as deixa read-only; autoria delas é case futuro).
+- Editar docs de decisions/references (o [case 0011](../0011_ui-read-pages/spec.md) as deixa read-only; autoria delas é case futuro).
 - Editor rich-text/WYSIWYG, edição colaborativa, resolução de conflito além de last-writer-wins.
 - Geração da spec por LLM ("escreva a spec pra mim") — camada LLM do [case 0003](../0003_llm-compile-ask/spec.md).
 - Reordenação/priorização do backlog.
