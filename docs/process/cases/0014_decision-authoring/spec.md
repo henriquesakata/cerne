@@ -1,4 +1,4 @@
-# Case 0011 — Autoria nativa de decisions (ADRs)
+# Case 0014 — Autoria nativa de decisions (ADRs)
 
 tags: #spec #cerne #decision #adr #cli
 
@@ -23,7 +23,7 @@ A decision é entidade *first-class* em **tudo menos na autoria**:
 
 Duas consequências:
 
-1. **Autoria** — criar um ADR novo hoje depende de `cerne import`, que **não é incremental**: `importer.Apply` chama `store.NextID(repoDir, "D")` por candidato, sem deduplicar por `imported_from`. Re-rodar `cerne import --yes` após adicionar um ADR re-importaria os 45 já existentes como duplicatas (D-0046…). Logo, o modelo "ADR novo é *file-authored* → re-importa" **não funciona como caminho contínuo** — só serviu para a carga inicial.
+1. **Autoria** — não existe comando para criar uma decision; ADRs só entram via `cerne import`. O import já é **idempotente** (pula docs cujo `imported_from` já existe — `importer.Unimported`), então *file-authored → re-import* funciona para o legado; mas isso não é **autoria**: o `D-NNNN` e o estado saem da heurística do import, não da intenção do autor — e o conteúdo do ADR novo passa a nascer no backend do cerne (decisão de concentrar a documentação ali, ver Decisões), não como arquivo solto em `docs/architecture/adr/`.
 
 2. **Transição** — **não há nenhum caminho para substituir uma decision**. `domain.TransitionDecision` existe mas só é chamada por testes (código morto em produção). O único jeito de uma decision virar `superseded` hoje é o regex do import adivinhando a palavra no corpo (`reDecisionSuperseded`) ou edição manual do JSON — exatamente a "transição por edição de texto" que a spec fundadora proíbe: *"Transições de estado (aprovar, rejeitar, substituir) são operações validadas da ferramenta — nunca edição de texto"* (0001). O evento `adr.superseded` é nomeado na spec 0001 e **nenhum comando o emite**.
 
@@ -31,7 +31,7 @@ Duas consequências:
 
 ## Objetivo e critérios de sucesso
 
-Dar à decision a mesma superfície de autoria e transição que a feature já tem, ligando o FSM e a persistência que já existem; manter `import` como onboarding único dos ADRs legados.
+Dar à decision a mesma superfície de autoria e transição que a feature já tem, ligando o FSM e a persistência que já existem; o `import` (já idempotente) segue carregando os ADRs legados.
 
 **Critério de aceite:**
 1. `cerne decision new "<título>"` cunha D-NNNN (`NextID("D")`), salva a entidade em `active`, grava stub em `content/decisions/D-NNNN.md` com frontmatter `cerne_id`, emite `decision.created`, e faz commit+push+lock. Saída pt-BR.
@@ -47,13 +47,13 @@ Dar à decision a mesma superfície de autoria e transição que a feature já t
 
 | Fork | Decisão | Razão |
 |---|---|---|
-| **Autoria do ADR novo** | **cerne-native** (`decision new` cunha entidade + stub) — não "*file-authored* + import incremental" | Simetria com `feature new`: o autor não inventa o ID nem deixa o estado para um regex adivinhar. Import não-idempotente inviabiliza o caminho *file-authored* contínuo. A fonte da verdade do conteúdo do ADR passa a morar no backend (`content/decisions/`), materializada *read-only* no `.docs/` — como já é com specs de feature. |
+| **Autoria do ADR novo** | **cerne-native** (`decision new` cunha entidade + stub) | Simetria com `feature new`: o autor controla o ID e o estado explícito, em vez de deixá-los para a heurística do import. A fonte da verdade do conteúdo do ADR passa a morar no backend (`content/decisions/`), materializada *read-only* no `.docs/` — como já é com specs de feature. (O `import` já é idempotente, então *file-authored* seria tecnicamente possível; ainda assim a autoria nativa é o modelo escolhido — concentra a documentação no backend e dá par à transição validada abaixo.) |
 | **Verbo de transição** | **`substituir`** (pt-BR), renomeando junto `feature supersede` → `feature substituir` | `supersede` é estrangeirismo (memória `ptbr-formal-correctness`); é texto que o usuário digita/lê. Renomear o feature junto evita o mesmo conceito com duas palavras. v0.2, só o hub dogfoodando → *breaking change* trivial. Escopo escolhido pelo usuário: decision + feature (não todos os verbos). |
 | **Camada de dado** | `superseded` (estado JSON), `superseded_by`, `domain.ActionSupersede`, evento `*.superseded`, `ref-to-superseded` **continuam inglês** | Regra *data-vs-UI* do CLAUDE.md: estados de ciclo são strings inglesas no dado; só prosa humana é pt-BR. |
 | **Evento** | `decision.created` (criação) + `decision.superseded` (transição) | Realiza o `adr.superseded` previsto na 0001 sob o prefixo `decision.` já usado pelo importer (`decision.imported`). |
 | **Orquestração** | Núcleo em `internal/app` (`CreateDecision` + `TransitionDecision`, par de `TransitionFeature`); CLI fino por cima | "CLI + server chamam o mesmo core" (CLAUDE.md). Reusa `CommitAndSnapshot` (commit+push+lock), `EventActor()` e `ValidateTransitionFlags`. |
 | **Estado inicial** | Decision nasce `active` (sem `draft`/gate de conteúdo) | FSM da 0001 é `active/superseded` apenas. Consequência: um `decision new` recém-criado materializa o stub até o autor preenchê-lo (auto-corrige no próximo `pull`). Gate de conteúdo p/ decision = follow-up se incomodar. |
-| **`import`** | **Inalterado** — segue onboarding único | Tornar o import incremental (dedup por `imported_from`) é outro problema, fora de escopo. ADR novo agora nasce nativo, então o import só carrega o legado. |
+| **`import`** | **Inalterado** | Já é idempotente (dedup por `imported_from`); segue carregando o legado. ADR novo nasce nativo, então a autoria não depende dele. |
 
 ---
 
@@ -113,7 +113,7 @@ Em `internal/cli/transitioncmd.go`, `transitionSpecs`: `{"substituir", "Substitu
 
 ## Fora de escopo
 
-- **Import incremental** (dedup por `imported_from` para re-importar só o ADR novo) — `import` segue onboarding único.
+- **Import incremental** (dedup por `imported_from`) — **já entregue fora deste caso** (`importer.Unimported`); deixou de ser follow-up.
 - **Gate de conteúdo / estado `draft`** para decision (hoje nasce `active`; stub materializa até o autor preencher).
 - **Migração dos 45 ADRs legados** de `docs/architecture/adr/*.md` para autoria nativa — seguem como estão; só ADRs novos nascem nativos.
 - **UI** (criar/substituir decision pela UI) — o núcleo (`internal/app`) fica pronto; endpoint + tela = follow-up.

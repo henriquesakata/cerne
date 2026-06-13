@@ -1,4 +1,4 @@
-# Plano — Case 0011 (autoria nativa de decisions)
+# Plano — Case 0014 (autoria nativa de decisions)
 
 **Goal:** `cerne decision new`/`decision substituir` ligando o FSM/persistência de decision já existentes; renomear `feature supersede` → `feature substituir`. Dado (`superseded`, `superseded_by`, `ActionSupersede`, `*.superseded`, `ref-to-superseded`) fica em inglês.
 
@@ -28,7 +28,7 @@ Tudo em TDD: teste vermelho → implementação mínima → verde. As funções 
 
 ## Verificação final
 
-- `go vet ./...` + `go test ./... -count=1` verdes (suíte sobe de 235; lint/materialize de decision já cobertos no pacote, reexercitados no e2e).
+- `go vet ./...` + `go test ./... -count=1` verdes (lint/materialize de decision já cobertos no pacote, reexercitados no e2e).
 - `cerne decision new "X"` → D-NNNN + stub; `cerne decision substituir` move para `superseded` e some do `.docs/`.
 - `cerne feature substituir` responde no nome novo; `cerne feature supersede` deixa de existir.
-- Atualizar `docs/process/CLAUDE.md` (status do 0011) e escrever `result.md` antes do merge.
+- Atualizar `docs/process/CLAUDE.md` (status do 0014) e escrever `result.md` antes do merge.

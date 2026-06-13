@@ -160,3 +160,108 @@ export async function postTransition(
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true, data: (await r.json()) as TransitionResult }
 }
+
+// ---- páginas de leitura (case 0011) ----
+
+export type DecisionDetail = { decision: Decision; doc: string }
+export type ReferenceDetail = { reference: Reference; doc: string }
+
+export async function fetchDecision(id: string): Promise<DecisionDetail> {
+  const r = await fetch(`/api/decisions/${encodeURIComponent(id)}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as DecisionDetail
+}
+
+export async function fetchReference(id: string): Promise<ReferenceDetail> {
+  const r = await fetch(`/api/references/${encodeURIComponent(id)}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as ReferenceDetail
+}
+
+// SearchHit espelha o DTO snake_case de internal/server (projeção de index.Result).
+export type SearchHit = {
+  entity_id: string
+  kind: string // feature | decision | reference
+  doc: string // spec | plan | result | doc | ""
+  state: string
+  title: string
+  snippet: string
+  superseded_by?: string
+}
+
+export async function search(q: string, limit = 20): Promise<SearchHit[]> {
+  const r = await fetch(
+    `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+  )
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { results: SearchHit[] }).results
+}
+
+export type LintFinding = {
+  rule: string
+  entity?: string
+  file?: string
+  detail: string
+}
+
+export async function fetchLint(): Promise<LintFinding[]> {
+  const r = await fetch('/api/lint')
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { findings: LintFinding[] }).findings
+}
+
+// LifecycleEvent espelha domain.Event (nome evita o tipo global Event do DOM).
+export type LifecycleEvent = {
+  id: string
+  at: string
+  entity_id: string
+  type: string
+  payload?: Record<string, string>
+  actor: string
+}
+
+export async function fetchEvents(): Promise<LifecycleEvent[]> {
+  const r = await fetch('/api/events')
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { events: LifecycleEvent[] }).events
+}
+
+// ---- autoria e gestão de features (case 0012) ----
+
+export type CreateOutcome =
+  | { ok: true; feature: Feature }
+  | { ok: false; error: string }
+
+// createFeature cria uma feature candidata (POST /api/features); o servidor
+// faz commit+push e atualiza o snapshot do docs.lock.
+export async function createFeature(
+  title: string,
+  module: string,
+): Promise<CreateOutcome> {
+  const r = await fetch('/api/features', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, module }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true, feature: ((await r.json()) as { feature: Feature }).feature }
+}
+
+// saveFeatureDoc grava um doc de ciclo de vida (spec|plan|result) como
+// markdown bruto; o servidor faz commit+push e atualiza o lock.
+export async function saveFeatureDoc(
+  id: string,
+  doc: string,
+  content: string,
+): Promise<SaveOutcome> {
+  const r = await fetch(
+    `/api/features/${encodeURIComponent(id)}/docs/${encodeURIComponent(doc)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/markdown' },
+      body: content,
+    },
+  )
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}

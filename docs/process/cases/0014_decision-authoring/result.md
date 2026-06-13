@@ -1,4 +1,4 @@
-# Resultado — Case 0011 (autoria nativa de decisions)
+# Resultado — Case 0014 (autoria nativa de decisions)
 
 **Status:** Implementado e verificado (2026-06-13) — suíte 361 testes verdes, `go vet` limpo. Aguardando revisão/merge.
 
@@ -16,7 +16,7 @@ A decision ganhou a mesma superfície de autoria e transição que a feature já
 
 ## Decisões (ver spec)
 
-- **cerne-native, não file-authored**: ADR novo nasce no backend (`content/decisions/`), materializado read-only no `.docs/`, como já é com specs. `import` segue onboarding único (não-idempotente) dos 45 ADRs legados.
+- **cerne-native, não file-authored**: ADR novo nasce no backend (`content/decisions/`), materializado read-only no `.docs/`, como já é com specs — concentrando a documentação no cerne. O `import` (já idempotente) segue carregando os 45 ADRs legados; a autoria nativa não depende dele.
 - **Dado em inglês**: o valor de estado `superseded`, o campo `superseded_by`, o identificador `domain.ActionSupersede` (= `"supersede"`), os eventos `*.superseded`, a regra de lint `ref-to-superseded` e o **token de ação no wire da UI** (`action: 'supersede'`, com `label: 'Substituir'`) ficaram intactos. Só o verbo do CLI e a prosa pt-BR mudaram. Ver memória `ptbr-formal-correctness`.
 - **Decision nasce `active`** (sem `draft`/gate): o stub materializa até o autor preencher (auto-corrige no `pull`).
 
@@ -40,7 +40,6 @@ A decision ganhou a mesma superfície de autoria e transição que a feature já
 
 ## Follow-ups (fora de escopo, ver spec)
 
-- **Import incremental** (dedup por `imported_from`) — re-importar só o ADR novo; hoje `import` é onboarding único.
 - **Gate de conteúdo / estado `draft`** para decision (hoje nasce `active`; stub materializa transitoriamente).
 - **Migração dos 45 ADRs legados** para autoria nativa — seguem em `docs/architecture/adr/`.
 - **UI**: criar/substituir decision pela UI (o núcleo `internal/app` já está pronto).
