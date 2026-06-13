@@ -54,13 +54,17 @@ func runRetire(cmd *cobra.Command, dir, name, by, reason string, aliases []strin
 	if err != nil {
 		return err
 	}
-	h, err := app.RecordHistorical(ctx.repoDir, ctx.projDir, name, by, reason, aliases, importedFrom)
+	h, created, err := app.RecordHistorical(ctx.repoDir, ctx.projDir, name, by, reason, aliases, importedFrom)
 	if err != nil {
 		if errors.Is(err, domain.ErrAliasTooShort) {
 			return fmt.Errorf("alias muito curto: mínimo %d caracteres", domain.MinAliasLen)
 		}
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s registrada como histórica (supersedida por %s).\n", h.ID, by)
+	if created {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s registrada como histórica (supersedida por %s).\n", h.ID, by)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s atualizada (já existia como histórica, supersedida por %s).\n", h.ID, by)
+	}
 	return nil
 }

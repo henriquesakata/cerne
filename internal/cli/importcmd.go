@@ -81,7 +81,7 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 		return err
 	}
 	for _, s := range seeds {
-		if _, err := app.SaveHistoricalEntity(ctx.repoDir, s.Name, s.SupersededBy, s.Reason, s.Aliases, "", "import"); err != nil {
+		if _, _, err := app.SaveHistoricalEntity(ctx.repoDir, s.Name, s.SupersededBy, s.Reason, s.Aliases, "", "import"); err != nil {
 			return err
 		}
 	}
