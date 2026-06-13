@@ -54,11 +54,35 @@ func sourceIDs(p Page) []string {
 	return ids
 }
 
-func TestPagesMultiModule(t *testing.T) {
+func pageRels(pages []Page) []string {
+	rels := make([]string, 0, len(pages))
+	for _, p := range pages {
+		rels = append(rels, p.Rel)
+	}
+	return rels
+}
+
+// sourceContains reports whether any page lists the entity as a source.
+func sourceContains(pages []Page, id string) bool {
+	for _, p := range pages {
+		for _, s := range p.Sources {
+			if s.ID == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// (a) Project WITH modules + active decisions + current references + a
+// module-less feature: the page set is [modules..., decisions, references],
+// there is NO project page, and the module-less feature appears in no page.
+func TestPagesModuledSplitsDecisionsReferences(t *testing.T) {
 	dir := seedBackend(t, "finance", "core")
 	addFeature(t, dir, "F-0001", "finance", domain.StateApproved, "# F-0001\n\nspec.\n")
 	addFeature(t, dir, "F-0002", "core", domain.StateCandidate, "# F-0002\n\nspec.\n")
 	addFeature(t, dir, "F-0003", "finance", domain.StateSuperseded, "# F-0003\n\nold.\n") // not live
+	addFeature(t, dir, "F-0099", "", domain.StateImplemented, "# F-0099\n\nsem módulo.\n")  // module-less
 	if err := store.SaveDecision(dir, store.Decision{ID: "D-0001", Title: "ADR um", State: domain.DecisionActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
 	}
@@ -70,22 +94,58 @@ func TestPagesMultiModule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pages: %v", err)
 	}
-	fin, ok := pageByName(pages, "finance")
-	if !ok || len(fin.Sources) != 1 || fin.Sources[0].ID != "F-0001" {
+	if got, want := pageRels(pages), []string{"modules/finance", "modules/core", "decisions", "references"}; !equalStrings(got, want) {
+		t.Fatalf("page rels = %v, want %v", got, want)
+	}
+	if _, ok := pageByName(pages, "project"); ok {
+		t.Fatalf("moduled project must not emit a project page: %v", pageRels(pages))
+	}
+	fin, _ := pageByName(pages, "finance")
+	if len(fin.Sources) != 1 || fin.Sources[0].ID != "F-0001" {
 		t.Fatalf("finance page = %+v", fin)
 	}
-	core, ok := pageByName(pages, "core")
-	if !ok || len(core.Sources) != 1 || core.Sources[0].ID != "F-0002" {
-		t.Fatalf("core page = %+v", core)
+	dec, ok := pageByName(pages, "decisions")
+	if !ok || len(sourceIDs(dec)) != 1 || sourceIDs(dec)[0] != "D-0001" {
+		t.Fatalf("decisions page = %+v, want [D-0001]", dec)
 	}
-	proj, ok := pageByName(pages, "project")
-	if !ok {
-		t.Fatalf("missing project page")
+	ref, ok := pageByName(pages, "references")
+	if !ok || len(sourceIDs(ref)) != 1 || sourceIDs(ref)[0] != "R-0001" {
+		t.Fatalf("references page = %+v, want [R-0001]", ref)
 	}
-	got := sourceIDs(proj)
-	if len(got) != 2 || got[0] != "D-0001" || got[1] != "R-0001" {
-		t.Fatalf("project sources = %v, want [D-0001 R-0001]", got)
+	if sourceContains(pages, "F-0099") {
+		t.Fatalf("module-less F-0099 must appear in no wiki page: %v", pageRels(pages))
 	}
+}
+
+// (c) A moduled project with zero active decisions yields no decisions page.
+func TestPagesModuledNoActiveDecisionsNoDecisionsPage(t *testing.T) {
+	dir := seedBackend(t, "finance")
+	addFeature(t, dir, "F-0001", "finance", domain.StateApproved, "# F-0001\n\nspec.\n")
+	if err := store.SaveReference(dir, store.Reference{ID: "R-0001", Title: "Ref um", State: domain.ReferenceCurrent, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveReference: %v", err)
+	}
+	pages, err := Pages(dir)
+	if err != nil {
+		t.Fatalf("Pages: %v", err)
+	}
+	if _, ok := pageByName(pages, "decisions"); ok {
+		t.Fatalf("no active decisions, but a decisions page was emitted: %v", pageRels(pages))
+	}
+	if got, want := pageRels(pages), []string{"modules/finance", "references"}; !equalStrings(got, want) {
+		t.Fatalf("page rels = %v, want %v", got, want)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestPagesIncludesImplemented(t *testing.T) {
@@ -102,21 +162,50 @@ func TestPagesIncludesImplemented(t *testing.T) {
 	}
 }
 
+// (b) Project with NO modules: page rels are [decisions, references, project]
+// (decisions/references only when present), and the project page holds every
+// live/implemented feature (the small-project fallback).
 func TestPagesNoModules(t *testing.T) {
 	dir := seedBackend(t)
 	addFeature(t, dir, "F-0001", "", domain.StateCandidate, "# F-0001\n\nspec.\n")
+	addFeature(t, dir, "F-0002", "", domain.StateImplemented, "# F-0002\n\nentregue.\n")
 	if err := store.SaveDecision(dir, store.Decision{ID: "D-0001", Title: "ADR", State: domain.DecisionActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
+	}
+	if err := store.SaveReference(dir, store.Reference{ID: "R-0001", Title: "Ref", State: domain.ReferenceCurrent, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveReference: %v", err)
 	}
 	pages, err := Pages(dir)
 	if err != nil {
 		t.Fatalf("Pages: %v", err)
 	}
-	if len(pages) != 1 || pages[0].Name != "project" {
-		t.Fatalf("pages = %+v, want single project page", pages)
+	if got, want := pageRels(pages), []string{"decisions", "references", "project"}; !equalStrings(got, want) {
+		t.Fatalf("page rels = %v, want %v", got, want)
 	}
-	if ids := sourceIDs(pages[0]); len(ids) != 2 || ids[0] != "D-0001" || ids[1] != "F-0001" {
-		t.Fatalf("project sources = %v, want [D-0001 F-0001]", ids)
+	dec, _ := pageByName(pages, "decisions")
+	if ids := sourceIDs(dec); len(ids) != 1 || ids[0] != "D-0001" {
+		t.Fatalf("decisions sources = %v, want [D-0001]", ids)
+	}
+	proj, ok := pageByName(pages, "project")
+	if !ok {
+		t.Fatalf("module-less project must emit a project page: %v", pageRels(pages))
+	}
+	if ids := sourceIDs(proj); len(ids) != 2 || ids[0] != "F-0001" || ids[1] != "F-0002" {
+		t.Fatalf("project sources = %v, want [F-0001 F-0002] (all live/implemented features)", ids)
+	}
+}
+
+// A project with no modules and no decisions/references emits only the project
+// page (both cross-cutting pages omitted when empty).
+func TestPagesNoModulesOnlyProjectWhenNoCrossCutting(t *testing.T) {
+	dir := seedBackend(t)
+	addFeature(t, dir, "F-0001", "", domain.StateCandidate, "# F-0001\n\nspec.\n")
+	pages, err := Pages(dir)
+	if err != nil {
+		t.Fatalf("Pages: %v", err)
+	}
+	if got, want := pageRels(pages), []string{"project"}; !equalStrings(got, want) {
+		t.Fatalf("page rels = %v, want %v", got, want)
 	}
 }
 

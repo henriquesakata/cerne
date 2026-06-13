@@ -29,11 +29,12 @@ type EntitySource struct {
 	Content string
 }
 
-// Page is one synthesis page: a module's live features, or the cross-cutting
-// "project" page (active decisions + current references + module-less features).
+// Page is one synthesis page: a module's live features, the active-decisions
+// page, the current-references page, or — only when the project declares no
+// modules — the cross-cutting "project" page holding every live entity.
 type Page struct {
-	Name    string // module name, or "project"
-	Rel     string // path under content/wiki without extension ("modules/x" | "project")
+	Name    string // module name, "decisions", "references", or "project"
+	Rel     string // path under content/wiki without extension ("modules/x" | "decisions" | "references" | "project")
 	Sources []EntitySource
 }
 
@@ -48,11 +49,17 @@ var wikiSourceStates = map[domain.FeatureState]bool{
 	domain.StateImplemented:   true,
 }
 
-// Pages computes the deterministic page set for the backend at repoDir: one
-// page per declared module (its live features) plus a "project" page (active
-// decisions, current references, and any live feature without a known module).
-// A project with no declared modules yields only the "project" page, holding
-// every live entity.
+// Pages computes the deterministic page set for the backend at repoDir:
+//   - one page per declared module (its live features), in proj.Modules order;
+//   - a "decisions" page (active decisions), only when at least one exists;
+//   - a "references" page (current references), only when at least one exists;
+//   - a "project" page, ONLY when the project declares no modules, holding
+//     every live entity (the small-project fallback).
+//
+// When the project HAS modules, live features without a declared module are
+// synthesized in NO page — they are covered by CONTEXT.md / search instead
+// (see ModulelessSkipped). Page order is deterministic: modules, decisions,
+// references, project.
 func Pages(repoDir string) ([]Page, error) {
 	proj, err := store.LoadProject(repoDir)
 	if err != nil {
@@ -71,11 +78,6 @@ func Pages(repoDir string) ([]Page, error) {
 		return nil, err
 	}
 
-	moduleSet := make(map[string]bool, len(proj.Modules))
-	for _, m := range proj.Modules {
-		moduleSet[m] = true
-	}
-
 	var pages []Page
 	for _, m := range proj.Modules {
 		var srcs []EntitySource
@@ -87,24 +89,40 @@ func Pages(repoDir string) ([]Page, error) {
 		pages = append(pages, Page{Name: m, Rel: "modules/" + m, Sources: srcs})
 	}
 
-	// project page: cross-cutting entities (no module) + module-less features.
-	var proje []EntitySource
+	// decisions page: active decisions, only when at least one exists.
+	var dsrcs []EntitySource
 	for _, d := range decisions {
 		if d.State == domain.DecisionActive {
-			proje = append(proje, decisionSource(repoDir, d))
+			dsrcs = append(dsrcs, decisionSource(repoDir, d))
 		}
 	}
+	if len(dsrcs) > 0 {
+		pages = append(pages, Page{Name: "decisions", Rel: "decisions", Sources: dsrcs})
+	}
+
+	// references page: current references, only when at least one exists.
+	var rsrcs []EntitySource
 	for _, r := range references {
 		if r.State == domain.ReferenceCurrent {
-			proje = append(proje, referenceSource(repoDir, r))
+			rsrcs = append(rsrcs, referenceSource(repoDir, r))
 		}
 	}
-	for _, f := range features {
-		if wikiSourceStates[f.State] && !moduleSet[f.Module] {
-			proje = append(proje, featureSource(repoDir, f))
-		}
+	if len(rsrcs) > 0 {
+		pages = append(pages, Page{Name: "references", Rel: "references", Sources: rsrcs})
 	}
-	pages = append(pages, Page{Name: "project", Rel: "project", Sources: proje})
+
+	// project page: the small-project fallback, only when no modules are
+	// declared. It holds every live/implemented feature. With modules, the
+	// module-less features are deliberately omitted from the wiki.
+	if len(proj.Modules) == 0 {
+		var proje []EntitySource
+		for _, f := range features {
+			if wikiSourceStates[f.State] {
+				proje = append(proje, featureSource(repoDir, f))
+			}
+		}
+		pages = append(pages, Page{Name: "project", Rel: "project", Sources: proje})
+	}
 	return pages, nil
 }
 
