@@ -44,9 +44,6 @@ func runAsk(cmd *cobra.Command, dir, query string, history bool) error {
 	if err != nil {
 		return err
 	}
-	if mode := llm.ResolveMode(ctx.cfg.LLM.Mode); mode != llm.ModeDelegation {
-		return fmt.Errorf("modo LLM %q ainda não suportado (apenas 'delegation')", mode)
-	}
 	dbPath, err := project.IndexPath(ctx.cfg.ProjectID)
 	if err != nil {
 		return err
@@ -64,6 +61,22 @@ func runAsk(cmd *cobra.Command, dir, query string, history bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(out, ask.BuildAskPrompt(query, snippets))
+	prompt := ask.BuildAskPrompt(query, snippets)
+
+	// byo-key: call the Provider and print the answer. Delegation (default)
+	// prints the assembled prompt for the host agent to answer inline.
+	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
+		prov, err := llm.NewProvider(ctx.cfg.LLM)
+		if err != nil {
+			return err
+		}
+		answer, err := prov.Complete(cmd.Context(), prompt)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, answer)
+		return nil
+	}
+	fmt.Fprint(out, prompt)
 	return nil
 }
