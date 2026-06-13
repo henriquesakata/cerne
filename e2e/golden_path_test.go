@@ -66,7 +66,7 @@ func assertLockParity(t *testing.T, projDir, origin, stage string) {
 
 // TestGoldenPath walks the full product loop in one shared temp world:
 // init → feature new → pull → edit spec in .docs/ → push → approve →
-// pull → supersede → pull, asserting the .docs/ projection, the backend
+// pull → substituir → pull, asserting the .docs/ projection, the backend
 // (via fresh clones of origin) and docs.lock parity along the way.
 func TestGoldenPath(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
@@ -152,12 +152,12 @@ func TestGoldenPath(t *testing.T) {
 		t.Fatalf("CONTEXT.md row not approved after pull:\n%s", ctx)
 	}
 
-	t.Log("stage 7: supersede F-0001 by F-0002 — gone from .docs/, kept in history")
+	t.Log("stage 7: substituir F-0001 by F-0002 — gone from .docs/, kept in history")
 	out = mustCerne(t, "feature", "new", "Carrinho v2", "--module", "checkout", "--dir", proj)
 	if !strings.Contains(out, "F-0002 criada (candidate)") {
 		t.Fatalf("second feature new output missing F-0002 confirmation:\n%s", out)
 	}
-	mustCerne(t, "feature", "supersede", "F-0001", "--by", "F-0002", "--reason", "redesign", "--dir", proj)
+	mustCerne(t, "feature", "substituir", "F-0001", "--by", "F-0002", "--reason", "redesign", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 	if _, err := os.Stat(specDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("superseded feature dir still materialized (stat err = %v)", err)
