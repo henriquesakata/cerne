@@ -68,9 +68,22 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 	return c
 }
 
-// SaveConfig writes <dir>/.cernerc as TOML.
+// SaveConfig writes <dir>/.cernerc as TOML. The [llm] block is omitted when it
+// is the zero value, so a fresh project doesn't carry an empty table the user
+// would collide with when adding their own [llm] config.
 func SaveConfig(dir string, c Config) error {
-	data, err := toml.Marshal(c)
+	type wire struct {
+		ProjectID    string     `toml:"project_id"`
+		Backend      string     `toml:"backend"`
+		DefaultScope string     `toml:"default_scope"`
+		LLM          *LLMConfig `toml:"llm,omitempty"`
+	}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope}
+	if c.LLM != (LLMConfig{}) {
+		llm := c.LLM
+		w.LLM = &llm
+	}
+	data, err := toml.Marshal(w)
 	if err != nil {
 		return err
 	}
