@@ -35,6 +35,7 @@ var layoutSubdirsInit = []string{
 	"content/decisions",
 	"content/references",
 	"content/artifacts",
+	"content/wiki",
 }
 
 // idSubdirs maps a NextID prefix to its entity subdir.
