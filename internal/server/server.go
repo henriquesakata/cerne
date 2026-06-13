@@ -14,8 +14,10 @@ import (
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/ask"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -55,6 +57,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	})
 	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
 		handleSearch(w, r, repoDir, projectID)
+	})
+	mux.HandleFunc("POST /api/ask", func(w http.ResponseWriter, r *http.Request) {
+		handleAsk(w, r, repoDir, projDir, projectID)
 	})
 	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
 		handleLint(w, repoDir)
@@ -308,6 +313,93 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 		}
 	}
 	writeJSON(w, http.StatusOK, searchResponse{Results: hits})
+}
+
+// askRequest is the POST /api/ask body: a natural-language question and
+// whether to dive into superseded/rejected/obsolete history.
+type askRequest struct {
+	Query   string `json:"query"`
+	History bool   `json:"history"`
+}
+
+// askSource is one retrieved context source in the API's snake_case contract,
+// projected from ask.Snippet (the body text is dropped; the UI links by source).
+type askSource struct {
+	Source string `json:"source"` // entity ID, or "wiki:<rel>" for a compiled page
+	Kind   string `json:"kind"`   // feature | decision | reference | wiki
+	State  string `json:"state"`  // lifecycle state; "current" for wiki pages
+}
+
+// askResponse is the POST /api/ask payload. Answered is false in delegation
+// mode (no provider to answer for the human): the sources are still returned,
+// and never a fabricated answer.
+type askResponse struct {
+	Answered      bool        `json:"answered"`
+	NeedsProvider bool        `json:"needs_provider,omitempty"`
+	Answer        string      `json:"answer,omitempty"`
+	Sources       []askSource `json:"sources"`
+}
+
+// handleAsk answers a natural-language question over the wiki for a human in
+// the browser. Retrieval mirrors handleSearch (same offline index). The config
+// is loaded per-request from projDir so editing .cernerc takes effect without
+// restarting `cerne ui`; delegation (the agent's mode) can't answer here, so
+// the endpoint returns the sources with needs_provider instead of inventing one.
+func handleAsk(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
+	var req askRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo inválido: "+err.Error()))
+		return
+	}
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("informe a pergunta (campo query)"))
+		return
+	}
+	dbPath, err := project.IndexPath(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// Offline by design: build the index on first use from the cached clone
+	// (mirrors handleSearch); 'cerne pull' is the sync point.
+	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+		if err := index.Rebuild(repoDir, dbPath); err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+	} else if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	snips, err := ask.Retrieve(repoDir, dbPath, query, req.History, 10)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	sources := make([]askSource, len(snips))
+	for i, s := range snips {
+		sources[i] = askSource{Source: s.Source, Kind: s.Kind, State: s.State}
+	}
+
+	// Load the config per-request: delegation (or no .cernerc) means there is no
+	// provider to answer for the human — return the sources, not a fabrication.
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil || llm.ResolveMode(cfg.LLM.Mode) == llm.ModeDelegation {
+		writeJSON(w, http.StatusOK, askResponse{Answered: false, NeedsProvider: true, Sources: sources})
+		return
+	}
+	prov, err := llm.NewProvider(cfg.LLM)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	answer, err := prov.Complete(r.Context(), ask.BuildAskPrompt(query, snips))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, askResponse{Answered: true, Answer: answer, Sources: sources})
 }
 
 // lintFinding is one lint problem in the API's snake_case contract,
