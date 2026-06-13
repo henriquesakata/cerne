@@ -14,7 +14,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0008](cases/0008_cache-auto-recreate/spec.md) | Cache clone auto-recreate (no init dead-end) | Done |
 | [0009](cases/0009_byo-key-provider/spec.md) | BYO-key LLM provider (`compile`/`ask` standalone) | Done |
 | [0010](cases/0010_release-pipeline/spec.md) | Release pipeline (ldflags version, cross-compile, GitLab CI) | Done |
-| [0011](cases/0011_ui-read-pages/spec.md) | UI nav shell + read pages (decisions, references, search, lint, history) | Spec |
+| [0011](cases/0011_ui-read-pages/spec.md) | UI nav shell + read pages (decisions, references, search, lint, history) | Done |
 | [0012](cases/0012_feature-authoring-ui/spec.md) | Feature authoring & management in the UI (create/edit/"remove") | Spec (depends on 0011) |
 
 Conventions (inherited from the methodology cerne itself formalizes):
