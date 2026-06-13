@@ -19,9 +19,16 @@ const configFilename = ".cernerc"
 
 // Config is the persisted form of .cernerc (TOML, committed by the user).
 type Config struct {
-	ProjectID    string `toml:"project_id"`    // slug, e.g. "cerne"
-	Backend      string `toml:"backend"`       // git URL or local path
-	DefaultScope string `toml:"default_scope"` // optional module filter
+	ProjectID    string    `toml:"project_id"`    // slug, e.g. "cerne"
+	Backend      string    `toml:"backend"`       // git URL or local path
+	DefaultScope string    `toml:"default_scope"` // optional module filter
+	LLM          LLMConfig `toml:"llm"`           // optional v1.5 LLM layer config
+}
+
+// LLMConfig is the optional [llm] block of .cernerc. A secret never lives
+// here — a future BYO-key mode reads its key from the environment.
+type LLMConfig struct {
+	Mode string `toml:"mode"` // "delegation" (default when empty); "byo-key" reserved
 }
 
 // SaveConfig writes <dir>/.cernerc as TOML.

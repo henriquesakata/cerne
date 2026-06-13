@@ -1,0 +1,44 @@
+// Package llm hosts the pluggable LLM provider seam for the optional v1.5
+// layer (compile/ask). The deterministic core never imports it: only the
+// compile and ask use-cases do, and only outside delegation mode.
+//
+// In delegation mode (the default and only runtime mode implemented now) the
+// host agent already running — Claude Code, Cursor — performs the synthesis,
+// so Provider.Complete is NOT called: the work travels through prompt files
+// (compile) or stdout (ask). Complete exists for the test Fake and for a
+// future BYO-key implementation behind the same interface.
+package llm
+
+import "context"
+
+// ModeDelegation is the default provider mode: cerne emits prompts for the
+// host agent instead of calling an LLM itself. No API key, no HTTP.
+const ModeDelegation = "delegation"
+
+// Provider abstracts a single text completion.
+type Provider interface {
+	Complete(ctx context.Context, prompt string) (string, error)
+}
+
+// ResolveMode maps a configured .cernerc [llm] mode to the effective mode,
+// defaulting an empty value to ModeDelegation.
+func ResolveMode(mode string) string {
+	if mode == "" {
+		return ModeDelegation
+	}
+	return mode
+}
+
+// Fake is a deterministic Provider for tests: it returns Reply and records
+// every prompt it was given, so tests can assert on prompt assembly without
+// calling a real LLM.
+type Fake struct {
+	Reply   string
+	Prompts []string
+}
+
+// Complete records the prompt and returns the canned Reply.
+func (f *Fake) Complete(_ context.Context, prompt string) (string, error) {
+	f.Prompts = append(f.Prompts, prompt)
+	return f.Reply, nil
+}
