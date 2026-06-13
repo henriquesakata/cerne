@@ -9,17 +9,21 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/ui"
 )
 
 // New returns the http.Handler serving /api/* JSON endpoints and the
 // embedded UI (SPA fallback to index.html) for everything else.
-func New(repoDir, projDir string) http.Handler {
+func New(repoDir, projDir, projectID string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		handleState(w, repoDir)
@@ -35,6 +39,21 @@ func New(repoDir, projDir string) http.Handler {
 	})
 	mux.HandleFunc("PUT /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
 		handleArtifactPut(w, r, repoDir, projDir, r.PathValue("featureID"), r.PathValue("name"))
+	})
+	mux.HandleFunc("GET /api/decisions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		handleDecisionDetail(w, repoDir, r.PathValue("id"))
+	})
+	mux.HandleFunc("GET /api/references/{id}", func(w http.ResponseWriter, r *http.Request) {
+		handleReferenceDetail(w, repoDir, r.PathValue("id"))
+	})
+	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
+		handleSearch(w, r, repoDir, projectID)
+	})
+	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
+		handleLint(w, repoDir)
+	})
+	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
+		handleEvents(w, repoDir)
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
@@ -154,6 +173,181 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 		})
 	}
 	return artifacts, nil
+}
+
+// decisionDetailResponse is the GET /api/decisions/{id} payload: the entity
+// plus its content document (empty when the doc file is absent).
+type decisionDetailResponse struct {
+	Decision store.Decision `json:"decision"`
+	Doc      string         `json:"doc"`
+}
+
+func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
+	d, err := store.LoadDecision(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("decisão não encontrada"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	doc, err := readContentDoc(repoDir, "decisions", id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc})
+}
+
+// referenceDetailResponse is the GET /api/references/{id} payload.
+type referenceDetailResponse struct {
+	Reference store.Reference `json:"reference"`
+	Doc       string          `json:"doc"`
+}
+
+func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
+	ref, err := store.LoadReference(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("referência não encontrada"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	doc, err := readContentDoc(repoDir, "references", id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, referenceDetailResponse{Reference: ref, Doc: doc})
+}
+
+// readContentDoc reads content/<kind>/<id>.md (decisions, references); ""
+// when the file is absent, mirroring how the materializer and index treat a
+// missing content document.
+func readContentDoc(repoDir, kind, id string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// searchHit is one full-text search result in the API's snake_case contract,
+// projected from index.Result (which carries no JSON tags).
+type searchHit struct {
+	EntityID     string `json:"entity_id"`
+	Kind         string `json:"kind"`
+	Doc          string `json:"doc"`
+	State        string `json:"state"`
+	Title        string `json:"title"`
+	Snippet      string `json:"snippet"`
+	SupersededBy string `json:"superseded_by,omitempty"`
+}
+
+// searchResponse is the GET /api/search payload.
+type searchResponse struct {
+	Results []searchHit `json:"results"`
+}
+
+func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("informe o termo de busca (parâmetro q)"))
+		return
+	}
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	dbPath, err := project.IndexPath(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// Offline by design: build the index on first use from the cached clone,
+	// never the remote — 'cerne pull' is the sync point (mirrors searchcmd).
+	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+		if err := index.Rebuild(repoDir, dbPath); err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+	} else if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	results, err := index.Search(dbPath, query, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	hits := make([]searchHit, len(results))
+	for i, res := range results {
+		hits[i] = searchHit{
+			EntityID:     res.EntityID,
+			Kind:         res.Kind,
+			Doc:          res.Doc,
+			State:        res.State,
+			Title:        res.Title,
+			Snippet:      res.Snippet,
+			SupersededBy: res.SupersededBy,
+		}
+	}
+	writeJSON(w, http.StatusOK, searchResponse{Results: hits})
+}
+
+// lintFinding is one lint problem in the API's snake_case contract,
+// projected from lint.Finding (which carries no JSON tags).
+type lintFinding struct {
+	Rule   string `json:"rule"`
+	Entity string `json:"entity,omitempty"`
+	File   string `json:"file,omitempty"`
+	Detail string `json:"detail"`
+}
+
+// lintResponse is the GET /api/lint payload; findings come already ordered
+// by lint.RuleOrder.
+type lintResponse struct {
+	Findings []lintFinding `json:"findings"`
+}
+
+func handleLint(w http.ResponseWriter, repoDir string) {
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	out := make([]lintFinding, len(findings))
+	for i, f := range findings {
+		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail}
+	}
+	writeJSON(w, http.StatusOK, lintResponse{Findings: out})
+}
+
+// eventsResponse is the GET /api/events payload: the lifecycle event log,
+// newest first for a timeline view.
+type eventsResponse struct {
+	Events []domain.Event `json:"events"`
+}
+
+func handleEvents(w http.ResponseWriter, repoDir string) {
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// ReadEvents yields chronological order; reverse to newest-first.
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+	writeJSON(w, http.StatusOK, eventsResponse{Events: events})
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.
