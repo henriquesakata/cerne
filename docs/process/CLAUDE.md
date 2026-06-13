@@ -7,7 +7,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0001](cases/0001_founding-spec/spec.md) | Founding spec — product, architecture and v1 cut | Done (v0.2.0) |
 | [0002](cases/0002_historical-entity-registry/spec.md) | Historical entity registry (Bills/Investments gap) | Implemented (gap closed; dedup → 0004) |
 | [0003](cases/0003_llm-compile-ask/spec.md) | LLM layer — `compile` + `ask` (v1.5) | Implemented (usable-on-mature-project fixes → 0005) |
-| [0004](cases/0004_historical-registry-idempotency/spec.md) | Historical registry idempotency (dedup) | Draft (stub) |
+| [0004](cases/0004_historical-registry-idempotency/spec.md) | Historical registry idempotency (dedup) | Done |
 | [0005](cases/0005_wiki-ask-usability/spec.md) | Wiki + `ask` usability (0003 follow-up) | Draft (stub) |
 
 Conventions (inherited from the methodology cerne itself formalizes):

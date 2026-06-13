@@ -1,8 +1,8 @@
 # Case 0004 — Idempotência do registro histórico (dedup)
 
-tags: #spec #cerne #stub #domain #lint #historical
+tags: #spec #cerne #domain #lint #historical
 
-**Status:** Draft (stub — precisa de rodada de brainstorming para fechar decisões)
+**Status:** Done — implementado e verificado no corpus real do hub (2026-06-13); ver [result.md](result.md)
 **Tipo:** Extensão do núcleo de domínio/app do registro histórico (case 0002) + possível defesa no lint.
 **Origem:** Revisão do case 0002 (2026-06-13). Dívida nº 2 do [result.md do 0002](../0002_historical-entity-registry/result.md), mas **confirmada ao vivo como mais séria do que "lixo de entidade"**: re-registrar uma entidade histórica corrompe a contagem do lint.
 
@@ -30,27 +30,19 @@ Critérios-alvo:
 
 ---
 
-## Direção a explorar (alternativas — decidir no brainstorming)
+## Decisão tomada (2026-06-13)
 
-1. **Dedup-on-write no núcleo** (`SaveHistoricalEntity`): antes do `NextID`, procurar histórica existente com mesmo `name` (case-insensitive); se existe, **no-op** ou **merge** (unir aliases, atualizar `reason`/`superseded_by`). Como `retire` e seed compartilham o núcleo, conserta os dois de uma vez.
-2. **Semântica de update** explícita: `retire` de nome existente atualiza a entidade (merge de aliases, sobrescreve `by`/`reason`) e emite evento `historical.updated`. Mais expressivo, mas exige decidir o que "merge" significa.
-3. **Dedup só no import** (seed pula nomes já presentes), mantendo `retire` ad-hoc como está. Mais estreito; não resolve `retire` repetido.
+**Upsert por nome normalizado** no núcleo `SaveHistoricalEntity` (combina as alternativas 1 + 2) — escolhido por dar idempotência convergente: re-rodar `retire`/seed leva ao estado declarado, em vez de no-op (que descartaria silenciosamente aliases novos) ou erro (que quebraria o re-import de seed).
 
-**Defesa-em-profundidade (transversal, talvez independente):** o lint deduplicar findings por `(arquivo, trecho-da-menção)` mesmo quando entidades distintas compartilham um alias — duas históricas legítimas podem ter o mesmo alias e ainda assim a mesma menção não deveria contar duas vezes. Vale mesmo se a idempotência entrar.
-
----
-
-## Questões em aberto
-
-1. Chave de dedup: só `name`? `name` + qualquer `alias`? Normalização (case-folding, acentos)?
-2. No-op vs update: re-registrar com aliases diferentes funde ou ignora? Precisa de `historical.updated` no log?
-3. Limpeza das duplicatas que já existem no `hub-docs` real (H-0003/H-0004 só apareceram no meu clone local, mas H-0001/H-0002 estão no GitLab): comando `cerne forget <id>`? Migração manual?
-4. A defesa no lint (dedup por menção) é deste case ou de um follow-up do lint?
+| Questão | Decisão |
+|---|---|
+| Chave de dedup | **Nome normalizado via `slug.Fold`** (lowercase + sem acento). Casa `Bills`/`bills`/`BILLS`; nomes distintos seguem distintos. |
+| No-op vs update | **Update (upsert)**: entidade existente é atualizada in-place — mantém `ID`+`CreatedAt`, sobrescreve `superseded_by`/`reason`/`imported_from`, **une aliases** (existentes ∪ novos, dedup case-insensitive, ordem estável). Emite `historical.updated`; criação nova emite `historical.recorded`. |
+| Limpeza de duplicatas existentes | **Desnecessária**: o `hub-docs` real só tem H-0001/H-0002 (legítimas). As duplicatas H-0003/H-0004 só existiram no clone local da revisão. `cerne forget` fica como follow-up se um dia surgir necessidade. |
+| Defesa no lint (dedup por menção) | **Fora de escopo deste case**: a idempotência elimina a causa raiz (entidades duplicadas). O dedup de findings por `(arquivo, entidade)` do case 0001 já cobre o resto. Fica como follow-up de lint se duas históricas legítimas vierem a compartilhar alias.
 
 ---
 
-## Próximos passos
+## Verificação (corpus real do hub)
 
-1. **Brainstorming** para escolher dedup-on-write vs update-semantics e a chave de dedup.
-2. `plan.md` (TDD): domínio/app (dedup no núcleo) → import/retire (reuso) → regressão de lint (contagem estável) → teste de dupla-execução.
-3. `result.md`.
+Clone bare local do `hub-docs` (308 features, H-0001/H-0002 já presentes): `ref-to-superseded = 89`. Após **re-`retire` Bills + Investments** com o binário corrigido: mensagem "H-000X atualizada (já existia…)", **2 históricas** (sem H-0003/H-0004), `ref-to-superseded = 89` (estável — não foi a 160). Bug 89→160 fechado.
