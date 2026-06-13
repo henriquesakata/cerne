@@ -198,6 +198,87 @@ func TestArtifactPutTraversalRejected(t *testing.T) {
 	}
 }
 
+const mermaidA = "sequenceDiagram\n  A->>B: olá\n"
+
+// TestArtifactGetMmd serves a .mmd artifact as text/plain with its raw body.
+func TestArtifactGetMmd(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	writeArtifact(t, repoDir, "F-0001", "sequence.mmd", mermaidA)
+
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "").ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/api/artifacts/F-0001/sequence.mmd", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain", ct)
+	}
+	if rec.Body.String() != mermaidA {
+		t.Fatalf("body = %q, want raw mermaid %q", rec.Body.String(), mermaidA)
+	}
+}
+
+// TestArtifactPutMmdCreate creates a .mmd artifact from a plain-text body
+// (no JSON validation) and advances origin.
+func TestArtifactPutMmdCreate(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	head0, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	var got struct {
+		OK bool `json:"ok"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/sequence.mmd", mermaidA, &got)
+	if rec.Code != http.StatusOK || !got.OK {
+		t.Fatalf("create status = %d body = %s, want 200 {\"ok\":true}", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "artifacts", "F-0001", "sequence.mmd"))
+	if err != nil {
+		t.Fatalf(".mmd not written to backend: %v", err)
+	}
+	if string(data) != mermaidA {
+		t.Fatalf("backend file = %q, want %q", data, mermaidA)
+	}
+	head1, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	if head1 == head0 {
+		t.Fatalf("origin HEAD did not advance after .mmd create (still %s)", head1)
+	}
+}
+
+// TestArtifactPutMmdEmpty rejects an empty .mmd body with 400.
+func TestArtifactPutMmdEmpty(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeatureForArtifacts(t, repoDir)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/sequence.mmd", "", &got)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] == "" {
+		t.Fatalf("body = %v, want pt-BR JSON error message", got)
+	}
+}
+
+// TestArtifactPutUnknownExtension rejects extensions other than
+// .excalidraw / .mmd with 400 naming both accepted extensions.
+func TestArtifactPutUnknownExtension(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeatureForArtifacts(t, repoDir)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/notes.txt", "hello", &got)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(got["error"], ".excalidraw") || !strings.Contains(got["error"], ".mmd") {
+		t.Fatalf("error = %q, want message naming .excalidraw and .mmd", got["error"])
+	}
+}
+
 func seedFeatureForArtifacts(t *testing.T, repoDir string) {
 	t.Helper()
 	seedFeature(t, repoDir, "F-0001", "Feature A", "candidate")

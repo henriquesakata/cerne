@@ -25,7 +25,8 @@ func artifactPath(repoDir, featureID, name string) string {
 }
 
 // handleArtifactGet serves the raw artifact file. .excalidraw files are
-// scene JSON; anything else falls back to a generic byte stream.
+// scene JSON, .mmd files are Mermaid text; anything else falls back to a
+// generic byte stream.
 func handleArtifactGet(w http.ResponseWriter, repoDir, featureID, name string) {
 	if !safeSegment(featureID) || !safeSegment(name) {
 		writeJSON(w, http.StatusBadRequest, errorBody("nome de artefato inválido"))
@@ -40,22 +41,28 @@ func handleArtifactGet(w http.ResponseWriter, repoDir, featureID, name string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if strings.HasSuffix(name, ".excalidraw") {
+	switch {
+	case strings.HasSuffix(name, ".excalidraw"):
 		w.Header().Set("Content-Type", "application/json")
-	} else {
+	case strings.HasSuffix(name, ".mmd"):
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	default:
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
 
-// handleArtifactPut creates or updates an .excalidraw artifact: validates
-// name and body, writes the file into the backend clone and syncs it
-// (commit + push + docs.lock snapshot) via app.SaveArtifact.
+// handleArtifactPut creates or updates an artifact: .excalidraw scene JSON or
+// .mmd Mermaid text. It validates the name and the per-type body, writes the
+// file into the backend clone and syncs it (commit + push + docs.lock
+// snapshot) via app.SaveArtifact.
 func handleArtifactPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, featureID, name string) {
-	if !safeSegment(featureID) || !safeSegment(name) || !strings.HasSuffix(name, ".excalidraw") {
+	isExcalidraw := strings.HasSuffix(name, ".excalidraw")
+	isMmd := strings.HasSuffix(name, ".mmd")
+	if !safeSegment(featureID) || !safeSegment(name) || (!isExcalidraw && !isMmd) {
 		writeJSON(w, http.StatusBadRequest,
-			errorBody("nome de artefato inválido (esperado um único segmento terminado em .excalidraw)"))
+			errorBody("nome de artefato inválido (esperado um único segmento terminado em .excalidraw ou .mmd)"))
 		return
 	}
 	if _, err := store.LoadFeature(repoDir, featureID); errors.Is(err, store.ErrNotFound) {
@@ -70,8 +77,13 @@ func handleArtifactPut(w http.ResponseWriter, r *http.Request, repoDir, projDir,
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if !json.Valid(body) {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição não é JSON válido"))
+	if isExcalidraw {
+		if !json.Valid(body) {
+			writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição não é JSON válido"))
+			return
+		}
+	} else if len(body) == 0 {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo do artefato .mmd não pode ser vazio"))
 		return
 	}
 	if err := app.SaveArtifact(repoDir, projDir, featureID, name, body); err != nil {
