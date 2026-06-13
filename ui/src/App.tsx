@@ -7,6 +7,8 @@ import References, { ReferenceDetail } from './References'
 import Search from './Search'
 import Lint from './Lint'
 import History from './History'
+import Manage from './Manage'
+import NewFeature from './NewFeature'
 import './app.css'
 
 // Roteamento mínimo por hash: lista de seções + rotas de detalhe
@@ -43,5 +45,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />
   if (hash === '#/history') return <History />
+  if (hash === '#/manage') return <Manage />
+  if (hash === '#/new') return <NewFeature />
   return <Kanban />
 }

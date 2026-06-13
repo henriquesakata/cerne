@@ -5,6 +5,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -31,8 +32,14 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("GET /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
 		handleFeatureDetail(w, repoDir, r.PathValue("id"))
 	})
+	mux.HandleFunc("POST /api/features", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateFeature(w, r, repoDir, projDir)
+	})
 	mux.HandleFunc("POST /api/features/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
 		handleTransition(w, r, repoDir, projDir, r.PathValue("id"))
+	})
+	mux.HandleFunc("PUT /api/features/{id}/docs/{doc}", func(w http.ResponseWriter, r *http.Request) {
+		handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 	})
 	mux.HandleFunc("GET /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
 		handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
@@ -348,6 +355,51 @@ func handleEvents(w http.ResponseWriter, repoDir string) {
 		events[i], events[j] = events[j], events[i]
 	}
 	writeJSON(w, http.StatusOK, eventsResponse{Events: events})
+}
+
+// createFeatureRequest is the POST /api/features body.
+type createFeatureRequest struct {
+	Title  string `json:"title"`
+	Module string `json:"module"`
+}
+
+// createFeatureResponse is the POST /api/features 201 payload.
+type createFeatureResponse struct {
+	Feature store.Feature `json:"feature"`
+}
+
+func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	var req createFeatureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module)
+	if err != nil {
+		// Validation/module failures surface as 422 with the same pt-BR
+		// message the CLI prints, matching handleTransition.
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, createFeatureResponse{Feature: f})
+}
+
+func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, id, doc string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	switch err := app.SaveFeatureDoc(repoDir, projDir, id, doc, string(body)); {
+	case errors.Is(err, app.ErrUnknownDoc):
+		writeJSON(w, http.StatusBadRequest, errorBody("documento inválido (use spec, plan ou result)"))
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.

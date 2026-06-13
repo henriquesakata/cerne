@@ -435,3 +435,160 @@ h2 {
 .history-type { font-weight: 600; }
 .history-reason { color: #5c635e; font-style: italic; }
 .history-actor { margin-left: auto; color: #8a8f8b; font-size: 0.8rem; }
+
+/* ---- autoria e gestão de features (case 0012) ---- */
+
+/* edição de docs na página da feature */
+.doc-view { position: relative; }
+
+.doc-edit-toggle {
+  position: absolute;
+  top: 0.4rem;
+  right: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.doc-edit-toggle:hover { background: #ece9e2; }
+
+.doc-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 0.7rem;
+  border: 1px solid #d8d2c6;
+  border-radius: 6px;
+  background: #fff;
+  resize: vertical;
+}
+
+.doc-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.doc-edit-actions button {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.doc-edit-actions button:hover:not(:disabled) { background: #ece9e2; }
+.doc-edit-actions button:disabled { opacity: 0.6; cursor: default; }
+
+/* nova feature */
+.new-feature-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-width: 30rem;
+  margin: 1rem 0;
+}
+
+.new-feature-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #5c635e;
+}
+
+.new-feature-form input,
+.new-feature-form select {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d8d2c6;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.new-feature-form button {
+  align-self: flex-start;
+  font: inherit;
+  padding: 0.45rem 1.1rem;
+  border: 1px solid #1f2421;
+  border-radius: 6px;
+  background: #1f2421;
+  color: #faf7f2;
+  cursor: pointer;
+}
+
+.new-feature-form button:disabled { opacity: 0.5; cursor: default; }
+
+/* gestão por estado */
+.manage-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.new-feature-btn {
+  font-size: 0.88rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #1f2421;
+  border-radius: 6px;
+  background: #1f2421;
+  color: #faf7f2;
+  text-decoration: none;
+}
+
+.filters { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 1rem 0; }
+
+.filter {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #d8d2c6;
+  border-radius: 999px;
+  background: #fff;
+  color: #5c635e;
+  cursor: pointer;
+}
+
+.filter:hover { background: #f3efe7; }
+.filter.active { background: #1f2421; color: #faf7f2; border-color: #1f2421; }
+.filter.active .column-count { color: #cbd2cc; }
+
+.manage-table { width: 100%; border-collapse: collapse; }
+
+.manage-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #ece9e2;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.manage-title { color: inherit; text-decoration: none; }
+.manage-title:hover { text-decoration: underline; }
+.manage-actions { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; }
+
+.manage-actions button {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.manage-actions button:hover:not(:disabled) { background: #ece9e2; }
+.manage-actions button:disabled { opacity: 0.6; cursor: default; }
+.manage-close { font-size: 0.82rem; color: #8a8f8b; text-decoration: none; }
+.manage-close:hover { color: #5c635e; text-decoration: underline; }

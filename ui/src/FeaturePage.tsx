@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import {
   fetchFeature,
   postTransition,
+  saveFeatureDoc,
   STATE_LABELS,
   type FeatureDetail,
   type FeatureState,
@@ -22,10 +23,6 @@ const TAB_LABELS: Record<DocTab, string> = {
   result: 'Resultado',
 }
 
-function availableTabs(detail: FeatureDetail): DocTab[] {
-  return (['spec', 'plan', 'result'] as const).filter((t) => detail.docs[t] !== '')
-}
-
 // diagramFilename normaliza o nome digitado para slug + sufixo .excalidraw.
 function diagramFilename(input: string): string {
   const slug = input
@@ -43,19 +40,13 @@ type OpenDiagram = { name: string; isNew: boolean }
 export default function FeaturePage({ id }: { id: string }) {
   const [detail, setDetail] = useState<FeatureDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<DocTab | null>(null)
+  const [tab, setTab] = useState<DocTab>('spec')
   const [notice, setNotice] = useState<string | null>(null)
   const [diagram, setDiagram] = useState<OpenDiagram | null>(null)
 
   const load = useCallback(() => {
     fetchFeature(id)
-      .then((d) => {
-        setDetail(d)
-        setTab((cur) => {
-          const tabs = availableTabs(d)
-          return cur && tabs.includes(cur) ? cur : (tabs[0] ?? null)
-        })
-      })
+      .then(setDetail)
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e)),
       )
@@ -69,7 +60,6 @@ export default function FeaturePage({ id }: { id: string }) {
   if (!detail) return <p className="status">Carregando…</p>
 
   const f = detail.feature
-  const tabs = availableTabs(detail)
 
   return (
     <main className="feature">
@@ -104,26 +94,23 @@ export default function FeaturePage({ id }: { id: string }) {
       ) : (
         <div className="feature-body">
           <section className="docs">
-            {tabs.length === 0 ? (
-              <p className="muted">Sem documentos ainda.</p>
-            ) : (
-              <>
-                <nav className="tabs">
-                  {tabs.map((t) => (
-                    <button
-                      key={t}
-                      className={t === tab ? 'tab active' : 'tab'}
-                      onClick={() => setTab(t)}
-                    >
-                      {TAB_LABELS[t]}
-                    </button>
-                  ))}
-                </nav>
-                <article className="doc">
-                  {tab && <ReactMarkdown>{detail.docs[tab]}</ReactMarkdown>}
-                </article>
-              </>
-            )}
+            <nav className="tabs">
+              {(['spec', 'plan', 'result'] as DocTab[]).map((t) => (
+                <button
+                  key={t}
+                  className={t === tab ? 'tab active' : 'tab'}
+                  onClick={() => setTab(t)}
+                >
+                  {TAB_LABELS[t]}
+                </button>
+              ))}
+            </nav>
+            <DocEditor
+              featureId={f.id}
+              doc={tab}
+              content={detail.docs[tab]}
+              onSaved={load}
+            />
           </section>
           <aside className="side">
             <ActionsPanel
@@ -142,6 +129,85 @@ export default function FeaturePage({ id }: { id: string }) {
         </div>
       )}
     </main>
+  )
+}
+
+// DocEditor mostra um doc de ciclo de vida (spec/plan/result) e permite
+// editá-lo inline: "Editar" troca para um textarea; "Salvar" grava via
+// saveFeatureDoc (o servidor commita+empurra) e recarrega a feature.
+function DocEditor({
+  featureId,
+  doc,
+  content,
+  onSaved,
+}: {
+  featureId: string
+  doc: DocTab
+  content: string
+  onSaved: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(content)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Reset quando o doc ou o conteúdo muda (troca de aba, reload após salvar).
+  useEffect(() => {
+    setDraft(content)
+    setEditing(false)
+    setError(null)
+  }, [content, doc])
+
+  if (editing) {
+    return (
+      <div className="doc-edit">
+        <textarea
+          className="doc-textarea"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={22}
+        />
+        <div className="doc-edit-actions">
+          <button
+            disabled={saving}
+            onClick={() => {
+              setSaving(true)
+              setError(null)
+              void saveFeatureDoc(featureId, doc, draft).then((res) => {
+                setSaving(false)
+                if (res.ok) {
+                  setEditing(false)
+                  onSaved()
+                } else {
+                  setError(res.error)
+                }
+              })
+            }}
+          >
+            Salvar
+          </button>
+          <button disabled={saving} onClick={() => setEditing(false)}>
+            Cancelar
+          </button>
+          {error && <span className="form-error">{error}</span>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="doc-view">
+      <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
+        Editar
+      </button>
+      {content.trim() === '' ? (
+        <p className="muted">Vazio — clique em Editar para escrever.</p>
+      ) : (
+        <article className="doc">
+          <ReactMarkdown>{content}</ReactMarkdown>
+        </article>
+      )}
+    </div>
   )
 }
 
