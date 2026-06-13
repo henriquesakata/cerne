@@ -4,7 +4,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 
 | Case | Title | Status |
 |---|---|---|
-| [0001](cases/0001_founding-spec/spec.md) | Founding spec — product, architecture and v1 cut | Draft |
+| [0001](cases/0001_founding-spec/spec.md) | Founding spec — product, architecture and v1 cut | Done (v0.2.0) |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

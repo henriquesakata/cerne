@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #founding #docs-as-code #ai-agents
 
-**Status:** Draft
+**Status:** Done — v1 entregue (v0.2.0, 2026-06-12); ver [result.md](result.md)
 **Tipo:** Spec fundadora — define o produto, a arquitetura e o corte do v1.
 **Origem:** Brainstorming em 2026-06-12, motivado pela dor real do Rockt Hub: agentes de IA se perdendo em documentação histórica e citando estruturas que não existem mais.
 
