@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,8 +10,20 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
+
+// ErrUnknownDoc is returned by SaveFeatureDoc for a doc name outside the
+// spec/plan/result lifecycle set.
+var ErrUnknownDoc = errors.New("documento de feature desconhecido")
+
+// featureDocFilenames maps the API doc name to its backend filename.
+var featureDocFilenames = map[string]string{
+	"spec":   "spec.md",
+	"plan":   "plan.md",
+	"result": "result.md",
+}
 
 // CreateFeature creates a candidate feature with a spec stub, appends the
 // feature.created event, commits+pushes the backend and refreshes the
@@ -68,6 +81,33 @@ func ValidateModule(module string, modules []string) error {
 		return fmt.Errorf("módulo %q não existe no projeto (módulos: %s)", module, strings.Join(modules, ", "))
 	}
 	return nil
+}
+
+// SaveFeatureDoc writes the markdown content of a feature lifecycle document
+// (doc ∈ spec|plan|result) to content/features/<id>/<doc>.md, then commits,
+// pushes and refreshes the docs.lock snapshot. A byte-identical write is a
+// successful no-op (like SaveArtifact). ErrUnknownDoc for an invalid doc name;
+// store.ErrNotFound (wrapped) when the feature does not exist.
+func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
+	filename, ok := featureDocFilenames[doc]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
+	}
+	if _, err := store.LoadFeature(repoDir, id); err != nil {
+		return err
+	}
+	path := FeatureDocPath(repoDir, id, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: update %s/%s", id, filename))
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return nil // backend already had exactly this content
+	}
+	return err
 }
 
 // writeSpecStub creates content/features/<id>/spec.md with the placeholder

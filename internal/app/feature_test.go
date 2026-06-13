@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,5 +107,54 @@ func TestCreateFeatureModuleRules(t *testing.T) {
 	f, err := CreateFeature(repoDir, projDir, "X", "core")
 	if err != nil || f.Module != "core" {
 		t.Fatalf("CreateFeature valid module = %+v, %v; want module core", f, err)
+	}
+}
+
+func TestSaveFeatureDoc(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Feature", ""); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	head0, _ := gitback.HeadSHA(origin)
+
+	content := "---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", content); err != nil {
+		t.Fatalf("SaveFeatureDoc: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil || string(data) != content {
+		t.Fatalf("spec not written: %v / %q", err, string(data))
+	}
+	// A real spec now counts for the approve gate.
+	ds, err := FeatureDocSet(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("FeatureDocSet: %v", err)
+	}
+	if !ds.HasSpec {
+		t.Fatalf("written spec should count as real content")
+	}
+	head1, _ := gitback.HeadSHA(origin)
+	if head1 == head0 {
+		t.Fatalf("origin HEAD did not advance after doc save")
+	}
+	// Idempotent: a byte-identical write is a no-op (no new commit).
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", content); err != nil {
+		t.Fatalf("idempotent SaveFeatureDoc: %v", err)
+	}
+	if head2, _ := gitback.HeadSHA(origin); head2 != head1 {
+		t.Fatalf("origin HEAD moved on a byte-identical doc save")
+	}
+}
+
+func TestSaveFeatureDocErrors(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Feature", ""); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "notes", "x"); !errors.Is(err, ErrUnknownDoc) {
+		t.Fatalf("err = %v, want ErrUnknownDoc", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, "F-9999", "spec", "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want store.ErrNotFound", err)
 	}
 }

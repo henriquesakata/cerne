@@ -618,3 +618,48 @@ func TestCreateFeatureEndpointInvalidBody(t *testing.T) {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestFeatureDocPut(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 candidate, no docs
+	realSpec := realDoc("F-0001", "Problema real descrito aqui.")
+
+	var got struct {
+		Saved bool `json:"saved"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", realSpec, &got)
+	if rec.Code != http.StatusOK || !got.Saved {
+		t.Fatalf("status=%d saved=%v body=%s, want 200 saved", rec.Code, got.Saved, rec.Body.String())
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil || string(data) != realSpec {
+		t.Fatalf("spec not written to backend: %v / %q", err, string(data))
+	}
+
+	// The approve gate now passes (spec is real) — checked via the endpoint.
+	var tr map[string]string
+	rec = doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition", `{"action":"approve"}`, &tr)
+	if rec.Code != http.StatusOK || tr["to"] != "approved" {
+		t.Fatalf("approve after real spec: status=%d body=%s, want 200 to=approved", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFeatureDocPutBadDoc(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/notes", "x", &got)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFeatureDocPutUnknownFeature(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-9999/docs/spec", realDoc("F-9999", "x"), &got)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] != "feature não encontrada" {
+		t.Fatalf("error = %q, want 'feature não encontrada'", got["error"])
+	}
+}
