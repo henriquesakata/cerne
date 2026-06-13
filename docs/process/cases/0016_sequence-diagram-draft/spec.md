@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #llm #diagram #mermaid #excalidraw #ui
 
-**Status:** Draft → em implementação (2026-06-13)
+**Status:** Done (2026-06-13) — ver [result.md](result.md)
 **Tipo:** Comando de autoria de diagrama (LLM) + suporte a artifact Mermaid (backend/server) + renderização e edição na UI.
 **Origem:** Pedido do usuário: no modo standalone, usar a assinatura Claude Code para **elaborar diagramas de sequência**. Conecta a visão original (case 0001: Excalidraw para revisar a spec com diagrama antes de aprovar) com o provider `claude-cli` (case 0014).
 

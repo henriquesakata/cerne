@@ -19,6 +19,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0013](cases/0013_ui-open-browser/spec.md) | `cerne ui` opens the browser (default; `--no-browser`) | Done |
 | [0014](cases/0014_claude-cli-provider/spec.md) | `claude-cli` provider (subscription) + `cerne spec draft` | Done |
 | [0015](cases/0015_decision-authoring/spec.md) | Native decision authoring (`decision new`/`substituir`) + `feature supersede`→`substituir` rename | Implemented — suíte verde; aguardando revisão |
+| [0016](cases/0016_sequence-diagram-draft/spec.md) | `cerne spec diagram` (Mermaid via assinatura) + render/edição na UI | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
