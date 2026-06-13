@@ -169,15 +169,14 @@ func TestImportYes(t *testing.T) {
 		t.Fatalf("lock.Snapshot = %s, want pushed origin HEAD %s", lock.Snapshot, originHead)
 	}
 
-	// Re-running WITHOUT --yes shows the plan again: no state corruption.
+	// Re-running is idempotent: every doc already imported is skipped, so the
+	// plan reports nothing left to import and the backend is untouched.
 	out2, err := execCerne(t, "import", "--root", treeDir, "--dir", projDir)
 	if err != nil {
 		t.Fatalf("re-run dry-run: %v\noutput: %s", err, out2)
 	}
-	for _, want := range []string{"Plano de importação (dry-run):", "Rode com --yes para aplicar."} {
-		if !strings.Contains(out2, want) {
-			t.Errorf("re-run output missing %q:\n%s", want, out2)
-		}
+	if !strings.Contains(out2, "Tudo já importado") {
+		t.Errorf("re-run output missing 'Tudo já importado':\n%s", out2)
 	}
 	headAfterRerun, err := gitback.HeadSHA(origin)
 	if err != nil {
@@ -185,6 +184,47 @@ func TestImportYes(t *testing.T) {
 	}
 	if headAfterRerun != originHead {
 		t.Fatalf("origin HEAD changed during dry-run re-run: %s -> %s", originHead, headAfterRerun)
+	}
+}
+
+func TestImportIncremental(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	treeDir := t.TempDir()
+	writeTree(t, treeDir, importFixtureFiles())
+
+	// First import: the full fixture (2 features, 1 decision, 1 reference).
+	if _, err := execCerne(t, "import", "--root", treeDir, "--yes", "--dir", projDir); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+
+	// A new reference doc appears in the source tree after the first import.
+	writeTree(t, treeDir, map[string]string{
+		"docs/runbooks/deploy.md": "# Deploy\n\nPassos de deploy.\n",
+	})
+
+	// Re-import brings in ONLY the new doc; everything else is skipped.
+	out, err := execCerne(t, "import", "--root", treeDir, "--yes", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("incremental import: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Importado: 0 features, 0 decisões, 1 referências") {
+		t.Fatalf("incremental import should add only the new reference:\n%s", out)
+	}
+
+	references, err := store.LoadAllReferences(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllReferences: %v", err)
+	}
+	if len(references) != 2 || references[1].ID != "R-0002" || references[1].Title != "Deploy" {
+		t.Fatalf("references = %+v, want R-0001 (setup) + new R-0002 (Deploy)", references)
+	}
+	// The second run must not duplicate the already-imported features.
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllFeatures: %v", err)
+	}
+	if len(features) != 2 {
+		t.Fatalf("features = %d, want 2 (no duplicates on re-import)", len(features))
 	}
 }
 
