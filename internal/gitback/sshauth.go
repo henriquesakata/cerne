@@ -2,6 +2,7 @@ package gitback
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // sshKeyFiles are the private key filenames probed under the .ssh dir, in order.
@@ -53,6 +56,103 @@ func sshUser(u string) string {
 	return "git"
 }
 
+// sshHost extracts the bare host (no port) from an SSH remote:
+//   - scp-like "user@host:path" → the segment between "@" and the first ":"
+//   - "ssh://user@host[:port]/path" → url.Hostname()
+//
+// Returns "" for non-SSH urls.
+func sshHost(u string) string {
+	if !isSSHURL(u) {
+		return ""
+	}
+	if strings.HasPrefix(u, "ssh://") {
+		if parsed, err := url.Parse(u); err == nil {
+			return parsed.Hostname()
+		}
+		return ""
+	}
+	at := strings.Index(u, "@")
+	if at < 0 {
+		return ""
+	}
+	rest := u[at+1:]
+	if colon := strings.Index(rest, ":"); colon >= 0 {
+		return rest[:colon]
+	}
+	return rest
+}
+
+// hostKeyAlgorithms returns the host key algorithms (e.g. "ssh-ed25519",
+// "ssh-rsa", "ecdsa-sha2-nistp256") present in the known_hosts file at path for
+// the given addr ("host" or "host:port"). It is used to pin
+// ssh.ClientConfig.HostKeyAlgorithms so the server presents a host key type we
+// already trust — avoiding the knownhosts "key mismatch" error that occurs when
+// go-git leaves the algorithm list unconstrained and the server offers a key
+// type (e.g. RSA) different from the one recorded in known_hosts (e.g. ed25519).
+//
+// A missing file is not an error (returns nil): we don't break
+// first-connection-to-unknown-host; go-git's default callback still applies.
+func hostKeyAlgorithms(path, addr string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	host := addr
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		host = addr[:i]
+	}
+	hashedHost := knownhosts.HashHostname(host)
+
+	var algos []string
+	seen := map[string]bool{}
+	rest := data
+	for {
+		_, hosts, pubKey, _, remaining, parseErr := gossh.ParseKnownHosts(rest)
+		if parseErr == io.EOF {
+			break
+		}
+		if parseErr != nil {
+			// Skip the offending entry and keep going where possible.
+			if len(remaining) == 0 || len(remaining) >= len(rest) {
+				break
+			}
+			rest = remaining
+			continue
+		}
+		rest = remaining
+		if !knownHostsMatch(hosts, host, hashedHost) {
+			continue
+		}
+		if alg := pubKey.Type(); alg != "" && !seen[alg] {
+			seen[alg] = true
+			algos = append(algos, alg)
+		}
+	}
+	return algos, nil
+}
+
+// knownHostsMatch reports whether any of the host patterns from a known_hosts
+// entry matches host (plaintext compare) or its hashed form hashedHost.
+func knownHostsMatch(patterns []string, host, hashedHost string) bool {
+	for _, p := range patterns {
+		if p == host {
+			return true
+		}
+		if strings.HasPrefix(p, "|1|") && p == hashedHost {
+			return true
+		}
+		// Entries can carry a "[host]:port" form; strip brackets to compare.
+		if stripped := strings.TrimSuffix(strings.TrimPrefix(p, "["), "]"); stripped == host {
+			return true
+		}
+	}
+	return false
+}
+
 // sshDir returns the directory probed for key files: $CERNE_SSH_DIR when set,
 // otherwise the user's ~/.ssh.
 func sshDir() (string, error) {
@@ -72,15 +172,23 @@ func sshDir() (string, error) {
 //  2. key files under the user's .ssh dir: id_ed25519, id_rsa, id_ecdsa (first
 //     that exists), empty passphrase
 //
+// Both auth paths get their host-key verification pinned to the algorithms
+// recorded in known_hosts (see pinKnownHosts), avoiding the go-git/x-crypto
+// "knownhosts: key mismatch" gotcha.
+//
 // Returns a descriptive pt-BR error if the url is SSH and no method works.
 func sshAuthFor(u string) (transport.AuthMethod, error) {
 	if !isSSHURL(u) {
 		return nil, nil
 	}
 	user := sshUser(u)
+	host := sshHost(u)
 
 	// 1. SSH agent — best effort; on any error fall through to key files.
 	if auth, err := agentDial(user); err == nil {
+		if err := pinKnownHosts(auth, host); err != nil {
+			return nil, err
+		}
 		return auth, nil
 	}
 
@@ -100,10 +208,68 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 				"chave %s protegida por passphrase — inicie o ssh-agent e rode 'ssh-add': %w",
 				path, keyErr)
 		}
+		if err := pinKnownHosts(auth, host); err != nil {
+			return nil, err
+		}
 		return auth, nil
 	}
 
 	return nil, fmt.Errorf(
 		"nenhuma chave SSH utilizável em %s (procurei id_ed25519, id_rsa, id_ecdsa) — "+
 			"configure uma chave ou inicie o ssh-agent", dir)
+}
+
+// pinKnownHosts configures host-key verification on auth using the user's
+// known_hosts file. It sets HostKeyCallback (so go-git verifies against
+// known_hosts) AND pins HostKeyAlgorithms to the key types recorded there, so
+// the server presents a key type we already trust — the fix for the
+// "knownhosts: key mismatch" handshake failure. Both *ssh.PublicKeys and
+// *ssh.PublicKeysCallback embed HostKeyCallbackHelper, whose fields ClientConfig
+// reads, so we set them directly.
+//
+// If known_hosts is absent, auth is left untouched (go-git default behavior;
+// don't break first-connection-to-unknown-host).
+func pinKnownHosts(auth transport.AuthMethod, host string) error {
+	if host == "" {
+		return nil
+	}
+	helper := hostKeyHelperOf(auth)
+	if helper == nil {
+		return nil
+	}
+
+	dir, err := sshDir()
+	if err != nil {
+		return fmt.Errorf("não foi possível localizar o diretório .ssh: %w", err)
+	}
+	khPath := filepath.Join(dir, "known_hosts")
+	if _, statErr := os.Stat(khPath); statErr != nil {
+		return nil // no known_hosts: leave go-git defaults in place
+	}
+
+	cb, err := knownhosts.New(khPath)
+	if err != nil {
+		return fmt.Errorf("não foi possível ler known_hosts (%s): %w", khPath, err)
+	}
+	algos, err := hostKeyAlgorithms(khPath, host+":22")
+	if err != nil {
+		return fmt.Errorf("não foi possível ler known_hosts (%s): %w", khPath, err)
+	}
+
+	helper.HostKeyCallback = cb
+	helper.HostKeyAlgorithms = algos
+	return nil
+}
+
+// hostKeyHelperOf returns the embedded *HostKeyCallbackHelper of the go-git ssh
+// auth methods that carry one, or nil for other auth types.
+func hostKeyHelperOf(auth transport.AuthMethod) *ssh.HostKeyCallbackHelper {
+	switch a := auth.(type) {
+	case *ssh.PublicKeys:
+		return &a.HostKeyCallbackHelper
+	case *ssh.PublicKeysCallback:
+		return &a.HostKeyCallbackHelper
+	default:
+		return nil
+	}
 }
