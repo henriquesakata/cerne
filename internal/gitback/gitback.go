@@ -34,13 +34,31 @@ func InitBare(path string) error {
 	return err
 }
 
+// originURL returns the first URL configured for the origin remote of repo.
+func originURL(repo *git.Repository) (string, error) {
+	remote, err := repo.Remote(remoteName)
+	if err != nil {
+		return "", err
+	}
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", fmt.Errorf("remote %q has no URL", remoteName)
+	}
+	return urls[0], nil
+}
+
 // Clone clones url (which may be a local path) into workdir on branch main.
 // An empty remote still yields a usable working copy wired to origin, with
 // HEAD pointing at the unborn main branch.
 func Clone(url, workdir string) error {
-	_, err := git.PlainClone(workdir, false, &git.CloneOptions{
+	auth, err := sshAuthFor(url)
+	if err != nil {
+		return err
+	}
+	_, err = git.PlainClone(workdir, false, &git.CloneOptions{
 		URL:           url,
 		ReferenceName: mainBranch,
+		Auth:          auth,
 	})
 	if !errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return err
@@ -86,9 +104,18 @@ func CommitAndPush(workdir, msg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	url, err := originURL(repo)
+	if err != nil {
+		return "", err
+	}
+	auth, err := sshAuthFor(url)
+	if err != nil {
+		return "", err
+	}
 	err = repo.Push(&git.PushOptions{
 		RemoteName: remoteName,
 		RefSpecs:   []config.RefSpec{config.RefSpec("refs/heads/main:refs/heads/main")},
+		Auth:       auth,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return "", err
@@ -106,9 +133,18 @@ func Pull(workdir string) error {
 	if err != nil {
 		return err
 	}
+	url, err := originURL(repo)
+	if err != nil {
+		return err
+	}
+	auth, err := sshAuthFor(url)
+	if err != nil {
+		return err
+	}
 	err = wt.Pull(&git.PullOptions{
 		RemoteName:    remoteName,
 		ReferenceName: mainBranch,
+		Auth:          auth,
 	})
 	if errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil
@@ -128,7 +164,15 @@ func RemoteHeadSHA(workdir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	refs, err := remote.List(&git.ListOptions{})
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", fmt.Errorf("remote %q has no URL", remoteName)
+	}
+	auth, err := sshAuthFor(urls[0])
+	if err != nil {
+		return "", err
+	}
+	refs, err := remote.List(&git.ListOptions{Auth: auth})
 	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
 	}
