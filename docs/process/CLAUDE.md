@@ -13,6 +13,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0007](cases/0007_module-inference/spec.md) | Module inference/assignment (`classify` + import) | Done |
 | [0008](cases/0008_cache-auto-recreate/spec.md) | Cache clone auto-recreate (no init dead-end) | Done |
 | [0009](cases/0009_byo-key-provider/spec.md) | BYO-key LLM provider (`compile`/`ask` standalone) | Done |
+| [0010](cases/0010_release-pipeline/spec.md) | Release pipeline (ldflags version, cross-compile, GitLab CI) | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
