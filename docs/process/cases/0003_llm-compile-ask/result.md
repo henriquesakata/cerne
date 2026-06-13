@@ -54,8 +54,20 @@ Os 7 milestones do [plan.md](plan.md), em TDD estrito, um commit por preocupaç�
 - **Tocados**: `internal/project/config.go` (`[llm]`), `internal/store/layout.go` (`content/wiki`), `internal/cli/root.go`, `internal/materialize/materialize.go` (projeção wiki), `internal/lint/lint.go` (regras de wiki).
 - Sem dependências novas.
 
+## Dogfood real no hub (2026-06-13)
+
+Mesmo backend local (clone bare do `hub-docs`, 308 features), via `cerne compile`/`ask`.
+
+- **compile (delegação) ✅:** `cerne compile` gerou prompts para as páginas com features vivas. Sintetizei `modules/finance.md` (1 fonte viva, `F-0268`); `compile --ingest --scope finance` carimbou a proveniência (`sources: [F-0268]`, `input_hash`), commitou; `pull` materializou em `.docs/wiki/`. Re-rodar → "Nada a recompilar" (dirty-tracking por input-hash confirmado).
+- **ask ✅ (com keyword):** `cerne ask "cifragem"` recupera a página `wiki:modules/finance` (current) + features, todas marcadas por estado. Integração wiki + tagging confirmados.
+
+**Achados (viram follow-up — ver pendências):**
+1. **compile exclui `implemented`** (usa `liveFeatureStates` = candidate/approved/in_development). Num projeto maduro (285/308 implemented) só `finance` e `identity` tiveram página — a wiki não sintetiza o sistema vigente já entregue. Provável correção: incluir `implemented` nas fontes do compile (divergindo de lint/materialize).
+2. **Página `project` impraticável:** o prompt embute o conteúdo de 45 ADRs + 66 refs → ~33k linhas, grande demais para uma chamada LLM. Precisa chunking/sumarização, não embutir tudo.
+3. **`ask` com pergunta em linguagem natural: recall ~zero.** A frase inteira vira query FTS literal e não casa; só queries por palavra-chave recuperam. Precisa extração de keywords (ou retriever melhor) antes do `ask` ser útil para perguntas reais.
+
 ## Próximos passos sugeridos
 
-1. Rodar o dogfood real e anexar a wiki + resposta aqui.
+1. **Corrigir os 3 achados do dogfood** (acima) — em especial incluir `implemented` no compile e a extração de keywords no `ask`; provavelmente um case 0003.1 antes de declarar a camada útil.
 2. Case seguinte: BYO-key (provider HTTP, chave por env) + caminho síncrono — fecha o "pluggable" de ponta a ponta.
 3. UI da wiki/ask (follow-up do escopo A).
