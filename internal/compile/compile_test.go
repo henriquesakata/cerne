@@ -3,6 +3,7 @@ package compile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,6 +184,54 @@ func TestBuildPagePrompt(t *testing.T) {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
+	}
+}
+
+func TestBuildPagePromptBoundsLongSource(t *testing.T) {
+	short := "# Curto\n\nConteúdo pequeno.\n"
+	long := "# Longo\n\n" + strings.Repeat("palavra ", 500) // well over the cap
+	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
+		{ID: "F-0001", Kind: "feature", State: "implemented", Title: "Longo", Content: long},
+		{ID: "F-0002", Kind: "feature", State: "approved", Title: "Curto", Content: short},
+	}}
+	prompt := BuildPagePrompt(p)
+
+	if !contains(prompt, "…(conteúdo truncado)") {
+		t.Fatalf("long source not truncated:\n%s", prompt)
+	}
+	// The whole long content (4000 chars) must not be embedded verbatim.
+	if contains(prompt, long) {
+		t.Fatalf("long source embedded in full despite the cap")
+	}
+	// The short source must appear whole and without a marker for it.
+	if !contains(prompt, "Conteúdo pequeno.") {
+		t.Fatalf("short source not emitted whole:\n%s", prompt)
+	}
+
+	// InputHash must hash FULL content, not the bounded excerpt: it must equal
+	// the digest computed directly from each source's full content.
+	want := wiki.InputHash([]wiki.Source{
+		{ID: "F-0001", State: "implemented", ContentHash: contentHash(long)},
+		{ID: "F-0002", State: "approved", ContentHash: contentHash(short)},
+	})
+	if got := p.InputHash(); got != want {
+		t.Fatalf("InputHash = %s, want full-content hash %s (excerpting must not affect it)", got, want)
+	}
+}
+
+func TestExcerptShortIsWhole(t *testing.T) {
+	s := "linha curta sem corte"
+	if got := excerpt(s); got != s {
+		t.Fatalf("excerpt(short) = %q, want unchanged", got)
+	}
+	long := strings.Repeat("x", maxSourceExcerptChars+50)
+	got := excerpt(long)
+	if !strings.HasSuffix(got, "\n…(conteúdo truncado)") {
+		t.Fatalf("excerpt(long) missing marker: %q", got)
+	}
+	body := strings.TrimSuffix(got, "\n…(conteúdo truncado)")
+	if len([]rune(body)) > maxSourceExcerptChars {
+		t.Fatalf("excerpt body = %d runes, want <= %d", len([]rune(body)), maxSourceExcerptChars)
 	}
 }
 

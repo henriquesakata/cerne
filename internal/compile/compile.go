@@ -142,16 +142,38 @@ func Dirty(repoDir string, pages []Page, force bool) ([]Page, error) {
 	return dirty, nil
 }
 
+// maxSourceExcerptChars bounds each source's content in the synthesis prompt so
+// a page aggregating many entities (e.g. the cross-cutting project page) stays
+// within one LLM call. It bounds only the PROMPT text — InputHash still hashes
+// each source's full content (see InputHash), so deep edits keep marking dirty.
+const maxSourceExcerptChars = 800
+
+// excerpt returns content unchanged when within the cap, otherwise the first
+// maxSourceExcerptChars runes (cut on a rune boundary, preferring the last
+// newline within the cap) followed by a truncation marker.
+func excerpt(content string) string {
+	r := []rune(content)
+	if len(r) <= maxSourceExcerptChars {
+		return content
+	}
+	head := string(r[:maxSourceExcerptChars])
+	if nl := strings.LastIndexByte(head, '\n'); nl > 0 {
+		head = head[:nl]
+	}
+	return head + "\n…(conteúdo truncado)"
+}
+
 // BuildPagePrompt renders the deterministic synthesis prompt for a page: the
-// instruction plus every source with its state and content. The text the LLM
-// returns is the page body; cerne stamps the provenance frontmatter on ingest.
+// instruction plus every source with its state and a bounded excerpt of its
+// content. The text the LLM returns is the page body; cerne stamps the
+// provenance frontmatter on ingest.
 func BuildPagePrompt(p Page) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Sintetize a página de wiki \"%s\" do projeto a partir das fontes vigentes abaixo.\n", p.Name)
 	b.WriteString("Escreva markdown em pt-BR: visão geral + como as partes se relacionam hoje. ")
 	b.WriteString("Respeite o estado de cada fonte e não invente o que não está nas fontes.\n\n")
 	for _, s := range p.Sources {
-		fmt.Fprintf(&b, "## %s — %s (%s, %s)\n\n%s\n\n", s.ID, s.Title, s.Kind, s.State, strings.TrimSpace(s.Content))
+		fmt.Fprintf(&b, "## %s — %s (%s, %s)\n\n%s\n\n", s.ID, s.Title, s.Kind, s.State, excerpt(strings.TrimSpace(s.Content)))
 	}
 	return b.String()
 }
