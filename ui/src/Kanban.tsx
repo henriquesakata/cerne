@@ -6,10 +6,11 @@ import {
   type StateResponse,
 } from './api'
 
+// Lifecycle flow left to right: candidata → aprovada → em desenvolvimento → implementada.
 const OPEN_COLUMNS: FeatureState[] = [
-  'in_development',
-  'approved',
   'candidate',
+  'approved',
+  'in_development',
   'implemented',
 ]
 const CLOSED_COLUMNS: FeatureState[] = ['superseded', 'rejected']
