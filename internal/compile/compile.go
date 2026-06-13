@@ -126,6 +126,37 @@ func Pages(repoDir string) ([]Page, error) {
 	return pages, nil
 }
 
+// ModulelessSkipped reports how many live (wiki-source) features the wiki
+// deliberately omits because they have no declared module. It is 0 when the
+// project declares no modules — there every live feature is synthesized on the
+// project page, so nothing is skipped. A feature whose module is not among the
+// declared modules counts as skipped (it lands in no module page). The compile
+// command surfaces this count so the omission is never silent.
+func ModulelessSkipped(repoDir string) (int, error) {
+	proj, err := store.LoadProject(repoDir)
+	if err != nil {
+		return 0, err
+	}
+	if len(proj.Modules) == 0 {
+		return 0, nil
+	}
+	moduleSet := make(map[string]bool, len(proj.Modules))
+	for _, m := range proj.Modules {
+		moduleSet[m] = true
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, f := range features {
+		if wikiSourceStates[f.State] && !moduleSet[f.Module] {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // InputHash is the digest of the page's sources for dirty-tracking.
 func (p Page) InputHash() string {
 	ws := make([]wiki.Source, 0, len(p.Sources))

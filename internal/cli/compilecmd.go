@@ -54,11 +54,30 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 	if ingest {
 		return ingestPending(cmd, ctx, pages)
 	}
+	if err := reportModulelessSkipped(cmd, ctx.repoDir); err != nil {
+		return err
+	}
 	dirty, err := compile.Dirty(ctx.repoDir, pages, force)
 	if err != nil {
 		return err
 	}
 	return preparePrompts(cmd, ctx, dirty)
+}
+
+// reportModulelessSkipped tells the user, on the prepare phase, how many live
+// features the wiki omits for lacking a declared module — no silent drop. The
+// deterministic index (CONTEXT.md) and search still cover them.
+func reportModulelessSkipped(cmd *cobra.Command, repoDir string) error {
+	n, err := compile.ModulelessSkipped(repoDir)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"%d feature(s) sem módulo não entram na wiki (veja CONTEXT.md / cerne search); atribua módulos para sintetizá-las.\n", n)
+	return nil
 }
 
 // compilablePages keeps the pages worth compiling: those with at least one

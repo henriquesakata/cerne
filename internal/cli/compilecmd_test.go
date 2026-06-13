@@ -74,6 +74,39 @@ func TestCompileDelegationFlow(t *testing.T) {
 	}
 }
 
+func TestCompileReportsModulelessSkipped(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance")
+	// A moduled feature (synthesized) and a module-less one (omitted).
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new finance: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "new", "Sem modulo", "--dir", projDir); err != nil {
+		t.Fatalf("feature new module-less: %v\n%s", err, out)
+	}
+
+	out, err := execCerne(t, "compile", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("compile: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "sem módulo não entram na wiki") {
+		t.Fatalf("compile output missing module-less note:\n%s", out)
+	}
+}
+
+func TestCompileNoModulelessNoteWhenNone(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	out, err := execCerne(t, "compile", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("compile: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "sem módulo não entram na wiki") {
+		t.Fatalf("compile printed module-less note when none apply:\n%s", out)
+	}
+}
+
 func TestCompileForceRecompiles(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance")
 	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {

@@ -209,6 +209,39 @@ func TestPagesNoModulesOnlyProjectWhenNoCrossCutting(t *testing.T) {
 	}
 }
 
+func TestModulelessSkipped(t *testing.T) {
+	// Moduled project: live features without a declared module are counted;
+	// superseded ones (not wiki sources) and moduled ones are not.
+	dir := seedBackend(t, "finance")
+	addFeature(t, dir, "F-0001", "finance", domain.StateApproved, "# F-0001\n")        // moduled
+	addFeature(t, dir, "F-0002", "", domain.StateImplemented, "# F-0002\n")            // module-less, counted
+	addFeature(t, dir, "F-0003", "", domain.StateCandidate, "# F-0003\n")              // module-less, counted
+	addFeature(t, dir, "F-0004", "", domain.StateSuperseded, "# F-0004\n")             // not a wiki source
+	addFeature(t, dir, "F-0005", "ghost", domain.StateApproved, "# F-0005\n")          // module not declared, counted
+	n, err := ModulelessSkipped(dir)
+	if err != nil {
+		t.Fatalf("ModulelessSkipped: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("ModulelessSkipped (moduled) = %d, want 3", n)
+	}
+}
+
+func TestModulelessSkippedNoModulesIsZero(t *testing.T) {
+	// No declared modules: nothing is "skipped" — every feature is synthesized
+	// on the project page — so the count is 0.
+	dir := seedBackend(t)
+	addFeature(t, dir, "F-0001", "", domain.StateApproved, "# F-0001\n")
+	addFeature(t, dir, "F-0002", "", domain.StateImplemented, "# F-0002\n")
+	n, err := ModulelessSkipped(dir)
+	if err != nil {
+		t.Fatalf("ModulelessSkipped: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("ModulelessSkipped (no modules) = %d, want 0", n)
+	}
+}
+
 // writeCompiled simulates a previously compiled page whose provenance matches
 // the page's current input hash.
 func writeCompiled(t *testing.T, dir string, p Page) {
