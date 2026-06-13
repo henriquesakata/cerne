@@ -83,10 +83,15 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	return nil
 }
 
+// specPath is the backend path of a feature's spec document.
+func specPath(repoDir, id string) string {
+	return filepath.Join(repoDir, "content", "features", id, "spec.md")
+}
+
 // readSpecCurrent returns the current content/features/<id>/spec.md, or "" when
 // it is missing (a freshly created feature may have only the stub, or none).
 func readSpecCurrent(repoDir, id string) string {
-	data, err := os.ReadFile(featureDocPath(repoDir, id, "spec.md"))
+	data, err := os.ReadFile(specPath(repoDir, id))
 	if err != nil {
 		return ""
 	}
@@ -97,7 +102,7 @@ func readSpecCurrent(repoDir, id string) string {
 // cerne_id frontmatter followed by the model's trimmed body. cerne stamps the
 // frontmatter itself — the model is never trusted to emit cerne_id.
 func writeSpecDraft(repoDir, id, body string) error {
-	path := featureDocPath(repoDir, id, "spec.md")
+	path := specPath(repoDir, id)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
