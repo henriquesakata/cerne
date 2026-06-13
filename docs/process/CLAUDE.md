@@ -15,7 +15,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0009](cases/0009_byo-key-provider/spec.md) | BYO-key LLM provider (`compile`/`ask` standalone) | Done |
 | [0010](cases/0010_release-pipeline/spec.md) | Release pipeline (ldflags version, cross-compile, GitLab CI) | Done |
 | [0011](cases/0011_ui-read-pages/spec.md) | UI nav shell + read pages (decisions, references, search, lint, history) | Done |
-| [0012](cases/0012_feature-authoring-ui/spec.md) | Feature authoring & management in the UI (create/edit/"remove") | Spec (depends on 0011) |
+| [0012](cases/0012_feature-authoring-ui/spec.md) | Feature authoring & management in the UI (create/edit/"remove") | Done (stacked on 0011) |
 | [0013](cases/0013_ui-open-browser/spec.md) | `cerne ui` opens the browser (default; `--no-browser`) | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
