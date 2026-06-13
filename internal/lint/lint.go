@@ -22,24 +22,27 @@ import (
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
 // Rule names, in deterministic report order.
 const (
-	RuleRefToSuperseded = "ref-to-superseded"
-	RuleBrokenLink      = "broken-link"
-	RuleOrphanContent   = "orphan-content"
-	RuleMissingGateDoc  = "missing-gate-doc"
+	RuleRefToSuperseded   = "ref-to-superseded"
+	RuleBrokenLink        = "broken-link"
+	RuleOrphanContent     = "orphan-content"
+	RuleMissingGateDoc    = "missing-gate-doc"
+	RuleWikiSourceUnknown = "wiki-source-unknown"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown}
 
 var ruleRank = map[string]int{
-	RuleRefToSuperseded: 0,
-	RuleBrokenLink:      1,
-	RuleOrphanContent:   2,
-	RuleMissingGateDoc:  3,
+	RuleRefToSuperseded:   0,
+	RuleBrokenLink:        1,
+	RuleOrphanContent:     2,
+	RuleMissingGateDoc:    3,
+	RuleWikiSourceUnknown: 4,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -123,6 +126,11 @@ func Run(repoDir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
+	wikiPages, err := wikiDocs(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	docs = append(docs, wikiPages...)
 
 	var findings []Finding
 	for _, d := range docs {
@@ -146,6 +154,12 @@ func Run(repoDir string) ([]Finding, error) {
 		return nil, err
 	}
 	findings = append(findings, gates...)
+
+	wikiSources, err := wikiSourceFindings(repoDir, features, decisions, references)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, wikiSources...)
 
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
@@ -285,6 +299,77 @@ func deriveImportedNeedles(source string) []string {
 // wordRx compiles a case-insensitive word-boundary matcher for the literal s.
 func wordRx(s string) *regexp.Regexp {
 	return regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(s) + `\b`)
+}
+
+// wikiPagePaths returns the rel slash paths of every compiled wiki page under
+// content/wiki/; empty when the directory is absent.
+func wikiPagePaths(repoDir string) ([]string, error) {
+	root := filepath.Join(repoDir, "content", "wiki")
+	var rels []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		rel, err := filepath.Rel(repoDir, p)
+		if err != nil {
+			return err
+		}
+		rels = append(rels, filepath.ToSlash(rel))
+		return nil
+	})
+	return rels, err
+}
+
+// wikiDocs lists the compiled wiki pages as scanned documents, so the text
+// rules (ref-to-superseded, broken-link) run over them too.
+func wikiDocs(repoDir string) ([]scannedDoc, error) {
+	rels, err := wikiPagePaths(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	docs := make([]scannedDoc, 0, len(rels))
+	for _, rel := range rels {
+		docs = append(docs, scannedDoc{entity: "", rel: rel})
+	}
+	return docs, nil
+}
+
+// wikiSourceFindings reports wiki pages whose provenance lists a source that
+// resolves to no existing entity (a dangling synthesis input).
+func wikiSourceFindings(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]Finding, error) {
+	known := make(map[string]bool, len(features)+len(decisions)+len(references))
+	for _, f := range features {
+		known[f.ID] = true
+	}
+	for _, d := range decisions {
+		known[d.ID] = true
+	}
+	for _, r := range references {
+		known[r.ID] = true
+	}
+	rels, err := wikiPagePaths(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var findings []Finding
+	for _, rel := range rels {
+		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
+		if err != nil {
+			return nil, err
+		}
+		for _, src := range wiki.ParseProvenance(data).Sources {
+			if !known[src] {
+				findings = append(findings, Finding{Rule: RuleWikiSourceUnknown, File: rel, Detail: "fonte desconhecida: " + src})
+			}
+		}
+	}
+	return findings, nil
 }
 
 // scannedDocs lists the content documents of live entities: every *.md under

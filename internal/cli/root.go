@@ -21,6 +21,8 @@ func Root() *cobra.Command {
 	root.AddCommand(newImportCmd())
 	root.AddCommand(newLintCmd())
 	root.AddCommand(newSearchCmd())
+	root.AddCommand(newCompileCmd())
+	root.AddCommand(newAskCmd())
 	root.AddCommand(newUICmd())
 	return root
 }

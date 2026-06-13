@@ -1,0 +1,198 @@
+// Package compile builds the deterministic half of `cerne compile`: the set
+// of wiki pages a project should have, which of them are stale (input-hash),
+// and the prompt that synthesizes each. The non-deterministic half — the
+// synthesis text — is produced by the host agent (delegation) or a Provider.
+package compile
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/wiki"
+)
+
+// EntitySource is one live entity feeding a wiki page, with the content the
+// prompt needs and the state every consumer must respect.
+type EntitySource struct {
+	ID      string
+	Kind    string // feature | decision | reference
+	State   string
+	Title   string
+	Content string
+}
+
+// Page is one synthesis page: a module's live features, or the cross-cutting
+// "project" page (active decisions + current references + module-less features).
+type Page struct {
+	Name    string // module name, or "project"
+	Rel     string // path under content/wiki without extension ("modules/x" | "project")
+	Sources []EntitySource
+}
+
+var liveFeatureStates = map[domain.FeatureState]bool{
+	domain.StateCandidate:     true,
+	domain.StateApproved:      true,
+	domain.StateInDevelopment: true,
+}
+
+// Pages computes the deterministic page set for the backend at repoDir: one
+// page per declared module (its live features) plus a "project" page (active
+// decisions, current references, and any live feature without a known module).
+// A project with no declared modules yields only the "project" page, holding
+// every live entity.
+func Pages(repoDir string) ([]Page, error) {
+	proj, err := store.LoadProject(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	decisions, err := store.LoadAllDecisions(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	references, err := store.LoadAllReferences(repoDir)
+	if err != nil {
+		return nil, err
+	}
+
+	moduleSet := make(map[string]bool, len(proj.Modules))
+	for _, m := range proj.Modules {
+		moduleSet[m] = true
+	}
+
+	var pages []Page
+	for _, m := range proj.Modules {
+		var srcs []EntitySource
+		for _, f := range features {
+			if liveFeatureStates[f.State] && f.Module == m {
+				srcs = append(srcs, featureSource(repoDir, f))
+			}
+		}
+		pages = append(pages, Page{Name: m, Rel: "modules/" + m, Sources: srcs})
+	}
+
+	// project page: cross-cutting entities (no module) + module-less features.
+	var proje []EntitySource
+	for _, d := range decisions {
+		if d.State == domain.DecisionActive {
+			proje = append(proje, decisionSource(repoDir, d))
+		}
+	}
+	for _, r := range references {
+		if r.State == domain.ReferenceCurrent {
+			proje = append(proje, referenceSource(repoDir, r))
+		}
+	}
+	for _, f := range features {
+		if liveFeatureStates[f.State] && !moduleSet[f.Module] {
+			proje = append(proje, featureSource(repoDir, f))
+		}
+	}
+	pages = append(pages, Page{Name: "project", Rel: "project", Sources: proje})
+	return pages, nil
+}
+
+// InputHash is the digest of the page's sources for dirty-tracking.
+func (p Page) InputHash() string {
+	ws := make([]wiki.Source, 0, len(p.Sources))
+	for _, s := range p.Sources {
+		ws = append(ws, wiki.Source{ID: s.ID, State: s.State, ContentHash: contentHash(s.Content)})
+	}
+	return wiki.InputHash(ws)
+}
+
+// Dirty returns the pages that need recompilation: those whose compiled page
+// is missing or whose recorded input_hash differs from the current one. With
+// force, every page is returned.
+func Dirty(repoDir string, pages []Page, force bool) ([]Page, error) {
+	var dirty []Page
+	for _, p := range pages {
+		if force {
+			dirty = append(dirty, p)
+			continue
+		}
+		data, err := os.ReadFile(pagePath(repoDir, p))
+		if errors.Is(err, fs.ErrNotExist) {
+			dirty = append(dirty, p)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if wiki.ParseProvenance(data).InputHash != p.InputHash() {
+			dirty = append(dirty, p)
+		}
+	}
+	return dirty, nil
+}
+
+// BuildPagePrompt renders the deterministic synthesis prompt for a page: the
+// instruction plus every source with its state and content. The text the LLM
+// returns is the page body; cerne stamps the provenance frontmatter on ingest.
+func BuildPagePrompt(p Page) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Sintetize a página de wiki \"%s\" do projeto a partir das fontes vigentes abaixo.\n", p.Name)
+	b.WriteString("Escreva markdown em pt-BR: visão geral + como as partes se relacionam hoje. ")
+	b.WriteString("Respeite o estado de cada fonte e não invente o que não está nas fontes.\n\n")
+	for _, s := range p.Sources {
+		fmt.Fprintf(&b, "## %s — %s (%s, %s)\n\n%s\n\n", s.ID, s.Title, s.Kind, s.State, strings.TrimSpace(s.Content))
+	}
+	return b.String()
+}
+
+func featureSource(repoDir string, f store.Feature) EntitySource {
+	return EntitySource{ID: f.ID, Kind: "feature", State: string(f.State), Title: f.Title,
+		Content: readFeatureContent(repoDir, f.ID)}
+}
+
+func decisionSource(repoDir string, d store.Decision) EntitySource {
+	return EntitySource{ID: d.ID, Kind: "decision", State: string(d.State), Title: d.Title,
+		Content: readFile(filepath.Join(repoDir, "content", "decisions", d.ID+".md"))}
+}
+
+func referenceSource(repoDir string, r store.Reference) EntitySource {
+	return EntitySource{ID: r.ID, Kind: "reference", State: string(r.State), Title: r.Title,
+		Content: readFile(filepath.Join(repoDir, "content", "references", r.ID+".md"))}
+}
+
+// readFeatureContent concatenates the feature's existing lifecycle documents
+// in spec→plan→result order.
+func readFeatureContent(repoDir, id string) string {
+	var b strings.Builder
+	for _, name := range []string{"spec.md", "plan.md", "result.md"} {
+		if c := readFile(filepath.Join(repoDir, "content", "features", id, name)); c != "" {
+			b.WriteString(c)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func readFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func contentHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// pagePath is the backend path of a page's compiled markdown file.
+func pagePath(repoDir string, p Page) string {
+	return filepath.Join(repoDir, "content", "wiki", filepath.FromSlash(p.Rel)+".md")
+}

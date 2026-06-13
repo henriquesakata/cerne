@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,10 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 		data.References = append(data.References, line)
 	}
 
+	if err := copyWiki(repoDir, docsDir, manifest); err != nil {
+		return nil, err
+	}
+
 	tmpl, err := template.New("context").Parse(contextTemplate)
 	if err != nil {
 		return nil, err
@@ -170,6 +175,40 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 	}
 	manifest["CONTEXT.md"] = sum
 	return manifest, nil
+}
+
+// copyWiki projects every compiled page under content/wiki/ into .docs/wiki/
+// verbatim, adding each to the manifest. Wiki is a versioned synthesis
+// artifact, so it is project-wide and ignores the feature scope filter. A
+// backend with no compiled pages is a no-op.
+func copyWiki(repoDir, docsDir string, manifest map[string]string) error {
+	wikiRoot := filepath.Join(repoDir, "content", "wiki")
+	return filepath.WalkDir(wikiRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		under, err := filepath.Rel(wikiRoot, p)
+		if err != nil {
+			return err
+		}
+		rel := "wiki/" + filepath.ToSlash(under)
+		sum, err := writeFile(docsDir, rel, body)
+		if err != nil {
+			return err
+		}
+		manifest[rel] = sum
+		return nil
+	})
 }
 
 // copyFeatureDocs copies the feature's existing lifecycle documents into
