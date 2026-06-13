@@ -529,3 +529,52 @@ func TestLintEndpointClean(t *testing.T) {
 		t.Fatalf("findings = %+v, want none on a clean backend", got.Findings)
 	}
 }
+
+func TestEventsEndpoint(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	if err := store.AppendEvent(repoDir, domain.NewEvent("F-0001", "feature.created", map[string]string{"title": "A"}, "tester")); err != nil {
+		t.Fatalf("AppendEvent 1: %v", err)
+	}
+	if err := store.AppendEvent(repoDir, domain.NewEvent("F-0001", "feature.approved", nil, "tester")); err != nil {
+		t.Fatalf("AppendEvent 2: %v", err)
+	}
+
+	var got struct {
+		Events []struct {
+			EntityID string `json:"entity_id"`
+			Type     string `json:"type"`
+			Actor    string `json:"actor"`
+		} `json:"events"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/events", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Events) != 2 {
+		t.Fatalf("events = %+v, want 2", got.Events)
+	}
+	// Newest first: the approved event (appended last) leads the timeline.
+	if got.Events[0].Type != "feature.approved" || got.Events[1].Type != "feature.created" {
+		t.Fatalf("order = [%s, %s], want [feature.approved, feature.created]", got.Events[0].Type, got.Events[1].Type)
+	}
+	if got.Events[0].EntityID != "F-0001" || got.Events[0].Actor != "tester" {
+		t.Fatalf("lead event = %+v, want F-0001 by tester", got.Events[0])
+	}
+}
+
+func TestEventsEndpointEmpty(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	var got struct {
+		Events []struct{} `json:"events"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/events", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Events) != 0 {
+		t.Fatalf("events = %+v, want none", got.Events)
+	}
+	if !strings.Contains(rec.Body.String(), `"events": []`) {
+		t.Fatalf("empty events not serialized as []:\n%s", rec.Body.String())
+	}
+}

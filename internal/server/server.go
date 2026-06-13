@@ -52,6 +52,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
 		handleLint(w, repoDir)
 	})
+	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
+		handleEvents(w, repoDir)
+	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
 	})
@@ -326,6 +329,25 @@ func handleLint(w http.ResponseWriter, repoDir string) {
 		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail}
 	}
 	writeJSON(w, http.StatusOK, lintResponse{Findings: out})
+}
+
+// eventsResponse is the GET /api/events payload: the lifecycle event log,
+// newest first for a timeline view.
+type eventsResponse struct {
+	Events []domain.Event `json:"events"`
+}
+
+func handleEvents(w http.ResponseWriter, repoDir string) {
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// ReadEvents yields chronological order; reverse to newest-first.
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+	writeJSON(w, http.StatusOK, eventsResponse{Events: events})
 }
 
 // transitionRequest is the POST /api/features/{id}/transition body.
