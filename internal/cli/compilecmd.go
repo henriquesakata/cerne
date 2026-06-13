@@ -43,14 +43,21 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 	if err != nil {
 		return err
 	}
-	if mode := llm.ResolveMode(ctx.cfg.LLM.Mode); mode != llm.ModeDelegation {
-		return fmt.Errorf("modo LLM %q ainda não suportado (apenas 'delegation')", mode)
-	}
 	pages, err := compile.Pages(ctx.repoDir)
 	if err != nil {
 		return err
 	}
 	pages = compilablePages(pages, scope)
+
+	// byo-key: one-phase synchronous synthesis via the configured Provider.
+	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
+		if ingest {
+			return fmt.Errorf("--ingest é exclusivo do modo delegação; no modo byo-key a compilação é síncrona")
+		}
+		return compileSynchronous(cmd, ctx, pages, force)
+	}
+
+	// delegation (default): two-phase via prompt files for the host agent.
 	if ingest {
 		return ingestPending(cmd, ctx, pages)
 	}
@@ -62,6 +69,52 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 		return err
 	}
 	return preparePrompts(cmd, ctx, dirty)
+}
+
+// compileSynchronous is the byo-key path: it builds the configured Provider and,
+// for each dirty page, calls Complete with the deterministic page prompt, writes
+// the synthesized body with provenance frontmatter (same stamping as ingest),
+// and finally commits+pushes once when at least one page was written.
+func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, force bool) error {
+	out := cmd.OutOrStdout()
+	if err := reportModulelessSkipped(cmd, ctx.repoDir); err != nil {
+		return err
+	}
+	dirty, err := compile.Dirty(ctx.repoDir, pages, force)
+	if err != nil {
+		return err
+	}
+	if len(dirty) == 0 {
+		fmt.Fprintln(out, "Nada a recompilar.")
+		return nil
+	}
+	prov, err := llm.NewProvider(ctx.cfg.LLM)
+	if err != nil {
+		return err
+	}
+	head, err := gitback.HeadSHA(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	var done []compile.Page
+	for _, p := range dirty {
+		body, err := prov.Complete(cmd.Context(), compile.BuildPagePrompt(p))
+		if err != nil {
+			return fmt.Errorf("sintetizando a página %s: %w", p.Name, err)
+		}
+		if err := writeStampedPage(ctx.repoDir, p, head, []byte(body)); err != nil {
+			return err
+		}
+		done = append(done, p)
+	}
+	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Compiladas %d página(s) (modo byo-key).\n", len(done))
+	for _, p := range done {
+		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
+	}
+	return nil
 }
 
 // reportModulelessSkipped tells the user, on the prepare phase, how many live
@@ -146,9 +199,7 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 		if err != nil {
 			return fmt.Errorf("página %s não foi escrita pelo agente em content/wiki/%s.md: %w", p.Name, p.Rel, err)
 		}
-		prov := wiki.Provenance{Page: p.Name, Sources: sourceIDs(p), CompiledFrom: head, InputHash: p.InputHash()}
-		stamped := wiki.RenderProvenance(prov) + "\n" + string(stripLeadingFrontmatter(body))
-		if err := os.WriteFile(pagePath, []byte(stamped), 0o644); err != nil {
+		if err := writeStampedPage(ctx.repoDir, p, head, body); err != nil {
 			return err
 		}
 		done = append(done, p)
@@ -166,6 +217,21 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
 	}
 	return nil
+}
+
+// writeStampedPage writes content/wiki/<rel>.md for the page: cerne's provenance
+// frontmatter (computed from the page sources and the backend HEAD sha) followed
+// by body, with any leading frontmatter the body already carried stripped first.
+// Shared by the delegation ingest phase and the byo-key synchronous path so both
+// emit the exact same frontmatter format.
+func writeStampedPage(repoDir string, p compile.Page, head string, body []byte) error {
+	pagePath := filepath.Join(repoDir, "content", "wiki", filepath.FromSlash(p.Rel)+".md")
+	if err := os.MkdirAll(filepath.Dir(pagePath), 0o755); err != nil {
+		return err
+	}
+	prov := wiki.Provenance{Page: p.Name, Sources: sourceIDs(p), CompiledFrom: head, InputHash: p.InputHash()}
+	stamped := wiki.RenderProvenance(prov) + "\n" + string(stripLeadingFrontmatter(body))
+	return os.WriteFile(pagePath, []byte(stamped), 0o644)
 }
 
 // sourceIDs lists a page's source entity IDs in order.
