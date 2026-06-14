@@ -15,6 +15,10 @@ import "context"
 // host agent instead of calling an LLM itself. No API key, no HTTP.
 const ModeDelegation = "delegation"
 
+// ModeByoKey is the bring-your-own-key mode: cerne calls the provider's HTTP
+// API with a key read from the environment (NewProvider's fallback mode).
+const ModeByoKey = "byo-key"
+
 // Provider abstracts a single text completion.
 type Provider interface {
 	Complete(ctx context.Context, prompt string) (string, error)

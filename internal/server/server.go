@@ -62,6 +62,12 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("POST /api/ask", func(w http.ResponseWriter, r *http.Request) {
 		handleAsk(w, r, repoDir, projDir, projectID)
 	})
+	mux.HandleFunc("GET /api/config/llm", func(w http.ResponseWriter, r *http.Request) {
+		handleLLMConfigGet(w, projDir)
+	})
+	mux.HandleFunc("PUT /api/config/llm", func(w http.ResponseWriter, r *http.Request) {
+		handleLLMConfigPut(w, r, projDir)
+	})
 	mux.HandleFunc("GET /api/wiki", func(w http.ResponseWriter, r *http.Request) {
 		handleWikiIndex(w, repoDir)
 	})

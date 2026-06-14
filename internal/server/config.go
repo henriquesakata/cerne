@@ -1,0 +1,68 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"gitlab.com/rockt/cerne/internal/llm"
+	"gitlab.com/rockt/cerne/internal/project"
+)
+
+// llmConfigResponse is the GET/PUT /api/config/llm payload: the effective LLM
+// mode. Secrets never travel here — the byo-key API key stays in the env.
+type llmConfigResponse struct {
+	Mode string `json:"mode"`
+}
+
+// llmConfigRequest is the PUT /api/config/llm body.
+type llmConfigRequest struct {
+	Mode string `json:"mode"`
+}
+
+// validLLMMode reports whether mode is one cerne understands.
+func validLLMMode(mode string) bool {
+	switch mode {
+	case llm.ModeDelegation, llm.ModeByoKey, llm.ModeClaudeCLI:
+		return true
+	}
+	return false
+}
+
+// handleLLMConfigGet returns the project's effective LLM mode (empty → the
+// normalized "delegation" default), read from .cernerc at projDir.
+func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode(cfg.LLM.Mode)})
+}
+
+// handleLLMConfigPut sets the [llm] mode in .cernerc, preserving every other
+// config field (project_id/backend/default_scope and the other [llm] fields).
+// It writes only the mode — never a secret. The /api/ask handler reloads the
+// config per request, so the change takes effect on the next question.
+func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) {
+	var req llmConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo inválido: "+err.Error()))
+		return
+	}
+	if !validLLMMode(req.Mode) {
+		writeJSON(w, http.StatusBadRequest,
+			errorBody(`modo inválido (esperado "delegation", "claude-cli" ou "byo-key")`))
+		return
+	}
+	cfg, dir, err := project.LoadConfig(projDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	cfg.LLM.Mode = req.Mode
+	if err := project.SaveConfig(dir, cfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: req.Mode})
+}
