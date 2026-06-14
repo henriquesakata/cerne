@@ -83,8 +83,8 @@ func TestLintFindings(t *testing.T) {
 	// Groups in fixed rule order, each line "  <loc> — <detail>".
 	blocks := []string{
 		"REF-TO-SUPERSEDED (2)\n" +
-			"  content/decisions/D-0001.md — menciona F-0007 (\"One\") que está superseded\n" +
-			"  content/features/F-0003/spec.md — menciona F-0001 (\"Bills\") que está superseded — use F-0002\n",
+			"  content/decisions/D-0001.md — menciona F-0007 (\"One\") que está substituída\n" +
+			"  content/features/F-0003/spec.md — menciona F-0001 (\"Bills\") que está substituída — use F-0002\n",
 		"BROKEN-LINK (1)\n" +
 			"  content/features/F-0003/spec.md — link quebrado: ../missing.md\n",
 		"ORPHAN-CONTENT (1)\n" +
@@ -120,7 +120,7 @@ func TestLintFixTasks(t *testing.T) {
 	}
 
 	wantBlock := "## Tarefas de manutenção (geradas por cerne lint)\n" +
-		"- [ ] content/decisions/D-0001.md: remover menção a F-0007 (\"One\") (superseded)\n" +
+		"- [ ] content/decisions/D-0001.md: remover menção a F-0007 (\"One\") (substituída)\n" +
 		"- [ ] content/features/F-0003/spec.md: substituir menção a F-0001 (\"Bills\") por F-0002\n" +
 		"- [ ] content/features/F-0003/spec.md: corrigir link quebrado: ../missing.md\n" +
 		"- [ ] content/decisions/D-0099.md: remover conteúdo sem entidade ou criar a entidade correspondente\n" +

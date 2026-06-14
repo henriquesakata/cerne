@@ -107,13 +107,13 @@ func TestRunFindings(t *testing.T) {
 
 	want := []Finding{
 		{Rule: RuleRefToSuperseded, Entity: "D-0001", File: "content/decisions/D-0001.md",
-			Detail: `menciona F-0007 ("One") que está superseded`},
+			Detail: `menciona F-0007 ("One") que está substituída`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: `menciona D-0002 ("Usar boleto legado") que está superseded — use D-0003`},
+			Detail: `menciona D-0002 ("Usar boleto legado") que está substituída — use D-0003`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: `menciona F-0001 ("Bills") que está superseded — use F-0002`},
+			Detail: `menciona F-0001 ("Bills") que está substituída — use F-0002`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: `menciona R-0001 ("API antiga") que está obsolete`},
+			Detail: `menciona R-0001 ("API antiga") que está obsoleta`},
 		{Rule: RuleBrokenLink, Entity: "F-0003", File: "content/features/F-0003/spec.md",
 			Detail: "link quebrado: ../missing.md"},
 		{Rule: RuleBrokenLink, Entity: "R-0002", File: "content/references/R-0002.md",
@@ -219,13 +219,13 @@ func TestRunImportedFromNeedles(t *testing.T) {
 
 	want := []Finding{
 		{Rule: RuleRefToSuperseded, Entity: "F-0091", File: "content/features/F-0091/spec.md",
-			Detail: `menciona 0090_plugin-autonomous-agent (F-0090 "Agente autônomo") que está superseded — use F-0091`},
+			Detail: `menciona 0090_plugin-autonomous-agent (F-0090 "Agente autônomo") que está substituída — use F-0091`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0091", File: "content/features/F-0091/spec.md",
-			Detail: `menciona roadmap-2024 (R-0050 "Roadmap antigo") que está obsolete`},
+			Detail: `menciona roadmap-2024 (R-0050 "Roadmap antigo") que está obsoleta`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
-			Detail: `menciona adr-045 (D-0045 "Identity como biblioteca") que está superseded — use D-0046`},
+			Detail: `menciona adr-045 (D-0045 "Identity como biblioteca") que está substituída — use D-0046`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
-			Detail: `menciona case 0090 (F-0090 "Agente autônomo") que está superseded — use F-0091`},
+			Detail: `menciona case 0090 (F-0090 "Agente autônomo") que está substituída — use F-0091`},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
