@@ -23,6 +23,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0017](cases/0017_wiki-on-web/spec.md) | Wiki na web — perguntar (`/api/ask` via provider) + navegar a síntese | Done |
 | [0018](cases/0018_import-classify-backfill/spec.md) | `import` auto-classifica módulos (sem subsistema órfão) | Done |
 | [0019](cases/0019_llm-mode-in-ui/spec.md) | Trocar o modo de IA pela UI (`/api/config/llm` + seletor) | Done |
+| [0020](cases/0020_external-references/spec.md) | Referências externas (marca + conteúdo indexado + backlink `informs`) | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

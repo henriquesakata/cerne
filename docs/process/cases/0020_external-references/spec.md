@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #references #ui #ask #provenance
 
-**Status:** Draft (2026-06-14)
+**Status:** Done (2026-06-14) — ver [result.md](result.md)
 **Tipo:** Nova faceta da entidade Reference (URL + marca externa + backlink `informs`) + comando CLI `reference new` + endpoint/forma na UI + citação no `ask`.
 **Origem:** Pedido do usuário: cadastrar **documentação/artigos externos** como fonte de informação, com uma **marca** "fonte externa" em Referências; e — quando o **agente** resolve um problema a partir de um artigo — ele mesmo registrar o artigo, ligado à correção/decisão, como **histórico de decisões e fonte da correção**.
 
