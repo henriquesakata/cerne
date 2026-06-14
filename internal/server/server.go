@@ -56,6 +56,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("GET /api/references/{id}", func(w http.ResponseWriter, r *http.Request) {
 		handleReferenceDetail(w, repoDir, r.PathValue("id"))
 	})
+	mux.HandleFunc("POST /api/references", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateReference(w, r, repoDir, projDir)
+	})
 	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
 		handleSearch(w, r, repoDir, projectID)
 	})
@@ -130,9 +133,10 @@ func handleState(w http.ResponseWriter, repoDir string) {
 
 // featureDetailResponse is the GET /api/features/{id} payload.
 type featureDetailResponse struct {
-	Feature   store.Feature `json:"feature"`
-	Docs      featureDocs   `json:"docs"`
-	Artifacts []artifact    `json:"artifacts"`
+	Feature    store.Feature     `json:"feature"`
+	Docs       featureDocs       `json:"docs"`
+	Artifacts  []artifact        `json:"artifacts"`
+	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this feature
 }
 
 type featureDocs struct {
@@ -174,7 +178,25 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts})
+	informedBy, err := informedByRefs(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts, InformedBy: informedBy})
+}
+
+// informedByRefs returns the external references whose Informs backlink targets
+// entityID, as a non-nil slice (so the JSON is [] not null).
+func informedByRefs(repoDir, entityID string) ([]store.Reference, error) {
+	refs, err := app.ReferencesInforming(repoDir, entityID)
+	if err != nil {
+		return nil, err
+	}
+	if refs == nil {
+		refs = []store.Reference{}
+	}
+	return refs, nil
 }
 
 // listArtifacts lists content/artifacts/<id>/ files (dotfiles like .gitkeep
@@ -203,8 +225,9 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 // decisionDetailResponse is the GET /api/decisions/{id} payload: the entity
 // plus its content document (empty when the doc file is absent).
 type decisionDetailResponse struct {
-	Decision store.Decision `json:"decision"`
-	Doc      string         `json:"doc"`
+	Decision   store.Decision    `json:"decision"`
+	Doc        string            `json:"doc"`
+	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this decision
 }
 
 func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
@@ -222,7 +245,12 @@ func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc})
+	informedBy, err := informedByRefs(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, InformedBy: informedBy})
 }
 
 // referenceDetailResponse is the GET /api/references/{id} payload.
@@ -338,9 +366,10 @@ type askRequest struct {
 // askSource is one retrieved context source in the API's snake_case contract,
 // projected from ask.Snippet (the body text is dropped; the UI links by source).
 type askSource struct {
-	Source string `json:"source"` // entity ID, or "wiki:<rel>" for a compiled page
-	Kind   string `json:"kind"`   // feature | decision | reference | wiki
-	State  string `json:"state"`  // lifecycle state; "current" for wiki pages
+	Source string `json:"source"`        // entity ID, or "wiki:<rel>" for a compiled page
+	Kind   string `json:"kind"`          // feature | decision | reference | wiki
+	State  string `json:"state"`         // lifecycle state; "current" for wiki pages
+	URL    string `json:"url,omitempty"` // source URL for external references
 }
 
 // askResponse is the POST /api/ask payload. Answered is false in delegation
@@ -580,6 +609,35 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		return
 	}
 	writeJSON(w, http.StatusCreated, createFeatureResponse{Feature: f})
+}
+
+// createReferenceRequest is the POST /api/references body: an external source
+// (article/doc) with optional informs backlinks. No secret travels here.
+type createReferenceRequest struct {
+	Title   string   `json:"title"`
+	URL     string   `json:"url"`
+	Content string   `json:"content"`
+	Informs []string `json:"informs"`
+}
+
+// createReferenceResponse is the POST /api/references 201 payload.
+type createReferenceResponse struct {
+	Reference store.Reference `json:"reference"`
+}
+
+func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	var req createReferenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs)
+	if err != nil {
+		// Validation (empty url, dangling informs) surfaces as 422, like features.
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, createReferenceResponse{Reference: ref})
 }
 
 func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, id, doc string) {

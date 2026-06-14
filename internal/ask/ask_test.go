@@ -237,6 +237,19 @@ func TestBuildAskPrompt(t *testing.T) {
 	}
 }
 
+// TestBuildAskPromptAnnotatesExternalURL: a snippet carrying a URL (external
+// reference) surfaces that URL in the prompt so the answer can cite the source.
+func TestBuildAskPromptAnnotatesExternalURL(t *testing.T) {
+	prompt := BuildAskPrompt("como configurar PKCE?", []Snippet{
+		{Source: "R-0042", Kind: "reference", State: "current", URL: "https://example.com/pkce", Text: "use S256"},
+	})
+	for _, want := range []string{"R-0042", "referência externa", "https://example.com/pkce"} {
+		if !contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

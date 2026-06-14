@@ -20,6 +20,7 @@ type Snippet struct {
 	Source string // entity ID, or "wiki:<rel>" for a compiled page
 	Kind   string // feature | decision | reference | wiki
 	State  string // lifecycle state; "current" for wiki pages
+	URL    string // source URL for external references; empty otherwise
 	Text   string
 }
 
@@ -88,7 +89,7 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 		if !history && terminalStates[h.State] {
 			continue
 		}
-		entitySnips = append(entitySnips, Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet})
+		snip := Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet}
 		switch h.Kind {
 		case "feature":
 			if f, err := store.LoadFeature(repoDir, h.EntityID); err == nil && f.Module != "" {
@@ -98,7 +99,12 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 			sawDecision = true
 		case "reference":
 			sawReference = true
+			// External references carry their source URL so the answer can cite it.
+			if r, err := store.LoadReference(repoDir, h.EntityID); err == nil && r.External {
+				snip.URL = r.URL
+			}
 		}
+		entitySnips = append(entitySnips, snip)
 	}
 
 	// Wiki context first (high-level synthesis), then the entity hits. Order
@@ -182,7 +188,11 @@ func BuildAskPrompt(query string, snippets []Snippet) string {
 	b.WriteString("Responda em pt-BR usando apenas as fontes abaixo e cite-as (IDs/páginas). ")
 	b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente.\n\n")
 	for _, s := range snippets {
-		b.WriteString("## " + s.Source + " (" + s.Kind + ", " + s.State + ")\n")
+		header := "## " + s.Source + " (" + s.Kind + ", " + s.State
+		if s.URL != "" {
+			header += ", referência externa: " + s.URL
+		}
+		b.WriteString(header + ")\n")
 		b.WriteString(strings.TrimSpace(s.Text) + "\n\n")
 	}
 	return b.String()
