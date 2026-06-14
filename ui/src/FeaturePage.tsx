@@ -144,6 +144,18 @@ export default function FeaturePage({ id }: { id: string }) {
           <p className="feature-note">Substituída por {f.superseded_by}</p>
         )}
         {f.reason && <p className="feature-note">Motivo: {f.reason}</p>}
+        {detail.informed_by.length > 0 && (
+          <p className="feature-note">
+            Fontes:{' '}
+            {detail.informed_by.map((r, i) => (
+              <span key={r.id}>
+                {i > 0 && ', '}
+                <a href={`#/r/${encodeURIComponent(r.id)}`}>{r.id}</a>
+                {r.external && <span className="badge badge-external"> externa</span>}
+              </span>
+            ))}
+          </p>
+        )}
         {notice && <p className="notice">{notice}</p>}
       </header>
       {diagram ? (

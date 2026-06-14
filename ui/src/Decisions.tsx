@@ -97,6 +97,18 @@ export function DecisionDetail({ id }: { id: string }) {
         </p>
         {d.superseded_by && <p className="feature-note">Substituída por {d.superseded_by}</p>}
         {d.reason && <p className="feature-note">Motivo: {d.reason}</p>}
+        {data.informed_by.length > 0 && (
+          <p className="feature-note">
+            Fontes:{' '}
+            {data.informed_by.map((r, i) => (
+              <span key={r.id}>
+                {i > 0 && ', '}
+                <a href={`#/r/${encodeURIComponent(r.id)}`}>{r.id}</a>
+                {r.external && <span className="badge badge-external"> externa</span>}
+              </span>
+            ))}
+          </p>
+        )}
       </header>
       <article className="doc">
         {data.doc ? (

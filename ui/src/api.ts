@@ -41,6 +41,9 @@ export type Reference = {
   id: string
   title: string
   state: string
+  url?: string // external source link
+  external?: boolean // true for a registered external source
+  informs?: string[] // F-/D- ids this source motivated
   created_at: string
   updated_at: string
 }
@@ -72,6 +75,7 @@ export type FeatureDetail = {
   feature: Feature
   docs: FeatureDocs
   artifacts: Artifact[]
+  informed_by: Reference[] // external sources that motivated this feature
 }
 
 export type TransitionResult = {
@@ -167,7 +171,7 @@ export async function postTransition(
 
 // ---- páginas de leitura (case 0011) ----
 
-export type DecisionDetail = { decision: Decision; doc: string }
+export type DecisionDetail = { decision: Decision; doc: string; informed_by: Reference[] }
 export type ReferenceDetail = { reference: Reference; doc: string }
 
 export async function fetchDecision(id: string): Promise<DecisionDetail> {
@@ -340,4 +344,27 @@ export async function setLLMMode(mode: LLMMode): Promise<LLMMode> {
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { mode: LLMMode }).mode
+}
+
+// ---- referências externas (case 0020) ----
+
+export type CreateReferenceOutcome =
+  | { ok: true; reference: Reference }
+  | { ok: false; error: string }
+
+// createReference registra uma fonte externa (artigo/doc): o servidor cunha
+// R-NNNN, grava o conteúdo (indexado), faz commit+push e atualiza o lock.
+export async function createReference(
+  title: string,
+  url: string,
+  content: string,
+  informs: string[],
+): Promise<CreateReferenceOutcome> {
+  const r = await fetch('/api/references', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, url, content, informs }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true, reference: ((await r.json()) as { reference: Reference }).reference }
 }

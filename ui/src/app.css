@@ -561,6 +561,62 @@ h2 {
 
 .ask-mode-hint { color: #8a8f8b; font-size: 0.82rem; }
 
+/* referências externas (case 0020) */
+.badge-external {
+  background: #eef2fb;
+  color: #3a5bbf;
+  border: 1px solid #cfd9f2;
+}
+
+.new-ref-toggle {
+  font: inherit;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 1rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px dashed #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  color: #5c635e;
+  cursor: pointer;
+}
+
+.new-ref-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 640px;
+  margin: 0.5rem 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid #e0d8c4;
+  border-radius: 8px;
+  background: #fbf9f3;
+}
+
+.new-ref-form h2 { margin: 0 0 0.25rem; font-size: 1rem; }
+
+.new-ref-form input,
+.new-ref-form textarea {
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d8d2c6;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.new-ref-actions { display: flex; gap: 0.5rem; }
+
+.new-ref-actions button {
+  font: inherit;
+  padding: 0.45rem 1rem;
+  border: 1px solid #b9b2a4;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.new-ref-actions button:disabled { opacity: 0.6; cursor: default; }
+
 /* lint */
 .lint-list { list-style: none; margin: 0; padding: 0; }
 
