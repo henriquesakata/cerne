@@ -11,15 +11,16 @@ import (
 )
 
 // TestCLIProviderCompleteSuccess drives cliProvider with a fake runner: it
-// returns the runner's stdout (trimmed) and the runner receives the exact argv
-// the Claude Code headless invocation needs — "-p <prompt> --output-format
-// text" — with no --bare and no --model (subscription default must be used).
+// returns the runner's stdout (trimmed), the runner receives the exact argv the
+// Claude Code headless invocation needs — "-p --output-format text" with no
+// --bare and no --model — and the PROMPT travels on stdin, not argv.
 func TestCLIProviderCompleteSuccess(t *testing.T) {
-	var gotName string
+	var gotName, gotStdin string
 	var gotArgs []string
-	fake := func(_ context.Context, name string, args []string) (string, error) {
+	fake := func(_ context.Context, name string, args []string, stdin string) (string, error) {
 		gotName = name
 		gotArgs = args
+		gotStdin = stdin
 		return "  resposta da assinatura\n", nil
 	}
 	p := &cliProvider{bin: "claude", run: fake}
@@ -34,9 +35,12 @@ func TestCLIProviderCompleteSuccess(t *testing.T) {
 	if gotName != "claude" {
 		t.Fatalf("runner name = %q, want claude", gotName)
 	}
-	want := []string{"-p", "qual o problema?", "--output-format", "text"}
+	want := []string{"-p", "--output-format", "text"}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, want)
+	}
+	if gotStdin != "qual o problema?" {
+		t.Fatalf("runner stdin = %q, want the prompt", gotStdin)
 	}
 	for _, banned := range []string{"--bare", "--model"} {
 		for _, a := range gotArgs {
@@ -47,11 +51,39 @@ func TestCLIProviderCompleteSuccess(t *testing.T) {
 	}
 }
 
+// TestCLIProviderLargePromptGoesToStdin is the regression for the Windows argv
+// limit (~32 KB): a real compile/ask prompt exceeds it, so the prompt must never
+// be passed as an argument (which failed with "The filename or extension is too
+// long"). It must travel on stdin, and argv must stay small and fixed.
+func TestCLIProviderLargePromptGoesToStdin(t *testing.T) {
+	prompt := strings.Repeat("contexto grande ", 4000) // ~64 KB, well over the argv cap
+	var gotArgs []string
+	var gotStdin string
+	fake := func(_ context.Context, _ string, args []string, stdin string) (string, error) {
+		gotArgs = args
+		gotStdin = stdin
+		return "ok", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake}
+
+	if _, err := p.Complete(context.Background(), prompt); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if gotStdin != prompt {
+		t.Fatalf("prompt did not reach stdin (got %d bytes, want %d)", len(gotStdin), len(prompt))
+	}
+	for _, a := range gotArgs {
+		if strings.Contains(a, "contexto grande") {
+			t.Fatalf("prompt leaked into argv (arg of %d bytes) — exceeds the OS command-line limit", len(a))
+		}
+	}
+}
+
 // TestCLIProviderCompleteError wraps a runner failure as ErrClaudeCLI (errors.Is)
 // with an actionable pt-BR message that mentions claude -p and the byo-key fallback.
 func TestCLIProviderCompleteError(t *testing.T) {
 	cause := errors.New("exit status 1: not logged in")
-	fake := func(_ context.Context, _ string, _ []string) (string, error) {
+	fake := func(_ context.Context, _ string, _ []string, _ string) (string, error) {
 		return "", cause
 	}
 	p := &cliProvider{bin: "claude", run: fake}
