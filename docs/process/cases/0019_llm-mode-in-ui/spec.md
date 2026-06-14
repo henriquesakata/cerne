@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #ui #llm #config
 
-**Status:** Draft (2026-06-14)
+**Status:** Done (2026-06-14) — ver [result.md](result.md)
 **Tipo:** Endpoint de config (`GET`/`PUT /api/config/llm`) + seletor de modo na UI (página Perguntar).
 **Origem:** Follow-up #2 do dogfood do [case 0017](../0017_wiki-on-web/spec.md). A alternativa inicial era um override por env (`CERNE_LLM_MODE`); o usuário apontou que **"seria mais fácil trocar pela UI"** — coerente com a divisão **web = humano**: trocar modo editando TOML/env é coisa de máquina; o humano clica.
 
