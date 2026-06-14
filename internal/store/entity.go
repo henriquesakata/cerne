@@ -41,11 +41,16 @@ type Decision struct {
 	UpdatedAt    time.Time            `json:"updated_at"`
 }
 
-// Reference is the persisted form of a reference entity.
+// Reference is the persisted form of a reference entity. External references
+// (registered, not imported) carry the source URL, the External marker, and an
+// Informs backlink to the features/decisions the source motivated.
 type Reference struct {
 	ID        string                `json:"id"`
 	Title     string                `json:"title"`
 	State     domain.ReferenceState `json:"state"`
+	URL       string                `json:"url,omitempty"`      // external source link
+	External  bool                  `json:"external,omitempty"` // true for a registered external source
+	Informs   []string              `json:"informs,omitempty"`  // F-/D- ids this source motivated
 	CreatedAt time.Time             `json:"created_at"`
 	UpdatedAt time.Time             `json:"updated_at"`
 }
