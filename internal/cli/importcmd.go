@@ -78,56 +78,104 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 	skipped += seedSkipped
 
 	out := cmd.OutOrStdout()
-	if len(cands) == 0 && len(seeds) == 0 {
-		if skipped > 0 {
-			fmt.Fprintf(out, "Tudo já importado (%d documento(s) já no backend).\n", skipped)
-		} else {
-			fmt.Fprintln(out, "Nada para importar.")
-		}
-		return nil
-	}
+	nothingNew := len(cands) == 0 && len(seeds) == 0
+
+	// Dry-run: show what would be imported (or that nothing is new), then what
+	// the classify backfill would assign over the existing module-less features.
 	if !yes {
-		printImportPlan(out, cands, seeds, skipped)
-		return nil
-	}
-
-	// Pre-validate the whole seed so a malformed entry aborts before any
-	// write — the historicals apply atomically alongside the scanned docs.
-	for _, s := range seeds {
-		if err := domain.ValidateHistorical(s.Name, s.SupersededBy, s.Reason, s.Aliases); err != nil {
-			return fmt.Errorf("historical.toml (%s): %w", s.Name, err)
+		if nothingNew {
+			reportNothingNew(out, skipped)
+		} else {
+			printImportPlan(out, cands, seeds, skipped)
 		}
-	}
-
-	// Permalink source-code references to the source repo's blob, pinned at
-	// its current HEAD. Left disabled when root is not a git checkout or its
-	// remote host is unrecognised, in which case code refs stay as written.
-	opts := importer.ApplyOptions{SrcRoot: root}
-	if url, err := gitback.RemoteURL(root); err == nil {
-		if sha, err := gitback.HeadSHA(root); err == nil {
-			opts.BlobBase = importer.BlobBase(url, sha)
-		}
-	}
-	sum, err := importer.Apply(ctx.repoDir, cands, eventActor(), opts)
-	if err != nil {
-		return err
-	}
-	for _, s := range seeds {
-		if _, _, err := app.SaveHistoricalEntity(ctx.repoDir, s.Name, s.SupersededBy, s.Reason, s.Aliases, "", "import"); err != nil {
+		assigned, residual, err := app.ClassifyBackfill(ctx.repoDir, "", false)
+		if err != nil {
 			return err
 		}
+		reportClassifyProjection(out, len(assigned), residual)
+		return nil
 	}
-	total := sum.Features + sum.Decisions + sum.References + len(seeds)
-	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import %d documento(s)", total))
+
+	// Apply the scanned docs, when there is anything new.
+	if nothingNew {
+		reportNothingNew(out, skipped)
+	} else {
+		// Pre-validate the whole seed so a malformed entry aborts before any
+		// write — the historicals apply atomically alongside the scanned docs.
+		for _, s := range seeds {
+			if err := domain.ValidateHistorical(s.Name, s.SupersededBy, s.Reason, s.Aliases); err != nil {
+				return fmt.Errorf("historical.toml (%s): %w", s.Name, err)
+			}
+		}
+
+		// Permalink source-code references to the source repo's blob, pinned at
+		// its current HEAD. Left disabled when root is not a git checkout or its
+		// remote host is unrecognised, in which case code refs stay as written.
+		opts := importer.ApplyOptions{SrcRoot: root}
+		if url, err := gitback.RemoteURL(root); err == nil {
+			if sha, err := gitback.HeadSHA(root); err == nil {
+				opts.BlobBase = importer.BlobBase(url, sha)
+			}
+		}
+		sum, err := importer.Apply(ctx.repoDir, cands, eventActor(), opts)
+		if err != nil {
+			return err
+		}
+		for _, s := range seeds {
+			if _, _, err := app.SaveHistoricalEntity(ctx.repoDir, s.Name, s.SupersededBy, s.Reason, s.Aliases, "", "import"); err != nil {
+				return err
+			}
+		}
+		total := sum.Features + sum.Decisions + sum.References + len(seeds)
+		sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import %d documento(s)", total))
+		if err != nil {
+			return err
+		}
+		if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Importado: %d features, %d decisões, %d referências, %d históricas (snapshot %s).\n",
+			sum.Features, sum.Decisions, sum.References, len(seeds), shortSHA(sha))
+	}
+
+	// Self-heal module assignment: classify every module-less feature the
+	// heuristic resolves — so a module declared after its cases were imported
+	// (e.g. a new subsystem) is picked up here instead of vanishing from the
+	// wiki. ClassifyBackfill only ever touches features with an empty module and
+	// commits at most once, so a no-op run writes nothing.
+	assigned, residual, err := app.ClassifyBackfill(ctx.repoDir, ctx.projDir, true)
 	if err != nil {
 		return err
 	}
-	if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "Importado: %d features, %d decisões, %d referências, %d históricas (snapshot %s).\n",
-		sum.Features, sum.Decisions, sum.References, len(seeds), shortSHA(sha))
+	reportClassifyResult(out, len(assigned), residual)
 	return nil
+}
+
+// reportNothingNew prints the import line when no scanned doc is new: either
+// everything was already imported, or the tree had nothing to import.
+func reportNothingNew(out io.Writer, skipped int) {
+	if skipped > 0 {
+		fmt.Fprintf(out, "Tudo já importado (%d documento(s) já no backend).\n", skipped)
+	} else {
+		fmt.Fprintln(out, "Nada para importar.")
+	}
+}
+
+// reportClassifyProjection (dry-run) announces what the classify backfill would
+// assign, only when it would assign at least one — silent otherwise to avoid
+// noise (compile already reports the standing module-less count).
+func reportClassifyProjection(out io.Writer, assigned, residual int) {
+	if assigned > 0 {
+		fmt.Fprintf(out, "Inferência classificaria %d feature(s) sem módulo (%d permaneceriam).\n", assigned, residual)
+	}
+}
+
+// reportClassifyResult (apply) reports what the backfill classified, only when
+// it assigned at least one.
+func reportClassifyResult(out io.Writer, assigned, residual int) {
+	if assigned > 0 {
+		fmt.Fprintf(out, "Classificadas %d feature(s) por inferência (%d sem módulo permanecem).\n", assigned, residual)
+	}
 }
 
 // unseededHistoricals drops seeds whose name already exists as a historical

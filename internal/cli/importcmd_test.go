@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -244,6 +245,71 @@ func TestImportRootMissing(t *testing.T) {
 	_, err := execCerne(t, "import", "--root", filepath.Join(projDir, "nope"), "--dir", projDir)
 	if err == nil {
 		t.Fatalf("import with missing --root succeeded, want error")
+	}
+}
+
+// declareModules rewrites the backend project.json with the given modules and
+// commits+pushes it — simulating a module declared (in the project) after some
+// cases were already imported.
+func declareModules(t *testing.T, repoDir, name string, modules []string) {
+	t.Helper()
+	data, err := json.MarshalIndent(store.Project{Name: name, Modules: modules}, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "project.json"), data, 0o644); err != nil {
+		t.Fatalf("write project.json: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "test: declare modules"); err != nil {
+		t.Fatalf("commit project.json: %v", err)
+	}
+}
+
+// TestImportBackfillsModuleDeclaredAfterImport is the studio regression: a case
+// imported BEFORE its module was declared comes in module-less, and (since
+// import is idempotent and never revisits) used to stay orphaned out of the
+// wiki. Now a later `import` runs the classify backfill — even with no new docs
+// — and assigns the module, with a dry-run projection first that writes nothing.
+func TestImportBackfillsModuleDeclaredAfterImport(t *testing.T) {
+	projDir, _, repoDir := setupProject(t) // no modules declared yet
+	treeDir := t.TempDir()
+	writeTree(t, treeDir, map[string]string{
+		"docs/process/cases/0001_finance-reporting/spec.md": "# Relatórios financeiros\n\nGeração de relatórios do finance: contas e transações do módulo finance.\n",
+	})
+
+	// First import: finance is not declared → the feature comes in module-less.
+	if _, err := execCerne(t, "import", "--root", treeDir, "--yes", "--dir", projDir); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if f, err := store.LoadFeature(repoDir, "F-0001"); err != nil || f.Module != "" {
+		t.Fatalf("precondition: F-0001 module=%q err=%v, want module-less", f.Module, err)
+	}
+
+	// The module is declared only later (mirrors studio added after its cases).
+	declareModules(t, repoDir, "demo", []string{"finance"})
+
+	// Dry-run projects the backfill and must NOT write.
+	out, err := execCerne(t, "import", "--root", treeDir, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("dry-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "classificaria 1") {
+		t.Fatalf("dry-run missing classify projection:\n%s", out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.Module != "" {
+		t.Fatalf("dry-run classified F-0001 (module=%q); must not write", f.Module)
+	}
+
+	// Apply: no new docs, but the backfill classifies the pre-existing feature.
+	out, err = execCerne(t, "import", "--root", treeDir, "--yes", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("re-import: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Classificadas 1") {
+		t.Fatalf("apply missing classify result:\n%s", out)
+	}
+	if f, err := store.LoadFeature(repoDir, "F-0001"); err != nil || f.Module != "finance" {
+		t.Fatalf("F-0001 module=%q err=%v, want finance (backfilled by import)", f.Module, err)
 	}
 }
 
