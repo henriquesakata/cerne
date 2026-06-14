@@ -426,6 +426,21 @@ func scannedDocs(repoDir string, features []store.Feature, decisions []store.Dec
 	return docs, nil
 }
 
+// stateLabelPT maps an English lifecycle state to the pt-BR adjective used in
+// user-facing ref-to-superseded findings. Feminine, to agree with "entidade"
+// (the rule's UI/CLI label is "menção a entidade substituída").
+func stateLabelPT(state string) string {
+	switch state {
+	case "superseded":
+		return "substituída"
+	case "rejected":
+		return "rejeitada"
+	case "obsolete":
+		return "obsoleta"
+	}
+	return state
+}
+
 // refFindings reports the terminal entities the document mentions. All hits
 // of the same entity collapse into one finding: an ID or title hit keeps the
 // ID-based detail; otherwise the first matching imported identifier names
@@ -436,11 +451,11 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		var detail string
 		switch {
 		case n.rxID.MatchString(text) || (n.rxTitle != nil && n.rxTitle.MatchString(text)):
-			detail = fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, n.state)
+			detail = fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state))
 		default:
 			for _, in := range n.imported {
 				if in.rx.MatchString(text) {
-					detail = fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, n.state)
+					detail = fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, stateLabelPT(n.state))
 					break
 				}
 			}
