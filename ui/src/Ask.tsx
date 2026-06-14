@@ -1,6 +1,77 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import Markdown from './Markdown'
-import { ask, type AskAnswer, type AskSource } from './api'
+import {
+  ask,
+  fetchLLMMode,
+  setLLMMode,
+  type AskAnswer,
+  type AskSource,
+  type LLMMode,
+} from './api'
+
+const MODE_LABELS: Record<LLMMode, string> = {
+  delegation: 'Delegação (o agente responde)',
+  'claude-cli': 'Assinatura (claude-cli)',
+  'byo-key': 'Chave de API (byo-key)',
+}
+
+// ModeSelector lê e troca o [llm] mode do projeto. O servidor relê a config a
+// cada pergunta (case 0017), então a troca vale já na próxima pergunta.
+function ModeSelector() {
+  const [mode, setMode] = useState<LLMMode | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchLLMMode()
+      .then(setMode)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+  }, [])
+
+  const change = (next: LLMMode) => {
+    const prev = mode
+    setMode(next) // otimista
+    setSaving(true)
+    setError(null)
+    setLLMMode(next)
+      .then((m) => {
+        setMode(m)
+        setSaving(false)
+      })
+      .catch((e: unknown) => {
+        setMode(prev)
+        setError(e instanceof Error ? e.message : String(e))
+        setSaving(false)
+      })
+  }
+
+  return (
+    <div className="ask-mode">
+      <span className="ask-mode-label">Modo de IA:</span>{' '}
+      {mode === null ? (
+        <span className="muted">{error ? `erro: ${error}` : 'carregando…'}</span>
+      ) : (
+        <>
+          <select
+            value={mode}
+            disabled={saving}
+            onChange={(e) => change(e.target.value as LLMMode)}
+          >
+            {(Object.keys(MODE_LABELS) as LLMMode[]).map((m) => (
+              <option key={m} value={m}>
+                {MODE_LABELS[m]}
+              </option>
+            ))}
+          </select>
+          {mode === 'byo-key' && (
+            <span className="ask-mode-hint"> requer a chave no env configurado no .cernerc</span>
+          )}
+          {error && <span className="form-error"> {error}</span>}
+        </>
+      )}
+    </div>
+  )
+}
 
 const KIND_LABELS: Record<string, string> = {
   feature: 'feature',
@@ -44,10 +115,10 @@ function AnswerView({ result }: { result: AskAnswer }) {
         </article>
       ) : (
         <p className="ask-notice">
-          Nenhum provider configurado para respostas. As fontes recuperadas estão
-          abaixo. Para respostas em linguagem natural, defina <code>[llm] mode</code>{' '}
-          (<code>claude-cli</code> ou <code>byo-key</code>) no <code>.cernerc</code> —
-          o servidor relê a config a cada pergunta, sem reiniciar o <code>cerne ui</code>.
+          Modo <strong>delegação</strong>: nesse modo quem responde é o agente, não o
+          servidor — então aqui só mostramos as fontes recuperadas (abaixo). Para
+          respostas em linguagem natural, troque o <strong>Modo de IA</strong> acima
+          para <em>Assinatura</em> ou <em>Chave de API</em> e pergunte de novo.
         </p>
       )}
       <h2 className="ask-sources-title">Fontes</h2>
@@ -88,6 +159,7 @@ export default function Ask() {
         resposta vem do provider configurado (assinatura/byo-key). Para busca por
         palavra-chave, use <a href="#/search">Busca</a>.
       </p>
+      <ModeSelector />
       <form className="search-form" onSubmit={run}>
         <input
           value={query}

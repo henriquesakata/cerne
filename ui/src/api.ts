@@ -319,3 +319,25 @@ export async function fetchWikiPage(rel: string): Promise<WikiPage> {
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as WikiPage
 }
+
+// ---- modo de IA do projeto (case 0019) ----
+
+export type LLMMode = 'delegation' | 'byo-key' | 'claude-cli'
+
+export async function fetchLLMMode(): Promise<LLMMode> {
+  const r = await fetch('/api/config/llm')
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { mode: LLMMode }).mode
+}
+
+// setLLMMode grava o modo no .cernerc; o servidor relê a config a cada
+// pergunta, então a troca vale na próxima pergunta (sem reiniciar).
+export async function setLLMMode(mode: LLMMode): Promise<LLMMode> {
+  const r = await fetch('/api/config/llm', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { mode: LLMMode }).mode
+}
