@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #import #classify #wiki
 
-**Status:** Draft (2026-06-14)
+**Status:** Done (2026-06-14) — ver [result.md](result.md)
 **Tipo:** Comportamento do `cerne import` (roda o backfill de classificação + reporta resíduo sem módulo).
 **Origem:** Dogfood do [case 0017](../0017_wiki-on-web/spec.md) no hub: o **studio** (subsistema real, módulo declarado) **não tinha página de wiki** porque nenhuma feature estava classificada nele. A correção exigiu rodar `cerne classify --yes` manualmente. Follow-up acordado: o `import` não deveria deixar subsistemas órfãos.
 

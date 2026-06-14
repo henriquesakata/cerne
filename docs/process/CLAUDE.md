@@ -21,6 +21,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0015](cases/0015_decision-authoring/spec.md) | Native decision authoring (`decision new`/`substituir`) + `feature supersede`→`substituir` rename | Implemented — suíte verde; aguardando revisão |
 | [0016](cases/0016_sequence-diagram-draft/spec.md) | `cerne spec diagram` (Mermaid via assinatura) + render/edição na UI | Done |
 | [0017](cases/0017_wiki-on-web/spec.md) | Wiki na web — perguntar (`/api/ask` via provider) + navegar a síntese | Done |
+| [0018](cases/0018_import-classify-backfill/spec.md) | `import` auto-classifica módulos (sem subsistema órfão) | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
