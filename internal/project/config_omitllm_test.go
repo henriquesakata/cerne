@@ -31,6 +31,29 @@ func TestSaveConfigOmitsEmptyLLM(t *testing.T) {
 	}
 }
 
+// Writing a partial [llm] (just the mode, as the UI mode switcher does) must
+// not emit empty provider/key_env/... lines — those default on read, and a
+// .cernerc littered with `key_env = ""` is noise the user would have to clean.
+func TestSaveConfigLLMOmitsEmptyFields(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "x", Backend: "b", LLM: LLMConfig{Mode: "claude-cli"}}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `mode = "claude-cli"`) {
+		t.Fatalf("want mode written:\n%s", s)
+	}
+	for _, empty := range []string{"provider", "key_env", "base_url", "model", "claude_bin", "max_tokens"} {
+		if strings.Contains(s, empty) {
+			t.Fatalf(".cernerc must omit empty [llm] field %q:\n%s", empty, s)
+		}
+	}
+}
+
 // When the user configures byo-key, the [llm] block is written and round-trips.
 func TestSaveConfigWritesLLMWhenSet(t *testing.T) {
 	dir := t.TempDir()

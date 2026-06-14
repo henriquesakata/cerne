@@ -28,14 +28,19 @@ type Config struct {
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
 // here: in byo-key mode the API key is read from the environment variable
 // named by KeyEnv — only the NAME is persisted, never the value.
+// Tags keep .cernerc clean when writing a partial config (e.g. just the mode,
+// from the UI switcher): strings use omitempty (drops "") and the int uses
+// omitzero (drops 0) — in BurntSushi/toml v1.6 omitempty does not drop a zero
+// int, so the two tags are complementary. Defaults are applied on read by
+// WithDefaults.
 type LLMConfig struct {
-	Mode      string `toml:"mode"`       // "delegation" (default when empty) | "byo-key"
-	Provider  string `toml:"provider"`   // byo-key provider; default "anthropic"
-	Model     string `toml:"model"`      // model id; default "claude-opus-4-8"
-	KeyEnv    string `toml:"key_env"`    // env var NAME holding the key; default "CERNE_LLM_API_KEY"
-	BaseURL   string `toml:"base_url"`   // API base URL; default "https://api.anthropic.com"
-	MaxTokens int    `toml:"max_tokens"` // max output tokens; default 8000
-	ClaudeBin string `toml:"claude_bin"` // claude-cli binary path; default "claude"
+	Mode      string `toml:"mode,omitempty"`      // "delegation" (default when empty) | "byo-key" | "claude-cli"
+	Provider  string `toml:"provider,omitempty"`  // byo-key provider; default "anthropic"
+	Model     string `toml:"model,omitempty"`     // model id; default "claude-opus-4-8"
+	KeyEnv    string `toml:"key_env,omitempty"`   // env var NAME holding the key; default "CERNE_LLM_API_KEY"
+	BaseURL   string `toml:"base_url,omitempty"`  // API base URL; default "https://api.anthropic.com"
+	MaxTokens int    `toml:"max_tokens,omitzero"` // max output tokens; default 8000
+	ClaudeBin string `toml:"claude_bin,omitempty"` // claude-cli binary path; default "claude"
 }
 
 // LLM defaults applied by withDefaults when a byo-key field is empty/zero.
