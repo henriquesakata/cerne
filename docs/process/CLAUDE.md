@@ -25,6 +25,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0019](cases/0019_llm-mode-in-ui/spec.md) | Trocar o modo de IA pela UI (`/api/config/llm` + seletor) | Done |
 | [0020](cases/0020_external-references/spec.md) | Referências externas (marca + conteúdo indexado + backlink `informs`) | Done |
 | [0021](cases/0021_entity-graph/spec.md) | Grafo explicativo de entidades (arestas tipadas+motivo, React Flow, layout em camadas) | Done (A/B/C; explicação LLM → follow-up) |
+| [0022](cases/0022_serve-multiproject/spec.md) | `cerne serve` multi-projeto (fundação de integração com hosts; ex.: Studio) | Done (lado cerne da F1; hub → case em apps/studio) |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

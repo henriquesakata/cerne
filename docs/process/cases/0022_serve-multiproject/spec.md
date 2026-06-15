@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #serve #multiproject #service #integration
 
-**Status:** Draft (2026-06-14)
+**Status:** Done (2026-06-14) — ver [result.md](result.md)
 **Tipo:** Novo comando `cerne serve` + servidor HTTP multi-projeto (reusa os handlers atuais, parametrizados por `projectId`) + auth S2S por shared-secret. **Fundação** para hosts (ex.: Studio do Rockt Hub) consumirem o cerne de N projetos via um único serviço.
 **Origem:** Pedido do usuário (no hub): integrar o cerne no Studio para gerir a documentação de cada aplicação. O Studio é web multiusuário com N projetos; o `cerne ui` atual é local, single-project. Esta é a fatia **F1, lado cerne**: o cerne passa a servir **vários projetos** num processo só, atrás de auth de serviço. (O lado hub — BFF + página Arc + container/compose — é case separado em `apps/studio`.)
 
