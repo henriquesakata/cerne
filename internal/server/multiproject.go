@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // MultiServer serves many projects from a single process under
@@ -141,7 +142,9 @@ func (s *MultiServer) mux() http.Handler {
 // cloning on first call and idempotent thereafter.
 func (s *MultiServer) handleRegister(w http.ResponseWriter, r *http.Request, pid string) {
 	var req struct {
-		Backend string `json:"backend"`
+		Backend string   `json:"backend"`
+		Name    string   `json:"name"`
+		Modules []string `json:"modules"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo inválido: "+err.Error()))
@@ -156,21 +159,41 @@ func (s *MultiServer) handleRegister(w http.ResponseWriter, r *http.Request, pid
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if err := ensureProjectClone(repoDir, projDir, req.Backend); err != nil {
+	// A freshly provisioned backend has no cerne layout yet; name (fallback pid)
+	// and modules seed project.json when ensureProjectClone initializes it.
+	name := req.Name
+	if name == "" {
+		name = pid
+	}
+	if err := ensureProjectClone(repoDir, projDir, req.Backend, name, req.Modules); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"project": pid, "backend": req.Backend})
 }
 
-// ensureProjectClone clones backend into repoDir when absent and ensures a
-// docs.lock pinning that backend exists in projDir. Idempotent.
-func ensureProjectClone(repoDir, projDir, backend string) error {
+// ensureProjectClone clones backend into repoDir when absent, initializes the
+// cerne layout when the backend is empty (no project.json — a host just created
+// the repo), and ensures a docs.lock pinning that backend exists in projDir.
+// Idempotent: an already-cloned, already-initialized backend is left intact.
+func ensureProjectClone(repoDir, projDir, backend, name string, modules []string) error {
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
 			return err
 		}
 		if err := gitback.Clone(backend, repoDir); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	// Freshly provisioned backend: no layout yet. Initialize and push it so the
+	// project is usable immediately (mirrors the join path of `cerne init`).
+	if _, err := store.LoadProject(repoDir); errors.Is(err, store.ErrNotFound) {
+		if err := store.InitLayout(repoDir, store.Project{Name: name, Modules: modules}); err != nil {
+			return err
+		}
+		if _, err := gitback.CommitAndPush(repoDir, "cerne: initialize backend layout"); err != nil {
 			return err
 		}
 	} else if err != nil {

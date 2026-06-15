@@ -148,6 +148,58 @@ func TestMultiProjectAuth(t *testing.T) {
 	}
 }
 
+// seedEmptyBackend returns a bare origin with NO cerne layout — an empty repo a
+// host (e.g. identity-api) just created for a project's docs. Clonable, but
+// uninitialized: exercises lazy InitLayout on register (case 0024).
+func seedEmptyBackend(t *testing.T) string {
+	t.Helper()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := gitback.InitBare(origin); err != nil {
+		t.Fatalf("InitBare: %v", err)
+	}
+	return origin
+}
+
+// TestMultiProjectRegisterInitsEmptyBackend: registering a freshly provisioned
+// (layout-less) backend initializes the cerne layout and pushes it, so the
+// project is immediately usable — state readable and features creatable (0024).
+func TestMultiProjectRegisterInitsEmptyBackend(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	h := NewMultiProject(mpSecret)
+	origin := seedEmptyBackend(t)
+
+	body, err := json.Marshal(map[string]any{"backend": origin, "name": "Projeto Novo"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if rec := doMP(t, h, http.MethodPut, "/api/projects/proj-new", string(body), mpSecret, nil); rec.Code != http.StatusOK {
+		t.Fatalf("register empty backend: status %d, body %s", rec.Code, rec.Body.String())
+	}
+
+	// Layout exists: state is readable with zero features.
+	var st mpState
+	if rec := doMP(t, h, http.MethodGet, "/api/projects/proj-new/state", "", mpSecret, &st); rec.Code != http.StatusOK {
+		t.Fatalf("state: %d %s", rec.Code, rec.Body.String())
+	}
+	if len(st.Features) != 0 {
+		t.Fatalf("fresh project features = %d, want 0", len(st.Features))
+	}
+
+	// A feature can be created immediately on the freshly initialized backend.
+	if rec := doMP(t, h, http.MethodPost, "/api/projects/proj-new/features", `{"title":"Primeira"}`, mpSecret, nil); rec.Code != http.StatusCreated {
+		t.Fatalf("create feature: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// The layout was pushed to the origin: a fresh clone sees project.json.
+	verify := filepath.Join(t.TempDir(), "verify")
+	if err := gitback.Clone(origin, verify); err != nil {
+		t.Fatalf("verify clone: %v", err)
+	}
+	if _, err := store.LoadProject(verify); err != nil {
+		t.Fatalf("origin missing cerne layout after register: %v", err)
+	}
+}
+
 // TestMultiProjectUnknownProject: an unregistered project is a 404.
 func TestMultiProjectUnknownProject(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
