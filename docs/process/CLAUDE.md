@@ -24,6 +24,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0018](cases/0018_import-classify-backfill/spec.md) | `import` auto-classifica módulos (sem subsistema órfão) | Done |
 | [0019](cases/0019_llm-mode-in-ui/spec.md) | Trocar o modo de IA pela UI (`/api/config/llm` + seletor) | Done |
 | [0020](cases/0020_external-references/spec.md) | Referências externas (marca + conteúdo indexado + backlink `informs`) | Done |
+| [0021](cases/0021_entity-graph/spec.md) | Grafo explicativo de entidades (arestas tipadas+motivo, React Flow, layout em camadas) | Spec — plan.md pendente |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
