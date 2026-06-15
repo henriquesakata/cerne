@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #ui #graph #explainability #navigation
 
-**Status:** Spec — plan.md pendente
+**Status:** Done (2026-06-14) — A/B/C entregues; ver [result.md](result.md). Explicação por LLM (Frente D) adiada.
 **Tipo:** Projeção determinística do grafo latente das entidades (feature/decision/reference/historical) em `app.BuildGraph`, exposta por `GET /api/graph` + `cerne graph`, e renderizada como **grafo explicativo** (React Flow, arestas tipadas + com motivo, layout em camadas) na UI. Núcleo sem LLM; explicação em linguagem natural é camada **opcional** sobre arestas que já são verdade.
 **Origem:** Pedido do usuário (2026-06-14): não um "monte de bolinhas" topológico estilo Obsidian, mas um grafo **que explique como conceitos/regras se conectam**, inspirado no *Understand Anything* (https://understand-anything.com/, fonte MIT em github.com/Egonex-AI/Understand-Anything). Constatação do brainstorming: **os dados já são um grafo — e as arestas já são semânticas**: `superseded_by` carrega um **motivo obrigatório** (`store.Reason`, exigido em `domain.ValidateSupersedePayload`), `informs` diz que uma fonte motivou uma feature/decisão, `links` é citação. Falta projetar, rotular e renderizar de forma explicativa.
 
