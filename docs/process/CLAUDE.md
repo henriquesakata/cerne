@@ -28,6 +28,8 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0022](cases/0022_serve-multiproject/spec.md) | `cerne serve` multi-projeto (fundação de integração com hosts; ex.: Studio) | Done (lado cerne da F1; hub → case em apps/studio) |
 | [0023](cases/0023_push-net-new-entity-docs/spec.md) | `push` aceita plan/result net-new sob feature rastreada (desbloqueia fluxo cerne-native) | Done |
 | [0024](cases/0024_serve-init-empty-backend/spec.md) | `serve` inicializa layout ao registrar backend vazio (provisão sob demanda do host) | Done |
+| [0025](cases/0025_ui-generate-diagram/spec.md) | Botão "Gerar com IA" na UI: diagrama de sequência (Mermaid → Excalidraw editável) | Done |
+| [0026](cases/0026_diagram-grounded-in-code/spec.md) | Geração de diagrama ancorada no código e estrutura do projeto (prompt + `ProjectStructure`) | Done |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

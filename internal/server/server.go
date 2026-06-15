@@ -41,6 +41,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("POST /api/features/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
 		handleTransition(w, r, repoDir, projDir, r.PathValue("id"))
 	})
+	mux.HandleFunc("POST /api/features/{id}/diagram", func(w http.ResponseWriter, r *http.Request) {
+		handleGenerateDiagram(w, r, repoDir, projDir, r.PathValue("id"))
+	})
 	mux.HandleFunc("PUT /api/features/{id}/docs/{doc}", func(w http.ResponseWriter, r *http.Request) {
 		handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 	})
@@ -456,6 +459,92 @@ func handleAsk(w http.ResponseWriter, r *http.Request, repoDir, projDir, project
 		return
 	}
 	writeJSON(w, http.StatusOK, askResponse{Answered: true, Answer: answer, Sources: sources})
+}
+
+// generateDiagramRequest is the POST /api/features/{id}/diagram body: an
+// optional artifact name (default "sequence", normalized to <name>.mmd).
+type generateDiagramRequest struct {
+	Name string `json:"name"`
+}
+
+// generateDiagramResponse is the POST /api/features/{id}/diagram payload.
+// Generated is false in delegation mode (no provider to synthesize for the
+// human in the browser): the UI then hints to switch the AI mode, and the
+// endpoint never fabricates a diagram.
+type generateDiagramResponse struct {
+	Generated     bool   `json:"generated"`
+	NeedsProvider bool   `json:"needs_provider,omitempty"`
+	Name          string `json:"name,omitempty"`
+	Mermaid       string `json:"mermaid,omitempty"`
+}
+
+// handleGenerateDiagram AI-drafts a Mermaid sequence diagram for a feature on
+// behalf of a human in the browser — the web counterpart of `cerne spec
+// diagram`. It mirrors handleAsk: the config is loaded per-request from projDir
+// (so changing the AI mode in the UI takes effect without restarting), and
+// delegation — the agent's mode, with no provider to synthesize here —
+// degrades to needs_provider instead of inventing a diagram. On success it
+// saves <name>.mmd to the backend (commit + push) and returns the Mermaid text
+// so the UI can convert it to an editable Excalidraw scene without a round-trip.
+func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req generateDiagramRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	name := app.MermaidArtifactName(req.Name)
+
+	f, err := store.LoadFeature(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+
+	// Current spec as context (absent file → empty), mirroring handleFeatureDetail.
+	specBytes, err := os.ReadFile(app.FeatureDocPath(repoDir, id, "spec.md"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+
+	// Load the config per-request: delegation (or no .cernerc) means there is no
+	// provider to synthesize for the human — signal needs_provider, write nothing.
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil || llm.ResolveMode(cfg.LLM.Mode) == llm.ModeDelegation {
+		writeJSON(w, http.StatusOK, generateDiagramResponse{Generated: false, NeedsProvider: true})
+		return
+	}
+	prov, err := llm.NewProvider(cfg.LLM)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// Project structure grounds the diagram in real components (best-effort).
+	structure, _ := app.ProjectStructure(projDir)
+	body, err := prov.Complete(r.Context(), app.BuildSequenceDiagramPrompt(f, string(specBytes), structure))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	mermaid, err := app.SanitizeMermaid(body)
+	if err != nil {
+		if errors.Is(err, app.ErrNotMermaidSequence) {
+			writeJSON(w, http.StatusUnprocessableEntity,
+				errorBody("o modelo não retornou um diagrama de sequência Mermaid — tente novamente"))
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	if err := app.SaveArtifact(repoDir, projDir, id, name, []byte(mermaid+"\n")); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, generateDiagramResponse{Generated: true, Name: name, Mermaid: mermaid})
 }
 
 // wikiPageRef is one compiled wiki page in the index: its canonical name and
