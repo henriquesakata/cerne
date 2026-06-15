@@ -1,12 +1,27 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
+
+// writeDoc writes content at the backend-relative slash path rel under repo.
+func writeDoc(t *testing.T, repo, rel, content string) {
+	t.Helper()
+	full := filepath.Join(repo, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestBuildGraphStructuredEdges: BuildGraph projects every entity as a node
 // (kind + state) and the structured relationships as edges — superseded_by
@@ -72,5 +87,44 @@ func TestBuildGraphStructuredEdges(t *testing.T) {
 		if g.Edges[i] != want[i] {
 			t.Fatalf("edge[%d] = %+v, want %+v", i, g.Edges[i], want[i])
 		}
+	}
+}
+
+// TestBuildGraphContentLinkEdges: a markdown citation between content docs that
+// resolves to a known entity becomes a links edge; a self link, a non-entity
+// link and an external link produce none.
+func TestBuildGraphContentLinkEdges(t *testing.T) {
+	repo := t.TempDir()
+	now := time.Now()
+	save := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "A", State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0002", Title: "B", State: domain.StateImplemented, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveDecision(repo, store.Decision{ID: "D-0001", Title: "Dec", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}))
+
+	writeDoc(t, repo, "content/features/F-0001/spec.md",
+		"[dec](../../decisions/D-0001.md) [other](../F-0002/spec.md) [self](plan.md) [ext](https://x)")
+
+	g, err := BuildGraph(repo)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	var links []Edge
+	for _, e := range g.Edges {
+		if e.Type == EdgeLinks {
+			links = append(links, e)
+		}
+	}
+	want := []Edge{
+		{From: "F-0001", To: "D-0001", Type: EdgeLinks},
+		{From: "F-0001", To: "F-0002", Type: EdgeLinks},
+	}
+	if !reflect.DeepEqual(links, want) {
+		t.Fatalf("link edges = %+v, want %+v", links, want)
 	}
 }
