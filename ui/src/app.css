@@ -831,10 +831,13 @@ h2 {
 .graph-conns > li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.3rem 0; border-bottom: 1px solid #ece9e2; }
 .graph-reason { flex-basis: 100%; color: #5c635e; font-style: italic; font-size: 0.82rem; }
 
+.graph-count { font-size: 0.85rem; font-weight: 400; color: #8a8f8b; margin-left: 0.5rem; }
+.graph-filters { margin-bottom: 0.75rem; }
+.graph-filters .filter { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0.3rem 0.35rem 0; }
+.graph-filters .graph-line { width: 1.1rem; }
 .graph-legend { margin-top: 1rem; border-top: 1px solid #e0d8c4; padding-top: 0.75rem; }
-.graph-toggle { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: #5c635e; }
-.graph-legend-edges, .graph-legend-kinds { list-style: none; margin: 0.25rem 0 0; padding: 0; }
-.graph-legend-edges > li, .graph-legend-kinds > li { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.82rem; color: #5c635e; }
+.graph-legend-kinds { list-style: none; margin: 0.25rem 0 0; padding: 0; }
+.graph-legend-kinds > li { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.82rem; color: #5c635e; }
 
 .graph-line { display: inline-block; width: 1.5rem; height: 0; border-top-width: 2px; border-top-style: solid; }
 .graph-line.t-superseded_by { border-color: #d97706; }
