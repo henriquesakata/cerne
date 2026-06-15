@@ -1,4 +1,4 @@
-package cli
+package app
 
 import (
 	"errors"
@@ -77,19 +77,40 @@ func TestSanitizeMermaid(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := sanitizeMermaid(c.raw)
+			got, err := SanitizeMermaid(c.raw)
 			if c.wantErr != nil {
 				if !errors.Is(err, c.wantErr) {
-					t.Fatalf("sanitizeMermaid(%q) err = %v, want %v", c.raw, err, c.wantErr)
+					t.Fatalf("SanitizeMermaid(%q) err = %v, want %v", c.raw, err, c.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("sanitizeMermaid(%q) unexpected err: %v", c.raw, err)
+				t.Fatalf("SanitizeMermaid(%q) unexpected err: %v", c.raw, err)
 			}
 			if got != c.want {
-				t.Fatalf("sanitizeMermaid(%q) = %q, want %q", c.raw, got, c.want)
+				t.Fatalf("SanitizeMermaid(%q) = %q, want %q", c.raw, got, c.want)
 			}
 		})
+	}
+}
+
+// TestMermaidArtifactName covers the name normalization: defaulting, slugging
+// pt-BR / spaced names, and ensuring a single .mmd suffix.
+func TestMermaidArtifactName(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "sequence.mmd"},
+		{"sequence", "sequence.mmd"},
+		{"sequence.mmd", "sequence.mmd"},
+		{"Fluxo Principal", "fluxo-principal.mmd"},
+		{"Conciliação", "conciliacao.mmd"},
+		{"login.mmd", "login.mmd"},
+	}
+	for _, c := range cases {
+		if got := MermaidArtifactName(c.in); got != c.want {
+			t.Fatalf("MermaidArtifactName(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

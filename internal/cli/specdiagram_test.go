@@ -13,27 +13,6 @@ import (
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
-// TestMermaidArtifactName covers the --name normalization: defaulting, slugging
-// pt-BR / spaced names, and ensuring a single .mmd suffix.
-func TestMermaidArtifactName(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"", "sequence.mmd"},
-		{"sequence", "sequence.mmd"},
-		{"sequence.mmd", "sequence.mmd"},
-		{"Fluxo Principal", "fluxo-principal.mmd"},
-		{"Conciliação", "conciliacao.mmd"},
-		{"login.mmd", "login.mmd"},
-	}
-	for _, c := range cases {
-		if got := mermaidArtifactName(c.in); got != c.want {
-			t.Fatalf("mermaidArtifactName(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // TestSpecDiagramByoKeyWritesAndCommits drives `cerne spec diagram` in byo-key
 // mode: the provider returns a Mermaid sequence diagram, which is saved as
 // content/artifacts/<id>/sequence.mmd in the backend clone, origin advances and
