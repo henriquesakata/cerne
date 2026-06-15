@@ -80,6 +80,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
 		handleLint(w, repoDir)
 	})
+	mux.HandleFunc("GET /api/graph", func(w http.ResponseWriter, r *http.Request) {
+		handleGraph(w, repoDir)
+	})
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
 		handleEvents(w, repoDir)
 	})
@@ -88,6 +91,17 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	})
 	mux.Handle("/", spaHandler())
 	return mux
+}
+
+// handleGraph returns the deterministic entity relationship graph
+// (nodes + edges) projected from the backend by app.BuildGraph.
+func handleGraph(w http.ResponseWriter, repoDir string) {
+	g, err := app.BuildGraph(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
 }
 
 // stateResponse is the GET /api/state payload: the full backend state;

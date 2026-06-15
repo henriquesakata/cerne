@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import Kanban from './Kanban'
 import FeaturePage from './FeaturePage'
 import Nav from './Nav'
@@ -12,6 +12,9 @@ import History from './History'
 import Manage from './Manage'
 import NewFeature from './NewFeature'
 import './app.css'
+
+// Grafo carrega React Flow (pesado) sob demanda, como o Excalidraw.
+const Graph = lazy(() => import('./Graph'))
 
 // Roteamento mínimo por hash: lista de seções + rotas de detalhe
 // (#/f/<id>, #/d/<id>, #/r/<id>). Rota desconhecida cai no kanban.
@@ -47,6 +50,12 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/decisions') return <Decisions />
   if (hash === '#/references') return <References />
   if (hash === '#/wiki') return <Wiki />
+  if (hash === '#/graph')
+    return (
+      <Suspense fallback={<p className="status">Carregando grafo…</p>}>
+        <Graph />
+      </Suspense>
+    )
   if (hash === '#/ask') return <Ask />
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />

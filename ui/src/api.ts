@@ -368,3 +368,32 @@ export async function createReference(
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true, reference: ((await r.json()) as { reference: Reference }).reference }
 }
+
+// ---- grafo de entidades (case 0021) ----
+
+export type GraphKind = 'feature' | 'decision' | 'reference' | 'historical'
+export type GraphEdgeType = 'superseded_by' | 'informs' | 'links'
+
+// Espelha app.Node / app.Edge (internal/app/graph.go). reason só vem nas
+// arestas superseded_by (o motivo persistido — a carga explicativa).
+export type GraphNode = {
+  id: string
+  kind: GraphKind
+  title: string
+  state: string
+}
+
+export type GraphEdge = {
+  from: string
+  to: string
+  type: GraphEdgeType
+  reason?: string
+}
+
+export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
+
+export async function fetchGraph(): Promise<Graph> {
+  const r = await fetch('/api/graph')
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Graph
+}

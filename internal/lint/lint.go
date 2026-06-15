@@ -21,6 +21,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/mdlink"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
@@ -91,11 +92,6 @@ type scannedDoc struct {
 	entity string
 	rel    string // rel slash path within the backend
 }
-
-// mdLinkRx captures the target of inline markdown links [x](target) and
-// [x](target "title"); the optional title after the first whitespace is
-// ignored.
-var mdLinkRx = regexp.MustCompile(`\[[^\]]*\]\(([^)\s]+)[^)]*\)`)
 
 // Run lints the backend at repoDir and returns the findings in
 // deterministic order: by Rule (RuleOrder), then File, then Detail
@@ -476,37 +472,21 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 // External (http/https/mailto), pure-anchor and absolute targets are skipped;
 // a fragment suffix is stripped before resolving.
 func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
-	var findings []Finding
-	seen := map[string]bool{}
-	for _, m := range mdLinkRx.FindAllStringSubmatch(text, -1) {
-		target := m[1]
-		if seen[target] || skipLinkTarget(target) {
-			continue
-		}
-		seen[target] = true
-		resolved, _, _ := strings.Cut(target, "#")
-		if resolved == "" {
-			continue
-		}
-		full := filepath.Join(repoDir, filepath.FromSlash(path.Dir(d.rel)), filepath.FromSlash(resolved))
+	docDir := filepath.FromSlash(path.Dir(d.rel))
+	_, broken := mdlink.ContentLinks(text, func(clean string) (string, bool) {
+		full := filepath.Join(repoDir, docDir, filepath.FromSlash(clean))
 		// Any stat failure (not just fs.ErrNotExist) means the target is
 		// unreachable from the doc, e.g. characters invalid on the OS.
 		if _, err := os.Stat(full); err != nil {
-			findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "link quebrado: " + target})
+			return "", false
 		}
+		return full, true
+	})
+	findings := make([]Finding, 0, len(broken))
+	for _, target := range broken {
+		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "link quebrado: " + target})
 	}
 	return findings
-}
-
-// skipLinkTarget reports whether the link target is outside the broken-link
-// rule: external schemes, pure anchors and absolute paths.
-func skipLinkTarget(target string) bool {
-	lower := strings.ToLower(target)
-	return strings.HasPrefix(lower, "http://") ||
-		strings.HasPrefix(lower, "https://") ||
-		strings.HasPrefix(lower, "mailto:") ||
-		strings.HasPrefix(target, "#") ||
-		strings.HasPrefix(target, "/")
 }
 
 // orphanFindings reports content files whose entity JSON does not exist:
