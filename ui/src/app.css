@@ -817,9 +817,9 @@ h2 {
 .graph-canvas { flex: 1; min-width: 0; border: 1px solid #e0d8c4; border-radius: 8px; background: #fff; overflow: hidden; }
 .graph-panel { width: 17rem; flex-shrink: 0; overflow-y: auto; font-size: 0.9rem; }
 
-.gnode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; line-height: 1.2; }
-.gnode b { font-size: 0.8rem; color: #1f2421; }
-.gnode span { font-size: 0.78rem; color: #5c635e; text-align: center; padding: 0 0.3rem; }
+.gnode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; width: 100%; height: 100%; padding: 0 0.4rem; box-sizing: border-box; line-height: 1.15; overflow: hidden; }
+.gnode b { font-size: 0.78rem; color: #1f2421; }
+.gnode span { font-size: 0.72rem; color: #5c635e; text-align: center; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 
 .graph-node-info h2 { font-size: 1rem; text-transform: none; letter-spacing: 0; color: #1f2421; margin: 0; }
 .graph-node-sub { margin: 0.15rem 0 0.5rem; color: #5c635e; }
@@ -829,6 +829,8 @@ h2 {
 
 .graph-conns { list-style: none; margin: 0; padding: 0; }
 .graph-conns > li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.3rem 0; border-bottom: 1px solid #ece9e2; }
+.graph-conn { display: flex; align-items: center; gap: 0.4rem; width: 100%; text-align: left; font: inherit; font-size: 0.85rem; padding: 0; border: 0; background: none; color: #3a5bbf; cursor: pointer; }
+.graph-conn:hover { text-decoration: underline; }
 .graph-reason { flex-basis: 100%; color: #5c635e; font-style: italic; font-size: 0.82rem; }
 
 .graph-count { font-size: 0.85rem; font-weight: 400; color: #8a8f8b; margin-left: 0.5rem; }

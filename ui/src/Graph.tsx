@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -7,6 +7,7 @@ import {
   MarkerType,
   type Node,
   type Edge,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
@@ -93,6 +94,20 @@ export default function Graph() {
   const [hidden, setHidden] = useState<Set<GraphEdgeType>>(
     () => new Set<GraphEdgeType>(['links']),
   )
+  const rf = useRef<ReactFlowInstance | null>(null)
+
+  // focusNode selects a node and recentres the viewport on it — used to jump
+  // from a connection in the panel to its node on the canvas.
+  const focusNode = (id: string) => {
+    setSelected(id)
+    const n = baseNodes.find((b) => b.id === id)
+    if (n && rf.current) {
+      void rf.current.setCenter(n.position.x + NODE_W / 2, n.position.y + NODE_H / 2, {
+        zoom: 1.2,
+        duration: 400,
+      })
+    }
+  }
 
   useEffect(() => {
     fetchGraph()
@@ -138,6 +153,8 @@ export default function Graph() {
             borderRadius: 10,
             background: '#fff',
             padding: 0,
+            overflow: 'hidden',
+            boxSizing: 'border-box',
             opacity: TERMINAL.has(n.state) ? 0.6 : 1,
           },
         } satisfies Node
@@ -277,6 +294,9 @@ export default function Graph() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            onInit={(inst) => {
+              rf.current = inst
+            }}
             onNodeClick={(_, n) => setSelected(n.id)}
             onPaneClick={() => setSelected(null)}
             fitView
@@ -330,8 +350,14 @@ export default function Graph() {
                 <ul className="graph-conns">
                   {connections.map((c, i) => (
                     <li key={i}>
-                      <span className={`graph-dot t-${c.type}`} aria-hidden="true" />
-                      {connText(c)}
+                      <button
+                        className="graph-conn"
+                        onClick={() => focusNode(c.other)}
+                        title={`ir para ${c.other}`}
+                      >
+                        <span className={`graph-dot t-${c.type}`} aria-hidden="true" />
+                        {connText(c)}
+                      </button>
                       {c.type === 'superseded_by' && c.reason && (
                         <span className="graph-reason">motivo: {c.reason}</span>
                       )}
