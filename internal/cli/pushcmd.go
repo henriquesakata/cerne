@@ -162,12 +162,12 @@ func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc
 			return err
 		}
 		want, tracked := manifest[rel]
-		if !tracked {
-			return fmt.Errorf("arquivo não rastreado: %s — rode 'cerne pull' para ressincronizar", rel)
-		}
 		sum := sha256Hex(body)
-		if sum == want {
-			return nil
+		switch {
+		case tracked && sum == want:
+			return nil // tracked and unchanged
+		case !tracked && !acceptableNewDoc(rel, manifest):
+			return fmt.Errorf("arquivo não rastreado: %s — rode 'cerne pull' para ressincronizar", rel)
 		}
 		id := parseCerneID(body)
 		if id == "" {
@@ -184,6 +184,28 @@ func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc
 		return nil, err
 	}
 	return docs, nil
+}
+
+// acceptableNewDoc reports whether rel is a net-new plan.md/result.md authored
+// alongside an already-tracked feature — a sibling under the same feature folder
+// is in the manifest. This lets the cerne-native flow push a plan/result after
+// the feature-new spec stub, without accepting arbitrary untracked files.
+func acceptableNewDoc(rel string, manifest map[string]string) bool {
+	if !strings.HasPrefix(rel, "current/features/") {
+		return false
+	}
+	switch path.Base(rel) {
+	case "plan.md", "result.md":
+	default:
+		return false
+	}
+	folder := path.Dir(rel) + "/"
+	for k := range manifest {
+		if strings.HasPrefix(k, folder) {
+			return true
+		}
+	}
+	return false
 }
 
 // backendRelPath maps a materialized doc path back to its backend content

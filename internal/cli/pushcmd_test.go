@@ -44,6 +44,38 @@ func sha256OfString(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// TestPushNetNewPlan: a plan.md authored after the feature-new spec stub is
+// pushable (the cerne-native flow), written to the backend and tracked.
+func TestPushNetNewPlan(t *testing.T) {
+	projDir, origin, repoDir, _ := pulledProject(t)
+	planPath := filepath.Join(projDir, ".docs", "current", "features", "F-0001-parcelamento", "plan.md")
+	planBody := "---\ncerne_id: F-0001\n---\n\n# Plano\n\nPassos do parcelamento.\n"
+	mustWrite(t, planPath, planBody)
+
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("push net-new plan: %v\noutput: %s", err, out)
+	}
+	got, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "plan.md"))
+	if err != nil || string(got) != planBody {
+		t.Fatalf("backend plan = %q, %v; want the authored plan verbatim", string(got), err)
+	}
+	verify := filepath.Join(t.TempDir(), "verify")
+	if err := gitback.Clone(origin, verify); err != nil {
+		t.Fatalf("clone verify: %v", err)
+	}
+	if _, err := os.ReadFile(filepath.Join(verify, "content", "features", "F-0001", "plan.md")); err != nil {
+		t.Fatalf("plan not pushed to origin: %v", err)
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if _, ok := lock.Materialized["current/features/F-0001-parcelamento/plan.md"]; !ok {
+		t.Fatalf("manifest missing the new plan.md: %+v", lock.Materialized)
+	}
+}
+
 func TestPushGoldenPath(t *testing.T) {
 	projDir, origin, repoDir, specPath := pulledProject(t)
 
