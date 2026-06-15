@@ -2,7 +2,7 @@
 
 tags: #spec #cerne #push #authoring #bugfix
 
-**Status:** Draft (2026-06-14)
+**Status:** Done (2026-06-14) — ver [result.md](result.md)
 **Tipo:** Correção do `cerne push` — aceitar `plan.md`/`result.md` net-new sob uma feature já rastreada.
 **Origem:** Dogfooding (autoria do F-0311 no hub): o fluxo cerne-native documentado ("author plan.md → `cerne push` → `cerne feature start`") **falha** para features net-new. `cerne feature new` cria só o stub de `spec.md` (rastreado); ao autorar um `plan.md` novo e dar `cerne push`, o comando barra com *"arquivo não rastreado … rode 'cerne pull'"* e o `feature start` fica bloqueado (gate de plano). Só features **importadas** (que vieram com plan.md) tinham plano.
 
