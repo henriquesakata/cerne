@@ -6,6 +6,15 @@
 - **What shipped + acceptance numbers + debts + next steps:** [docs/process/cases/0001_founding-spec/result.md](docs/process/cases/0001_founding-spec/result.md)
 - **Status:** v1 shipped (tags `v0.1.0`, `v0.2.0`). First real client: the Rockt Hub, dogfooding against `git@gitlab.com:rockt/hub-docs.git`.
 
+## Documentation source of truth: cerne (this repo dogfoods itself)
+
+cerne is the **guardian and source of truth** for this project's documentation. The truth lives in the **`cerne-docs` backend** (`git@gitlab.com:rockt/cerne-docs.git`), pinned by the committed `docs.lock`; `.cernerc` wires it. Query and change docs through cerne — loose markdown is authoring input, not authority.
+
+- **Read current state:** start at `.docs/CONTEXT.md` (generated: feature roster + states). The 21 founding cases are all `implemented`, so their prose is **history**, not materialized — reach it via `cerne search "<q>"`, `cerne ask "<q>"`, or (kept during the transition) the `docs/process/cases/` tree.
+- **State is data, never prose:** "what exists / in which state" → `cerne status`. Lifecycle moves only via gated commands: `cerne feature new|approve|start|complete|reject|substituir` (also `decision new|substituir`, `retire`).
+- **Authoring (transition period):** new cases are written as files under `docs/process/cases/NNNN_name/` (spec→plan→result), then `cerne import` + `cerne pull` register them; commit `docs.lock`. After import the backend is canonical — re-import will **not** re-sync an edited case. Edit **active** features via `.docs/current/` + `cerne push`; edit **implemented** cases (history, not in `.docs/`) directly in the `cerne-docs` clone. Don't edit the `docs/` source expecting cerne to pick it up.
+- **End state:** `docs/` is kept during the transition; the goal is cerne as sole guardian, at which point the source tree becomes removable.
+
 ## Toolchain (Windows dev box)
 
 - **Go 1.26.4** lives at `C:\development\tools\go\bin` (on the user PATH for new shells). In the Bash tool, prefix commands: `export PATH="/c/development/tools/go/bin:$PATH"`.
@@ -54,7 +63,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 - **Data vs UI**: lifecycle states are English strings in data (`candidate`, `approved`, `in_development`, `implemented`, `rejected`, `superseded`); pt-BR labels live only in the UI.
 - **Commits**: Conventional Commits; end the body with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - **Minimal surface**: no speculative API; keep exported identifiers to what is used.
-- **Dogfooding**: this repo follows the same methodology cerne formalizes — `spec.md` → `plan.md` → `result.md` per case under `docs/process/cases/NNNN_name/`.
+- **Dogfooding**: this repo is itself a cerne project — its docs are managed by cerne (source of truth: the `cerne-docs` backend; see *Documentation source of truth* above). Cases are authored as `spec.md` → `plan.md` → `result.md` under `docs/process/cases/NNNN_name/`, then imported.
 
 ## Next steps (from case 0001 result.md)
 
@@ -63,4 +72,4 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 3. **Release pipeline**: goreleaser or GitLab CI producing win/mac/linux binaries with the UI built in CI (so `ui/dist` need not be committed); stamp version via ldflags (currently hardcoded `0.0.1-dev`).
 4. **Lint coverage**: wiki-links (`[[note]]`, Obsidian style) are not parsed yet — only inline `[x](y)` links.
 
-When starting a new case, use the brainstorming → writing-plans → (subagent-driven-development) → result.md flow.
+When starting a new case, use the brainstorming → writing-plans → (subagent-driven-development) → result.md flow, then register it with the guardian: `cerne import` + `cerne pull`, and commit the updated `docs.lock`.
