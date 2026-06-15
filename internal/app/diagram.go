@@ -3,6 +3,9 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/slug"
@@ -15,11 +18,14 @@ import (
 var ErrNotMermaidSequence = errors.New("a saída do modelo não é um diagrama de sequência Mermaid")
 
 // BuildSequenceDiagramPrompt assembles the pt-BR prompt instructing the LLM to
-// produce a Mermaid sequence diagram for the feature, using its id/title/module
-// and the current spec as context. The model is told to answer with bare
-// Mermaid (no markdown fences, no prose). Shared by the CLI (`cerne spec
-// diagram`) and the server (POST /api/features/{id}/diagram).
-func BuildSequenceDiagramPrompt(f store.Feature, specContent string) string {
+// produce a Mermaid sequence diagram for the feature, using its id/title/module,
+// the current spec and the project structure as context. When projectStructure
+// is non-empty it is embedded and the model is told to ground participants and
+// messages in real components — and, when it has repository access (claude-cli /
+// delegation agents), to read the relevant source files before drawing. The
+// model is told to answer with bare Mermaid (no fences, no prose). Shared by the
+// CLI (`cerne spec diagram`) and the server (POST /api/features/{id}/diagram).
+func BuildSequenceDiagramPrompt(f store.Feature, specContent, projectStructure string) string {
 	module := f.Module
 	if module == "" {
 		module = "(sem módulo)"
@@ -34,9 +40,87 @@ func BuildSequenceDiagramPrompt(f store.Feature, specContent string) string {
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(specContent))
 	b.WriteString("\n---\n\n")
+	if s := strings.TrimSpace(projectStructure); s != "" {
+		b.WriteString("Estrutura do projeto (arquivos versionados; use para identificar os componentes reais):\n")
+		b.WriteString("---\n")
+		b.WriteString(s)
+		b.WriteString("\n---\n\n")
+	}
+	b.WriteString("Ancore o diagrama no código real do projeto:\n")
+	b.WriteString("- Os participantes devem ser componentes reais (pacotes, módulos, serviços, tipos), não papéis genéricos.\n")
+	b.WriteString("- As mensagens devem refletir chamadas e interações reais entre esses componentes no fluxo desta feature.\n")
+	b.WriteString("- Se você tem acesso ao repositório, examine os arquivos-fonte relevantes (pelos caminhos acima) antes de desenhar, para que o fluxo corresponda à implementação.\n\n")
 	b.WriteString("Produza um diagrama de sequência Mermaid (bloco começando com `sequenceDiagram`) que represente o fluxo principal desta feature, usando o título e o módulo como contexto.\n")
 	b.WriteString("Responda APENAS com o código Mermaid, sem cercas de markdown e sem texto antes ou depois.\n")
 	return b.String()
+}
+
+// maxStructureEntries bounds the project structure listing so the prompt stays
+// reasonable on a large repo.
+const maxStructureEntries = 400
+
+// skipDirs are directory names pruned from ProjectStructure: VCS, dependency and
+// build/generated trees, and cerne's own gitignored projection.
+var skipDirs = map[string]bool{
+	"node_modules": true,
+	"dist":         true,
+	"vendor":       true,
+	"build":        true,
+	"target":       true,
+	".docs":        true,
+}
+
+// ProjectStructure returns a compact, newline-separated listing of the project's
+// files as forward-slash relative paths under projDir, pruning VCS / dependency
+// / build trees and dot-entries, sorted and capped at maxStructureEntries. It
+// grounds the diagram prompt in the real codebase; callers treat an empty result
+// or error as best-effort (omit the structure) rather than failing generation.
+func ProjectStructure(projDir string) (string, error) {
+	var paths []string
+	err := filepath.WalkDir(projDir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if p == projDir {
+				return nil
+			}
+			if skipDirs[name] || strings.HasPrefix(name, ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(name, ".") {
+			return nil // skip dotfiles (.cernerc, .gitignore, …)
+		}
+		rel, err := filepath.Rel(projDir, p)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return formatStructure(paths, maxStructureEntries), nil
+}
+
+// formatStructure sorts the paths, caps the listing at max entries and appends a
+// truncation marker when more were elided.
+func formatStructure(paths []string, max int) string {
+	sort.Strings(paths)
+	truncated := false
+	if len(paths) > max {
+		paths = paths[:max]
+		truncated = true
+	}
+	s := strings.Join(paths, "\n")
+	if truncated {
+		s += "\n… (estrutura truncada)"
+	}
+	return s
 }
 
 // SanitizeMermaid cleans raw LLM output into a bare Mermaid sequence diagram:

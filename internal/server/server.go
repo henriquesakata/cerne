@@ -523,7 +523,9 @@ func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, proj
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	body, err := prov.Complete(r.Context(), app.BuildSequenceDiagramPrompt(f, string(specBytes)))
+	// Project structure grounds the diagram in real components (best-effort).
+	structure, _ := app.ProjectStructure(projDir)
+	body, err := prov.Complete(r.Context(), app.BuildSequenceDiagramPrompt(f, string(specBytes), structure))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
