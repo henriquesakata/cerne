@@ -66,11 +66,10 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 - **Minimal surface**: no speculative API; keep exported identifiers to what is used.
 - **Dogfooding**: this repo is itself a cerne project — its docs are managed by cerne (source of truth: the `cerne-docs` backend; see *Documentation source of truth* above). Cases are authored as `spec.md` → `plan.md` → `result.md` under `docs/process/cases/NNNN_name/`, then imported.
 
-## Next steps (from case 0001 result.md)
+## Roadmap and open work
 
-1. **Case 0002 — historical entity registry**: a way to declare "X existed and was absorbed by Y" when X predates the case convention (the Bills/Investments gap — lint can't flag mentions of an entity that was never recorded). Closes acceptance criterion 1 fully.
-2. **Case 0003 — LLM layer (v1.5)**: `cerne compile` (recompile wiki pages) + `cerne ask` (Q&A over current state, dive into history). Deterministic core stays LLM-free; LLM is pluggable (BYO key or delegate to host agent).
-3. **Release pipeline**: goreleaser or GitLab CI producing win/mac/linux binaries with the UI built in CI (so `ui/dist` need not be committed); stamp version via ldflags (currently hardcoded `0.0.1-dev`).
-4. **Lint coverage**: wiki-links (`[[note]]`, Obsidian style) are not parsed yet — only inline `[x](y)` links.
+This file does not track next steps — a hand-maintained roadmap is exactly the staleness cerne exists to kill (the founding spec's problem #3). Ask the guardian: `cerne status` for feature states, `cerne lint` for documentation debts, and the open cases under `docs/process/cases/`.
+
+Known tooling gap, not yet filed as a case: `cerne lint` parses only inline `[x](y)` links, not wiki-links (`[[note]]`, Obsidian style).
 
 When starting a new case, use the brainstorming → writing-plans → (subagent-driven-development) → result.md flow, then register it with the guardian: `cerne import` + `cerne pull`, and commit the updated `docs.lock`.
