@@ -80,7 +80,7 @@ func BuildGraph(repoDir string) (Graph, error) {
 		return Graph{}, err
 	}
 
-	var nodes []Node
+	nodes := []Node{}
 	nodeSet := map[string]bool{}
 	add := func(id, kind, title, state string) {
 		nodes = append(nodes, Node{ID: id, Kind: kind, Title: title, State: state})
@@ -99,7 +99,7 @@ func BuildGraph(repoDir string) (Graph, error) {
 		add(h.ID, KindHistorical, h.Name, string(h.State))
 	}
 
-	var edges []Edge
+	edges := []Edge{}
 	seen := map[string]bool{}
 	addEdge := func(from, to, typ, reason string) {
 		if from == to || !nodeSet[from] || !nodeSet[to] {
