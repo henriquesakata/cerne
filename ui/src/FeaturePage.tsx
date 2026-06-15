@@ -4,11 +4,14 @@ import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types'
 import {
   fetchArtifactText,
   fetchFeature,
+  fetchLLMMode,
+  generateDiagram,
   postTransition,
   saveFeatureDoc,
   STATE_LABELS,
   type FeatureDetail,
   type FeatureState,
+  type LLMMode,
   type TransitionAction,
   type TransitionResult,
 } from './api'
@@ -83,6 +86,8 @@ export default function FeaturePage({ id }: { id: string }) {
   // Conversão Mermaid→Excalidraw em andamento (texto bruto) / falha.
   const [converting, setConverting] = useState(false)
   const [convertError, setConvertError] = useState<string | null>(null)
+  // Modo de IA do projeto (case 0019): habilita/desabilita "Gerar com IA".
+  const [llmMode, setLlmMode] = useState<LLMMode | null>(null)
 
   const load = useCallback(() => {
     fetchFeature(id)
@@ -123,6 +128,13 @@ export default function FeaturePage({ id }: { id: string }) {
   useEffect(() => {
     load()
   }, [load])
+
+  // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
+  useEffect(() => {
+    fetchLLMMode()
+      .then(setLlmMode)
+      .catch(() => setLlmMode(null))
+  }, [])
 
   if (error) return <p className="status error">Erro ao carregar a feature: {error}</p>
   if (!detail) return <p className="status">Carregando…</p>
@@ -221,8 +233,11 @@ export default function FeaturePage({ id }: { id: string }) {
               }}
             />
             <DiagramsSection
+              featureId={f.id}
               artifacts={detail.artifacts}
+              llmMode={llmMode}
               onOpen={(d) => setDiagram(d)}
+              onRefresh={load}
             />
           </aside>
         </div>
@@ -311,14 +326,23 @@ function DocEditor({
 }
 
 function DiagramsSection({
+  featureId,
   artifacts,
+  llmMode,
   onOpen,
+  onRefresh,
 }: {
+  featureId: string
   artifacts: FeatureDetail['artifacts']
+  llmMode: LLMMode | null
   onOpen: (d: OpenDiagram) => void
+  onRefresh: () => void
 }) {
   const [naming, setNaming] = useState(false)
   const [newName, setNewName] = useState('')
+  // Geração por IA em andamento / falha (ou dica de modo em delegação).
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
 
   const create = () => {
     const filename = diagramFilename(newName)
@@ -326,6 +350,39 @@ function DiagramsSection({
     setNaming(false)
     setNewName('')
     onOpen({ mode: 'excalidraw', name: filename, isNew: true })
+  }
+
+  // generate pede o diagrama à IA, converte o Mermaid devolvido em cena
+  // Excalidraw e abre o editor já preenchido (salvando um <base>.excalidraw).
+  // O .mmd gerado fica como fonte no backend; onRefresh o traz para a lista.
+  const generate = () => {
+    setGenerating(true)
+    setGenError(null)
+    generateDiagram(featureId)
+      .then(async (res) => {
+        if (!res.ok) {
+          setGenError(res.error)
+          return
+        }
+        if (!res.generated) {
+          setGenError(
+            'A geração automática precisa do modo de IA “assinatura” ou “chave própria”. Troque o modo em Gestão.',
+          )
+          return
+        }
+        const scene = await convertMermaidToScene(res.mermaid)
+        onRefresh()
+        onOpen({
+          mode: 'excalidraw',
+          name: excalidrawSiblingName(res.name),
+          isNew: true,
+          initialScene: scene,
+        })
+      })
+      .catch((e: unknown) =>
+        setGenError(e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => setGenerating(false))
   }
 
   // openArtifact ramifica por extensão: .mmd abre o MermaidView (render);
@@ -337,6 +394,8 @@ function DiagramsSection({
       onOpen({ mode: 'excalidraw', name, isNew: false })
     }
   }
+
+  const delegated = llmMode === 'delegation'
 
   return (
     <section className="artifacts">
@@ -365,27 +424,41 @@ function DiagramsSection({
           })}
         </ul>
       )}
-      {naming ? (
-        <form
-          className="diagram-name-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            create()
-          }}
+      {genError && <p className="form-error">{genError}</p>}
+      <div className="diagram-actions">
+        <button
+          onClick={generate}
+          disabled={generating || delegated}
+          title={
+            delegated
+              ? 'Disponível nos modos de IA “assinatura” ou “chave própria” — troque o modo em Gestão.'
+              : undefined
+          }
         >
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="nome-do-diagrama"
-            autoFocus
-          />
-          <button type="submit" disabled={diagramFilename(newName) === ''}>
-            Criar
-          </button>
-        </form>
-      ) : (
-        <button onClick={() => setNaming(true)}>Novo diagrama</button>
-      )}
+          {generating ? 'Gerando…' : 'Gerar com IA'}
+        </button>
+        {naming ? (
+          <form
+            className="diagram-name-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              create()
+            }}
+          >
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="nome-do-diagrama"
+              autoFocus
+            />
+            <button type="submit" disabled={diagramFilename(newName) === ''}>
+              Criar
+            </button>
+          </form>
+        ) : (
+          <button onClick={() => setNaming(true)}>Novo diagrama</button>
+        )}
+      </div>
     </section>
   )
 }

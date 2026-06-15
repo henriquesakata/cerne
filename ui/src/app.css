@@ -311,7 +311,7 @@ h2 {
   text-decoration: underline;
 }
 
-.artifacts > button,
+.diagram-actions button,
 .diagram-name-form button {
   font: inherit;
   font-size: 0.85rem;
@@ -322,13 +322,20 @@ h2 {
   cursor: pointer;
 }
 
-.artifacts > button { margin-top: 0.6rem; }
+.diagram-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
 
-.artifacts > button:hover,
+.diagram-actions button:hover:not(:disabled),
 .diagram-name-form button:hover:not(:disabled) { background: #ece9e2; }
+.diagram-actions button:disabled,
 .diagram-name-form button:disabled { opacity: 0.6; cursor: default; }
 
-.diagram-name-form { display: flex; gap: 0.4rem; margin-top: 0.6rem; }
+.diagram-name-form { display: flex; gap: 0.4rem; }
 
 .diagram-name-form input {
   font: inherit;

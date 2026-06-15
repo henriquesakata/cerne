@@ -152,6 +152,42 @@ export async function putArtifact(
   return { ok: true }
 }
 
+// GenerateDiagramResult: no sucesso traz o Mermaid gerado (para a UI converter
+// e abrir como Excalidraw editável); generated=false sinaliza modo delegação
+// (sem provider para gerar) — a UI orienta a trocar o modo de IA.
+export type GenerateDiagramResult =
+  | { ok: false; error: string }
+  | { ok: true; generated: false }
+  | { ok: true; generated: true; name: string; mermaid: string }
+
+// generateDiagram pede à IA um diagrama de sequência (Mermaid) para a feature.
+// O servidor salva o <name>.mmd (commit+push) e devolve o texto; em delegação
+// devolve generated=false (nunca inventa um diagrama).
+export async function generateDiagram(
+  featureId: string,
+  name?: string,
+): Promise<GenerateDiagramResult> {
+  const r = await fetch(
+    `/api/features/${encodeURIComponent(featureId)}/diagram`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(name ? { name } : {}),
+    },
+  )
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  const data = (await r.json()) as {
+    generated: boolean
+    needs_provider?: boolean
+    name?: string
+    mermaid?: string
+  }
+  if (data.generated && data.name && data.mermaid) {
+    return { ok: true, generated: true, name: data.name, mermaid: data.mermaid }
+  }
+  return { ok: true, generated: false }
+}
+
 export type TransitionOutcome =
   | { ok: true; data: TransitionResult }
   | { ok: false; error: string }
