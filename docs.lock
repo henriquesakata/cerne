@@ -1,8 +1,8 @@
 {
   "version": 1,
   "backend": "git@gitlab.com:rockt/cerne-docs.git",
-  "snapshot": "812debf057165abbd186167208595f9d70b0b096",
+  "snapshot": "3c32cb2ada6656e4d6778c51742f3e801baf30e2",
   "materialized": {
-    "CONTEXT.md": "4136595a257fb93695e3b1691b688f1bb6a72654e43214c2ba86e007cf9d29b6"
+    "CONTEXT.md": "7927009b1fb48527e19ef021c1f38310554d82384c4d52d95fd8b9ff31b57dfe"
   }
 }
