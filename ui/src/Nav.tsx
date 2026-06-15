@@ -5,6 +5,7 @@ const LINKS: { href: string; label: string }[] = [
   { href: '#/decisions', label: 'Decisões' },
   { href: '#/references', label: 'Referências' },
   { href: '#/wiki', label: 'Wiki' },
+  { href: '#/graph', label: 'Grafo' },
   { href: '#/ask', label: 'Perguntar' },
   { href: '#/search', label: 'Busca' },
   { href: '#/lint', label: 'Lint' },
@@ -18,6 +19,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/decisions') || hash.startsWith('#/d/')) return '#/decisions'
   if (hash.startsWith('#/references') || hash.startsWith('#/r/')) return '#/references'
   if (hash.startsWith('#/wiki')) return '#/wiki'
+  if (hash.startsWith('#/graph')) return '#/graph'
   if (hash.startsWith('#/ask')) return '#/ask'
   if (hash.startsWith('#/search')) return '#/search'
   if (hash.startsWith('#/lint')) return '#/lint'

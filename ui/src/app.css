@@ -810,3 +810,38 @@ h2 {
 .manage-actions button:disabled { opacity: 0.6; cursor: default; }
 .manage-close { font-size: 0.82rem; color: #8a8f8b; text-decoration: none; }
 .manage-close:hover { color: #5c635e; text-decoration: underline; }
+
+/* ---- grafo explicativo (case 0021) ---- */
+.graph-page { display: flex; flex-direction: column; height: calc(100vh - 7rem); box-sizing: border-box; }
+.graph-wrap { display: flex; gap: 1rem; flex: 1; min-height: 0; margin-top: 0.75rem; }
+.graph-canvas { flex: 1; min-width: 0; border: 1px solid #e0d8c4; border-radius: 8px; background: #fff; overflow: hidden; }
+.graph-panel { width: 17rem; flex-shrink: 0; overflow-y: auto; font-size: 0.9rem; }
+
+.gnode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; line-height: 1.2; }
+.gnode b { font-size: 0.8rem; color: #1f2421; }
+.gnode span { font-size: 0.78rem; color: #5c635e; text-align: center; padding: 0 0.3rem; }
+
+.graph-node-info h2 { font-size: 1rem; text-transform: none; letter-spacing: 0; color: #1f2421; margin: 0; }
+.graph-node-sub { margin: 0.15rem 0 0.5rem; color: #5c635e; }
+.graph-open { display: inline-block; margin-bottom: 0.5rem; font-size: 0.85rem; color: #3a5bbf; text-decoration: none; }
+.graph-open:hover { text-decoration: underline; }
+.graph-panel h3 { margin: 0.75rem 0 0.4rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #8a8f8b; }
+
+.graph-conns { list-style: none; margin: 0; padding: 0; }
+.graph-conns > li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; padding: 0.3rem 0; border-bottom: 1px solid #ece9e2; }
+.graph-reason { flex-basis: 100%; color: #5c635e; font-style: italic; font-size: 0.82rem; }
+
+.graph-legend { margin-top: 1rem; border-top: 1px solid #e0d8c4; padding-top: 0.75rem; }
+.graph-toggle { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: #5c635e; }
+.graph-legend-edges, .graph-legend-kinds { list-style: none; margin: 0.25rem 0 0; padding: 0; }
+.graph-legend-edges > li, .graph-legend-kinds > li { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.82rem; color: #5c635e; }
+
+.graph-line { display: inline-block; width: 1.5rem; height: 0; border-top-width: 2px; border-top-style: solid; }
+.graph-line.t-superseded_by { border-color: #d97706; }
+.graph-line.t-informs { border-color: #0d9488; border-top-style: dashed; }
+.graph-line.t-links { border-color: #9ca3af; border-top-style: dashed; }
+
+.graph-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 999px; flex-shrink: 0; }
+.graph-dot.t-superseded_by { background: #d97706; }
+.graph-dot.t-informs { background: #0d9488; }
+.graph-dot.t-links { background: #9ca3af; }
