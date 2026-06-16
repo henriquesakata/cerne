@@ -704,7 +704,7 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module)
+	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, "")
 	if err != nil {
 		// Validation/module failures surface as 422 with the same pt-BR
 		// message the CLI prints, matching handleTransition.

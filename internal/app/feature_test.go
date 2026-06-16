@@ -44,7 +44,7 @@ func newFeatureBackend(t *testing.T, modules ...string) (repoDir, projDir, origi
 func TestCreateFeature(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 
-	f, err := CreateFeature(repoDir, projDir, "  Minha feature  ", "")
+	f, err := CreateFeature(repoDir, projDir, "  Minha feature  ", "", "")
 	if err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
@@ -90,21 +90,66 @@ func TestCreateFeature(t *testing.T) {
 
 func TestCreateFeatureEmptyTitle(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "   ", ""); err == nil {
+	if _, err := CreateFeature(repoDir, projDir, "   ", "", ""); err == nil {
 		t.Fatalf("want error for empty title")
+	}
+}
+
+func TestCreateFeatureWithParent(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID)
+	if err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+	if child.Parent != epic.ID {
+		t.Fatalf("child.Parent = %q, want %q", child.Parent, epic.ID)
+	}
+	got, err := store.LoadFeature(repoDir, child.ID)
+	if err != nil || got.Parent != epic.ID {
+		t.Fatalf("persisted parent = %q, %v; want %q", got.Parent, err, epic.ID)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := evs[len(evs)-1]
+	if last.Type != "feature.created" || last.EntityID != child.ID || last.Payload["parent"] != epic.ID {
+		t.Fatalf("event = %+v, want feature.created for child carrying parent", last)
+	}
+}
+
+func TestCreateFeatureParentErrors(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "X", "", "F-9999"); !errors.Is(err, ErrParentNotFound) {
+		t.Fatalf("err = %v, want ErrParentNotFound", err)
+	}
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	epic.State = domain.StateRejected // drive it terminal directly
+	if err := store.SaveFeature(repoDir, epic); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if _, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID); !errors.Is(err, ErrParentTerminal) {
+		t.Fatalf("err = %v, want ErrParentTerminal", err)
 	}
 }
 
 func TestCreateFeatureModuleRules(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t, "core", "web")
 
-	if _, err := CreateFeature(repoDir, projDir, "X", ""); err == nil {
+	if _, err := CreateFeature(repoDir, projDir, "X", "", ""); err == nil {
 		t.Fatalf("want error: --module required with 2+ declared modules")
 	}
-	if _, err := CreateFeature(repoDir, projDir, "X", "nope"); err == nil {
+	if _, err := CreateFeature(repoDir, projDir, "X", "nope", ""); err == nil {
 		t.Fatalf("want error: undeclared module")
 	}
-	f, err := CreateFeature(repoDir, projDir, "X", "core")
+	f, err := CreateFeature(repoDir, projDir, "X", "core", "")
 	if err != nil || f.Module != "core" {
 		t.Fatalf("CreateFeature valid module = %+v, %v; want module core", f, err)
 	}
@@ -112,7 +157,7 @@ func TestCreateFeatureModuleRules(t *testing.T) {
 
 func TestSaveFeatureDoc(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feature", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Feature", "", ""); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	head0, _ := gitback.HeadSHA(origin)
@@ -148,7 +193,7 @@ func TestSaveFeatureDoc(t *testing.T) {
 
 func TestSaveFeatureDocErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feature", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Feature", "", ""); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "notes", "x"); !errors.Is(err, ErrUnknownDoc) {

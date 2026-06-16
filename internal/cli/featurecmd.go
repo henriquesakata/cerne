@@ -40,7 +40,7 @@ func runFeatureNew(cmd *cobra.Command, dir, title, module string) error {
 	if err != nil {
 		return err
 	}
-	f, err := app.CreateFeature(ctx.repoDir, ctx.projDir, title, module)
+	f, err := app.CreateFeature(ctx.repoDir, ctx.projDir, title, module, "")
 	if err != nil {
 		return err
 	}
