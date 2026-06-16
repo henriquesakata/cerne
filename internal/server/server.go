@@ -154,6 +154,7 @@ type featureDetailResponse struct {
 	Docs       featureDocs       `json:"docs"`
 	Artifacts  []artifact        `json:"artifacts"`
 	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this feature
+	Children   []store.Feature   `json:"children"`    // features that decompose this one (epic view)
 }
 
 type featureDocs struct {
@@ -200,7 +201,16 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts, InformedBy: informedBy})
+	all, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	children := store.ChildrenByParent(all)[id]
+	if children == nil {
+		children = []store.Feature{}
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts, InformedBy: informedBy, Children: children})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -691,6 +701,7 @@ func handleEvents(w http.ResponseWriter, repoDir string) {
 type createFeatureRequest struct {
 	Title  string `json:"title"`
 	Module string `json:"module"`
+	Parent string `json:"parent"`
 }
 
 // createFeatureResponse is the POST /api/features 201 payload.
@@ -704,7 +715,7 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, "")
+	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent)
 	if err != nil {
 		// Validation/module failures surface as 422 with the same pt-BR
 		// message the CLI prints, matching handleTransition.
