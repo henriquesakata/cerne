@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"gitlab.com/rockt/cerne/internal/llm"
@@ -32,6 +33,12 @@ func validLLMMode(mode string) bool {
 // normalized "delegation" default), read from .cernerc at projDir.
 func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
 	cfg, _, err := project.LoadConfig(projDir)
+	if errors.Is(err, project.ErrNoProject) {
+		// Serve/multiproject mode: the per-project dir holds only docs.lock, no
+		// .cernerc yet. Report the normalized default; a PUT seeds the .cernerc.
+		writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode("")})
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -55,7 +62,18 @@ func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) 
 		return
 	}
 	cfg, dir, err := project.LoadConfig(projDir)
-	if err != nil {
+	if errors.Is(err, project.ErrNoProject) {
+		// Serve/multiproject mode: no .cernerc in projDir — seed a minimal one
+		// from the docs.lock backend so the mode (and the ask LLM config) persist
+		// per project. The byo-key API key never lives here (only the mode).
+		lock, lerr := project.LoadLock(projDir)
+		if lerr != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(lerr.Error()))
+			return
+		}
+		cfg = project.Config{Backend: lock.Backend}
+		dir = projDir
+	} else if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
