@@ -209,6 +209,40 @@ func TestFeatureDetail(t *testing.T) {
 	}
 }
 
+func TestFeatureDetailChildren(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Épico", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filha A", Parent: "F-0001", State: domain.StateApproved},
+		{ID: "F-0003", Title: "Filha B", Parent: "F-0001", State: domain.StateImplemented},
+	} {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+
+	var got struct {
+		Children []store.Feature `json:"children"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Children) != 2 || got.Children[0].ID != "F-0002" || got.Children[1].ID != "F-0003" {
+		t.Fatalf("children = %+v, want [F-0002, F-0003] sorted", got.Children)
+	}
+
+	var leaf struct {
+		Children []store.Feature `json:"children"`
+	}
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0002", "", &leaf)
+	if leaf.Children == nil || len(leaf.Children) != 0 {
+		t.Fatalf("leaf children = %v, want empty (non-null) array", leaf.Children)
+	}
+}
+
 func TestFeatureDetailNoArtifactsDir(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
@@ -598,6 +632,29 @@ func TestCreateFeatureEndpoint(t *testing.T) {
 	}
 }
 
+func TestCreateFeatureEndpointWithParent(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 (candidate)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features",
+		`{"title":"Filha","parent":"F-0001"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Feature.Parent != "F-0001" {
+		t.Fatalf("feature.Parent = %q, want F-0001", got.Feature.Parent)
+	}
+
+	var errBody map[string]string
+	rec = doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features",
+		`{"title":"X","parent":"F-9999"}`, &errBody)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown parent status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateFeatureEndpointEmptyTitle(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	var got map[string]string
@@ -616,6 +673,46 @@ func TestCreateFeatureEndpointInvalidBody(t *testing.T) {
 	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features", `{not json`, &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSetParentEndpoint(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 (candidate)
+	h := New(repoDir, projDir, "")
+
+	var created struct {
+		Feature store.Feature `json:"feature"`
+	}
+	doJSON(t, h, http.MethodPost, "/api/features", `{"title":"Filha"}`, &created)
+	child := created.Feature.ID
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":"F-0001"}`, &got)
+	if rec.Code != http.StatusOK || got.Feature.Parent != "F-0001" {
+		t.Fatalf("reparent: status %d parent %q, want 200 + F-0001; body: %s", rec.Code, got.Feature.Parent, rec.Body.String())
+	}
+
+	// Clear: the response omits an empty parent (omitempty), so assert against
+	// the persisted state rather than the reused struct.
+	rec = doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":""}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear: status %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if f, _ := store.LoadFeature(repoDir, child); f.Parent != "" {
+		t.Fatalf("clear: persisted parent = %q, want empty", f.Parent)
+	}
+
+	var e map[string]string
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-9999/parent", `{"parent":"F-0001"}`, &e); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown feature status = %d, want 404", rec.Code)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":"F-9999"}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown parent status = %d, want 422", rec.Code)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":"`+child+`"}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("self parent status = %d, want 422", rec.Code)
 	}
 }
 

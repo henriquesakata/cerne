@@ -17,30 +17,33 @@ func newFeatureCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newFeatureNewCmd(&dir))
+	cmd.AddCommand(newFeatureReparentCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	return cmd
 }
 
 func newFeatureNewCmd(dir *string) *cobra.Command {
 	var module string
+	var parent string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a feature in candidate state",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureNew(cmd, *dir, args[0], module)
+			return runFeatureNew(cmd, *dir, args[0], module, parent)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
+	cmd.Flags().StringVar(&parent, "parent", "", "parent feature ID (the epic this one decomposes)")
 	return cmd
 }
 
-func runFeatureNew(cmd *cobra.Command, dir, title, module string) error {
+func runFeatureNew(cmd *cobra.Command, dir, title, module, parent string) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	f, err := app.CreateFeature(ctx.repoDir, ctx.projDir, title, module)
+	f, err := app.CreateFeature(ctx.repoDir, ctx.projDir, title, module, parent)
 	if err != nil {
 		return err
 	}

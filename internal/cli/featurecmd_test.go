@@ -127,6 +127,27 @@ func TestFeatureNew(t *testing.T) {
 	}
 }
 
+func TestFeatureNewWithParent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Épico", "--dir", projDir); err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	out, err := execCerne(t, "feature", "new", "Filha", "--parent", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("create child: %v\noutput: %s", err, out)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0002")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.Parent != "F-0001" {
+		t.Fatalf("Parent = %q, want F-0001", f.Parent)
+	}
+	if _, err := execCerne(t, "feature", "new", "X", "--parent", "F-9999", "--dir", projDir); err == nil {
+		t.Fatalf("feature new with unknown parent succeeded, want error")
+	}
+}
+
 func TestFeatureNewModuleRules(t *testing.T) {
 	tests := []struct {
 		name       string

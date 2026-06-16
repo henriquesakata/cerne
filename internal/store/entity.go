@@ -18,11 +18,14 @@ import (
 // ErrNotFound is the sentinel for an entity file missing from the backend.
 var ErrNotFound = errors.New("entity not found")
 
-// Feature is the persisted form of a feature entity.
+// Feature is the persisted form of a feature entity. Parent, when set, is the
+// ID of the feature this one decomposes: a feature referenced as a Parent is an
+// epic (the role is inferred from the link, never a separate flag).
 type Feature struct {
 	ID           string              `json:"id"`
 	Title        string              `json:"title"`
 	Module       string              `json:"module"`
+	Parent       string              `json:"parent,omitempty"`
 	State        domain.FeatureState `json:"state"`
 	SupersededBy string              `json:"superseded_by,omitempty"`
 	Reason       string              `json:"reason,omitempty"`

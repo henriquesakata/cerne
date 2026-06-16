@@ -28,6 +28,7 @@ func TestFeatureRoundTrip(t *testing.T) {
 	want.State = domain.StateSuperseded
 	want.SupersededBy = "F-0002"
 	want.Reason = "absorbed into bills"
+	want.Parent = "F-0003"
 	if err := SaveFeature(dir, want); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
@@ -36,7 +37,8 @@ func TestFeatureRoundTrip(t *testing.T) {
 		t.Fatalf("LoadFeature: %v", err)
 	}
 	if got.ID != want.ID || got.Title != want.Title || got.Module != want.Module ||
-		got.State != want.State || got.SupersededBy != want.SupersededBy || got.Reason != want.Reason {
+		got.State != want.State || got.SupersededBy != want.SupersededBy || got.Reason != want.Reason ||
+		got.Parent != want.Parent {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
@@ -160,5 +162,9 @@ func TestSavedFileFormat(t *testing.T) {
 	}
 	if !strings.HasSuffix(s, "}\n") {
 		t.Fatalf("file must end with closing brace + newline, got suffix %q", s[max(0, len(s)-5):])
+	}
+	// A feature with no parent must not carry the key (omitempty).
+	if strings.Contains(s, "\"parent\"") {
+		t.Fatalf("feature with no parent must omit the parent key, got:\n%s", s)
 	}
 }

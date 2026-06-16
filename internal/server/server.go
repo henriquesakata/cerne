@@ -47,6 +47,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("PUT /api/features/{id}/docs/{doc}", func(w http.ResponseWriter, r *http.Request) {
 		handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 	})
+	mux.HandleFunc("PUT /api/features/{id}/parent", func(w http.ResponseWriter, r *http.Request) {
+		handleSetParent(w, r, repoDir, projDir, r.PathValue("id"))
+	})
 	mux.HandleFunc("GET /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
 		handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
 	})
@@ -154,6 +157,7 @@ type featureDetailResponse struct {
 	Docs       featureDocs       `json:"docs"`
 	Artifacts  []artifact        `json:"artifacts"`
 	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this feature
+	Children   []store.Feature   `json:"children"`    // features that decompose this one (epic view)
 }
 
 type featureDocs struct {
@@ -200,7 +204,16 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts, InformedBy: informedBy})
+	all, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	children := store.ChildrenByParent(all)[id]
+	if children == nil {
+		children = []store.Feature{}
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts, InformedBy: informedBy, Children: children})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -691,6 +704,7 @@ func handleEvents(w http.ResponseWriter, repoDir string) {
 type createFeatureRequest struct {
 	Title  string `json:"title"`
 	Module string `json:"module"`
+	Parent string `json:"parent"`
 }
 
 // createFeatureResponse is the POST /api/features 201 payload.
@@ -704,7 +718,7 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module)
+	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent)
 	if err != nil {
 		// Validation/module failures surface as 422 with the same pt-BR
 		// message the CLI prints, matching handleTransition.
@@ -758,6 +772,38 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
+}
+
+// setParentRequest is the PUT /api/features/{id}/parent body; an empty parent
+// detaches the feature from its epic.
+type setParentRequest struct {
+	Parent string `json:"parent"`
+}
+
+func handleSetParent(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req setParentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	switch err := app.SetFeatureParent(repoDir, projDir, id, req.Parent); {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+	case errors.Is(err, app.ErrParentNotFound),
+		errors.Is(err, app.ErrParentTerminal),
+		errors.Is(err, domain.ErrParentSelf),
+		errors.Is(err, domain.ErrParentCycle):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		writeJSON(w, http.StatusOK, createFeatureResponse{Feature: f})
 	}
 }
 

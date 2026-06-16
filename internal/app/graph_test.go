@@ -90,6 +90,42 @@ func TestBuildGraphStructuredEdges(t *testing.T) {
 	}
 }
 
+// TestBuildGraphPartOfEdges: a feature with a Parent yields a part_of edge
+// (child → epic); an edge to a missing parent is dropped so the graph never
+// dangles.
+func TestBuildGraphPartOfEdges(t *testing.T) {
+	repo := t.TempDir()
+	now := time.Now()
+	save := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "Épico", State: domain.StateInDevelopment, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0002", Title: "Filha A", Parent: "F-0001", State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0003", Title: "Filha B", Parent: "F-0001", State: domain.StateImplemented, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0004", Title: "Órfã", Parent: "F-9999", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}))
+
+	g, err := BuildGraph(repo)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	var parts []Edge
+	for _, e := range g.Edges {
+		if e.Type == EdgePartOf {
+			parts = append(parts, e)
+		}
+	}
+	want := []Edge{
+		{From: "F-0002", To: "F-0001", Type: EdgePartOf},
+		{From: "F-0003", To: "F-0001", Type: EdgePartOf},
+	}
+	if !reflect.DeepEqual(parts, want) {
+		t.Fatalf("part_of edges = %+v, want %+v (missing-parent edge dropped)", parts, want)
+	}
+}
+
 // TestBuildGraphContentLinkEdges: a markdown citation between content docs that
 // resolves to a known entity becomes a links edge; a self link, a non-entity
 // link and an external link produce none.

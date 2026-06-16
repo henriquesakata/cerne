@@ -24,10 +24,12 @@ const (
 	// it; its Reason is the mandatory supersession motive (the explanatory
 	// payload). EdgeInforms points from a reference to the feature/decision it
 	// motivated. EdgeLinks points from one entity's content doc to another
-	// entity it cites with a resolvable markdown link.
+	// entity it cites with a resolvable markdown link. EdgePartOf points from a
+	// child feature to the epic (parent feature) it decomposes.
 	EdgeSupersededBy = "superseded_by"
 	EdgeInforms      = "informs"
 	EdgeLinks        = "links"
+	EdgePartOf       = "part_of"
 )
 
 // Node is one entity in the graph projection.
@@ -130,6 +132,11 @@ func BuildGraph(repoDir string) (Graph, error) {
 	for _, r := range references {
 		for _, to := range r.Informs {
 			addEdge(r.ID, to, EdgeInforms, "")
+		}
+	}
+	for _, f := range features {
+		if f.Parent != "" {
+			addEdge(f.ID, f.Parent, EdgePartOf, "")
 		}
 	}
 

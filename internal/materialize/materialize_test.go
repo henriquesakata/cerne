@@ -152,7 +152,7 @@ func TestMaterializeStateProjection(t *testing.T) {
 	}
 
 	// Implemented row present, state shown, Docs column empty.
-	if !strings.Contains(ctx, "| F-0004 | implemented | core | Tema escuro |  |") {
+	if !strings.Contains(ctx, "| F-0004 | implemented |  | core | Tema escuro |  |") {
 		t.Errorf("CONTEXT.md missing implemented row without docs:\n%s", ctx)
 	}
 
@@ -258,10 +258,14 @@ func TestMaterializeContextGolden(t *testing.T) {
 
 ## Features
 
-| ID | Estado | Módulo | Título | Docs |
-|---|---|---|---|---|
-| F-0001 | in_development | finance | Parcelamento | [spec](current/features/F-0001-parcelamento/spec.md), [plan](current/features/F-0001-parcelamento/plan.md) |
-| F-0002 | implemented | core | Tema escuro |  |
+| ID | Estado | Épico | Módulo | Título | Docs |
+|---|---|---|---|---|---|
+| F-0001 | in_development |  | finance | Parcelamento | [spec](current/features/F-0001-parcelamento/spec.md), [plan](current/features/F-0001-parcelamento/plan.md) |
+| F-0002 | implemented |  | core | Tema escuro |  |
+
+## Épicos
+
+_Nenhum._
 
 ## Decisões ativas
 
@@ -276,6 +280,51 @@ _Nenhuma._
 	}
 }
 
+func TestMaterializeContextEpics(t *testing.T) {
+	backend := seedBackend(t)
+	save := func(f store.Feature) {
+		t.Helper()
+		f.CreatedAt, f.UpdatedAt = seedTime, seedTime
+		if err := store.SaveFeature(backend, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	save(store.Feature{ID: "F-0001", Title: "Revamp de assinaturas", State: domain.StateInDevelopment})
+	save(store.Feature{ID: "F-0002", Title: "Tela de planos", Parent: "F-0001", State: domain.StateImplemented})
+	save(store.Feature{ID: "F-0003", Title: "Cobrança recorrente", Parent: "F-0001", State: domain.StateApproved})
+	save(store.Feature{ID: "F-0004", Title: "Ideia descartada", Parent: "F-0001", State: domain.StateRejected})
+	save(store.Feature{ID: "F-0005", Title: "Feature solta", State: domain.StateCandidate})
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(backend, docsDir, ""); err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+	ctx := readContext(t, docsDir)
+
+	// Épico column carries the parent ID on a child row.
+	if !strings.Contains(ctx, "| F-0003 | approved | F-0001 |  | Cobrança recorrente |  |") {
+		t.Errorf("missing child row with Épico column:\n%s", ctx)
+	}
+	// Épicos breakdown: progress counts only live children (rejected excluded → 1/2).
+	if !strings.Contains(ctx, "### F-0001 — Revamp de assinaturas (1/2 implementadas)") {
+		t.Errorf("missing epic heading with progress:\n%s", ctx)
+	}
+	for _, want := range []string{
+		"- F-0002 — Tela de planos (implemented)",
+		"- F-0003 — Cobrança recorrente (approved)",
+	} {
+		if !strings.Contains(ctx, want) {
+			t.Errorf("missing epic child %q:\n%s", want, ctx)
+		}
+	}
+	if strings.Contains(ctx, "Ideia descartada") {
+		t.Errorf("rejected child leaked into CONTEXT.md:\n%s", ctx)
+	}
+	if strings.Contains(ctx, "### F-0005") {
+		t.Errorf("non-epic F-0005 rendered as an epic:\n%s", ctx)
+	}
+}
+
 func TestMaterializeEmptyBackend(t *testing.T) {
 	backend := seedBackend(t)
 	docsDir := filepath.Join(t.TempDir(), ".docs")
@@ -286,6 +335,7 @@ func TestMaterializeEmptyBackend(t *testing.T) {
 	ctx := readContext(t, docsDir)
 	for _, want := range []string{
 		"## Features\n\n_Nenhuma._\n",
+		"## Épicos\n\n_Nenhum._\n",
 		"## Decisões ativas\n\n_Nenhuma._\n",
 		"## Referências\n\n_Nenhuma._\n",
 	} {

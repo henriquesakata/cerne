@@ -5,10 +5,13 @@ import {
   fetchArtifactText,
   fetchFeature,
   fetchLLMMode,
+  fetchState,
   generateDiagram,
   postTransition,
   saveFeatureDoc,
+  setFeatureParent,
   STATE_LABELS,
+  type Feature,
   type FeatureDetail,
   type FeatureState,
   type LLMMode,
@@ -152,6 +155,12 @@ export default function FeaturePage({ id }: { id: string }) {
           <span className={`chip chip-${f.state}`}>{STATE_LABELS[f.state]}</span>
           {f.module && <span className="badge">{f.module}</span>}
         </p>
+        {f.parent && (
+          <p className="feature-note">
+            Épico:{' '}
+            <a href={`#/f/${encodeURIComponent(f.parent)}`}>{f.parent}</a>
+          </p>
+        )}
         {f.superseded_by && (
           <p className="feature-note">Substituída por {f.superseded_by}</p>
         )}
@@ -232,6 +241,7 @@ export default function FeaturePage({ id }: { id: string }) {
                 load()
               }}
             />
+            <EpicPanel feature={f} childFeatures={detail.children} onChanged={load} />
             <DiagramsSection
               featureId={f.id}
               artifacts={detail.artifacts}
@@ -589,6 +599,110 @@ function ActionsPanel({
         </form>
       )}
       {formError && <p className="form-error">{formError}</p>}
+    </section>
+  )
+}
+
+// EpicPanel mostra a posição da feature na hierarquia de épicos: os filhos que a
+// decompõem (com progresso) e um controle para definir/trocar/remover o épico
+// (pai). A lista de pais elegíveis vem de /api/state sob demanda (ao editar).
+function EpicPanel({
+  feature,
+  childFeatures,
+  onChanged,
+}: {
+  feature: Feature
+  childFeatures: Feature[]
+  onChanged: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [features, setFeatures] = useState<Feature[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (editing && features === null) {
+      fetchState()
+        .then((s) => setFeatures(s.features))
+        .catch(() => setFeatures([]))
+    }
+  }, [editing, features])
+
+  const done = childFeatures.filter((c) => c.state === 'implemented').length
+  const eligible = (features ?? []).filter(
+    (f) =>
+      f.id !== feature.id &&
+      f.state !== 'superseded' &&
+      f.state !== 'rejected',
+  )
+
+  const change = (parent: string) => {
+    setBusy(true)
+    setError(null)
+    void setFeatureParent(feature.id, parent).then((res) => {
+      setBusy(false)
+      if (res.ok) {
+        setEditing(false)
+        onChanged()
+      } else {
+        setError(res.error)
+      }
+    })
+  }
+
+  return (
+    <section className="epic">
+      <h2>Épico</h2>
+
+      {childFeatures.length > 0 ? (
+        <div className="epic-children">
+          <p className="epic-progress">
+            {done}/{childFeatures.length} filho(s) implementado(s)
+          </p>
+          <ul>
+            {childFeatures.map((c) => (
+              <li key={c.id}>
+                <a href={`#/f/${encodeURIComponent(c.id)}`}>{c.id}</a>{' '}
+                <span className={`chip chip-${c.state}`}>
+                  {STATE_LABELS[c.state]}
+                </span>{' '}
+                {c.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="muted">Sem filhos.</p>
+      )}
+
+      {editing ? (
+        <div className="epic-edit">
+          {features === null ? (
+            <p className="muted">Carregando…</p>
+          ) : (
+            <select
+              disabled={busy}
+              defaultValue={feature.parent ?? ''}
+              onChange={(e) => change(e.target.value)}
+            >
+              <option value="">— sem épico —</option>
+              {eligible.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.id} — {f.title}
+                </option>
+              ))}
+            </select>
+          )}
+          <button disabled={busy} onClick={() => setEditing(false)}>
+            Cancelar
+          </button>
+          {error && <p className="form-error">{error}</p>}
+        </div>
+      ) : (
+        <button onClick={() => setEditing(true)}>
+          {feature.parent ? 'Trocar épico' : 'Definir épico'}
+        </button>
+      )}
     </section>
   )
 }
