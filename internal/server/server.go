@@ -47,6 +47,9 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("PUT /api/features/{id}/docs/{doc}", func(w http.ResponseWriter, r *http.Request) {
 		handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 	})
+	mux.HandleFunc("PUT /api/features/{id}/parent", func(w http.ResponseWriter, r *http.Request) {
+		handleSetParent(w, r, repoDir, projDir, r.PathValue("id"))
+	})
 	mux.HandleFunc("GET /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
 		handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
 	})
@@ -769,6 +772,38 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
+}
+
+// setParentRequest is the PUT /api/features/{id}/parent body; an empty parent
+// detaches the feature from its epic.
+type setParentRequest struct {
+	Parent string `json:"parent"`
+}
+
+func handleSetParent(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req setParentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	switch err := app.SetFeatureParent(repoDir, projDir, id, req.Parent); {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+	case errors.Is(err, app.ErrParentNotFound),
+		errors.Is(err, app.ErrParentTerminal),
+		errors.Is(err, domain.ErrParentSelf),
+		errors.Is(err, domain.ErrParentCycle):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		writeJSON(w, http.StatusOK, createFeatureResponse{Feature: f})
 	}
 }
 

@@ -676,6 +676,46 @@ func TestCreateFeatureEndpointInvalidBody(t *testing.T) {
 	}
 }
 
+func TestSetParentEndpoint(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 (candidate)
+	h := New(repoDir, projDir, "")
+
+	var created struct {
+		Feature store.Feature `json:"feature"`
+	}
+	doJSON(t, h, http.MethodPost, "/api/features", `{"title":"Filha"}`, &created)
+	child := created.Feature.ID
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":"F-0001"}`, &got)
+	if rec.Code != http.StatusOK || got.Feature.Parent != "F-0001" {
+		t.Fatalf("reparent: status %d parent %q, want 200 + F-0001; body: %s", rec.Code, got.Feature.Parent, rec.Body.String())
+	}
+
+	// Clear: the response omits an empty parent (omitempty), so assert against
+	// the persisted state rather than the reused struct.
+	rec = doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":""}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear: status %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if f, _ := store.LoadFeature(repoDir, child); f.Parent != "" {
+		t.Fatalf("clear: persisted parent = %q, want empty", f.Parent)
+	}
+
+	var e map[string]string
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-9999/parent", `{"parent":"F-0001"}`, &e); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown feature status = %d, want 404", rec.Code)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":"F-9999"}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown parent status = %d, want 422", rec.Code)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/"+child+"/parent", `{"parent":"`+child+`"}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("self parent status = %d, want 422", rec.Code)
+	}
+}
+
 func TestFeatureDocPut(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 candidate, no docs
 	realSpec := realDoc("F-0001", "Problema real descrito aqui.")
