@@ -20,6 +20,7 @@ export type Feature = {
   id: string
   title: string
   module: string
+  parent?: string // ID of the epic (parent feature) this one decomposes
   state: FeatureState
   superseded_by?: string
   reason?: string
@@ -76,6 +77,7 @@ export type FeatureDetail = {
   docs: FeatureDocs
   artifacts: Artifact[]
   informed_by: Reference[] // external sources that motivated this feature
+  children: Feature[] // features that decompose this one (epic view)
 }
 
 export type TransitionResult = {
@@ -277,18 +279,35 @@ export type CreateOutcome =
   | { ok: false; error: string }
 
 // createFeature cria uma feature candidata (POST /api/features); o servidor
-// faz commit+push e atualiza o snapshot do docs.lock.
+// faz commit+push e atualiza o snapshot do docs.lock. parent (opcional) vincula
+// a feature a um épico já na criação.
 export async function createFeature(
   title: string,
   module: string,
+  parent = '',
 ): Promise<CreateOutcome> {
   const r = await fetch('/api/features', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, module }),
+    body: JSON.stringify({ title, module, parent }),
   })
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true, feature: ((await r.json()) as { feature: Feature }).feature }
+}
+
+// setFeatureParent move a feature para baixo de um épico (parent) ou a desvincula
+// quando parent é vazio (PUT /api/features/{id}/parent).
+export async function setFeatureParent(
+  id: string,
+  parent: string,
+): Promise<SaveOutcome> {
+  const r = await fetch(`/api/features/${encodeURIComponent(id)}/parent`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
 }
 
 // saveFeatureDoc grava um doc de ciclo de vida (spec|plan|result) como
@@ -408,7 +427,7 @@ export async function createReference(
 // ---- grafo de entidades (case 0021) ----
 
 export type GraphKind = 'feature' | 'decision' | 'reference' | 'historical'
-export type GraphEdgeType = 'superseded_by' | 'informs' | 'links'
+export type GraphEdgeType = 'superseded_by' | 'informs' | 'links' | 'part_of'
 
 // Espelha app.Node / app.Edge (internal/app/graph.go). reason só vem nas
 // arestas superseded_by (o motivo persistido — a carga explicativa).
