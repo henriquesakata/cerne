@@ -153,6 +153,48 @@ func TestStatusJSON(t *testing.T) {
 	}
 }
 
+func TestStatusEpics(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Revamp de assinaturas", Module: "billing", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Tela de planos", Parent: "F-0001", State: domain.StateImplemented},
+		{ID: "F-0003", Title: "Cobrança recorrente", Parent: "F-0001", State: domain.StateApproved},
+		{ID: "F-0004", Title: "Feature solta", State: domain.StateCandidate},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed epics"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "status", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "ÉPICOS (1)") {
+		t.Fatalf("missing ÉPICOS section:\n%s", out)
+	}
+	if !strings.Contains(out, "  F-0001  Revamp de assinaturas — 1/2 implementadas\n") {
+		t.Fatalf("missing epic progress line:\n%s", out)
+	}
+	for _, l := range []string{
+		"    F-0002  [implementada]  Tela de planos\n",
+		"    F-0003  [aprovada]  Cobrança recorrente\n",
+	} {
+		if !strings.Contains(out, l) {
+			t.Fatalf("missing child line %q:\n%s", l, out)
+		}
+	}
+	if strings.Contains(out, "F-0004  Feature solta —") {
+		t.Fatalf("non-epic F-0004 listed as epic:\n%s", out)
+	}
+}
+
 func TestStatusEmptyProject(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 

@@ -3,14 +3,28 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
+
+// statusStateShort is the compact pt-BR label for a feature state, used in the
+// ÉPICOS child list.
+var statusStateShort = map[domain.FeatureState]string{
+	domain.StateCandidate:     "candidata",
+	domain.StateApproved:      "aprovada",
+	domain.StateInDevelopment: "em desenvolvimento",
+	domain.StateImplemented:   "implementada",
+	domain.StateSuperseded:    "substituída",
+	domain.StateRejected:      "rejeitada",
+}
 
 // statusGroup pairs a feature state with its pt-BR table header, in the
 // fixed display order of `cerne status`.
@@ -117,6 +131,8 @@ func runStatus(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	}
 	fmt.Fprintf(out, "Total: %d feature(s)\n", total)
 
+	renderEpics(out, features)
+
 	// Historical entities are terminal by definition; they only show under
 	// --all, in their own section after the feature totals.
 	if all && len(historicals) > 0 {
@@ -147,4 +163,57 @@ func statusLine(f store.Feature, width int) string {
 		b.WriteString(" → " + f.SupersededBy)
 	}
 	return b.String()
+}
+
+// renderEpics prints the ÉPICOS section: every feature that has at least one
+// live child (not superseded/rejected), with its implemented/total progress and
+// the live children listed underneath. Epics are sorted by ID; a child pointing
+// at a missing parent is left to the lint, not shown here. No output when there
+// are no epics.
+func renderEpics(out io.Writer, features []store.Feature) {
+	byID := make(map[string]store.Feature, len(features))
+	for _, f := range features {
+		byID[f.ID] = f
+	}
+	childrenByParent := app.ChildrenByParent(features)
+	epicIDs := make([]string, 0, len(childrenByParent))
+	for id := range childrenByParent {
+		epicIDs = append(epicIDs, id)
+	}
+	sort.Strings(epicIDs)
+
+	type epicRow struct {
+		epic     store.Feature
+		children []store.Feature
+	}
+	var rows []epicRow
+	for _, id := range epicIDs {
+		epic, ok := byID[id]
+		if !ok {
+			continue // dangling parent: a lint concern
+		}
+		var live []store.Feature
+		for _, c := range childrenByParent[id] {
+			if c.State == domain.StateSuperseded || c.State == domain.StateRejected {
+				continue
+			}
+			live = append(live, c)
+		}
+		if len(live) == 0 {
+			continue
+		}
+		rows = append(rows, epicRow{epic, live})
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	fmt.Fprintf(out, "\nÉPICOS (%d)\n", len(rows))
+	for _, r := range rows {
+		done, total := app.EpicProgress(r.children)
+		fmt.Fprintf(out, "  %s  %s — %d/%d implementadas\n", r.epic.ID, r.epic.Title, done, total)
+		for _, c := range r.children {
+			fmt.Fprintf(out, "    %s  [%s]  %s\n", c.ID, statusStateShort[c.State], c.Title)
+		}
+	}
 }
