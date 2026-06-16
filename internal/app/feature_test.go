@@ -155,6 +155,74 @@ func TestCreateFeatureModuleRules(t *testing.T) {
 	}
 }
 
+func TestSetFeatureParent(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child, err := CreateFeature(repoDir, projDir, "Filha", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+	head0, _ := gitback.HeadSHA(origin)
+
+	if err := SetFeatureParent(repoDir, projDir, child.ID, epic.ID); err != nil {
+		t.Fatalf("SetFeatureParent: %v", err)
+	}
+	got, _ := store.LoadFeature(repoDir, child.ID)
+	if got.Parent != epic.ID {
+		t.Fatalf("parent = %q, want %q", got.Parent, epic.ID)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	last := evs[len(evs)-1]
+	if last.Type != "feature.reparented" || last.Payload["to"] != epic.ID || last.Payload["from"] != "" {
+		t.Fatalf("event = %+v, want feature.reparented from '' to %s", last, epic.ID)
+	}
+	if h, _ := gitback.HeadSHA(origin); h == head0 {
+		t.Fatalf("origin HEAD did not advance after reparent")
+	}
+
+	// Clear the parent.
+	if err := SetFeatureParent(repoDir, projDir, child.ID, ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	got, _ = store.LoadFeature(repoDir, child.ID)
+	if got.Parent != "" {
+		t.Fatalf("parent after clear = %q, want empty", got.Parent)
+	}
+
+	// Idempotent no-op: setting the same (empty) parent again does not error.
+	if err := SetFeatureParent(repoDir, projDir, child.ID, ""); err != nil {
+		t.Fatalf("no-op clear: %v", err)
+	}
+}
+
+func TestSetFeatureParentErrors(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	a, err := CreateFeature(repoDir, projDir, "A", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature A: %v", err)
+	}
+	b, err := CreateFeature(repoDir, projDir, "B", "", a.ID) // B is a child of A
+	if err != nil {
+		t.Fatalf("CreateFeature B: %v", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, "F-9999", a.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want store.ErrNotFound", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, a.ID, "F-9999"); !errors.Is(err, ErrParentNotFound) {
+		t.Fatalf("err = %v, want ErrParentNotFound", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, a.ID, a.ID); !errors.Is(err, domain.ErrParentSelf) {
+		t.Fatalf("err = %v, want ErrParentSelf", err)
+	}
+	// Cycle: A under B, while B is already under A.
+	if err := SetFeatureParent(repoDir, projDir, a.ID, b.ID); !errors.Is(err, domain.ErrParentCycle) {
+		t.Fatalf("err = %v, want ErrParentCycle", err)
+	}
+}
+
 func TestSaveFeatureDoc(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 	if _, err := CreateFeature(repoDir, projDir, "Feature", "", ""); err != nil {

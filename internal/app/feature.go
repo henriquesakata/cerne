@@ -132,6 +132,41 @@ func validateParent(repoDir, childID, parent string) error {
 	return nil
 }
 
+// SetFeatureParent reparents a feature under the epic parent (or clears it when
+// parent is empty), appends a feature.reparented event, then commits, pushes
+// and refreshes the docs.lock snapshot. A no-op when the parent is unchanged.
+// store.ErrNotFound (wrapped) for an unknown feature; the validateParent
+// sentinels for an invalid link.
+func SetFeatureParent(repoDir, projDir, id, parent string) error {
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return err
+	}
+	if f.Parent == parent {
+		return nil // unchanged: nothing to commit
+	}
+	if parent != "" {
+		if err := validateParent(repoDir, id, parent); err != nil {
+			return err
+		}
+	}
+	from := f.Parent
+	f.Parent = parent
+	f.UpdatedAt = time.Now().UTC()
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		return err
+	}
+	ev := domain.NewEvent(id, "feature.reparented", map[string]string{"from": from, "to": parent}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return err
+	}
+	msg := fmt.Sprintf("cerne: reparent %s to %s", id, parent)
+	if parent == "" {
+		msg = fmt.Sprintf("cerne: clear parent of %s", id)
+	}
+	return CommitAndSnapshot(repoDir, projDir, msg)
+}
+
 // SaveFeatureDoc writes the markdown content of a feature lifecycle document
 // (doc ∈ spec|plan|result) to content/features/<id>/<doc>.md, then commits,
 // pushes and refreshes the docs.lock snapshot. A byte-identical write is a
