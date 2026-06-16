@@ -100,7 +100,7 @@ func TestGoldenPath(t *testing.T) {
 	t.Log("stage 3: pull — CONTEXT.md lists the candidate, spec stub materialized")
 	mustCerne(t, "pull", "--dir", proj)
 	ctx := mustRead(t, ctxPath)
-	if !strings.Contains(ctx, "| F-0001 | candidate | checkout | Carrinho persistente |") {
+	if !strings.Contains(ctx, "| F-0001 | candidate |  | checkout | Carrinho persistente |") {
 		t.Fatalf("CONTEXT.md missing candidate row for F-0001:\n%s", ctx)
 	}
 	stub := mustRead(t, specPath)
@@ -148,7 +148,7 @@ func TestGoldenPath(t *testing.T) {
 	t.Log("stage 6: pull again — CONTEXT.md row moved to approved")
 	mustCerne(t, "pull", "--dir", proj)
 	ctx = mustRead(t, ctxPath)
-	if !strings.Contains(ctx, "| F-0001 | approved | checkout | Carrinho persistente |") {
+	if !strings.Contains(ctx, "| F-0001 | approved |  | checkout | Carrinho persistente |") {
 		t.Fatalf("CONTEXT.md row not approved after pull:\n%s", ctx)
 	}
 
@@ -166,7 +166,7 @@ func TestGoldenPath(t *testing.T) {
 	if strings.Contains(ctx, "F-0001") {
 		t.Fatalf("CONTEXT.md still mentions superseded F-0001:\n%s", ctx)
 	}
-	if !strings.Contains(ctx, "| F-0002 | candidate | checkout | Carrinho v2 |") {
+	if !strings.Contains(ctx, "| F-0002 | candidate |  | checkout | Carrinho v2 |") {
 		t.Fatalf("CONTEXT.md missing successor F-0002:\n%s", ctx)
 	}
 	out = mustCerne(t, "status", "--all", "--dir", proj)
