@@ -1,17 +1,16 @@
-package app
+package store
 
 import (
 	"sort"
 
 	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // ChildrenByParent groups features by their Parent ID. Features without a
 // parent are skipped; each child slice is sorted by ID. The result maps an
 // epic's ID to the features that decompose it — the inferred epic structure.
-func ChildrenByParent(features []store.Feature) map[string][]store.Feature {
-	byParent := map[string][]store.Feature{}
+func ChildrenByParent(features []Feature) map[string][]Feature {
+	byParent := map[string][]Feature{}
 	for _, f := range features {
 		if f.Parent == "" {
 			continue
@@ -27,7 +26,7 @@ func ChildrenByParent(features []store.Feature) map[string][]store.Feature {
 // EpicProgress counts how many of children reached the implemented state (done)
 // out of the total — the rollup shown for an epic in status, CONTEXT.md and the
 // UI.
-func EpicProgress(children []store.Feature) (done, total int) {
+func EpicProgress(children []Feature) (done, total int) {
 	for _, c := range children {
 		if c.State == domain.StateImplemented {
 			done++

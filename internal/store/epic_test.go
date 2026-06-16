@@ -1,15 +1,14 @@
-package app
+package store
 
 import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func TestChildrenByParentAndProgress(t *testing.T) {
-	features := []store.Feature{
-		{ID: "F-0001", State: domain.StateInDevelopment},               // epic
+	features := []Feature{
+		{ID: "F-0001", State: domain.StateInDevelopment},                // epic
 		{ID: "F-0002", Parent: "F-0001", State: domain.StateImplemented},
 		{ID: "F-0003", Parent: "F-0001", State: domain.StateCandidate},
 		{ID: "F-0004", State: domain.StateApproved}, // top-level, no children

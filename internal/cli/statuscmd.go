@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -175,7 +174,7 @@ func renderEpics(out io.Writer, features []store.Feature) {
 	for _, f := range features {
 		byID[f.ID] = f
 	}
-	childrenByParent := app.ChildrenByParent(features)
+	childrenByParent := store.ChildrenByParent(features)
 	epicIDs := make([]string, 0, len(childrenByParent))
 	for id := range childrenByParent {
 		epicIDs = append(epicIDs, id)
@@ -210,7 +209,7 @@ func renderEpics(out io.Writer, features []store.Feature) {
 
 	fmt.Fprintf(out, "\nÉPICOS (%d)\n", len(rows))
 	for _, r := range rows {
-		done, total := app.EpicProgress(r.children)
+		done, total := store.EpicProgress(r.children)
 		fmt.Fprintf(out, "  %s  %s — %d/%d implementadas\n", r.epic.ID, r.epic.Title, done, total)
 		for _, c := range r.children {
 			fmt.Fprintf(out, "    %s  [%s]  %s\n", c.ID, statusStateShort[c.State], c.Title)
