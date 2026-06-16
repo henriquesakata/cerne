@@ -33,10 +33,13 @@ const (
 	RuleOrphanContent     = "orphan-content"
 	RuleMissingGateDoc    = "missing-gate-doc"
 	RuleWikiSourceUnknown = "wiki-source-unknown"
+	RuleParentNotFound    = "parent-not-found"
+	RuleParentTerminal    = "parent-terminal"
+	RuleEpicOpenChildren  = "epic-open-children"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:   0,
@@ -44,6 +47,9 @@ var ruleRank = map[string]int{
 	RuleOrphanContent:     2,
 	RuleMissingGateDoc:    3,
 	RuleWikiSourceUnknown: 4,
+	RuleParentNotFound:    5,
+	RuleParentTerminal:    6,
+	RuleEpicOpenChildren:  7,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -157,6 +163,8 @@ func Run(repoDir string) ([]Finding, error) {
 	}
 	findings = append(findings, wikiSources...)
 
+	findings = append(findings, parentFindings(features)...)
+
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
 		if ruleRank[a.Rule] != ruleRank[b.Rule] {
@@ -171,6 +179,70 @@ func Run(repoDir string) ([]Finding, error) {
 		return a.Entity < b.Entity
 	})
 	return findings, nil
+}
+
+// parentFindings checks the epic (parent/child) invariants over the features,
+// independent of any content doc:
+//   - parent-not-found: a feature points at a parent that does not exist.
+//   - parent-terminal: a live feature sits under an epic that is terminal
+//     (superseded/rejected) — the children were orphaned.
+//   - epic-open-children: an implemented feature still has open (non-terminal)
+//     children — the epic was marked done but its decomposition is not.
+func parentFindings(features []store.Feature) []Finding {
+	byID := make(map[string]store.Feature, len(features))
+	for _, f := range features {
+		byID[f.ID] = f
+	}
+	isLive := func(s domain.FeatureState) bool {
+		return s == domain.StateCandidate || s == domain.StateApproved || s == domain.StateInDevelopment
+	}
+	isTerminal := func(s domain.FeatureState) bool {
+		return s == domain.StateSuperseded || s == domain.StateRejected
+	}
+
+	var findings []Finding
+	for _, f := range features {
+		if f.Parent == "" {
+			continue
+		}
+		parent, ok := byID[f.Parent]
+		if !ok {
+			findings = append(findings, Finding{
+				Rule:   RuleParentNotFound,
+				Entity: f.ID,
+				Detail: fmt.Sprintf("%s aponta para o épico %s, que não existe", f.ID, f.Parent),
+			})
+			continue
+		}
+		if isLive(f.State) && isTerminal(parent.State) {
+			findings = append(findings, Finding{
+				Rule:   RuleParentTerminal,
+				Entity: f.ID,
+				Detail: fmt.Sprintf("%s está sob o épico %s, que está %s", f.ID, parent.ID, parent.State),
+			})
+		}
+	}
+
+	for epicID, children := range store.ChildrenByParent(features) {
+		epic, ok := byID[epicID]
+		if !ok || epic.State != domain.StateImplemented {
+			continue
+		}
+		open := 0
+		for _, c := range children {
+			if isLive(c.State) {
+				open++
+			}
+		}
+		if open > 0 {
+			findings = append(findings, Finding{
+				Rule:   RuleEpicOpenChildren,
+				Entity: epicID,
+				Detail: fmt.Sprintf("o épico %s está implementado, mas tem %d filho(s) ainda em aberto", epicID, open),
+			})
+		}
+	}
+	return findings
 }
 
 // buildNeedles collects every terminal entity scanned docs must not mention:

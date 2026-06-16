@@ -97,6 +97,34 @@ func seedBackend(t *testing.T) string {
 	return dir
 }
 
+func TestParentFindings(t *testing.T) {
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Épico vivo", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filha sob épico inexistente", Parent: "F-9999", State: domain.StateCandidate},
+		{ID: "F-0003", Title: "Épico morto", State: domain.StateSuperseded, SupersededBy: "F-0001"},
+		{ID: "F-0004", Title: "Filha órfã", Parent: "F-0003", State: domain.StateApproved},
+		{ID: "F-0005", Title: "Épico concluído", State: domain.StateImplemented},
+		{ID: "F-0006", Title: "Filha em aberto", Parent: "F-0005", State: domain.StateInDevelopment},
+		{ID: "F-0007", Title: "Filha pronta", Parent: "F-0005", State: domain.StateImplemented},
+	}
+	got := parentFindings(features)
+
+	want := map[string]string{ // entity -> rule
+		"F-0002": RuleParentNotFound,
+		"F-0004": RuleParentTerminal,
+		"F-0005": RuleEpicOpenChildren,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("findings = %d (%+v), want %d", len(got), got, len(want))
+	}
+	for _, f := range got {
+		wantRule, ok := want[f.Entity]
+		if !ok || f.Rule != wantRule {
+			t.Fatalf("finding %+v unexpected; want rule %q for entity %s", f, wantRule, f.Entity)
+		}
+	}
+}
+
 func TestRunFindings(t *testing.T) {
 	dir := seedBackend(t)
 
