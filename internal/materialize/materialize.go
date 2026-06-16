@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -49,12 +50,20 @@ const contextTemplate = `# {{.ProjectName}} — estado atual
 
 ## Features
 
-{{if .Features}}| ID | Estado | Módulo | Título | Docs |
-|---|---|---|---|---|
-{{range .Features}}| {{.ID}} | {{.State}} | {{.Module}} | {{.Title}} | {{.Docs}} |
+{{if .Features}}| ID | Estado | Épico | Módulo | Título | Docs |
+|---|---|---|---|---|---|
+{{range .Features}}| {{.ID}} | {{.State}} | {{.Parent}} | {{.Module}} | {{.Title}} | {{.Docs}} |
 {{end}}{{else}}_Nenhuma._
 {{end}}
-## Decisões ativas
+## Épicos
+
+{{if .Epics}}{{range .Epics}}### {{.ID}} — {{.Title}} ({{.Done}}/{{.Total}} implementadas)
+
+{{range .Children}}- {{.ID}} — {{.Title}} ({{.State}})
+{{end}}
+{{end}}{{else}}_Nenhum._
+
+{{end}}## Decisões ativas
 
 {{if .Decisions}}{{range .Decisions}}- {{.}}
 {{end}}{{else}}_Nenhuma._
@@ -70,12 +79,25 @@ const contextTemplate = `# {{.ProjectName}} — estado atual
 type contextData struct {
 	ProjectName string
 	Features    []featureRow
+	Epics       []epicSection
 	Decisions   []string
-	References  []string
+	References   []string
 }
 
 type featureRow struct {
-	ID, State, Module, Title, Docs string
+	ID, State, Parent, Module, Title, Docs string
+}
+
+// epicSection is one epic in the CONTEXT.md "Épicos" breakdown: the parent
+// feature with its live children and implemented/total progress.
+type epicSection struct {
+	ID, Title   string
+	Done, Total int
+	Children    []epicChild
+}
+
+type epicChild struct {
+	ID, State, Title string
 }
 
 // Materialize wipes and rebuilds docsDir from the backend at repoDir,
@@ -115,6 +137,7 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 	manifest := map[string]string{}
 	data := contextData{ProjectName: proj.Name}
 
+	var shown []store.Feature // in-scope, non-terminal features, for the epic breakdown
 	for _, state := range contextGroupOrder {
 		for _, f := range features { // already sorted by ID
 			if f.State != state {
@@ -123,7 +146,7 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 			if scope != "" && f.Module != scope {
 				continue
 			}
-			row := featureRow{ID: f.ID, State: string(f.State), Module: f.Module, Title: f.Title}
+			row := featureRow{ID: f.ID, State: string(f.State), Parent: f.Parent, Module: f.Module, Title: f.Title}
 			if materializedStates[f.State] {
 				docs, err := copyFeatureDocs(repoDir, docsDir, f, manifest)
 				if err != nil {
@@ -132,8 +155,10 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 				row.Docs = docs
 			}
 			data.Features = append(data.Features, row)
+			shown = append(shown, f)
 		}
 	}
+	data.Epics = epicSections(shown)
 
 	for _, d := range decisions {
 		if d.State != domain.DecisionActive {
@@ -256,6 +281,41 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 	}
 	manifest[rel] = sum
 	return fmt.Sprintf("[%s](%s)", label, rel), nil
+}
+
+// epicSections builds the CONTEXT.md "Épicos" breakdown from the features shown
+// in the table: every feature that has at least one child among them, with its
+// children and implemented/total progress. The caller passes only shown
+// (in-scope, non-terminal) features, so children are already live; epics are
+// sorted by ID. A child whose parent is not among the shown features (e.g. the
+// epic itself is terminal) is left to the lint, not rendered here.
+func epicSections(shown []store.Feature) []epicSection {
+	byID := make(map[string]store.Feature, len(shown))
+	for _, f := range shown {
+		byID[f.ID] = f
+	}
+	childrenByParent := store.ChildrenByParent(shown)
+	epicIDs := make([]string, 0, len(childrenByParent))
+	for id := range childrenByParent {
+		epicIDs = append(epicIDs, id)
+	}
+	sort.Strings(epicIDs)
+
+	var sections []epicSection
+	for _, id := range epicIDs {
+		epic, ok := byID[id]
+		if !ok {
+			continue
+		}
+		children := childrenByParent[id]
+		done, total := store.EpicProgress(children)
+		sec := epicSection{ID: id, Title: epic.Title, Done: done, Total: total}
+		for _, c := range children {
+			sec.Children = append(sec.Children, epicChild{ID: c.ID, State: string(c.State), Title: c.Title})
+		}
+		sections = append(sections, sec)
+	}
+	return sections
 }
 
 // entryName joins ID and slugified title; just the ID when the title
