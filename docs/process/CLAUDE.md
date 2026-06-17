@@ -31,6 +31,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0025](cases/0025_ui-generate-diagram/spec.md) | Botão "Gerar com IA" na UI: diagrama de sequência (Mermaid → Excalidraw editável) | Done |
 | [0026](cases/0026_diagram-grounded-in-code/spec.md) | Geração de diagrama ancorada no código e estrutura do projeto (prompt + `ProjectStructure`) | Done |
 | [0027](cases/0027_feature-epics/spec.md) | Épicos: relação pai/filho nativa entre features (épico inferido, aresta `part_of`, rollup em status/CONTEXT, lint, UI) | Implemented — suíte verde; aguardando revisão |
+| [0028](cases/0028_skill-distribution/spec.md) | Skill canônica `cerne-authoring` distribuída pela ferramenta (`cerne skill install` + embed) | Spec |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
