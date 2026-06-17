@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/skills"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -118,6 +119,16 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	} else {
 		fmt.Fprintf(out, "Initialized project %q with backend %s.\n", projectID, backend)
 	}
+
+	// Install cerne's canonical Claude Code skills so a new project ships with
+	// the agent guide. The project is already provisioned at this point, so a
+	// skills failure must not fail init — warn and continue.
+	if results, err := skills.Install(targetDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível instalar as skills do cerne: %v\n", err)
+	} else {
+		printSkillResults(out, results)
+	}
+
 	fmt.Fprintln(out, "Next steps:")
 	fmt.Fprintln(out, "  - add .docs/ to your project's .gitignore (cerne never edits it for you)")
 	fmt.Fprintln(out, "  - commit .cernerc and docs.lock to your project repository")
