@@ -178,3 +178,22 @@ func TestInitJoinExistingBackendSharedCache(t *testing.T) {
 		t.Fatalf("join lock.Snapshot empty, want backend HEAD")
 	}
 }
+
+func TestInitInstallsSkills(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	origin := newOrigin(t)
+	projDir := t.TempDir()
+
+	out, err := execInit(t, "--name", "demo", "--backend", origin, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+
+	skillFile := filepath.Join(projDir, ".claude", "skills", "cerne-authoring", "SKILL.md")
+	if _, err := os.Stat(skillFile); err != nil {
+		t.Fatalf("expected canonical skill installed at %s: %v", skillFile, err)
+	}
+	if !strings.Contains(out, "cerne-authoring: criada em .claude/skills/cerne-authoring") {
+		t.Fatalf("output missing skill install status:\n%s", out)
+	}
+}

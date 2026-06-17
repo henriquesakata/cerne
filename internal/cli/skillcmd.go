@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -51,7 +52,13 @@ func runSkillInstall(cmd *cobra.Command, dir string) error {
 	if err != nil {
 		return err
 	}
-	out := cmd.OutOrStdout()
+	printSkillResults(cmd.OutOrStdout(), results)
+	return nil
+}
+
+// printSkillResults writes one pt-BR status line per installed skill. Shared by
+// `cerne skill install` and `cerne init`.
+func printSkillResults(out io.Writer, results []skills.Result) {
 	for _, r := range results {
 		label := skillStatusLabel[r.Status]
 		if label == "" {
@@ -59,5 +66,4 @@ func runSkillInstall(cmd *cobra.Command, dir string) error {
 		}
 		fmt.Fprintf(out, "%s: %s em .claude/skills/%s\n", r.Skill, label, r.Skill)
 	}
-	return nil
 }
