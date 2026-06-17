@@ -33,5 +33,6 @@ func Root() *cobra.Command {
 	root.AddCommand(newSpecCmd())
 	root.AddCommand(newUICmd())
 	root.AddCommand(newServeCmd())
+	root.AddCommand(newSkillCmd())
 	return root
 }
