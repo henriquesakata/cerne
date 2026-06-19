@@ -33,7 +33,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0027](cases/0027_feature-epics/spec.md) | Épicos: relação pai/filho nativa entre features (épico inferido, aresta `part_of`, rollup em status/CONTEXT, lint, UI) | Implemented — suíte verde; aguardando revisão |
 | [0028](cases/0028_skill-distribution/spec.md) | Skill canônica `cerne-authoring` distribuída pela ferramenta (`cerne skill install` + embed) | Implemented — suíte verde; aguardando revisão |
 | [0029](cases/0029_init-installs-skills/spec.md) | `cerne init` instala a skill canônica em projetos novos (reusa o embed do 0028; falha de skill não-fatal) | Implemented — suíte verde; aguardando revisão |
-| [0030](cases/0030_docs-lock-conflict-free/spec.md) | `docs.lock` à prova de conflito: manifest local (`.docs/.manifest.json`) + merge driver para o `snapshot` (pin por-commit preservado) | Rascunho (spec) — registrado como F-0030 candidate |
+| [0030](cases/0030_docs-lock-conflict-free/spec.md) | `docs.lock` à prova de conflito: manifest local (`.docs/.manifest.json`) + merge driver para o `snapshot` (pin por-commit preservado) | Implemented — suíte verde (506); e2e real (git merge auto-resolve) |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

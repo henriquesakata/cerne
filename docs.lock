@@ -1,9 +1,5 @@
 {
   "version": 1,
   "backend": "git@gitlab.com:rockt/cerne-docs.git",
-  "snapshot": "6d999949435893f56b84c259dd25977b0c439570",
-  "materialized": {
-    "CONTEXT.md": "933eb1d41a9c3f8226858238deb9071a8904c6b0e8177fc554354be9780f8deb",
-    "current/features/F-0030-case-0030--docslock-a-prova-de-conflito-manifest-local--merge-driver/spec.md": "09c3c0361b3309ea5fc8e7230be63863916e46cfbe6594aa8072c525093599c2"
-  }
+  "snapshot": "fef13c61b820e69c78c01bdd21a031c9c59c41d3"
 }
