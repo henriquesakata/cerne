@@ -218,8 +218,8 @@ func (r *registry) list() (infos []projectInfo, def string) {
 }
 
 // watchHeadMulti polls one project's HEAD and broadcasts a change (tagged with
-// pid) whenever it advances. Mirrors liveHub.watchHead but routes through the
-// multiplexed hub. Stops when ctx is cancelled (project removed / server down).
+// pid) whenever it advances, routing through the multiplexed hub. Stops when
+// ctx is cancelled (project removed / server down).
 func watchHeadMulti(ctx context.Context, hub *multiHub, pid, repoDir string, interval time.Duration) {
 	last, _ := gitback.HeadSHA(repoDir)
 	ticker := time.NewTicker(interval)
