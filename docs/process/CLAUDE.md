@@ -34,6 +34,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0028](cases/0028_skill-distribution/spec.md) | Skill canônica `cerne-authoring` distribuída pela ferramenta (`cerne skill install` + embed) | Implemented — suíte verde; aguardando revisão |
 | [0029](cases/0029_init-installs-skills/spec.md) | `cerne init` instala a skill canônica em projetos novos (reusa o embed do 0028; falha de skill não-fatal) | Implemented — suíte verde; aguardando revisão |
 | [0030](cases/0030_docs-lock-conflict-free/spec.md) | `docs.lock` à prova de conflito: manifest local (`.docs/.manifest.json`) + merge driver para o `snapshot` (pin por-commit preservado) | Implemented — suíte verde (506); e2e real (git merge auto-resolve) |
+| [0031](cases/0031_ui-live-refresh/spec.md) | UI ao vivo: a tela atualiza sozinha (SSE `GET /api/stream` + observador do HEAD + pull periódico opcional; `cerne ui --pull-interval`) | Implemented — suíte verde (513); aguardando verificação manual no navegador |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

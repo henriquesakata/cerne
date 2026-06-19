@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -14,24 +19,27 @@ func newUICmd() *cobra.Command {
 	var dir string
 	var port int
 	var noBrowser bool
+	var pullInterval time.Duration
 	cmd := &cobra.Command{
 		Use:   "ui",
 		Short: "Serve the local web dashboard",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUI(cmd, dir, port, noBrowser)
+			return runUI(cmd, dir, port, noBrowser, pullInterval)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().IntVar(&port, "port", 7717, "port for the local UI server")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open the browser automatically")
+	cmd.Flags().DurationVar(&pullInterval, "pull-interval", 15*time.Second,
+		"intervalo de sincronização com o backend remoto (0 desliga)")
 	return cmd
 }
 
-func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool) error {
+func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
 	// resolveProject pulls first: the dashboard should show fresh state.
-	ctx, err := resolveProject(dir)
+	proj, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
@@ -47,5 +55,23 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool) error {
 	if !noBrowser {
 		go openBrowser(url)
 	}
-	return http.Serve(ln, server.New(ctx.repoDir, ctx.projDir, ctx.cfg.ProjectID))
+
+	// A cancellable context ties the live-refresh goroutines (HEAD watcher +
+	// periodic pull) to the process: Ctrl+C cancels it and shuts the server
+	// down gracefully, so the goroutines never outlive the listener.
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	srv := &http.Server{
+		Handler: server.NewLive(sigCtx, proj.repoDir, proj.projDir, proj.cfg.ProjectID, pullInterval),
+	}
+	go func() {
+		<-sigCtx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }

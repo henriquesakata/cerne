@@ -5,6 +5,7 @@ import {
   type FeatureState,
   type StateResponse,
 } from './api'
+import { useLiveVersion } from './live'
 
 // Lifecycle flow left to right: candidata → aprovada → em desenvolvimento → implementada.
 const OPEN_COLUMNS: FeatureState[] = [
@@ -31,14 +32,18 @@ export default function Kanban() {
   const [error, setError] = useState<string | null>(null)
   const [showClosed, setShowClosed] = useState(false)
   const [groupByEpic, setGroupByEpic] = useState(false)
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchState()
-      .then(setState)
+      .then((s) => {
+        setState(s)
+        setError(null)
+      })
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e)),
       )
-  }, [])
+  }, [version])
 
   if (error) return <p className="status error">Erro ao carregar o estado: {error}</p>
   if (!state) return <p className="status">Carregando…</p>

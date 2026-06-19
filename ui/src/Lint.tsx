@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchLint, type LintFinding } from './api'
+import { useLiveVersion } from './live'
 
 // Espelha as regras de internal/lint, na mesma ordem de relatório (RuleOrder).
 const RULE_LABELS: Record<string, string> = {
@@ -20,12 +21,16 @@ const RULE_ORDER = [
 export default function Lint() {
   const [findings, setFindings] = useState<LintFinding[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchLint()
-      .then(setFindings)
+      .then((f) => {
+        setFindings(f)
+        setError(null)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [])
+  }, [version])
 
   if (error) return <p className="status error">Erro ao rodar o lint: {error}</p>
   if (!findings) return <p className="status">Carregando…</p>

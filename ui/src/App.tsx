@@ -11,6 +11,7 @@ import Lint from './Lint'
 import History from './History'
 import Manage from './Manage'
 import NewFeature from './NewFeature'
+import { LiveProvider } from './live'
 import './app.css'
 
 // Grafo carrega React Flow (pesado) sob demanda, como o Excalidraw.
@@ -31,10 +32,10 @@ function useHash(): string {
 export default function App() {
   const hash = useHash()
   return (
-    <>
+    <LiveProvider>
       <Nav hash={hash} />
       <Routed hash={hash} />
-    </>
+    </LiveProvider>
   )
 }
 

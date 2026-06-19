@@ -18,6 +18,7 @@ import {
   type TransitionAction,
   type TransitionResult,
 } from './api'
+import { useLiveVersion } from './live'
 
 // Carregados sob demanda: os bundles do Excalidraw e do mermaid só chegam ao
 // navegador quando o usuário abre um diagrama (cada um no seu chunk lazy).
@@ -91,10 +92,14 @@ export default function FeaturePage({ id }: { id: string }) {
   const [convertError, setConvertError] = useState<string | null>(null)
   // Modo de IA do projeto (case 0019): habilita/desabilita "Gerar com IA".
   const [llmMode, setLlmMode] = useState<LLMMode | null>(null)
+  const version = useLiveVersion()
 
   const load = useCallback(() => {
     fetchFeature(id)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d)
+        setError(null)
+      })
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e)),
       )
@@ -130,7 +135,7 @@ export default function FeaturePage({ id }: { id: string }) {
 
   useEffect(() => {
     load()
-  }, [load])
+  }, [load, version])
 
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
   type Reference,
   type ReferenceDetail as ReferenceDetailData,
 } from './api'
+import { useLiveVersion } from './live'
 
 const GROUP_LABELS: Record<string, string> = {
   current: 'Vigentes',
@@ -27,12 +28,16 @@ export default function References() {
   const [references, setReferences] = useState<Reference[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const version = useLiveVersion()
   const load = () => {
     fetchState()
-      .then((s) => setReferences(s.references))
+      .then((s) => {
+        setReferences(s.references)
+        setError(null)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
-  useEffect(load, [])
+  useEffect(load, [version])
 
   if (error) return <p className="status error">Erro ao carregar referências: {error}</p>
   if (!references) return <p className="status">Carregando…</p>
@@ -148,12 +153,16 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
 export function ReferenceDetail({ id }: { id: string }) {
   const [data, setData] = useState<ReferenceDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchReference(id)
-      .then(setData)
+      .then((d) => {
+        setData(d)
+        setError(null)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id])
+  }, [id, version])
 
   if (error) return <p className="status error">Erro ao carregar a referência: {error}</p>
   if (!data) return <p className="status">Carregando…</p>

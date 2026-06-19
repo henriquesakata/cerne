@@ -452,3 +452,14 @@ export async function fetchGraph(): Promise<Graph> {
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as Graph
 }
+
+// ---- atualização ao vivo (case 0031) ----
+
+// subscribeChanges abre o canal SSE (/api/stream) e chama onChange a cada
+// evento "change" (o backend avançou — commit local ou pull do remoto).
+// Devolve um disposer que fecha o canal. O EventSource reconecta sozinho.
+export function subscribeChanges(onChange: () => void): () => void {
+  const es = new EventSource('/api/stream')
+  es.addEventListener('change', () => onChange())
+  return () => es.close()
+}
