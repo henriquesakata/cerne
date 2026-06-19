@@ -209,6 +209,32 @@ func TestUIMultiRegisterListDeregister(t *testing.T) {
 	}
 }
 
+// TestUIMultiExposesFullRouteSet: the local ui serves even the non-remote
+// routes (e.g. graph), the counterpart of the serve-subset invariant.
+func TestUIMultiExposesFullRouteSet(t *testing.T) {
+	repoA, projA, _ := newGitBackendNoClean(t)
+	resolve := func(dir string) (string, string, string, string, error) {
+		return repoA, projA, "proj-a", "Projeto A", nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handler, err := NewUIMulti(ctx, resolve, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	r, err := http.Get(srv.URL + "/api/projects/proj-a/graph")
+	if err != nil {
+		t.Fatalf("GET graph: %v", err)
+	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("ui /graph: status %d, want 200 (the local ui exposes the full set)", r.StatusCode)
+	}
+}
+
 func TestUIMultiRegisterUnknownDir(t *testing.T) {
 	repoA, projA, _ := newGitBackendNoClean(t)
 	resolve := func(dir string) (string, string, string, string, error) {
