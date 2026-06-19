@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/ask"
@@ -25,9 +27,31 @@ import (
 	"gitlab.com/rockt/cerne/ui"
 )
 
-// New returns the http.Handler serving /api/* JSON endpoints and the
-// embedded UI (SPA fallback to index.html) for everything else.
+// New returns the http.Handler serving /api/* JSON endpoints and the embedded
+// UI (SPA fallback to index.html) for everything else. This is the static
+// handler with no live-refresh channel — used by tests and any caller that does
+// not want background goroutines; `cerne ui` uses NewLive.
 func New(repoDir, projDir, projectID string) http.Handler {
+	return newMux(repoDir, projDir, projectID, nil)
+}
+
+// NewLive returns the handler with auto-refresh: a watcher broadcasts backend
+// HEAD changes over GET /api/stream, and (when pullInterval > 0) a loop pulls
+// origin so a teammate's push reaches the dashboard. Both goroutines stop when
+// ctx is cancelled. pullInterval <= 0 keeps the offline-by-default behaviour
+// (no periodic pull); the stream still reflects local changes.
+func NewLive(ctx context.Context, repoDir, projDir, projectID string, pullInterval time.Duration) http.Handler {
+	hub := newLiveHub()
+	go hub.watchHead(ctx, repoDir, headPollInterval)
+	if pullInterval > 0 {
+		go pullLoop(ctx, repoDir, pullInterval)
+	}
+	return newMux(repoDir, projDir, projectID, hub)
+}
+
+// newMux builds the route table. When hub is non-nil it also serves the SSE
+// stream at GET /api/stream.
+func newMux(repoDir, projDir, projectID string, hub *liveHub) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		handleState(w, repoDir)
@@ -92,6 +116,11 @@ func New(repoDir, projDir, projectID string) http.Handler {
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
 		handleEvents(w, repoDir)
 	})
+	if hub != nil {
+		mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
+			hub.handleStream(w, r, repoDir)
+		})
+	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
 	})
