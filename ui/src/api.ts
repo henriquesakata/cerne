@@ -72,9 +72,18 @@ export type Artifact = {
   path: string
 }
 
+// docs_updated traz a data (ISO) do último commit que tocou cada doc; null
+// quando o documento ainda não tem histórico (nunca foi commitado).
+export type FeatureDocTimes = {
+  spec: string | null
+  plan: string | null
+  result: string | null
+}
+
 export type FeatureDetail = {
   feature: Feature
   docs: FeatureDocs
+  docs_updated: FeatureDocTimes
   artifacts: Artifact[]
   informed_by: Reference[] // external sources that motivated this feature
   children: Feature[] // features that decompose this one (epic view)

@@ -719,6 +719,10 @@ h2 {
 
 .doc-edit-toggle:hover { background: #ece9e2; }
 
+/* "Atualizado há …" — discreto, no topo da visualização, sem encostar no
+   botão Editar (que flutua à direita). */
+.doc-updated { font-size: 0.8rem; margin: 0.45rem 0 0.7rem; padding-right: 5rem; }
+
 .doc-textarea {
   width: 100%;
   box-sizing: border-box;

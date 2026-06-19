@@ -5,6 +5,7 @@ package gitback
 import (
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
@@ -219,4 +220,38 @@ func HeadSHA(workdir string) (string, error) {
 		return "", err
 	}
 	return ref.Hash().String(), nil
+}
+
+// LastCommitTime returns the committer time of the most recent commit that
+// touched rel — a slash-separated path relative to the repo root — on the
+// current HEAD's history. It resolves per file rather than reporting the HEAD
+// commit, so two docs under one feature each get their own last-modified time.
+// Committer-time order keeps the answer correct across merge commits. Git
+// commit times have one-second resolution. ErrNoCommits when rel has no
+// commits (never committed) or HEAD is unborn.
+func LastCommitTime(workdir, rel string) (time.Time, error) {
+	repo, err := git.PlainOpen(workdir)
+	if err != nil {
+		return time.Time{}, err
+	}
+	head, err := repo.Head()
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return time.Time{}, fmt.Errorf("%w: %s", ErrNoCommits, workdir)
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	iter, err := repo.Log(&git.LogOptions{From: head.Hash(), FileName: &rel, Order: git.LogOrderCommitterTime})
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer iter.Close()
+	commit, err := iter.Next()
+	if errors.Is(err, io.EOF) {
+		return time.Time{}, fmt.Errorf("%w: %s", ErrNoCommits, rel)
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return commit.Committer.When, nil
 }

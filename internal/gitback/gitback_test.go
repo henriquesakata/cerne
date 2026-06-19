@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
+
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var shaHex = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -205,5 +209,78 @@ func TestHeadSHAUnborn(t *testing.T) {
 	_, err := HeadSHA(workdir)
 	if !errors.Is(err, ErrNoCommits) {
 		t.Fatalf("HeadSHA err = %v, want ErrNoCommits", err)
+	}
+}
+
+// commitFileAt stages name=content and commits it with an explicit committer
+// time. Git commit times have one-second resolution and no sub-second part, so
+// distinct backdated times (not sleeps) make time-ordering assertions
+// deterministic.
+func commitFileAt(t *testing.T, workdir, name, content string, when time.Time) {
+	t.Helper()
+	writeFile(t, workdir, name, content)
+	repo, err := git.PlainOpen(workdir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	if _, err := wt.Add(name); err != nil {
+		t.Fatalf("Add %s: %v", name, err)
+	}
+	sig := &object.Signature{Name: "cerne", Email: "cerne@local", When: when}
+	if _, err := wt.Commit("test "+name, &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("Commit %s: %v", name, err)
+	}
+}
+
+// LastCommitTime resolves per file: a.txt keeps its own (older) commit time
+// even after a later commit moves HEAD by touching b.txt — proving it does not
+// just report the HEAD commit's time.
+func TestLastCommitTimePerFile(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	jan := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	feb := time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC)
+	commitFileAt(t, clone1, "a.txt", "a", jan)
+	commitFileAt(t, clone1, "b.txt", "b", feb)
+
+	gotA, err := LastCommitTime(clone1, "a.txt")
+	if err != nil {
+		t.Fatalf("LastCommitTime(a.txt): %v", err)
+	}
+	if gotA.Unix() != jan.Unix() {
+		t.Fatalf("a.txt time = %v, want %v (per file, not HEAD)", gotA.UTC(), jan)
+	}
+	gotB, err := LastCommitTime(clone1, "b.txt")
+	if err != nil {
+		t.Fatalf("LastCommitTime(b.txt): %v", err)
+	}
+	if gotB.Unix() != feb.Unix() {
+		t.Fatalf("b.txt time = %v, want %v", gotB.UTC(), feb)
+	}
+}
+
+func TestLastCommitTimeUnknownPath(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	_, err := LastCommitTime(clone1, "never-committed.txt")
+	if !errors.Is(err, ErrNoCommits) {
+		t.Fatalf("LastCommitTime(unknown) err = %v, want ErrNoCommits", err)
+	}
+}
+
+func TestLastCommitTimeUnborn(t *testing.T) {
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := InitBare(origin); err != nil {
+		t.Fatalf("InitBare: %v", err)
+	}
+	workdir := filepath.Join(t.TempDir(), "clone")
+	if err := Clone(origin, workdir); err != nil {
+		t.Fatalf("Clone empty: %v", err)
+	}
+	_, err := LastCommitTime(workdir, "anything.txt")
+	if !errors.Is(err, ErrNoCommits) {
+		t.Fatalf("LastCommitTime on unborn HEAD err = %v, want ErrNoCommits", err)
 	}
 }
