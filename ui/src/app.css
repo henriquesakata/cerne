@@ -272,7 +272,7 @@ h2 {
 .epic > h2 { margin: 0 0 0.5rem; font-size: 0.95rem; }
 .epic-progress { margin: 0 0 0.4rem; font-size: 0.85rem; color: #5c635e; }
 .epic-children ul { list-style: none; margin: 0 0 0.6rem; padding: 0; }
-.epic-children li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; font-size: 0.85rem; margin: 0.2rem 0; }
+.epic-children li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; font-size: 0.85rem; margin: 0.2rem 0; overflow-wrap: anywhere; }
 .epic-edit { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
 .artifacts ul { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; }
 .action-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
