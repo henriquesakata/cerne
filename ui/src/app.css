@@ -480,6 +480,20 @@ h2 {
 .nav-link:hover { background: #ece9e2; }
 .nav-link.active { background: #1f2421; color: #faf7f2; }
 
+/* seletor de projeto (multi-projeto, case 0032): canto direito do header */
+.nav-project-wrap { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
+.nav-project-label { font-size: 0.8rem; color: #8a8f8a; }
+.nav-project-name { font-weight: 600; font-size: 0.9rem; }
+.nav-project-select {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #d8d2c6;
+  background: #fff;
+  color: #1f2421;
+}
+
 /* ---- páginas de leitura (decisions, references, search, lint, history) ---- */
 
 .page { max-width: 70rem; margin: 0 auto; padding: 1.5rem; }
