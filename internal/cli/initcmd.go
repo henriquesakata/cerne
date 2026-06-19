@@ -129,6 +129,12 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		printSkillResults(out, results)
 	}
 
+	// Wire docs.lock to the merge driver so concurrent branches don't conflict
+	// on the snapshot pin. Non-fatal: the project is already provisioned.
+	if err := ensureLockMergeDriver(targetDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível registrar o merge driver do docs.lock: %v\n", err)
+	}
+
 	fmt.Fprintln(out, "Next steps:")
 	fmt.Fprintln(out, "  - add .docs/ to your project's .gitignore (cerne never edits it for you)")
 	fmt.Fprintln(out, "  - commit .cernerc and docs.lock to your project repository")

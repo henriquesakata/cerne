@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,74 @@ import (
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
 )
+
+// setupGitProject is setupProject with the project dir initialized as a git
+// repo first, so the docs.lock merge driver has somewhere to register.
+func setupGitProject(t *testing.T) (projDir, origin, repoDir string) {
+	t.Helper()
+	cacheRoot := t.TempDir()
+	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
+	origin = newOrigin(t)
+	projDir = t.TempDir()
+	if _, err := git.PlainInit(projDir, false); err != nil {
+		t.Fatalf("git init projDir: %v", err)
+	}
+	if out, err := execInit(t, "--name", "demo", "--backend", origin, "--dir", projDir); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	return projDir, origin, filepath.Join(cacheRoot, "demo", "repo")
+}
+
+func assertMergeDriverRegistered(t *testing.T, projDir string) {
+	t.Helper()
+	attrs, err := os.ReadFile(filepath.Join(projDir, ".gitattributes"))
+	if err != nil {
+		t.Fatalf("read .gitattributes: %v", err)
+	}
+	if !strings.Contains(string(attrs), "docs.lock merge=cerne-lock") {
+		t.Fatalf(".gitattributes = %q, want the docs.lock merge line", attrs)
+	}
+	repo, err := git.PlainOpen(projDir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatalf("Config: %v", err)
+	}
+	if got := cfg.Raw.Section("merge").Subsection("cerne-lock").Option("driver"); got != "cerne lock merge %O %A %B" {
+		t.Fatalf("merge.cerne-lock.driver = %q, want the driver command", got)
+	}
+}
+
+func TestInitRegistersMergeDriver(t *testing.T) {
+	projDir, _, _ := setupGitProject(t)
+	assertMergeDriverRegistered(t, projDir)
+}
+
+func TestPullSelfHealsMergeDriver(t *testing.T) {
+	projDir, _, _ := setupGitProject(t)
+	// Simulate a fresh clone: .gitattributes travels (committed) but the local
+	// .git/config never does, so the driver is unregistered until something
+	// self-heals it.
+	repo, err := git.PlainOpen(projDir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatalf("Config: %v", err)
+	}
+	cfg.Raw.RemoveSubsection("merge", "cerne-lock")
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	assertMergeDriverRegistered(t, projDir)
+}
 
 func writeTempLock(t *testing.T, l project.Lock) string {
 	t.Helper()

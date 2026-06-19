@@ -2,9 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
+	git "github.com/go-git/go-git/v5"
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -116,4 +120,57 @@ func writeLockFile(path string, l project.Lock) error {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+const (
+	lockMergeAttr   = "docs.lock merge=cerne-lock"
+	lockMergeDriver = "cerne lock merge %O %A %B"
+)
+
+// ensureLockMergeDriver wires docs.lock to the cerne-lock merge driver in
+// projDir: the .gitattributes line (committed, travels with the repo) plus the
+// merge.cerne-lock.* keys in the local git config (which never travel, so init
+// and pull both call this to self-heal fresh clones). Idempotent. When projDir
+// is not a git repository yet it is a graceful no-op — a later pull, once the
+// repo exists, registers it.
+func ensureLockMergeDriver(projDir string) error {
+	repo, err := git.PlainOpen(projDir)
+	if errors.Is(err, git.ErrRepositoryNotExists) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := ensureGitAttributes(projDir); err != nil {
+		return err
+	}
+	cfg, err := repo.Config()
+	if err != nil {
+		return err
+	}
+	sec := cfg.Raw.Section("merge").Subsection("cerne-lock")
+	sec.SetOption("name", "cerne docs.lock snapshot resolver")
+	sec.SetOption("driver", lockMergeDriver)
+	return repo.SetConfig(cfg)
+}
+
+// ensureGitAttributes appends the docs.lock merge line to projDir/.gitattributes
+// unless an identical line is already present.
+func ensureGitAttributes(projDir string) error {
+	path := filepath.Join(projDir, ".gitattributes")
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == lockMergeAttr {
+			return nil
+		}
+	}
+	buf := append([]byte{}, data...)
+	if len(buf) > 0 && buf[len(buf)-1] != '\n' {
+		buf = append(buf, '\n')
+	}
+	buf = append(buf, []byte(lockMergeAttr+"\n")...)
+	return os.WriteFile(path, buf, 0o644)
 }
