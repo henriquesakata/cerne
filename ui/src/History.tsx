@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchEvents, type LifecycleEvent } from './api'
+import { useLiveVersion } from './live'
 
 const TYPE_LABELS: Record<string, string> = {
   'feature.created': 'criada',
@@ -19,12 +20,16 @@ function formatAt(at: string): string {
 export default function History() {
   const [events, setEvents] = useState<LifecycleEvent[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchEvents()
-      .then(setEvents)
+      .then((evs) => {
+        setEvents(evs)
+        setError(null)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [])
+  }, [version])
 
   if (error) return <p className="status error">Erro ao carregar o histórico: {error}</p>
   if (!events) return <p className="status">Carregando…</p>

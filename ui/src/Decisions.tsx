@@ -6,6 +6,7 @@ import {
   type Decision,
   type DecisionDetail as DecisionDetailData,
 } from './api'
+import { useLiveVersion } from './live'
 
 const GROUP_LABELS: Record<string, string> = {
   active: 'Ativas',
@@ -20,12 +21,16 @@ const ORDER = ['active', 'superseded']
 export default function Decisions() {
   const [decisions, setDecisions] = useState<Decision[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchState()
-      .then((s) => setDecisions(s.decisions))
+      .then((s) => {
+        setDecisions(s.decisions)
+        setError(null)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [])
+  }, [version])
 
   if (error) return <p className="status error">Erro ao carregar decisões: {error}</p>
   if (!decisions) return <p className="status">Carregando…</p>
@@ -74,12 +79,16 @@ export default function Decisions() {
 export function DecisionDetail({ id }: { id: string }) {
   const [data, setData] = useState<DecisionDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchDecision(id)
-      .then(setData)
+      .then((d) => {
+        setData(d)
+        setError(null)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id])
+  }, [id, version])
 
   if (error) return <p className="status error">Erro ao carregar a decisão: {error}</p>
   if (!data) return <p className="status">Carregando…</p>
