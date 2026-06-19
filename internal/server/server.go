@@ -53,69 +53,11 @@ func NewLive(ctx context.Context, repoDir, projDir, projectID string, pullInterv
 // stream at GET /api/stream.
 func newMux(repoDir, projDir, projectID string, hub *liveHub) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
-		handleState(w, repoDir)
-	})
-	mux.HandleFunc("GET /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
-		handleFeatureDetail(w, repoDir, r.PathValue("id"))
-	})
-	mux.HandleFunc("POST /api/features", func(w http.ResponseWriter, r *http.Request) {
-		handleCreateFeature(w, r, repoDir, projDir)
-	})
-	mux.HandleFunc("POST /api/features/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
-		handleTransition(w, r, repoDir, projDir, r.PathValue("id"))
-	})
-	mux.HandleFunc("POST /api/features/{id}/diagram", func(w http.ResponseWriter, r *http.Request) {
-		handleGenerateDiagram(w, r, repoDir, projDir, r.PathValue("id"))
-	})
-	mux.HandleFunc("PUT /api/features/{id}/docs/{doc}", func(w http.ResponseWriter, r *http.Request) {
-		handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
-	})
-	mux.HandleFunc("PUT /api/features/{id}/parent", func(w http.ResponseWriter, r *http.Request) {
-		handleSetParent(w, r, repoDir, projDir, r.PathValue("id"))
-	})
-	mux.HandleFunc("GET /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
-		handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
-	})
-	mux.HandleFunc("PUT /api/artifacts/{featureID}/{name}", func(w http.ResponseWriter, r *http.Request) {
-		handleArtifactPut(w, r, repoDir, projDir, r.PathValue("featureID"), r.PathValue("name"))
-	})
-	mux.HandleFunc("GET /api/decisions/{id}", func(w http.ResponseWriter, r *http.Request) {
-		handleDecisionDetail(w, repoDir, r.PathValue("id"))
-	})
-	mux.HandleFunc("GET /api/references/{id}", func(w http.ResponseWriter, r *http.Request) {
-		handleReferenceDetail(w, repoDir, r.PathValue("id"))
-	})
-	mux.HandleFunc("POST /api/references", func(w http.ResponseWriter, r *http.Request) {
-		handleCreateReference(w, r, repoDir, projDir)
-	})
-	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
-		handleSearch(w, r, repoDir, projectID)
-	})
-	mux.HandleFunc("POST /api/ask", func(w http.ResponseWriter, r *http.Request) {
-		handleAsk(w, r, repoDir, projDir, projectID)
-	})
-	mux.HandleFunc("GET /api/config/llm", func(w http.ResponseWriter, r *http.Request) {
-		handleLLMConfigGet(w, projDir)
-	})
-	mux.HandleFunc("PUT /api/config/llm", func(w http.ResponseWriter, r *http.Request) {
-		handleLLMConfigPut(w, r, projDir)
-	})
-	mux.HandleFunc("GET /api/wiki", func(w http.ResponseWriter, r *http.Request) {
-		handleWikiIndex(w, repoDir)
-	})
-	mux.HandleFunc("GET /api/wiki/{rel...}", func(w http.ResponseWriter, r *http.Request) {
-		handleWikiPage(w, repoDir, r.PathValue("rel"))
-	})
-	mux.HandleFunc("GET /api/lint", func(w http.ResponseWriter, r *http.Request) {
-		handleLint(w, repoDir)
-	})
-	mux.HandleFunc("GET /api/graph", func(w http.ResponseWriter, r *http.Request) {
-		handleGraph(w, repoDir)
-	})
-	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
-		handleEvents(w, repoDir)
-	})
+	// Single-project binder: every request resolves to the one fixed project.
+	bind := func(h scopedHandler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) { h(w, r, repoDir, projDir, projectID) }
+	}
+	mountDataRoutes(mux, "", bind, false)
 	if hub != nil {
 		mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
 			hub.handleStream(w, r, repoDir)

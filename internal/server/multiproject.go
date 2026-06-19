@@ -72,8 +72,8 @@ func (s *MultiServer) mux() http.Handler {
 	})
 
 	// withProject resolves (repoDir, projDir, pid) for a registered project and
-	// hands them to fn; 404 when the project was never registered.
-	withProject := func(fn func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string)) http.HandlerFunc {
+	// binds them into a data handler; 404 when the project was never registered.
+	withProject := func(h scopedHandler) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			pid := r.PathValue("pid")
 			repoDir, projDir, err := projectPaths(pid)
@@ -85,52 +85,11 @@ func (s *MultiServer) mux() http.Handler {
 				writeJSON(w, http.StatusNotFound, errorBody("projeto não registrado: "+pid))
 				return
 			}
-			fn(w, r, repoDir, projDir, pid)
+			h(w, r, repoDir, projDir, pid)
 		}
 	}
-
-	mux.HandleFunc("GET /api/projects/{pid}/state", withProject(func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-		handleState(w, repoDir)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/features/{id}", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
-		handleFeatureDetail(w, repoDir, r.PathValue("id"))
-	}))
-	mux.HandleFunc("POST /api/projects/{pid}/features", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
-		handleCreateFeature(w, r, repoDir, projDir)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/decisions/{id}", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
-		handleDecisionDetail(w, repoDir, r.PathValue("id"))
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/references/{id}", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
-		handleReferenceDetail(w, repoDir, r.PathValue("id"))
-	}))
-	mux.HandleFunc("POST /api/projects/{pid}/references", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
-		handleCreateReference(w, r, repoDir, projDir)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/search", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, _, projectID string) {
-		handleSearch(w, r, repoDir, projectID)
-	}))
-	mux.HandleFunc("POST /api/projects/{pid}/ask", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
-		handleAsk(w, r, repoDir, projDir, projectID)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/wiki", withProject(func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-		handleWikiIndex(w, repoDir)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/wiki/{rel...}", withProject(func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
-		handleWikiPage(w, repoDir, r.PathValue("rel"))
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/config/llm", withProject(func(w http.ResponseWriter, _ *http.Request, _, projDir, _ string) {
-		handleLLMConfigGet(w, projDir)
-	}))
-	mux.HandleFunc("PUT /api/projects/{pid}/config/llm", withProject(func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
-		handleLLMConfigPut(w, r, projDir)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/events", withProject(func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-		handleEvents(w, repoDir)
-	}))
-	mux.HandleFunc("GET /api/projects/{pid}/lint", withProject(func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-		handleLint(w, repoDir)
-	}))
+	// Remote serve exposes the deliberate subset — routes flagged remote.
+	mountDataRoutes(mux, "/projects/{pid}", withProject, true)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))

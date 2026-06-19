@@ -200,6 +200,23 @@ func TestMultiProjectRegisterInitsEmptyBackend(t *testing.T) {
 	}
 }
 
+// TestServeExposesOnlyRemoteSubset pins the `cerne serve` route subset against
+// drift in the shared route table: a non-remote route (graph) is 404 even for a
+// registered project, while a remote route (state) is 200.
+func TestServeExposesOnlyRemoteSubset(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	h := NewMultiProject(mpSecret)
+	origin := seedBareBackend(t, "Projeto A")
+	doMP(t, h, http.MethodPut, "/api/projects/proj-a", regBody(t, origin), mpSecret, nil)
+
+	if rec := doMP(t, h, http.MethodGet, "/api/projects/proj-a/state", "", mpSecret, nil); rec.Code != http.StatusOK {
+		t.Fatalf("remote route /state: status %d, want 200", rec.Code)
+	}
+	if rec := doMP(t, h, http.MethodGet, "/api/projects/proj-a/graph", "", mpSecret, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("non-remote route /graph on serve: status %d, want 404", rec.Code)
+	}
+}
+
 // TestMultiProjectUnknownProject: an unregistered project is a 404.
 func TestMultiProjectUnknownProject(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
