@@ -3,7 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,47 @@ func assertMergeDriverRegistered(t *testing.T, projDir string) {
 func TestInitRegistersMergeDriver(t *testing.T) {
 	projDir, _, _ := setupGitProject(t)
 	assertMergeDriverRegistered(t, projDir)
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
+
+// A git worktree keeps .git as a file pointing at a shared gitdir; the driver
+// must still register in the shared config (this is the parallel-worktree
+// workflow case 0030 targets). Regression guard for EnableDotGitCommonDir.
+func TestPullSelfHealsMergeDriverInWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available")
+	}
+	if runtime.GOOS == "windows" {
+		// go-git keeps a handle on the worktree's gitdir open within this
+		// in-process test, so t.TempDir cleanup can't unlink it on Windows. The
+		// behaviour itself works there (validated manually); CI (Linux) runs this
+		// guard. Real usage runs 'cerne pull' as a separate, exiting process.
+		t.Skip("worktree gitdir handle blocks t.TempDir cleanup on Windows; covered on CI (Linux)")
+	}
+	projDir, _, _ := setupGitProject(t)
+	runGit(t, projDir, "config", "user.email", "t@t")
+	runGit(t, projDir, "config", "user.name", "t")
+	runGit(t, projDir, "add", ".cernerc", "docs.lock", ".gitattributes")
+	runGit(t, projDir, "commit", "-m", "base")
+	wt := filepath.Join(t.TempDir(), "wt")
+	runGit(t, projDir, "worktree", "add", "-b", "wtbranch", wt, "HEAD")
+	runGit(t, projDir, "config", "--remove-section", "merge.cerne-lock")
+
+	if out, err := execCerne(t, "pull", "--dir", wt); err != nil {
+		t.Fatalf("pull in worktree: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(runGit(t, wt, "config", "--get", "merge.cerne-lock.driver"))
+	if got != "cerne lock merge %O %A %B" {
+		t.Fatalf("driver from worktree = %q, want it registered in the shared config", got)
+	}
 }
 
 func TestPullSelfHealsMergeDriver(t *testing.T) {

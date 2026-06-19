@@ -134,7 +134,10 @@ const (
 // is not a git repository yet it is a graceful no-op — a later pull, once the
 // repo exists, registers it.
 func ensureLockMergeDriver(projDir string) error {
-	repo, err := git.PlainOpen(projDir)
+	// EnableDotGitCommonDir resolves a worktree's shared config (.git is a file
+	// there, not a dir) so the driver registers for parallel worktrees too —
+	// exactly the conflict-prone workflow this case targets.
+	repo, err := git.PlainOpenWithOptions(projDir, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
 	if errors.Is(err, git.ErrRepositoryNotExists) {
 		return nil
 	}
