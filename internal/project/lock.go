@@ -13,12 +13,14 @@ var ErrNoLock = errors.New("no docs.lock")
 
 const lockFilename = "docs.lock"
 
-// Lock is the persisted form of docs.lock (JSON, committed by the user).
+// Lock is the persisted form of docs.lock (JSON, committed by the user). It
+// holds only the backend snapshot pin: the materialized manifest lives in a
+// gitignored sidecar (see manifest.go), so the committed file stays small and
+// merge-conflict-free.
 type Lock struct {
-	Version      int               `json:"version"`      // 1
-	Backend      string            `json:"backend"`      // git URL or local path
-	Snapshot     string            `json:"snapshot"`     // backend HEAD SHA
-	Materialized map[string]string `json:"materialized"` // rel path (slash-separated) -> sha256 hex
+	Version  int    `json:"version"`  // 1
+	Backend  string `json:"backend"`  // git URL or local path
+	Snapshot string `json:"snapshot"` // backend HEAD SHA
 }
 
 // SaveLock writes <dir>/docs.lock as pretty-printed JSON (2-space indent,

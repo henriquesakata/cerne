@@ -53,8 +53,10 @@ func runPull(cmd *cobra.Command, dir, scope string) error {
 		return err
 	}
 	lock.Snapshot = head
-	lock.Materialized = manifest
 	if err := project.SaveLock(ctx.projDir, lock); err != nil {
+		return err
+	}
+	if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
 		return err
 	}
 	// pull is the sync point: refresh the local search index alongside .docs/.

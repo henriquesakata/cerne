@@ -101,7 +101,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if err := project.SaveConfig(targetDir, project.Config{ProjectID: projectID, Backend: backend}); err != nil {
 		return err
 	}
-	lock := project.Lock{Version: 1, Backend: backend, Snapshot: head, Materialized: map[string]string{}}
+	lock := project.Lock{Version: 1, Backend: backend, Snapshot: head}
 	if err := project.SaveLock(targetDir, lock); err != nil {
 		return err
 	}

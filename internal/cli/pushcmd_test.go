@@ -67,12 +67,12 @@ func TestPushNetNewPlan(t *testing.T) {
 	if _, err := os.ReadFile(filepath.Join(verify, "content", "features", "F-0001", "plan.md")); err != nil {
 		t.Fatalf("plan not pushed to origin: %v", err)
 	}
-	lock, err := project.LoadLock(projDir)
+	manifest, err := project.LoadManifest(projDir)
 	if err != nil {
-		t.Fatalf("LoadLock: %v", err)
+		t.Fatalf("LoadManifest: %v", err)
 	}
-	if _, ok := lock.Materialized["current/features/F-0001-parcelamento/plan.md"]; !ok {
-		t.Fatalf("manifest missing the new plan.md: %+v", lock.Materialized)
+	if _, ok := manifest["current/features/F-0001-parcelamento/plan.md"]; !ok {
+		t.Fatalf("manifest missing the new plan.md: %+v", manifest)
 	}
 }
 
@@ -121,8 +121,12 @@ func TestPushGoldenPath(t *testing.T) {
 		t.Fatalf("lock.Snapshot = %s, want origin HEAD %s", lock.Snapshot, originHead)
 	}
 	rel := "current/features/F-0001-parcelamento/spec.md"
-	if lock.Materialized[rel] != sha256OfString(edited) {
-		t.Fatalf("lock.Materialized[%s] = %s, want sha256 of the edited content", rel, lock.Materialized[rel])
+	manifest, err := project.LoadManifest(projDir)
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	if manifest[rel] != sha256OfString(edited) {
+		t.Fatalf("manifest[%s] = %s, want sha256 of the edited content", rel, manifest[rel])
 	}
 	want := "Enviado: 1 documento(s) (snapshot " + originHead[:8] + ")."
 	if !strings.Contains(out, want) {

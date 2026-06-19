@@ -68,8 +68,12 @@ func TestInitFresh(t *testing.T) {
 	if lock.Version != 1 || lock.Backend != origin {
 		t.Fatalf("lock = %+v, want version 1 backend %q", lock, origin)
 	}
-	if len(lock.Materialized) != 0 {
-		t.Fatalf("lock.Materialized = %v, want empty", lock.Materialized)
+	manifest, err := project.LoadManifest(projDir)
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	if len(manifest) != 0 {
+		t.Fatalf("manifest = %v, want empty after init", manifest)
 	}
 
 	repoDir := filepath.Join(cacheRoot, "my-project", "repo")

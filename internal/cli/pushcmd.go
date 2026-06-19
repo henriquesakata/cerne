@@ -68,10 +68,14 @@ func runPush(cmd *cobra.Command, dir string) error {
 	}
 
 	docsDir := filepath.Join(ctx.projDir, ".docs")
-	if err := checkContextUntouched(docsDir, lock.Materialized); err != nil {
+	manifest, err := project.LoadManifest(ctx.projDir)
+	if err != nil {
 		return err
 	}
-	docs, err := collectChangedDocs(docsDir, lock.Materialized)
+	if err := checkContextUntouched(docsDir, manifest); err != nil {
+		return err
+	}
+	docs, err := collectChangedDocs(docsDir, manifest)
 	if err != nil {
 		return err
 	}
@@ -90,13 +94,13 @@ func runPush(cmd *cobra.Command, dir string) error {
 		}
 	}
 	for _, d := range docs {
-		lock.Materialized[d.rel] = d.sum
+		manifest[d.rel] = d.sum
 	}
 	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: push %d documento(s)", len(docs)))
 	if errors.Is(err, gitback.ErrNothingToCommit) {
 		// The edited copies already match the backend byte for byte; just
 		// realign the manifest hashes.
-		if err := project.SaveLock(ctx.projDir, lock); err != nil {
+		if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
 			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Nada para enviar.")
@@ -107,6 +111,9 @@ func runPush(cmd *cobra.Command, dir string) error {
 	}
 	lock.Snapshot = sha
 	if err := project.SaveLock(ctx.projDir, lock); err != nil {
+		return err
+	}
+	if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Enviado: %d documento(s) (snapshot %s).\n", len(docs), shortSHA(sha))
