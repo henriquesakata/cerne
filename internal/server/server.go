@@ -147,7 +147,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	}
 	docs := featureDocs{}
 	updated := featureDocTimes{}
-	for _, d := range []struct {
+	docFields := []struct {
 		name    string
 		content *string
 		updated **time.Time
@@ -155,7 +155,9 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		{"spec.md", &docs.Spec, &updated.Spec},
 		{"plan.md", &docs.Plan, &updated.Plan},
 		{"result.md", &docs.Result, &updated.Result},
-	} {
+	}
+	var docPaths []string
+	for _, d := range docFields {
 		data, err := os.ReadFile(app.FeatureDocPath(repoDir, id, d.name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -163,7 +165,20 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		}
 		*d.content = string(data)
 		if len(data) > 0 {
-			*d.updated = docUpdatedAt(repoDir, id, d.name)
+			docPaths = append(docPaths, "content/features/"+id+"/"+d.name)
+		}
+	}
+	// A single history walk resolves the last-updated time of every present
+	// doc. Best-effort: a non-git backend (tests) or any git error simply omits
+	// the timestamps — the document content is what the page needs.
+	if len(docPaths) > 0 {
+		if times, err := gitback.LastCommitTimes(repoDir, docPaths); err == nil {
+			for _, d := range docFields {
+				if t, ok := times["content/features/"+id+"/"+d.name]; ok {
+					t := t
+					*d.updated = &t
+				}
+			}
 		}
 	}
 	artifacts, err := listArtifacts(repoDir, id)
@@ -186,18 +201,6 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		children = []store.Feature{}
 	}
 	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children})
-}
-
-// docUpdatedAt returns the last-commit time of a feature's lifecycle document
-// in the backend, or nil when it has no git history (uncommitted, or repoDir is
-// not a git repo). Best-effort by design: a lookup failure must never fail the
-// request — the document content is what the page needs.
-func docUpdatedAt(repoDir, id, name string) *time.Time {
-	t, err := gitback.LastCommitTime(repoDir, "content/features/"+id+"/"+name)
-	if err != nil {
-		return nil
-	}
-	return &t
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

@@ -236,41 +236,58 @@ func commitFileAt(t *testing.T, workdir, name, content string, when time.Time) {
 	}
 }
 
-// LastCommitTime resolves per file: a.txt keeps its own (older) commit time
+// LastCommitTimes resolves per file: a.txt keeps its own (older) commit time
 // even after a later commit moves HEAD by touching b.txt — proving it does not
 // just report the HEAD commit's time.
-func TestLastCommitTimePerFile(t *testing.T) {
+func TestLastCommitTimesPerFile(t *testing.T) {
 	_, clone1, _ := fixture(t)
 	jan := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	feb := time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC)
 	commitFileAt(t, clone1, "a.txt", "a", jan)
 	commitFileAt(t, clone1, "b.txt", "b", feb)
 
-	gotA, err := LastCommitTime(clone1, "a.txt")
+	got, err := LastCommitTimes(clone1, []string{"a.txt", "b.txt"})
 	if err != nil {
-		t.Fatalf("LastCommitTime(a.txt): %v", err)
+		t.Fatalf("LastCommitTimes: %v", err)
 	}
-	if gotA.Unix() != jan.Unix() {
-		t.Fatalf("a.txt time = %v, want %v (per file, not HEAD)", gotA.UTC(), jan)
+	if got["a.txt"].Unix() != jan.Unix() {
+		t.Fatalf("a.txt time = %v, want %v (per file, not HEAD)", got["a.txt"].UTC(), jan)
 	}
-	gotB, err := LastCommitTime(clone1, "b.txt")
-	if err != nil {
-		t.Fatalf("LastCommitTime(b.txt): %v", err)
-	}
-	if gotB.Unix() != feb.Unix() {
-		t.Fatalf("b.txt time = %v, want %v", gotB.UTC(), feb)
+	if got["b.txt"].Unix() != feb.Unix() {
+		t.Fatalf("b.txt time = %v, want %v", got["b.txt"].UTC(), feb)
 	}
 }
 
-func TestLastCommitTimeUnknownPath(t *testing.T) {
+// A modified file resolves to its latest modification, not its creation —
+// exercising the first-parent diff in committer-time order.
+func TestLastCommitTimesLatestModification(t *testing.T) {
 	_, clone1, _ := fixture(t)
-	_, err := LastCommitTime(clone1, "never-committed.txt")
-	if !errors.Is(err, ErrNoCommits) {
-		t.Fatalf("LastCommitTime(unknown) err = %v, want ErrNoCommits", err)
+	jan := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	mar := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+	commitFileAt(t, clone1, "doc.txt", "v1", jan)
+	commitFileAt(t, clone1, "doc.txt", "v2", mar)
+
+	got, err := LastCommitTimes(clone1, []string{"doc.txt"})
+	if err != nil {
+		t.Fatalf("LastCommitTimes: %v", err)
+	}
+	if got["doc.txt"].Unix() != mar.Unix() {
+		t.Fatalf("doc.txt time = %v, want latest modification %v", got["doc.txt"].UTC(), mar)
 	}
 }
 
-func TestLastCommitTimeUnborn(t *testing.T) {
+func TestLastCommitTimesUnknownPath(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	got, err := LastCommitTimes(clone1, []string{"never-committed.txt"})
+	if err != nil {
+		t.Fatalf("LastCommitTimes: %v", err)
+	}
+	if _, ok := got["never-committed.txt"]; ok {
+		t.Fatalf("unknown path should be absent from result, got %v", got)
+	}
+}
+
+func TestLastCommitTimesUnborn(t *testing.T) {
 	origin := filepath.Join(t.TempDir(), "origin.git")
 	if err := InitBare(origin); err != nil {
 		t.Fatalf("InitBare: %v", err)
@@ -279,8 +296,8 @@ func TestLastCommitTimeUnborn(t *testing.T) {
 	if err := Clone(origin, workdir); err != nil {
 		t.Fatalf("Clone empty: %v", err)
 	}
-	_, err := LastCommitTime(workdir, "anything.txt")
+	_, err := LastCommitTimes(workdir, []string{"anything.txt"})
 	if !errors.Is(err, ErrNoCommits) {
-		t.Fatalf("LastCommitTime on unborn HEAD err = %v, want ErrNoCommits", err)
+		t.Fatalf("LastCommitTimes on unborn HEAD err = %v, want ErrNoCommits", err)
 	}
 }
