@@ -16,10 +16,6 @@ func TestLockRoundTrip(t *testing.T) {
 		Version:  1,
 		Backend:  "https://gitlab.com/rockt/cerne-docs.git",
 		Snapshot: "0123456789abcdef0123456789abcdef01234567",
-		Materialized: map[string]string{
-			"features/F-0001.md":  "aa11",
-			"decisions/D-0001.md": "bb22",
-		},
 	}
 	if err := SaveLock(dir, want); err != nil {
 		t.Fatalf("SaveLock: %v", err)
@@ -43,10 +39,9 @@ func TestLoadLockMissing(t *testing.T) {
 func TestLockFileFormat(t *testing.T) {
 	dir := t.TempDir()
 	l := Lock{
-		Version:      1,
-		Backend:      "/tmp/backend",
-		Snapshot:     "deadbeef",
-		Materialized: map[string]string{"features/F-0001.md": "aa11"},
+		Version:  1,
+		Backend:  "/tmp/backend",
+		Snapshot: "deadbeef",
 	}
 	if err := SaveLock(dir, l); err != nil {
 		t.Fatalf("SaveLock: %v", err)
@@ -68,5 +63,8 @@ func TestLockFileFormat(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("\n  \"version\"")) {
 		t.Fatalf("docs.lock not 2-space indented: %q", data)
+	}
+	if bytes.Contains(data, []byte("materialized")) {
+		t.Fatalf("docs.lock must not embed the materialized manifest (case 0030): %q", data)
 	}
 }

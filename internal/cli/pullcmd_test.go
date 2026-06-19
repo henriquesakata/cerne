@@ -46,13 +46,23 @@ func TestPullGoldenPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadLock: %v", err)
 	}
-	if len(lock.Materialized) == 0 {
-		t.Fatalf("lock.Materialized empty, want manifest of written files")
+	// The manifest is a gitignored sidecar now, not part of the committed lock.
+	manifest, err := project.LoadManifest(projDir)
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	if len(manifest) == 0 {
+		t.Fatalf("manifest sidecar empty, want manifest of written files")
 	}
 	for _, rel := range []string{"CONTEXT.md", "current/features/F-0001-parcelamento/spec.md"} {
-		if _, ok := lock.Materialized[rel]; !ok {
-			t.Fatalf("lock.Materialized missing %s: %v", rel, lock.Materialized)
+		if _, ok := manifest[rel]; !ok {
+			t.Fatalf("manifest missing %s: %v", rel, manifest)
 		}
+	}
+	if raw, rerr := os.ReadFile(filepath.Join(projDir, "docs.lock")); rerr != nil {
+		t.Fatalf("read docs.lock: %v", rerr)
+	} else if strings.Contains(string(raw), "materialized") {
+		t.Fatalf("docs.lock must not embed the manifest after pull: %s", raw)
 	}
 	originHead, err := gitback.HeadSHA(origin)
 	if err != nil {

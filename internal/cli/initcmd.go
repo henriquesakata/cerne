@@ -101,7 +101,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if err := project.SaveConfig(targetDir, project.Config{ProjectID: projectID, Backend: backend}); err != nil {
 		return err
 	}
-	lock := project.Lock{Version: 1, Backend: backend, Snapshot: head, Materialized: map[string]string{}}
+	lock := project.Lock{Version: 1, Backend: backend, Snapshot: head}
 	if err := project.SaveLock(targetDir, lock); err != nil {
 		return err
 	}
@@ -127,6 +127,12 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível instalar as skills do cerne: %v\n", err)
 	} else {
 		printSkillResults(out, results)
+	}
+
+	// Wire docs.lock to the merge driver so concurrent branches don't conflict
+	// on the snapshot pin. Non-fatal: the project is already provisioned.
+	if err := ensureLockMergeDriver(targetDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível registrar o merge driver do docs.lock: %v\n", err)
 	}
 
 	fmt.Fprintln(out, "Next steps:")

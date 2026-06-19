@@ -53,9 +53,16 @@ func runPull(cmd *cobra.Command, dir, scope string) error {
 		return err
 	}
 	lock.Snapshot = head
-	lock.Materialized = manifest
 	if err := project.SaveLock(ctx.projDir, lock); err != nil {
 		return err
+	}
+	if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
+		return err
+	}
+	// Self-heal the merge driver: .git/config never travels in a clone, so the
+	// routine sync point re-registers it. Non-fatal.
+	if err := ensureLockMergeDriver(ctx.projDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível registrar o merge driver do docs.lock: %v\n", err)
 	}
 	// pull is the sync point: refresh the local search index alongside .docs/.
 	dbPath, err := project.IndexPath(ctx.cfg.ProjectID)
