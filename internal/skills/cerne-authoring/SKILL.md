@@ -60,4 +60,4 @@ It is marked external, its content is indexed (so `cerne ask` cites it), and `--
 - **Author through cerne**, not as loose markdown folders for tracked features/decisions — loose markdown is authoring input, not authority.
 - **Never hand-edit generated outputs:** `.docs/CONTEXT.md` and the compiled wiki regenerate (`cerne pull` / `cerne compile`).
 - After a `cerne push` that changes the backend, commit the updated `docs.lock` (the code↔docs pin) alongside your code change.
-- `.docs/` is gitignored; only `.cernerc` and `docs.lock` are committed in your project repo.
+- `.docs/` is gitignored; commit `.cernerc`, `docs.lock` **and `.gitattributes`** in your project repo. The `.gitattributes` wires the `docs.lock` merge driver that `cerne init`/`cerne pull` register, so parallel branches/worktrees stop conflicting on the snapshot pin — a fresh clone just runs `cerne pull` once to self-heal its local git config.

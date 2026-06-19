@@ -38,7 +38,7 @@ cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (e
 
 ## Architecture (one binary, four layers)
 
-Backend git repo = **source of truth** (entities as JSON + content as markdown + events as NDJSON). SQLite (`<cache>/index.db`) is a **derived, rebuildable** FTS5 cache. `.docs/` is a **projection** of current state; `docs.lock` (committed in the user's project) pins the backend snapshot.
+Backend git repo = **source of truth** (entities as JSON + content as markdown + events as NDJSON). SQLite (`<cache>/index.db`) is a **derived, rebuildable** FTS5 cache. `.docs/` is a **projection** of current state; `docs.lock` (committed in the user's project) pins the backend snapshot **only** — the materialized manifest lives in a gitignored `.docs/.manifest.json` sidecar, and a `cerne lock merge` git driver (wired via `.gitattributes`, registered by `init`/`pull`) keeps `docs.lock` conflict-free across parallel branches/worktrees (case 0030).
 
 | Package | Role |
 |---|---|
@@ -52,7 +52,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 | `internal/lint` | Deterministic staleness rules (ref-to-superseded, broken-link, orphan, missing-gate-doc). |
 | `internal/index` | SQLite FTS5 over full history (incl. superseded). |
 | `internal/server` | Local web API + embedded UI (`internal/cli/uicmd.go` serves it). |
-| `internal/cli` | cobra commands: init, feature, status, pull, push, import, lint, search, ui. |
+| `internal/cli` | cobra commands: init, feature, status, pull, push, import, lint, search, ui, lock (`lock merge` = the docs.lock git merge driver). |
 | `internal/doccheck`, `internal/slug` | Shared helpers (stub detection, slugify with diacritics). |
 | `ui/` | Vite + React 19 + TS: kanban, feature page, Excalidraw (lazy). `dist/` committed + embedded. |
 | `e2e/` | Black-box golden-path test through `cli.Root()`. |

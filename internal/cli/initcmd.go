@@ -137,6 +137,6 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 
 	fmt.Fprintln(out, "Next steps:")
 	fmt.Fprintln(out, "  - add .docs/ to your project's .gitignore (cerne never edits it for you)")
-	fmt.Fprintln(out, "  - commit .cernerc and docs.lock to your project repository")
+	fmt.Fprintln(out, "  - commit .cernerc, docs.lock and .gitattributes to your project repository")
 	return nil
 }
