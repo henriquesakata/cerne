@@ -1,18 +1,26 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/server"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newUICmd() *cobra.Command {
@@ -37,17 +45,28 @@ func newUICmd() *cobra.Command {
 	return cmd
 }
 
+// runUI binds the port to become the host that serves the dashboard for N
+// projects. If the port is already in use by a running cerne ui, it instead
+// joins that instance: it registers this project and stays attached, removing
+// the project again on Ctrl+C.
 func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
-	// resolveProject pulls first: the dashboard should show fresh state.
-	proj, err := resolveProject(dir)
-	if err != nil {
-		return err
-	}
-	// Bind before printing/opening so the URL is shown only once the socket is
-	// listening (no race with the browser).
 	addr := fmt.Sprintf("localhost:%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
+		if isAddrInUse(err) {
+			return joinRunningUI(cmd.OutOrStdout(), dir, port)
+		}
+		return err
+	}
+
+	// Host mode: this process owns the port and serves every registered project.
+	// A cancellable context ties the per-project live-refresh goroutines to the
+	// process; Ctrl+C cancels it and shuts the server down gracefully.
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	handler, err := server.NewUIMulti(sigCtx, uiResolver, pullInterval, dir)
+	if err != nil {
+		ln.Close()
 		return err
 	}
 	url := fmt.Sprintf("http://%s", addr)
@@ -55,15 +74,7 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 	if !noBrowser {
 		go openBrowser(url)
 	}
-
-	// A cancellable context ties the live-refresh goroutines (HEAD watcher +
-	// periodic pull) to the process: Ctrl+C cancels it and shuts the server
-	// down gracefully, so the goroutines never outlive the listener.
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	srv := &http.Server{
-		Handler: server.NewLive(sigCtx, proj.repoDir, proj.projDir, proj.cfg.ProjectID, pullInterval),
-	}
+	srv := &http.Server{Handler: handler}
 	go func() {
 		<-sigCtx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -72,6 +83,136 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 	}()
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	return nil
+}
+
+// uiResolver maps a project directory to the backend locations and identity the
+// multi-project server needs. It refreshes the cached clone (resolveProject
+// pulls), so a freshly added project shows current state.
+func uiResolver(dir string) (repoDir, projDir, projectID, name string, err error) {
+	pc, err := resolveProject(dir)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	proj, err := store.LoadProject(pc.repoDir)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return pc.repoDir, pc.projDir, pc.cfg.ProjectID, proj.Name, nil
+}
+
+// joinRunningUI registers this project with the cerne ui already serving the
+// port, then blocks until Ctrl+C, removing the project on the way out. The 2nd
+// process owns nothing — it just keeps the project in the panel for its
+// lifetime (close the terminal → the project leaves the selector).
+func joinRunningUI(out io.Writer, dir string, port int) error {
+	base := fmt.Sprintf("http://localhost:%d", port)
+	if !probeCerneUI(base) {
+		return fmt.Errorf("a porta %d já está em uso por outro processo (não parece um cerne ui)", port)
+	}
+	if dir == "" {
+		dir = "."
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	pid, name, err := registerProject(base, absDir)
+	if err != nil {
+		return fmt.Errorf("não foi possível adicionar o projeto ao cerne ui em %s: %w", base, err)
+	}
+	fmt.Fprintf(out, "projeto %q adicionado ao cerne ui em %s (Ctrl+C para remover)\n", name, base)
+
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	<-sigCtx.Done()
+
+	if err := deregisterProject(base, pid); err != nil {
+		fmt.Fprintf(out, "\naviso: não foi possível remover o projeto do painel: %v\n", err)
+		return nil
+	}
+	fmt.Fprintf(out, "\nprojeto %q removido do painel\n", name)
+	return nil
+}
+
+// isAddrInUse reports whether err is a bind failure because the port is taken.
+func isAddrInUse(err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	// Windows phrases it differently than the POSIX errno text.
+	return strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "only one usage of each socket address")
+}
+
+// probeCerneUI checks that the server on base is a cerne ui (and not some other
+// app holding the port) by confirming GET /api/projects returns the expected
+// shape.
+func probeCerneUI(base string) bool {
+	r, err := http.Get(base + "/api/projects")
+	if err != nil {
+		return false
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return false
+	}
+	var body struct {
+		Projects []struct {
+			PID string `json:"pid"`
+		} `json:"projects"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return false
+	}
+	return body.Projects != nil // a cerne ui always returns a (possibly empty) array
+}
+
+// registerProject adds dir to the running cerne ui (POST /api/projects),
+// returning the minted project id and name.
+func registerProject(base, dir string) (pid, name string, err error) {
+	b, _ := json.Marshal(map[string]string{"dir": dir})
+	r, err := http.Post(base+"/api/projects", "application/json", bytes.NewReader(b))
+	if err != nil {
+		return "", "", err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		var e struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&e)
+		if e.Error != "" {
+			return "", "", errors.New(e.Error)
+		}
+		return "", "", fmt.Errorf("HTTP %d", r.StatusCode)
+	}
+	var info struct {
+		PID  string `json:"pid"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&info); err != nil {
+		return "", "", err
+	}
+	return info.PID, info.Name, nil
+}
+
+// deregisterProject removes pid from the running cerne ui (DELETE
+// /api/projects/{pid}).
+func deregisterProject(base, pid string) error {
+	req, err := http.NewRequest(http.MethodDelete, base+"/api/projects/"+url.PathEscape(pid), nil)
+	if err != nil {
+		return err
+	}
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", r.StatusCode)
 	}
 	return nil
 }

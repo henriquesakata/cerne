@@ -105,14 +105,38 @@ async function errorMessage(r: Response): Promise<string> {
   return `HTTP ${r.status}`
 }
 
+// ---- projeto ativo (case 0032) ----
+// O painel serve N projetos sob /api/projects/{pid}/*. activePid é o projeto
+// selecionado; o LiveProvider chama setApiProject antes de disparar os
+// refetches, então toda chamada de dados abaixo usa base() com o pid corrente.
+export type ProjectInfo = { pid: string; name: string }
+
+let activePid = ''
+export function setApiProject(pid: string): void {
+  activePid = pid
+}
+function base(): string {
+  return `/api/projects/${encodeURIComponent(activePid)}`
+}
+
+// fetchProjects lista os projetos registrados (rota global, não escopada).
+export async function fetchProjects(): Promise<{
+  projects: ProjectInfo[]
+  default: string
+}> {
+  const r = await fetch('/api/projects')
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as { projects: ProjectInfo[]; default: string }
+}
+
 export async function fetchState(): Promise<StateResponse> {
-  const r = await fetch('/api/state')
+  const r = await fetch(`${base()}/state`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as StateResponse
 }
 
 export async function fetchFeature(id: string): Promise<FeatureDetail> {
-  const r = await fetch(`/api/features/${encodeURIComponent(id)}`)
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as FeatureDetail
 }
@@ -123,7 +147,7 @@ export async function fetchArtifactJSON(
   name: string,
 ): Promise<string> {
   const r = await fetch(
-    `/api/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
+    `${base()}/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
   )
   if (!r.ok) throw new Error(await errorMessage(r))
   return await r.text()
@@ -143,7 +167,7 @@ export async function putArtifact(
   json: string,
 ): Promise<SaveOutcome> {
   const r = await fetch(
-    `/api/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
+    `${base()}/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -170,7 +194,7 @@ export async function generateDiagram(
   name?: string,
 ): Promise<GenerateDiagramResult> {
   const r = await fetch(
-    `/api/features/${encodeURIComponent(featureId)}/diagram`,
+    `${base()}/features/${encodeURIComponent(featureId)}/diagram`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -198,7 +222,7 @@ export async function postTransition(
   id: string,
   body: { action: TransitionAction; by?: string; reason?: string },
 ): Promise<TransitionOutcome> {
-  const r = await fetch(`/api/features/${encodeURIComponent(id)}/transition`, {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/transition`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -213,13 +237,13 @@ export type DecisionDetail = { decision: Decision; doc: string; informed_by: Ref
 export type ReferenceDetail = { reference: Reference; doc: string }
 
 export async function fetchDecision(id: string): Promise<DecisionDetail> {
-  const r = await fetch(`/api/decisions/${encodeURIComponent(id)}`)
+  const r = await fetch(`${base()}/decisions/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as DecisionDetail
 }
 
 export async function fetchReference(id: string): Promise<ReferenceDetail> {
-  const r = await fetch(`/api/references/${encodeURIComponent(id)}`)
+  const r = await fetch(`${base()}/references/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as ReferenceDetail
 }
@@ -237,7 +261,7 @@ export type SearchHit = {
 
 export async function search(q: string, limit = 20): Promise<SearchHit[]> {
   const r = await fetch(
-    `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    `${base()}/search?q=${encodeURIComponent(q)}&limit=${limit}`,
   )
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { results: SearchHit[] }).results
@@ -251,7 +275,7 @@ export type LintFinding = {
 }
 
 export async function fetchLint(): Promise<LintFinding[]> {
-  const r = await fetch('/api/lint')
+  const r = await fetch(`${base()}/lint`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { findings: LintFinding[] }).findings
 }
@@ -267,7 +291,7 @@ export type LifecycleEvent = {
 }
 
 export async function fetchEvents(): Promise<LifecycleEvent[]> {
-  const r = await fetch('/api/events')
+  const r = await fetch(`${base()}/events`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { events: LifecycleEvent[] }).events
 }
@@ -286,7 +310,7 @@ export async function createFeature(
   module: string,
   parent = '',
 ): Promise<CreateOutcome> {
-  const r = await fetch('/api/features', {
+  const r = await fetch(`${base()}/features`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, module, parent }),
@@ -301,7 +325,7 @@ export async function setFeatureParent(
   id: string,
   parent: string,
 ): Promise<SaveOutcome> {
-  const r = await fetch(`/api/features/${encodeURIComponent(id)}/parent`, {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/parent`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ parent }),
@@ -318,7 +342,7 @@ export async function saveFeatureDoc(
   content: string,
 ): Promise<SaveOutcome> {
   const r = await fetch(
-    `/api/features/${encodeURIComponent(id)}/docs/${encodeURIComponent(doc)}`,
+    `${base()}/features/${encodeURIComponent(id)}/docs/${encodeURIComponent(doc)}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'text/markdown' },
@@ -351,7 +375,7 @@ export type AskAnswer = {
 // ask pergunta em linguagem natural sobre o estado vigente; a resposta vem do
 // provider configurado no .cernerc (lido a cada request → hot-reload).
 export async function ask(query: string, history: boolean): Promise<AskAnswer> {
-  const r = await fetch('/api/ask', {
+  const r = await fetch(`${base()}/ask`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, history }),
@@ -363,7 +387,7 @@ export async function ask(query: string, history: boolean): Promise<AskAnswer> {
 export type WikiPageRef = { name: string; rel: string }
 
 export async function fetchWikiIndex(): Promise<WikiPageRef[]> {
-  const r = await fetch('/api/wiki')
+  const r = await fetch(`${base()}/wiki`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { pages: WikiPageRef[] }).pages
 }
@@ -374,7 +398,7 @@ export async function fetchWikiPage(rel: string): Promise<WikiPage> {
   // rel pode ter barra ("modules/<x>"): codifica cada segmento, mantém a barra
   // (a rota é /api/wiki/{rel...}, que casa múltiplos segmentos).
   const path = rel.split('/').map(encodeURIComponent).join('/')
-  const r = await fetch(`/api/wiki/${path}`)
+  const r = await fetch(`${base()}/wiki/${path}`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as WikiPage
 }
@@ -384,7 +408,7 @@ export async function fetchWikiPage(rel: string): Promise<WikiPage> {
 export type LLMMode = 'delegation' | 'byo-key' | 'claude-cli'
 
 export async function fetchLLMMode(): Promise<LLMMode> {
-  const r = await fetch('/api/config/llm')
+  const r = await fetch(`${base()}/config/llm`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { mode: LLMMode }).mode
 }
@@ -392,7 +416,7 @@ export async function fetchLLMMode(): Promise<LLMMode> {
 // setLLMMode grava o modo no .cernerc; o servidor relê a config a cada
 // pergunta, então a troca vale na próxima pergunta (sem reiniciar).
 export async function setLLMMode(mode: LLMMode): Promise<LLMMode> {
-  const r = await fetch('/api/config/llm', {
+  const r = await fetch(`${base()}/config/llm`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode }),
@@ -415,7 +439,7 @@ export async function createReference(
   content: string,
   informs: string[],
 ): Promise<CreateReferenceOutcome> {
-  const r = await fetch('/api/references', {
+  const r = await fetch(`${base()}/references`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, url, content, informs }),
@@ -448,18 +472,28 @@ export type GraphEdge = {
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 
 export async function fetchGraph(): Promise<Graph> {
-  const r = await fetch('/api/graph')
+  const r = await fetch(`${base()}/graph`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as Graph
 }
 
-// ---- atualização ao vivo (case 0031) ----
+// ---- atualização ao vivo (casos 0031/0032) ----
 
-// subscribeChanges abre o canal SSE (/api/stream) e chama onChange a cada
-// evento "change" (o backend avançou — commit local ou pull do remoto).
-// Devolve um disposer que fecha o canal. O EventSource reconecta sozinho.
-export function subscribeChanges(onChange: () => void): () => void {
+// subscribeLive abre o canal SSE multiplexado (/api/stream): onChange recebe o
+// pid do projeto que avançou (a página re-busca o ativo e marca os demais);
+// onProjects dispara quando o conjunto de projetos muda. Devolve um disposer
+// que fecha o canal; o EventSource reconecta sozinho.
+export function subscribeLive(handlers: {
+  onChange: (pid: string) => void
+  onProjects: () => void
+}): () => void {
   const es = new EventSource('/api/stream')
-  es.addEventListener('change', () => onChange())
+  es.addEventListener('change', (e) => {
+    const pid = String((e as MessageEvent).data ?? '')
+      .trim()
+      .split(' ')[0]
+    if (pid) handlers.onChange(pid)
+  })
+  es.addEventListener('projects', () => handlers.onProjects())
   return () => es.close()
 }
