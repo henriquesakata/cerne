@@ -3,7 +3,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/ask"
@@ -28,41 +26,23 @@ import (
 )
 
 // New returns the http.Handler serving /api/* JSON endpoints and the embedded
-// UI (SPA fallback to index.html) for everything else. This is the static
-// handler with no live-refresh channel — used by tests and any caller that does
-// not want background goroutines; `cerne ui` uses NewLive.
+// UI (SPA fallback to index.html) for everything else. It is the static,
+// single-project handler with no background goroutines — used by tests. Live
+// `cerne ui` uses NewUIMulti (uimulti.go), which adds per-project live refresh.
 func New(repoDir, projDir, projectID string) http.Handler {
-	return newMux(repoDir, projDir, projectID, nil)
+	return newMux(repoDir, projDir, projectID)
 }
 
-// NewLive returns the handler with auto-refresh: a watcher broadcasts backend
-// HEAD changes over GET /api/stream, and (when pullInterval > 0) a loop pulls
-// origin so a teammate's push reaches the dashboard. Both goroutines stop when
-// ctx is cancelled. pullInterval <= 0 keeps the offline-by-default behaviour
-// (no periodic pull); the stream still reflects local changes.
-func NewLive(ctx context.Context, repoDir, projDir, projectID string, pullInterval time.Duration) http.Handler {
-	hub := newLiveHub()
-	go hub.watchHead(ctx, repoDir, headPollInterval)
-	if pullInterval > 0 {
-		go pullLoop(ctx, repoDir, pullInterval)
-	}
-	return newMux(repoDir, projDir, projectID, hub)
-}
-
-// newMux builds the route table. When hub is non-nil it also serves the SSE
-// stream at GET /api/stream.
-func newMux(repoDir, projDir, projectID string, hub *liveHub) http.Handler {
+// newMux builds the single-project route table: the /api/* data routes plus the
+// embedded SPA. The live SSE stream (GET /api/stream) is served only by the
+// multi-project handler (NewUIMulti); this static mux has none.
+func newMux(repoDir, projDir, projectID string) http.Handler {
 	mux := http.NewServeMux()
 	// Single-project binder: every request resolves to the one fixed project.
 	bind := func(h scopedHandler) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) { h(w, r, repoDir, projDir, projectID) }
 	}
 	mountDataRoutes(mux, "", bind, false)
-	if hub != nil {
-		mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
-			hub.handleStream(w, r, repoDir)
-		})
-	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
 	})
