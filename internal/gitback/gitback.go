@@ -5,6 +5,7 @@ package gitback
 import (
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
@@ -219,4 +220,80 @@ func HeadSHA(workdir string) (string, error) {
 		return "", err
 	}
 	return ref.Hash().String(), nil
+}
+
+// LastCommitTimes returns, for each slash-separated path (relative to the repo
+// root), the committer time of the most recent commit that modified it — its
+// blob differs from the same path in the commit's first parent — resolved in a
+// single committer-time-ordered walk from HEAD that stops once every path is
+// found. Paths with no history are absent from the result; ErrNoCommits when
+// HEAD is unborn. It compares blob hashes per path instead of diffing whole
+// trees, which is what keeps it fast over long histories (go-git's per-commit
+// FileName diff is ~35x slower). Git commit times have one-second resolution.
+func LastCommitTimes(workdir string, paths []string) (map[string]time.Time, error) {
+	repo, err := git.PlainOpen(workdir)
+	if err != nil {
+		return nil, err
+	}
+	head, err := repo.Head()
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return nil, fmt.Errorf("%w: %s", ErrNoCommits, workdir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	iter, err := repo.Log(&git.LogOptions{From: head.Hash(), Order: git.LogOrderCommitterTime})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	result := make(map[string]time.Time, len(paths))
+	pending := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		pending[p] = true
+	}
+	for len(pending) > 0 {
+		c, err := iter.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		tree, err := c.Tree()
+		if err != nil {
+			return nil, err
+		}
+		var parent *object.Tree
+		if c.NumParents() > 0 {
+			if p, err := c.Parent(0); err == nil {
+				parent, _ = p.Tree()
+			}
+		}
+		for path := range pending {
+			h, ok := treeEntryHash(tree, path)
+			if !ok {
+				continue // absent here: a newer commit modified it, or it never existed
+			}
+			if ph, pok := treeEntryHash(parent, path); !pok || ph != h {
+				result[path] = c.Committer.When // created or changed at this commit
+				delete(pending, path)
+			}
+		}
+	}
+	return result, nil
+}
+
+// treeEntryHash returns the blob hash of a slash-separated path within tree; a
+// nil tree (e.g. a root commit's missing parent) or a missing entry is absent.
+func treeEntryHash(tree *object.Tree, path string) (plumbing.Hash, bool) {
+	if tree == nil {
+		return plumbing.ZeroHash, false
+	}
+	e, err := tree.FindEntry(path)
+	if err != nil {
+		return plumbing.ZeroHash, false
+	}
+	return e.Hash, true
 }

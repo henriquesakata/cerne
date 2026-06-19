@@ -13,10 +13,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/ask"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -104,17 +106,28 @@ func handleState(w http.ResponseWriter, repoDir string) {
 
 // featureDetailResponse is the GET /api/features/{id} payload.
 type featureDetailResponse struct {
-	Feature    store.Feature     `json:"feature"`
-	Docs       featureDocs       `json:"docs"`
-	Artifacts  []artifact        `json:"artifacts"`
-	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this feature
-	Children   []store.Feature   `json:"children"`    // features that decompose this one (epic view)
+	Feature     store.Feature     `json:"feature"`
+	Docs        featureDocs       `json:"docs"`
+	DocsUpdated featureDocTimes   `json:"docs_updated"` // per-doc last-commit time; nil when uncommitted
+	Artifacts   []artifact        `json:"artifacts"`
+	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
+	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
 }
 
 type featureDocs struct {
 	Spec   string `json:"spec"`
 	Plan   string `json:"plan"`
 	Result string `json:"result"`
+}
+
+// featureDocTimes is the last-modified time of each lifecycle document, taken
+// from the most recent backend commit that touched it (git log). A nil pointer
+// means the document has no git history yet — never committed, or the backend
+// is not a git repo — and serializes as null.
+type featureDocTimes struct {
+	Spec   *time.Time `json:"spec"`
+	Plan   *time.Time `json:"plan"`
+	Result *time.Time `json:"result"`
 }
 
 type artifact struct {
@@ -133,17 +146,40 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		return
 	}
 	docs := featureDocs{}
-	for name, dst := range map[string]*string{
-		"spec.md":   &docs.Spec,
-		"plan.md":   &docs.Plan,
-		"result.md": &docs.Result,
-	} {
-		data, err := os.ReadFile(app.FeatureDocPath(repoDir, id, name))
+	updated := featureDocTimes{}
+	docFields := []struct {
+		name    string
+		content *string
+		updated **time.Time
+	}{
+		{"spec.md", &docs.Spec, &updated.Spec},
+		{"plan.md", &docs.Plan, &updated.Plan},
+		{"result.md", &docs.Result, &updated.Result},
+	}
+	var docPaths []string
+	for _, d := range docFields {
+		data, err := os.ReadFile(app.FeatureDocPath(repoDir, id, d.name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 			return
 		}
-		*dst = string(data)
+		*d.content = string(data)
+		if len(data) > 0 {
+			docPaths = append(docPaths, "content/features/"+id+"/"+d.name)
+		}
+	}
+	// A single history walk resolves the last-updated time of every present
+	// doc. Best-effort: a non-git backend (tests) or any git error simply omits
+	// the timestamps — the document content is what the page needs.
+	if len(docPaths) > 0 {
+		if times, err := gitback.LastCommitTimes(repoDir, docPaths); err == nil {
+			for _, d := range docFields {
+				if t, ok := times["content/features/"+id+"/"+d.name]; ok {
+					t := t
+					*d.updated = &t
+				}
+			}
+		}
 	}
 	artifacts, err := listArtifacts(repoDir, id)
 	if err != nil {
@@ -164,7 +200,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	if children == nil {
 		children = []store.Feature{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, Artifacts: artifacts, InformedBy: informedBy, Children: children})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

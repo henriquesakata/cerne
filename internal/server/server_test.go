@@ -209,6 +209,39 @@ func TestFeatureDetail(t *testing.T) {
 	}
 }
 
+// docs_updated carries the per-document last-commit time: present for a
+// committed doc, absent (nil) for one that does not exist. It resolves per
+// document, so it needs a git-backed backend (newGitBackend).
+func TestFeatureDetailDocsUpdated(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real."))
+	if _, err := gitback.CommitAndPush(repoDir, "add F-0001 spec"); err != nil {
+		t.Fatalf("CommitAndPush spec: %v", err)
+	}
+
+	var got struct {
+		Docs        struct{ Spec string } `json:"docs"`
+		DocsUpdated struct {
+			Spec   *time.Time `json:"spec"`
+			Plan   *time.Time `json:"plan"`
+			Result *time.Time `json:"result"`
+		} `json:"docs_updated"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.DocsUpdated.Spec == nil {
+		t.Fatalf("docs_updated.spec = nil, want the spec's last commit time")
+	}
+	if since := time.Since(*got.DocsUpdated.Spec); since > time.Hour {
+		t.Fatalf("docs_updated.spec = %v, want a recent commit time (since = %v)", got.DocsUpdated.Spec, since)
+	}
+	if got.DocsUpdated.Plan != nil || got.DocsUpdated.Result != nil {
+		t.Fatalf("docs_updated plan/result = %v/%v, want nil (no such docs)", got.DocsUpdated.Plan, got.DocsUpdated.Result)
+	}
+}
+
 func TestFeatureDetailChildren(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	now := time.Now().UTC()

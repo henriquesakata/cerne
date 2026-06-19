@@ -33,6 +33,30 @@ const TAB_LABELS: Record<DocTab, string> = {
   result: 'Resultado',
 }
 
+// formatUpdatedAt devolve um rótulo relativo em pt-BR ("há 3 dias", "ontem") a
+// partir de um instante ISO, escolhendo a maior unidade que couber.
+function formatUpdatedAt(iso: string): string {
+  const sec = Math.round((new Date(iso).getTime() - Date.now()) / 1000)
+  const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' })
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 31536000],
+    ['month', 2592000],
+    ['week', 604800],
+    ['day', 86400],
+    ['hour', 3600],
+    ['minute', 60],
+  ]
+  for (const [unit, secs] of units) {
+    if (Math.abs(sec) >= secs) return rtf.format(Math.round(sec / secs), unit)
+  }
+  return rtf.format(sec, 'second')
+}
+
+// dateTooltip é a data/hora absoluta (pt-BR) para o title do rótulo relativo.
+function dateTooltip(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR')
+}
+
 // diagramFilename normaliza o nome digitado para slug + sufixo .excalidraw.
 function diagramFilename(input: string): string {
   const slug = input
@@ -234,6 +258,7 @@ export default function FeaturePage({ id }: { id: string }) {
               featureId={f.id}
               doc={tab}
               content={detail.docs[tab]}
+              updatedAt={detail.docs_updated[tab]}
               onSaved={load}
             />
           </section>
@@ -268,11 +293,13 @@ function DocEditor({
   featureId,
   doc,
   content,
+  updatedAt,
   onSaved,
 }: {
   featureId: string
   doc: DocTab
   content: string
+  updatedAt: string | null
   onSaved: () => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -329,6 +356,11 @@ function DocEditor({
       <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
         Editar
       </button>
+      {updatedAt && (
+        <p className="doc-updated muted" title={dateTooltip(updatedAt)}>
+          Atualizado {formatUpdatedAt(updatedAt)}
+        </p>
+      )}
       {content.trim() === '' ? (
         <p className="muted">Vazio — clique em Editar para escrever.</p>
       ) : (
