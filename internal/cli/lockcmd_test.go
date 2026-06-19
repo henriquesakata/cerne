@@ -103,6 +103,80 @@ func TestPullSelfHealsMergeDriverInWorktree(t *testing.T) {
 	}
 }
 
+// extensions.worktreeConfig is what git enables on the shared config of a repo
+// using per-worktree config (the default for this project's parallel worktrees).
+// go-git validates extensions on open and refuses that one, so it can't open the
+// repo for a config write at all — the open fails before SetConfig. The driver
+// must still register via the git-binary fallback. This is the faithful
+// end-to-end scenario; TestPullRegistersMergeDriverWithWorktreeConfigExtension
+// is the all-platforms guard for the same go-git open failure.
+func TestPullRegistersMergeDriverInWorktreeWithWorktreeConfig(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available")
+	}
+	if runtime.GOOS == "windows" {
+		// Same limitation as TestPullSelfHealsMergeDriverInWorktree: go-git keeps a
+		// handle on the worktree's gitdir within this in-process test, so t.TempDir
+		// cleanup can't unlink it on Windows. The fallback itself works there
+		// (validated manually + by the non-worktree guard below); CI (Linux) runs
+		// this one. Real usage runs 'cerne pull' as a separate, exiting process.
+		t.Skip("worktree gitdir handle blocks t.TempDir cleanup on Windows; covered on CI (Linux)")
+	}
+	projDir, _, _ := setupGitProject(t)
+	runGit(t, projDir, "config", "user.email", "t@t")
+	runGit(t, projDir, "config", "user.name", "t")
+	runGit(t, projDir, "config", "extensions.worktreeConfig", "true")
+	runGit(t, projDir, "add", ".cernerc", "docs.lock", ".gitattributes")
+	runGit(t, projDir, "commit", "-m", "base")
+	wt := filepath.Join(t.TempDir(), "wt")
+	runGit(t, projDir, "worktree", "add", "-b", "wtbranch", wt, "HEAD")
+	// Fresh clone: the local merge.* config never travels, so it starts absent.
+	runGit(t, projDir, "config", "--remove-section", "merge.cerne-lock")
+
+	if out, err := execCerne(t, "pull", "--dir", wt); err != nil {
+		t.Fatalf("pull in worktree: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(runGit(t, wt, "config", "--get", "merge.cerne-lock.driver"))
+	if got != "cerne lock merge %O %A %B" {
+		t.Fatalf("driver from worktree = %q, want it registered via the git-binary fallback", got)
+	}
+}
+
+// extensions.worktreeConfig on the repo config is the exact shared-config state a
+// worktree presents to go-git, and the precise trigger for the open failure —
+// without needing an actual worktree gitdir (which leaks a go-git handle that
+// blocks t.TempDir cleanup on Windows). So this guards the git-binary fallback on
+// every platform, including the Windows dev box where the bug surfaced.
+func TestPullRegistersMergeDriverWithWorktreeConfigExtension(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available")
+	}
+	projDir, _, _ := setupGitProject(t)
+	runGit(t, projDir, "config", "extensions.worktreeConfig", "true")
+	// Fresh clone: the local merge.* config never travels, so it starts absent.
+	runGit(t, projDir, "config", "--remove-section", "merge.cerne-lock")
+
+	// go-git can no longer open this repo for a config write — assert the trigger.
+	if _, err := git.PlainOpenWithOptions(projDir, &git.PlainOpenOptions{EnableDotGitCommonDir: true}); err == nil {
+		t.Fatal("go-git opened a repo declaring extensions.worktreeConfig; the fallback would be untested")
+	}
+
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(runGit(t, projDir, "config", "--get", "merge.cerne-lock.driver"))
+	if got != "cerne lock merge %O %A %B" {
+		t.Fatalf("driver = %q, want it registered via the git-binary fallback", got)
+	}
+	attrs, err := os.ReadFile(filepath.Join(projDir, ".gitattributes"))
+	if err != nil {
+		t.Fatalf("read .gitattributes: %v", err)
+	}
+	if !strings.Contains(string(attrs), "docs.lock merge=cerne-lock") {
+		t.Fatalf(".gitattributes = %q, want the docs.lock merge line", attrs)
+	}
+}
+
 func TestPullSelfHealsMergeDriver(t *testing.T) {
 	projDir, _, _ := setupGitProject(t)
 	// Simulate a fresh clone: .gitattributes travels (committed) but the local

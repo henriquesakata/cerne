@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -125,6 +126,7 @@ func writeLockFile(path string, l project.Lock) error {
 const (
 	lockMergeAttr   = "docs.lock merge=cerne-lock"
 	lockMergeDriver = "cerne lock merge %O %A %B"
+	lockMergeName   = "cerne docs.lock snapshot resolver"
 )
 
 // ensureLockMergeDriver wires docs.lock to the cerne-lock merge driver in
@@ -141,6 +143,19 @@ func ensureLockMergeDriver(projDir string) error {
 	if errors.Is(err, git.ErrRepositoryNotExists) {
 		return nil
 	}
+	// go-git validates extensions when opening and refuses any repo whose config
+	// declares extensions.worktreeConfig (it doesn't implement that extension).
+	// Parallel git worktrees set exactly that on the shared config, so go-git can
+	// never open them for a config write — the open fails before we reach
+	// SetConfig. Fall back to the git binary, which writes these non-worktree
+	// merge.* keys to the shared config: precisely where a merge driver must live
+	// to be visible from every worktree.
+	if errors.Is(err, git.ErrUnsupportedExtensionRepositoryFormatVersion) || errors.Is(err, git.ErrUnknownExtension) {
+		if err := ensureGitAttributes(projDir); err != nil {
+			return err
+		}
+		return registerMergeDriverViaGit(projDir)
+	}
 	if err != nil {
 		return err
 	}
@@ -152,9 +167,30 @@ func ensureLockMergeDriver(projDir string) error {
 		return err
 	}
 	sec := cfg.Raw.Section("merge").Subsection("cerne-lock")
-	sec.SetOption("name", "cerne docs.lock snapshot resolver")
+	sec.SetOption("name", lockMergeName)
 	sec.SetOption("driver", lockMergeDriver)
 	return repo.SetConfig(cfg)
+}
+
+// registerMergeDriverViaGit registers the cerne-lock merge driver with the git
+// binary. It is the fallback for repos go-git refuses to open for a config
+// write (a worktree whose shared config declares extensions.worktreeConfig).
+// git resolves the right config for these non-worktree keys — the shared one,
+// which every worktree reads — so a single registration covers all of them.
+func registerMergeDriverViaGit(projDir string) error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git binary unavailable to register the docs.lock merge driver: %w", err)
+	}
+	for _, kv := range [][2]string{
+		{"merge.cerne-lock.name", lockMergeName},
+		{"merge.cerne-lock.driver", lockMergeDriver},
+	} {
+		out, err := exec.Command("git", "-C", projDir, "config", kv[0], kv[1]).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git config %s: %w: %s", kv[0], err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
 }
 
 // ensureGitAttributes appends the docs.lock merge line to projDir/.gitattributes

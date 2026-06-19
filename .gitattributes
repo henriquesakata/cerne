@@ -1,1 +1,2 @@
 internal/importer/testdata/** text eol=lf
+docs.lock merge=cerne-lock
