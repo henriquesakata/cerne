@@ -37,6 +37,7 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0031](cases/0031_ui-live-refresh/spec.md) | UI ao vivo: a tela atualiza sozinha (SSE `GET /api/stream` + observador do HEAD + pull periódico opcional; `cerne ui --pull-interval`) | Implemented — suíte verde (513); aguardando verificação manual no navegador |
 | [0032](cases/0032_ui-multi-project/spec.md) | `cerne ui` multi-projeto: host + join por porta ocupada, rotas `/api/projects/{pid}/*`, SSE multiplexado, seletor global + badge | Done — suíte verde (520); verificado no navegador |
 | [0033](cases/0033_unify-route-tables/spec.md) | Tabela de rotas única (`dataRoutes()` + `mountDataRoutes`) reusada por `newMux`/`uimulti`/`serve`; subset do `serve` preservado por flag `remote` | Implemented — suíte verde (523); refactor sem mudança de comportamento |
+| [0034](cases/0034_remove-dead-livehub/spec.md) | Remover o caminho live single-project morto (`NewLive`/`liveHub`/`watchHead`/`handleStream`); `newMux` sem o parâmetro `hub`/stream; `pullLoop`+constantes seguem no `uimulti` | Implemented — suíte verde (518); dead-code, sem mudança de comportamento |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 
