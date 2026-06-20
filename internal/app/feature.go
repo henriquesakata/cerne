@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/plantmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -205,5 +207,28 @@ func writeSpecStub(repoDir, id, title string) error {
 		return err
 	}
 	content := "---\ncerne_id: " + id + "\n---\n\n" + spectmpl.Stub(title)
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// writePlanStub creates content/features/<id>/plan.md scaffolded from the
+// canonical plan template (plantmpl) — the execution counterpart of
+// writeSpecStub. It runs when a feature is approved (the plan phase begins), so
+// the author lands on a structured plan to fill rather than a blank file. It is
+// a no-op when a real (non-stub) plan already exists, so it never clobbers work.
+// The start gate (doccheck) treats the fresh scaffold as "plan still pending"
+// until a section is filled.
+func writePlanStub(repoDir, id, title string) error {
+	path := FeatureDocPath(repoDir, id, "plan.md")
+	data, err := os.ReadFile(path)
+	if err == nil && doccheck.HasRealContent(data) {
+		return nil // a real plan already exists — don't overwrite it
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.Stub(title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }

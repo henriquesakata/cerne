@@ -58,5 +58,9 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	// Approving a feature scaffolds its plan stub: point the author at it.
+	if action == domain.ActionApprove {
+		fmt.Fprintf(cmd.OutOrStdout(), "Próximo passo: preencha o plano em content/features/%s/plan.md (cerne plan draft %s ajuda) e rode 'cerne push' antes de 'cerne feature start'.\n", id, id)
+	}
 	return nil
 }
