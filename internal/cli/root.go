@@ -32,6 +32,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newAskCmd())
 	root.AddCommand(newSpecCmd())
 	root.AddCommand(newPlanCmd())
+	root.AddCommand(newResultCmd())
 	root.AddCommand(newUICmd())
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newSkillCmd())
