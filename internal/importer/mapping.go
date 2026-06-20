@@ -18,12 +18,17 @@ var (
 	// reADRFile matches an ADR filename: adr-NNN-kebab-title.md.
 	reADRFile = regexp.MustCompile(`^adr-(\d+)-(.+)\.md$`)
 	// reFeatureSuperseded marks a spec whose status line says the case was
-	// superseded, discontinued, absorbed or cancelled.
-	reFeatureSuperseded = regexp.MustCompile(`(?i)status[:*\s]+.*(supersed|descontinuad|absorvid|cancelad)`)
+	// superseded, discontinued, absorbed or cancelled. Anchored to the real
+	// `**Status:**` metadata line (line start, optional bold, colon) so a
+	// stray keyword in a table cell or prose never flips the state.
+	reFeatureSuperseded = regexp.MustCompile(`(?im)^\s*\**\s*status\**\s*:.*(supersed|descontinuad|absorvid|cancelad)`)
 	// reFeatureImplemented marks a spec whose status line says the case shipped.
-	reFeatureImplemented = regexp.MustCompile(`(?i)status[:*\s]+.*(done|conclu[íi]d|completo|merged|implementad)`)
-	// reDecisionSuperseded marks an ADR superseded by a newer one.
-	reDecisionSuperseded = regexp.MustCompile(`(?i)(supersed|substitu[íi]d)`)
+	reFeatureImplemented = regexp.MustCompile(`(?im)^\s*\**\s*status\**\s*:.*(done|conclu[íi]d|completo|merged|implementad)`)
+	// reDecisionSuperseded marks an ADR superseded by a newer one: either a
+	// status line carrying the keyword, or a directed "Superseded by /
+	// Substituído por" callout (e.g. the Nygard `> Superseded by adr-NNN`
+	// convention). A bare prose mention of the keyword is not enough.
+	reDecisionSuperseded = regexp.MustCompile(`(?im)^\s*>?\s*\**\s*(status\**\s*:.*?(supersed|substitu[íi]d)|(supersed|substitu[íi]d)\w*\s+(by|por)\b)`)
 )
 
 // featureState maps a case to a feature state from its spec body (first 40
