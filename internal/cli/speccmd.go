@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/llm"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -113,7 +114,9 @@ func writeSpecDraft(repoDir, id, body string) error {
 
 // BuildSpecDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
 // COMPLETE feature spec from the feature's id/title/module and the current stub
-// or spec content. The four canonical sections are required.
+// or spec content. It requests the canonical spectmpl.Sections in order and the
+// authoring rules (problem-first ordering, EARS-testable criteria, the
+// [ESCLARECER] ambiguity marker, code-grounded design).
 func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	module := f.Module
 	if module == "" {
@@ -129,8 +132,15 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Escreva uma spec COMPLETA e coerente para esta feature, em Markdown, com exatamente estas seções:\n")
-	b.WriteString("## Problema\n## Objetivo e critérios de sucesso\n## Decisões\n## Fora de escopo\n\n")
+	b.WriteString("Escreva uma spec COMPLETA e coerente para esta feature, em Markdown, com exatamente estas seções nesta ordem:\n")
+	for _, s := range spectmpl.Sections {
+		b.WriteString("## " + s + "\n")
+	}
+	b.WriteString("\nRegras de autoria:\n")
+	b.WriteString("- Abra pela Problema, ancorada em código real (arquivo.go:linha) quando possível; deixe a Verificação por último.\n")
+	b.WriteString("- Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". Invariantes estruturais como asserção direta.\n")
+	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
+	b.WriteString("- No Desenho, ancore em arquivos/pacotes reais com contratos explícitos (assinaturas, schemas); não omita o \"como\".\n\n")
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString("Responda apenas com o conteúdo da spec.\n")
 	return b.String()

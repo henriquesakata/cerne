@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -194,13 +195,15 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 	return err
 }
 
-// writeSpecStub creates content/features/<id>/spec.md with the placeholder
-// body the approve gate recognizes as "spec still pending".
+// writeSpecStub creates content/features/<id>/spec.md scaffolded from the
+// canonical spec template (spectmpl): the section skeleton with inline
+// guidance. The approve gate (doccheck) treats that scaffold as "spec still
+// pending" until the author fills a section.
 func writeSpecStub(repoDir, id, title string) error {
 	path := FeatureDocPath(repoDir, id, "spec.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := fmt.Sprintf("---\ncerne_id: %s\n---\n\n# %s\n\n> Spec pendente — escreva o problema, objetivo e critérios de aceite.\n", id, title)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + spectmpl.Stub(title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }
