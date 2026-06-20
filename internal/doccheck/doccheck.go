@@ -33,8 +33,13 @@ func FrontmatterValue(data []byte, key string) string {
 }
 
 // HasRealContent reports whether a lifecycle document carries content beyond
-// its stub: ignoring the leading frontmatter block, blank lines, the first
-// "#" heading and stub placeholder lines, at least one line remains.
+// its scaffold. Scaffold is everything cerne (or the spec template) lays down
+// for the author to fill: the leading frontmatter block, blank lines, markdown
+// headings (structure, not content), HTML-comment guidance (single- or
+// multi-line) and the legacy stub placeholder blockquotes. If any other line
+// remains, the document has real content. This lets a freshly scaffolded
+// template — section headings plus comment guidance — still read as a stub so
+// the lifecycle gates stay closed until it is filled in.
 func HasRealContent(data []byte) bool {
 	// Editors on Windows may prepend a UTF-8 BOM; without stripping it the
 	// frontmatter delimiter on line 1 would not match and a stub would
@@ -51,24 +56,42 @@ func HasRealContent(data []byte) bool {
 			}
 		}
 	}
-	headingSeen := false
+	inComment := false
 	for _, line := range lines[start:] {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
+		switch {
+		case trimmed == "":
 			continue
-		}
-		if !headingSeen && strings.HasPrefix(trimmed, "#") {
-			headingSeen = true
-			continue
-		}
-		isStub := false
-		for _, p := range stubPrefixes {
-			if strings.HasPrefix(trimmed, p) {
-				isStub = true
-				break
+		case inComment:
+			// Inside a multi-line HTML comment; it ends on the line with "-->".
+			if strings.Contains(trimmed, "-->") {
+				inComment = false
 			}
+			continue
+		case strings.HasPrefix(trimmed, "<!--"):
+			// HTML-comment guidance is scaffold; a comment that does not close
+			// on its own line opens a multi-line block.
+			if !strings.Contains(trimmed, "-->") {
+				inComment = true
+			}
+			continue
+		case strings.HasPrefix(trimmed, "#"):
+			// Markdown headings are structure, not content.
+			continue
+		case isStubLine(trimmed):
+			continue
+		default:
+			return true
 		}
-		if !isStub {
+	}
+	return false
+}
+
+// isStubLine reports whether trimmed is one of the legacy one-line stub
+// placeholders cerne used to write.
+func isStubLine(trimmed string) bool {
+	for _, p := range stubPrefixes {
+		if strings.HasPrefix(trimmed, p) {
 			return true
 		}
 	}
