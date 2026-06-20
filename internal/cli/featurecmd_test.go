@@ -73,10 +73,13 @@ func TestFeatureNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spec stub: %v", err)
 	}
-	for _, want := range []string{"cerne_id: F-0001", "# Login com Google", "> Spec pendente"} {
+	for _, want := range []string{"cerne_id: F-0001", "# Login com Google", "## Problema", "## Verificação"} {
 		if !strings.Contains(string(spec), want) {
 			t.Fatalf("spec stub missing %q:\n%s", want, spec)
 		}
+	}
+	if strings.Contains(string(spec), "> Spec pendente") {
+		t.Fatalf("spec stub still uses the legacy one-liner:\n%s", spec)
 	}
 
 	events, err := store.ReadEvents(repoDir)

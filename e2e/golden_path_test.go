@@ -104,8 +104,8 @@ func TestGoldenPath(t *testing.T) {
 		t.Fatalf("CONTEXT.md missing candidate row for F-0001:\n%s", ctx)
 	}
 	stub := mustRead(t, specPath)
-	if !strings.Contains(stub, "> Spec pendente") {
-		t.Fatalf("materialized spec is not the pending stub:\n%s", stub)
+	if !strings.Contains(stub, "## Problema") || !strings.Contains(stub, "[ESCLARECER:") {
+		t.Fatalf("materialized spec is not the scaffolded template stub:\n%s", stub)
 	}
 	assertLockParity(t, proj, origin, "pull")
 
