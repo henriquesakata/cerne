@@ -13,13 +13,15 @@ This skill is the **mechanics and lifecycle**. The *content* of each document (t
 
 ## When to use
 
-- Starting a new feature, decision (ADR), or registering an external source that informed your work.
+- **The moment you pick up a task** — register it first with `cerne feature new` so in-flight work shows on the board from the start, not after it is done. Also for new decisions (ADRs) or registering an external source that informed your work.
 - Moving a feature through its lifecycle (approve / start / complete).
 - Any moment you would otherwise hand-create a tracked "case" or "feature" doc folder — don't; use this loop.
 
 ## Feature loop
 
 cerne mints the canonical `F-NNNN` id and gates each transition on a real document.
+
+**Register at the start, not the end.** The first action when you pick up a task is step 1 below — run it *before* you start building, so the work is visible on the kanban (as a candidate) from minute one instead of an agent running in the dark. The spec/plan/result you write then carry it rightward across the board; if the work is dropped, `reject` it. Creating the feature is cheap and self-limiting — you only mint one when real work actually starts, so the board never fills with speculative ideas nobody is working on.
 
 1. **Create** — `cerne feature new "<title>" [--module <module>] [--parent F-NNNN]` → candidate.
    - `--module` assigns the subsystem when the project declares modules; omit for cross-cutting work.
@@ -99,6 +101,7 @@ It is marked external, its content is indexed (so `cerne ask` cites it), and `--
 
 ## Hard rules
 
+- **Register the task at the start.** The first action when you pick up a task is `cerne feature new "<title>"` (it lands as a candidate, visible on the kanban) — not something you do after the work is finished. Advance it as you go (spec → `approve`, plan → `start`, result → `complete`); if it is abandoned, `cerne feature reject <id> --reason "…"` so the board stays honest. Candidates left without a real spec past the grace window are flagged by `cerne lint` (`stale-candidate`).
 - **Author through cerne**, not as loose markdown folders for tracked features/decisions — loose markdown is authoring input, not authority.
 - **Never hand-edit generated outputs:** `.docs/CONTEXT.md` and the compiled wiki regenerate (`cerne pull` / `cerne compile`).
 - After a `cerne push` that changes the backend, commit the updated `docs.lock` (the code↔docs pin) alongside your code change.

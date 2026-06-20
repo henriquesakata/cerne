@@ -38,6 +38,8 @@ Index of development cases. Each case folder contains `spec.md` (intent), `plan.
 | [0032](cases/0032_ui-multi-project/spec.md) | `cerne ui` multi-projeto: host + join por porta ocupada, rotas `/api/projects/{pid}/*`, SSE multiplexado, seletor global + badge | Done — suíte verde (520); verificado no navegador |
 | [0033](cases/0033_unify-route-tables/spec.md) | Tabela de rotas única (`dataRoutes()` + `mountDataRoutes`) reusada por `newMux`/`uimulti`/`serve`; subset do `serve` preservado por flag `remote` | Implemented — suíte verde (523); refactor sem mudança de comportamento |
 | [0034](cases/0034_remove-dead-livehub/spec.md) | Remover o caminho live single-project morto (`NewLive`/`liveHub`/`watchHead`/`handleStream`); `newMux` sem o parâmetro `hub`/stream; `pullLoop`+constantes seguem no `uimulti` | Implemented — suíte verde (518); dead-code, sem mudança de comportamento |
+| [0035](cases/0035_register-task-at-start/spec.md) | Registrar a task no início (regra `cerne-authoring` + hook `SessionStart`); `candidate` como inbox de trabalho-em-voo | Implemented — suíte verde (548); registro no backend pendente |
+| [0036](cases/0036_stale-candidate-lint/spec.md) | Lint `stale-candidate`: candidata em `candidate` há >30d sem spec real (guard anti-poluição do 0035) | Implemented — suíte verde (548); registro no backend pendente |
 
 Conventions (inherited from the methodology cerne itself formalizes):
 

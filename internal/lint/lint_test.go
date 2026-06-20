@@ -280,3 +280,63 @@ func TestRunCleanBackend(t *testing.T) {
 		t.Fatalf("Run on clean backend = %+v, want no findings", got)
 	}
 }
+
+// TestStaleCandidateFindings pins the stale-candidate logic in isolation, with
+// now injected so the rule is deterministic. Only a candidate parked past the
+// threshold WITHOUT a real spec is noise: a fresh candidate is inside its grace
+// window (register-at-start), a stale one that already has a spec is just
+// waiting on approve, and a non-candidate is some other rule's concern.
+func TestStaleCandidateFindings(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	stale := now.Add(-40 * 24 * time.Hour)
+	fresh := now.Add(-5 * 24 * time.Hour)
+
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Parada sem spec", State: domain.StateCandidate, CreatedAt: stale},
+		{ID: "F-0002", Title: "Recém-criada", State: domain.StateCandidate, CreatedAt: fresh},
+		{ID: "F-0003", Title: "Parada com spec", State: domain.StateCandidate, CreatedAt: stale},
+		{ID: "F-0004", Title: "Aprovada antiga", State: domain.StateApproved, CreatedAt: stale},
+	}
+	writeDoc(t, dir, "content/features/F-0003/spec.md",
+		"---\ncerne_id: F-0003\n---\n\n# Parada com spec\n\nProblema real, objetivo e critérios de aceitação.\n")
+
+	got, err := staleCandidateFindings(dir, features, now)
+	if err != nil {
+		t.Fatalf("staleCandidateFindings: %v", err)
+	}
+	want := []Finding{
+		{Rule: RuleStaleCandidate, Entity: "F-0001",
+			Detail: "candidata há 40 dias sem spec — rejeite ou avance com uma spec"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+}
+
+// TestRunFlagsStaleCandidate proves the rule is wired into Run: an ancient
+// specless candidate surfaces exactly one stale-candidate finding (the day
+// count in the detail is relative to wall-clock now, so only Rule/Entity are
+// asserted here — the exact-detail contract lives in TestStaleCandidateFindings).
+func TestRunFlagsStaleCandidate(t *testing.T) {
+	dir := t.TempDir()
+	ancient := time.Now().UTC().Add(-365 * 24 * time.Hour)
+	f := store.Feature{ID: "F-0001", Title: "Parada", State: domain.StateCandidate, CreatedAt: ancient, UpdatedAt: ancient}
+	if err := store.SaveFeature(dir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+
+	got, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var stale []Finding
+	for _, fnd := range got {
+		if fnd.Rule == RuleStaleCandidate {
+			stale = append(stale, fnd)
+		}
+	}
+	if len(stale) != 1 || stale[0].Entity != "F-0001" {
+		t.Fatalf("stale-candidate findings = %+v, want exactly one for F-0001", stale)
+	}
+}
