@@ -53,6 +53,8 @@ func TestBodyHasGuidanceMarkers(t *testing.T) {
 		"POR QUE foi rejeitada",   // alternatives with rationale
 		"Dimensione pela decisão", // auto-sizing / zero ceremony
 		"gerido pelo cerne",       // status is data, not prose
+		"não a pergunta",          // title records the decision, not the question
+		"registro histórico",      // an accepted ADR is immutable — supersede, don't rewrite
 	}
 	for _, want := range wants {
 		if !strings.Contains(dectmpl.Body, want) {

@@ -168,7 +168,7 @@ func TestBuildDecisionDraftPrompt(t *testing.T) {
 	}
 	// The prompt teaches the shared ambiguity marker and the ADR rules:
 	// imperative decision, mandatory negatives, why-rejected alternatives.
-	for _, want := range []string{spectmpl.AmbiguityMarker, "imperativo", "negativas", "rejeitadas"} {
+	for _, want := range []string{spectmpl.AmbiguityMarker, "imperativo", "negativas", "rejeitadas", "registro histórico"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
 		}

@@ -35,12 +35,14 @@ var Sections = []string{
 // token is the same ambiguity marker the spec and plan templates use
 // (spectmpl.AmbiguityMarker) — one marker across the lifecycle, asserted by the
 // tests.
-const Body = `<!-- COMO USAR: este é o registro de uma decisão de arquitetura (ADR). Capture a decisão e suas forças e
-consequências de forma DURÁVEL — não o passo a passo de implementação (isso é o plano). Preencha cada seção e
-remova estas linhas-guia. Marque qualquer incerteza com [ESCLARECER: pergunta específica] e resolva antes de
-tratar a decisão como aceita. Dimensione pela decisão: uma escolha pequena pode ter Alternativas e
-Implementação em uma linha ("N/A") — não infle. O status (active/superseded) é dado gerido pelo cerne
-(cerne decision substituir), não prosa. -->
+const Body = `<!-- COMO USAR: este é o registro de uma decisão de arquitetura JÁ TOMADA (ADR), não uma proposta em aberto.
+Capture a decisão e suas forças e consequências de forma DURÁVEL e CONCISA — não o passo a passo de
+implementação (isso é o plano). O título registra a DECISÃO, não a pergunta (ex.: "Usar Postgres como storage
+primário", não "Qual banco usar?"). Preencha cada seção e remova estas linhas-guia. Marque qualquer incerteza
+com [ESCLARECER: pergunta específica] e resolva antes de tratar a decisão como aceita. Dimensione pela decisão:
+uma escolha pequena pode ter Alternativas e Implementação em uma linha ("N/A") — não infle. Um ADR aceito é
+registro histórico: para mudar de rumo, supersede (cerne decision substituir), não reescreva. O status
+(active/superseded) é dado gerido pelo cerne, não prosa. -->
 
 <!-- METADADOS (preencha como linha **Data:**):
 Data: AAAA-MM-DD — quando a decisão foi tomada. -->

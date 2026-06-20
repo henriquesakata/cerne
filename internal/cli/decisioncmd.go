@@ -196,7 +196,8 @@ func BuildDecisionDraftPrompt(d store.Decision, currentContent string) string {
 	b.WriteString("- Em Consequências, liste SEMPRE as negativas/trade-offs e as restrições/invariantes, não só os benefícios.\n")
 	b.WriteString("- Em Alternativas consideradas, dê 2+ opções com prós/contras e por que foram rejeitadas.\n")
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
-	b.WriteString("- Dimensione pela decisão: se trivial, Alternativas/Implementação podem ser \"N/A\". Não escreva seção de status (o cerne gerencia active/superseded).\n\n")
+	b.WriteString("- Dimensione pela decisão: se trivial, Alternativas/Implementação podem ser \"N/A\". Não escreva seção de status (o cerne gerencia active/superseded).\n")
+	b.WriteString("- O título registra a decisão tomada, não a pergunta (\"Usar X\", não \"Devemos usar X?\"). Um ADR aceito é registro histórico — para mudar de rumo, supersede; não reescreva.\n\n")
 	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). Responda apenas com o conteúdo do ADR.\n")
 	return b.String()
 }
