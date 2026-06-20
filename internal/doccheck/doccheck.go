@@ -9,7 +9,7 @@ import (
 
 // stubPrefixes are the placeholder lines cerne writes into freshly created
 // lifecycle documents; a document whose body is only these is still a stub.
-var stubPrefixes = []string{"> Spec pendente", "> Plano pendente", "> Resultado pendente"}
+var stubPrefixes = []string{"> Spec pendente", "> Plano pendente", "> Resultado pendente", "> Decisão pendente"}
 
 // FrontmatterValue returns the value of key inside the leading "---"
 // delimited frontmatter block of data; "" when the block or the key is

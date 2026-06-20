@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/dectmpl"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -104,13 +105,14 @@ func DecisionDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "decisions", id+".md")
 }
 
-// writeDecisionStub creates content/decisions/<id>.md with the placeholder ADR
-// body the author replaces with the real decision record.
+// writeDecisionStub creates content/decisions/<id>.md scaffolded from the
+// canonical ADR template (dectmpl): the section skeleton with inline guidance.
+// doccheck treats that scaffold as a stub until the author fills a section.
 func writeDecisionStub(repoDir, id, title string) error {
 	path := DecisionDocPath(repoDir, id)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := fmt.Sprintf("---\ncerne_id: %s\n---\n\n# %s\n\n> Decisão pendente — descreva contexto, decisão e consequências.\n", id, title)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + dectmpl.Stub(title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }
