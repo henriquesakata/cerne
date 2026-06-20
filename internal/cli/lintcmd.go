@@ -113,6 +113,8 @@ func taskAction(f lint.Finding) string {
 		if before, doc, found := strings.Cut(f.Detail, " sem "); found {
 			return fmt.Sprintf("escrever %s (%s)", doc, before)
 		}
+	case lint.RuleStaleCandidate:
+		return "rejeitar a candidata (cerne feature reject) ou escrever a spec e aprovar"
 	}
 	return f.Detail
 }

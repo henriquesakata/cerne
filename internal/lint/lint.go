@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
@@ -36,10 +37,11 @@ const (
 	RuleParentNotFound    = "parent-not-found"
 	RuleParentTerminal    = "parent-terminal"
 	RuleEpicOpenChildren  = "epic-open-children"
+	RuleStaleCandidate    = "stale-candidate"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleStaleCandidate}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:   0,
@@ -50,6 +52,7 @@ var ruleRank = map[string]int{
 	RuleParentNotFound:    5,
 	RuleParentTerminal:    6,
 	RuleEpicOpenChildren:  7,
+	RuleStaleCandidate:    8,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -164,6 +167,12 @@ func Run(repoDir string) ([]Finding, error) {
 	findings = append(findings, wikiSources...)
 
 	findings = append(findings, parentFindings(features)...)
+
+	stale, err := staleCandidateFindings(repoDir, features, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, stale...)
 
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
@@ -630,6 +639,48 @@ func orphanFindings(repoDir string, features []store.Feature, decisions []store.
 			rel := kind.subdir + "/" + e.Name()
 			findings = append(findings, Finding{Rule: RuleOrphanContent, File: rel, Detail: "conteúdo sem entidade: " + rel})
 		}
+	}
+	return findings, nil
+}
+
+// staleCandidateDays is how long a feature may sit in candidate without a real
+// spec before stale-candidate flags it. Long enough that register-at-start work
+// (a feature minted the moment an agent picks up a task) is never noise; short
+// enough that a candidate nobody followed through on surfaces instead of rotting
+// on the board. This is the guard for the "register the task at the start" rule:
+// it keeps the candidate inbox honest without policing fresh or progressing work.
+const staleCandidateDays = 30
+
+// staleCandidateFindings flags features parked in candidate past
+// staleCandidateDays with no real spec.md — registered work that was never
+// elaborated nor rejected. A candidate that already has a real spec is
+// progressing (it just needs `approve`) and a candidate inside its grace window
+// was likely just minted, so both stay silent; only the abandoned, specless
+// ones are reported. now is injected so the rule is deterministic under test —
+// Run passes time.Now().
+func staleCandidateFindings(repoDir string, features []store.Feature, now time.Time) ([]Finding, error) {
+	threshold := time.Duration(staleCandidateDays) * 24 * time.Hour
+	var findings []Finding
+	for _, f := range features {
+		if f.State != domain.StateCandidate {
+			continue
+		}
+		age := now.Sub(f.CreatedAt)
+		if age < threshold {
+			continue
+		}
+		real, err := isRealFile(filepath.Join(repoDir, "content", "features", f.ID, "spec.md"))
+		if err != nil {
+			return nil, err
+		}
+		if real {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleStaleCandidate,
+			Entity: f.ID,
+			Detail: fmt.Sprintf("candidata há %d dias sem spec — rejeite ou avance com uma spec", int(age.Hours()/24)),
+		})
 	}
 	return findings, nil
 }

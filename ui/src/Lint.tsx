@@ -9,6 +9,7 @@ const RULE_LABELS: Record<string, string> = {
   'orphan-content': 'Conteúdo órfão',
   'missing-gate-doc': 'Documento de gate ausente',
   'wiki-source-unknown': 'Fonte de wiki desconhecida',
+  'stale-candidate': 'Candidata parada (sem spec)',
 }
 const RULE_ORDER = [
   'ref-to-superseded',
@@ -16,6 +17,7 @@ const RULE_ORDER = [
   'orphan-content',
   'missing-gate-doc',
   'wiki-source-unknown',
+  'stale-candidate',
 ]
 
 export default function Lint() {
