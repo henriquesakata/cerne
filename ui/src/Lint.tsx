@@ -9,6 +9,9 @@ const RULE_LABELS: Record<string, string> = {
   'orphan-content': 'Conteúdo órfão',
   'missing-gate-doc': 'Documento de gate ausente',
   'wiki-source-unknown': 'Fonte de wiki desconhecida',
+  'parent-not-found': 'Épico inexistente',
+  'parent-terminal': 'Feature sob épico terminal',
+  'epic-open-children': 'Épico concluído com filhos abertos',
   'stale-candidate': 'Candidata parada (sem spec)',
 }
 const RULE_ORDER = [
@@ -17,6 +20,9 @@ const RULE_ORDER = [
   'orphan-content',
   'missing-gate-doc',
   'wiki-source-unknown',
+  'parent-not-found',
+  'parent-terminal',
+  'epic-open-children',
   'stale-candidate',
 ]
 
