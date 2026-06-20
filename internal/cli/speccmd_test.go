@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -25,10 +26,16 @@ func TestBuildSpecDraftPrompt(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	// The four canonical sections must be requested.
-	for _, want := range []string{"Problema", "Objetivo e critérios de sucesso", "Decisões", "Fora de escopo"} {
-		if !strings.Contains(prompt, want) {
+	// All canonical template sections must be requested, in spectmpl order.
+	for _, want := range spectmpl.Sections {
+		if !strings.Contains(prompt, "## "+want) {
 			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
+		}
+	}
+	// The prompt must teach the ambiguity marker and the EARS phrasing.
+	for _, want := range []string{spectmpl.AmbiguityMarker, "O SISTEMA DEVE"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
 		}
 	}
 }
