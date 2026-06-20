@@ -13,6 +13,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/plantmpl"
+	"gitlab.com/rockt/cerne/internal/restmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -230,5 +231,28 @@ func writePlanStub(repoDir, id, title string) error {
 		return err
 	}
 	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.Stub(title)
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// writeResultStub creates content/features/<id>/result.md scaffolded from the
+// canonical result template (restmpl). It runs when a feature starts development
+// (the phase where the result is authored), so the author lands on a structured
+// closeout to fill rather than a blank file — the counterpart of writePlanStub
+// at approve. It is a no-op when a real result already exists, so it never
+// clobbers work. The complete gate (doccheck) treats the fresh scaffold as
+// "result still pending" until a section is filled.
+func writeResultStub(repoDir, id, title string) error {
+	path := FeatureDocPath(repoDir, id, "result.md")
+	data, err := os.ReadFile(path)
+	if err == nil && doccheck.HasRealContent(data) {
+		return nil // a real result already exists — don't overwrite it
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + restmpl.Stub(title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }

@@ -154,6 +154,42 @@ func TestApproveScaffoldsPlanStub(t *testing.T) {
 	}
 }
 
+// TestStartScaffoldsResultStub asserts starting development scaffolds result.md
+// from the canonical result template, the author is pointed at it, yet it still
+// reads as a stub so `complete` stays gated on a real result.
+func TestStartScaffoldsResultStub(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar."))
+
+	out, err := execCerne(t, "feature", "start", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("start: %v\noutput: %s", err, out)
+	}
+	// The start output points the author at the result next step.
+	if !strings.Contains(out, "result.md") {
+		t.Fatalf("start output should hint the result next step:\n%s", out)
+	}
+	// The result was scaffolded from the canonical template...
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
+	if err != nil {
+		t.Fatalf("start should scaffold result.md: %v", err)
+	}
+	for _, want := range []string{"## Resultado", "## Aceitação", "## Aprendizados e desvios"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("scaffolded result missing section %q:\n%s", want, data)
+		}
+	}
+	// ...yet it still reads as a stub, so complete stays gated on a real result.
+	if _, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err == nil || !strings.Contains(err.Error(), "result.md") {
+		t.Fatalf("complete after start should still be gated on a real result, err = %v", err)
+	}
+}
+
 func TestTransitionFlagRules(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)

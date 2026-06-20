@@ -109,6 +109,13 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 			return out, err
 		}
 	}
+	// Starting development opens the result phase: scaffold the result stub so it
+	// is committed alongside the transition (mirrors the plan stub at approve).
+	if action == domain.ActionStart {
+		if err := writeResultStub(repoDir, id, f.Title); err != nil {
+			return out, err
+		}
+	}
 	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: %s %s", action, id)); err != nil {
 		return out, err
 	}
