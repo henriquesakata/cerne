@@ -73,7 +73,19 @@ An **epic is just a feature that has children** — the role is inferred from th
 
 ## Decisions (ADRs)
 
-Same model: `cerne decision new "<title>"` (mints `D-NNNN`, active) → `cerne pull` → author `.docs/current/decisions/D-NNNN-<slug>.md` (keep the `cerne_id` frontmatter) → `cerne push`. Supersede with `cerne decision substituir D-NNNN --by D-MMMM --reason "…"`.
+Same model: `cerne decision new "<title>"` mints `D-NNNN` (active) and scaffolds `content/decisions/D-NNNN.md` from the canonical ADR template (or run `cerne decision draft D-NNNN`). Then `cerne pull`, fill the ADR in `.docs/current/decisions/D-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`. Supersede with `cerne decision substituir D-NNNN --by D-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose in the ADR.
+
+## ADR structure (the template cerne scaffolds)
+
+cerne scaffolds `content/decisions/D-NNNN.md` from a canonical ADR template when you create a decision (the same one `cerne decision draft` asks the model to fill). It follows Michael Nygard's classic spine (Context → Decision → Consequences), extended with the alternatives and code anchors that make a record durable. **Right-size it:** a small decision can leave the last sections as one line ("N/A") — don't inflate. Sections, **in order**:
+
+1. **Contexto** — the forces and constraints in tension and the trigger (why decide now). Name the forces; ground them in real code/cases.
+2. **Decisão** — the choice stated imperatively ("Vamos X" / "Usaremos X") with the two or three reasons that won.
+3. **Consequências** — what follows: positives, **negatives/trade-offs (always list them)**, and constraints/invariants (what cannot change without revisiting).
+4. **Alternativas consideradas** — the options weighed (2+ when there is a real trade-off), each with pros/cons and **why it was rejected**.
+5. **Implementação e relações** — where the decision shows up in code (real files/modules) and the links: the features and ADRs it affects, supersedes, or that motivated it (use F-/D- ids).
+
+**Ordering is deliberate** (primacy/recency): Contexto and Decisão lead; Implementação e relações is lookup material at the end. **Status is data, not prose** — the lifecycle is owned by cerne (`cerne decision substituir`), so the template has no Status section. **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve it before treating the decision as accepted. The evidence behind this structure (Nygard's ADRs, MADR, ThoughtWorks' lightweight ADRs) is registered in the backend as external references.
 
 ## External sources (provenance)
 
