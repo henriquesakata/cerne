@@ -2,14 +2,19 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/dectmpl"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -42,7 +47,7 @@ func TestDecisionNew(t *testing.T) {
 		t.Fatalf("decision = %+v, want active titled 'Usar Postgres'", d)
 	}
 
-	// stub ADR doc with cerne_id frontmatter + pending placeholder.
+	// ADR doc with cerne_id frontmatter, scaffolded from the canonical template.
 	body, err := os.ReadFile(filepath.Join(repoDir, "content", "decisions", "D-0001.md"))
 	if err != nil {
 		t.Fatalf("read decision doc: %v", err)
@@ -50,8 +55,10 @@ func TestDecisionNew(t *testing.T) {
 	if !strings.HasPrefix(string(body), "---\ncerne_id: D-0001\n---") {
 		t.Fatalf("decision doc missing cerne_id frontmatter:\n%s", body)
 	}
-	if !strings.Contains(string(body), "> Decisão pendente") {
-		t.Fatalf("decision doc is not the pending stub:\n%s", body)
+	for _, want := range []string{"## Contexto", "## Decisão", "## Consequências"} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("decision doc not scaffolded from the template (missing %q):\n%s", want, body)
+		}
 	}
 
 	evs, err := store.ReadEvents(repoDir)
@@ -139,5 +146,103 @@ func TestDecisionSubstituirFlagRules(t *testing.T) {
 	}
 	if _, err := execCerne(t, "decision", "substituir", id, "--by", id2, "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--reason") {
 		t.Fatalf("substituir without --reason err = %v, want error mentioning --reason", err)
+	}
+}
+
+// TestBuildDecisionDraftPrompt asserts the assembled prompt carries the decision
+// id/title, requests every canonical ADR section in order, and teaches the ADR
+// authoring rules.
+func TestBuildDecisionDraftPrompt(t *testing.T) {
+	d := store.Decision{ID: "D-0007", Title: "Adotar micro-frontends", State: domain.DecisionActive}
+	prompt := BuildDecisionDraftPrompt(d, "# Adotar micro-frontends\n\n> Decisão pendente")
+
+	for _, want := range []string{"D-0007", "Adotar micro-frontends"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, want := range dectmpl.Sections {
+		if !strings.Contains(prompt, "## "+want) {
+			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
+		}
+	}
+	// The prompt teaches the shared ambiguity marker and the ADR rules:
+	// imperative decision, mandatory negatives, why-rejected alternatives.
+	for _, want := range []string{spectmpl.AmbiguityMarker, "imperativo", "negativas", "rejeitadas", "registro histórico"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestDecisionDraftByoKeyWritesAndCommits drives `cerne decision draft` in
+// byo-key mode: the provider's body is written to the backend ADR with
+// cerne-stamped cerne_id frontmatter and origin advances.
+func TestDecisionDraftByoKeyWritesAndCommits(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "decision", "new", "Usar Postgres", "--dir", projDir); err != nil {
+		t.Fatalf("decision new: %v\n%s", err, out)
+	}
+
+	var gotPrompt string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotPrompt = string(raw)
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Contexto\n\nForças em tensão.\n\n## Decisão\n\nUsaremos Postgres."}]}`)
+	}))
+	defer srv.Close()
+
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+
+	headBefore, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA before: %v", err)
+	}
+
+	out, err := execCerne(t, "decision", "draft", "D-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("decision draft byo-key: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(gotPrompt, "Usar Postgres") || !strings.Contains(gotPrompt, "D-0001") {
+		t.Fatalf("provider prompt missing the decision id/title:\n%s", gotPrompt)
+	}
+
+	adr, err := os.ReadFile(filepath.Join(repoDir, "content", "decisions", "D-0001.md"))
+	if err != nil {
+		t.Fatalf("read drafted ADR: %v", err)
+	}
+	if !strings.Contains(string(adr), "Usaremos Postgres.") {
+		t.Fatalf("ADR missing the synthesized body:\n%s", adr)
+	}
+	if !strings.HasPrefix(string(adr), "---\ncerne_id: D-0001\n---\n") {
+		t.Fatalf("ADR missing cerne_id frontmatter stamped by cerne:\n%s", adr)
+	}
+
+	headAfter, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA after: %v", err)
+	}
+	if headAfter == headBefore {
+		t.Fatalf("origin HEAD did not advance after decision draft")
+	}
+	if !strings.Contains(out, "rascunhado e enviado") {
+		t.Fatalf("decision draft output missing confirmation:\n%s", out)
+	}
+}
+
+// TestDecisionDraftUnknownDecision errors when the id does not exist.
+func TestDecisionDraftUnknownDecision(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, "http://127.0.0.1:0", "TEST_BYO_KEY")
+
+	_, err := execCerne(t, "decision", "draft", "D-9999", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("decision draft on unknown decision succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "D-9999") {
+		t.Fatalf("error %q does not name the missing decision", err)
 	}
 }

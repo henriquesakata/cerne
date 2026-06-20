@@ -40,8 +40,10 @@ func TestDecisionGoldenPath(t *testing.T) {
 	t.Log("stage 3: pull — ADR materialized as a stub, listed in CONTEXT.md")
 	mustCerne(t, "pull", "--dir", proj)
 	stub := mustRead(t, adrPath)
-	if !strings.Contains(stub, "> Decisão pendente") {
-		t.Fatalf("materialized ADR is not the pending stub:\n%s", stub)
+	for _, want := range []string{"## Contexto", "## Decisão", "## Consequências"} {
+		if !strings.Contains(stub, want) {
+			t.Fatalf("materialized ADR not scaffolded from the template (missing %q):\n%s", want, stub)
+		}
 	}
 	ctx := mustRead(t, ctxPath)
 	if !strings.Contains(ctx, "D-0001 — ADR A") {
