@@ -27,7 +27,7 @@ cerne mints the canonical `F-NNNN` id and gates each transition on a real docume
 2. **Spec** — `cerne pull`, author `.docs/current/features/F-NNNN-<slug>/spec.md` (keep the `cerne_id` frontmatter), `cerne push`, then `cerne feature approve F-NNNN` (gate: a real spec, not the stub).
 3. **Plan** — `cerne feature approve` scaffolds `plan.md` from a canonical template (or run `cerne plan draft F-NNNN`); fill it in, `cerne push`, then `cerne feature start F-NNNN` (gate: a real plan, not the stub).
 4. **Implement** — build it per your project's stack and conventions; add tests; review.
-5. **Result** — author `result.md` next to the spec, `cerne push`, then `cerne feature complete F-NNNN` (gate: a real result). No manual "Done" status, no index edits — `cerne feature complete` is the source of truth.
+5. **Result** — `cerne feature start` scaffolds `result.md` from a canonical template (or run `cerne result draft F-NNNN`); fill it as you finish, `cerne push`, then `cerne feature complete F-NNNN` (gate: a real result, not the stub). No manual "Done" status, no index edits — `cerne feature complete` is the source of truth.
 
 Terminal transitions when work is dropped or replaced: `cerne feature reject F-NNNN --reason "…"`; `cerne feature substituir F-NNNN --by F-MMMM --reason "…"`.
 
@@ -60,6 +60,18 @@ cerne scaffolds `plan.md` from a canonical template when you **approve** a featu
 6. **Definição de pronto** — a **binary** checklist (each item MET/UNMET with `file:line` evidence, not "looks done"): every spec criterion has both an implementation and a test that proves it, tracked by number; full suite green; result.md written. It is the `cerne feature complete` gate.
 
 **Ordering is deliberate, not cosmetic.** Estratégia and the Sequência de tarefas sit at the top and the Definição de pronto at the end, so the most decision-bearing, executable content and the exit gate land where long-context models attend best (primacy/recency). **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve every marker before `cerne feature start`. The evidence behind this structure (context engineering / lost-in-the-middle, plan-and-solve decomposition, spec-driven plan→tasks, agentic-coding best practices) is registered in the backend as external references.
+
+## Result structure (the template cerne scaffolds)
+
+cerne scaffolds `result.md` from a canonical template when you **start** a feature (the same one `cerne result draft` asks the model to fill, with the spec and plan as context). The result **closes the loop**: the spec sets the acceptance criteria, the plan defines done, and the result **verifies done with evidence**. Record what shipped, not what was planned; **show evidence, never assertion**. **Right-size it** — a small delivery has short sections. Sections, **in order**:
+
+1. **Resultado** — what shipped and the state (delivered / partial), in 1-2 sentences. The bottom line first.
+2. **Aceitação** — each numbered spec criterion → **MET/UNMET (ATENDIDO/PENDENTE)** with **evidence** (test name, `file:line`, numbers). Binary and 1:1 with the spec — no "looks done".
+3. **O que mudou** — the concrete changes from the reader's perspective: files/modules created and edited, new commands, observable behaviour.
+4. **Débitos e follow-ups** — what's incomplete or deferred, as concrete work (a new feature/case), not an orphan TODO.
+5. **Aprendizados e desvios** — what you learned and any intentional deviations from the spec/plan (what changed and why). Concise; "N/A" if nothing notable.
+
+**Ordering is deliberate** (primacy/recency): Resultado and Aceitação lead — the outcome and its proof — and the softer learnings sit last. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Definition of Done, show-evidence-not-assertion, binary acceptance verification, Keep a Changelog) is registered in the backend as external references.
 
 ## Epics (large work, decomposed)
 
