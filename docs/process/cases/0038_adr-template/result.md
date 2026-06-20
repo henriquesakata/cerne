@@ -14,7 +14,7 @@ tags: #result #cerne #cli #dectmpl #docs
 
 ## Como foi embasado
 
-Análise dos **46 ADRs do hub** (Nygard + MADR + custom; lacunas: negativas ausentes ~20%, alternativas finas, sem backlinks de supersessão) + pesquisa em fontes confiáveis, registradas como referências `--informs` esta feature: Michael Nygard (Documenting Architecture Decisions, 2011), MADR, ThoughtWorks Technology Radar (Lightweight ADRs — Adopt), e o overview adr.github.io. A skill tlc-spec-driven (já R-0014) também informa pela fase Design.
+Análise dos **46 ADRs do hub** (Nygard + MADR + custom; lacunas: negativas ausentes ~20%, alternativas finas, sem backlinks de supersessão) + pesquisa em fontes confiáveis, registradas como referências `--informs` esta feature: Michael Nygard (Documenting Architecture Decisions, 2011), MADR, ThoughtWorks Technology Radar (Lightweight ADRs — Adopt), o overview adr.github.io, e a skill create-adr (TLC: ADR vs RFC, título-como-decisão, imutabilidade/supersede, concisão 200–500 palavras). A skill tlc-spec-driven (já R-0014) também informa pela fase Design.
 
 ## Números de aceitação
 
