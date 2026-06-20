@@ -122,6 +122,38 @@ func TestTransitionFullLifecycle(t *testing.T) {
 	}
 }
 
+// TestApproveScaffoldsPlanStub asserts approving a feature scaffolds plan.md
+// from the canonical plan template, the author is pointed at it, yet it still
+// reads as a stub so `start` stays gated on a real plan.
+func TestApproveScaffoldsPlanStub(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+
+	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("approve: %v\noutput: %s", err, out)
+	}
+	// The approve output points the author at the plan next step.
+	if !strings.Contains(out, "plan.md") {
+		t.Fatalf("approve output should hint the plan next step:\n%s", out)
+	}
+	// The plan was scaffolded from the canonical template...
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "plan.md"))
+	if err != nil {
+		t.Fatalf("approve should scaffold plan.md: %v", err)
+	}
+	for _, want := range []string{"## Estratégia", "## Sequência de tarefas", "## Definição de pronto"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("scaffolded plan missing section %q:\n%s", want, data)
+		}
+	}
+	// ...yet it still reads as a stub, so start stays gated on a real plan.
+	if _, err := execCerne(t, "feature", "start", id, "--dir", projDir); err == nil || !strings.Contains(err.Error(), "plan.md") {
+		t.Fatalf("start after approve should still be gated on a real plan, err = %v", err)
+	}
+}
+
 func TestTransitionFlagRules(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)

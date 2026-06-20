@@ -101,6 +101,14 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
 		return out, err
 	}
+	// Approving a candidate opens the plan phase: scaffold the plan stub from the
+	// canonical template so it is committed alongside the approval (mirrors the
+	// spec stub written at create time). No-op if a real plan already exists.
+	if action == domain.ActionApprove {
+		if err := writePlanStub(repoDir, id, f.Title); err != nil {
+			return out, err
+		}
+	}
 	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: %s %s", action, id)); err != nil {
 		return out, err
 	}
