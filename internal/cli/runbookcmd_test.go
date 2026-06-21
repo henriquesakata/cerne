@@ -197,6 +197,92 @@ func TestRunbookDraftByoKeyWritesAndCommits(t *testing.T) {
 	}
 }
 
+// plantRunbookRef writes a reference entity + its content doc carrying the given
+// imported_from directly into the backend clone, as `cerne import` would have left
+// a docs/runbooks doc before the runbook entity existed.
+func plantRunbookRef(t *testing.T, repoDir, id, title, importedFrom string) {
+	t.Helper()
+	if err := store.SaveReference(repoDir, store.Reference{ID: id, Title: title, State: domain.ReferenceCurrent}); err != nil {
+		t.Fatalf("SaveReference %s: %v", id, err)
+	}
+	doc := "---\ncerne_id: " + id + "\nimported_from: " + importedFrom + "\n---\n\n# " + title + "\n\nProcedure.\n"
+	p := filepath.Join(repoDir, "content", "references", id+".md")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunbookMigrateDryRun(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	plantRunbookRef(t, repoDir, "R-0001", "Deploy", "docs/runbooks/deploy.md")
+
+	headBefore, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA before: %v", err)
+	}
+	out, err := execCerne(t, "runbook", "migrate", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("migrate dry-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "R-0001") || !strings.Contains(out, "--yes") {
+		t.Fatalf("dry-run should list R-0001 and mention --yes:\n%s", out)
+	}
+	// dry-run writes nothing and pushes nothing
+	if _, err := store.LoadReference(repoDir, "R-0001"); err != nil {
+		t.Fatalf("dry-run removed the reference: %v", err)
+	}
+	headAfter, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA after: %v", err)
+	}
+	if headAfter != headBefore {
+		t.Fatalf("dry-run advanced origin HEAD")
+	}
+}
+
+func TestRunbookMigrateYes(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	plantRunbookRef(t, repoDir, "R-0001", "Deploy", "docs/runbooks/deploy.md")
+	plantRunbookRef(t, repoDir, "R-0002", "Smoke", "docs/runbooks/smoke.md")
+
+	headBefore, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA before: %v", err)
+	}
+	out, err := execCerne(t, "runbook", "migrate", "--yes", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("migrate --yes: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "R-0001 → RB-0001") {
+		t.Fatalf("output missing migration line:\n%s", out)
+	}
+	// runbooks created, refs gone
+	if _, err := store.LoadRunbook(repoDir, "RB-0001"); err != nil {
+		t.Fatalf("RB-0001 not created: %v", err)
+	}
+	if _, err := store.LoadReference(repoDir, "R-0001"); err == nil {
+		t.Fatalf("R-0001 still present after migrate")
+	}
+	// committed + pushed: origin HEAD advanced and the lock pins it
+	headAfter, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA after: %v", err)
+	}
+	if headAfter == headBefore {
+		t.Fatalf("origin HEAD did not advance after migrate --yes")
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if lock.Snapshot != headAfter {
+		t.Fatalf("lock.Snapshot = %s, want origin HEAD %s", lock.Snapshot, headAfter)
+	}
+}
+
 func TestRunbookDraftUnknownRunbook(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	t.Setenv("TEST_BYO_KEY", "sk-byo")

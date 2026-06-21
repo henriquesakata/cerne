@@ -154,6 +154,13 @@ func LoadAllReferences(backendDir string) ([]Reference, error) {
 	return loadAllEntities[Reference](backendDir, referencesSubdir)
 }
 
+// DeleteReference removes the reference entity at entities/references/<id>.json.
+// Used by the runbook migration, which reclassifies a reference imported from
+// docs/runbooks into a runbook. ErrNotFound when the file is missing.
+func DeleteReference(backendDir, id string) error {
+	return deleteEntity(backendDir, referencesSubdir, id)
+}
+
 // SaveHistorical writes the historical entity to entities/historicals/<ID>.json.
 func SaveHistorical(backendDir string, h Historical) error {
 	return saveEntity(backendDir, historicalsSubdir, h.ID, h)
@@ -172,6 +179,15 @@ func LoadAllHistoricals(backendDir string) ([]Historical, error) {
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.
 func saveEntity(backendDir, subdir, id string, e any) error {
 	return writeJSONFile(filepath.Join(backendDir, filepath.FromSlash(subdir)), id+".json", e)
+}
+
+// deleteEntity removes <backendDir>/<subdir>/<id>.json; ErrNotFound when absent.
+func deleteEntity(backendDir, subdir, id string) error {
+	err := os.Remove(filepath.Join(backendDir, filepath.FromSlash(subdir), id+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return err
 }
 
 // writeJSONFile writes e as pretty-printed JSON (2-space indent, trailing
