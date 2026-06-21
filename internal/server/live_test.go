@@ -16,6 +16,13 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
+// broadcastWait bounds how long a test blocks for an SSE/registry broadcast.
+// A healthy path delivers the event in milliseconds, so this ceiling only ever
+// caps the failure path. It is set generously because the shared GitLab CI
+// runner can stall a commit+push+poll cycle well past a few seconds under load;
+// a tight deadline turned that scheduling jitter into a flaky failure.
+const broadcastWait = 20 * time.Second
+
 // newGitBackendNoClean mirrors newGitBackend but manages its own temp dir with
 // a best-effort RemoveAll. Tests that drive watchHeadMulti/pullLoop in
 // goroutines keep the go-git clone open; on Windows, t.TempDir's strict cleanup
@@ -84,7 +91,7 @@ func waitEvent(t *testing.T, events <-chan string) string {
 	select {
 	case e := <-events:
 		return e
-	case <-time.After(3 * time.Second):
+	case <-time.After(broadcastWait):
 		t.Fatal("timed out waiting for SSE event")
 		return ""
 	}
@@ -125,7 +132,7 @@ func TestPullLoopAdvancesHeadFromRemote(t *testing.T) {
 		if ev.kind != "change" || ev.pid != "proj-a" || ev.sha != sha {
 			t.Fatalf("change event = %+v, want kind=change pid=proj-a sha=%q", ev, sha)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(broadcastWait):
 		t.Fatal("pull loop did not bring the remote commit to the dashboard")
 	}
 }
