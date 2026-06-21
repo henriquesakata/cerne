@@ -154,6 +154,10 @@ func TestRunFindings(t *testing.T) {
 			Detail: "feature approved sem spec.md real"},
 		{Rule: RuleMissingGateDoc, Entity: "F-0005", File: "",
 			Detail: "feature implemented sem result.md real"},
+		{Rule: RuleIncompleteDoc, File: "content/decisions/D-0001.md",
+			Detail: "content/decisions/D-0001.md: faltam as seções do template: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações"},
+		{Rule: RuleIncompleteDoc, File: "content/features/F-0003/spec.md",
+			Detail: "content/features/F-0003/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
@@ -254,6 +258,12 @@ func TestRunImportedFromNeedles(t *testing.T) {
 			Detail: `menciona adr-045 (D-0045 "Identity como biblioteca") que está substituída — use D-0046`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
 			Detail: `menciona case 0090 (F-0090 "Agente autônomo") que está substituída — use F-0091`},
+		{Rule: RuleIncompleteDoc, File: "content/features/F-0091/spec.md",
+			Detail: "content/features/F-0091/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+		{Rule: RuleIncompleteDoc, File: "content/features/F-0092/spec.md",
+			Detail: "content/features/F-0092/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+		{Rule: RuleIncompleteDoc, File: "content/features/F-0093/spec.md",
+			Detail: "content/features/F-0093/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)

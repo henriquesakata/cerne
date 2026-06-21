@@ -76,8 +76,8 @@ func TestLintFindings(t *testing.T) {
 	if err == nil {
 		t.Fatalf("lint with findings returned nil error, want exit error\noutput: %s", out)
 	}
-	if err.Error() != "6 problema(s) encontrado(s)" {
-		t.Fatalf("lint error = %q, want %q", err.Error(), "6 problema(s) encontrado(s)")
+	if err.Error() != "8 problema(s) encontrado(s)" {
+		t.Fatalf("lint error = %q, want %q", err.Error(), "8 problema(s) encontrado(s)")
 	}
 
 	// Groups in fixed rule order, each line "  <loc> — <detail>".
@@ -92,7 +92,10 @@ func TestLintFindings(t *testing.T) {
 		"MISSING-GATE-DOC (2)\n" +
 			"  F-0004 — feature approved sem spec.md real\n" +
 			"  F-0005 — feature implemented sem result.md real\n",
-		"Total: 6 problema(s).\n",
+		"INCOMPLETE-DOC (2)\n" +
+			"  content/decisions/D-0001.md — content/decisions/D-0001.md: faltam as seções do template: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações\n" +
+			"  content/features/F-0003/spec.md — content/features/F-0003/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo\n",
+		"Total: 8 problema(s).\n",
 	}
 	prev := -1
 	for _, b := range blocks {

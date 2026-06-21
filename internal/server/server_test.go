@@ -579,9 +579,10 @@ func TestLintEndpoint(t *testing.T) {
 
 func TestLintEndpointClean(t *testing.T) {
 	repoDir, projDir := newBackend(t)
-	// A candidate with a real spec leaves nothing stale.
+	// A candidate with a real, template-complete spec leaves nothing stale or incomplete.
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
-	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real."))
+	writeDoc(t, repoDir, "F-0001", "spec.md",
+		"---\ncerne_id: F-0001\n---\n\n# Feature A\n\n## Problema\n\nReal.\n\n## Objetivo e critérios de aceitação\n\n1. Critério.\n\n## Decisões do design\n\nN/A\n\n## Desenho\n\nReal.\n\n## Verificação\n\nReal.\n\n## Fora de escopo\n\nN/A\n")
 
 	var got struct {
 		Findings []struct {
