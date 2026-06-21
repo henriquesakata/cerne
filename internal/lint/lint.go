@@ -118,16 +118,20 @@ func Run(repoDir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
+	runbooks, err := store.LoadAllRunbooks(repoDir)
+	if err != nil {
+		return nil, err
+	}
 	historicals, err := store.LoadAllHistoricals(repoDir)
 	if err != nil {
 		return nil, err
 	}
 
-	needles, err := buildNeedles(repoDir, features, decisions, references, historicals)
+	needles, err := buildNeedles(repoDir, features, decisions, references, runbooks, historicals)
 	if err != nil {
 		return nil, err
 	}
-	docs, err := scannedDocs(repoDir, features, decisions, references)
+	docs, err := scannedDocs(repoDir, features, decisions, references, runbooks)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +152,7 @@ func Run(repoDir string) ([]Finding, error) {
 		findings = append(findings, linkFindings(repoDir, d, text)...)
 	}
 
-	orphans, err := orphanFindings(repoDir, features, decisions, references)
+	orphans, err := orphanFindings(repoDir, features, decisions, references, runbooks)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +264,7 @@ func parentFindings(features []store.Feature) []Finding {
 // derived from the imported_from frontmatter of the entity's content doc (the
 // spec for features), when present; for historical entities the declared
 // aliases play that role.
-func buildNeedles(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, historicals []store.Historical) ([]needle, error) {
+func buildNeedles(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, runbooks []store.Runbook, historicals []store.Historical) ([]needle, error) {
 	var needles []needle
 	for _, f := range features {
 		if f.State != domain.StateSuperseded && f.State != domain.StateRejected {
@@ -294,6 +298,17 @@ func buildNeedles(repoDir string, features []store.Feature, decisions []store.De
 		n := needle{id: r.ID, title: r.Title, state: string(r.State), rxID: wordRx(r.ID)}
 		var err error
 		if n.imported, err = importedNeedles(repoDir, "content/references/"+r.ID+".md"); err != nil {
+			return nil, err
+		}
+		needles = append(needles, n)
+	}
+	for _, rb := range runbooks {
+		if rb.State != domain.RunbookSuperseded {
+			continue
+		}
+		n := needle{id: rb.ID, title: rb.Title, state: string(rb.State), use: rb.SupersededBy, rxID: wordRx(rb.ID)}
+		var err error
+		if n.imported, err = importedNeedles(repoDir, "content/runbooks/"+rb.ID+".md"); err != nil {
 			return nil, err
 		}
 		needles = append(needles, n)
@@ -453,7 +468,7 @@ func wikiSourceFindings(repoDir string, features []store.Feature, decisions []st
 // content/features/<ID>/ for candidate/approved/in_development features,
 // plus content/decisions/<ID>.md for active decisions and
 // content/references/<ID>.md for current references, when present.
-func scannedDocs(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]scannedDoc, error) {
+func scannedDocs(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, runbooks []store.Runbook) ([]scannedDoc, error) {
 	var docs []scannedDoc
 	for _, f := range features {
 		if !liveFeatureStates[f.State] {
@@ -497,6 +512,14 @@ func scannedDocs(repoDir string, features []store.Feature, decisions []store.Dec
 			continue
 		}
 		if err := appendIfPresent(r.ID, "content/references/"+r.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
+	for _, rb := range runbooks {
+		if rb.State != domain.RunbookActive {
+			continue
+		}
+		if err := appendIfPresent(rb.ID, "content/runbooks/"+rb.ID+".md"); err != nil {
 			return nil, err
 		}
 	}
@@ -574,7 +597,7 @@ func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
 // every file under content/features/<ID>/ for an unknown <ID>, and every
 // content/decisions/<ID>.md / content/references/<ID>.md (extension
 // stripped) for an unknown <ID>.
-func orphanFindings(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]Finding, error) {
+func orphanFindings(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, runbooks []store.Runbook) ([]Finding, error) {
 	featureIDs := make(map[string]bool, len(features))
 	for _, f := range features {
 		featureIDs[f.ID] = true
@@ -618,11 +641,16 @@ func orphanFindings(repoDir string, features []store.Feature, decisions []store.
 	for _, r := range references {
 		referenceIDs[r.ID] = true
 	}
+	runbookIDs := make(map[string]bool, len(runbooks))
+	for _, rb := range runbooks {
+		runbookIDs[rb.ID] = true
+	}
 	for _, kind := range []struct {
 		subdir string
 		ids    map[string]bool
 	}{
 		{"content/decisions", decisionIDs},
+		{"content/runbooks", runbookIDs},
 		{"content/references", referenceIDs},
 	} {
 		entries, err := os.ReadDir(filepath.Join(repoDir, filepath.FromSlash(kind.subdir)))
