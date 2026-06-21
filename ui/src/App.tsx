@@ -4,6 +4,7 @@ import FeaturePage from './FeaturePage'
 import Nav from './Nav'
 import Decisions, { DecisionDetail } from './Decisions'
 import References, { ReferenceDetail } from './References'
+import Runbooks, { RunbookDetail } from './Runbooks'
 import Search from './Search'
 import Ask from './Ask'
 import Wiki, { WikiPageView } from './Wiki'
@@ -46,10 +47,13 @@ function Routed({ hash }: { hash: string }) {
   if (decision) return <DecisionDetail key={decision[1]} id={decodeURIComponent(decision[1])} />
   const reference = /^#\/r\/(.+)$/.exec(hash)
   if (reference) return <ReferenceDetail key={reference[1]} id={decodeURIComponent(reference[1])} />
+  const runbook = /^#\/rb\/(.+)$/.exec(hash)
+  if (runbook) return <RunbookDetail key={runbook[1]} id={decodeURIComponent(runbook[1])} />
   const wikiPage = /^#\/wiki\/(.+)$/.exec(hash)
   if (wikiPage) return <WikiPageView key={wikiPage[1]} rel={decodeURIComponent(wikiPage[1])} />
   if (hash === '#/decisions') return <Decisions />
   if (hash === '#/references') return <References />
+  if (hash === '#/runbooks') return <Runbooks />
   if (hash === '#/wiki') return <Wiki />
   if (hash === '#/graph')
     return (

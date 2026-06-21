@@ -339,6 +339,61 @@ func TestDecisionDetailNotFound(t *testing.T) {
 	}
 }
 
+func TestRunbookDetail(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveRunbook(repoDir, store.Runbook{ID: "RB-0001", Title: "Recuperar dev env", State: domain.RunbookActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveRunbook: %v", err)
+	}
+	doc := realDoc("RB-0001", "Quando usar e procedimento.")
+	writeContentDoc(t, repoDir, "runbooks", "RB-0001", doc)
+
+	var got struct {
+		Runbook store.Runbook `json:"runbook"`
+		Doc     string        `json:"doc"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/runbooks/RB-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Runbook.ID != "RB-0001" || got.Runbook.State != domain.RunbookActive {
+		t.Fatalf("runbook = %+v, want active RB-0001", got.Runbook)
+	}
+	if got.Doc != doc {
+		t.Fatalf("doc = %q, want the runbook content markdown", got.Doc)
+	}
+}
+
+func TestRunbookDetailNotFound(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/runbooks/RB-9999", "", &got)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] != "runbook não encontrado" {
+		t.Fatalf("error = %q, want %q", got["error"], "runbook não encontrado")
+	}
+}
+
+func TestStateEndpointIncludesRunbooks(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveRunbook(repoDir, store.Runbook{ID: "RB-0001", Title: "Deploy", State: domain.RunbookActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveRunbook: %v", err)
+	}
+	var got struct {
+		Runbooks []store.Runbook `json:"runbooks"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Runbooks) != 1 || got.Runbooks[0].ID != "RB-0001" {
+		t.Fatalf("state runbooks = %+v, want [RB-0001]", got.Runbooks)
+	}
+}
+
 func TestReferenceDetail(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	now := time.Now().UTC()

@@ -20,8 +20,8 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
-	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/ui"
@@ -70,6 +70,7 @@ type stateResponse struct {
 	Features   []store.Feature   `json:"features"`
 	Decisions  []store.Decision  `json:"decisions"`
 	References []store.Reference `json:"references"`
+	Runbooks   []store.Runbook   `json:"runbooks"`
 }
 
 func handleState(w http.ResponseWriter, repoDir string) {
@@ -93,6 +94,11 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	runbooks, err := store.LoadAllRunbooks(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
 	if proj.Modules == nil {
 		proj.Modules = []string{} // contract: modules is always a list
 	}
@@ -101,6 +107,7 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		Features:   features,
 		Decisions:  decisions,
 		References: references,
+		Runbooks:   runbooks,
 	})
 }
 
@@ -294,8 +301,32 @@ func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
 	writeJSON(w, http.StatusOK, referenceDetailResponse{Reference: ref, Doc: doc})
 }
 
-// readContentDoc reads content/<kind>/<id>.md (decisions, references); ""
-// when the file is absent, mirroring how the materializer and index treat a
+// runbookDetailResponse is the GET /api/runbooks/{id} payload.
+type runbookDetailResponse struct {
+	Runbook store.Runbook `json:"runbook"`
+	Doc     string        `json:"doc"`
+}
+
+func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
+	rb, err := store.LoadRunbook(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("runbook não encontrado"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	doc, err := readContentDoc(repoDir, "runbooks", id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc})
+}
+
+// readContentDoc reads content/<kind>/<id>.md (decisions, references, runbooks);
+// "" when the file is absent, mirroring how the materializer and index treat a
 // missing content document.
 func readContentDoc(repoDir, kind, id string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))

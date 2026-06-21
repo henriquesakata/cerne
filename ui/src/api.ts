@@ -49,6 +49,16 @@ export type Reference = {
   updated_at: string
 }
 
+export type Runbook = {
+  id: string
+  title: string
+  state: string
+  superseded_by?: string
+  reason?: string
+  created_at: string
+  updated_at: string
+}
+
 export type Project = {
   name: string
   modules: string[]
@@ -59,6 +69,7 @@ export type StateResponse = {
   features: Feature[]
   decisions: Decision[]
   references: Reference[]
+  runbooks: Runbook[]
 }
 
 export type FeatureDocs = {
@@ -244,6 +255,7 @@ export async function postTransition(
 
 export type DecisionDetail = { decision: Decision; doc: string; informed_by: Reference[] }
 export type ReferenceDetail = { reference: Reference; doc: string }
+export type RunbookDetail = { runbook: Runbook; doc: string }
 
 export async function fetchDecision(id: string): Promise<DecisionDetail> {
   const r = await fetch(`${base()}/decisions/${encodeURIComponent(id)}`)
@@ -255,6 +267,12 @@ export async function fetchReference(id: string): Promise<ReferenceDetail> {
   const r = await fetch(`${base()}/references/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as ReferenceDetail
+}
+
+export async function fetchRunbook(id: string): Promise<RunbookDetail> {
+  const r = await fetch(`${base()}/runbooks/${encodeURIComponent(id)}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as RunbookDetail
 }
 
 // SearchHit espelha o DTO snake_case de internal/server (projeção de index.Result).
