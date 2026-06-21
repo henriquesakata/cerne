@@ -44,6 +44,18 @@ type Decision struct {
 	UpdatedAt    time.Time            `json:"updated_at"`
 }
 
+// Runbook is the persisted form of a runbook entity: an actionable operational
+// procedure (deploy, smoke, recovery, migration, setup).
+type Runbook struct {
+	ID           string              `json:"id"`
+	Title        string              `json:"title"`
+	State        domain.RunbookState `json:"state"`
+	SupersededBy string              `json:"superseded_by,omitempty"`
+	Reason       string              `json:"reason,omitempty"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+}
+
 // Reference is the persisted form of a reference entity. External references
 // (registered, not imported) carry the source URL, the External marker, and an
 // Informs backlink to the features/decisions the source motivated.
@@ -78,6 +90,7 @@ const (
 	featuresSubdir    = "entities/features"
 	decisionsSubdir   = "entities/decisions"
 	referencesSubdir  = "entities/references"
+	runbooksSubdir    = "entities/runbooks"
 	historicalsSubdir = "entities/historicals"
 )
 
@@ -109,6 +122,21 @@ func LoadDecision(backendDir, id string) (Decision, error) {
 // LoadAllDecisions returns all decisions sorted by ID ascending.
 func LoadAllDecisions(backendDir string) ([]Decision, error) {
 	return loadAllEntities[Decision](backendDir, decisionsSubdir)
+}
+
+// SaveRunbook writes the runbook to entities/runbooks/<ID>.json.
+func SaveRunbook(backendDir string, rb Runbook) error {
+	return saveEntity(backendDir, runbooksSubdir, rb.ID, rb)
+}
+
+// LoadRunbook reads one runbook by id; ErrNotFound when the file is missing.
+func LoadRunbook(backendDir, id string) (Runbook, error) {
+	return loadEntity[Runbook](backendDir, runbooksSubdir, id)
+}
+
+// LoadAllRunbooks returns all runbooks sorted by ID ascending.
+func LoadAllRunbooks(backendDir string) ([]Runbook, error) {
+	return loadAllEntities[Runbook](backendDir, runbooksSubdir)
 }
 
 // SaveReference writes the reference to entities/references/<ID>.json.

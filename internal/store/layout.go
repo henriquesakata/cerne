@@ -30,21 +30,24 @@ var layoutSubdirsInit = []string{
 	featuresSubdir,
 	decisionsSubdir,
 	referencesSubdir,
+	runbooksSubdir,
 	historicalsSubdir,
 	eventsSubdir,
 	"content/features",
 	"content/decisions",
 	"content/references",
+	"content/runbooks",
 	"content/artifacts",
 	"content/wiki",
 }
 
 // idSubdirs maps a NextID prefix to its entity subdir.
 var idSubdirs = map[string]string{
-	"F": featuresSubdir,
-	"D": decisionsSubdir,
-	"R": referencesSubdir,
-	"H": historicalsSubdir,
+	"F":  featuresSubdir,
+	"D":  decisionsSubdir,
+	"R":  referencesSubdir,
+	"RB": runbooksSubdir,
+	"H":  historicalsSubdir,
 }
 
 // Project is the persisted form of project.json.
