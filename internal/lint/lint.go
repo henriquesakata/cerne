@@ -20,9 +20,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gitlab.com/rockt/cerne/internal/dectmpl"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/mdlink"
+	"gitlab.com/rockt/cerne/internal/plantmpl"
+	"gitlab.com/rockt/cerne/internal/restmpl"
+	"gitlab.com/rockt/cerne/internal/runtmpl"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
@@ -38,10 +43,11 @@ const (
 	RuleParentTerminal    = "parent-terminal"
 	RuleEpicOpenChildren  = "epic-open-children"
 	RuleStaleCandidate    = "stale-candidate"
+	RuleIncompleteDoc     = "incomplete-doc"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleStaleCandidate}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleStaleCandidate, RuleIncompleteDoc}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:   0,
@@ -53,6 +59,7 @@ var ruleRank = map[string]int{
 	RuleParentTerminal:    6,
 	RuleEpicOpenChildren:  7,
 	RuleStaleCandidate:    8,
+	RuleIncompleteDoc:     9,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -178,6 +185,12 @@ func Run(repoDir string) ([]Finding, error) {
 	}
 	findings = append(findings, stale...)
 
+	incomplete, err := incompleteDocFindings(repoDir, features, decisions, runbooks)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, incomplete...)
+
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
 		if ruleRank[a.Rule] != ruleRank[b.Rule] {
@@ -192,6 +205,91 @@ func Run(repoDir string) ([]Finding, error) {
 		return a.Entity < b.Entity
 	})
 	return findings, nil
+}
+
+// incompleteDocFindings flags a real (non-stub) lifecycle doc of a live entity
+// missing one or more canonical template sections — making the templates
+// (spec/plan/result/ADR/runbook) enforced, not merely offered. Scope mirrors the
+// text-scan rules: only live work is checked (features in
+// candidate/approved/in_development, active decisions/runbooks). Imported docs
+// (imported_from frontmatter) are grandfathered; stub docs are the gates' job;
+// implemented features and superseded entities are settled history. Deterministic:
+// it compares the doc's level-2 headings against the canonical *tmpl.Sections.
+func incompleteDocFindings(repoDir string, features []store.Feature, decisions []store.Decision, runbooks []store.Runbook) ([]Finding, error) {
+	var findings []Finding
+	check := func(rel string, sections []string) error {
+		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if doccheck.FrontmatterValue(data, "imported_from") != "" {
+			return nil // legacy imported doc — predates the templates
+		}
+		if !doccheck.HasRealContent(data) {
+			return nil // still a stub — enforced by the lifecycle gates
+		}
+		if missing := missingSections(data, sections); len(missing) > 0 {
+			findings = append(findings, Finding{
+				Rule:   RuleIncompleteDoc,
+				File:   rel,
+				Detail: rel + ": faltam as seções do template: " + strings.Join(missing, ", "),
+			})
+		}
+		return nil
+	}
+	for _, f := range features {
+		if !liveFeatureStates[f.State] {
+			continue // only live work; implemented/terminal docs are settled history
+		}
+		if err := check("content/features/"+f.ID+"/spec.md", spectmpl.Sections); err != nil {
+			return nil, err
+		}
+		if err := check("content/features/"+f.ID+"/plan.md", plantmpl.Sections); err != nil {
+			return nil, err
+		}
+		if err := check("content/features/"+f.ID+"/result.md", restmpl.Sections); err != nil {
+			return nil, err
+		}
+	}
+	for _, d := range decisions {
+		if d.State != domain.DecisionActive {
+			continue
+		}
+		if err := check("content/decisions/"+d.ID+".md", dectmpl.Sections); err != nil {
+			return nil, err
+		}
+	}
+	for _, rb := range runbooks {
+		if rb.State != domain.RunbookActive {
+			continue
+		}
+		if err := check("content/runbooks/"+rb.ID+".md", runtmpl.Sections); err != nil {
+			return nil, err
+		}
+	}
+	return findings, nil
+}
+
+// missingSections returns the canonical sections absent from data as level-2
+// (## ) headings, in canonical order. A heading present with "N/A" content still
+// counts as present (right-sizing): only the heading is checked, not its body.
+func missingSections(data []byte, sections []string) []string {
+	present := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
+			present[strings.TrimSpace(h)] = true
+		}
+	}
+	var missing []string
+	for _, s := range sections {
+		if !present[s] {
+			missing = append(missing, s)
+		}
+	}
+	return missing
 }
 
 // parentFindings checks the epic (parent/child) invariants over the features,
