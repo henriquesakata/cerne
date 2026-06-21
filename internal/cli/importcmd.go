@@ -71,6 +71,17 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 		return err
 	}
 	cands, skipped := importer.Unimported(cands, imported)
+	// Second guard: drop feature candidates whose title already exists as a
+	// backend feature. Catches cases registered natively (cerne feature new) —
+	// they carry no imported_from, so the source-based dedup above lets them
+	// through — preventing import from minting a duplicate. A genuine orphan
+	// (no matching backend title) is still surfaced.
+	registered, err := importer.ExistingFeatureTitles(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	cands, registeredSkipped := importer.DropRegisteredTitles(cands, registered)
+	skipped += registeredSkipped
 	seeds, seedSkipped, err := unseededHistoricals(ctx.repoDir, seeds)
 	if err != nil {
 		return err
