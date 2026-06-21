@@ -61,12 +61,13 @@ func TestImportDryRun(t *testing.T) {
 		"Plano de importação (dry-run):",
 		"Features: 2 (candidate 1, implemented 1)",
 		"Decisões: 1 (active 1)",
-		"Referências: 1",
+		"Runbooks: 1",
+		"Referências: 0",
 		"Amostra:",
 		"F? docs/process/cases/0001_login/ → feature implemented",
 		"F? docs/process/cases/0002_export/ → feature candidate",
 		"D? docs/architecture/adr/adr-001-db.md → decision active",
-		"R? docs/runbooks/setup.md → reference current",
+		"R? docs/runbooks/setup.md → runbook active",
 		"Rode com --yes para aplicar.",
 	} {
 		if !strings.Contains(out, want) {
@@ -107,7 +108,7 @@ func TestImportYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import --yes: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Importado: 2 features, 1 decisões, 1 referências, 0 históricas (snapshot ") {
+	if !strings.Contains(out, "Importado: 2 features, 1 decisões, 1 runbooks, 0 referências, 0 históricas (snapshot ") {
 		t.Fatalf("output missing import confirmation:\n%s", out)
 	}
 
@@ -131,12 +132,12 @@ func TestImportYes(t *testing.T) {
 	if len(decisions) != 1 || decisions[0].ID != "D-0001" || decisions[0].State != domain.DecisionActive {
 		t.Fatalf("decisions = %+v, want one active D-0001", decisions)
 	}
-	references, err := store.LoadAllReferences(repoDir)
+	runbooks, err := store.LoadAllRunbooks(repoDir)
 	if err != nil {
-		t.Fatalf("LoadAllReferences: %v", err)
+		t.Fatalf("LoadAllRunbooks: %v", err)
 	}
-	if len(references) != 1 || references[0].ID != "R-0001" || references[0].State != domain.ReferenceCurrent {
-		t.Fatalf("references = %+v, want one current R-0001", references)
+	if len(runbooks) != 1 || runbooks[0].ID != "RB-0001" || runbooks[0].State != domain.RunbookActive {
+		t.Fatalf("runbooks = %+v, want one active RB-0001", runbooks)
 	}
 
 	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
@@ -193,12 +194,12 @@ func TestImportIncremental(t *testing.T) {
 	treeDir := t.TempDir()
 	writeTree(t, treeDir, importFixtureFiles())
 
-	// First import: the full fixture (2 features, 1 decision, 1 reference).
+	// First import: the full fixture (2 features, 1 decision, 1 runbook).
 	if _, err := execCerne(t, "import", "--root", treeDir, "--yes", "--dir", projDir); err != nil {
 		t.Fatalf("first import: %v", err)
 	}
 
-	// A new reference doc appears in the source tree after the first import.
+	// A new runbook doc appears in the source tree after the first import.
 	writeTree(t, treeDir, map[string]string{
 		"docs/runbooks/deploy.md": "# Deploy\n\nPassos de deploy.\n",
 	})
@@ -208,16 +209,16 @@ func TestImportIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("incremental import: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Importado: 0 features, 0 decisões, 1 referências") {
-		t.Fatalf("incremental import should add only the new reference:\n%s", out)
+	if !strings.Contains(out, "Importado: 0 features, 0 decisões, 1 runbooks, 0 referências") {
+		t.Fatalf("incremental import should add only the new runbook:\n%s", out)
 	}
 
-	references, err := store.LoadAllReferences(repoDir)
+	runbooks, err := store.LoadAllRunbooks(repoDir)
 	if err != nil {
-		t.Fatalf("LoadAllReferences: %v", err)
+		t.Fatalf("LoadAllRunbooks: %v", err)
 	}
-	if len(references) != 2 || references[1].ID != "R-0002" || references[1].Title != "Deploy" {
-		t.Fatalf("references = %+v, want R-0001 (setup) + new R-0002 (Deploy)", references)
+	if len(runbooks) != 2 || runbooks[1].ID != "RB-0002" || runbooks[1].Title != "Deploy" {
+		t.Fatalf("runbooks = %+v, want RB-0001 (setup) + new RB-0002 (Deploy)", runbooks)
 	}
 	// The second run must not duplicate the already-imported features.
 	features, err := store.LoadAllFeatures(repoDir)

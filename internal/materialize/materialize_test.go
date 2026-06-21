@@ -271,6 +271,10 @@ _Nenhum._
 
 - [D-0001 — Usar Postgres](current/decisions/D-0001-usar-postgres.md)
 
+## Runbooks
+
+_Nenhum._
+
 ## Referências
 
 _Nenhuma._

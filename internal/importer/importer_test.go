@@ -43,7 +43,7 @@ func TestScanHubTree(t *testing.T) {
 		{"reference", "docs/plans/2026-q1.md", "current", "", "Plano Q1 2026", []string{"doc.md"}},
 		{"reference", "docs/plugins/registry.md", "current", "", "Plugin registry", []string{"doc.md"}},
 		{"reference", "docs/review/review-2026-04.md", "current", "", "Review 2026-04", []string{"doc.md"}},
-		{"reference", "docs/runbooks/dev-setup.md", "current", "", "Setup de desenvolvimento", []string{"doc.md"}},
+		{"runbook", "docs/runbooks/dev-setup.md", "active", "", "Setup de desenvolvimento", []string{"doc.md"}},
 	}
 	if len(cands) != len(want) {
 		t.Fatalf("Scan returned %d candidates, want %d: %+v", len(cands), len(want), cands)
@@ -136,12 +136,12 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if sum.Features != 6 || sum.Decisions != 2 || sum.References != 10 {
-		t.Fatalf("Summary counts = %+v, want 6 features, 2 decisions, 10 references", sum)
+	if sum.Features != 6 || sum.Decisions != 2 || sum.References != 9 || sum.Runbooks != 1 {
+		t.Fatalf("Summary counts = %+v, want 6 features, 2 decisions, 9 references, 1 runbook", sum)
 	}
 	wantByState := map[string]int{
 		"implemented": 1, "candidate": 3, "superseded": 2, "in_development": 1,
-		"active": 1, "current": 10,
+		"active": 2, "current": 9,
 	}
 	for state, n := range wantByState {
 		if sum.ByState[state] != n {
@@ -205,8 +205,8 @@ func TestApplyHubTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAllReferences: %v", err)
 	}
-	if len(references) != 10 || references[0].ID != "R-0001" || references[9].ID != "R-0010" {
-		t.Fatalf("references = %+v, want R-0001..R-0010", references)
+	if len(references) != 9 || references[0].ID != "R-0001" || references[8].ID != "R-0009" {
+		t.Fatalf("references = %+v, want R-0001..R-0009", references)
 	}
 	if references[1].Title != "LGPD" {
 		t.Fatalf("references[1].Title = %q, want LGPD (docs/compliance sorts right after docs/architecture)", references[1].Title)
@@ -215,6 +215,18 @@ func TestApplyHubTree(t *testing.T) {
 		if r.State != domain.ReferenceCurrent {
 			t.Errorf("reference %s state = %s, want current", r.ID, r.State)
 		}
+	}
+
+	// docs/runbooks now imports as a runbook entity (was a reference before).
+	runbooks, err := store.LoadAllRunbooks(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllRunbooks: %v", err)
+	}
+	if len(runbooks) != 1 || runbooks[0].ID != "RB-0001" || runbooks[0].State != domain.RunbookActive {
+		t.Fatalf("runbooks = %+v, want one active RB-0001", runbooks)
+	}
+	if runbooks[0].Title != "Setup de desenvolvimento" {
+		t.Fatalf("runbooks[0].Title = %q, want 'Setup de desenvolvimento'", runbooks[0].Title)
 	}
 
 	// Frontmatter prepend branch: source file has no frontmatter block.
@@ -234,13 +246,13 @@ func TestApplyHubTree(t *testing.T) {
 
 	// Frontmatter inject branch: source file already has a frontmatter block;
 	// cerne_id and imported_from become the first keys, existing keys stay.
-	ref, err := os.ReadFile(filepath.Join(repoDir, "content", "references", "R-0010.md"))
+	rbDoc, err := os.ReadFile(filepath.Join(repoDir, "content", "runbooks", "RB-0001.md"))
 	if err != nil {
-		t.Fatalf("imported reference: %v", err)
+		t.Fatalf("imported runbook: %v", err)
 	}
-	wantRefPrefix := "---\ncerne_id: R-0010\nimported_from: docs/runbooks/dev-setup.md\ntags: runbook\n---\n\n# Setup de desenvolvimento"
-	if !strings.HasPrefix(string(ref), wantRefPrefix) {
-		t.Errorf("imported reference frontmatter not injected as first keys:\n%s", ref)
+	wantRbPrefix := "---\ncerne_id: RB-0001\nimported_from: docs/runbooks/dev-setup.md\ntags: runbook\n---\n\n# Setup de desenvolvimento"
+	if !strings.HasPrefix(string(rbDoc), wantRbPrefix) {
+		t.Errorf("imported runbook frontmatter not injected as first keys:\n%s", rbDoc)
 	}
 
 	events, err := store.ReadEvents(repoDir)
@@ -268,7 +280,7 @@ func TestApplyHubTree(t *testing.T) {
 		{"R-0007", "reference.imported", "docs/plans/2026-q1.md"},
 		{"R-0008", "reference.imported", "docs/plugins/registry.md"},
 		{"R-0009", "reference.imported", "docs/review/review-2026-04.md"},
-		{"R-0010", "reference.imported", "docs/runbooks/dev-setup.md"},
+		{"RB-0001", "runbook.imported", "docs/runbooks/dev-setup.md"},
 	}
 	for i, w := range wantEvents {
 		ev := events[i]
