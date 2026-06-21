@@ -44,6 +44,7 @@ type Summary struct {
 	Features   int
 	Decisions  int
 	References int
+	Runbooks   int
 	ByState    map[string]int
 }
 
@@ -85,7 +86,12 @@ func Scan(rootDir string, modules []string) ([]Candidate, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(cands, references...), nil
+	cands = append(cands, references...)
+	runbooks, err := scanRunbooks(root)
+	if err != nil {
+		return nil, err
+	}
+	return append(cands, runbooks...), nil
 }
 
 // scanCases maps every NNNN_name folder under <root>/<relCases> that has a
@@ -236,7 +242,6 @@ var referenceDirs = []string{
 	"docs/plans",
 	"docs/plugins",
 	"docs/review",
-	"docs/runbooks",
 }
 
 // scanReferences maps the *.md files directly under each referenceDirs entry
@@ -273,6 +278,45 @@ func scanReferences(root string) ([]Candidate, error) {
 			State:  "current",
 			Files:  map[string]string{"doc.md": abs},
 			Source: source,
+		})
+	}
+	return cands, nil
+}
+
+// scanRunbooks maps docs/runbooks/*.md files to runbook candidates, alphabetical
+// by filename. Runbooks are operational procedures; they are born active. (They
+// were previously imported as references — see referenceDirs.)
+func scanRunbooks(root string) ([]Candidate, error) {
+	relDir := "docs/runbooks"
+	names, err := readDirNames(filepath.Join(root, filepath.FromSlash(relDir)), false)
+	if err != nil {
+		return nil, err
+	}
+	var sources []string
+	for _, name := range names {
+		if strings.HasSuffix(name, ".md") {
+			sources = append(sources, name)
+		}
+	}
+	sort.Strings(sources)
+
+	var cands []Candidate
+	for _, name := range sources {
+		abs := filepath.Join(root, filepath.FromSlash(relDir), name)
+		body, err := os.ReadFile(abs)
+		if err != nil {
+			return nil, err
+		}
+		title := firstHeading(body)
+		if title == "" {
+			title = humanize(strings.TrimSuffix(name, ".md"))
+		}
+		cands = append(cands, Candidate{
+			Kind:   "runbook",
+			Title:  title,
+			State:  "active",
+			Files:  map[string]string{"doc.md": abs},
+			Source: relDir + "/" + name,
 		})
 	}
 	return cands, nil
@@ -339,6 +383,8 @@ func Apply(repoDir string, cands []Candidate, actor string, opts ApplyOptions) (
 			sum.Decisions++
 		case "reference":
 			sum.References++
+		case "runbook":
+			sum.Runbooks++
 		}
 		ev := domain.NewEvent(id, c.Kind+".imported", map[string]string{"source": c.Source}, actor)
 		if err := store.AppendEvent(repoDir, ev); err != nil {
@@ -422,6 +468,20 @@ func assignEntity(repoDir string, c Candidate, now time.Time) (string, []docTarg
 			src:        c.Files["doc.md"],
 			dst:        filepath.Join(repoDir, "content", "references", id+".md"),
 			contentRel: "content/references/" + id + ".md",
+		}}, nil
+	case "runbook":
+		id, err := store.NextID(repoDir, "RB")
+		if err != nil {
+			return "", nil, err
+		}
+		rb := store.Runbook{ID: id, Title: c.Title, State: domain.RunbookState(c.State), CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveRunbook(repoDir, rb); err != nil {
+			return "", nil, err
+		}
+		return id, []docTarget{{
+			src:        c.Files["doc.md"],
+			dst:        filepath.Join(repoDir, "content", "runbooks", id+".md"),
+			contentRel: "content/runbooks/" + id + ".md",
 		}}, nil
 	}
 	return "", nil, fmt.Errorf("unknown candidate kind %q (source %s)", c.Kind, c.Source)

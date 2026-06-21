@@ -68,6 +68,11 @@ const contextTemplate = `# {{.ProjectName}} — estado atual
 {{if .Decisions}}{{range .Decisions}}- {{.}}
 {{end}}{{else}}_Nenhuma._
 {{end}}
+## Runbooks
+
+{{if .Runbooks}}{{range .Runbooks}}- {{.}}
+{{end}}{{else}}_Nenhum._
+{{end}}
 ## Referências
 
 {{if .References}}{{range .References}}- {{.}}
@@ -81,7 +86,8 @@ type contextData struct {
 	Features    []featureRow
 	Epics       []epicSection
 	Decisions   []string
-	References   []string
+	Runbooks    []string
+	References  []string
 }
 
 type featureRow struct {
@@ -116,6 +122,10 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 		return nil, err
 	}
 	decisions, err := store.LoadAllDecisions(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	runbooks, err := store.LoadAllRunbooks(repoDir)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +179,17 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 			return nil, err
 		}
 		data.Decisions = append(data.Decisions, line)
+	}
+
+	for _, rb := range runbooks {
+		if rb.State != domain.RunbookActive {
+			continue
+		}
+		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest)
+		if err != nil {
+			return nil, err
+		}
+		data.Runbooks = append(data.Runbooks, line)
 	}
 
 	for _, r := range references {

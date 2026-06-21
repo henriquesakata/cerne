@@ -126,7 +126,7 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 				return err
 			}
 		}
-		total := sum.Features + sum.Decisions + sum.References + len(seeds)
+		total := sum.Features + sum.Decisions + sum.References + sum.Runbooks + len(seeds)
 		sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import %d documento(s)", total))
 		if err != nil {
 			return err
@@ -134,8 +134,8 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 		if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "Importado: %d features, %d decisões, %d referências, %d históricas (snapshot %s).\n",
-			sum.Features, sum.Decisions, sum.References, len(seeds), shortSHA(sha))
+		fmt.Fprintf(out, "Importado: %d features, %d decisões, %d runbooks, %d referências, %d históricas (snapshot %s).\n",
+			sum.Features, sum.Decisions, sum.Runbooks, sum.References, len(seeds), shortSHA(sha))
 	}
 
 	// Self-heal module assignment: classify every module-less feature the
@@ -219,6 +219,7 @@ func printImportPlan(w io.Writer, cands []importer.Candidate, seeds []importer.H
 	}
 	fmt.Fprintf(w, "  Features: %d%s\n", kindTotal(counts["feature"]), stateBreakdown(counts["feature"], planFeatureStates))
 	fmt.Fprintf(w, "  Decisões: %d%s\n", kindTotal(counts["decision"]), stateBreakdown(counts["decision"], planDecisionStates))
+	fmt.Fprintf(w, "  Runbooks: %d\n", kindTotal(counts["runbook"]))
 	fmt.Fprintf(w, "  Referências: %d\n", kindTotal(counts["reference"]))
 	fmt.Fprintf(w, "  Históricas: %d\n", len(seeds))
 	fmt.Fprintln(w, "Amostra:")
