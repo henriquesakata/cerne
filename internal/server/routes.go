@@ -68,6 +68,9 @@ func dataRoutes() []dataRoute {
 		{"GET", "/runbooks/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleRunbookDetail(w, repoDir, r.PathValue("id"))
 		}},
+		{"GET", "/notes/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
+			handleNoteDetail(w, repoDir, r.PathValue("id"))
+		}},
 		{"POST", "/references", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleCreateReference(w, r, repoDir, projDir)
 		}},

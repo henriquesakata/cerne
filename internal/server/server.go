@@ -71,6 +71,7 @@ type stateResponse struct {
 	Decisions  []store.Decision  `json:"decisions"`
 	References []store.Reference `json:"references"`
 	Runbooks   []store.Runbook   `json:"runbooks"`
+	Notes      []store.Note      `json:"notes"`
 }
 
 func handleState(w http.ResponseWriter, repoDir string) {
@@ -99,6 +100,11 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	notes, err := store.LoadAllNotes(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
 	if proj.Modules == nil {
 		proj.Modules = []string{} // contract: modules is always a list
 	}
@@ -108,6 +114,7 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		Decisions:  decisions,
 		References: references,
 		Runbooks:   runbooks,
+		Notes:      notes,
 	})
 }
 
@@ -325,9 +332,33 @@ func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
 	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc})
 }
 
-// readContentDoc reads content/<kind>/<id>.md (decisions, references, runbooks);
-// "" when the file is absent, mirroring how the materializer and index treat a
-// missing content document.
+// noteDetailResponse is the GET /api/notes/{id} payload.
+type noteDetailResponse struct {
+	Note store.Note `json:"note"`
+	Doc  string     `json:"doc"`
+}
+
+func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
+	n, err := store.LoadNote(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody("nota não encontrada"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	doc, err := readContentDoc(repoDir, "notes", id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc})
+}
+
+// readContentDoc reads content/<kind>/<id>.md (decisions, references, runbooks,
+// notes); "" when the file is absent, mirroring how the materializer and index
+// treat a missing content document.
 func readContentDoc(repoDir, kind, id string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))
 	if errors.Is(err, os.ErrNotExist) {
