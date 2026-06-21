@@ -258,6 +258,7 @@ export default function FeaturePage({ id }: { id: string }) {
               featureId={f.id}
               doc={tab}
               content={detail.docs[tab]}
+              hasRealContent={detail.docs_real[tab]}
               updatedAt={detail.docs_updated[tab]}
               onSaved={load}
             />
@@ -293,12 +294,14 @@ function DocEditor({
   featureId,
   doc,
   content,
+  hasRealContent,
   updatedAt,
   onSaved,
 }: {
   featureId: string
   doc: DocTab
   content: string
+  hasRealContent: boolean
   updatedAt: string | null
   onSaved: () => void
 }) {
@@ -361,12 +364,15 @@ function DocEditor({
           Atualizado {formatUpdatedAt(updatedAt)}
         </p>
       )}
-      {content.trim() === '' ? (
-        <p className="muted">Vazio — clique em Editar para escrever.</p>
-      ) : (
+      {hasRealContent ? (
         <article className="doc">
           <Markdown>{content}</Markdown>
         </article>
+      ) : (
+        // Stub: só scaffold (títulos + comentários-guia do template) ou vazio.
+        // Não renderiza a orientação do template como se fosse conteúdo; o
+        // scaffold continua no textarea ao clicar em Editar (guia de autoria).
+        <p className="muted">Vazio — clique em Editar para escrever.</p>
       )}
     </div>
   )
