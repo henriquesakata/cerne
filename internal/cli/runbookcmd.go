@@ -28,7 +28,65 @@ func newRunbookCmd() *cobra.Command {
 	cmd.AddCommand(newRunbookNewCmd(&dir))
 	cmd.AddCommand(newRunbookDraftCmd(&dir))
 	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
+	cmd.AddCommand(newRunbookMigrateCmd(&dir))
 	return cmd
+}
+
+func newRunbookMigrateCmd(dir *string) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Reclassifica referências importadas de docs/runbooks em runbooks",
+		Long: "Encontra referências cujo doc foi importado de docs/runbooks/ (antes de o runbook existir) e as " +
+			"reclassifica em runbooks: cunha um id RB-, move o conteúdo, reescreve os cross-links (R-→RB-, " +
+			"references/→runbooks/) e remove a referência antiga. Sem --yes, apenas lista o que faria.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRunbookMigrate(cmd, *dir, yes)
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "aplica a migração (sem isto, dry-run)")
+	return cmd
+}
+
+func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if !yes {
+		plan, err := app.PlanRunbookMigration(ctx.repoDir)
+		if err != nil {
+			return err
+		}
+		if len(plan) == 0 {
+			fmt.Fprintln(out, "Nenhuma referência de docs/runbooks para migrar.")
+			return nil
+		}
+		fmt.Fprintf(out, "%d referência(s) virariam runbooks (use --yes para aplicar):\n", len(plan))
+		for _, m := range plan {
+			fmt.Fprintf(out, "  %s  %s  (%s)\n", m.FromRef, m.Title, m.Source)
+		}
+		return nil
+	}
+	migrated, err := app.MigrateRunbooksFromReferences(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	if len(migrated) == 0 {
+		fmt.Fprintln(out, "Nenhuma referência de docs/runbooks para migrar.")
+		return nil
+	}
+	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: migrate %d runbook(s) from references", len(migrated))); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Migradas %d referência(s) para runbooks:\n", len(migrated))
+	for _, m := range migrated {
+		fmt.Fprintf(out, "  %s → %s  %s\n", m.FromRef, m.ToRunbook, m.Title)
+	}
+	fmt.Fprintln(out, "Rode 'cerne pull' para materializar.")
+	return nil
 }
 
 func newRunbookNewCmd(dir *string) *cobra.Command {
