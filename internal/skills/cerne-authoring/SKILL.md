@@ -1,13 +1,13 @@
 ---
 name: cerne-authoring
-description: "Use this whenever you create, plan, finish, or manage a feature, decision (ADR), or external reference in a project guarded by cerne. cerne is the documentation source of truth — author through it (cerne feature new -> pull -> push -> approve/start/complete), never as loose docs/case folders. Read current state from .docs/CONTEXT.md and `cerne status`."
+description: "Use this whenever you create, plan, finish, or manage a feature, decision (ADR), runbook, or external reference in a project guarded by cerne. cerne is the documentation source of truth — author through it (cerne feature new -> pull -> push -> approve/start/complete), never as loose docs/case folders. Read current state from .docs/CONTEXT.md and `cerne status`."
 ---
 
 # Cerne-Native Authoring
 
 ## Overview
 
-In a cerne-managed project the living documentation is owned by **cerne**: it holds the lifecycle of **features**, **decisions** (ADRs) and **references**, and is the source of truth for the current state. The backend (a git repo) is pinned by the committed `docs.lock`; `.cernerc` wires it. You author documents under `.docs/current/…` and push them back through cerne — you do **not** hand-create folders of loose markdown for tracked work.
+In a cerne-managed project the living documentation is owned by **cerne**: it holds the lifecycle of **features**, **decisions** (ADRs), **runbooks** and **references**, and is the source of truth for the current state. The backend (a git repo) is pinned by the committed `docs.lock`; `.cernerc` wires it. You author documents under `.docs/current/…` and push them back through cerne — you do **not** hand-create folders of loose markdown for tracked work.
 
 This skill is the **mechanics and lifecycle**. The *content* of each document (the actual spec/plan/result prose) comes from your normal process. Read current state from `.docs/CONTEXT.md` and `cerne status`; reach superseded/rejected history with `cerne search "<q>"` / `cerne ask "<q>"`.
 
@@ -100,6 +100,22 @@ cerne scaffolds `content/decisions/D-NNNN.md` from a canonical ADR template when
 5. **Implementação e relações** — where the decision shows up in code (real files/modules) and the links: the features and ADRs it affects, supersedes, or that motivated it (use F-/D- ids).
 
 **Ordering is deliberate** (primacy/recency): Contexto and Decisão lead; Implementação e relações is lookup material at the end. **The title records the decision, not the question** ("Use Postgres for primary storage", not "Which database?"). **Status is data, not prose** — the lifecycle is owned by cerne (`cerne decision substituir`), so the template has no Status section, and **an accepted ADR is a historical record: to change course, supersede it — don't rewrite it.** **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve it before treating the decision as accepted. The evidence behind this structure (Nygard's ADRs, MADR, ThoughtWorks' lightweight ADRs, the create-adr skill) is registered in the backend as external references.
+
+## Runbooks (operational procedures)
+
+A **runbook** is an actionable operational procedure (deploy, smoke, recovery, migration, setup), separate from features and decisions. `cerne runbook new "<title>"` mints `RB-NNNN` (active) and scaffolds `content/runbooks/RB-NNNN.md` from the canonical template (or run `cerne runbook draft RB-NNNN`). Then `cerne pull`, fill it in `.docs/current/runbooks/RB-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`. Replace an obsolete one with `cerne runbook substituir RB-NNNN --by RB-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose. Runbooks surface in the `## Runbooks` section of `.docs/CONTEXT.md` (and `cerne search` / `cerne ask`). (Importing a hub `docs/runbooks/` tree registers each file as a runbook.)
+
+## Runbook structure (the template cerne scaffolds)
+
+cerne scaffolds `content/runbooks/RB-NNNN.md` from a canonical template when you create a runbook (the same one `cerne runbook draft` asks the model to fill). A runbook is read mid-incident, so every step is a command with its **expected output**, never a paragraph. **Right-size it** — a simple procedure has short sections. Sections, **in order**:
+
+1. **Quando usar** — the trigger, symptoms or goal: the situation that fires this runbook, so the reader confirms in seconds it is the right one.
+2. **Pré-requisitos** — access/tokens, tools and versions, environment state, window/approvals to confirm before starting.
+3. **Procedimento** — numbered, action-first steps with copy-pasteable commands, each with its expected output ("você deve ver: X"); note idempotency where a step is safe to repeat.
+4. **Verificação** — how to confirm success: observable checks/signals with expected output.
+5. **Rollback e troubleshooting** — how to undo/recover (flag destructive steps), common failures as a symptom → cause → solution table, and **who to escalate to** when the runbook does not resolve.
+
+**Ordering is deliberate** (primacy): the trigger, prerequisites and procedure lead — what an operator needs first under pressure. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Google SRE playbooks, PagerDuty incident response, lightweight runbook practice) is registered in the backend as external references.
 
 ## External sources (provenance)
 
