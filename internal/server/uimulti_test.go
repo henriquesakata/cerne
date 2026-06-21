@@ -137,6 +137,48 @@ func TestRegistryWatchBroadcastsChange(t *testing.T) {
 	}
 }
 
+// TestWatchHeadMultiDetectsFromBaseline pins the fix deterministically: the
+// watcher is handed a stale baseline (h0) while HEAD is already at h1, so its
+// first poll must detect the advance and broadcast exactly h1 — no dependence on
+// when the goroutine is scheduled relative to the commit (the old flakiness).
+func TestWatchHeadMultiDetectsFromBaseline(t *testing.T) {
+	repoA, _, _ := newGitBackendNoClean(t)
+	h0, err := gitback.HeadSHA(repoA)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	seedFeature(t, repoA, "F-0002", "Feature B", domain.StateCandidate)
+	h1, err := gitback.CommitAndPush(repoA, "second")
+	if err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	if h1 == h0 {
+		t.Fatal("commit did not advance HEAD")
+	}
+
+	hub := newMultiHub()
+	sub := hub.subscribe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watchHeadMulti(ctx, hub, "proj-a", repoA, 10*time.Millisecond, h0)
+
+	deadline := time.After(broadcastWait)
+	for {
+		select {
+		case ev := <-sub:
+			if ev.kind != "change" {
+				continue
+			}
+			if ev.pid != "proj-a" || ev.sha != h1 {
+				t.Fatalf("change ev = %+v, want pid proj-a sha %s", ev, h1)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no change event from the stale baseline")
+		}
+	}
+}
+
 func TestUIMultiRegisterListDeregister(t *testing.T) {
 	repoA, projA, _ := newGitBackendNoClean(t)
 	repoB, projB, _ := newGitBackendNoClean(t)

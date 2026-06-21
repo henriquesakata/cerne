@@ -120,9 +120,10 @@ func TestPullLoopAdvancesHeadFromRemote(t *testing.T) {
 	hub := newMultiHub()
 	sub := hub.subscribe()
 	ctx, cancel := context.WithCancel(context.Background())
+	baseline, _ := gitback.HeadSHA(repoDir) // HEAD before pullLoop brings the remote commit
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); watchHeadMulti(ctx, hub, "proj-a", repoDir, 10*time.Millisecond) }()
+	go func() { defer wg.Done(); watchHeadMulti(ctx, hub, "proj-a", repoDir, 10*time.Millisecond, baseline) }()
 	go func() { defer wg.Done(); pullLoop(ctx, repoDir, 10*time.Millisecond) }()
 	defer wg.Wait() // stop the loops before the clone's temp dir is removed
 	defer cancel()

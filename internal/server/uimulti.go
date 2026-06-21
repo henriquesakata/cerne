@@ -167,7 +167,8 @@ func (r *registry) add(dir string) (pid, name string, err error) {
 		interval = headPollInterval
 	}
 
-	go watchHeadMulti(ctx, r.hub, projectID, repoDir, interval)
+	baseline, _ := gitback.HeadSHA(repoDir)
+	go watchHeadMulti(ctx, r.hub, projectID, repoDir, interval, baseline)
 	if r.pull > 0 {
 		go pullLoop(ctx, repoDir, r.pull)
 	}
@@ -218,10 +219,11 @@ func (r *registry) list() (infos []projectInfo, def string) {
 }
 
 // watchHeadMulti polls one project's HEAD and broadcasts a change (tagged with
-// pid) whenever it advances, routing through the multiplexed hub. Stops when
-// ctx is cancelled (project removed / server down).
-func watchHeadMulti(ctx context.Context, hub *multiHub, pid, repoDir string, interval time.Duration) {
-	last, _ := gitback.HeadSHA(repoDir)
+// pid) whenever it advances past last, routing through the multiplexed hub. The
+// caller (add) captures last synchronously at registration time, so a HEAD
+// advance right after add() is never missed by a late goroutine start. Stops
+// when ctx is cancelled (project removed / server down).
+func watchHeadMulti(ctx context.Context, hub *multiHub, pid, repoDir string, interval time.Duration, last string) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
