@@ -90,6 +90,15 @@ export type FeatureDocs = {
   result: string
 }
 
+// docs_real diz, por doc, se há conteúdo real além do scaffold que o cerne
+// escreve (frontmatter, títulos, comentários-guia). false ⇒ a UI mostra "Vazio"
+// em vez de renderizar a orientação do template como se fosse conteúdo.
+export type FeatureDocReal = {
+  spec: boolean
+  plan: boolean
+  result: boolean
+}
+
 export type Artifact = {
   name: string
   path: string
@@ -106,6 +115,7 @@ export type FeatureDocTimes = {
 export type FeatureDetail = {
   feature: Feature
   docs: FeatureDocs
+  docs_real: FeatureDocReal
   docs_updated: FeatureDocTimes
   artifacts: Artifact[]
   informed_by: Reference[] // external sources that motivated this feature

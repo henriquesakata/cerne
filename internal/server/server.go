@@ -17,6 +17,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/ask"
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
@@ -122,6 +123,7 @@ func handleState(w http.ResponseWriter, repoDir string) {
 type featureDetailResponse struct {
 	Feature     store.Feature     `json:"feature"`
 	Docs        featureDocs       `json:"docs"`
+	DocsReal    featureDocReal    `json:"docs_real"`    // per-doc: carries real content beyond the scaffold (vs stub)
 	DocsUpdated featureDocTimes   `json:"docs_updated"` // per-doc last-commit time; nil when uncommitted
 	Artifacts   []artifact        `json:"artifacts"`
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
@@ -132,6 +134,16 @@ type featureDocs struct {
 	Spec   string `json:"spec"`
 	Plan   string `json:"plan"`
 	Result string `json:"result"`
+}
+
+// featureDocReal mirrors featureDocs with a per-document flag: true when the
+// document carries real content beyond the scaffold cerne writes (frontmatter,
+// headings, HTML-comment guidance). The UI shows "Vazio" for a false flag so a
+// freshly scaffolded stub does not render its raw template guidance as content.
+type featureDocReal struct {
+	Spec   bool `json:"spec"`
+	Plan   bool `json:"plan"`
+	Result bool `json:"result"`
 }
 
 // featureDocTimes is the last-modified time of each lifecycle document, taken
@@ -160,15 +172,17 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		return
 	}
 	docs := featureDocs{}
+	real := featureDocReal{}
 	updated := featureDocTimes{}
 	docFields := []struct {
 		name    string
 		content *string
+		real    *bool
 		updated **time.Time
 	}{
-		{"spec.md", &docs.Spec, &updated.Spec},
-		{"plan.md", &docs.Plan, &updated.Plan},
-		{"result.md", &docs.Result, &updated.Result},
+		{"spec.md", &docs.Spec, &real.Spec, &updated.Spec},
+		{"plan.md", &docs.Plan, &real.Plan, &updated.Plan},
+		{"result.md", &docs.Result, &real.Result, &updated.Result},
 	}
 	var docPaths []string
 	for _, d := range docFields {
@@ -178,6 +192,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 			return
 		}
 		*d.content = string(data)
+		*d.real = doccheck.HasRealContent(data)
 		if len(data) > 0 {
 			docPaths = append(docPaths, "content/features/"+id+"/"+d.name)
 		}
@@ -214,7 +229,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	if children == nil {
 		children = []store.Feature{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
