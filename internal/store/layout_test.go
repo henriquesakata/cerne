@@ -181,6 +181,9 @@ func TestNextID(t *testing.T) {
 	if err := SaveDecision(seeded, Decision{ID: "D-0007", Title: "x", State: domain.DecisionActive}); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
 	}
+	if err := SaveNote(seeded, Note{ID: "N-0004", Title: "x", State: domain.NoteActive}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
 
 	tests := []struct {
 		name    string
@@ -193,6 +196,7 @@ func TestNextID(t *testing.T) {
 		{name: "after F-0002 exists", dir: seeded, prefix: "F", want: "F-0003"},
 		{name: "after D-0007 exists", dir: seeded, prefix: "D", want: "D-0008"},
 		{name: "references untouched", dir: seeded, prefix: "R", want: "R-0001"},
+		{name: "after N-0004 exists", dir: seeded, prefix: "N", want: "N-0005"},
 		{name: "unknown prefix", dir: seeded, prefix: "X", wantErr: true},
 	}
 	for _, tt := range tests {

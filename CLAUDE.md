@@ -34,6 +34,7 @@ cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (e
 
 - CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`.
 - `go install ./cmd/cerne` installs `cerne` to `C:\Users\Henrique\go\bin` (on PATH).
+- **RULE — reinstall the dogfood binary after changing cerne.** This repo runs its *own* `cerne` (the binary on PATH), so a behavior change (new command/entity/flag/lifecycle) is **invisible until you reinstall**: `go install ./cmd/cerne`. Otherwise `cerne …` silently runs the previous build — e.g. `cerne note` does not exist until the F-0044 build is installed. Always reinstall before dogfooding the change you just made.
 - Try the UI: `cerne ui` (serves `localhost:7717`).
 
 ## Architecture (one binary, four layers)

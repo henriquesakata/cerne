@@ -4,7 +4,8 @@ import "github.com/spf13/cobra"
 
 // version is the build version reported by `cerne --version`. It defaults to
 // "dev" for local builds and is stamped at release time via:
-//   -ldflags "-X gitlab.com/rockt/cerne/internal/cli.version=<tag>"
+//
+//	-ldflags "-X gitlab.com/rockt/cerne/internal/cli.version=<tag>"
 var version = "dev"
 
 func Root() *cobra.Command {
@@ -19,6 +20,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newFeatureCmd())
 	root.AddCommand(newDecisionCmd())
 	root.AddCommand(newRunbookCmd())
+	root.AddCommand(newNoteCmd())
 	root.AddCommand(newReferenceCmd())
 	root.AddCommand(newRetireCmd())
 	root.AddCommand(newStatusCmd())

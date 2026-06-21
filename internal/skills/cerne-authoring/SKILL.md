@@ -1,13 +1,13 @@
 ---
 name: cerne-authoring
-description: "Use this whenever you create, plan, finish, or manage a feature, decision (ADR), runbook, or external reference in a project guarded by cerne. cerne is the documentation source of truth — author through it (cerne feature new -> pull -> push -> approve/start/complete), never as loose docs/case folders. Read current state from .docs/CONTEXT.md and `cerne status`."
+description: "Use this whenever you create, plan, finish, or manage a feature, decision (ADR), runbook, note (durable team knowledge), or external reference in a project guarded by cerne. cerne is the documentation source of truth — author through it (cerne feature new -> pull -> push -> approve/start/complete), never as loose docs/case folders. Read current state from .docs/CONTEXT.md and `cerne status`. Route durable team knowledge an agent acquires to `cerne note new`, not the local Claude Code memory."
 ---
 
 # Cerne-Native Authoring
 
 ## Overview
 
-In a cerne-managed project the living documentation is owned by **cerne**: it holds the lifecycle of **features**, **decisions** (ADRs), **runbooks** and **references**, and is the source of truth for the current state. The backend (a git repo) is pinned by the committed `docs.lock`; `.cernerc` wires it. You author documents under `.docs/current/…` and push them back through cerne — you do **not** hand-create folders of loose markdown for tracked work.
+In a cerne-managed project the living documentation is owned by **cerne**: it holds the lifecycle of **features**, **decisions** (ADRs), **runbooks**, **notes** (durable team knowledge) and **references**, and is the source of truth for the current state. The backend (a git repo) is pinned by the committed `docs.lock`; `.cernerc` wires it. You author documents under `.docs/current/…` and push them back through cerne — you do **not** hand-create folders of loose markdown for tracked work.
 
 This skill is the **mechanics and lifecycle**. The *content* of each document (the actual spec/plan/result prose) comes from your normal process. Read current state from `.docs/CONTEXT.md` and `cerne status`; reach superseded/rejected history with `cerne search "<q>"` / `cerne ask "<q>"`.
 
@@ -116,6 +116,23 @@ cerne scaffolds `content/runbooks/RB-NNNN.md` from a canonical template when you
 5. **Rollback e troubleshooting** — how to undo/recover (flag destructive steps), common failures as a symptom → cause → solution table, and **who to escalate to** when the runbook does not resolve.
 
 **Ordering is deliberate** (primacy): the trigger, prerequisites and procedure lead — what an operator needs first under pressure. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Google SRE playbooks, PagerDuty incident response, lightweight runbook practice) is registered in the backend as external references.
+
+## Notes (durable team knowledge)
+
+A **note** is durable, team-relevant project knowledge an agent acquired across sessions — a gotcha, an invariant, a "why X and not Y", a tacit convention, a trap. It is **not** a feature (no work to gate), a decision (no formal choice), or a reference (no external URL): it is internal knowledge that today leaks into a per-user, per-machine scratchpad instead of reaching the guardian.
+
+- Capture it: `cerne note new "<title>" [--informs F-NNNN,D-NNNN] [--file <body> | stdin]` mints `N-NNNN` (active). The **body is freeform** — there is no template and no `draft` command; write the knowledge and the *why*. With no body the note is born a stub for you to fill. `--informs` backlinks the note to the feature/decision (F-/D-) it informs.
+- Author it: `cerne pull`, fill `.docs/current/notes/N-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`.
+- Correct or retire it: `cerne note substituir N-NNNN --by N-MMMM --reason "…"` replaces a note with a corrected successor; **omit `--by` to merely retire it** (`--reason` still required). Either way it moves to `superseded` and becomes searchable history — the lifecycle (active/superseded) is cerne data, not prose.
+- Find it: active notes surface in the `## Conhecimento` section of `.docs/CONTEXT.md` and in `cerne search` / `cerne ask`; superseded ones stay reachable through search/ask as history.
+
+## Knowledge routing: cerne note vs. local memory
+
+When you acquire knowledge worth keeping, route it by **who it belongs to**, not by reflex:
+
+- **Durable, team-relevant project knowledge → `cerne note new`.** Gotchas, invariants, hard-won conventions, "why X and not Y" — anything a teammate or your own agent on another machine would need. It belongs in the guardian, where it is shared across machines and members, versioned, indexed, and governed (so it can be superseded instead of rotting). This is the gap notes exist to close: such knowledge otherwise dies in one person's local `~/.claude/.../memory/`.
+- **Personal or machine-specific knowledge → stays in local Claude Code memory, never pushed.** Who you are and how you like to work (`user`/`feedback`-class) is personal — sharing it imposes one person's style on the team. **Machine-specific** facts are worse: a memory like "Go lives at `C:\…\go\bin`" is correct on one box and **wrong** on another, so pushing it is an actively harmful asset. Leave these where they are.
+- **When in doubt, ask:** would this still be true and useful for a different person on a different machine? If yes, it is a note. If it only holds for *you* or *this box*, keep it local. Never bulk-sync memory into cerne — the boundary requires this per-item judgment.
 
 ## External sources (provenance)
 

@@ -160,6 +160,10 @@ func collectRows(repoDir string) ([]row, error) {
 	if err != nil {
 		return nil, err
 	}
+	notes, err := store.LoadAllNotes(repoDir)
+	if err != nil {
+		return nil, err
+	}
 	historicals, err := store.LoadAllHistoricals(repoDir)
 	if err != nil {
 		return nil, err
@@ -215,6 +219,18 @@ func collectRows(repoDir string) ([]row, error) {
 		r := row{entityID: rb.ID, kind: "runbook", state: string(rb.State),
 			title: rb.Title, supersededBy: rb.SupersededBy}
 		body, exists, err := readDoc(filepath.Join(repoDir, "content", "runbooks", rb.ID+".md"))
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			r.doc, r.body = "doc", body
+		}
+		rows = append(rows, r)
+	}
+	for _, n := range notes {
+		r := row{entityID: n.ID, kind: "note", state: string(n.State),
+			title: n.Title, supersededBy: n.SupersededBy}
+		body, exists, err := readDoc(filepath.Join(repoDir, "content", "notes", n.ID+".md"))
 		if err != nil {
 			return nil, err
 		}

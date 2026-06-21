@@ -100,6 +100,38 @@ func TestReferenceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestNoteRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Note{
+		ID:           "N-0001",
+		Title:        "Toolchain path is per-machine",
+		State:        domain.NoteSuperseded,
+		SupersededBy: "N-0002",
+		Reason:       "corrected",
+		Informs:      []string{"F-0001", "D-0003"},
+		CreatedAt:    time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC),
+	}
+	if err := SaveNote(dir, want); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	got, err := LoadNote(dir, "N-0001")
+	if err != nil {
+		t.Fatalf("LoadNote: %v", err)
+	}
+	if got.ID != want.ID || got.Title != want.Title || got.State != want.State ||
+		got.SupersededBy != want.SupersededBy || got.Reason != want.Reason {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	if len(got.Informs) != 2 || got.Informs[0] != "F-0001" || got.Informs[1] != "D-0003" {
+		t.Fatalf("informs = %v, want [F-0001 D-0003]", got.Informs)
+	}
+	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
+		t.Fatalf("times: got %v / %v, want %v / %v",
+			got.CreatedAt, got.UpdatedAt, want.CreatedAt, want.UpdatedAt)
+	}
+}
+
 func TestLoadAllFeaturesSortedByID(t *testing.T) {
 	dir := t.TempDir()
 	for _, id := range []string{"F-0002", "F-0001"} {

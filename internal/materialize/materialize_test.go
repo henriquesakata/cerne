@@ -275,6 +275,10 @@ _Nenhum._
 
 _Nenhum._
 
+## Conhecimento
+
+_Nenhum._
+
 ## Referências
 
 _Nenhuma._
@@ -329,6 +333,53 @@ func TestMaterializeContextEpics(t *testing.T) {
 	}
 }
 
+func addNote(t *testing.T, backendDir, id, title string, state domain.NoteState, body string) {
+	t.Helper()
+	n := store.Note{ID: id, Title: title, State: state, CreatedAt: seedTime, UpdatedAt: seedTime}
+	if err := store.SaveNote(backendDir, n); err != nil {
+		t.Fatalf("SaveNote %s: %v", id, err)
+	}
+	path := filepath.Join(backendDir, "content", "notes", id+".md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile %s: %v", path, err)
+	}
+}
+
+func TestMaterializeNotes(t *testing.T) {
+	backend := seedBackend(t)
+	addNote(t, backend, "N-0001", "go-git ignora ssh config", domain.NoteActive,
+		"---\ncerne_id: N-0001\n---\n\nUse key-file fallback.\n")
+	addNote(t, backend, "N-0002", "Conhecimento velho", domain.NoteSuperseded,
+		"---\ncerne_id: N-0002\n---\n\nObsoleto.\n")
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	manifest, err := Materialize(backend, docsDir, "")
+	if err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+	ctx := readContext(t, docsDir)
+
+	// Active note is materialized and linked under the Conhecimento section.
+	if !strings.Contains(ctx, "## Conhecimento\n\n- [N-0001 — go-git ignora ssh config](current/notes/N-0001-go-git-ignora-ssh-config.md)\n") {
+		t.Errorf("CONTEXT.md missing active note under Conhecimento:\n%s", ctx)
+	}
+	rel := "current/notes/N-0001-go-git-ignora-ssh-config.md"
+	if _, ok := manifest[rel]; !ok {
+		t.Errorf("manifest missing materialized active note %s: %v", rel, manifest)
+	}
+	if _, err := os.Stat(filepath.Join(docsDir, filepath.FromSlash(rel))); err != nil {
+		t.Errorf("active note not written to .docs/current/notes/: %v", err)
+	}
+
+	// Superseded note is history: never materialized nor listed.
+	if strings.Contains(ctx, "N-0002") {
+		t.Errorf("superseded note leaked into CONTEXT.md:\n%s", ctx)
+	}
+	if _, ok := manifest["current/notes/N-0002-conhecimento-velho.md"]; ok {
+		t.Errorf("superseded note materialized:\n%v", manifest)
+	}
+}
+
 func TestMaterializeEmptyBackend(t *testing.T) {
 	backend := seedBackend(t)
 	docsDir := filepath.Join(t.TempDir(), ".docs")
@@ -341,6 +392,7 @@ func TestMaterializeEmptyBackend(t *testing.T) {
 		"## Features\n\n_Nenhuma._\n",
 		"## Épicos\n\n_Nenhum._\n",
 		"## Decisões ativas\n\n_Nenhuma._\n",
+		"## Conhecimento\n\n_Nenhum._\n",
 		"## Referências\n\n_Nenhuma._\n",
 	} {
 		if !strings.Contains(ctx, want) {

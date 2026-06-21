@@ -217,7 +217,7 @@ func acceptableNewDoc(rel string, manifest map[string]string) bool {
 
 // backendRelPath maps a materialized doc path back to its backend content
 // path: feature docs keep their filename under content/features/<ID>/;
-// decisions, runbooks and references collapse to content/<kind>/<ID>.md.
+// decisions, runbooks, notes and references collapse to content/<kind>/<ID>.md.
 func backendRelPath(rel, id string) (string, error) {
 	switch {
 	case strings.HasPrefix(rel, "current/features/"):
@@ -226,6 +226,8 @@ func backendRelPath(rel, id string) (string, error) {
 		return "content/decisions/" + id + ".md", nil
 	case strings.HasPrefix(rel, "current/runbooks/"):
 		return "content/runbooks/" + id + ".md", nil
+	case strings.HasPrefix(rel, "current/notes/"):
+		return "content/notes/" + id + ".md", nil
 	case strings.HasPrefix(rel, "current/references/"):
 		return "content/references/" + id + ".md", nil
 	}
