@@ -1,6 +1,9 @@
 # cerne dogfooding: a materialização nunca é versionada (o docs.lock sim)
 .docs/
 
+# cerne-authoring skill: instalada pela ferramenta (cerne skill install), não versionada
+.claude/skills/
+
 # OS / editor
 .DS_Store
 Thumbs.db
