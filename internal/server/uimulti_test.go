@@ -120,7 +120,7 @@ func TestRegistryWatchBroadcastsChange(t *testing.T) {
 		t.Fatalf("CommitAndPush: %v", err)
 	}
 
-	deadline := time.After(4 * time.Second)
+	deadline := time.After(broadcastWait)
 	for {
 		select {
 		case ev := <-sub:
