@@ -394,6 +394,61 @@ func TestStateEndpointIncludesRunbooks(t *testing.T) {
 	}
 }
 
+func TestNoteDetail(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveNote(repoDir, store.Note{ID: "N-0001", Title: "go-git SSH caveat", State: domain.NoteActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	doc := realDoc("N-0001", "Conhecimento durável de time.")
+	writeContentDoc(t, repoDir, "notes", "N-0001", doc)
+
+	var got struct {
+		Note store.Note `json:"note"`
+		Doc  string     `json:"doc"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/notes/N-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Note.ID != "N-0001" || got.Note.State != domain.NoteActive {
+		t.Fatalf("note = %+v, want active N-0001", got.Note)
+	}
+	if got.Doc != doc {
+		t.Fatalf("doc = %q, want the note content markdown", got.Doc)
+	}
+}
+
+func TestNoteDetailNotFound(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/notes/N-9999", "", &got)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["error"] != "nota não encontrada" {
+		t.Fatalf("error = %q, want %q", got["error"], "nota não encontrada")
+	}
+}
+
+func TestStateEndpointIncludesNotes(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveNote(repoDir, store.Note{ID: "N-0001", Title: "Invariante", State: domain.NoteActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	var got struct {
+		Notes []store.Note `json:"notes"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Notes) != 1 || got.Notes[0].ID != "N-0001" {
+		t.Fatalf("state notes = %+v, want [N-0001]", got.Notes)
+	}
+}
+
 func TestReferenceDetail(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	now := time.Now().UTC()
