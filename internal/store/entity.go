@@ -56,6 +56,21 @@ type Runbook struct {
 	UpdatedAt    time.Time           `json:"updated_at"`
 }
 
+// Note is the persisted form of a note entity: durable, team-relevant project
+// knowledge an agent acquired (gotchas, invariants, tacit conventions). The
+// body is freeform; the lifecycle (active/superseded) is the leanest one that
+// preserves searchable history.
+type Note struct {
+	ID           string           `json:"id"`
+	Title        string           `json:"title"`
+	State        domain.NoteState `json:"state"`
+	SupersededBy string           `json:"superseded_by,omitempty"`
+	Reason       string           `json:"reason,omitempty"`
+	Informs      []string         `json:"informs,omitempty"` // F-/D- ids this knowledge informs
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
+}
+
 // Reference is the persisted form of a reference entity. External references
 // (registered, not imported) carry the source URL, the External marker, and an
 // Informs backlink to the features/decisions the source motivated.
@@ -91,6 +106,7 @@ const (
 	decisionsSubdir   = "entities/decisions"
 	referencesSubdir  = "entities/references"
 	runbooksSubdir    = "entities/runbooks"
+	notesSubdir       = "entities/notes"
 	historicalsSubdir = "entities/historicals"
 )
 
@@ -137,6 +153,21 @@ func LoadRunbook(backendDir, id string) (Runbook, error) {
 // LoadAllRunbooks returns all runbooks sorted by ID ascending.
 func LoadAllRunbooks(backendDir string) ([]Runbook, error) {
 	return loadAllEntities[Runbook](backendDir, runbooksSubdir)
+}
+
+// SaveNote writes the note to entities/notes/<ID>.json.
+func SaveNote(backendDir string, n Note) error {
+	return saveEntity(backendDir, notesSubdir, n.ID, n)
+}
+
+// LoadNote reads one note by id; ErrNotFound when the file is missing.
+func LoadNote(backendDir, id string) (Note, error) {
+	return loadEntity[Note](backendDir, notesSubdir, id)
+}
+
+// LoadAllNotes returns all notes sorted by ID ascending.
+func LoadAllNotes(backendDir string) ([]Note, error) {
+	return loadAllEntities[Note](backendDir, notesSubdir)
 }
 
 // SaveReference writes the reference to entities/references/<ID>.json.

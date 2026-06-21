@@ -31,12 +31,14 @@ var layoutSubdirsInit = []string{
 	decisionsSubdir,
 	referencesSubdir,
 	runbooksSubdir,
+	notesSubdir,
 	historicalsSubdir,
 	eventsSubdir,
 	"content/features",
 	"content/decisions",
 	"content/references",
 	"content/runbooks",
+	"content/notes",
 	"content/artifacts",
 	"content/wiki",
 }
@@ -47,6 +49,7 @@ var idSubdirs = map[string]string{
 	"D":  decisionsSubdir,
 	"R":  referencesSubdir,
 	"RB": runbooksSubdir,
+	"N":  notesSubdir,
 	"H":  historicalsSubdir,
 }
 

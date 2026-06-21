@@ -50,6 +50,17 @@ func seedBackend(t *testing.T) (repoDir string) {
 	}); err != nil {
 		t.Fatalf("SaveReference: %v", err)
 	}
+	notes := []store.Note{
+		{ID: "N-0001", Title: "Cache do índice é derivado", State: domain.NoteActive,
+			CreatedAt: now, UpdatedAt: now},
+		{ID: "N-0002", Title: "Convenção antiga de slug", State: domain.NoteSuperseded,
+			SupersededBy: "N-0001", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, n := range notes {
+		if err := store.SaveNote(repoDir, n); err != nil {
+			t.Fatalf("SaveNote %s: %v", n.ID, err)
+		}
+	}
 
 	writeContent(t, repoDir, "content/features/F-0001/spec.md",
 		"---\ncerne_id: F-0001\n---\n\n# Bills\n\nEmitir boleto bancário com vencimento mensal, "+
@@ -65,7 +76,34 @@ func seedBackend(t *testing.T) (repoDir string) {
 			"maturidade e pela robustez da decisão.\n")
 	writeContent(t, repoDir, "content/decisions/D-0002.md",
 		"---\ncerne_id: D-0002\n---\n\n# Usar MySQL\n\nDescartado pela limitação de janelas transacionais.\n")
+	writeContent(t, repoDir, "content/notes/N-0001.md",
+		"---\ncerne_id: N-0001\n---\n\n# Cache do índice é derivado\n\nApague o arquivo sqlite e reconstrua; é gotcha conhecida.\n")
+	writeContent(t, repoDir, "content/notes/N-0002.md",
+		"---\ncerne_id: N-0002\n---\n\n# Convenção antiga de slug\n\nConhecimento substituído sobre slug legado.\n")
 	return repoDir
+}
+
+// TestSearchFindsNotes pins that notes are indexed and surface in search —
+// active ones AND superseded history (the index covers the whole backend).
+func TestSearchFindsNotes(t *testing.T) {
+	_, dbPath := rebuild(t)
+	tests := []struct {
+		query   string
+		wantID  string
+		wantKnd string
+	}{
+		{"gotcha", "N-0001", "note"}, // active note body
+		{"legado", "N-0002", "note"}, // superseded note still searchable
+	}
+	for _, tt := range tests {
+		results, err := Search(dbPath, tt.query, 10)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", tt.query, err)
+		}
+		if len(results) != 1 || results[0].EntityID != tt.wantID || results[0].Kind != tt.wantKnd {
+			t.Fatalf("Search(%q) = %+v, want single %s %s", tt.query, results, tt.wantKnd, tt.wantID)
+		}
+	}
 }
 
 func writeContent(t *testing.T, repoDir, rel, body string) {

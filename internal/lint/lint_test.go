@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +96,75 @@ func seedBackend(t *testing.T) string {
 	writeDoc(t, dir, "content/features/F-0099/spec.md", "# Órfão\n\nSem entidade.\n")
 	writeDoc(t, dir, "content/decisions/D-0099.md", "# Órfão\n\nSem entidade.\n")
 	return dir
+}
+
+// TestNoteLint pins the note parity rules, reusing the existing rule machinery:
+//   - an active note that mentions a superseded entity → ref-to-superseded.
+//   - a content/notes/<ID>.md with no note entity → orphan-content.
+//   - a superseded note becomes a needle: a live doc mentioning it is flagged.
+func TestNoteLint(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Núcleo", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.SaveFeature(dir, f); err != nil {
+			t.Fatalf("SaveFeature: %v", err)
+		}
+	}
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0002", Title: "x", State: domain.DecisionSuperseded, SupersededBy: "D-0003", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	notes := []store.Note{
+		{ID: "N-0001", Title: "Nota viva", State: domain.NoteActive, CreatedAt: now, UpdatedAt: now},
+		{ID: "N-0007", Title: "Nota substituída longa", State: domain.NoteSuperseded, SupersededBy: "N-0008", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, n := range notes {
+		if err := store.SaveNote(dir, n); err != nil {
+			t.Fatalf("SaveNote %s: %v", n.ID, err)
+		}
+	}
+
+	// Active note mentions superseded D-0002 → ref-to-superseded on the note.
+	writeDoc(t, dir, "content/notes/N-0001.md",
+		"---\ncerne_id: N-0001\n---\n\n# Nota viva\n\nNão confie na decisão D-0002, foi substituída.\n")
+	// Superseded note's content (history) is not scanned, but its ID is a needle.
+	writeDoc(t, dir, "content/notes/N-0007.md",
+		"---\ncerne_id: N-0007\n---\n\n# Nota substituída longa\n\nConteúdo antigo.\n")
+	// A live feature spec that mentions the superseded note N-0007 → flagged.
+	writeDoc(t, dir, "content/features/F-0001/spec.md",
+		"---\ncerne_id: F-0001\n---\n\n# Núcleo\n\nVeja a antiga N-0007 para o histórico.\n")
+	// Orphan note content: no N-0099 entity.
+	writeDoc(t, dir, "content/notes/N-0099.md", "# Órfã\n\nSem entidade.\n")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var sawRefOnNote, sawNeedleOnSpec, sawOrphan bool
+	for _, f := range findings {
+		switch {
+		case f.Rule == RuleRefToSuperseded && f.File == "content/notes/N-0001.md":
+			sawRefOnNote = true // active note flagged for mentioning superseded D-0002
+		case f.Rule == RuleRefToSuperseded && f.File == "content/features/F-0001/spec.md" && f.Detail != "":
+			if strings.Contains(f.Detail, "N-0007") {
+				sawNeedleOnSpec = true // superseded note is a needle
+			}
+		case f.Rule == RuleOrphanContent && f.File == "content/notes/N-0099.md":
+			sawOrphan = true
+		}
+	}
+	if !sawRefOnNote {
+		t.Errorf("active note mentioning superseded D-0002 not flagged:\n%+v", findings)
+	}
+	if !sawNeedleOnSpec {
+		t.Errorf("superseded note N-0007 did not become a needle:\n%+v", findings)
+	}
+	if !sawOrphan {
+		t.Errorf("orphan note content N-0099 not flagged:\n%+v", findings)
+	}
 }
 
 func TestParentFindings(t *testing.T) {
