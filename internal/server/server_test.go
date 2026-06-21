@@ -242,6 +242,40 @@ func TestFeatureDetailDocsUpdated(t *testing.T) {
 	}
 }
 
+// docs_real reports, per document, whether it carries real content beyond the
+// scaffold cerne writes (headings + HTML-comment guidance). The UI needs this
+// to show "Vazio" for a stub instead of rendering the raw template guidance.
+func TestFeatureDetailDocsRealContent(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateInDevelopment)
+	// spec: real content. plan: scaffold only (heading + comment guidance).
+	// result: absent.
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real."))
+	scaffold := "---\ncerne_id: F-0001\n---\n\n# Título\n\n<!-- COMO USAR: preencha. -->\n\n## Resultado\n\n<!-- Em 1-2 frases. -->\n"
+	writeDoc(t, repoDir, "F-0001", "plan.md", scaffold)
+
+	var got struct {
+		DocsReal struct {
+			Spec   bool `json:"spec"`
+			Plan   bool `json:"plan"`
+			Result bool `json:"result"`
+		} `json:"docs_real"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if !got.DocsReal.Spec {
+		t.Fatalf("docs_real.spec = false, want true (spec has real content)")
+	}
+	if got.DocsReal.Plan {
+		t.Fatalf("docs_real.plan = true, want false (plan is only scaffold)")
+	}
+	if got.DocsReal.Result {
+		t.Fatalf("docs_real.result = true, want false (result absent)")
+	}
+}
+
 func TestFeatureDetailChildren(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	now := time.Now().UTC()
