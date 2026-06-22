@@ -115,6 +115,8 @@ func taskAction(f lint.Finding) string {
 		}
 	case lint.RuleStaleCandidate:
 		return "rejeitar a candidata (cerne feature reject) ou escrever a spec e aprovar"
+	case lint.RuleStaleNote:
+		return "aposentar a nota (cerne note retire) ou confirmar que ainda é durável"
 	}
 	return f.Detail
 }

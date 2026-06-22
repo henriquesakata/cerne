@@ -187,6 +187,33 @@ func TestNoteSubstituir(t *testing.T) {
 	}
 }
 
+func TestNoteRetire(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newNote(t, projDir, "Conhecimento que envelheceu", 1)
+
+	// --reason is required.
+	if _, err := execCerne(t, "note", "retire", id, "--dir", projDir); err == nil {
+		t.Fatalf("note retire without --reason succeeded, want error")
+	}
+
+	// retire moves the note to superseded with NO successor (like substituir
+	// sem --by), and the output reads as a retirement.
+	out, err := execCerne(t, "note", "retire", id, "--reason", "resolvida pela F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note retire: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "aposentada") || !strings.Contains(out, "superseded") {
+		t.Fatalf("note retire output missing aposentada/superseded:\n%s", out)
+	}
+	n, err := store.LoadNote(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadNote: %v", err)
+	}
+	if n.State != domain.NoteSuperseded || n.SupersededBy != "" || n.Reason != "resolvida pela F-0001" {
+		t.Fatalf("note = %+v, want superseded with no successor and the reason", n)
+	}
+}
+
 func TestNoteSubstituirRetire(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newNote(t, projDir, "Conhecimento obsoleto", 1)
