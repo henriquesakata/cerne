@@ -56,6 +56,15 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
 	if err != nil {
 		return err
 	}
+	// A note created with a body is already real content, committed and pushed
+	// by CreateNote (CommitAndSnapshot) — there is nothing to fill or push.
+	// Confirm it is synced and point at 'cerne pull', so the caller doesn't
+	// pull+inspect just to verify a complete operation. A bodyless note is a
+	// stub: keep the fill + push next step.
+	if strings.TrimSpace(body) != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (active) com corpo — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", n.ID)
+		return nil
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (active). Próximo passo: preencha a nota em '.docs/current/notes/%s-<slug>.md' e rode 'cerne push'.\n", n.ID, n.ID)
 	return nil
 }

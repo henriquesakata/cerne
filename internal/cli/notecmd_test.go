@@ -34,6 +34,11 @@ func TestNoteNew(t *testing.T) {
 	if !strings.Contains(out, "N-0001 criada (active)") {
 		t.Fatalf("note new output missing N-0001 confirmation:\n%s", out)
 	}
+	// A bodyless note is born a stub: the CLI keeps pointing the author at the
+	// fill + push flow.
+	if !strings.Contains(out, "preencha") || !strings.Contains(out, "cerne push") {
+		t.Fatalf("note new (stub) output missing the fill+push next step:\n%s", out)
+	}
 
 	n, err := store.LoadNote(repoDir, "N-0001")
 	if err != nil {
@@ -89,8 +94,22 @@ func TestNoteNewWithFileBody(t *testing.T) {
 		t.Fatalf("write body file: %v", err)
 	}
 
-	if _, err := execCerne(t, "note", "new", "Índice é derivado", "--file", bodyFile, "--dir", projDir); err != nil {
+	out, err := execCerne(t, "note", "new", "Índice é derivado", "--file", bodyFile, "--dir", projDir)
+	if err != nil {
 		t.Fatalf("note new --file: %v", err)
+	}
+	// A note created with a body is already real content, committed and pushed
+	// (CreateNote → CommitAndSnapshot). The CLI must confirm it is synced and
+	// point at 'cerne pull', NOT the stub fill+push hint — otherwise the agent
+	// pulls and cats the note just to verify a complete operation.
+	if !strings.Contains(out, "já sincronizada") || !strings.Contains(out, "com corpo") {
+		t.Fatalf("note new --file output must confirm a synced body:\n%s", out)
+	}
+	if !strings.Contains(out, "cerne pull") {
+		t.Fatalf("note new --file output must point at 'cerne pull' to materialize:\n%s", out)
+	}
+	if strings.Contains(out, "preencha") || strings.Contains(out, "cerne push") {
+		t.Fatalf("note new --file must not print the stub fill+push hint:\n%s", out)
 	}
 
 	body, err := os.ReadFile(filepath.Join(repoDir, "content", "notes", "N-0001.md"))
