@@ -121,9 +121,12 @@ cerne scaffolds `content/runbooks/RB-NNNN.md` from a canonical template when you
 
 A **note** is durable, team-relevant project knowledge an agent acquired across sessions — a gotcha, an invariant, a "why X and not Y", a tacit convention, a trap. It is **not** a feature (no work to gate), a decision (no formal choice), or a reference (no external URL): it is internal knowledge that today leaks into a per-user, per-machine scratchpad instead of reaching the guardian.
 
-- Capture it: `cerne note new "<title>" [--informs F-NNNN,D-NNNN] [--file <body> | stdin]` mints `N-NNNN` (active). The **body is freeform** — there is no template and no `draft` command; write the knowledge and the *why*. With no body the note is born a stub for you to fill. `--informs` backlinks the note to the feature/decision (F-/D-) it informs.
-- Author it: `cerne pull`, fill `.docs/current/notes/N-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`.
-- Correct or retire it: `cerne note substituir N-NNNN --by N-MMMM --reason "…"` replaces a note with a corrected successor; **omit `--by` to merely retire it** (`--reason` still required). Either way it moves to `superseded` and becomes searchable history — the lifecycle (active/superseded) is cerne data, not prose.
+- Capture it: `cerne note new "<title>" [--informs F-NNNN,D-NNNN] [--file <body> | stdin]` mints `N-NNNN` (active). The **body is freeform** — there is no template and no `draft` command; write the knowledge and the *why*. `--informs` backlinks the note to the feature/decision (F-/D-) it informs.
+- Author it — two flows, depending on whether you passed a body:
+  - **Body on `new` (`--file`/stdin):** the note is born `active` with real content, already committed and pushed — the CLI confirms it (`✓ … já sincronizada`). Just `cerne pull` to materialize it locally. **No fill, no push** (a `cerne push` now would report nothing to send); don't pull-and-read just to check the body landed.
+  - **Stub (no body):** `cerne pull`, fill `.docs/current/notes/N-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`.
+- Retire or correct it: **`cerne note retire N-NNNN --reason "…"`** retires an obsolete note (e.g. the feature it informed has shipped) — it moves to `superseded` with no successor, leaving `.docs/CONTEXT.md` but staying searchable history. To replace it with a corrected version instead, `cerne note substituir N-NNNN --by N-MMMM --reason "…"` (the successor materializes in its place). Either way the lifecycle (active/superseded) is cerne data, not prose.
+- Let the guardian flag staleness: `cerne lint` reports a **`stale-note`** when an active note's `--informs` targets are *all* concluded (feature implemented/rejected/superseded, decision superseded) — confirm it is still durable or `retire` it. cerne never auto-retires: the gotcha learned while building a feature is often the durable invariant worth keeping, so the call is yours.
 - Find it: active notes surface in the `## Conhecimento` section of `.docs/CONTEXT.md` and in `cerne search` / `cerne ask`; superseded ones stay reachable through search/ask as history.
 
 ## Knowledge routing: cerne note vs. local memory

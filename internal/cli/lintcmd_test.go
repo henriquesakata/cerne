@@ -25,8 +25,9 @@ func writeBackendDoc(t *testing.T, repoDir, rel, content string) {
 	}
 }
 
-// seedLintFixture seeds a backend with exactly 6 lint findings:
-// 2 ref-to-superseded, 1 broken-link, 1 orphan-content, 2 missing-gate-doc.
+// seedLintFixture seeds a backend with 9 lint findings: 2 ref-to-superseded,
+// 1 broken-link, 1 orphan-content, 2 missing-gate-doc, 1 stale-note,
+// 2 incomplete-doc.
 func seedLintFixture(t *testing.T, repoDir string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -47,6 +48,11 @@ func seedLintFixture(t *testing.T, repoDir string) {
 	d := store.Decision{ID: "D-0001", Title: "Adotar gateway", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveDecision(repoDir, d); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
+	}
+	// An active note informing only the implemented F-0005 → stale-note.
+	note := store.Note{ID: "N-0001", Title: "Migração da exportação", State: domain.NoteActive, Informs: []string{"F-0005"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveNote(repoDir, note); err != nil {
+		t.Fatalf("SaveNote: %v", err)
 	}
 
 	writeBackendDoc(t, repoDir, "content/features/F-0003/spec.md",
@@ -76,8 +82,8 @@ func TestLintFindings(t *testing.T) {
 	if err == nil {
 		t.Fatalf("lint with findings returned nil error, want exit error\noutput: %s", out)
 	}
-	if err.Error() != "8 problema(s) encontrado(s)" {
-		t.Fatalf("lint error = %q, want %q", err.Error(), "8 problema(s) encontrado(s)")
+	if err.Error() != "9 problema(s) encontrado(s)" {
+		t.Fatalf("lint error = %q, want %q", err.Error(), "9 problema(s) encontrado(s)")
 	}
 
 	// Groups in fixed rule order, each line "  <loc> — <detail>".
@@ -92,10 +98,12 @@ func TestLintFindings(t *testing.T) {
 		"MISSING-GATE-DOC (2)\n" +
 			"  F-0004 — feature approved sem spec.md real\n" +
 			"  F-0005 — feature implemented sem result.md real\n",
+		"STALE-NOTE (1)\n" +
+			"  N-0001 — só informa trabalho encerrado (F-0005 implemented) — aposente ou confirme que ainda é durável\n",
 		"INCOMPLETE-DOC (2)\n" +
 			"  content/decisions/D-0001.md — content/decisions/D-0001.md: faltam as seções do template: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações\n" +
 			"  content/features/F-0003/spec.md — content/features/F-0003/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo\n",
-		"Total: 8 problema(s).\n",
+		"Total: 9 problema(s).\n",
 	}
 	prev := -1
 	for _, b := range blocks {
@@ -128,12 +136,13 @@ func TestLintFixTasks(t *testing.T) {
 		"- [ ] content/features/F-0003/spec.md: corrigir link quebrado: ../missing.md\n" +
 		"- [ ] content/decisions/D-0099.md: remover conteúdo sem entidade ou criar a entidade correspondente\n" +
 		"- [ ] F-0004: escrever spec.md real (feature approved)\n" +
-		"- [ ] F-0005: escrever result.md real (feature implemented)\n"
+		"- [ ] F-0005: escrever result.md real (feature implemented)\n" +
+		"- [ ] N-0001: aposentar a nota (cerne note retire) ou confirmar que ainda é durável\n"
 	if !strings.Contains(out, wantBlock) {
 		t.Fatalf("output missing fix-tasks block:\nwant:\n%s\ngot:\n%s", wantBlock, out)
 	}
 	// The task list comes after the findings table.
-	if strings.Index(out, "Total: 6 problema(s).") > strings.Index(out, "## Tarefas de manutenção") {
+	if strings.Index(out, "Total: 9 problema(s).") > strings.Index(out, "## Tarefas de manutenção") {
 		t.Fatalf("fix-tasks block printed before the findings table:\n%s", out)
 	}
 }

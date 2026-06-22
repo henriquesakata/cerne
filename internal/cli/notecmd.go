@@ -20,6 +20,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newNoteNewCmd(&dir))
+	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
 	return cmd
 }
@@ -56,6 +57,15 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
 	if err != nil {
 		return err
 	}
+	// A note created with a body is already real content, committed and pushed
+	// by CreateNote (CommitAndSnapshot) — there is nothing to fill or push.
+	// Confirm it is synced and point at 'cerne pull', so the caller doesn't
+	// pull+inspect just to verify a complete operation. A bodyless note is a
+	// stub: keep the fill + push next step.
+	if strings.TrimSpace(body) != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (active) com corpo — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", n.ID)
+		return nil
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (active). Próximo passo: preencha a nota em '.docs/current/notes/%s-<slug>.md' e rode 'cerne push'.\n", n.ID, n.ID)
 	return nil
 }
@@ -91,6 +101,42 @@ func stdinPiped() bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice == 0
+}
+
+func newNoteRetireCmd(dir *string) *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "retire <id>",
+		Short: "Aposentar uma nota obsoleta (vai para superseded, sem sucessora; --reason obrigatório)",
+		Long: "Move uma nota de active para superseded SEM sucessora — para conhecimento que não vale mais " +
+			"(ex.: a feature que a nota informava já entregou). A nota sai do estado atual (.docs/CONTEXT.md) e " +
+			"vira história pesquisável ('cerne search'/'ask'). Para trocar por uma versão corrigida, use " +
+			"'cerne note substituir --by'. O 'cerne lint' sinaliza (stale-note) notas cujo --informs já encerrou.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteRetire(cmd, *dir, args[0], reason)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "motivo da aposentadoria (obrigatório)")
+	return cmd
+}
+
+func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
+	// Validate the required reason before resolveProject so bad invocations
+	// fail fast without touching origin. retire is substituir with no successor.
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("--reason é obrigatório")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	out, err := app.TransitionNote(ctx.repoDir, ctx.projDir, id, "", reason)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s aposentada: %s → %s\n", out.ID, out.From, out.To)
+	return nil
 }
 
 func newNoteSubstituirCmd(dir *string) *cobra.Command {
