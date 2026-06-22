@@ -137,7 +137,7 @@ func TestLintFixTasks(t *testing.T) {
 		"- [ ] content/decisions/D-0099.md: remover conteúdo sem entidade ou criar a entidade correspondente\n" +
 		"- [ ] F-0004: escrever spec.md real (feature approved)\n" +
 		"- [ ] F-0005: escrever result.md real (feature implemented)\n" +
-		"- [ ] N-0001: aposentar a nota (cerne note retire) ou confirmar que ainda é durável\n"
+		"- [ ] N-0001: aposentar (cerne note retire) ou marcar durável (cerne note keep)\n"
 	if !strings.Contains(out, wantBlock) {
 		t.Fatalf("output missing fix-tasks block:\nwant:\n%s\ngot:\n%s", wantBlock, out)
 	}

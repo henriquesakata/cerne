@@ -67,6 +67,7 @@ type Note struct {
 	SupersededBy string           `json:"superseded_by,omitempty"`
 	Reason       string           `json:"reason,omitempty"`
 	Informs      []string         `json:"informs,omitempty"` // F-/D- ids this knowledge informs
+	Durable      bool             `json:"durable,omitempty"` // reviewed as durable: lint's stale-note skips it
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }

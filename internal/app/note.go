@@ -115,6 +115,41 @@ func TransitionNote(repoDir, projDir, id, by, reason string) (NoteOutcome, error
 	return NoteOutcome{ID: id, From: oldState, To: newState}, nil
 }
 
+// KeepNote marks note id as durable in the backend clone at repoDir: the note
+// has been reviewed as durable team knowledge, so lint's stale-note rule no
+// longer flags it even when every --informs target has concluded. It requires an
+// active note (a superseded one is history), is idempotent (a no-op with no new
+// commit when already durable), appends the note.kept event and syncs the backend
+// + docs.lock in projDir.
+func KeepNote(repoDir, projDir, id string) (store.Note, error) {
+	n, err := store.LoadNote(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Note{}, fmt.Errorf("nota %s não encontrada no backend", id)
+	}
+	if err != nil {
+		return store.Note{}, err
+	}
+	if n.State != domain.NoteActive {
+		return store.Note{}, fmt.Errorf("nota %s não está active (está %s) — keep só vale para nota ativa", id, n.State)
+	}
+	if n.Durable {
+		return n, nil // idempotent: already durable, nothing to commit
+	}
+	n.Durable = true
+	n.UpdatedAt = time.Now().UTC()
+	if err := store.SaveNote(repoDir, n); err != nil {
+		return store.Note{}, err
+	}
+	ev := domain.NewEvent(id, "note.kept", map[string]string{}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Note{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: keep %s (durable)", id)); err != nil {
+		return store.Note{}, err
+	}
+	return n, nil
+}
+
 // NoteDocPath returns the backend path of a note's content document.
 func NoteDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "notes", id+".md")

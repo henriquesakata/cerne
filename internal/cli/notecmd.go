@@ -20,6 +20,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newNoteNewCmd(&dir))
+	cmd.AddCommand(newNoteKeepCmd(&dir))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
 	return cmd
@@ -136,6 +137,34 @@ func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s aposentada: %s → %s\n", out.ID, out.From, out.To)
+	return nil
+}
+
+func newNoteKeepCmd(dir *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "keep <id>",
+		Short: "Marcar uma nota como durável (o lint para de sinalizá-la como stale-note)",
+		Long: "Marca uma nota ativa como conhecimento durável: o veredito humano de que ela vale, mesmo que " +
+			"informe (--informs) uma feature/decisão já encerrada. A nota continua active e materializada; o " +
+			"'cerne lint' deixa de sinalizá-la como stale-note. Idempotente. Para aposentar de vez, use 'cerne note retire'.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteKeep(cmd, *dir, args[0])
+		},
+	}
+	return cmd
+}
+
+func runNoteKeep(cmd *cobra.Command, dir, id string) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	n, err := app.KeepNote(ctx.repoDir, ctx.projDir, id)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s marcada como durável — o 'cerne lint' não a sinaliza mais (stale-note).\n", n.ID)
 	return nil
 }
 

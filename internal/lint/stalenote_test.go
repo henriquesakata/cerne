@@ -45,6 +45,7 @@ func TestStaleNoteFindings(t *testing.T) {
 		{ID: "N-0005", Title: "informa decisão superseded", State: domain.NoteActive, Informs: []string{"D-0002"}},             // stale
 		{ID: "N-0006", Title: "informa decisão vigente", State: domain.NoteActive, Informs: []string{"D-0001"}},                // live target
 		{ID: "N-0007", Title: "já aposentada", State: domain.NoteSuperseded, Informs: []string{"F-0001"}},                      // not active
+		{ID: "N-0008", Title: "durável, ainda que informe feature concluída", State: domain.NoteActive, Informs: []string{"F-0001"}, Durable: true}, // durable → skip
 	}
 	for _, n := range notes {
 		n.CreatedAt, n.UpdatedAt = now, now
