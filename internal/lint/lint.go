@@ -853,7 +853,8 @@ func staleCandidateFindings(repoDir string, features []store.Feature, now time.T
 // it is still durable or `cerne note retire` it. It never auto-retires, since the
 // gotcha learned building a feature is often the durable invariant worth keeping.
 // A note with any live target, or no --informs at all (freeform knowledge with no
-// binding), is presumed durable and left alone; a superseded note is history.
+// binding), is presumed durable and left alone; a superseded note is history; a
+// note reviewed as durable (`cerne note keep`, the Durable flag) is silenced.
 func staleNoteFindings(features []store.Feature, decisions []store.Decision, notes []store.Note) []Finding {
 	featureState := make(map[string]domain.FeatureState, len(features))
 	for _, f := range features {
@@ -877,7 +878,7 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 
 	var findings []Finding
 	for _, nt := range notes {
-		if nt.State != domain.NoteActive || len(nt.Informs) == 0 {
+		if nt.State != domain.NoteActive || nt.Durable || len(nt.Informs) == 0 {
 			continue
 		}
 		terminals := make([]string, 0, len(nt.Informs))

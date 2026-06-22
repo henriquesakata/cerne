@@ -214,6 +214,48 @@ func TestNoteRetire(t *testing.T) {
 	}
 }
 
+func TestNoteKeep(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newNote(t, projDir, "Conhecimento durável", 1)
+
+	out, err := execCerne(t, "note", "keep", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note keep: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "durável") {
+		t.Fatalf("note keep output missing durável confirmation:\n%s", out)
+	}
+	n, err := store.LoadNote(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadNote: %v", err)
+	}
+	if !n.Durable || n.State != domain.NoteActive {
+		t.Fatalf("note = %+v, want active and durable after keep", n)
+	}
+	// The note.kept event was appended.
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if last := evs[len(evs)-1]; last.Type != "note.kept" || last.EntityID != id {
+		t.Fatalf("last event = %+v, want note.kept for %s", last, id)
+	}
+
+	// keep is idempotent: a second keep succeeds without error.
+	if _, err := execCerne(t, "note", "keep", id, "--dir", projDir); err != nil {
+		t.Fatalf("second note keep (idempotent) failed: %v", err)
+	}
+
+	// keep refuses a non-active (superseded) note.
+	id2 := newNote(t, projDir, "Para aposentar", 2)
+	if _, err := execCerne(t, "note", "retire", id2, "--reason", "obsoleta", "--dir", projDir); err != nil {
+		t.Fatalf("note retire: %v", err)
+	}
+	if _, err := execCerne(t, "note", "keep", id2, "--dir", projDir); err == nil {
+		t.Fatalf("note keep on a superseded note succeeded, want error")
+	}
+}
+
 func TestNoteSubstituirRetire(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newNote(t, projDir, "Conhecimento obsoleto", 1)
