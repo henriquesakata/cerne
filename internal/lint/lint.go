@@ -43,11 +43,12 @@ const (
 	RuleParentTerminal    = "parent-terminal"
 	RuleEpicOpenChildren  = "epic-open-children"
 	RuleStaleCandidate    = "stale-candidate"
+	RuleStaleNote         = "stale-note"
 	RuleIncompleteDoc     = "incomplete-doc"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleStaleCandidate, RuleIncompleteDoc}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:   0,
@@ -59,7 +60,8 @@ var ruleRank = map[string]int{
 	RuleParentTerminal:    6,
 	RuleEpicOpenChildren:  7,
 	RuleStaleCandidate:    8,
-	RuleIncompleteDoc:     9,
+	RuleStaleNote:         9,
+	RuleIncompleteDoc:     10,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -188,6 +190,8 @@ func Run(repoDir string) ([]Finding, error) {
 		return nil, err
 	}
 	findings = append(findings, stale...)
+
+	findings = append(findings, staleNoteFindings(features, decisions, notes)...)
 
 	incomplete, err := incompleteDocFindings(repoDir, features, decisions, runbooks)
 	if err != nil {
@@ -840,6 +844,62 @@ func staleCandidateFindings(repoDir string, features []store.Feature, now time.T
 		})
 	}
 	return findings, nil
+}
+
+// staleNoteFindings flags an active note whose --informs targets are ALL
+// terminal — every informed feature is implemented/rejected/superseded and every
+// informed decision is superseded — so the work the note documented is settled.
+// Such a note is a strong retirement candidate: surface it for a human to confirm
+// it is still durable or `cerne note retire` it. It never auto-retires, since the
+// gotcha learned building a feature is often the durable invariant worth keeping.
+// A note with any live target, or no --informs at all (freeform knowledge with no
+// binding), is presumed durable and left alone; a superseded note is history.
+func staleNoteFindings(features []store.Feature, decisions []store.Decision, notes []store.Note) []Finding {
+	featureState := make(map[string]domain.FeatureState, len(features))
+	for _, f := range features {
+		featureState[f.ID] = f.State
+	}
+	decisionState := make(map[string]domain.DecisionState, len(decisions))
+	for _, d := range decisions {
+		decisionState[d.ID] = d.State
+	}
+	// classify reports whether an informed target is still live (work ongoing or
+	// decision standing) plus its raw state label, or ok=false when unknown.
+	classify := func(id string) (live bool, state string, ok bool) {
+		if s, ok := featureState[id]; ok {
+			return s == domain.StateCandidate || s == domain.StateApproved || s == domain.StateInDevelopment, string(s), true
+		}
+		if s, ok := decisionState[id]; ok {
+			return s == domain.DecisionActive, string(s), true
+		}
+		return false, "", false
+	}
+
+	var findings []Finding
+	for _, nt := range notes {
+		if nt.State != domain.NoteActive || len(nt.Informs) == 0 {
+			continue
+		}
+		terminals := make([]string, 0, len(nt.Informs))
+		allTerminal := true
+		for _, target := range nt.Informs {
+			live, state, ok := classify(target)
+			if !ok || live {
+				allTerminal = false
+				break
+			}
+			terminals = append(terminals, target+" "+state)
+		}
+		if !allTerminal {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleStaleNote,
+			Entity: nt.ID,
+			Detail: fmt.Sprintf("só informa trabalho encerrado (%s) — aposente ou confirme que ainda é durável", strings.Join(terminals, ", ")),
+		})
+	}
+	return findings
 }
 
 // gateFindings enforces the entity-state document invariants: approved and
