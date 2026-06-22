@@ -13,6 +13,7 @@ const RULE_LABELS: Record<string, string> = {
   'parent-terminal': 'Feature sob épico terminal',
   'epic-open-children': 'Épico concluído com filhos abertos',
   'stale-candidate': 'Candidata parada (sem spec)',
+  'stale-note': 'Nota obsoleta (trabalho informado encerrado)',
 }
 const RULE_ORDER = [
   'ref-to-superseded',
@@ -24,6 +25,7 @@ const RULE_ORDER = [
   'parent-terminal',
   'epic-open-children',
   'stale-candidate',
+  'stale-note',
 ]
 
 export default function Lint() {
