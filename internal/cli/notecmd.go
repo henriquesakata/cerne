@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newNoteCmd() *cobra.Command {
@@ -20,10 +22,117 @@ func newNoteCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newNoteNewCmd(&dir))
+	cmd.AddCommand(newNoteListCmd(&dir))
+	cmd.AddCommand(newNoteShowCmd(&dir))
 	cmd.AddCommand(newNoteKeepCmd(&dir))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
 	return cmd
+}
+
+func newNoteListCmd(dir *string) *cobra.Command {
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "Listar notas (conhecimento durável) — ativas por padrão; --all inclui história",
+		Long: "Lista as notas lidas direto do backend (store), não da projeção '.docs/' — então enxerga o " +
+			"conhecimento mesmo quando '.docs/' está desatualizado (sem 'cerne pull'). Por padrão mostra só as " +
+			"ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
+			"(durável, informa F-/D-, sucessora).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteList(cmd, *dir, all)
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "incluir notas superseded (história)")
+	return cmd
+}
+
+func runNoteList(cmd *cobra.Command, dir string, all bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	notes, err := store.LoadAllNotes(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	w := cmd.OutOrStdout()
+	shown := 0
+	for _, n := range notes {
+		if !all && n.State != domain.NoteActive {
+			continue
+		}
+		shown++
+		line := fmt.Sprintf("%s  [%s]  %s", n.ID, n.State, n.Title)
+		var tags []string
+		if n.Durable {
+			tags = append(tags, "durável")
+		}
+		if len(n.Informs) > 0 {
+			tags = append(tags, "informa "+strings.Join(n.Informs, ","))
+		}
+		if n.SupersededBy != "" {
+			tags = append(tags, "→ "+n.SupersededBy)
+		}
+		if len(tags) > 0 {
+			line += "  · " + strings.Join(tags, " · ")
+		}
+		fmt.Fprintln(w, line)
+	}
+	if shown == 0 {
+		if all {
+			fmt.Fprintln(w, "Nenhuma nota registrada. Use 'cerne note new \"<título>\"' para registrar conhecimento durável.")
+		} else {
+			fmt.Fprintln(w, "Nenhuma nota ativa. Use 'cerne note new \"<título>\"' para registrar, ou 'cerne note list --all' para ver história.")
+		}
+	}
+	return nil
+}
+
+func newNoteShowCmd(dir *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <id>",
+		Short: "Mostrar uma nota (metadados + corpo) lida direto do backend",
+		Long: "Imprime os metadados (id, estado, durável, informa, motivo/sucessora) e o corpo markdown da nota, " +
+			"ambos lidos direto do backend (store) — imune a uma projeção '.docs/' desatualizada.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteShow(cmd, *dir, args[0])
+		},
+	}
+	return cmd
+}
+
+func runNoteShow(cmd *cobra.Command, dir, id string) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	n, err := store.LoadNote(ctx.repoDir, id)
+	if err != nil {
+		return fmt.Errorf("nota %s: %w", id, err)
+	}
+	w := cmd.OutOrStdout()
+	fmt.Fprintf(w, "%s  [%s]  %s\n", n.ID, n.State, n.Title)
+	if n.Durable {
+		fmt.Fprintln(w, "durável: sim")
+	}
+	if len(n.Informs) > 0 {
+		fmt.Fprintf(w, "informa: %s\n", strings.Join(n.Informs, ", "))
+	}
+	if n.SupersededBy != "" {
+		fmt.Fprintf(w, "substituída por: %s\n", n.SupersededBy)
+	}
+	if n.Reason != "" {
+		fmt.Fprintf(w, "motivo: %s\n", n.Reason)
+	}
+	body, err := store.LoadNoteContent(ctx.repoDir, id)
+	if err != nil {
+		return fmt.Errorf("corpo da nota %s: %w", id, err)
+	}
+	fmt.Fprintf(w, "\n%s\n", strings.TrimRight(body, "\n"))
+	return nil
 }
 
 func newNoteNewCmd(dir *string) *cobra.Command {

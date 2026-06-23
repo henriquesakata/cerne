@@ -171,6 +171,17 @@ func LoadAllNotes(backendDir string) ([]Note, error) {
 	return loadAllEntities[Note](backendDir, notesSubdir)
 }
 
+// LoadNoteContent reads a note's markdown body (content/notes/<id>.md). The body
+// lives outside the entity JSON, so a reader (e.g. 'cerne note show') fetches it
+// straight from the backend store rather than from the .docs/ projection.
+func LoadNoteContent(backendDir, id string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(backendDir, "content", "notes", id+".md"))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // SaveReference writes the reference to entities/references/<ID>.json.
 func SaveReference(backendDir string, r Reference) error {
 	return saveEntity(backendDir, referencesSubdir, r.ID, r)

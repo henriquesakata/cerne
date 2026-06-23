@@ -256,6 +256,83 @@ func TestNoteKeep(t *testing.T) {
 	}
 }
 
+func TestNoteList(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+
+	// Empty project: a clear "no notes" signal. This is the gap the read command
+	// closes — without it an agent flails looking for a list path and concludes
+	// nothing exists; here it gets an explicit, greppable answer.
+	out, err := execCerne(t, "note", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list (empty): %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Nenhuma") {
+		t.Fatalf("empty note list must state there are no notes:\n%s", out)
+	}
+
+	a := newNote(t, projDir, "go-git não lê ssh config", 1)
+	b := newNote(t, projDir, "Índice é derivado", 2)
+	c := newNote(t, projDir, "Conhecimento obsoleto", 3)
+	// Retire c so it is non-active, and mark a durable so the marker shows.
+	if _, err := execCerne(t, "note", "retire", c, "--reason", "obsoleta", "--dir", projDir); err != nil {
+		t.Fatalf("note retire: %v", err)
+	}
+	if _, err := execCerne(t, "note", "keep", a, "--dir", projDir); err != nil {
+		t.Fatalf("note keep: %v", err)
+	}
+
+	// Default lists active notes only, read from the backend store.
+	out, err = execCerne(t, "note", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{a, "go-git não lê ssh config", b, "Índice é derivado", "durá"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("note list missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, c) {
+		t.Fatalf("note list (default) must omit the retired note %s:\n%s", c, out)
+	}
+
+	// --all includes the superseded one with its state.
+	out, err = execCerne(t, "note", "list", "--all", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list --all: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, c) || !strings.Contains(out, "superseded") {
+		t.Fatalf("note list --all must include the superseded note with its state:\n%s", out)
+	}
+}
+
+func TestNoteShow(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(bodyFile, []byte("O índice SQLite é cache derivado: apague e reconstrua.\n"), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+	if _, err := execCerne(t, "note", "new", "Índice é derivado", "--file", bodyFile, "--dir", projDir); err != nil {
+		t.Fatalf("note new --file: %v", err)
+	}
+
+	// show prints metadata (id, state, title) and the full body — both read
+	// straight from the backend store, so they are immune to a stale .docs/.
+	out, err := execCerne(t, "note", "show", "N-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note show: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{"N-0001", "active", "Índice é derivado", "cache derivado"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("note show output missing %q:\n%s", want, out)
+		}
+	}
+
+	// Unknown id errors, naming the id.
+	if _, err := execCerne(t, "note", "show", "N-9999", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "N-9999") {
+		t.Fatalf("note show N-9999 err = %v, want error naming N-9999", err)
+	}
+}
+
 func TestNoteSubstituirRetire(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newNote(t, projDir, "Conhecimento obsoleto", 1)
