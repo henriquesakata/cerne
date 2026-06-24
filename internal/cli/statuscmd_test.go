@@ -220,3 +220,57 @@ func TestStatusEmptyProject(t *testing.T) {
 		t.Fatalf("features = %v, want present empty array", parsed.Features)
 	}
 }
+
+// TestStatusActive pins the lean view: --active shows only the active groups
+// (+ ÉPICOS), hides IMPLEMENTADAS and terminals, counts only active features,
+// and takes precedence over --all.
+func TestStatusActive(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Epico ativo", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filho implementado", Parent: "F-0001", State: domain.StateImplemented},
+		{ID: "F-0003", Title: "Filho aprovado", Parent: "F-0001", State: domain.StateApproved},
+		{ID: "F-0004", Title: "Candidata solta", State: domain.StateCandidate},
+		{ID: "F-0005", Title: "Implementada solta", State: domain.StateImplemented},
+		{ID: "F-0006", Title: "Substituida", State: domain.StateSuperseded, SupersededBy: "F-0005"},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed active"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "status", "--active", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status --active: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{"EM DESENVOLVIMENTO (1)", "APROVADAS (1)", "CANDIDATAS (1)", "ÉPICOS (1)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--active missing %q:\n%s", want, out)
+		}
+	}
+	// Implemented + terminal groups and their standalone rows are hidden.
+	for _, banned := range []string{"IMPLEMENTADAS", "SUBSTITUÍDAS", "REJEITADAS", "Implementada solta", "Substituida"} {
+		if strings.Contains(out, banned) {
+			t.Errorf("--active leaks %q:\n%s", banned, out)
+		}
+	}
+	// Total counts only the 3 active features (in_dev epic + approved child + candidate).
+	if !strings.Contains(out, "Total: 3 feature(s)\n") {
+		t.Errorf("--active total should be 3:\n%s", out)
+	}
+
+	// --active takes precedence over --all.
+	out2, err := execCerne(t, "status", "--active", "--all", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status --active --all: %v\noutput: %s", err, out2)
+	}
+	if strings.Contains(out2, "IMPLEMENTADAS") || strings.Contains(out2, "SUBSTITUÍDAS") {
+		t.Errorf("--active must override --all:\n%s", out2)
+	}
+}
