@@ -105,7 +105,7 @@ func TestMaterializeStateProjection(t *testing.T) {
 	addReference(t, backend, "R-0002", "Arquitetura antiga", domain.ReferenceObsolete, "reference R-0002\n")
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestMaterializeScope(t *testing.T) {
 	addReference(t, backend, "R-0001", "Mapa do dominio", domain.ReferenceCurrent, "reference R-0001\n")
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "finance")
+	manifest, err := Materialize(backend, docsDir, "finance", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestMaterializeSlugCollision(t *testing.T) {
 		map[string]string{"spec.md": "spec F-0002\n"})
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestMaterializeContextGolden(t *testing.T) {
 	addDecision(t, backend, "D-0001", "Usar Postgres", domain.DecisionActive, "decision D-0001\n")
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	if _, err := Materialize(backend, docsDir, ""); err != nil {
+	if _, err := Materialize(backend, docsDir, "", false); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestMaterializeContextEpics(t *testing.T) {
 	save(store.Feature{ID: "F-0005", Title: "Feature solta", State: domain.StateCandidate})
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	if _, err := Materialize(backend, docsDir, ""); err != nil {
+	if _, err := Materialize(backend, docsDir, "", false); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
 	ctx := readContext(t, docsDir)
@@ -385,7 +385,7 @@ func TestMaterializeNotes(t *testing.T) {
 		"---\ncerne_id: N-0002\n---\n\nObsoleto.\n")
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestMaterializeNotes(t *testing.T) {
 func TestMaterializeEmptyBackend(t *testing.T) {
 	backend := seedBackend(t)
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestMaterializeEntryWithoutContentDoc(t *testing.T) {
 	}
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestMaterializeWipesSupersededOnRerun(t *testing.T) {
 		map[string]string{"spec.md": "spec F-0001\n", "plan.md": "plan F-0001\n"})
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	if _, err := Materialize(backend, docsDir, ""); err != nil {
+	if _, err := Materialize(backend, docsDir, "", false); err != nil {
 		t.Fatalf("first Materialize: %v", err)
 	}
 	featureDir := filepath.Join(docsDir, "current", "features", "F-0001-login-social")
@@ -486,7 +486,7 @@ func TestMaterializeWipesSupersededOnRerun(t *testing.T) {
 		t.Fatalf("SaveFeature: %v", err)
 	}
 
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("second Materialize: %v", err)
 	}

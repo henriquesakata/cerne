@@ -28,7 +28,7 @@ func TestMaterializeExcludesHistorical(t *testing.T) {
 	}
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	if _, err := Materialize(backend, docsDir, ""); err != nil {
+	if _, err := Materialize(backend, docsDir, "", false); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
 

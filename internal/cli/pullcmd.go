@@ -38,7 +38,7 @@ func runPull(cmd *cobra.Command, dir, scope string) error {
 	if scope == "" {
 		scope = ctx.cfg.DefaultScope
 	}
-	manifest, err := materialize.Materialize(ctx.repoDir, filepath.Join(ctx.projDir, ".docs"), scope)
+	manifest, err := materialize.Materialize(ctx.repoDir, filepath.Join(ctx.projDir, ".docs"), scope, false)
 	if err != nil {
 		return err
 	}

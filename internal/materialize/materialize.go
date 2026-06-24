@@ -118,7 +118,7 @@ type epicChild struct {
 // (decisions and references are project-wide). It returns the manifest of
 // written files: rel slash path -> sha256 hex (CONTEXT.md included,
 // .gitkeep excluded).
-func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
+func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, error) {
 	proj, err := store.LoadProject(repoDir)
 	if err != nil {
 		return nil, err
@@ -184,7 +184,8 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 		if d.State != domain.DecisionActive {
 			continue
 		}
-		line, err := copyEntry(repoDir, docsDir, "decisions", d.ID, d.Title, manifest)
+		meta := okfMeta{Type: "decision", Title: d.Title, Timestamp: okfTime(d.UpdatedAt)}
+		line, err := copyEntry(repoDir, docsDir, "decisions", d.ID, d.Title, manifest, okf, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +196,8 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 		if rb.State != domain.RunbookActive {
 			continue
 		}
-		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest)
+		meta := okfMeta{Type: "runbook", Title: rb.Title, Timestamp: okfTime(rb.UpdatedAt)}
+		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest, okf, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +208,8 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 		if n.State != domain.NoteActive {
 			continue
 		}
-		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest)
+		meta := okfMeta{Type: "note", Title: n.Title, Timestamp: okfTime(n.UpdatedAt), Informs: n.Informs}
+		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, okf, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +220,8 @@ func Materialize(repoDir, docsDir, scope string) (map[string]string, error) {
 		if r.State != domain.ReferenceCurrent {
 			continue
 		}
-		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest)
+		meta := okfMeta{Type: "reference", Title: r.Title, Timestamp: okfTime(r.UpdatedAt), Resource: r.URL, External: r.External, Informs: r.Informs}
+		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, okf, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -307,7 +311,7 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, manifest map[stri
 // copyEntry copies content/<kind>/<ID>.md into current/<kind>/<ID>-<slug>.md
 // and returns the CONTEXT.md bullet text: a markdown link when the content
 // document exists, the plain "<ID> — <title>" otherwise.
-func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]string) (string, error) {
+func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]string, okf bool, meta okfMeta) (string, error) {
 	label := fmt.Sprintf("%s — %s", id, title)
 	body, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -315,6 +319,9 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 	}
 	if err != nil {
 		return "", err
+	}
+	if okf {
+		body = okfFrontmatter(meta, body)
 	}
 	rel := "current/" + kind + "/" + entryName(id, title) + ".md"
 	sum, err := writeFile(docsDir, rel, body)

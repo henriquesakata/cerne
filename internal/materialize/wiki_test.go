@@ -25,7 +25,7 @@ func TestMaterializeProjectsWiki(t *testing.T) {
 	writeWiki(t, backend, "project.md", projBody)
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestMaterializeProjectsWiki(t *testing.T) {
 func TestMaterializeNoWiki(t *testing.T) {
 	backend := seedBackend(t)
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	manifest, err := Materialize(backend, docsDir, "")
+	manifest, err := Materialize(backend, docsDir, "", false)
 	if err != nil {
 		t.Fatalf("Materialize without wiki: %v", err)
 	}
