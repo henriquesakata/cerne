@@ -44,25 +44,35 @@ var statusTerminalGroups = []statusGroup{
 	{domain.StateRejected, "REJEITADAS"},
 }
 
+// activeGroups is the lean view (cerne status --active): only the non-terminal
+// work an agent is likely picking up. Implemented history is omitted — it is the
+// bulk of a mature board and pure noise for "what should I work on".
+var activeGroups = []statusGroup{
+	{domain.StateInDevelopment, "EM DESENVOLVIMENTO"},
+	{domain.StateApproved, "APROVADAS"},
+	{domain.StateCandidate, "CANDIDATAS"},
+}
+
 func newStatusCmd() *cobra.Command {
 	var dir string
-	var all, asJSON bool
+	var all, active, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show features grouped by state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(cmd, dir, all, asJSON)
+			return runStatus(cmd, dir, all, active, asJSON)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&all, "all", false, "include superseded and rejected features")
+	cmd.Flags().BoolVar(&active, "active", false, "mostrar apenas o trabalho ativo (oculta IMPLEMENTADAS e terminais)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output (all features)")
 	return cmd
 }
 
-func runStatus(cmd *cobra.Command, dir string, all, asJSON bool) error {
+func runStatus(cmd *cobra.Command, dir string, all, active, asJSON bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -91,8 +101,12 @@ func runStatus(cmd *cobra.Command, dir string, all, asJSON bool) error {
 		return nil
 	}
 
+	// --active is the most restrictive view and wins over --all.
 	groups := statusDefaultGroups
-	if all {
+	switch {
+	case active:
+		groups = activeGroups
+	case all:
 		groups = append(append([]statusGroup{}, statusDefaultGroups...), statusTerminalGroups...)
 	}
 
@@ -134,7 +148,7 @@ func runStatus(cmd *cobra.Command, dir string, all, asJSON bool) error {
 
 	// Historical entities are terminal by definition; they only show under
 	// --all, in their own section after the feature totals.
-	if all && len(historicals) > 0 {
+	if all && !active && len(historicals) > 0 {
 		fmt.Fprintf(out, "\nHISTÓRICAS (%d)\n", len(historicals))
 		for _, h := range historicals {
 			line := "  " + h.ID + "  " + h.Name

@@ -3,7 +3,10 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,21 +19,24 @@ import (
 
 func newPullCmd() *cobra.Command {
 	var dir, scope string
+	var okf, force bool
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Materialize the current project state into .docs/",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPull(cmd, dir, scope)
+			return runPull(cmd, dir, scope, okf, force)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&scope, "scope", "", "materialize only features of this module")
+	cmd.Flags().BoolVar(&okf, "okf", false, "emitir frontmatter compatível com o Open Knowledge Format em .docs/")
+	cmd.Flags().BoolVar(&force, "force", false, "descartar edições locais não-enviadas em .docs/ (sobrescreve o guard)")
 	return cmd
 }
 
-func runPull(cmd *cobra.Command, dir, scope string) error {
+func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -38,7 +44,32 @@ func runPull(cmd *cobra.Command, dir, scope string) error {
 	if scope == "" {
 		scope = ctx.cfg.DefaultScope
 	}
-	manifest, err := materialize.Materialize(ctx.repoDir, filepath.Join(ctx.projDir, ".docs"), scope)
+	// .cernerc sets the default; an explicit --okf flag overrides it either way.
+	okf := ctx.cfg.OKF
+	if cmd.Flags().Changed("okf") {
+		okf = okfFlag
+	}
+	docsDir := filepath.Join(ctx.projDir, ".docs")
+	// pull wipes .docs/ via RemoveAll; refuse when there are unpushed local
+	// edits (unless --force) so authored content is never lost silently.
+	if !force {
+		prev, err := project.LoadManifest(ctx.projDir)
+		if err != nil {
+			return err
+		}
+		if len(prev) > 0 {
+			unpushed, err := unpushedDocs(docsDir, prev)
+			if err != nil {
+				return err
+			}
+			if len(unpushed) > 0 {
+				return fmt.Errorf(
+					"pull descartaria %d edição(ões) não-enviada(s) em .docs/: %s — rode 'cerne push' ou use --force",
+					len(unpushed), strings.Join(unpushed, ", "))
+			}
+		}
+	}
+	manifest, err := materialize.Materialize(ctx.repoDir, docsDir, scope, okf)
 	if err != nil {
 		return err
 	}
@@ -98,4 +129,43 @@ func countManifest(manifest map[string]string) (features, decisions, references 
 		}
 	}
 	return len(featureDirs), decisions, references
+}
+
+// unpushedDocs returns the .docs/current/**.md paths whose content diverges from
+// the manifest (edited or net-new) — local authoring a pull's RemoveAll would
+// discard. Rels are slash-separated and sorted. Reuses sha256Hex (pushcmd.go).
+func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) {
+	currentDir := filepath.Join(docsDir, "current")
+	if _, err := os.Stat(currentDir); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var changed []string
+	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		relOS, err := filepath.Rel(docsDir, p)
+		if err != nil {
+			return err
+		}
+		rel := filepath.ToSlash(relOS)
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if want, ok := manifest[rel]; !ok || sha256Hex(body) != want {
+			changed = append(changed, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(changed)
+	return changed, nil
 }

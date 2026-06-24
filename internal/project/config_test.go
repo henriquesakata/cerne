@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,40 @@ func TestLoadConfigNoProject(t *testing.T) {
 	_, _, err := LoadConfig(t.TempDir())
 	if !errors.Is(err, ErrNoProject) {
 		t.Fatalf("LoadConfig err = %v, want ErrNoProject", err)
+	}
+}
+
+// TestConfigOKFRoundTrip pins the .cernerc `okf` key: it persists and reloads
+// when true, and is omitted (omitempty) when false.
+func TestConfigOKFRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x", OKF: true}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), "okf = true") {
+		t.Fatalf(".cernerc missing okf key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.OKF {
+		t.Fatalf("loaded OKF = false, want true")
+	}
+
+	// omitempty: a false OKF is not written to .cernerc.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig off: %v", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(raw), "okf") {
+		t.Fatalf("okf=false should be omitted:\n%s", raw)
 	}
 }
