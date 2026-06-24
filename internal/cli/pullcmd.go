@@ -16,21 +16,23 @@ import (
 
 func newPullCmd() *cobra.Command {
 	var dir, scope string
+	var okf bool
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Materialize the current project state into .docs/",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPull(cmd, dir, scope)
+			return runPull(cmd, dir, scope, okf)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&scope, "scope", "", "materialize only features of this module")
+	cmd.Flags().BoolVar(&okf, "okf", false, "emitir frontmatter compatível com o Open Knowledge Format em .docs/")
 	return cmd
 }
 
-func runPull(cmd *cobra.Command, dir, scope string) error {
+func runPull(cmd *cobra.Command, dir, scope string, okfFlag bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -38,7 +40,12 @@ func runPull(cmd *cobra.Command, dir, scope string) error {
 	if scope == "" {
 		scope = ctx.cfg.DefaultScope
 	}
-	manifest, err := materialize.Materialize(ctx.repoDir, filepath.Join(ctx.projDir, ".docs"), scope, false)
+	// .cernerc sets the default; an explicit --okf flag overrides it either way.
+	okf := ctx.cfg.OKF
+	if cmd.Flags().Changed("okf") {
+		okf = okfFlag
+	}
+	manifest, err := materialize.Materialize(ctx.repoDir, filepath.Join(ctx.projDir, ".docs"), scope, okf)
 	if err != nil {
 		return err
 	}

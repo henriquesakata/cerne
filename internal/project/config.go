@@ -22,6 +22,7 @@ type Config struct {
 	ProjectID    string    `toml:"project_id"`    // slug, e.g. "cerne"
 	Backend      string    `toml:"backend"`       // git URL or local path
 	DefaultScope string    `toml:"default_scope"` // optional module filter
+	OKF          bool      `toml:"okf,omitempty"` // emit OKF-compatible frontmatter in .docs/ (cerne pull); flag --okf overrides
 	LLM          LLMConfig `toml:"llm"`           // optional v1.5 LLM layer config
 }
 
@@ -86,9 +87,10 @@ func SaveConfig(dir string, c Config) error {
 		ProjectID    string     `toml:"project_id"`
 		Backend      string     `toml:"backend"`
 		DefaultScope string     `toml:"default_scope"`
+		OKF          bool       `toml:"okf,omitempty"`
 		LLM          *LLMConfig `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm

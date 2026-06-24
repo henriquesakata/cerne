@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,5 +170,74 @@ func TestPullScopeFilters(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(docsDir, "current", "features", "F-0001-parcelamento")); err == nil {
 		t.Fatalf("wipe semantics: previous scope's feature still materialized")
+	}
+}
+
+// TestPullOKF pins the opt-in: --okf emits OKF frontmatter (and a feature
+// index.md), the default stays off (verbatim), .cernerc okf=true makes it the
+// default, and an explicit --okf=false overrides that config default.
+func TestPullOKF(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Parcelamento", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas."))
+	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	read := func(path string) string {
+		t.Helper()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return string(b)
+	}
+	featDir := filepath.Join(projDir, ".docs", "current", "features", "F-0001-parcelamento")
+	specPath := filepath.Join(featDir, "spec.md")
+	indexPath := filepath.Join(featDir, "index.md")
+
+	// 1) --okf emits OKF frontmatter and a feature index.md.
+	if out, err := execCerne(t, "pull", "--okf", "--dir", projDir); err != nil {
+		t.Fatalf("pull --okf: %v\noutput: %s", err, out)
+	}
+	if spec := read(specPath); !strings.HasPrefix(spec, "---\ntype: spec\n") {
+		t.Fatalf("pull --okf did not add type: spec frontmatter:\n%s", spec)
+	}
+	if idx := read(indexPath); !strings.Contains(idx, "type: feature") {
+		t.Fatalf("pull --okf did not emit a feature index.md:\n%s", idx)
+	}
+
+	// 2) Default (no flag, no config) is off: verbatim spec, no index.md.
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	if spec := read(specPath); strings.Contains(spec, "type: spec") {
+		t.Fatalf("default pull must not emit OKF frontmatter:\n%s", spec)
+	}
+	if _, err := os.Stat(indexPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("default pull must not emit index.md (stat err = %v)", err)
+	}
+
+	// 3) .cernerc okf=true makes OKF the default.
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.OKF = true
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull with okf config: %v\noutput: %s", err, out)
+	}
+	if spec := read(specPath); !strings.Contains(spec, "type: spec") {
+		t.Fatalf(".cernerc okf=true should emit frontmatter by default:\n%s", spec)
+	}
+
+	// 4) Explicit --okf=false overrides the config default.
+	if out, err := execCerne(t, "pull", "--okf=false", "--dir", projDir); err != nil {
+		t.Fatalf("pull --okf=false: %v\noutput: %s", err, out)
+	}
+	if spec := read(specPath); strings.Contains(spec, "type: spec") {
+		t.Fatalf("--okf=false must override the config default:\n%s", spec)
 	}
 }
