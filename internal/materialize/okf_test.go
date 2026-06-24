@@ -1,8 +1,10 @@
 package materialize
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -165,5 +167,65 @@ func TestMaterializeOKFFeatureIndex(t *testing.T) {
 	plan := readDoc(t, docsDir, "current/features/F-0001-revamp-de-assinaturas/plan.md")
 	if !strings.Contains(plan, "type: plan") {
 		t.Errorf("plan.md missing type: plan:\n%s", plan)
+	}
+}
+
+// TestMaterializeOKFIdempotentAndValid pins C8 (the frontmatter emission is
+// deterministic, so a re-pull does not churn the manifest), C9 (CONTEXT.md is
+// unchanged by okf mode — the Docs column does not regress) and bundle validity
+// (every materialized concept carries the required `type`).
+func TestMaterializeOKFIdempotentAndValid(t *testing.T) {
+	backend := seedBackend(t, "finance")
+	addFeature(t, backend, "F-0001", "Parcelamento", "finance", domain.StateInDevelopment, map[string]string{
+		"spec.md": "---\ncerne_id: F-0001\n---\n\n# Spec\n\nConteúdo.\n",
+		"plan.md": "---\ncerne_id: F-0001\n---\n\n# Plan\n\nConteúdo.\n",
+	})
+	addDecision(t, backend, "D-0001", "Usar Postgres", domain.DecisionActive,
+		"---\ncerne_id: D-0001\n---\n\n# Usar Postgres\n\nDecisão.\n")
+
+	first := filepath.Join(t.TempDir(), ".docs")
+	m1, err := Materialize(backend, first, "", true)
+	if err != nil {
+		t.Fatalf("first Materialize: %v", err)
+	}
+	second := filepath.Join(t.TempDir(), ".docs")
+	m2, err := Materialize(backend, second, "", true)
+	if err != nil {
+		t.Fatalf("second Materialize: %v", err)
+	}
+	if !reflect.DeepEqual(m1, m2) {
+		t.Fatalf("okf manifest is not deterministic:\n1: %v\n2: %v", m1, m2)
+	}
+
+	// CONTEXT.md is identical with and without okf: the Docs column never regresses.
+	off := filepath.Join(t.TempDir(), ".docs")
+	mOff, err := Materialize(backend, off, "", false)
+	if err != nil {
+		t.Fatalf("off Materialize: %v", err)
+	}
+	if m1["CONTEXT.md"] != mOff["CONTEXT.md"] {
+		t.Errorf("okf mode changed CONTEXT.md (Docs column regressed)")
+	}
+
+	// Bundle validity: every materialized concept .md (CONTEXT.md aside) opens
+	// with the required OKF `type`.
+	err = filepath.WalkDir(first, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".md") || d.Name() == "CONTEXT.md" {
+			return nil
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		if !strings.HasPrefix(string(data), "---\ntype:") {
+			t.Errorf("concept %s lacks the required OKF type:\n%s", p, data)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir: %v", err)
 	}
 }
