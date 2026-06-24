@@ -238,6 +238,38 @@ func TestMaterializeSlugCollision(t *testing.T) {
 	}
 }
 
+// TestEntryNameCapsLongTitle guards the ENAMETOOLONG regression: a title long
+// enough that its slug overflows NAME_MAX (255 bytes) must yield a capped name so
+// the on-disk file (name + ".md") and feature dir stay materializable on macOS /
+// Linux. Before the cap, such an entry made `cerne pull` abort, blocking the whole
+// snapshot for everyone on a 255-byte-NAME_MAX filesystem.
+func TestEntryNameCapsLongTitle(t *testing.T) {
+	longTitle := strings.Repeat("identity ui catchall layout dead code ", 20) // slugifies to >700 bytes
+	name := entryName("N-0037", longTitle)
+
+	if got := len(name + ".md"); got > 255 {
+		t.Fatalf("entry file name %d bytes, want <=255 (NAME_MAX)", got)
+	}
+	if len(name) > maxEntryName {
+		t.Fatalf("entryName len %d, want <=%d", len(name), maxEntryName)
+	}
+	if !strings.HasPrefix(name, "N-0037-") {
+		t.Fatalf("entryName %q must keep the ID prefix (uniqueness)", name)
+	}
+	if strings.HasSuffix(name, "-") {
+		t.Fatalf("entryName %q must not end in a hyphen", name)
+	}
+
+	// Short titles round-trip unchanged.
+	if got, want := entryName("F-0001", "Identity Service"), "F-0001-identity-service"; got != want {
+		t.Fatalf("entryName(short) = %q, want %q", got, want)
+	}
+	// A title that slugifies to nothing falls back to the bare ID.
+	if got := entryName("D-0001", "!!!"); got != "D-0001" {
+		t.Fatalf("entryName(empty slug) = %q, want D-0001", got)
+	}
+}
+
 func TestMaterializeContextGolden(t *testing.T) {
 	backend := seedBackend(t, "finance", "core")
 	addFeature(t, backend, "F-0001", "Parcelamento", "finance", domain.StateInDevelopment,

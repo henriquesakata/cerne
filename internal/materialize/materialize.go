@@ -360,14 +360,33 @@ func epicSections(shown []store.Feature) []epicSection {
 	return sections
 }
 
-// entryName joins ID and slugified title; just the ID when the title
-// slugifies to nothing.
+// maxEntryName bounds the materialized name stem (ID + "-" + slug) used for both
+// single-file entries (<stem>.md) and feature directories (<stem>/). NAME_MAX is
+// 255 bytes on macOS APFS/HFS+ and most Linux filesystems; we keep a margin.
+// Without this cap a very long title overflows NAME_MAX and `cerne pull` aborts
+// with ENAMETOOLONG on the offending entry, blocking materialization of the whole
+// snapshot for everyone on such a filesystem.
+const maxEntryName = 200
+
+// entryName joins ID and slugified title; just the ID when the title slugifies to
+// nothing. The result is capped at maxEntryName bytes (trimmed back to a hyphen
+// boundary when possible) so an over-long title cannot produce a name that exceeds
+// the filesystem's NAME_MAX — the ID prefix keeps it unique regardless. slug.Make
+// emits only [a-z0-9-], so truncating by bytes never splits a multibyte rune.
 func entryName(id, title string) string {
 	s := slug.Make(title)
 	if s == "" {
 		return id
 	}
-	return id + "-" + s
+	name := id + "-" + s
+	if len(name) <= maxEntryName {
+		return name
+	}
+	name = name[:maxEntryName]
+	if i := strings.LastIndexByte(name, '-'); i > len(id) {
+		name = name[:i]
+	}
+	return strings.TrimRight(name, "-")
 }
 
 // writeFile writes body to <docsDir>/<rel> (rel slash-separated), creating
