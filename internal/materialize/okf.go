@@ -23,6 +23,7 @@ type okfMeta struct {
 	Parent    string   // extra (epic)
 	External  bool     // extra
 	Informs   []string // extra (F-/D- ids)
+	CerneID   string   // preserved cerne id; when "" it is read from the body's frontmatter
 }
 
 // okfTime formats an entity timestamp as the RFC3339 instant OKF's `timestamp`
@@ -40,7 +41,10 @@ func okfTime(t time.Time) string {
 // merged fields in a fixed key order, then appends the original body. The fixed
 // order keeps the output — and thus the materialize manifest hash — deterministic.
 func okfFrontmatter(meta okfMeta, body []byte) []byte {
-	cerneID := doccheck.FrontmatterValue(body, "cerne_id")
+	cerneID := meta.CerneID
+	if cerneID == "" {
+		cerneID = doccheck.FrontmatterValue(body, "cerne_id")
+	}
 	rest := stripFrontmatter(body)
 
 	var b strings.Builder
