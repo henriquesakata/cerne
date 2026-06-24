@@ -287,6 +287,7 @@ func TestMaterializeContextGolden(t *testing.T) {
 
 > Gerado por cerne. Não edite: rode 'cerne pull' para atualizar.
 > Histórico e documentos substituídos: 'cerne search'.
+> Para "por quê/como decidimos X", use 'cerne ask "<pergunta>"' — resposta sintetizada e citada, sem abrir arquivo por arquivo.
 
 ## Features
 
