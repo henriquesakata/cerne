@@ -262,6 +262,18 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 	return sum, nil
 }
 
+// itemsToCandidates projects plan items onto minimal Candidates so the agent
+// path reuses the hub import's idempotency guards — Unimported (by
+// imported_from source) and DropRegisteredTitles (by feature title). Only the
+// fields those guards read are set.
+func itemsToCandidates(items []PlanItem) []Candidate {
+	cands := make([]Candidate, len(items))
+	for i, it := range items {
+		cands[i] = Candidate{Kind: it.Kind, Title: it.Title, Module: it.Module, State: it.State, Source: it.Source}
+	}
+	return cands
+}
+
 // savePlanEntity allocates the next id for it.Kind, persists the entity JSON
 // (mapping url/informs where the kind carries them), and returns the id and the
 // backend-relative slash path where ApplyPlan should write the body.
