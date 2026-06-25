@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -207,29 +209,49 @@ func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope
 	return nil
 }
 
-// ingestPending (delegation phase 2) stamps provenance on the pages the agent
-// wrote for this round (one per pending prompt), commits and clears pending.
+// ErrPendingResponseMissing is returned when a manifest entry's declared
+// response_path was not written by the agent for this round. It is a hard error
+// (the exact expected path is reported) — the indiscoverable "write somewhere
+// and hope" path is gone.
+var ErrPendingResponseMissing = errors.New("resposta pendente ausente")
+
+// ingestPending (delegation phase 2) reads the round's manifest and, per
+// declared entry, stamps provenance on the response the agent wrote at the
+// declared response_path, commits, and clears pending. A declared response
+// missing at its path aborts with that exact path (crit. 2). Freshness checking
+// (rejecting a stale response) is layered on in a later step.
 func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error {
 	out := cmd.OutOrStdout()
-	pendingRoot := filepath.Join(ctx.projDir, ".docs", "wiki", ".pending")
-	byRel := map[string]compile.Page{}
+	pendingRoot := filepath.Join(ctx.projDir, filepath.FromSlash(pendingRelDir))
+	manifest, err := readManifest(pendingRoot)
+	if errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintln(out, "Nenhuma página pendente para ingerir.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	byName := make(map[string]compile.Page, len(pages))
 	for _, p := range pages {
-		byRel[p.Rel] = p
+		byName[p.Name] = p
 	}
 	head, err := gitback.HeadSHA(ctx.repoDir)
 	if err != nil {
 		return err
 	}
 	var done []compile.Page
-	for _, p := range pages {
-		promptPath := filepath.Join(pendingRoot, filepath.FromSlash(p.Rel)+".prompt.md")
-		if _, err := os.Stat(promptPath); err != nil {
-			continue // not requested this round
+	for _, e := range manifest.Entries {
+		responsePath := filepath.Join(ctx.projDir, filepath.FromSlash(e.ResponsePath))
+		body, err := os.ReadFile(responsePath)
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("página %s: resposta não encontrada em %s: %w", e.Page, e.ResponsePath, ErrPendingResponseMissing)
 		}
-		pagePath := filepath.Join(ctx.repoDir, "content", "wiki", filepath.FromSlash(p.Rel)+".md")
-		body, err := os.ReadFile(pagePath)
 		if err != nil {
-			return fmt.Errorf("página %s não foi escrita pelo agente em content/wiki/%s.md: %w", p.Name, p.Rel, err)
+			return err
+		}
+		p, ok := byName[e.Page]
+		if !ok {
+			return fmt.Errorf("página %s do manifesto não corresponde a nenhuma página compilável", e.Page)
 		}
 		if err := writeStampedPage(ctx.repoDir, p, head, body); err != nil {
 			return err
@@ -249,6 +271,21 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
 	}
 	return nil
+}
+
+// readManifest loads the delegation manifest from a pending directory. A missing
+// manifest is returned as fs.ErrNotExist so callers can treat "nothing pending"
+// distinctly from a malformed one.
+func readManifest(pendingRoot string) (compile.Manifest, error) {
+	data, err := os.ReadFile(filepath.Join(pendingRoot, compile.ManifestName))
+	if err != nil {
+		return compile.Manifest{}, err
+	}
+	var m compile.Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return compile.Manifest{}, fmt.Errorf("lendo o manifesto de delegação em %s: %w", pendingRoot, err)
+	}
+	return m, nil
 }
 
 // writeStampedPage writes content/wiki/<rel>.md for the page: cerne's provenance

@@ -34,14 +34,20 @@ func TestCompileDelegationFlow(t *testing.T) {
 		t.Fatalf("core page (no sources) should not be prepared")
 	}
 
-	// The host agent synthesizes the page into the backend.
+	// The host agent writes its synthesis to the declared response_path in the
+	// pending tree, echoing the run id so ingest accepts it as fresh.
+	m := readPendingManifest(t, projDir)
+	if len(m.Entries) != 1 || m.Entries[0].Page != "finance" {
+		t.Fatalf("manifest entries = %+v, want one finance entry", m.Entries)
+	}
+	respPath := filepath.Join(projDir, filepath.FromSlash(m.Entries[0].ResponsePath))
+	agentBody := "---\nrun_id: " + m.Entries[0].RunID + "\n---\n# Finance\n\nGera boletos.\n"
+	if err := os.WriteFile(respPath, []byte(agentBody), 0o644); err != nil {
+		t.Fatalf("agent write response: %v", err)
+	}
+
+	// The stamped page lands in the backend clone here.
 	pagePath := filepath.Join(repoDir, "content", "wiki", "modules", "finance.md")
-	if err := os.MkdirAll(filepath.Dir(pagePath), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(pagePath, []byte("# Finance\n\nGera boletos.\n"), 0o644); err != nil {
-		t.Fatalf("agent write page: %v", err)
-	}
 
 	// Phase 2 — ingest: stamp provenance, commit, clear pending.
 	out, err = execCerne(t, "compile", "--ingest", "--dir", projDir)
@@ -110,7 +116,7 @@ func TestCompileNoModulelessNoteWhenNone(t *testing.T) {
 }
 
 func TestCompileForceRecompiles(t *testing.T) {
-	projDir, _, repoDir := setupProject(t, "finance")
+	projDir, _, _ := setupProject(t, "finance")
 	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
@@ -118,9 +124,7 @@ func TestCompileForceRecompiles(t *testing.T) {
 	if _, err := execCerne(t, "compile", "--dir", projDir); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	page := filepath.Join(repoDir, "content", "wiki", "modules", "finance.md")
-	_ = os.MkdirAll(filepath.Dir(page), 0o755)
-	_ = os.WriteFile(page, []byte("# Finance\n\nv1.\n"), 0o644)
+	fulfillPending(t, projDir, "# Finance\n\nv1.\n")
 	if _, err := execCerne(t, "compile", "--ingest", "--dir", projDir); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -146,6 +150,24 @@ func readPendingManifest(t *testing.T, projDir string) compile.Manifest {
 		t.Fatalf("decode manifest: %v\n%s", err, raw)
 	}
 	return m
+}
+
+// fulfillPending simulates the host agent: for each manifest entry it writes a
+// fresh response (echoing the run id, so ingest accepts it) at the declared
+// response_path.
+func fulfillPending(t *testing.T, projDir, body string) {
+	t.Helper()
+	m := readPendingManifest(t, projDir)
+	for _, e := range m.Entries {
+		p := filepath.Join(projDir, filepath.FromSlash(e.ResponsePath))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir response dir: %v", err)
+		}
+		content := "---\nrun_id: " + e.RunID + "\n---\n" + body
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write response %s: %v", e.ResponsePath, err)
+		}
+	}
 }
 
 func TestCompilePrepareWritesManifest(t *testing.T) {
@@ -185,5 +207,23 @@ func TestCompilePrepareWritesManifest(t *testing.T) {
 	}
 	if fin.RunID != m.RunID {
 		t.Errorf("entry run_id %q != manifest run_id %q", fin.RunID, m.RunID)
+	}
+}
+
+func TestCompileIngestMissingResponseErrors(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance", "core")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
+		t.Fatalf("compile prepare: %v\n%s", err, out)
+	}
+	// Agent writes nothing — ingest must fail and name the exact expected path.
+	out, err := execCerne(t, "compile", "--ingest", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("expected ingest to fail on missing response, got success:\n%s", out)
+	}
+	if !strings.Contains(out, "modules/finance.md") {
+		t.Fatalf("error should name the expected response path, got:\n%s", out)
 	}
 }
