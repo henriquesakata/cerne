@@ -10,8 +10,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // ErrInvalidPlan is the sentinel for an agent plan that does not satisfy the
@@ -214,4 +216,107 @@ func capContent(content string) string {
 		return content
 	}
 	return content[:sourceCap] + "\n… [truncado]"
+}
+
+// ApplyPlan persists each validated plan item into the backend at repoDir: a
+// sequential id per kind, the entity JSON, a "<kind>.imported" event, and the
+// synthesized body as the entity's content document with cerne_id/imported_from
+// frontmatter (so re-runs dedup via ImportedSources). Unlike the hub Apply it
+// copies no files and rewrites no links — the body is authored against backend
+// ids. Items are expected pre-validated (see ValidatePlan); an unknown kind
+// still aborts. No git interaction happens here.
+func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) {
+	sum := Summary{ByState: map[string]int{}}
+	now := time.Now().UTC()
+	for _, it := range items {
+		id, contentRel, err := savePlanEntity(repoDir, it, now)
+		if err != nil {
+			return Summary{}, err
+		}
+		switch it.Kind {
+		case "feature":
+			sum.Features++
+		case "decision":
+			sum.Decisions++
+		case "reference":
+			sum.References++
+		case "runbook":
+			sum.Runbooks++
+		case "note":
+			sum.Notes++
+		}
+		ev := domain.NewEvent(id, it.Kind+".imported", map[string]string{"source": it.Source}, actor)
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return Summary{}, err
+		}
+		dst := filepath.Join(repoDir, filepath.FromSlash(contentRel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return Summary{}, err
+		}
+		stamped := injectFrontmatter([]byte(it.Body), id, it.Source)
+		if err := os.WriteFile(dst, stamped, 0o644); err != nil {
+			return Summary{}, err
+		}
+		sum.ByState[it.State]++
+	}
+	return sum, nil
+}
+
+// savePlanEntity allocates the next id for it.Kind, persists the entity JSON
+// (mapping url/informs where the kind carries them), and returns the id and the
+// backend-relative slash path where ApplyPlan should write the body.
+func savePlanEntity(repoDir string, it PlanItem, now time.Time) (string, string, error) {
+	switch it.Kind {
+	case "feature":
+		id, err := store.NextID(repoDir, "F")
+		if err != nil {
+			return "", "", err
+		}
+		f := store.Feature{ID: id, Title: it.Title, Module: it.Module, State: domain.FeatureState(it.State), CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", "", err
+		}
+		return id, "content/features/" + id + "/spec.md", nil
+	case "decision":
+		id, err := store.NextID(repoDir, "D")
+		if err != nil {
+			return "", "", err
+		}
+		d := store.Decision{ID: id, Title: it.Title, State: domain.DecisionState(it.State), CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", "", err
+		}
+		return id, "content/decisions/" + id + ".md", nil
+	case "reference":
+		id, err := store.NextID(repoDir, "R")
+		if err != nil {
+			return "", "", err
+		}
+		r := store.Reference{ID: id, Title: it.Title, State: domain.ReferenceState(it.State), URL: it.URL, External: it.URL != "", Informs: it.Informs, CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", "", err
+		}
+		return id, "content/references/" + id + ".md", nil
+	case "runbook":
+		id, err := store.NextID(repoDir, "RB")
+		if err != nil {
+			return "", "", err
+		}
+		rb := store.Runbook{ID: id, Title: it.Title, State: domain.RunbookState(it.State), CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveRunbook(repoDir, rb); err != nil {
+			return "", "", err
+		}
+		return id, "content/runbooks/" + id + ".md", nil
+	case "note":
+		id, err := store.NextID(repoDir, "N")
+		if err != nil {
+			return "", "", err
+		}
+		n := store.Note{ID: id, Title: it.Title, State: domain.NoteState(it.State), Informs: it.Informs, CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", "", err
+		}
+		return id, "content/notes/" + id + ".md", nil
+	}
+	return "", "", fmt.Errorf("unknown candidate kind %q (source %s)", it.Kind, it.Source)
 }
