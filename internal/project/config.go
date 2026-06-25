@@ -19,11 +19,12 @@ const configFilename = ".cernerc"
 
 // Config is the persisted form of .cernerc (TOML, committed by the user).
 type Config struct {
-	ProjectID    string    `toml:"project_id"`    // slug, e.g. "cerne"
-	Backend      string    `toml:"backend"`       // git URL or local path
-	DefaultScope string    `toml:"default_scope"` // optional module filter
-	OKF          bool      `toml:"okf,omitempty"` // emit OKF-compatible frontmatter in .docs/ (cerne pull); flag --okf overrides
-	LLM          LLMConfig `toml:"llm"`           // optional v1.5 LLM layer config
+	ProjectID      string    `toml:"project_id"`                // slug, e.g. "cerne"
+	Backend        string    `toml:"backend"`                   // git URL or local path
+	DefaultScope   string    `toml:"default_scope"`             // optional module filter
+	OKF            bool      `toml:"okf,omitempty"`             // emit OKF-compatible frontmatter in .docs/ (cerne pull); flag --okf overrides
+	AutocommitLock bool      `toml:"autocommit_lock,omitempty"` // F-0060: cerne commits the project-side docs.lock after a backend mutation (opt-in, default off)
+	LLM            LLMConfig `toml:"llm"`                       // optional v1.5 LLM layer config
 }
 
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
@@ -35,12 +36,12 @@ type Config struct {
 // int, so the two tags are complementary. Defaults are applied on read by
 // WithDefaults.
 type LLMConfig struct {
-	Mode      string `toml:"mode,omitempty"`      // "delegation" (default when empty) | "byo-key" | "claude-cli"
-	Provider  string `toml:"provider,omitempty"`  // byo-key provider; default "anthropic"
-	Model     string `toml:"model,omitempty"`     // model id; default "claude-opus-4-8"
-	KeyEnv    string `toml:"key_env,omitempty"`   // env var NAME holding the key; default "CERNE_LLM_API_KEY"
-	BaseURL   string `toml:"base_url,omitempty"`  // API base URL; default "https://api.anthropic.com"
-	MaxTokens int    `toml:"max_tokens,omitzero"` // max output tokens; default 8000
+	Mode      string `toml:"mode,omitempty"`       // "delegation" (default when empty) | "byo-key" | "claude-cli"
+	Provider  string `toml:"provider,omitempty"`   // byo-key provider; default "anthropic"
+	Model     string `toml:"model,omitempty"`      // model id; default "claude-opus-4-8"
+	KeyEnv    string `toml:"key_env,omitempty"`    // env var NAME holding the key; default "CERNE_LLM_API_KEY"
+	BaseURL   string `toml:"base_url,omitempty"`   // API base URL; default "https://api.anthropic.com"
+	MaxTokens int    `toml:"max_tokens,omitzero"`  // max output tokens; default 8000
 	ClaudeBin string `toml:"claude_bin,omitempty"` // claude-cli binary path; default "claude"
 }
 
@@ -84,13 +85,14 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 // would collide with when adding their own [llm] config.
 func SaveConfig(dir string, c Config) error {
 	type wire struct {
-		ProjectID    string     `toml:"project_id"`
-		Backend      string     `toml:"backend"`
-		DefaultScope string     `toml:"default_scope"`
-		OKF          bool       `toml:"okf,omitempty"`
-		LLM          *LLMConfig `toml:"llm,omitempty"`
+		ProjectID      string     `toml:"project_id"`
+		Backend        string     `toml:"backend"`
+		DefaultScope   string     `toml:"default_scope"`
+		OKF            bool       `toml:"okf,omitempty"`
+		AutocommitLock bool       `toml:"autocommit_lock,omitempty"`
+		LLM            *LLMConfig `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm
