@@ -136,3 +136,29 @@ func TestWikiSuccessorNearbySuppresses(t *testing.T) {
 		t.Fatalf("mention next to the terminal successor should not be flagged, got: %+v", refs)
 	}
 }
+
+// TestAuthoredEntityRefUnchanged pins crit. 4: the wiki-only tolerance must not
+// leak into authored entity docs — a live feature spec citing a superseded id is
+// still flagged (attributed to the feature), even with a history word present.
+func TestAuthoredEntityRefUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	supersededDecisionPair(t, dir)
+	writeLiveFeatureDoc(t, dir, "F-0001", "menciona D-0003 que foi superseded por outra")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var found bool
+	for _, f := range refToSuperseded(findings) {
+		if f.Entity == "F-0001" && contains(f.File, "content/features/F-0001/spec.md") && contains(f.Detail, "D-0003") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("authored entity ref-to-superseded must still be flagged (tolerance is wiki-only), got: %+v", refToSuperseded(findings))
+	}
+}
