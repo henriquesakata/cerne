@@ -105,10 +105,15 @@ type importedNeedle struct {
 	rx   *regexp.Regexp
 }
 
-// scannedDoc is one live-entity content document subject to the text rules.
+// scannedDoc is one content document subject to the text rules. For authored
+// entity docs, entity is the owning id and sources is nil. For a compiled wiki
+// page, entity is empty and sources are the provenance source ids — so a finding
+// on the generated page is attributed to the entity that must be fixed, and the
+// page's history-labeled mentions can be tolerated (it regenerates from source).
 type scannedDoc struct {
-	entity string
-	rel    string // rel slash path within the backend
+	entity  string
+	rel     string // rel slash path within the backend
+	sources []string
 }
 
 // Run lints the backend at repoDir and returns the findings in
@@ -547,7 +552,11 @@ func wikiDocs(repoDir string) ([]scannedDoc, error) {
 	}
 	docs := make([]scannedDoc, 0, len(rels))
 	for _, rel := range rels {
-		docs = append(docs, scannedDoc{entity: "", rel: rel})
+		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, scannedDoc{entity: "", rel: rel, sources: wiki.ParseProvenance(data).Sources})
 	}
 	return docs, nil
 }
@@ -694,7 +703,15 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
-		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
+		// A wiki page regenerates from its sources, so the debt belongs to the
+		// source entity, not the generated file — emit one finding per source.
+		if len(d.sources) > 0 {
+			for _, src := range d.sources {
+				findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: src, File: d.rel, Detail: detail})
+			}
+		} else {
+			findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
+		}
 	}
 	return findings
 }
