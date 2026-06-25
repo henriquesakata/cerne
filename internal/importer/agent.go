@@ -262,16 +262,35 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 	return sum, nil
 }
 
-// itemsToCandidates projects plan items onto minimal Candidates so the agent
-// path reuses the hub import's idempotency guards — Unimported (by
-// imported_from source) and DropRegisteredTitles (by feature title). Only the
-// fields those guards read are set.
-func itemsToCandidates(items []PlanItem) []Candidate {
-	cands := make([]Candidate, len(items))
-	for i, it := range items {
-		cands[i] = Candidate{Kind: it.Kind, Title: it.Title, Module: it.Module, State: it.State, Source: it.Source}
+// FilterPlanItems drops items already represented in the backend so
+// re-ingesting a plan is idempotent — reusing the very predicates the hub
+// import uses: an item whose Source was already imported (imported_from, via
+// ImportedSources) and a feature whose title already matches a registered
+// feature (the F-0045 title guard, via ExistingFeatureTitles + normalizeTitle).
+// Returns the items to apply and the number skipped.
+func FilterPlanItems(repoDir string, items []PlanItem) ([]PlanItem, int, error) {
+	imported, err := ImportedSources(repoDir)
+	if err != nil {
+		return nil, 0, err
 	}
-	return cands
+	registered, err := ExistingFeatureTitles(repoDir)
+	if err != nil {
+		return nil, 0, err
+	}
+	var kept []PlanItem
+	skipped := 0
+	for _, it := range items {
+		if imported[it.Source] {
+			skipped++
+			continue
+		}
+		if it.Kind == "feature" && registered[normalizeTitle(it.Title)] {
+			skipped++
+			continue
+		}
+		kept = append(kept, it)
+	}
+	return kept, skipped, nil
 }
 
 // savePlanEntity allocates the next id for it.Kind, persists the entity JSON
