@@ -229,7 +229,7 @@ func TestRetrieveNaturalLanguageQuestion(t *testing.T) {
 func TestBuildAskPrompt(t *testing.T) {
 	prompt := BuildAskPrompt("por que abandonamos boletos?", []Snippet{
 		{Source: "F-0002", Kind: "feature", State: "superseded", Text: "boletos antigos"},
-	})
+	}, true)
 	for _, want := range []string{"por que abandonamos boletos?", "F-0002", "superseded", "boletos antigos"} {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
@@ -242,11 +242,57 @@ func TestBuildAskPrompt(t *testing.T) {
 func TestBuildAskPromptAnnotatesExternalURL(t *testing.T) {
 	prompt := BuildAskPrompt("como configurar PKCE?", []Snippet{
 		{Source: "R-0042", Kind: "reference", State: "current", URL: "https://example.com/pkce", Text: "use S256"},
-	})
+	}, true)
 	for _, want := range []string{"R-0042", "referência externa", "https://example.com/pkce"} {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
+	}
+}
+
+// TestBuildAskPromptNoPreamble: with preamble=false the instruction scaffold is
+// dropped, but the question and the sources stay.
+func TestBuildAskPromptNoPreamble(t *testing.T) {
+	prompt := BuildAskPrompt("por que abandonamos boletos?", []Snippet{
+		{Source: "F-0002", Kind: "feature", State: "superseded", Text: "boletos antigos"},
+	}, false)
+	if contains(prompt, "Responda em pt-BR") || contains(prompt, "Respeite o estado") {
+		t.Fatalf("preamble=false must omit the instruction:\n%s", prompt)
+	}
+	for _, want := range []string{"por que abandonamos boletos?", "F-0002", "boletos antigos"} {
+		if !contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestTrim: caps the number of sources (order preserved) and truncates each
+// snippet body to the rune budget, appending an ellipsis when it cuts.
+func TestTrim(t *testing.T) {
+	in := []Snippet{
+		{Source: "wiki:project", Kind: "wiki", State: "current", Text: "abcdefghij"},
+		{Source: "F-0001", Kind: "feature", State: "candidate", Text: "short"},
+		{Source: "F-0002", Kind: "feature", State: "candidate", Text: "dropped"},
+	}
+
+	// Budget 5: "abcdefghij" (10) is cut to 5 + ellipsis; "short" (exactly 5) is
+	// left intact — truncation only fires when length strictly exceeds the budget.
+	got := Trim(in, 2, 5)
+	if len(got) != 2 {
+		t.Fatalf("Trim kept %d sources, want 2 (cap): %+v", len(got), got)
+	}
+	if got[0].Source != "wiki:project" || got[1].Source != "F-0001" {
+		t.Fatalf("Trim must preserve order, got %s,%s", got[0].Source, got[1].Source)
+	}
+	if got[0].Text != "abcde…" {
+		t.Fatalf("Trim truncate = %q, want \"abcde…\"", got[0].Text)
+	}
+	if got[1].Text != "short" {
+		t.Fatalf("Trim must leave text at the budget intact, got %q", got[1].Text)
+	}
+	// Zero limits are no-ops; the input is not mutated.
+	if all := Trim(in, 0, 0); len(all) != 3 || in[0].Text != "abcdefghij" {
+		t.Fatalf("Trim(0,0) must keep all and not mutate input: len=%d in0=%q", len(all), in[0].Text)
 	}
 }
 
