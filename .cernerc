@@ -1,3 +1,4 @@
 project_id = "cerne"
 backend = "git@gitlab.com:rockt/cerne-docs.git"
 default_scope = ""
+autocommit_lock = true
