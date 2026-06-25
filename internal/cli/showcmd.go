@@ -1,0 +1,262 @@
+package cli
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"gitlab.com/rockt/cerne/internal/doccheck"
+	"gitlab.com/rockt/cerne/internal/store"
+)
+
+// ErrUnknownIDPrefix is returned by `cerne show` when a cerne_id's prefix maps
+// to no known entity kind (F/D/R/N/RB/H).
+var ErrUnknownIDPrefix = errors.New("prefixo de cerne_id desconhecido")
+
+// showResult is one resolved cerne_id: its kind, the loaded entity value, and
+// any markdown content sections read straight from the backend store. Feature
+// docs split into spec/plan/result; other kinds carry a single body (name "").
+type showResult struct {
+	kind    string
+	entity  any
+	content []showDoc
+}
+
+type showDoc struct {
+	name string // "spec"/"plan"/"result" for features; "" for single-body kinds
+	body string
+}
+
+func newShowCmd() *cobra.Command {
+	var dir string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "show <cerne_id>",
+		Short: "Mostrar qualquer entidade (feature, decision, reference, note, runbook, histórico) por id",
+		Long: "Resolve um cerne_id pelo prefixo (F-/D-/R-/N-/RB-/H-) e imprime os metadados mais o corpo " +
+			"markdown da entidade, lidos direto do backend (store) — funciona para qualquer entidade, inclusive " +
+			"features já implementadas que não estão materializadas em '.docs/'. Use --json para saída de máquina.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runShow(cmd, dir, args[0], asJSON)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output (entity + content)")
+	return cmd
+}
+
+func runShow(cmd *cobra.Command, dir, id string, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	res, err := resolveEntity(ctx.repoDir, id)
+	if err != nil {
+		return err
+	}
+	w := cmd.OutOrStdout()
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(res.toJSON())
+	}
+	res.renderText(w)
+	return nil
+}
+
+// kindForID maps a cerne_id to its entity kind by the prefix before the first
+// dash. RB is matched as a whole token (the dash split makes it unambiguous
+// against R).
+func kindForID(id string) (string, bool) {
+	i := strings.IndexByte(id, '-')
+	if i <= 0 {
+		return "", false
+	}
+	switch id[:i] {
+	case "F":
+		return "feature", true
+	case "D":
+		return "decision", true
+	case "R":
+		return "reference", true
+	case "N":
+		return "note", true
+	case "RB":
+		return "runbook", true
+	case "H":
+		return "historical", true
+	}
+	return "", false
+}
+
+// resolveEntity loads the entity for id and gathers its content. History is
+// included by construction: the loaders read every entity regardless of state.
+func resolveEntity(repoDir, id string) (showResult, error) {
+	kind, ok := kindForID(id)
+	if !ok {
+		return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
+	}
+	switch kind {
+	case "feature":
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("feature %s: %w", id, err)
+		}
+		return showResult{kind, f, featureContent(repoDir, id)}, nil
+	case "decision":
+		d, err := store.LoadDecision(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("decision %s: %w", id, err)
+		}
+		return showResult{kind, d, singleContent(repoDir, "decisions", id)}, nil
+	case "reference":
+		r, err := store.LoadReference(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("reference %s: %w", id, err)
+		}
+		return showResult{kind, r, singleContent(repoDir, "references", id)}, nil
+	case "note":
+		n, err := store.LoadNote(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("note %s: %w", id, err)
+		}
+		return showResult{kind, n, singleContent(repoDir, "notes", id)}, nil
+	case "runbook":
+		rb, err := store.LoadRunbook(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("runbook %s: %w", id, err)
+		}
+		return showResult{kind, rb, singleContent(repoDir, "runbooks", id)}, nil
+	case "historical":
+		h, err := store.LoadHistorical(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("histórico %s: %w", id, err)
+		}
+		return showResult{kind, h, nil}, nil
+	}
+	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
+}
+
+// featureContent reads the spec/plan/result docs, skipping any that are still
+// stub scaffolds or absent.
+func featureContent(repoDir, id string) []showDoc {
+	var docs []showDoc
+	for _, name := range []string{"spec", "plan", "result"} {
+		body := readRealDoc(filepath.Join(repoDir, "content", "features", id, name+".md"))
+		if body != "" {
+			docs = append(docs, showDoc{name, body})
+		}
+	}
+	return docs
+}
+
+// singleContent reads the single markdown body of a non-feature entity stored at
+// content/<subdir>/<id>.md, skipping a stub or missing file.
+func singleContent(repoDir, subdir, id string) []showDoc {
+	body := readRealDoc(filepath.Join(repoDir, "content", subdir, id+".md"))
+	if body == "" {
+		return nil
+	}
+	return []showDoc{{"", body}}
+}
+
+// readRealDoc returns the trimmed markdown body of a content doc, or "" when the
+// file is missing or is still a stub scaffold (no real content yet).
+func readRealDoc(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil || !doccheck.HasRealContent(data) {
+		return ""
+	}
+	return strings.TrimRight(string(data), "\n")
+}
+
+func (r showResult) renderText(w io.Writer) {
+	switch e := r.entity.(type) {
+	case store.Feature:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		if e.Module != "" {
+			fmt.Fprintf(w, "módulo: %s\n", e.Module)
+		}
+		if e.Parent != "" {
+			fmt.Fprintf(w, "épico: %s\n", e.Parent)
+		}
+		writeSuccession(w, e.SupersededBy, e.Reason)
+	case store.Decision:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		writeSuccession(w, e.SupersededBy, e.Reason)
+	case store.Reference:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		if e.URL != "" {
+			fmt.Fprintf(w, "url: %s\n", e.URL)
+		}
+		if e.External {
+			fmt.Fprintln(w, "externa: sim")
+		}
+		if len(e.Informs) > 0 {
+			fmt.Fprintf(w, "informa: %s\n", strings.Join(e.Informs, ", "))
+		}
+	case store.Note:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		if e.Durable {
+			fmt.Fprintln(w, "durável: sim")
+		}
+		if len(e.Informs) > 0 {
+			fmt.Fprintf(w, "informa: %s\n", strings.Join(e.Informs, ", "))
+		}
+		writeSuccession(w, e.SupersededBy, e.Reason)
+	case store.Runbook:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		writeSuccession(w, e.SupersededBy, e.Reason)
+	case store.Historical:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Name)
+		if len(e.Aliases) > 0 {
+			fmt.Fprintf(w, "aliases: %s\n", strings.Join(e.Aliases, ", "))
+		}
+		writeSuccession(w, e.SupersededBy, e.Reason)
+	}
+	for _, d := range r.content {
+		if d.name != "" {
+			fmt.Fprintf(w, "\n## %s\n%s\n", d.name, d.body)
+		} else {
+			fmt.Fprintf(w, "\n%s\n", d.body)
+		}
+	}
+}
+
+// writeSuccession prints the shared "substituída por" / "motivo" tail used by
+// every entity that carries it.
+func writeSuccession(w io.Writer, supersededBy, reason string) {
+	if supersededBy != "" {
+		fmt.Fprintf(w, "substituída por: %s\n", supersededBy)
+	}
+	if reason != "" {
+		fmt.Fprintf(w, "motivo: %s\n", reason)
+	}
+}
+
+type showJSON struct {
+	Kind    string        `json:"kind"`
+	Entity  any           `json:"entity"`
+	Content []showDocJSON `json:"content,omitempty"`
+}
+
+type showDocJSON struct {
+	Name string `json:"name,omitempty"`
+	Body string `json:"body"`
+}
+
+func (r showResult) toJSON() showJSON {
+	var docs []showDocJSON
+	for _, d := range r.content {
+		docs = append(docs, showDocJSON{d.name, d.body})
+	}
+	return showJSON{r.kind, r.entity, docs}
+}
