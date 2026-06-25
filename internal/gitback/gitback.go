@@ -20,6 +20,11 @@ var (
 	ErrNothingToCommit = errors.New("nothing to commit")
 	// ErrNoCommits is the sentinel for a HeadSHA on a repo with an unborn HEAD.
 	ErrNoCommits = errors.New("no commits yet")
+	// ErrNotRepo is the sentinel for CommitPath when workdir is not a git repo.
+	ErrNotRepo = errors.New("not a git repository")
+	// ErrOtherStaged is the sentinel for CommitPath when a path other than the
+	// target is already staged — committing would sweep it into the pin.
+	ErrOtherStaged = errors.New("other staged changes present")
 )
 
 const remoteName = "origin"
@@ -119,6 +124,62 @@ func CommitAndPush(workdir, msg string) (string, error) {
 		Auth:       auth,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return "", err
+	}
+	return hash.String(), nil
+}
+
+// CommitPath stages and commits ONLY path in workdir's repository, on the
+// current HEAD, with no push. It is the project-side docs.lock pin: a mechanical
+// commit that must never disturb the user's other work or trigger client git
+// hooks (go-git runs none).
+//
+// go-git's Commit has no path-limited mode — it commits the whole index — so the
+// guards below keep the pin surgical:
+//   - ErrNotRepo when workdir is not a git repository.
+//   - ErrOtherStaged when any path other than `path` is already staged
+//     (committing then would sweep the user's staged changes into the pin).
+//   - ErrNothingToCommit when `path` itself is unchanged.
+//
+// Other UNSTAGED changes are left untouched: only `path` is staged here, so the
+// committed tree differs from HEAD only at `path`.
+func CommitPath(workdir, path, msg string) (string, error) {
+	repo, err := git.PlainOpen(workdir)
+	if errors.Is(err, git.ErrRepositoryNotExists) {
+		return "", fmt.Errorf("%w: %s", ErrNotRepo, workdir)
+	}
+	if err != nil {
+		return "", err
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return "", err
+	}
+	status, err := wt.Status()
+	if err != nil {
+		return "", err
+	}
+	for p, s := range status {
+		if p == path {
+			continue
+		}
+		if s.Staging != git.Unmodified && s.Staging != git.Untracked {
+			return "", fmt.Errorf("%w: %s", ErrOtherStaged, p)
+		}
+	}
+	if _, err := wt.Add(path); err != nil {
+		return "", err
+	}
+	status, err = wt.Status()
+	if err != nil {
+		return "", err
+	}
+	if s := status.File(path).Staging; s == git.Unmodified || s == git.Untracked {
+		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, path)
+	}
+	sig := &object.Signature{Name: "cerne", Email: "cerne@local", When: time.Now()}
+	hash, err := wt.Commit(msg, &git.CommitOptions{Author: sig, Committer: sig})
+	if err != nil {
 		return "", err
 	}
 	return hash.String(), nil
