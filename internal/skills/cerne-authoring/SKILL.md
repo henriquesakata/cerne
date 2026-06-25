@@ -9,7 +9,7 @@ description: "Use this whenever you create, plan, finish, or manage a feature, d
 
 In a cerne-managed project the living documentation is owned by **cerne**: it holds the lifecycle of **features**, **decisions** (ADRs), **runbooks**, **notes** (durable team knowledge) and **references**, and is the source of truth for the current state. The backend (a git repo) is pinned by the committed `docs.lock`; `.cernerc` wires it. You author documents under `.docs/current/…` and push them back through cerne — you do **not** hand-create folders of loose markdown for tracked work.
 
-This skill is the **mechanics and lifecycle**. The *content* of each document (the actual spec/plan/result prose) comes from your normal process. Read current state from `.docs/CONTEXT.md` and `cerne status`; reach superseded/rejected history with `cerne search "<q>"` / `cerne ask "<q>"`. To open **one entity by its id** — any kind: feature, decision, reference, note, runbook, historical — run **`cerne show <id>`** (`--json` for machine output). It reads straight from the backend store, so it works even for implemented features that are not materialized in `.docs/` — use it instead of guessing a command like `cerne feature show`, which does not exist.
+This skill is the **mechanics and lifecycle**. The *content* of each document (the actual spec/plan/result prose) comes from your normal process. Read current state from `.docs/CONTEXT.md` and `cerne status` (or `cerne brief` for the cheapest whole-project map — every id + state + title, no paths; `--json` too — ideal to prime on the project, then `cerne show` only the ids you need); reach superseded/rejected history with `cerne search "<q>"` / `cerne ask "<q>"`. To open **one entity by its id** — any kind: feature, decision, reference, note, runbook, historical — run **`cerne show <id>`** (`--json` for machine output). It reads straight from the backend store, so it works even for implemented features that are not materialized in `.docs/` — use it instead of guessing a command like `cerne feature show`, which does not exist.
 
 ## When to use
 
@@ -87,7 +87,12 @@ An **epic is just a feature that has children** — the role is inferred from th
 
 ## Decisions (ADRs)
 
-Same model: `cerne decision new "<title>"` mints `D-NNNN` (active) and scaffolds `content/decisions/D-NNNN.md` from the canonical ADR template (or run `cerne decision draft D-NNNN`). Then `cerne pull`, fill the ADR in `.docs/current/decisions/D-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`. Supersede with `cerne decision substituir D-NNNN --by D-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose in the ADR.
+Same model as a feature, with the **same two authoring flows as notes**:
+
+- **One-shot (`--file`/stdin):** `cerne decision new "<title>" --file <adr.md>` (or piped stdin) is born `active` with the ADR already committed and pushed — the CLI confirms it (`✓ … já sincronizada`). Just `cerne pull` to materialize it locally; **no fill, no push**. Best when you already have the ADR text.
+- **Stub (no body):** `cerne decision new "<title>"` mints `D-NNNN` (active) and scaffolds `content/decisions/D-NNNN.md` from the canonical ADR template (or run `cerne decision draft D-NNNN`); then `cerne pull`, fill the ADR in `.docs/current/decisions/D-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`.
+
+Supersede with `cerne decision substituir D-NNNN --by D-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose in the ADR.
 
 ## ADR structure (the template cerne scaffolds)
 
@@ -103,7 +108,12 @@ cerne scaffolds `content/decisions/D-NNNN.md` from a canonical ADR template when
 
 ## Runbooks (operational procedures)
 
-A **runbook** is an actionable operational procedure (deploy, smoke, recovery, migration, setup), separate from features and decisions. `cerne runbook new "<title>"` mints `RB-NNNN` (active) and scaffolds `content/runbooks/RB-NNNN.md` from the canonical template (or run `cerne runbook draft RB-NNNN`). Then `cerne pull`, fill it in `.docs/current/runbooks/RB-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`. Replace an obsolete one with `cerne runbook substituir RB-NNNN --by RB-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose. Runbooks surface in the `## Runbooks` section of `.docs/CONTEXT.md` (and `cerne search` / `cerne ask`). (Importing a hub `docs/runbooks/` tree registers each file as a runbook.)
+A **runbook** is an actionable operational procedure (deploy, smoke, recovery, migration, setup), separate from features and decisions. `cerne runbook new "<title>"` mints `RB-NNNN` (active), with the **same two authoring flows as notes**:
+
+- **One-shot (`--file`/stdin):** `cerne runbook new "<title>" --file <runbook.md>` (or piped stdin) is born `active` with the procedure already committed and pushed; just `cerne pull` to materialize it locally — **no fill, no push**. Best when you already have the procedure written.
+- **Stub (no body):** `cerne runbook new "<title>"` scaffolds `content/runbooks/RB-NNNN.md` from the canonical template (or run `cerne runbook draft RB-NNNN`); then `cerne pull`, fill it in `.docs/current/runbooks/RB-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`.
+
+Replace an obsolete one with `cerne runbook substituir RB-NNNN --by RB-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose. Runbooks surface in the `## Runbooks` section of `.docs/CONTEXT.md` (and `cerne search` / `cerne ask`). (Importing a hub `docs/runbooks/` tree registers each file as a runbook.)
 
 ## Runbook structure (the template cerne scaffolds)
 
