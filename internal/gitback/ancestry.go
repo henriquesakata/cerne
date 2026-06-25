@@ -14,7 +14,7 @@ import (
 // branch. The docs.lock merge driver uses this to resolve two divergent
 // snapshot pins to the more advanced (descendant) backend commit.
 func IsAncestor(workdir, a, b string) (bool, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return false, err
 	}
@@ -32,7 +32,7 @@ func IsAncestor(workdir, a, b string) (bool, error) {
 // Fetch downloads new objects and updates remote-tracking refs from origin,
 // without touching the worktree or HEAD. Already up-to-date is not an error.
 func Fetch(workdir string) error {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return err
 	}

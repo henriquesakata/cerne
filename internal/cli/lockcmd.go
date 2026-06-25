@@ -150,7 +150,7 @@ func ensureLockMergeDriver(projDir string) error {
 	// SetConfig. Fall back to the git binary, which writes these non-worktree
 	// merge.* keys to the shared config: precisely where a merge driver must live
 	// to be visible from every worktree.
-	if errors.Is(err, git.ErrUnsupportedExtensionRepositoryFormatVersion) || errors.Is(err, git.ErrUnknownExtension) {
+	if gitback.IsUnsupportedExtension(err) {
 		if err := ensureGitAttributes(projDir); err != nil {
 			return err
 		}
