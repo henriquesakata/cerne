@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/wiki"
@@ -26,7 +27,11 @@ type EntitySource struct {
 	Kind    string // feature | decision | reference
 	State   string
 	Title   string
-	Content string
+	Content string // ORIGINAL source content — what InputHash hashes (dirty-tracking)
+	// promptContent is Content with references to superseded entities resolved to
+	// their terminal successor ("D-0002 (antes D-0003)"); it feeds the prompt only,
+	// so the rewrite never changes InputHash. Empty means "use Content unchanged".
+	promptContent string
 }
 
 // Page is one synthesis page: a module's live features, the active-decisions
@@ -123,7 +128,27 @@ func Pages(repoDir string) ([]Page, error) {
 		}
 		pages = append(pages, Page{Name: "project", Rel: "project", Sources: proje})
 	}
+	resolveSupersededInPages(repoDir, pages)
 	return pages, nil
+}
+
+// resolveSupersededInPages fills each source's promptContent with its Content
+// rewritten so a reference to a superseded entity resolves to the terminal
+// successor. Run after assembly so the resolver sees every entity; Content (and
+// thus InputHash) is left untouched — the resolution feeds the prompt only.
+func resolveSupersededInPages(repoDir string, pages []Page) {
+	resolve := func(id string) (string, bool) {
+		succ, ok, err := app.TerminalSuccessor(repoDir, id)
+		if err != nil || !ok {
+			return "", false
+		}
+		return succ, true
+	}
+	for pi := range pages {
+		for si := range pages[pi].Sources {
+			pages[pi].Sources[si].promptContent = rewriteSupersededRefs(pages[pi].Sources[si].Content, resolve)
+		}
+	}
 }
 
 // ModulelessSkipped reports how many live (wiki-source) features the wiki
@@ -222,7 +247,11 @@ func BuildPagePrompt(p Page) string {
 	b.WriteString("Escreva markdown em pt-BR: visão geral + como as partes se relacionam hoje. ")
 	b.WriteString("Respeite o estado de cada fonte e não invente o que não está nas fontes.\n\n")
 	for _, s := range p.Sources {
-		fmt.Fprintf(&b, "## %s — %s (%s, %s)\n\n%s\n\n", s.ID, s.Title, s.Kind, s.State, excerpt(strings.TrimSpace(s.Content)))
+		content := s.Content
+		if s.promptContent != "" {
+			content = s.promptContent
+		}
+		fmt.Fprintf(&b, "## %s — %s (%s, %s)\n\n%s\n\n", s.ID, s.Title, s.Kind, s.State, excerpt(strings.TrimSpace(content)))
 	}
 	return b.String()
 }

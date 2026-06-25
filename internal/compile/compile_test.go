@@ -297,6 +297,39 @@ func TestDirtyTracking(t *testing.T) {
 	}
 }
 
+func TestBuildPagePromptResolvesSuperseded(t *testing.T) {
+	dir := seedBackend(t, "finance")
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0003", Title: "ADR velho", State: domain.DecisionSuperseded, SupersededBy: "D-0002", CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveDecision D-0003: %v", err)
+	}
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0002", Title: "ADR novo", State: domain.DecisionActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveDecision D-0002: %v", err)
+	}
+	// A live feature whose spec cites the superseded D-0003.
+	addFeature(t, dir, "F-0001", "finance", domain.StateImplemented, "# Boletos\n\nDecisão base: D-0003.\n")
+
+	pages, err := Pages(dir)
+	if err != nil {
+		t.Fatalf("Pages: %v", err)
+	}
+	p, ok := pageByName(pages, "finance")
+	if !ok {
+		t.Fatalf("no finance page in %v", pageRels(pages))
+	}
+	prompt := BuildPagePrompt(p)
+	if !strings.Contains(prompt, "D-0002 (antes D-0003)") {
+		t.Errorf("prompt should resolve the superseded id to its successor, got:\n%s", prompt)
+	}
+	if strings.Contains(strings.ReplaceAll(prompt, "(antes D-0003)", ""), "D-0003") {
+		t.Errorf("prompt still presents D-0003 as a current reference:\n%s", prompt)
+	}
+	// The hash-feeding Content stays ORIGINAL (the rewrite is prompt-only), so
+	// dirty-tracking does not re-fire on already-compiled pages.
+	if len(p.Sources) != 1 || !strings.Contains(p.Sources[0].Content, "D-0003") || strings.Contains(p.Sources[0].Content, "antes") {
+		t.Errorf("source Content must keep the original unresolved text, got: %q", p.Sources[0].Content)
+	}
+}
+
 func TestBuildPagePrompt(t *testing.T) {
 	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
 		{ID: "F-0001", Kind: "feature", State: "approved", Title: "Boletos", Content: "# Boletos\n\nGera boletos.\n"},
