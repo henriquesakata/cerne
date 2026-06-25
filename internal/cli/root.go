@@ -23,6 +23,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newNoteCmd())
 	root.AddCommand(newReferenceCmd())
 	root.AddCommand(newRetireCmd())
+	root.AddCommand(newShowCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newNextCmd())
 	root.AddCommand(newPullCmd())
