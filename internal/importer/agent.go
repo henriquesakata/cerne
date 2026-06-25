@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -76,4 +80,69 @@ func ValidatePlan(p Plan) error {
 		}
 	}
 	return nil
+}
+
+// Source is one documentation file CollectSources found: its slash path
+// relative to the scanned root and its full content.
+type Source struct {
+	RelPath string
+	Content string
+}
+
+// ignoredDirs are directories CollectSources never descends into: version
+// control, dependency, build, and cerne's own projection.
+var ignoredDirs = map[string]bool{
+	".git": true, "node_modules": true, ".docs": true,
+	"vendor": true, "dist": true,
+}
+
+// CollectSources walks root and returns its documentation sources for
+// agent-assisted mapping: every markdown file plus canonical extensionless
+// roots (HISTORY/CHANGELOG/README/CLAUDE), skipping ignoredDirs. This is what
+// makes discovery independent of the hub convention — any layout yields its
+// docs. Order is deterministic (RelPath ascending) so the prompt is stable.
+func CollectSources(root string) ([]Source, error) {
+	var sources []Source
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && ignoredDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !isDocSource(d.Name()) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		sources = append(sources, Source{RelPath: filepath.ToSlash(rel), Content: string(data)})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].RelPath < sources[j].RelPath })
+	return sources, nil
+}
+
+// isDocSource reports whether a file is a documentation source: any markdown
+// file, or a canonical project root that may ship without an extension.
+func isDocSource(name string) bool {
+	if strings.HasSuffix(strings.ToLower(name), ".md") {
+		return true
+	}
+	switch strings.ToUpper(name) {
+	case "HISTORY", "CHANGELOG", "README", "CLAUDE":
+		return true
+	}
+	return false
 }
