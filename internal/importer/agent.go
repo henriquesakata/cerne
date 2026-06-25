@@ -146,3 +146,72 @@ func isDocSource(name string) bool {
 	}
 	return false
 }
+
+// planKinds is the set of entity kinds the agent may propose, in the order the
+// prompt presents them.
+var planKinds = []string{"feature", "decision", "reference", "runbook", "note"}
+
+// sourceCap bounds how much of each source's content enters the prompt, so one
+// large file cannot blow the model's context; the overflow is replaced with a
+// truncation marker.
+const sourceCap = 8000
+
+// planSchemaJSON is the shape the agent must emit — one example item with every
+// field, matching PlanItem's json tags.
+const planSchemaJSON = `{
+  "items": [
+    {
+      "kind": "feature|decision|reference|runbook|note",
+      "title": "título da entidade",
+      "module": "(opcional) subsistema, só para feature",
+      "state": "estado válido para o kind (veja o modelo acima)",
+      "body": "conteúdo markdown sintetizado a partir da(s) fonte(s)",
+      "url": "(obrigatório quando kind=reference) link externo",
+      "informs": ["F-0001", "D-0002"],
+      "source": "caminho/relativo/da/fonte.md"
+    }
+  ]
+}`
+
+// BuildPlanPrompt assembles the pt-BR mapping prompt the agent fills: the cerne
+// model (the five kinds and their lifecycle states), the JSON plan schema it
+// must emit, and the discovered sources (each capped at sourceCap). The agent
+// classifies each source into the right kind; cerne validates and persists.
+func BuildPlanPrompt(sources []Source) string {
+	var b strings.Builder
+	b.WriteString("Você é um agente que conhece o modelo do cerne e vai mapear a documentação ")
+	b.WriteString("deste projeto para entidades do cerne. Leia as fontes abaixo, descubra o padrão ")
+	b.WriteString("de documentação e produza um plano de entidades. O cerne valida e persiste o seu plano — ")
+	b.WriteString("você propõe, o cerne é a autoridade.\n\n")
+
+	b.WriteString("## Modelo do cerne (kinds e estados válidos)\n\n")
+	for _, kind := range planKinds {
+		states, _ := domain.ValidStates(kind)
+		fmt.Fprintf(&b, "- **%s** — estados: %s\n", kind, strings.Join(states, ", "))
+	}
+	b.WriteString("\nClassifique cada fonte no tipo certo: changelog/histórico cronológico → ")
+	b.WriteString("decision/note/feature; doc de estado-atual (ex.: CLAUDE.md) → note/runbook; ")
+	b.WriteString("procedimento operacional → runbook; link externo que informou o projeto → ")
+	b.WriteString("reference (com url e informs). Sintetize o body em markdown; não copie a fonte cru.\n")
+
+	b.WriteString("\n## Schema do plano (emita SÓ este JSON, sem cercas nem prosa)\n\n```json\n")
+	b.WriteString(planSchemaJSON)
+	b.WriteString("\n```\n")
+
+	b.WriteString("\n## Fontes do projeto\n")
+	for _, s := range sources {
+		fmt.Fprintf(&b, "\n### %s\n\n", s.RelPath)
+		b.WriteString(capContent(s.Content))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// capContent returns content truncated to sourceCap bytes with a marker when it
+// overflows, so a single large file does not dominate the prompt.
+func capContent(content string) string {
+	if len(content) <= sourceCap {
+		return content
+	}
+	return content[:sourceCap] + "\n… [truncado]"
+}
