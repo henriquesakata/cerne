@@ -29,9 +29,9 @@ func TestFilterPlanItems(t *testing.T) {
 	}
 
 	items := []PlanItem{
-		{Kind: "note", Title: "A", State: "active", Body: "b", Source: "CLAUDE.md"},                               // already imported → skip
-		{Kind: "feature", Title: "Case 0001 — Foo", State: "implemented", Body: "b", Source: "HISTORY.md#1"},      // title registered → skip
-		{Kind: "feature", Title: "New Thing", State: "implemented", Body: "b", Source: "HISTORY.md#2"},            // kept
+		{Kind: "note", Title: "A", State: "active", Body: "b", Source: "CLAUDE.md"},                          // already imported → skip
+		{Kind: "feature", Title: "Case 0001 — Foo", State: "implemented", Body: "b", Source: "HISTORY.md#1"}, // title registered → skip
+		{Kind: "feature", Title: "New Thing", State: "implemented", Body: "b", Source: "HISTORY.md#2"},       // kept
 	}
 	kept, skipped, err := FilterPlanItems(repo, items)
 	if err != nil {
