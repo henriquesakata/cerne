@@ -15,13 +15,14 @@ import (
 )
 
 // Snippet is one retrieved piece of context. State travels with every snippet
-// so the answer can never present a superseded source as current.
+// so the answer can never present a superseded source as current. The json tags
+// back `cerne ask --json`, which emits the retrieved sources structured.
 type Snippet struct {
-	Source string // entity ID, or "wiki:<rel>" for a compiled page
-	Kind   string // feature | decision | reference | wiki
-	State  string // lifecycle state; "current" for wiki pages
-	URL    string // source URL for external references; empty otherwise
-	Text   string
+	Source string `json:"source"`        // entity ID, or "wiki:<rel>" for a compiled page
+	Kind   string `json:"kind"`          // feature | decision | reference | wiki
+	State  string `json:"state"`         // lifecycle state; "current" for wiki pages
+	URL    string `json:"url,omitempty"` // source URL for external references; empty otherwise
+	Text   string `json:"text"`
 }
 
 var terminalStates = map[string]bool{"superseded": true, "rejected": true, "obsolete": true}
@@ -180,13 +181,17 @@ func stripFrontmatter(s string) string {
 	return s
 }
 
-// BuildAskPrompt renders the question plus every state-tagged source, with the
-// instruction to cite sources and respect each source's state.
-func BuildAskPrompt(query string, snippets []Snippet) string {
+// BuildAskPrompt renders the question plus every state-tagged source. When
+// preamble is true it also emits the instruction to cite sources and respect
+// each source's state; callers that drive their own synthesis (the host agent
+// via `ask --no-preamble`) can drop it to save tokens.
+func BuildAskPrompt(query string, snippets []Snippet, preamble bool) string {
 	var b strings.Builder
 	b.WriteString("Pergunta: " + query + "\n\n")
-	b.WriteString("Responda em pt-BR usando apenas as fontes abaixo e cite-as (IDs/páginas). ")
-	b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente.\n\n")
+	if preamble {
+		b.WriteString("Responda em pt-BR usando apenas as fontes abaixo e cite-as (IDs/páginas). ")
+		b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente.\n\n")
+	}
 	for _, s := range snippets {
 		header := "## " + s.Source + " (" + s.Kind + ", " + s.State
 		if s.URL != "" {
@@ -196,4 +201,25 @@ func BuildAskPrompt(query string, snippets []Snippet) string {
 		b.WriteString(strings.TrimSpace(s.Text) + "\n\n")
 	}
 	return b.String()
+}
+
+// Trim caps retrieved context for token budget: it keeps at most maxSources
+// snippets (0 = all; order preserved, so the high-level wiki pages survive
+// first) and truncates each snippet's Text to maxSnippetRunes runes (0 = full),
+// appending an ellipsis when it cuts. It returns a new slice and does not mutate
+// the input.
+func Trim(snippets []Snippet, maxSources, maxSnippetRunes int) []Snippet {
+	if maxSources > 0 && len(snippets) > maxSources {
+		snippets = snippets[:maxSources]
+	}
+	out := make([]Snippet, len(snippets))
+	for i, s := range snippets {
+		if maxSnippetRunes > 0 {
+			if r := []rune(s.Text); len(r) > maxSnippetRunes {
+				s.Text = strings.TrimRight(string(r[:maxSnippetRunes]), " ") + "…"
+			}
+		}
+		out[i] = s
+	}
+	return out
 }

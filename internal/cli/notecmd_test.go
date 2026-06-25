@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,6 +123,37 @@ func TestNoteNewWithFileBody(t *testing.T) {
 	// A note with a real body reads as real content (not a stub).
 	if !doccheck.HasRealContent(body) {
 		t.Fatalf("a note with a --file body must read as real content:\n%s", body)
+	}
+}
+
+// TestNoteListJSON: --json emits the notes as a parseable object so an agent can
+// consume the roster without scraping the decorated text table.
+func TestNoteListJSON(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "n.md")
+	if err := os.WriteFile(bodyFile, []byte("O índice é cache derivado.\n"), 0o644); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if _, err := execCerne(t, "note", "new", "Índice é derivado", "--file", bodyFile, "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v", err)
+	}
+
+	out, err := execCerne(t, "note", "list", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list --json: %v\noutput: %s", err, out)
+	}
+	var data struct {
+		Notes []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Title string `json:"title"`
+		} `json:"notes"`
+	}
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("note list --json is not valid JSON: %v\n%s", err, out)
+	}
+	if len(data.Notes) != 1 || data.Notes[0].ID != "N-0001" || data.Notes[0].Title != "Índice é derivado" {
+		t.Fatalf("note list --json notes = %+v, want one N-0001", data.Notes)
 	}
 }
 

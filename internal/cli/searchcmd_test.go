@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,46 @@ func TestSearchNoResults(t *testing.T) {
 	}
 	if !strings.Contains(out, `Nada encontrado para "zzzz".`) {
 		t.Fatalf("missing no-results message:\n%s", out)
+	}
+}
+
+// TestSearchJSON: --json emits hits as a parseable object (the same shape the
+// HTTP API returns) and suppresses the human "Construindo índice..." chatter so
+// stdout is pure JSON even when the index is built on the first run.
+func TestSearchJSON(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Parcelamento", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas mensais sem juros."))
+	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "search", "parcelas", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("search --json: %v\noutput: %s", err, out)
+	}
+	var data struct {
+		Results []struct {
+			EntityID string `json:"entity_id"`
+			Kind     string `json:"kind"`
+			Doc      string `json:"doc"`
+			State    string `json:"state"`
+			Title    string `json:"title"`
+			Snippet  string `json:"snippet"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("search --json is not valid JSON: %v\n%s", err, out)
+	}
+	if len(data.Results) != 1 {
+		t.Fatalf("search --json results = %d, want 1:\n%s", len(data.Results), out)
+	}
+	r := data.Results[0]
+	if r.EntityID != "F-0001" || r.Kind != "feature" || r.Doc != "spec" || r.State != "candidate" || r.Title != "Parcelamento" {
+		t.Fatalf("search --json hit = %+v, want F-0001 feature/spec candidate Parcelamento", r)
+	}
+	if !strings.Contains(r.Snippet, "parcelas") {
+		t.Fatalf("search --json snippet missing match: %q", r.Snippet)
 	}
 }
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -31,24 +32,25 @@ func newNoteCmd() *cobra.Command {
 }
 
 func newNoteListCmd(dir *string) *cobra.Command {
-	var all bool
+	var all, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Listar notas (conhecimento durável) — ativas por padrão; --all inclui história",
 		Long: "Lista as notas lidas direto do backend (store), não da projeção '.docs/' — então enxerga o " +
 			"conhecimento mesmo quando '.docs/' está desatualizado (sem 'cerne pull'). Por padrão mostra só as " +
 			"ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
-			"(durável, informa F-/D-, sucessora).",
+			"(durável, informa F-/D-, sucessora). --json para saída estruturada.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteList(cmd, *dir, all)
+			return runNoteList(cmd, *dir, all, asJSON)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "incluir notas superseded (história)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
 	return cmd
 }
 
-func runNoteList(cmd *cobra.Command, dir string, all bool) error {
+func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -58,12 +60,23 @@ func runNoteList(cmd *cobra.Command, dir string, all bool) error {
 		return err
 	}
 	w := cmd.OutOrStdout()
-	shown := 0
+	shown := make([]store.Note, 0, len(notes))
 	for _, n := range notes {
 		if !all && n.State != domain.NoteActive {
 			continue
 		}
-		shown++
+		shown = append(shown, n)
+	}
+
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Notes []store.Note `json:"notes"`
+		}{shown})
+	}
+
+	for _, n := range shown {
 		line := fmt.Sprintf("%s  [%s]  %s", n.ID, n.State, n.Title)
 		var tags []string
 		if n.Durable {
@@ -80,7 +93,7 @@ func runNoteList(cmd *cobra.Command, dir string, all bool) error {
 		}
 		fmt.Fprintln(w, line)
 	}
-	if shown == 0 {
+	if len(shown) == 0 {
 		if all {
 			fmt.Fprintln(w, "Nenhuma nota registrada. Use 'cerne note new \"<título>\"' para registrar conhecimento durável.")
 		} else {
@@ -155,7 +168,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 }
 
 func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
-	body, err := readNoteBody(cmd, file)
+	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
 	}
@@ -180,11 +193,12 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
 	return nil
 }
 
-// readNoteBody reads the note body from --file when given, or from stdin only
-// when it is piped (not an interactive terminal). A note with no body is valid:
-// it is born a stub. This keeps 'cerne note new' from blocking on stdin when no
-// body is supplied.
-func readNoteBody(cmd *cobra.Command, file string) (string, error) {
+// readOptionalBody reads an entity body from --file when given, or from stdin
+// only when it is piped (not an interactive terminal). An empty body is valid:
+// the entity is born a stub. The stdin guard keeps a 'new' command from blocking
+// on an interactive terminal when no body is supplied. Shared by the
+// optional-body entities: note, runbook and decision.
+func readOptionalBody(cmd *cobra.Command, file string) (string, error) {
 	if file != "" {
 		data, err := os.ReadFile(file)
 		if err != nil {

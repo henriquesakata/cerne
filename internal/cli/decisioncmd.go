@@ -32,28 +32,45 @@ func newDecisionCmd() *cobra.Command {
 }
 
 func newDecisionNewCmd(dir *string) *cobra.Command {
-	return &cobra.Command{
+	var file string
+	cmd := &cobra.Command{
 		Use:   "new <title>",
-		Short: "Create a decision in active state",
-		Args:  cobra.ExactArgs(1),
+		Short: "Create a decision (active); one-shot with a --file/stdin body",
+		Long: "Cria uma decisão ativa. Com corpo (--file ou stdin com pipe) é one-shot: o ADR nasce com " +
+			"conteúdo real, já commitado e enviado — sem o ciclo draft+push. Sem corpo, nasce como stub do " +
+			"template para preencher.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecisionNew(cmd, *dir, args[0])
+			return runDecisionNew(cmd, *dir, args[0], file)
 		},
 	}
+	cmd.Flags().StringVar(&file, "file", "", "file with the ADR body (defaults to piped stdin); one-shot, skips draft+push")
+	return cmd
 }
 
-func runDecisionNew(cmd *cobra.Command, dir, title string) error {
+func runDecisionNew(cmd *cobra.Command, dir, title, file string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return fmt.Errorf("o título da decisão não pode ser vazio")
+	}
+	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title)
+	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body)
 	if err != nil {
 		return err
+	}
+	// A decision created with a body is already real content, committed and pushed
+	// by CreateDecision (CommitAndSnapshot) — nothing to draft or push. A bodyless
+	// decision is a stub: keep the draft + push next step.
+	if strings.TrimSpace(body) != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (active) com corpo — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", d.ID)
+		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (active). Próximo passo: preencha o ADR ('cerne decision draft %s' ajuda) e rode 'cerne push'.\n", d.ID, d.ID)
 	return nil

@@ -14,6 +14,12 @@ import (
 // ignored.
 var linkRx = regexp.MustCompile(`\[[^\]]*\]\(([^)\s]+)[^)]*\)`)
 
+// inlineCodeRx matches a single- or double-backtick inline code span on one
+// line. The double-backtick alternative is listed first so, at a given
+// position, it is preferred (Go regexp is leftmost-first) and consumes the
+// span whole before the single-backtick alternative can nibble its delimiters.
+var inlineCodeRx = regexp.MustCompile("``[^`\n]*``|`[^`\n]*`")
+
 // ContentLinks parses the inline markdown links of content and classifies each
 // distinct target with resolve. External (http/https/mailto), pure-anchor and
 // absolute targets are skipped; a #fragment suffix is stripped before resolve
@@ -21,6 +27,7 @@ var linkRx = regexp.MustCompile(`\[[^\]]*\]\(([^)\s]+)[^)]*\)`)
 // returns); the rest go to broken (the original target text, fragment kept).
 // Each distinct raw target is considered once, in first-appearance order.
 func ContentLinks(content string, resolve func(target string) (id string, ok bool)) (resolved, broken []string) {
+	content = stripCode(content)
 	seen := map[string]bool{}
 	for _, m := range linkRx.FindAllStringSubmatch(content, -1) {
 		target := m[1]
@@ -39,6 +46,34 @@ func ContentLinks(content string, resolve func(target string) (id string, ok boo
 		}
 	}
 	return resolved, broken
+}
+
+// stripCode removes fenced code blocks and inline code spans so that
+// link-looking syntax inside code — e.g. a shell command [x](docker inspect …)
+// — is not mistaken for a markdown link. Fenced blocks (``` or ~~~ delimited)
+// are dropped by a line scan; inline spans are blanked per surviving line.
+func stripCode(content string) string {
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	inFence := false
+	for _, line := range lines {
+		if isFenceDelim(line) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		out = append(out, inlineCodeRx.ReplaceAllString(line, ""))
+	}
+	return strings.Join(out, "\n")
+}
+
+// isFenceDelim reports whether the line opens or closes a fenced code block:
+// its first non-space content is a run of three or more backticks or tildes.
+func isFenceDelim(line string) bool {
+	t := strings.TrimLeft(line, " \t")
+	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
 }
 
 // skipTarget reports whether the link target is outside link resolution:

@@ -90,28 +90,45 @@ func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
 }
 
 func newRunbookNewCmd(dir *string) *cobra.Command {
-	return &cobra.Command{
+	var file string
+	cmd := &cobra.Command{
 		Use:   "new <title>",
-		Short: "Create a runbook in active state",
-		Args:  cobra.ExactArgs(1),
+		Short: "Create a runbook (active); one-shot with a --file/stdin body",
+		Long: "Cria um runbook ativo. Com corpo (--file ou stdin com pipe) é one-shot: nasce com conteúdo " +
+			"real, já commitado e enviado — sem o ciclo draft+push. Sem corpo, nasce como stub do template " +
+			"para preencher.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRunbookNew(cmd, *dir, args[0])
+			return runRunbookNew(cmd, *dir, args[0], file)
 		},
 	}
+	cmd.Flags().StringVar(&file, "file", "", "file with the runbook body (defaults to piped stdin); one-shot, skips draft+push")
+	return cmd
 }
 
-func runRunbookNew(cmd *cobra.Command, dir, title string) error {
+func runRunbookNew(cmd *cobra.Command, dir, title, file string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return fmt.Errorf("o título do runbook não pode ser vazio")
+	}
+	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	rb, err := app.CreateRunbook(ctx.repoDir, ctx.projDir, title)
+	rb, err := app.CreateRunbook(ctx.repoDir, ctx.projDir, title, body)
 	if err != nil {
 		return err
+	}
+	// A runbook created with a body is already real content, committed and pushed
+	// by CreateRunbook (CommitAndSnapshot) — nothing to draft or push. A bodyless
+	// runbook is a stub: keep the draft + push next step.
+	if strings.TrimSpace(body) != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criado (active) com corpo — já sincronizado. Rode 'cerne pull' para materializar localmente.\n", rb.ID)
+		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s criado (active). Próximo passo: preencha o runbook ('cerne runbook draft %s' ajuda) e rode 'cerne push'.\n", rb.ID, rb.ID)
 	return nil

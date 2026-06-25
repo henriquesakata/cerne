@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -26,6 +27,48 @@ func newRunbook(t *testing.T, projDir, title string, seq int) string {
 		t.Fatalf("runbook new %q: %v\noutput: %s", title, err, out)
 	}
 	return fmt.Sprintf("RB-%04d", seq)
+}
+
+// TestRunbookNewWithFileBody: a runbook created with a --file body is one-shot —
+// born active with real content, already committed and pushed (no draft+push
+// round-trip). The CLI confirms it is synced and points at 'cerne pull', not the
+// stub draft+push hint. Mirrors the note/reference one-shot flow.
+func TestRunbookNewWithFileBody(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "body.md")
+	content := "## Quando usar\nQuando o index.db corromper.\n\n" +
+		"## Procedimento\n1. Apague o index.db.\n2. Rode 'cerne search' para reconstruir.\n"
+	if err := os.WriteFile(bodyFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+
+	out, err := execCerne(t, "runbook", "new", "Reconstruir índice", "--file", bodyFile, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("runbook new --file: %v", err)
+	}
+	if !strings.Contains(out, "já sincronizado") || !strings.Contains(out, "com corpo") {
+		t.Fatalf("runbook new --file output must confirm a synced body:\n%s", out)
+	}
+	if !strings.Contains(out, "cerne pull") {
+		t.Fatalf("runbook new --file output must point at 'cerne pull' to materialize:\n%s", out)
+	}
+	if strings.Contains(out, "preencha") || strings.Contains(out, "cerne push") {
+		t.Fatalf("runbook new --file must not print the stub draft+push hint:\n%s", out)
+	}
+
+	body, err := os.ReadFile(filepath.Join(repoDir, "content", "runbooks", "RB-0001.md"))
+	if err != nil {
+		t.Fatalf("read runbook doc: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "---\ncerne_id: RB-0001\n---") {
+		t.Fatalf("runbook doc missing cerne_id frontmatter:\n%s", body)
+	}
+	if !strings.Contains(string(body), "Apague o index.db") {
+		t.Fatalf("runbook body not written from --file:\n%s", body)
+	}
+	if !doccheck.HasRealContent(body) {
+		t.Fatalf("a runbook with a --file body must read as real content:\n%s", body)
+	}
 }
 
 func TestRunbookNew(t *testing.T) {
