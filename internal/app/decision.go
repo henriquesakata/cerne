@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/dectmpl"
@@ -20,10 +21,12 @@ type DecisionOutcome struct {
 }
 
 // CreateDecision mints a new active decision in the backend clone at repoDir:
-// allocates the next D- id, persists the entity, writes a stub ADR document,
-// appends the decision.created event, commits+pushes the backend and refreshes
-// the docs.lock snapshot in projDir.
-func CreateDecision(repoDir, projDir, title string) (store.Decision, error) {
+// allocates the next D- id, persists the entity, writes the ADR document (from
+// body when given, else a stub), appends the decision.created event,
+// commits+pushes the backend and refreshes the docs.lock snapshot in projDir. A
+// non-empty body makes 'decision new' one-shot: the ADR is born with real
+// content, no draft+push needed.
+func CreateDecision(repoDir, projDir, title, body string) (store.Decision, error) {
 	id, err := store.NextID(repoDir, "D")
 	if err != nil {
 		return store.Decision{}, err
@@ -39,7 +42,7 @@ func CreateDecision(repoDir, projDir, title string) (store.Decision, error) {
 	if err := store.SaveDecision(repoDir, d); err != nil {
 		return store.Decision{}, err
 	}
-	if err := writeDecisionStub(repoDir, id, title); err != nil {
+	if err := writeDecisionBody(repoDir, id, title, body); err != nil {
 		return store.Decision{}, err
 	}
 	ev := domain.NewEvent(id, "decision.created", map[string]string{"title": title}, EventActor())
@@ -103,6 +106,22 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 // DecisionDocPath returns the backend path of a decision's content document.
 func DecisionDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "decisions", id+".md")
+}
+
+// writeDecisionBody writes content/decisions/<id>.md as cerne's stamped cerne_id
+// frontmatter followed by body. An empty body falls back to writeDecisionStub (the
+// canonical ADR template scaffold). cerne stamps the frontmatter itself — the body
+// supplied for a one-shot decision never carries cerne_id.
+func writeDecisionBody(repoDir, id, title, body string) error {
+	if strings.TrimSpace(body) == "" {
+		return writeDecisionStub(repoDir, id, title)
+	}
+	path := DecisionDocPath(repoDir, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // writeDecisionStub creates content/decisions/<id>.md scaffolded from the

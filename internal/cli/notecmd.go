@@ -155,7 +155,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 }
 
 func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
-	body, err := readNoteBody(cmd, file)
+	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
 	}
@@ -180,11 +180,12 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
 	return nil
 }
 
-// readNoteBody reads the note body from --file when given, or from stdin only
-// when it is piped (not an interactive terminal). A note with no body is valid:
-// it is born a stub. This keeps 'cerne note new' from blocking on stdin when no
-// body is supplied.
-func readNoteBody(cmd *cobra.Command, file string) (string, error) {
+// readOptionalBody reads an entity body from --file when given, or from stdin
+// only when it is piped (not an interactive terminal). An empty body is valid:
+// the entity is born a stub. The stdin guard keeps a 'new' command from blocking
+// on an interactive terminal when no body is supplied. Shared by the
+// optional-body entities: note, runbook and decision.
+func readOptionalBody(cmd *cobra.Command, file string) (string, error) {
 	if file != "" {
 		data, err := os.ReadFile(file)
 		if err != nil {

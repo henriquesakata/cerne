@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -20,10 +21,12 @@ type RunbookOutcome struct {
 }
 
 // CreateRunbook mints a new active runbook in the backend clone at repoDir:
-// allocates the next RB- id, persists the entity, scaffolds a stub runbook
-// document from the canonical template, appends the runbook.created event,
-// commits+pushes the backend and refreshes the docs.lock snapshot in projDir.
-func CreateRunbook(repoDir, projDir, title string) (store.Runbook, error) {
+// allocates the next RB- id, persists the entity, writes the runbook document
+// (from body when given, else a stub scaffolded from the canonical template),
+// appends the runbook.created event, commits+pushes the backend and refreshes
+// the docs.lock snapshot in projDir. A non-empty body makes 'runbook new'
+// one-shot: the runbook is born with real content, no draft+push needed.
+func CreateRunbook(repoDir, projDir, title, body string) (store.Runbook, error) {
 	id, err := store.NextID(repoDir, "RB")
 	if err != nil {
 		return store.Runbook{}, err
@@ -39,7 +42,7 @@ func CreateRunbook(repoDir, projDir, title string) (store.Runbook, error) {
 	if err := store.SaveRunbook(repoDir, rb); err != nil {
 		return store.Runbook{}, err
 	}
-	if err := writeRunbookStub(repoDir, id, title); err != nil {
+	if err := writeRunbookBody(repoDir, id, title, body); err != nil {
 		return store.Runbook{}, err
 	}
 	ev := domain.NewEvent(id, "runbook.created", map[string]string{"title": title}, EventActor())
@@ -103,6 +106,22 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 // RunbookDocPath returns the backend path of a runbook's content document.
 func RunbookDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "runbooks", id+".md")
+}
+
+// writeRunbookBody writes content/runbooks/<id>.md as cerne's stamped cerne_id
+// frontmatter followed by body. An empty body falls back to writeRunbookStub (the
+// canonical template scaffold). cerne stamps the frontmatter itself — the body
+// supplied for a one-shot runbook never carries cerne_id.
+func writeRunbookBody(repoDir, id, title, body string) error {
+	if strings.TrimSpace(body) == "" {
+		return writeRunbookStub(repoDir, id, title)
+	}
+	path := RunbookDocPath(repoDir, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // writeRunbookStub creates content/runbooks/<id>.md scaffolded from the canonical
