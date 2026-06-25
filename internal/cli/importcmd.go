@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,6 +13,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/importer"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -24,23 +26,29 @@ var (
 
 func newImportCmd() *cobra.Command {
 	var dir, root string
-	var yes bool
+	var yes, agent, ingest bool
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import an existing documentation tree into the backend",
-		Args:  cobra.NoArgs,
+		Long: "Importa uma árvore de documentação existente. Sem flags, usa a convenção do " +
+			"Rockt Hub (determinístico). Com --agent, faz import genérico assistido por IA de " +
+			"qualquer estrutura: emite um prompt de mapeamento (modo delegação) ou gera o plano " +
+			"(byo-key); depois 'cerne import --agent --ingest' valida e aplica (--yes).",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runImport(cmd, dir, root, yes)
+			return runImport(cmd, dir, root, yes, agent, ingest)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&root, "root", "", "documentation tree to scan (defaults to the project directory)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "apply the import instead of printing the dry-run plan")
+	cmd.Flags().BoolVar(&agent, "agent", false, "AI-assisted generic import: emit a mapping prompt for any doc structure")
+	cmd.Flags().BoolVar(&ingest, "ingest", false, "ingest the agent's plan.json: validate, then dry-run (or --yes to apply)")
 	return cmd
 }
 
-func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
+func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -50,6 +58,17 @@ func runImport(cmd *cobra.Command, dir, root string, yes bool) error {
 	}
 	if _, err := os.Stat(root); err != nil {
 		return fmt.Errorf("--root: %w", err)
+	}
+	// Agent path (F-0061) is fully gated behind --agent: without it, the
+	// deterministic hub import below runs exactly as before.
+	if agent {
+		if ingest {
+			return runImportAgentIngest(cmd, ctx, yes)
+		}
+		return runImportAgent(cmd, ctx, root)
+	}
+	if ingest {
+		return fmt.Errorf("--ingest requer --agent")
 	}
 	proj, err := store.LoadProject(ctx.repoDir)
 	if err != nil {
@@ -288,4 +307,143 @@ func sampleLines(cands []importer.Candidate) []string {
 	lines = append(lines, "  ...")
 	lines = append(lines, line(cands[len(cands)-1]))
 	return lines
+}
+
+// agent-import handoff files under the project's .docs/, mirroring compile's
+// .docs/wiki/.pending: phase 1 writes the prompt (delegation) or the plan
+// (byo-key) here; phase 2 reads the plan from here.
+const (
+	agentPromptRel = ".docs/import/.pending/plan.prompt.md"
+	agentPlanRel   = ".docs/import/.pending/plan.json"
+)
+
+// runImportAgent is phase 1 of agent-assisted import: collect the doc sources
+// generically and produce the mapping prompt. In delegation mode (default) it
+// writes the prompt for the host agent; in byo-key/claude-cli it synthesizes
+// the plan in one Provider call. Either way it stops before applying, so the
+// plan can be reviewed and ingested with --ingest.
+func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
+	out := cmd.OutOrStdout()
+	sources, err := importer.CollectSources(root)
+	if err != nil {
+		return err
+	}
+	if len(sources) == 0 {
+		fmt.Fprintln(out, "Nenhuma fonte de documentação encontrada para mapear.")
+		return nil
+	}
+	prompt := importer.BuildPlanPrompt(sources)
+	if err := os.MkdirAll(filepath.Join(ctx.projDir, filepath.FromSlash(".docs/import/.pending")), 0o755); err != nil {
+		return err
+	}
+	planPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPlanRel))
+
+	// byo-key/claude-cli: synthesize the plan in one shot (same routing as compile).
+	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
+		prov, err := llm.NewProvider(ctx.cfg.LLM)
+		if err != nil {
+			return err
+		}
+		planJSON, err := prov.Complete(cmd.Context(), prompt)
+		if err != nil {
+			return fmt.Errorf("gerando o plano: %w", err)
+		}
+		if err := os.WriteFile(planPath, []byte(planJSON), 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "%d fonte(s) mapeada(s). Plano em %s.\n", len(sources), agentPlanRel)
+		fmt.Fprintln(out, "Revise e rode 'cerne import --agent --ingest' (--yes para aplicar).")
+		return nil
+	}
+
+	// delegation (default): emit the prompt for the host agent to fill.
+	promptPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPromptRel))
+	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%d fonte(s) coletada(s). Prompt de mapeamento em %s.\n", len(sources), agentPromptRel)
+	fmt.Fprintf(out, "Processe o prompt, escreva o plano JSON em %s e rode 'cerne import --agent --ingest' (--yes para aplicar).\n", agentPlanRel)
+	return nil
+}
+
+// runImportAgentIngest is phase 2: read the agent's plan.json, validate it
+// against the cerne model (cerne is the authority), drop already-imported items
+// (idempotency), then either print the dry-run plan or apply it (--yes).
+func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
+	out := cmd.OutOrStdout()
+	planPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPlanRel))
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("lendo o plano em %s: %w — rode 'cerne import --agent' primeiro", agentPlanRel, err)
+	}
+	plan, err := importer.ParsePlan(data)
+	if err != nil {
+		return err
+	}
+	if err := importer.ValidatePlan(plan); err != nil {
+		return err
+	}
+	kept, skipped, err := importer.FilterPlanItems(ctx.repoDir, plan.Items)
+	if err != nil {
+		return err
+	}
+
+	if len(kept) == 0 {
+		if skipped > 0 {
+			fmt.Fprintf(out, "Tudo já importado (%d item(ns) já no backend).\n", skipped)
+		} else {
+			fmt.Fprintln(out, "Nada para importar.")
+		}
+		return nil
+	}
+
+	// Dry-run: show the plan, write nothing.
+	if !yes {
+		printAgentPlan(out, kept, skipped)
+		return nil
+	}
+
+	sum, err := importer.ApplyPlan(ctx.repoDir, kept, eventActor())
+	if err != nil {
+		return err
+	}
+	total := sum.Features + sum.Decisions + sum.References + sum.Runbooks + sum.Notes
+	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import (agente) %d documento(s)", total))
+	if err != nil {
+		return err
+	}
+	if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
+		return err
+	}
+	_ = os.RemoveAll(filepath.Join(ctx.projDir, filepath.FromSlash(".docs/import/.pending")))
+	fmt.Fprintf(out, "Importado (agente): %d features, %d decisões, %d referências, %d runbooks, %d notes (snapshot %s).\n",
+		sum.Features, sum.Decisions, sum.References, sum.Runbooks, sum.Notes, shortSHA(sha))
+	return nil
+}
+
+// printAgentPlan writes the agent-import dry-run report: per-kind totals
+// (notes included, unlike the hub printer), a small sample, and the --yes hint.
+func printAgentPlan(w io.Writer, items []importer.PlanItem, skipped int) {
+	counts := map[string]int{}
+	for _, it := range items {
+		counts[it.Kind]++
+	}
+	fmt.Fprintln(w, "Plano de importação (agente, dry-run):")
+	if skipped > 0 {
+		fmt.Fprintf(w, "  Já importados (pulados): %d\n", skipped)
+	}
+	fmt.Fprintf(w, "  Features: %d\n", counts["feature"])
+	fmt.Fprintf(w, "  Decisões: %d\n", counts["decision"])
+	fmt.Fprintf(w, "  Referências: %d\n", counts["reference"])
+	fmt.Fprintf(w, "  Runbooks: %d\n", counts["runbook"])
+	fmt.Fprintf(w, "  Notes: %d\n", counts["note"])
+	fmt.Fprintln(w, "Amostra:")
+	for i, it := range items {
+		if i >= 8 {
+			fmt.Fprintf(w, "  … (+%d)\n", len(items)-8)
+			break
+		}
+		fmt.Fprintf(w, "  %s? %s → %s %s\n", strings.ToUpper(it.Kind[:1]), it.Source, it.Kind, it.State)
+	}
+	fmt.Fprintln(w, "Rode com --yes para aplicar.")
 }
