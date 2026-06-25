@@ -31,7 +31,8 @@ func SaveArtifact(repoDir, projDir, id, name string, data []byte) error {
 
 // CommitAndSnapshot commits and pushes the backend clone, then rewrites the
 // docs.lock snapshot in projDir to the new HEAD — the sync tail shared by
-// every backend mutation (transitions, artifact saves).
+// every backend mutation (transitions, artifact saves). When the project opts
+// in (.cernerc autocommit_lock), it also commits the freshly-pinned docs.lock.
 func CommitAndSnapshot(repoDir, projDir, msg string) error {
 	sha, err := gitback.CommitAndPush(repoDir, msg)
 	if err != nil {
@@ -42,5 +43,27 @@ func CommitAndSnapshot(repoDir, projDir, msg string) error {
 		return err
 	}
 	lock.Snapshot = sha
-	return project.SaveLock(projDir, lock)
+	if err := project.SaveLock(projDir, lock); err != nil {
+		return err
+	}
+	return autocommitLock(projDir)
+}
+
+// autocommitLock commits the just-written project-side docs.lock when the
+// project opts in via .cernerc (autocommit_lock = true). Best-effort by design:
+// a missing/unreadable config, an opt-out, a non-git project, an unchanged lock,
+// or pre-staged user changes are all no-ops — the pin is skipped, never failing
+// the backend mutation that already succeeded.
+func autocommitLock(projDir string) error {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil || !cfg.AutocommitLock {
+		return nil
+	}
+	_, err = gitback.CommitPath(projDir, "docs.lock", "chore(docs): pin docs.lock")
+	if errors.Is(err, gitback.ErrNothingToCommit) ||
+		errors.Is(err, gitback.ErrNotRepo) ||
+		errors.Is(err, gitback.ErrOtherStaged) {
+		return nil
+	}
+	return err
 }
