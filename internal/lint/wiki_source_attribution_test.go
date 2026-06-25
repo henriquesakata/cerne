@@ -80,3 +80,59 @@ func TestWikiRefAttributedToSource(t *testing.T) {
 		t.Fatalf("want a ref-to-superseded finding attributed to F-0008 citing D-0003, got: %+v", refToSuperseded(findings))
 	}
 }
+
+func saveDecision(t *testing.T, dir, id string, state domain.DecisionState, by string) {
+	t.Helper()
+	if err := store.SaveDecision(dir, store.Decision{ID: id, Title: id, State: state, SupersededBy: by, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveDecision %s: %v", id, err)
+	}
+}
+
+func TestWikiHistoryMarkerSuppresses(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"superseded label", "# Finance\n\nA decisão D-0003 foi superseded por outra.\n"},
+		{"substitui label", "# Finance\n\nA D-0003 foi substituída pela nova.\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+				t.Fatalf("InitLayout: %v", err)
+			}
+			supersededDecisionPair(t, dir)
+			writeWikiPage(t, dir, "content/wiki/modules/finance.md", []string{"F-0008"}, tt.body)
+			findings, err := Run(dir)
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if refs := refToSuperseded(findings); len(refs) != 0 {
+				t.Fatalf("history-labeled mention should not be flagged, got: %+v", refs)
+			}
+		})
+	}
+}
+
+func TestWikiSuccessorNearbySuppresses(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	// Multi-hop chain D-0005 -> D-0004 -> D-0002 (active terminal). The page cites
+	// D-0005 next to the TERMINAL successor D-0002 (not the first hop D-0004), so
+	// only resolving to the terminal tolerates it.
+	saveDecision(t, dir, "D-0005", domain.DecisionSuperseded, "D-0004")
+	saveDecision(t, dir, "D-0004", domain.DecisionSuperseded, "D-0002")
+	saveDecision(t, dir, "D-0002", domain.DecisionActive, "")
+	writeWikiPage(t, dir, "content/wiki/modules/finance.md", []string{"F-0008"}, "# Finance\n\nUse D-0002 (antes D-0005).\n")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 0 {
+		t.Fatalf("mention next to the terminal successor should not be flagged, got: %+v", refs)
+	}
+}

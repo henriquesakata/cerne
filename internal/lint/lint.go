@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/dectmpl"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -166,7 +167,7 @@ func Run(repoDir string) ([]Finding, error) {
 			return nil, err
 		}
 		text := string(data)
-		findings = append(findings, refFindings(d, text, needles)...)
+		findings = append(findings, refFindings(repoDir, d, text, needles)...)
 		findings = append(findings, linkFindings(repoDir, d, text)...)
 	}
 
@@ -682,22 +683,18 @@ func stateLabelPT(state string) string {
 // of the same entity collapse into one finding: an ID or title hit keeps the
 // ID-based detail; otherwise the first matching imported identifier names
 // the mention.
-func refFindings(d scannedDoc, text string, needles []needle) []Finding {
+func refFindings(repoDir string, d scannedDoc, text string, needles []needle) []Finding {
 	var findings []Finding
+	isWiki := len(d.sources) > 0
 	for _, n := range needles {
-		var detail string
-		switch {
-		case n.rxID.MatchString(text) || (n.rxTitle != nil && n.rxTitle.MatchString(text)):
-			detail = fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state))
-		default:
-			for _, in := range n.imported {
-				if in.rx.MatchString(text) {
-					detail = fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, stateLabelPT(n.state))
-					break
-				}
-			}
-		}
+		detail, loc := matchNeedle(n, text)
 		if detail == "" {
+			continue
+		}
+		// On a wiki page a mention correctly labeled as historical (a marker or
+		// the terminal successor on the same line) is not a debt — the page
+		// regenerates from source. Authored docs keep the strict match (crit. 4).
+		if isWiki && toleratedOnWiki(repoDir, text, loc, n) {
 			continue
 		}
 		if n.use != "" {
@@ -705,7 +702,7 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		}
 		// A wiki page regenerates from its sources, so the debt belongs to the
 		// source entity, not the generated file — emit one finding per source.
-		if len(d.sources) > 0 {
+		if isWiki {
 			for _, src := range d.sources {
 				findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: src, File: d.rel, Detail: detail})
 			}
@@ -714,6 +711,58 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		}
 	}
 	return findings
+}
+
+// matchNeedle returns the ref-to-superseded detail and the location of the first
+// matching mention (by id, title or imported identifier), or "" when n is absent.
+func matchNeedle(n needle, text string) (string, []int) {
+	if loc := n.rxID.FindStringIndex(text); loc != nil {
+		return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state)), loc
+	}
+	if n.rxTitle != nil {
+		if loc := n.rxTitle.FindStringIndex(text); loc != nil {
+			return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state)), loc
+		}
+	}
+	for _, in := range n.imported {
+		if loc := in.rx.FindStringIndex(text); loc != nil {
+			return fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, stateLabelPT(n.state)), loc
+		}
+	}
+	return "", nil
+}
+
+// historyMarkerRx matches an explicit historical-mention marker near a superseded
+// id on a wiki page ("superseded", "substituí…", "histórico").
+var historyMarkerRx = regexp.MustCompile(`(?i)superseded|substitu|hist[óo]ric`)
+
+// toleratedOnWiki reports whether a superseded mention on a wiki page is already
+// correctly labeled as historical — a history marker or the terminal successor
+// (resolved via the F-0069 graph walk) appears on the same line — so the
+// regenerated page needs no fix and the mention is not a debt.
+func toleratedOnWiki(repoDir, text string, loc []int, n needle) bool {
+	window := lineAround(text, loc)
+	if historyMarkerRx.MatchString(window) {
+		return true
+	}
+	if succ, ok, err := app.TerminalSuccessor(repoDir, n.id); err == nil && ok && succ != "" && wordRx(succ).MatchString(window) {
+		return true
+	}
+	return false
+}
+
+// lineAround returns the single line of text containing the match at loc, so
+// tolerance is judged on the mention's own line, not the whole document.
+func lineAround(text string, loc []int) string {
+	if loc == nil {
+		return ""
+	}
+	start := strings.LastIndexByte(text[:loc[0]], '\n') + 1
+	end := len(text)
+	if nl := strings.IndexByte(text[loc[0]:], '\n'); nl >= 0 {
+		end = loc[0] + nl
+	}
+	return text[start:end]
 }
 
 // linkFindings reports markdown links whose relative target does not exist
