@@ -20,16 +20,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-docs-lock.sh\""
-          }
-        ]
-      }
     ]
   }
 }
