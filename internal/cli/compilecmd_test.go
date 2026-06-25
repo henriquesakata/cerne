@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/compile"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
@@ -261,5 +262,79 @@ func TestCompileIngestRejectsStale(t *testing.T) {
 	stamped := filepath.Join(repoDir, "content", "wiki", "modules", "finance.md")
 	if data, err := os.ReadFile(stamped); err == nil && strings.Contains(string(data), "velho") {
 		t.Fatalf("stale body leaked into the backend page:\n%s", data)
+	}
+}
+
+func TestCompileIngestPerPageStatus(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance", "billing")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new finance: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "new", "Faturas", "--module", "billing", "--dir", projDir); err != nil {
+		t.Fatalf("feature new billing: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	// finance: fresh (echoes run id) → ingerido; billing: stale → obsoleto.
+	m := readPendingManifest(t, projDir)
+	for _, e := range m.Entries {
+		respPath := filepath.Join(projDir, filepath.FromSlash(e.ResponsePath))
+		if err := os.MkdirAll(filepath.Dir(respPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nrun_id: rodada-velha\n---\n# " + e.Page + " velho\n"
+		if e.Page == "finance" {
+			body = "---\nrun_id: " + e.RunID + "\n---\n# Finance\n"
+		}
+		if err := os.WriteFile(respPath, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := execCerne(t, "compile", "--ingest", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("ingest: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "finance: ingerido") {
+		t.Errorf("expected finance ingerido, got:\n%s", out)
+	}
+	if !strings.Contains(out, "billing: obsoleto") {
+		t.Errorf("expected billing obsoleto, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Compilado: 1") {
+		t.Errorf("expected Compilado: 1 (only the fresh page), got:\n%s", out)
+	}
+}
+
+func TestCompileIngestIdempotent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "finance", "core")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	fulfillPending(t, projDir, "# Finance\n\nv1.\n")
+	if out, err := execCerne(t, "compile", "--ingest", "--dir", projDir); err != nil {
+		t.Fatalf("first ingest: %v\n%s", err, out)
+	}
+	headBefore, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Second ingest: pending was cleared, so it's a no-op with no new commit.
+	out, err := execCerne(t, "compile", "--ingest", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("second ingest: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Nenhuma página pendente") {
+		t.Fatalf("expected nothing-pending message, got:\n%s", out)
+	}
+	headAfter, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headBefore != headAfter {
+		t.Fatalf("second ingest created a commit: %s -> %s", headBefore, headAfter)
 	}
 }
