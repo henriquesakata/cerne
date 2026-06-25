@@ -27,7 +27,7 @@ esac
 
 git -C "$root" commit -q \
   -m "chore(docs): pin docs.lock" \
-  -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>" \
+  -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>" \
   -- docs.lock 2>/dev/null
 
 exit 0
