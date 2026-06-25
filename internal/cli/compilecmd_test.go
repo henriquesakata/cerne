@@ -227,3 +227,39 @@ func TestCompileIngestMissingResponseErrors(t *testing.T) {
 		t.Fatalf("error should name the expected response path, got:\n%s", out)
 	}
 }
+
+func TestCompileIngestRejectsStale(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "finance", "core")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
+		t.Fatalf("compile prepare: %v\n%s", err, out)
+	}
+	// Agent writes a STALE response: a run_id from a different round (repro of
+	// the bug where an old page in the clone passed as "Compilado").
+	m := readPendingManifest(t, projDir)
+	respPath := filepath.Join(projDir, filepath.FromSlash(m.Entries[0].ResponsePath))
+	if err := os.MkdirAll(filepath.Dir(respPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(respPath, []byte("---\nrun_id: rodada-anterior\n---\n# velho\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Stale alone is not a hard error — it's reported and skipped.
+	out, err := execCerne(t, "compile", "--ingest", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("stale-only ingest should not hard-error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "obsoleto") {
+		t.Fatalf("expected the page reported obsoleto, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Compilado: 0") {
+		t.Fatalf("stale page must not count as compiled, got:\n%s", out)
+	}
+	// The stale body must NOT have been stamped into the backend clone.
+	stamped := filepath.Join(repoDir, "content", "wiki", "modules", "finance.md")
+	if data, err := os.ReadFile(stamped); err == nil && strings.Contains(string(data), "velho") {
+		t.Fatalf("stale body leaked into the backend page:\n%s", data)
+	}
+}

@@ -16,6 +16,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/compile"
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/wiki"
@@ -215,11 +216,18 @@ func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope
 // and hope" path is gone.
 var ErrPendingResponseMissing = errors.New("resposta pendente ausente")
 
+// ErrPendingResponseStale is the marker for a response that does not belong to
+// the current run (a stale page from a previous round). Such a page is reported
+// and skipped, never committed as success — the bug this contract fixes.
+var ErrPendingResponseStale = errors.New("resposta pendente obsoleta")
+
 // ingestPending (delegation phase 2) reads the round's manifest and, per
-// declared entry, stamps provenance on the response the agent wrote at the
-// declared response_path, commits, and clears pending. A declared response
-// missing at its path aborts with that exact path (crit. 2). Freshness checking
-// (rejecting a stale response) is layered on in a later step.
+// declared entry, validates the response the agent wrote at the declared
+// response_path and stamps provenance on the fresh ones, commits them, and
+// reports an honest per-page status (ingerido / obsoleto / pulado). A stale
+// response is skipped (not committed); a missing one keeps pending and returns
+// a hard error naming the exact path (crit. 2). "Compilado: N" counts only the
+// pages actually ingested this round.
 func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error {
 	out := cmd.OutOrStdout()
 	pendingRoot := filepath.Join(ctx.projDir, filepath.FromSlash(pendingRelDir))
@@ -239,12 +247,19 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 	if err != nil {
 		return err
 	}
+
+	type pageStatus struct{ page, status string }
+	var statuses []pageStatus
 	var done []compile.Page
+	var missing []string
 	for _, e := range manifest.Entries {
 		responsePath := filepath.Join(ctx.projDir, filepath.FromSlash(e.ResponsePath))
+		promptPath := filepath.Join(ctx.projDir, filepath.FromSlash(e.PromptPath))
 		body, err := os.ReadFile(responsePath)
 		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("página %s: resposta não encontrada em %s: %w", e.Page, e.ResponsePath, ErrPendingResponseMissing)
+			statuses = append(statuses, pageStatus{e.Page, fmt.Sprintf("pulado (sem resposta em %s)", e.ResponsePath)})
+			missing = append(missing, e.ResponsePath)
+			continue
 		}
 		if err != nil {
 			return err
@@ -253,24 +268,58 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 		if !ok {
 			return fmt.Errorf("página %s do manifesto não corresponde a nenhuma página compilável", e.Page)
 		}
+		if !isFresh(e, body, promptPath, responsePath) {
+			statuses = append(statuses, pageStatus{e.Page, "obsoleto"})
+			continue
+		}
 		if err := writeStampedPage(ctx.repoDir, p, head, body); err != nil {
 			return err
 		}
 		done = append(done, p)
+		statuses = append(statuses, pageStatus{e.Page, "ingerido"})
 	}
-	if len(done) == 0 {
-		fmt.Fprintln(out, "Nenhuma página pendente para ingerir.")
-		return nil
+
+	if len(done) > 0 {
+		if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
+			return err
+		}
 	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
-		return err
+	for _, s := range statuses {
+		fmt.Fprintf(out, "  %s: %s\n", s.page, s.status)
 	}
-	_ = os.RemoveAll(pendingRoot)
 	fmt.Fprintf(out, "Compilado: %d página(s).\n", len(done))
-	for _, p := range done {
-		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
+
+	if len(missing) > 0 {
+		// Keep pending so the agent can write the missing responses and re-ingest.
+		return fmt.Errorf("%d resposta(s) declarada(s) ausente(s) (ex.: %s): %w", len(missing), missing[0], ErrPendingResponseMissing)
+	}
+	// A fully-consumed round (every declared page ingested) clears pending so a
+	// re-run is a clean no-op; an incomplete round (some obsolete) keeps it so
+	// the agent can rewrite and re-ingest without re-preparing.
+	if len(done) == len(manifest.Entries) {
+		_ = os.RemoveAll(pendingRoot)
 	}
 	return nil
+}
+
+// isFresh reports whether the agent's response belongs to the current round. The
+// run id echoed in the response frontmatter is the source of truth: present and
+// equal → fresh; present but different → stale. When the response carries no
+// frontmatter run id at all, fall back to mtime (response no older than its
+// prompt) — never accept a present-but-divergent run id on mtime grounds.
+func isFresh(e compile.ManifestEntry, body []byte, promptPath, responsePath string) bool {
+	if echoed := doccheck.FrontmatterValue(body, "run_id"); echoed != "" {
+		return echoed == e.RunID
+	}
+	rp, err := os.Stat(responsePath)
+	if err != nil {
+		return false
+	}
+	pp, err := os.Stat(promptPath)
+	if err != nil {
+		return false
+	}
+	return !rp.ModTime().Before(pp.ModTime())
 }
 
 // readManifest loads the delegation manifest from a pending directory. A missing
