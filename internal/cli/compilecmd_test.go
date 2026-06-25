@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/compile"
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
@@ -129,5 +131,59 @@ func TestCompileForceRecompiles(t *testing.T) {
 	}
 	if strings.Contains(out, "Nada a recompilar") {
 		t.Fatalf("--force should recompile, got:\n%s", out)
+	}
+}
+
+// readPendingManifest decodes .docs/wiki/.pending/manifest.json for a project.
+func readPendingManifest(t *testing.T, projDir string) compile.Manifest {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(projDir, ".docs", "wiki", ".pending", compile.ManifestName))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var m compile.Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("decode manifest: %v\n%s", err, raw)
+	}
+	return m
+}
+
+func TestCompilePrepareWritesManifest(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance", "core")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
+		t.Fatalf("compile prepare: %v\n%s", err, out)
+	}
+
+	m := readPendingManifest(t, projDir)
+	if m.Version != compile.ManifestVersion {
+		t.Fatalf("manifest version = %d, want %d", m.Version, compile.ManifestVersion)
+	}
+	if m.RunID == "" {
+		t.Fatal("manifest run_id is empty")
+	}
+	var fin *compile.ManifestEntry
+	for i := range m.Entries {
+		if m.Entries[i].Page == "finance" {
+			fin = &m.Entries[i]
+		}
+	}
+	if fin == nil {
+		t.Fatalf("no finance entry in manifest: %+v", m.Entries)
+	}
+	if !strings.HasSuffix(fin.PromptPath, "modules/finance.prompt.md") {
+		t.Errorf("prompt_path = %q, want suffix modules/finance.prompt.md", fin.PromptPath)
+	}
+	// The response goes in the SAME pending tree as the prompt, not content/wiki.
+	if !strings.HasSuffix(fin.ResponsePath, "modules/finance.md") || strings.Contains(fin.ResponsePath, "content/wiki") {
+		t.Errorf("response_path = %q, want a .pending/ path ending modules/finance.md", fin.ResponsePath)
+	}
+	if fin.SourceHash == "" {
+		t.Error("entry source_hash is empty")
+	}
+	if fin.RunID != m.RunID {
+		t.Errorf("entry run_id %q != manifest run_id %q", fin.RunID, m.RunID)
 	}
 }

@@ -2,10 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -68,7 +71,7 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 	if err != nil {
 		return err
 	}
-	return preparePrompts(cmd, ctx, dirty)
+	return preparePrompts(cmd, ctx, dirty, scope)
 }
 
 // compileSynchronous is the byo-key path: it builds the configured Provider and,
@@ -149,29 +152,58 @@ func compilablePages(pages []compile.Page, scope string) []compile.Page {
 	return out
 }
 
+// pendingRelDir is the project-relative directory (forward-slash, portable)
+// holding the delegation prompts, responses and manifest for the current round.
+const pendingRelDir = ".docs/wiki/.pending"
+
 // preparePrompts (delegation phase 1) writes one prompt bundle per dirty page
-// under .docs/wiki/.pending/ and tells the agent how to finish.
-func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page) error {
+// under .docs/wiki/.pending/ plus a manifest.json declaring, per page, the
+// response_path the agent must write and the run id it must echo. The prompt
+// announces that run id so the ingest can verify freshness. It then tells the
+// agent how to finish.
+func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope string) error {
 	out := cmd.OutOrStdout()
 	if len(dirty) == 0 {
 		fmt.Fprintln(out, "Nada a recompilar.")
 		return nil
 	}
-	pendingRoot := filepath.Join(ctx.projDir, ".docs", "wiki", ".pending")
+	pendingRoot := filepath.Join(ctx.projDir, filepath.FromSlash(pendingRelDir))
+	if err := os.MkdirAll(pendingRoot, 0o755); err != nil {
+		return err
+	}
+	runID := compile.NewRunID(scope, time.Now().UTC())
+	manifest := compile.Manifest{Version: compile.ManifestVersion, RunID: runID}
 	for _, p := range dirty {
-		path := filepath.Join(pendingRoot, filepath.FromSlash(p.Rel)+".prompt.md")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		promptRel := path.Join(pendingRelDir, p.Rel+".prompt.md")
+		responseRel := path.Join(pendingRelDir, p.Rel+".md")
+		promptPath := filepath.Join(ctx.projDir, filepath.FromSlash(promptRel))
+		if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(path, []byte(compile.BuildPagePrompt(p)), 0o644); err != nil {
+		header := fmt.Sprintf("<!-- cerne-run-id: %s — ecoe como 'run_id:' no frontmatter da resposta em %s -->\n\n", runID, responseRel)
+		if err := os.WriteFile(promptPath, []byte(header+compile.BuildPagePrompt(p)), 0o644); err != nil {
 			return err
 		}
+		manifest.Entries = append(manifest.Entries, compile.ManifestEntry{
+			Page:         p.Name,
+			PromptPath:   promptRel,
+			ResponsePath: responseRel,
+			SourceHash:   p.InputHash(),
+			RunID:        runID,
+		})
 	}
-	fmt.Fprintf(out, "%d página(s) para compilar (prompts em .docs/wiki/.pending/):\n", len(dirty))
+	manifestData, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(pendingRoot, compile.ManifestName), manifestData, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%d página(s) para compilar (prompts em %s/):\n", len(dirty), pendingRelDir)
 	for _, p := range dirty {
-		fmt.Fprintf(out, "  %s → content/wiki/%s.md\n", p.Name, p.Rel)
+		fmt.Fprintf(out, "  %s → %s\n", p.Name, path.Join(pendingRelDir, p.Rel+".md"))
 	}
-	fmt.Fprintln(out, "Processe cada prompt, escreva a página no backend e rode 'cerne compile --ingest'.")
+	fmt.Fprintf(out, "Contrato em %s/%s: escreva cada response_path (ecoando run_id: <id> no frontmatter) e rode 'cerne compile --ingest'.\n", pendingRelDir, compile.ManifestName)
 	return nil
 }
 
