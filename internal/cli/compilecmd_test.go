@@ -306,6 +306,19 @@ func TestCompileIngestPerPageStatus(t *testing.T) {
 	}
 }
 
+func TestCompileHelpShowsDelegationContract(t *testing.T) {
+	out, err := execCerne(t, "compile", "--help")
+	if err != nil {
+		t.Fatalf("compile --help: %v\n%s", err, out)
+	}
+	// The round-trip (crit. 1) + the machine contract it points at (crit. 3).
+	for _, want := range []string{".docs/wiki/.pending/", "manifest.json", "response_path", "cerne compile --ingest"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("compile --help missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestCompileIngestIdempotent(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance", "core")
 	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {

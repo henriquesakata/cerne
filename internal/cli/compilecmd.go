@@ -30,7 +30,15 @@ func newCompileCmd() *cobra.Command {
 		Short: "Compile per-module synthesis wiki pages (LLM layer)",
 		Long: "Compila páginas de síntese por módulo em content/wiki/, de forma incremental " +
 			"(só o que mudou, por input-hash). No modo delegação (default) emite prompts em " +
-			".docs/wiki/.pending/ para o agente hospedeiro processar; depois rode 'cerne compile --ingest'.",
+			pendingRelDir + "/ para o agente hospedeiro processar; depois rode 'cerne compile --ingest'. " +
+			"O contrato de máquina (onde escrever cada resposta e como confirmar) está em " +
+			pendingRelDir + "/manifest.json — um response_path por página.",
+		Example: "  # 1) emitir os prompts (modo delegação, default)\n" +
+			"  cerne compile\n" +
+			"  # 2) para cada página, escreva a resposta no response_path declarado em\n" +
+			"  #    " + pendingRelDir + "/manifest.json (campos: page, prompt_path, response_path, run_id)\n" +
+			"  # 3) ingerir: carimba a provenance e commita só as respostas desta rodada\n" +
+			"  cerne compile --ingest",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCompile(cmd, dir, scope, force, ingest)
