@@ -28,6 +28,7 @@ func newDecisionCmd() *cobra.Command {
 	cmd.AddCommand(newDecisionNewCmd(&dir))
 	cmd.AddCommand(newDecisionDraftCmd(&dir))
 	cmd.AddCommand(newDecisionSubstituirCmd(&dir))
+	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
 }
 

@@ -6,10 +6,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
+
+func TestPullScopeImplementedExplainsEmpty(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "finance")
+	now := time.Now().UTC()
+	// An implemented feature in module finance: pull --scope finance materializes 0.
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Boletos", Module: "finance", State: domain.StateImplemented, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	writeBackendDoc(t, repoDir, "content/features/F-0001/spec.md", realDoc("F-0001", "Boletos entregue."))
+	if _, err := gitback.CommitAndPush(repoDir, "seed implemented"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "pull", "--scope", "finance", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull --scope: %v\n%s", err, out)
+	}
+	for _, want := range []string{"implementadas não materializam", "cerne show", "cerne errata"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("pull --scope no-op output missing %q:\n%s", want, out)
+		}
+	}
+}
 
 func TestPullGoldenPath(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t)

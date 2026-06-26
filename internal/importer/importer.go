@@ -45,6 +45,7 @@ type Summary struct {
 	Decisions  int
 	References int
 	Runbooks   int
+	Notes      int // only the agent path (ApplyPlan) produces notes
 	ByState    map[string]int
 }
 

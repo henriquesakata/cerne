@@ -87,7 +87,7 @@ func Clone(url, workdir string) error {
 // with msg as "cerne" <cerne@local> and pushes main to origin. Returns the
 // commit SHA hex; ErrNothingToCommit when the worktree is clean.
 func CommitAndPush(workdir, msg string) (string, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return "", err
 	}
@@ -144,7 +144,7 @@ func CommitAndPush(workdir, msg string) (string, error) {
 // Other UNSTAGED changes are left untouched: only `path` is staged here, so the
 // committed tree differs from HEAD only at `path`.
 func CommitPath(workdir, path, msg string) (string, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if errors.Is(err, git.ErrRepositoryNotExists) {
 		return "", fmt.Errorf("%w: %s", ErrNotRepo, workdir)
 	}
@@ -187,7 +187,7 @@ func CommitPath(workdir, path, msg string) (string, error) {
 
 // Pull fast-forwards workdir from origin/main. Already up-to-date is not an error.
 func Pull(workdir string) error {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func Pull(workdir string) error {
 // without fetching or touching the local worktree; ErrNoCommits when the
 // remote has no main branch yet.
 func RemoteHeadSHA(workdir string) (string, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return "", err
 	}
@@ -252,7 +252,7 @@ func RemoteHeadSHA(workdir string) (string, error) {
 // RemoteURL returns the configured URL of origin in workdir; an error when the
 // directory is not a git repository or has no origin remote.
 func RemoteURL(workdir string) (string, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return "", err
 	}
@@ -269,7 +269,7 @@ func RemoteURL(workdir string) (string, error) {
 
 // HeadSHA returns the current HEAD commit hex of workdir; ErrNoCommits when unborn.
 func HeadSHA(workdir string) (string, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return "", err
 	}
@@ -292,7 +292,7 @@ func HeadSHA(workdir string) (string, error) {
 // trees, which is what keeps it fast over long histories (go-git's per-commit
 // FileName diff is ~35x slower). Git commit times have one-second resolution.
 func LastCommitTimes(workdir string, paths []string) (map[string]time.Time, error) {
-	repo, err := git.PlainOpen(workdir)
+	repo, err := openRepo(workdir)
 	if err != nil {
 		return nil, err
 	}

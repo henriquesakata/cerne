@@ -13,26 +13,31 @@ import (
 func newLintCmd() *cobra.Command {
 	var dir string
 	var fixTasks bool
+	var staged bool
 	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Detect stale documentation in the backend",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLint(cmd, dir, fixTasks)
+			return runLint(cmd, dir, fixTasks, staged)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&fixTasks, "fix-tasks", false, "print a maintenance task list after the findings")
+	cmd.Flags().BoolVar(&staged, "staged", false, "validar as edições locais em .docs/ antes do push, sem tocar o backend")
 	return cmd
 }
 
-func runLint(cmd *cobra.Command, dir string, fixTasks bool) error {
-	ctx, err := resolveProject(dir)
+func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
+	repoDir, cleanup, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
 	}
-	findings, err := lint.Run(ctx.repoDir)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	findings, err := lint.Run(repoDir)
 	if err != nil {
 		return err
 	}
@@ -48,6 +53,26 @@ func runLint(cmd *cobra.Command, dir string, fixTasks bool) error {
 	// Root has SilenceUsage, so this surfaces as a single error line and
 	// exit code 1 via main.
 	return fmt.Errorf("%d problema(s) encontrado(s)", len(findings))
+}
+
+// lintRoot resolves the directory lint.Run scans. Default: the cache clone,
+// refreshed from origin (resolveProject). With staged: a temp backend-shaped
+// tree of the local .docs/ edits over the pulled snapshot, WITHOUT a pull and
+// without touching the backend (resolvePaths + stagedLintRoot). The returned
+// cleanup is nil in the default mode and removes the temp tree in staged mode.
+func lintRoot(dir string, staged bool) (string, func(), error) {
+	if staged {
+		ctx, err := resolvePaths(dir)
+		if err != nil {
+			return "", nil, err
+		}
+		return stagedLintRoot(ctx.repoDir, ctx.projDir)
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	return ctx.repoDir, nil, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.

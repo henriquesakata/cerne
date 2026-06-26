@@ -107,6 +107,14 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"Materializado: %d feature(s), %d decisão(ões), %d referência(s) em .docs/ (snapshot %s).\n",
 		nFeatures, nDecisions, nReferences, head[:8])
+	// Explain a known no-op instead of a mute "0 feature(s)": a scoped pull that
+	// materializes nothing usually means the module's features are implemented
+	// (concluded entities don't materialize — they are history).
+	if scope != "" && nFeatures == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"Nenhuma feature do módulo %q materializou: features implementadas não materializam conteúdo (viram histórico). "+
+				"Use 'cerne show <id>' para ler, ou 'cerne errata <id>' para anotar/corrigir.\n", scope)
+	}
 	return nil
 }
 

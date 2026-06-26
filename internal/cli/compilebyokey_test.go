@@ -101,6 +101,40 @@ func TestCompileByoKeySynthesizesAndCommits(t *testing.T) {
 	}
 }
 
+// TestCompileSynchronousUnaffected pins the F-0070 invariant (crit. 6): the
+// delegation contract (manifest + --ingest) is exclusive to delegation mode and
+// leaves the byo-key synchronous path untouched.
+func TestCompileSynchronousUnaffected(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"# Finance\n\nSíntese byo-key."}]}`)
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+
+	// The synchronous path writes no delegation manifest.
+	if out, err := execCerne(t, "compile", "--force", "--dir", projDir); err != nil {
+		t.Fatalf("byo-key compile: %v\n%s", err, out)
+	}
+	manifestPath := filepath.Join(projDir, ".docs", "wiki", ".pending", "manifest.json")
+	if _, err := os.Stat(manifestPath); err == nil {
+		t.Fatalf("byo-key compile wrote a delegation manifest at %s", manifestPath)
+	}
+
+	// --ingest stays exclusive to delegation mode.
+	out, err := execCerne(t, "compile", "--ingest", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("expected --ingest rejected in byo-key mode, got success:\n%s", out)
+	}
+	if !strings.Contains(out, "exclusivo do modo delegação") {
+		t.Fatalf("expected byo-key --ingest rejection message, got:\n%s", out)
+	}
+}
+
 // TestCompileByoKeyNothingDirty makes a clean compile a no-op: the provider is
 // never called and origin does not advance.
 func TestCompileByoKeyNothingDirty(t *testing.T) {

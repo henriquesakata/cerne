@@ -29,6 +29,7 @@ func newRunbookCmd() *cobra.Command {
 	cmd.AddCommand(newRunbookDraftCmd(&dir))
 	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
 	cmd.AddCommand(newRunbookMigrateCmd(&dir))
+	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
 }
 
