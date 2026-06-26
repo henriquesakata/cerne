@@ -94,6 +94,21 @@ func TestShowJSONIncludesErrata(t *testing.T) {
 	}
 }
 
+// TestNoCommandRewritesConcludedBody pins crit. 5 at the surface level: errata is
+// the only correction path, so no command anywhere may rewrite an entity's body.
+func TestNoCommandRewritesConcludedBody(t *testing.T) {
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if n := sub.Name(); n == "edit" || n == "rewrite" {
+				t.Errorf("found a body-rewriting subcommand %q under %q — corrections must be additive (errata) only", n, c.Name())
+			}
+			walk(sub)
+		}
+	}
+	walk(Root())
+}
+
 func hasSubcommand(root *cobra.Command, parent, child string) bool {
 	for _, c := range root.Commands() {
 		if c.Name() != parent {
