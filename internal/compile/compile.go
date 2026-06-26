@@ -258,17 +258,33 @@ func BuildPagePrompt(p Page) string {
 
 func featureSource(repoDir string, f store.Feature) EntitySource {
 	return EntitySource{ID: f.ID, Kind: "feature", State: string(f.State), Title: f.Title,
-		Content: readFeatureContent(repoDir, f.ID)}
+		Content: withErrata(repoDir, f.ID, readFeatureContent(repoDir, f.ID))}
 }
 
 func decisionSource(repoDir string, d store.Decision) EntitySource {
 	return EntitySource{ID: d.ID, Kind: "decision", State: string(d.State), Title: d.Title,
-		Content: readFile(filepath.Join(repoDir, "content", "decisions", d.ID+".md"))}
+		Content: withErrata(repoDir, d.ID, readFile(filepath.Join(repoDir, "content", "decisions", d.ID+".md")))}
 }
 
 func referenceSource(repoDir string, r store.Reference) EntitySource {
 	return EntitySource{ID: r.ID, Kind: "reference", State: string(r.State), Title: r.Title,
-		Content: readFile(filepath.Join(repoDir, "content", "references", r.ID+".md"))}
+		Content: withErrata(repoDir, r.ID, readFile(filepath.Join(repoDir, "content", "references", r.ID+".md")))}
+}
+
+// withErrata appends the entity's errata (if any) to its content, so a correction
+// on a concluded, immutable entity reaches the synthesis prompt AND the input
+// hash (so the page re-synthesizes). The errata's own frontmatter is dropped —
+// only the dated entries feed the page.
+func withErrata(repoDir, id, content string) string {
+	er, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		return content
+	}
+	er = strings.TrimSpace(stripFrontmatter(er))
+	if er == "" {
+		return content
+	}
+	return content + "\n\n" + er
 }
 
 // readFeatureContent concatenates the feature's existing lifecycle documents

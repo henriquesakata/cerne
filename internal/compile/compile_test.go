@@ -330,6 +330,45 @@ func TestBuildPagePromptResolvesSuperseded(t *testing.T) {
 	}
 }
 
+func TestPageSourceIncludesErrata(t *testing.T) {
+	dir := seedBackend(t, "finance")
+	addFeature(t, dir, "F-0001", "finance", domain.StateImplemented, "# Boletos\n\nSpec.\n")
+	if err := store.AppendErrata(dir, "F-0001", "Correção: usar D-0002.", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	pages, err := Pages(dir)
+	if err != nil {
+		t.Fatalf("Pages: %v", err)
+	}
+	p, ok := pageByName(pages, "finance")
+	if !ok {
+		t.Fatalf("no finance page in %v", pageRels(pages))
+	}
+	if !strings.Contains(p.Sources[0].Content, "usar D-0002") {
+		t.Errorf("source Content missing the errata text:\n%s", p.Sources[0].Content)
+	}
+	if !strings.Contains(BuildPagePrompt(p), "usar D-0002") {
+		t.Errorf("prompt missing the errata text:\n%s", BuildPagePrompt(p))
+	}
+}
+
+func TestErrataChangesInputHash(t *testing.T) {
+	dir := seedBackend(t, "finance")
+	addFeature(t, dir, "F-0001", "finance", domain.StateImplemented, "# Boletos\n\nSpec.\n")
+	pages, _ := Pages(dir)
+	p, _ := pageByName(pages, "finance")
+	before := p.InputHash()
+
+	if err := store.AppendErrata(dir, "F-0001", "nova errata", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	pages2, _ := Pages(dir)
+	p2, _ := pageByName(pages2, "finance")
+	if p2.InputHash() == before {
+		t.Errorf("errata must change InputHash so the page re-synthesizes")
+	}
+}
+
 func TestBuildPagePrompt(t *testing.T) {
 	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
 		{ID: "F-0001", Kind: "feature", State: "approved", Title: "Boletos", Content: "# Boletos\n\nGera boletos.\n"},

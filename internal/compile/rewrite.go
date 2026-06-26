@@ -67,3 +67,16 @@ func isFenceDelim(line string) bool {
 	t := strings.TrimLeft(line, " \t")
 	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
 }
+
+// stripFrontmatter removes a leading "---\n…\n---" block, returning the body that
+// follows it (a doc with no leading frontmatter is returned unchanged).
+func stripFrontmatter(s string) string {
+	t := strings.TrimLeft(s, " \t\n")
+	if !strings.HasPrefix(t, "---\n") {
+		return s
+	}
+	if i := strings.Index(t[4:], "\n---"); i >= 0 {
+		return strings.TrimLeft(t[4+i+4:], "\n")
+	}
+	return s
+}
