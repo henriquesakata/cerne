@@ -211,3 +211,35 @@ func TestLintStagedPartialDocsNoFalsePositive(t *testing.T) {
 		t.Fatalf("partial .docs/ produced a false-positive finding:\n%s", out)
 	}
 }
+
+func TestLintStagedParityWithBackend(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	now := time.Now().UTC()
+	// A superseded entity so a mention of it is a ref-to-superseded finding.
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0009", Title: "Antigo", State: domain.StateSuperseded, SupersededBy: "F-0001", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed superseded F-0009"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	// A defective edit citing the superseded F-0009.
+	mustWrite(t, specPath, realDoc("F-0001", "ainda referencia F-0009 no fluxo"))
+
+	// Mode A: the same engine over the staged local tree.
+	stagedOut, _ := execCerne(t, "lint", "--staged", "--dir", projDir)
+	// Mode B: push the edit, then lint over the backend.
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	backendOut, _ := execCerne(t, "lint", "--dir", projDir)
+
+	if stagedOut != backendOut {
+		t.Fatalf("staged vs backend lint differ (single source of rules broken):\n--staged:\n%s\n--backend:\n%s", stagedOut, backendOut)
+	}
+	if !strings.Contains(stagedOut, "F-0009") {
+		t.Fatalf("expected the ref-to-superseded finding in both, got:\n%s", stagedOut)
+	}
+}
