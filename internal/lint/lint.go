@@ -661,6 +661,30 @@ func scannedDocs(repoDir string, features []store.Feature, decisions []store.Dec
 			return nil, err
 		}
 	}
+	// Errata is scanned regardless of entity state: it exists to correct
+	// CONCLUDED (immutable) entities, so gating it by liveFeatureStates/active
+	// would defeat its purpose — a stale reference in the errata of an
+	// implemented feature must still surface (F-0072).
+	for _, f := range features {
+		if err := appendIfPresent(f.ID, "content/errata/"+f.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
+	for _, d := range decisions {
+		if err := appendIfPresent(d.ID, "content/errata/"+d.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
+	for _, rb := range runbooks {
+		if err := appendIfPresent(rb.ID, "content/errata/"+rb.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
+	for _, nt := range notes {
+		if err := appendIfPresent(nt.ID, "content/errata/"+nt.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
 	return docs, nil
 }
 
