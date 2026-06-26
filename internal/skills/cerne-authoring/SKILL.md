@@ -33,6 +33,15 @@ cerne mints the canonical `F-NNNN` id and gates each transition on a real docume
 
 Terminal transitions when work is dropped or replaced: `cerne feature reject F-NNNN --reason "…"`; `cerne feature substituir F-NNNN --by F-MMMM --reason "…"`.
 
+## Validate locally before pushing
+
+Catch documentation debts **before** they churn the backend — same lint engine, no commit, no backend write:
+
+- `cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits (assembled over the pulled snapshot), without a pull. A partial `.docs/` (implemented features not materialized) yields no false positive.
+- `cerne push --dry-run` — shows exactly which documents **would** go to the backend and lints them, then stops before any commit/push. Exits non-zero if they would lint dirty, so it doubles as a pre-push gate.
+
+Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
+
 ## Spec structure (the template cerne scaffolds)
 
 cerne scaffolds a new feature's `spec.md` from a canonical template (the same one `cerne spec draft` asks the model to fill). Fill each section; the lifecycle gates treat the empty scaffold as a stub until you do. Sections, **in order**:
@@ -138,6 +147,17 @@ A **note** is durable, team-relevant project knowledge an agent acquired across 
 - Retire or correct it: **`cerne note retire N-NNNN --reason "…"`** retires an obsolete note (e.g. the feature it informed has shipped) — it moves to `superseded` with no successor, leaving `.docs/CONTEXT.md` but staying searchable history. To replace it with a corrected version instead, `cerne note substituir N-NNNN --by N-MMMM --reason "…"` (the successor materializes in its place). Either way the lifecycle (active/superseded) is cerne data, not prose.
 - Let the guardian flag staleness: `cerne lint` reports a **`stale-note`** when an active note's `--informs` targets are *all* concluded (feature implemented/rejected/superseded, decision superseded). Two responses: **`cerne note keep N-NNNN`** marks it durable — it stays active and the lint stops flagging it — or `cerne note retire N-NNNN --reason "…"` retires it. cerne never auto-retires: the gotcha learned while building a feature is often the durable invariant worth keeping, so the call is yours.
 - Find it: **`cerne note list`** lists the active notes (`--all` includes superseded history); **`cerne note show <id>`** prints one note's metadata + full body (or the generic **`cerne show N-NNNN`**, which reads any entity by id). Both read straight from the backend store, so they surface the knowledge **even when `.docs/` is stale** (locked snapshot not yet re-pulled) — prefer them over hunting through files. Active notes also appear in the `## Conhecimento` section of `.docs/CONTEXT.md` and in `cerne search` / `cerne ask`; superseded ones stay reachable through search/ask as history.
+
+## Errata (correcting a concluded, immutable entity)
+
+A concluded entity — an `implemented` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead:
+
+```
+cerne <kind> errata <id> "<text>"             # kind: feature | decision | runbook | note
+cerne feature errata F-0008 --file errata.md  # or piped stdin — one-shot, like note new
+```
+
+The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). There is **no** edit/rewrite command — errata is the only correction path, by design: annotate, never rewrite.
 
 ## Knowledge routing: cerne note vs. local memory
 
