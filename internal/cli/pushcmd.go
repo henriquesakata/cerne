@@ -15,21 +15,24 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
 func newPushCmd() *cobra.Command {
 	var dir string
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "push",
 		Short: "Send locally edited .docs/ documents back to the backend",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPush(cmd, dir)
+			return runPush(cmd, dir, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validar e mostrar o que iria pro backend, sem commitar nem enviar")
 	return cmd
 }
 
@@ -42,7 +45,7 @@ type pushedDoc struct {
 	sum        string // sha256 hex of body
 }
 
-func runPush(cmd *cobra.Command, dir string) error {
+func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	ctx, err := resolvePaths(dir)
 	if err != nil {
 		return err
@@ -84,6 +87,10 @@ func runPush(cmd *cobra.Command, dir string) error {
 		return nil
 	}
 
+	if dryRun {
+		return reportDryRun(cmd, ctx, docs)
+	}
+
 	for _, d := range docs {
 		dst := filepath.Join(ctx.repoDir, filepath.FromSlash(d.backendRel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -118,6 +125,34 @@ func runPush(cmd *cobra.Command, dir string) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Enviado: %d documento(s) (snapshot %s).\n", len(docs), shortSHA(sha))
 	return nil
+}
+
+// reportDryRun validates a push without performing it: it lists the documents
+// that would go to the backend and lints the staged tree with the same engine,
+// committing and pushing nothing. It returns a non-zero error when the staged
+// docs would lint dirty, so it is usable as a pre-push gate. Remote-drift was
+// already enforced before this point, identical to a real push.
+func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Dry-run: %d documento(s) iriam para o backend (nada commitado/enviado):\n", len(docs))
+	for _, d := range docs {
+		fmt.Fprintf(out, "  %s\n", d.backendRel)
+	}
+	root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	findings, err := lint.Run(root)
+	if err != nil {
+		return err
+	}
+	if len(findings) == 0 {
+		fmt.Fprintln(out, "Lint: nenhum problema encontrado.")
+		return nil
+	}
+	printFindings(out, findings)
+	return fmt.Errorf("%d problema(s) encontrado(s)", len(findings))
 }
 
 // checkContextUntouched errors when the generated CONTEXT.md was edited
