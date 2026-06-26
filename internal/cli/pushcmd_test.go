@@ -284,3 +284,37 @@ func TestPushDecisionDoc(t *testing.T) {
 		t.Fatalf("output missing 'Enviado: 1 documento(s)':\n%s", out)
 	}
 }
+
+func TestPushDryRunReportsAndDoesNotPush(t *testing.T) {
+	projDir, origin, repoDir, specPath := pulledProject(t)
+	repoHeadBefore, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA repo: %v", err)
+	}
+	originHeadBefore, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	// A tracked local edit, not yet pushed.
+	mustWrite(t, specPath, realDoc("F-0001", "Conteúdo editado, validado em dry-run."))
+
+	out, _ := execCerne(t, "push", "--dry-run", "--dir", projDir)
+	if !strings.Contains(out, "content/features/F-0001/spec.md") {
+		t.Fatalf("dry-run should list the doc that would go:\n%s", out)
+	}
+	// No commit/push happened.
+	if h, _ := gitback.HeadSHA(repoDir); h != repoHeadBefore {
+		t.Fatalf("dry-run mutated the cache clone: %s -> %s", repoHeadBefore, h)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != originHeadBefore {
+		t.Fatalf("dry-run pushed to origin: %s -> %s", originHeadBefore, h)
+	}
+	// The edit is still pending — a real push after the dry-run sends it.
+	out2, err := execCerne(t, "push", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("real push after dry-run: %v\n%s", err, out2)
+	}
+	if !strings.Contains(out2, "Enviado: 1 documento(s)") {
+		t.Fatalf("real push should send the still-pending edit:\n%s", out2)
+	}
+}

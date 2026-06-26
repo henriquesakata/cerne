@@ -62,6 +62,13 @@ func runShow(cmd *cobra.Command, dir, id string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	er, err := store.LoadErrata(ctx.repoDir, id)
+	if err != nil {
+		return err
+	}
+	if body := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er)))); body != "" {
+		res.content = append(res.content, showDoc{name: "errata", body: body})
+	}
 	w := cmd.OutOrStdout()
 	if asJSON {
 		enc := json.NewEncoder(w)

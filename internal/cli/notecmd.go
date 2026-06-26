@@ -28,6 +28,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(newNoteKeepCmd(&dir))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
+	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
 }
 

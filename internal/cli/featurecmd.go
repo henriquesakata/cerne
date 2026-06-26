@@ -19,6 +19,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newFeatureNewCmd(&dir))
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
+	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
 }
 
@@ -28,7 +29,10 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a feature in candidate state",
-		Args:  cobra.ExactArgs(1),
+		Example: "  # registra a candidata (no quadro) e materializa o slot da spec\n" +
+			"  cerne feature new \"<título>\" --module <m> [--parent F-NNNN]\n" +
+			"  cerne pull\n" + lifecycleSeq,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFeatureNew(cmd, *dir, args[0], module, parent)
 		},

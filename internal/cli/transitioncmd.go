@@ -11,17 +11,28 @@ import (
 
 // transitionSpec wires one lifecycle subcommand to its domain action.
 type transitionSpec struct {
-	use    string
-	short  string
-	action domain.Action
+	use     string
+	short   string
+	action  domain.Action
+	example string // shown in --help: the gate precondition + lifecycle sequence
 }
 
+// lifecycleSeq is the feature lifecycle, repeated in each gate example so the
+// reader always sees where the transition sits.
+const lifecycleSeq = "  # ciclo de vida: new → approve → start → complete"
+
 var transitionSpecs = []transitionSpec{
-	{"approve", "Approve a candidate feature (requires a real spec)", domain.ActionApprove},
-	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject},
-	{"start", "Start development (requires a real plan)", domain.ActionStart},
-	{"complete", "Complete development (requires a real result)", domain.ActionComplete},
-	{"substituir", "Substituir uma feature por outra (requer --by e --reason)", domain.ActionSupersede},
+	{"approve", "Approve a candidate feature (requires a real spec)", domain.ActionApprove,
+		"  # gate: a spec precisa estar preenchida (não o stub) e pushada\n" +
+			"  cerne push && cerne feature approve <id>\n" + lifecycleSeq},
+	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject, ""},
+	{"start", "Start development (requires a real plan)", domain.ActionStart,
+		"  # gate: o plano precisa estar preenchido (não o stub) e pushado\n" +
+			"  cerne push && cerne feature start <id>\n" + lifecycleSeq},
+	{"complete", "Complete development (requires a real result)", domain.ActionComplete,
+		"  # gate: o resultado precisa estar preenchido (não o stub) e pushado\n" +
+			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
+	{"substituir", "Substituir uma feature por outra (requer --by e --reason)", domain.ActionSupersede, ""},
 }
 
 func newTransitionCmds(dir *string) []*cobra.Command {
@@ -29,9 +40,10 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 	for _, ts := range transitionSpecs {
 		var by, reason string
 		cmd := &cobra.Command{
-			Use:   ts.use + " <id>",
-			Short: ts.short,
-			Args:  cobra.ExactArgs(1),
+			Use:     ts.use + " <id>",
+			Short:   ts.short,
+			Example: ts.example,
+			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runTransition(cmd, *dir, ts.action, args[0], by, reason)
 			},
