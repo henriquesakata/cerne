@@ -871,6 +871,36 @@ func handleSetParent(w http.ResponseWriter, r *http.Request, repoDir, projDir, i
 	}
 }
 
+// renameRequest is the PUT /api/features/{id}/title body.
+type renameRequest struct {
+	Title string `json:"title"`
+}
+
+func handleRenameTitle(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req renameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	switch err := app.RenameFeature(repoDir, projDir, id, req.Title); {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+	case errors.Is(err, app.ErrTitleFrozen):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case err != nil && strings.TrimSpace(req.Title) == "":
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		writeJSON(w, http.StatusOK, createFeatureResponse{Feature: f})
+	}
+}
+
 // transitionRequest is the POST /api/features/{id}/transition body.
 type transitionRequest struct {
 	Action string `json:"action"`

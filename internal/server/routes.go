@@ -53,6 +53,9 @@ func dataRoutes() []dataRoute {
 		{"PUT", "/features/{id}/parent", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleSetParent(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
+		{"PUT", "/features/{id}/title", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleRenameTitle(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
 		{"GET", "/artifacts/{featureID}/{name}", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
 		}},
