@@ -42,6 +42,14 @@ Catch documentation debts **before** they churn the backend — same lint engine
 
 Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
 
+## Syncing when the backend may have advanced (parallel agents)
+
+Reconciliation is **per document**, so disjoint edits never collide:
+
+- **`cerne sync`** = pull (merge) + push, retrying transient advances — the one forward command when another agent/worktree may have changed the backend. Disjoint documents reconcile automatically; a real **same-document** conflict stops non-destructively (your version kept in `.docs/`, the remote version stashed under `.docs/.conflicts/`) and names the file with a diff, so you resolve and `cerne push`.
+- **`cerne push`** auto-rebases per document: a remote advance on a *different* document never blocks it; only the same document changed both ways is a conflict.
+- **`cerne pull`** 3-way merges: it brings in the remote advance while keeping your unsent `.docs/` edits (it does **not** refuse on unsent edits). `--force` is only the explicit "discard my edits" escape — never the only way forward.
+
 ## Spec structure (the template cerne scaffolds)
 
 cerne scaffolds a new feature's `spec.md` from a canonical template (the same one `cerne spec draft` asks the model to fill). Fill each section; the lifecycle gates treat the empty scaffold as a stub until you do. Sections, **in order**:
