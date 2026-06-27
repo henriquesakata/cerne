@@ -29,24 +29,39 @@ func SaveArtifact(repoDir, projDir, id, name string, data []byte) error {
 	return err
 }
 
-// CommitAndSnapshot commits and pushes the backend clone, then rewrites the
-// docs.lock snapshot in projDir to the new HEAD — the sync tail shared by
-// every backend mutation (transitions, artifact saves). When the project opts
-// in (.cernerc autocommit_lock), it also commits the freshly-pinned docs.lock.
+// CommitAndSnapshot lands the backend clone's pending mutation on the latest
+// origin/main and pushes it, then rewrites the docs.lock snapshot in projDir to
+// the new HEAD — the sync tail shared by every backend mutation (transitions,
+// artifact saves, compile). It routes through the reconcile core, so it holds
+// the backend lock (serializing concurrent local processes on the shared clone),
+// merges per document, union-merges the append-only event log, and retries on a
+// concurrent advance. ErrNothingToCommit when the worktree is clean; a
+// *ConflictError when the same document changed locally and remotely. When the
+// project opts in (.cernerc autocommit_lock), the snapshot tail also commits the
+// freshly-pinned docs.lock.
 func CommitAndSnapshot(repoDir, projDir, msg string) error {
-	sha, err := gitback.CommitAndPush(repoDir, msg)
+	base, err := gitback.HeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) {
+		base = ""
+	} else if err != nil {
+		return err
+	}
+	// Capture the domain op's writes BEFORE the reconcile resets the worktree.
+	changes, err := captureChanges(repoDir)
 	if err != nil {
 		return err
 	}
-	lock, err := project.LoadLock(projDir)
+	if len(changes) == 0 {
+		return fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, repoDir)
+	}
+	_, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, msg, changes)
 	if err != nil {
 		return err
 	}
-	lock.Snapshot = sha
-	if err := project.SaveLock(projDir, lock); err != nil {
-		return err
+	if len(conflicts) > 0 {
+		return &ConflictError{Conflicts: conflicts}
 	}
-	return autocommitLock(projDir)
+	return nil
 }
 
 // autocommitLock commits the just-written project-side docs.lock when the
