@@ -223,6 +223,109 @@ func TestSetFeatureParentErrors(t *testing.T) {
 	}
 }
 
+func TestRenameFeatureLive(t *testing.T) {
+	for _, st := range []domain.FeatureState{
+		domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment,
+	} {
+		t.Run(string(st), func(t *testing.T) {
+			repoDir, projDir, origin := newFeatureBackend(t)
+			f, err := CreateFeature(repoDir, projDir, "Título antigo", "", "")
+			if err != nil {
+				t.Fatalf("CreateFeature: %v", err)
+			}
+			f.State = st
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				t.Fatalf("SaveFeature: %v", err)
+			}
+			head0, _ := gitback.HeadSHA(origin)
+
+			if err := RenameFeature(repoDir, projDir, f.ID, "  Título novo  "); err != nil {
+				t.Fatalf("RenameFeature: %v", err)
+			}
+			got, _ := store.LoadFeature(repoDir, f.ID)
+			if got.Title != "Título novo" {
+				t.Fatalf("title = %q, want trimmed 'Título novo'", got.Title)
+			}
+			evs, _ := store.ReadEvents(repoDir)
+			last := evs[len(evs)-1]
+			if last.Type != "feature.renamed" || last.EntityID != f.ID ||
+				last.Payload["from"] != "Título antigo" || last.Payload["to"] != "Título novo" {
+				t.Fatalf("event = %+v, want feature.renamed from 'Título antigo' to 'Título novo'", last)
+			}
+			if h, _ := gitback.HeadSHA(origin); h == head0 {
+				t.Fatalf("origin HEAD did not advance after rename")
+			}
+		})
+	}
+}
+
+func TestRenameFeatureTerminalFrozen(t *testing.T) {
+	for _, st := range []domain.FeatureState{
+		domain.StateImplemented, domain.StateRejected, domain.StateSuperseded,
+	} {
+		t.Run(string(st), func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			f, err := CreateFeature(repoDir, projDir, "Congelado", "", "")
+			if err != nil {
+				t.Fatalf("CreateFeature: %v", err)
+			}
+			f.State = st
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				t.Fatalf("SaveFeature: %v", err)
+			}
+			if err := RenameFeature(repoDir, projDir, f.ID, "Tentativa"); !errors.Is(err, ErrTitleFrozen) {
+				t.Fatalf("err = %v, want ErrTitleFrozen", err)
+			}
+			got, _ := store.LoadFeature(repoDir, f.ID)
+			if got.Title != "Congelado" {
+				t.Fatalf("title = %q, want unchanged 'Congelado'", got.Title)
+			}
+		})
+	}
+}
+
+func TestRenameFeatureEmpty(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeature(repoDir, projDir, "Original", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if err := RenameFeature(repoDir, projDir, f.ID, "   "); err == nil {
+		t.Fatalf("want error for empty title")
+	}
+	got, _ := store.LoadFeature(repoDir, f.ID)
+	if got.Title != "Original" {
+		t.Fatalf("title = %q, want unchanged 'Original'", got.Title)
+	}
+}
+
+func TestRenameFeatureUnchangedNoop(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	f, err := CreateFeature(repoDir, projDir, "Estável", "", "")
+	if err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	head0, _ := gitback.HeadSHA(origin)
+	evs0, _ := store.ReadEvents(repoDir)
+	if err := RenameFeature(repoDir, projDir, f.ID, "  Estável  "); err != nil {
+		t.Fatalf("no-op rename: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin HEAD advanced on unchanged rename")
+	}
+	evs1, _ := store.ReadEvents(repoDir)
+	if len(evs1) != len(evs0) {
+		t.Fatalf("events = %d, want unchanged %d on no-op", len(evs1), len(evs0))
+	}
+}
+
+func TestRenameFeatureUnknown(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if err := RenameFeature(repoDir, projDir, "F-9999", "X"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want store.ErrNotFound", err)
+	}
+}
+
 func TestSaveFeatureDoc(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 	if _, err := CreateFeature(repoDir, projDir, "Feature", "", ""); err != nil {
