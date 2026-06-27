@@ -44,6 +44,25 @@ func TestFeatureTransitions(t *testing.T) {
 	}
 }
 
+func TestTitleEditable(t *testing.T) {
+	cases := []struct {
+		state FeatureState
+		want  bool
+	}{
+		{StateCandidate, true},
+		{StateApproved, true},
+		{StateInDevelopment, true},
+		{StateImplemented, false},
+		{StateRejected, false},
+		{StateSuperseded, false},
+	}
+	for _, c := range cases {
+		if got := TitleEditable(c.state); got != c.want {
+			t.Errorf("TitleEditable(%s) = %v, want %v", c.state, got, c.want)
+		}
+	}
+}
+
 func TestTransitionUnknownState(t *testing.T) {
 	_, err := Transition("bogus", ActionApprove)
 	if !errors.Is(err, ErrUnknownState) {
