@@ -6,6 +6,7 @@ import (
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 // IsAncestor reports whether commit a is an ancestor of commit b in workdir
@@ -45,7 +46,7 @@ func Fetch(workdir string) error {
 		return err
 	}
 	err = repo.Fetch(&git.FetchOptions{RemoteName: remoteName, Auth: auth})
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+	if errors.Is(err, git.NoErrAlreadyUpToDate) || errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return nil
 	}
 	return err
