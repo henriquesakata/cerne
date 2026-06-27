@@ -143,48 +143,86 @@ func TestPushGoldenPath(t *testing.T) {
 	}
 }
 
-func TestPushDriftDetected(t *testing.T) {
+// A concurrent push to a DIFFERENT document no longer blocks: the push
+// auto-rebases onto the advanced backend and succeeds, preserving both (C1/C2).
+func TestPushAutoRebasesDisjointAdvance(t *testing.T) {
 	projDir, origin, _, specPath := pulledProject(t)
-	lockBefore, err := project.LoadLock(projDir)
-	if err != nil {
-		t.Fatalf("LoadLock: %v", err)
-	}
 
-	// Another machine pushes to origin after our pull.
+	// Another machine pushes plan.md, disjoint from our spec.md edit.
 	clone2 := filepath.Join(t.TempDir(), "clone2")
 	if err := gitback.Clone(origin, clone2); err != nil {
 		t.Fatalf("Clone clone2: %v", err)
 	}
-	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "plan.md"), realDoc("F-0001", "Plano vindo de outra máquina."))
-	remoteSHA, err := gitback.CommitAndPush(clone2, "external change")
+	theirPlan := realDoc("F-0001", "Plano vindo de outra máquina.")
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "plan.md"), theirPlan)
+	if _, err := gitback.CommitAndPush(clone2, "external disjoint change"); err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+
+	// Our disjoint edit pushes cleanly — no --force, no manual retry.
+	mineSpec := realDoc("F-0001", "Edição local que coexiste com o avanço remoto.")
+	mustWrite(t, specPath, mineSpec)
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("disjoint push should succeed: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+		t.Fatalf("output missing success:\n%s", out)
+	}
+
+	// Origin holds BOTH the remote plan and our spec.
+	verify := filepath.Join(t.TempDir(), "verify")
+	if err := gitback.Clone(origin, verify); err != nil {
+		t.Fatalf("Clone verify: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(verify, "content", "features", "F-0001", "plan.md")); err != nil || string(got) != theirPlan {
+		t.Fatalf("remote plan.md lost: %q err=%v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(verify, "content", "features", "F-0001", "spec.md")); err != nil || string(got) != mineSpec {
+		t.Fatalf("our spec.md not pushed: %q err=%v", got, err)
+	}
+
+	// docs.lock advanced to the new origin HEAD.
+	lock, _ := project.LoadLock(projDir)
+	originHead, _ := gitback.HeadSHA(origin)
+	if lock.Snapshot != originHead {
+		t.Fatalf("lock.Snapshot = %s, want origin HEAD %s", lock.Snapshot, originHead)
+	}
+}
+
+// Two machines editing the SAME document: the second push is a conflict (named
+// + diffed), nothing is sent, the remote keeps its version (C3/C7).
+func TestPushSameDocConflict(t *testing.T) {
+	projDir, origin, _, specPath := pulledProject(t)
+
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	theirSpec := realDoc("F-0001", "Versão do outro agente para o MESMO documento.")
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), theirSpec)
+	theirHead, err := gitback.CommitAndPush(clone2, "their spec edit")
 	if err != nil {
 		t.Fatalf("CommitAndPush clone2: %v", err)
 	}
 
-	mustWrite(t, specPath, realDoc("F-0001", "Edição local que não deve ser enviada."))
+	mineSpec := realDoc("F-0001", "Minha versão divergente do MESMO documento.")
+	mustWrite(t, specPath, mineSpec)
 	out, err := execCerne(t, "push", "--dir", projDir)
 	if err == nil {
-		t.Fatalf("push with drift succeeded\noutput: %s", out)
+		t.Fatalf("same-document push should conflict\noutput: %s", out)
 	}
-	msg := err.Error()
-	for _, want := range []string{
-		"backend avançou desde seu último pull",
-		"rode 'cerne pull' antes do push",
-		lockBefore.Snapshot[:8],
-		remoteSHA[:8],
-	} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("drift error %q missing %q", msg, want)
-		}
+	if !strings.Contains(out, "Conflito em 1 documento(s)") ||
+		!strings.Contains(out, "content/features/F-0001/spec.md") {
+		t.Fatalf("conflict output missing doc name:\n%s", out)
 	}
-
-	// Nothing was committed: origin HEAD is still the external SHA.
-	originHead, err := gitback.HeadSHA(origin)
-	if err != nil {
-		t.Fatalf("HeadSHA origin: %v", err)
+	// The diff shows both sides, distinguishing a real conflict from a false collision.
+	if !strings.Contains(out, "Minha versão") || !strings.Contains(out, "Versão do outro") {
+		t.Fatalf("conflict output missing the diff:\n%s", out)
 	}
-	if originHead != remoteSHA {
-		t.Fatalf("origin HEAD = %s, want untouched %s", originHead, remoteSHA)
+	// Non-destructive: origin still holds their version, mine not pushed.
+	if originHead, _ := gitback.HeadSHA(origin); originHead != theirHead {
+		t.Fatalf("origin HEAD = %s, want untouched %s (nothing pushed on conflict)", originHead, theirHead)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
@@ -83,10 +85,12 @@ func Clone(url, workdir string) error {
 	return err
 }
 
-// CommitAndPush stages all changes (adds, modifications, deletions), commits
-// with msg as "cerne" <cerne@local> and pushes main to origin. Returns the
-// commit SHA hex; ErrNothingToCommit when the worktree is clean.
-func CommitAndPush(workdir, msg string) (string, error) {
+// CommitAll stages all changes (adds, modifications, deletions) and commits
+// with msg as "cerne" <cerne@local>, WITHOUT pushing. Returns the commit SHA
+// hex; ErrNothingToCommit when the worktree is clean. Pushing is split out
+// (Push) so the reconcile loop can commit locally, then fetch/rebase/push with
+// retry on a concurrent advance.
+func CommitAll(workdir, msg string) (string, error) {
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return "", err
@@ -110,23 +114,48 @@ func CommitAndPush(workdir, msg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return hash.String(), nil
+}
+
+// Push pushes main to origin. NoErrAlreadyUpToDate is not an error. A
+// non-fast-forward rejection (the remote advanced) is returned as-is so callers
+// can classify it with IsNonFastForward and retry.
+func Push(workdir string) error {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return err
+	}
 	url, err := originURL(repo)
 	if err != nil {
-		return "", err
+		return err
 	}
 	auth, err := sshAuthFor(url)
 	if err != nil {
-		return "", err
+		return err
 	}
 	err = repo.Push(&git.PushOptions{
 		RemoteName: remoteName,
 		RefSpecs:   []config.RefSpec{config.RefSpec("refs/heads/main:refs/heads/main")},
 		Auth:       auth,
 	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return nil
+	}
+	return err
+}
+
+// CommitAndPush stages all changes, commits, and pushes main to origin in one
+// step. Returns the commit SHA hex; ErrNothingToCommit when the worktree is
+// clean. Retained for callers that do not need the reconcile loop.
+func CommitAndPush(workdir, msg string) (string, error) {
+	sha, err := CommitAll(workdir, msg)
+	if err != nil {
 		return "", err
 	}
-	return hash.String(), nil
+	if err := Push(workdir); err != nil {
+		return "", err
+	}
+	return sha, nil
 }
 
 // CommitPath stages and commits ONLY path in workdir's repository, on the
@@ -265,6 +294,119 @@ func RemoteURL(workdir string) (string, error) {
 		return "", fmt.Errorf("remote %q has no URL", remoteName)
 	}
 	return urls[0], nil
+}
+
+// TrackingHeadSHA returns the locally-known origin/main commit hex (the
+// remote-tracking ref last set by Clone/Fetch), without any network call.
+// ErrNoCommits when the tracking ref does not exist yet (never fetched, or an
+// empty remote).
+func TrackingHeadSHA(workdir string) (string, error) {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return "", err
+	}
+	ref, err := repo.Reference(plumbing.NewRemoteReferenceName(remoteName, "main"), true)
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
+	}
+	if err != nil {
+		return "", err
+	}
+	return ref.Hash().String(), nil
+}
+
+// FileBlobAt returns the content of relPath (slash-separated) at commit sha.
+// The bool is false (with a nil error) when the commit exists but the path does
+// not, or when the commit object is absent locally — both are "no such blob",
+// which the 3-way reconcile reads as "this side does not have the file".
+func FileBlobAt(workdir, sha, relPath string) ([]byte, bool, error) {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return nil, false, err
+	}
+	commit, err := repo.CommitObject(plumbing.NewHash(sha))
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, false, err
+	}
+	f, err := tree.File(relPath)
+	if errors.Is(err, object.ErrFileNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	data, err := f.Contents()
+	if err != nil {
+		return nil, false, err
+	}
+	return []byte(data), true, nil
+}
+
+// ResetHard sets the worktree, index and HEAD (the main branch) to commit sha,
+// restoring tracked files AND removing untracked ones (go-git's HardReset
+// matches the tree exactly). The reconcile loop uses it to land the worktree on
+// the latest remote — fully clean — before re-applying the captured changes.
+func ResetHard(workdir, sha string) error {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return err
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	return wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(sha), Mode: git.HardReset})
+}
+
+// Change is one worktree path that differs from HEAD (a modification/addition,
+// or a deletion).
+type Change struct {
+	Path    string // slash-separated, relative to the worktree root
+	Deleted bool
+}
+
+// WorktreeChanges returns the paths that differ from HEAD, sorted by path. It
+// captures a caller's uncommitted mutation (entity JSON, appended events, doc
+// content) so the reconcile loop can re-apply it onto the latest remote.
+func WorktreeChanges(workdir string) ([]Change, error) {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return nil, err
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return nil, err
+	}
+	status, err := wt.Status()
+	if err != nil {
+		return nil, err
+	}
+	var changes []Change
+	for p, s := range status {
+		if s.Staging == git.Unmodified && s.Worktree == git.Unmodified {
+			continue
+		}
+		deleted := s.Worktree == git.Deleted || s.Staging == git.Deleted
+		changes = append(changes, Change{Path: p, Deleted: deleted})
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	return changes, nil
+}
+
+// IsNonFastForward reports whether err is a push rejection because the remote
+// advanced. go-git returns this as a dynamic error ("non-fast-forward update:
+// …"), not a sentinel, so this matches by string as well as the pull-side
+// sentinel.
+func IsNonFastForward(err error) bool {
+	return err != nil && (errors.Is(err, git.ErrNonFastForwardUpdate) ||
+		strings.Contains(err.Error(), "non-fast-forward"))
 }
 
 // HeadSHA returns the current HEAD commit hex of workdir; ErrNoCommits when unborn.

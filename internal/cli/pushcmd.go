@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 )
@@ -58,18 +58,6 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		return err
 	}
 
-	// Drift detection against the REMOTE head, before any sync: the
-	// write-back is only safe on top of the exact snapshot the user pulled.
-	remoteHead, err := gitback.RemoteHeadSHA(ctx.repoDir)
-	if err != nil {
-		return err
-	}
-	if remoteHead != lock.Snapshot {
-		return fmt.Errorf(
-			"backend avançou desde seu último pull (snapshot local %s, remoto %s) — rode 'cerne pull' antes do push",
-			shortSHA(lock.Snapshot), shortSHA(remoteHead))
-	}
-
 	docsDir := filepath.Join(ctx.projDir, ".docs")
 	manifest, err := project.LoadManifest(ctx.projDir)
 	if err != nil {
@@ -91,40 +79,54 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		return reportDryRun(cmd, ctx, docs)
 	}
 
-	for _, d := range docs {
-		dst := filepath.Join(ctx.repoDir, filepath.FromSlash(d.backendRel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(dst, d.body, 0o644); err != nil {
-			return err
-		}
+	// Reconcile per document against the latest backend, starting from the
+	// snapshot we pulled: a remote advance on a DIFFERENT document never blocks
+	// this push (auto-rebase + retry); only the SAME document changed both ways
+	// is a real conflict.
+	changes := make([]app.FileChange, len(docs))
+	for i, d := range docs {
+		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
 	}
-	for _, d := range docs {
-		manifest[d.rel] = d.sum
-	}
-	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: push %d documento(s)", len(docs)))
-	if errors.Is(err, gitback.ErrNothingToCommit) {
-		// The edited copies already match the backend byte for byte; just
-		// realign the manifest hashes.
-		if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
-			return err
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Nada para enviar.")
-		return nil
-	}
+	head, conflicts, err := app.ReconcileCommitPush(
+		ctx.repoDir, ctx.projDir, lock.Snapshot,
+		fmt.Sprintf("cerne: push %d documento(s)", len(docs)), changes)
 	if err != nil {
 		return err
 	}
-	lock.Snapshot = sha
-	if err := project.SaveLock(ctx.projDir, lock); err != nil {
-		return err
+	if len(conflicts) > 0 {
+		return reportPushConflicts(cmd, conflicts)
+	}
+
+	// The backend now matches our docs (applied or already present): realign the
+	// manifest hashes. The snapshot pin was advanced inside the reconcile.
+	for _, d := range docs {
+		manifest[d.rel] = d.sum
 	}
 	if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Enviado: %d documento(s) (snapshot %s).\n", len(docs), shortSHA(sha))
+	if head == "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "Nada para enviar.")
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Enviado: %d documento(s) (snapshot %s).\n", len(docs), shortSHA(head))
 	return nil
+}
+
+// reportPushConflicts prints each same-document conflict with its diff and a
+// non-destructive resolution path, then returns a non-nil error so the command
+// exits non-zero. Nothing was written to the backend.
+func reportPushConflicts(cmd *cobra.Command, conflicts []app.Conflict) error {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Conflito em %d documento(s) — push abortado, nada enviado:\n", len(conflicts))
+	for _, c := range conflicts {
+		fmt.Fprintf(out, "\n  %s\n", c.Path)
+		for _, line := range strings.Split(strings.TrimRight(c.Diff, "\n"), "\n") {
+			fmt.Fprintf(out, "    %s\n", line)
+		}
+	}
+	fmt.Fprintln(out, "\nO mesmo documento mudou no backend. Reconcilie e rode 'cerne push' de novo, ou 'cerne pull' para trazer a versão remota.")
+	return fmt.Errorf("%d documento(s) em conflito", len(conflicts))
 }
 
 // reportDryRun validates a push without performing it: it lists the documents
