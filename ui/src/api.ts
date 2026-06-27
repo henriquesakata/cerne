@@ -390,6 +390,21 @@ export async function setFeatureParent(
   return { ok: true }
 }
 
+// renameFeature altera o título de uma feature (PUT /api/features/{id}/title).
+// Permitido só em estados vivos; o servidor recusa (422) em estados terminais.
+export async function renameFeature(
+  id: string,
+  title: string,
+): Promise<SaveOutcome> {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
+
 // saveFeatureDoc grava um doc de ciclo de vida (spec|plan|result) como
 // markdown bruto; o servidor faz commit+push e atualiza o lock.
 export async function saveFeatureDoc(

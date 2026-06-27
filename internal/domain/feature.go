@@ -56,6 +56,13 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 	StateSuperseded: {},
 }
 
+// TitleEditable reports whether a feature's title may still be changed: true for
+// the live states (candidate/approved/in_development), false for the terminal
+// ones (implemented/rejected/superseded), whose records are frozen history.
+func TitleEditable(s FeatureState) bool {
+	return s != StateImplemented && s != StateRejected && s != StateSuperseded
+}
+
 // Transition returns the state reached by applying action to from.
 func Transition(from FeatureState, action Action) (FeatureState, error) {
 	actions, ok := transitions[from]

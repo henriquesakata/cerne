@@ -18,6 +18,7 @@ func newFeatureCmd() *cobra.Command {
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newFeatureNewCmd(&dir))
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
+	cmd.AddCommand(newFeatureRenameCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
