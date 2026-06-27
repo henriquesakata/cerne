@@ -97,6 +97,18 @@ func TestGoldenPath(t *testing.T) {
 	}
 	assertLockParity(t, proj, origin, "feature new")
 
+	t.Log("stage 2b: rename — title is editable while the feature is live")
+	if out := mustCerne(t, "feature", "rename", "F-0001", "Carrinho temporário", "--dir", proj); !strings.Contains(out, "F-0001 renomeada") {
+		t.Fatalf("rename output missing confirmation:\n%s", out)
+	}
+	assertLockParity(t, proj, origin, "feature rename")
+	mustCerne(t, "pull", "--dir", proj)
+	if ctx := mustRead(t, ctxPath); !strings.Contains(ctx, "Carrinho temporário") {
+		t.Fatalf("CONTEXT.md missing renamed title:\n%s", ctx)
+	}
+	// Restore the canonical title for the downstream stages.
+	mustCerne(t, "feature", "rename", "F-0001", "Carrinho persistente", "--dir", proj)
+
 	t.Log("stage 3: pull — CONTEXT.md lists the candidate, spec stub materialized")
 	mustCerne(t, "pull", "--dir", proj)
 	ctx := mustRead(t, ctxPath)

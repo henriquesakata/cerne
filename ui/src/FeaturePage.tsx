@@ -8,6 +8,7 @@ import {
   fetchState,
   generateDiagram,
   postTransition,
+  renameFeature,
   saveFeatureDoc,
   setFeatureParent,
   STATE_LABELS,
@@ -24,6 +25,88 @@ import { useLiveVersion } from './live'
 // navegador quando o usuário abre um diagrama (cada um no seu chunk lazy).
 const DiagramPanel = lazy(() => import('./DiagramPanel'))
 const MermaidView = lazy(() => import('./MermaidView'))
+
+// titleEditable espelha domain.TitleEditable: o título é dado mutável só
+// enquanto a feature está viva; estados terminais congelam (história imutável).
+function titleEditable(state: FeatureState): boolean {
+  return (
+    state !== 'implemented' &&
+    state !== 'rejected' &&
+    state !== 'superseded'
+  )
+}
+
+// TitleEditor renderiza o título da feature com edição inline. O controle de
+// edição só aparece em estados vivos (titleEditable); em estados terminais o
+// título é somente-leitura.
+function TitleEditor({
+  feature,
+  onSaved,
+}: {
+  feature: Feature
+  onSaved: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(feature.title)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const start = () => {
+    setDraft(feature.title)
+    setError(null)
+    setEditing(true)
+  }
+
+  const save = () => {
+    setBusy(true)
+    setError(null)
+    void renameFeature(feature.id, draft).then((res) => {
+      setBusy(false)
+      if (res.ok) {
+        setEditing(false)
+        onSaved()
+      } else {
+        setError(res.error)
+      }
+    })
+  }
+
+  if (editing) {
+    return (
+      <div className="title-edit">
+        <input
+          className="title-input"
+          value={draft}
+          autoFocus
+          disabled={busy}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        />
+        <button onClick={save} disabled={busy || draft.trim() === ''}>
+          Salvar
+        </button>
+        <button onClick={() => setEditing(false)} disabled={busy}>
+          Cancelar
+        </button>
+        {error && <span className="status error">{error}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <h1>
+      <span className="feature-id">{feature.id}</span> {feature.title}
+      {titleEditable(feature.state) && (
+        <button className="title-edit-btn" onClick={start} title="Editar título">
+          ✎
+        </button>
+      )}
+    </h1>
+  )
+}
 
 type DocTab = 'spec' | 'plan' | 'result'
 
@@ -177,9 +260,7 @@ export default function FeaturePage({ id }: { id: string }) {
     <main className="feature">
       <a className="back" href="#/">← Kanban</a>
       <header className="feature-header">
-        <h1>
-          <span className="feature-id">{f.id}</span> {f.title}
-        </h1>
+        <TitleEditor feature={f} onSaved={load} />
         <p className="feature-meta">
           <span className={`chip chip-${f.state}`}>{STATE_LABELS[f.state]}</span>
           {f.module && <span className="badge">{f.module}</span>}
