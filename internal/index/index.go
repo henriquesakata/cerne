@@ -237,6 +237,11 @@ func collectRows(repoDir string) ([]row, error) {
 		if exists {
 			r.doc, r.body = "doc", body
 		}
+		// Index the tags into the body so a search by facet/component finds the
+		// note even when the term never appears in its prose.
+		if tags := strings.Join(append(append([]string{}, n.Facets...), n.Components...), " "); tags != "" {
+			r.body = strings.TrimSpace(r.body + " " + tags)
+		}
 		rows = append(rows, r)
 	}
 	for _, h := range historicals {
