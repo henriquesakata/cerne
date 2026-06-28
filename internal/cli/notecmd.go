@@ -150,25 +150,29 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 }
 
 func newNoteNewCmd(dir *string) *cobra.Command {
-	var informs, file string
+	var informs, file, facet, component string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register durable team knowledge as a note (active)",
 		Long: "Registra conhecimento durável de projeto (gotchas, invariantes, convenções tácitas) como uma nota " +
 			"ativa. O corpo é texto livre, vindo de --file ou da entrada padrão (quando há pipe); sem corpo a nota " +
 			"nasce como stub para você preencher. Use --informs para ligar a nota às features/decisões (F-/D-) que " +
-			"ela informa. Conhecimento pessoal/de-máquina (paths, preferências) NÃO vai aqui — fica na memória local.",
+			"ela informa. Use --facet (eixo fechado: infra,code,data,process,auth) e --component (subsistema/ferramenta, " +
+			"ex.: gitea,kpack) para organizar — ambos multivalor, separados por vírgula. " +
+			"Conhecimento pessoal/de-máquina (paths, preferências) NÃO vai aqui — fica na memória local.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteNew(cmd, *dir, args[0], informs, file)
+			return runNoteNew(cmd, *dir, args[0], informs, file, facet, component)
 		},
 	}
 	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D- ids this note informs")
 	cmd.Flags().StringVar(&file, "file", "", "file with the note body (defaults to piped stdin)")
+	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
+	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	return cmd
 }
 
-func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
+func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component string) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -177,7 +181,7 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file string) error {
 	if err != nil {
 		return err
 	}
-	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), nil, nil)
+	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component))
 	if err != nil {
 		return err
 	}
