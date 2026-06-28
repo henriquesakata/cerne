@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -34,24 +36,28 @@ func newNoteCmd() *cobra.Command {
 
 func newNoteListCmd(dir *string) *cobra.Command {
 	var all, asJSON bool
+	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Listar notas (conhecimento durável) — ativas por padrão; --all inclui história",
 		Long: "Lista as notas lidas direto do backend (store), não da projeção '.docs/' — então enxerga o " +
 			"conhecimento mesmo quando '.docs/' está desatualizado (sem 'cerne pull'). Por padrão mostra só as " +
 			"ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
-			"(durável, informa F-/D-, sucessora). --json para saída estruturada.",
+			"(durável, informa F-/D-, facet/componente, sucessora). Filtre por --facet e/ou --component (E lógico). " +
+			"--json para saída estruturada.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteList(cmd, *dir, all, asJSON)
+			return runNoteList(cmd, *dir, all, asJSON, facet, component)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "incluir notas superseded (história)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
+	cmd.Flags().StringVar(&facet, "facet", "", "filtrar por facet (ex.: infra)")
+	cmd.Flags().StringVar(&component, "component", "", "filtrar por componente (ex.: gitea)")
 	return cmd
 }
 
-func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool) error {
+func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, component string) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -60,10 +66,20 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	// Normalize the filters to the stored form so '--facet Infra'/'--component
+	// Gitea' match the lower/slug values persisted on the note.
+	facetQ := strings.ToLower(strings.TrimSpace(facet))
+	compQ := slug.Make(component)
 	w := cmd.OutOrStdout()
 	shown := make([]store.Note, 0, len(notes))
 	for _, n := range notes {
 		if !all && n.State != domain.NoteActive {
+			continue
+		}
+		if facetQ != "" && !slices.Contains(n.Facets, facetQ) {
+			continue
+		}
+		if compQ != "" && !slices.Contains(n.Components, compQ) {
 			continue
 		}
 		shown = append(shown, n)
@@ -82,6 +98,12 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 		var tags []string
 		if n.Durable {
 			tags = append(tags, "durável")
+		}
+		if len(n.Facets) > 0 {
+			tags = append(tags, "facet "+strings.Join(n.Facets, ","))
+		}
+		if len(n.Components) > 0 {
+			tags = append(tags, "comp "+strings.Join(n.Components, ","))
 		}
 		if len(n.Informs) > 0 {
 			tags = append(tags, "informa "+strings.Join(n.Informs, ","))
@@ -131,6 +153,12 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 	fmt.Fprintf(w, "%s  [%s]  %s\n", n.ID, n.State, n.Title)
 	if n.Durable {
 		fmt.Fprintln(w, "durável: sim")
+	}
+	if len(n.Facets) > 0 {
+		fmt.Fprintf(w, "facets: %s\n", strings.Join(n.Facets, ", "))
+	}
+	if len(n.Components) > 0 {
+		fmt.Fprintf(w, "components: %s\n", strings.Join(n.Components, ", "))
 	}
 	if len(n.Informs) > 0 {
 		fmt.Fprintf(w, "informa: %s\n", strings.Join(n.Informs, ", "))
