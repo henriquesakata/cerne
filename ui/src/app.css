@@ -95,6 +95,7 @@ h2 {
 }
 
 .badge-epic { background: #eef2fb; color: #2563eb; border-color: #cfd9f2; }
+.badge-behind { background: #fdf0d5; color: #b45309; border-color: #f0d9a8; }
 .card-parent {
   display: block;
   margin-top: 0.2rem;
