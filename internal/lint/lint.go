@@ -40,29 +40,31 @@ const (
 	RuleOrphanContent     = "orphan-content"
 	RuleMissingGateDoc    = "missing-gate-doc"
 	RuleWikiSourceUnknown = "wiki-source-unknown"
-	RuleParentNotFound    = "parent-not-found"
-	RuleParentTerminal    = "parent-terminal"
-	RuleEpicOpenChildren  = "epic-open-children"
-	RuleStaleCandidate    = "stale-candidate"
-	RuleStaleNote         = "stale-note"
-	RuleIncompleteDoc     = "incomplete-doc"
+	RuleParentNotFound     = "parent-not-found"
+	RuleParentTerminal     = "parent-terminal"
+	RuleEpicOpenChildren   = "epic-open-children"
+	RuleEpicBehindChildren = "epic-behind-children"
+	RuleStaleCandidate     = "stale-candidate"
+	RuleStaleNote          = "stale-note"
+	RuleIncompleteDoc      = "incomplete-doc"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc}
 
 var ruleRank = map[string]int{
-	RuleRefToSuperseded:   0,
-	RuleBrokenLink:        1,
-	RuleOrphanContent:     2,
-	RuleMissingGateDoc:    3,
-	RuleWikiSourceUnknown: 4,
-	RuleParentNotFound:    5,
-	RuleParentTerminal:    6,
-	RuleEpicOpenChildren:  7,
-	RuleStaleCandidate:    8,
-	RuleStaleNote:         9,
-	RuleIncompleteDoc:     10,
+	RuleRefToSuperseded:    0,
+	RuleBrokenLink:         1,
+	RuleOrphanContent:      2,
+	RuleMissingGateDoc:     3,
+	RuleWikiSourceUnknown:  4,
+	RuleParentNotFound:     5,
+	RuleParentTerminal:     6,
+	RuleEpicOpenChildren:   7,
+	RuleEpicBehindChildren: 8,
+	RuleStaleCandidate:     9,
+	RuleStaleNote:          10,
+	RuleIncompleteDoc:      11,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -313,6 +315,10 @@ func missingSections(data []byte, sections []string) []string {
 //     (superseded/rejected) — the children were orphaned.
 //   - epic-open-children: an implemented feature still has open (non-terminal)
 //     children — the epic was marked done but its decomposition is not.
+//   - epic-behind-children: a not-yet-started epic (candidate/approved) already
+//     has a child in development or beyond — work began but the epic was never
+//     planned/started. The forward mirror of epic-open-children; the two are
+//     disjoint by epic state.
 func parentFindings(features []store.Feature) []Finding {
 	byID := make(map[string]store.Feature, len(features))
 	for _, f := range features {
@@ -350,21 +356,38 @@ func parentFindings(features []store.Feature) []Finding {
 
 	for epicID, children := range store.ChildrenByParent(features) {
 		epic, ok := byID[epicID]
-		if !ok || epic.State != domain.StateImplemented {
+		if !ok {
 			continue
 		}
-		open := 0
-		for _, c := range children {
-			if isLive(c.State) {
-				open++
+		switch epic.State {
+		case domain.StateImplemented:
+			open := 0
+			for _, c := range children {
+				if isLive(c.State) {
+					open++
+				}
 			}
-		}
-		if open > 0 {
-			findings = append(findings, Finding{
-				Rule:   RuleEpicOpenChildren,
-				Entity: epicID,
-				Detail: fmt.Sprintf("o épico %s está implementado, mas tem %d filho(s) ainda em aberto", epicID, open),
-			})
+			if open > 0 {
+				findings = append(findings, Finding{
+					Rule:   RuleEpicOpenChildren,
+					Entity: epicID,
+					Detail: fmt.Sprintf("o épico %s está implementado, mas tem %d filho(s) ainda em aberto", epicID, open),
+				})
+			}
+		case domain.StateCandidate, domain.StateApproved:
+			started := 0
+			for _, c := range children {
+				if c.State == domain.StateInDevelopment || c.State == domain.StateImplemented {
+					started++
+				}
+			}
+			if started > 0 {
+				findings = append(findings, Finding{
+					Rule:   RuleEpicBehindChildren,
+					Entity: epicID,
+					Detail: fmt.Sprintf("o épico %s está %s, mas %d filho(s) já entraram em desenvolvimento", epicID, epic.State, started),
+				})
+			}
 		}
 	}
 	return findings

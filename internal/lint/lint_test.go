@@ -195,6 +195,41 @@ func TestParentFindings(t *testing.T) {
 	}
 }
 
+func TestEpicBehindChildren(t *testing.T) {
+	features := []store.Feature{
+		// epic candidate with a child already in development -> fires
+		{ID: "F-0001", Title: "Épico não iniciado", State: domain.StateCandidate},
+		{ID: "F-0002", Title: "Filha em dev", Parent: "F-0001", State: domain.StateInDevelopment},
+		// epic approved with a child implemented -> fires
+		{ID: "F-0003", Title: "Épico só aprovado", State: domain.StateApproved},
+		{ID: "F-0004", Title: "Filha pronta", Parent: "F-0003", State: domain.StateImplemented},
+		// epic candidate but children only candidate/approved -> normal decomposition, no fire
+		{ID: "F-0005", Title: "Épico em desenho", State: domain.StateCandidate},
+		{ID: "F-0006", Title: "Filha candidata", Parent: "F-0005", State: domain.StateCandidate},
+		{ID: "F-0007", Title: "Filha aprovada", Parent: "F-0005", State: domain.StateApproved},
+		// epic already in development with advanced child -> epic not behind, no fire
+		{ID: "F-0008", Title: "Épico em dev", State: domain.StateInDevelopment},
+		{ID: "F-0009", Title: "Filha em dev", Parent: "F-0008", State: domain.StateInDevelopment},
+	}
+	got := parentFindings(features)
+
+	behind := map[string]bool{}
+	for _, f := range got {
+		if f.Rule == RuleEpicBehindChildren {
+			behind[f.Entity] = true
+		}
+	}
+	want := []string{"F-0001", "F-0003"}
+	if len(behind) != len(want) {
+		t.Fatalf("epic-behind findings = %v (all=%+v), want %v", behind, got, want)
+	}
+	for _, id := range want {
+		if !behind[id] {
+			t.Fatalf("missing epic-behind finding for %s; got %v", id, behind)
+		}
+	}
+}
+
 func TestRunFindings(t *testing.T) {
 	dir := seedBackend(t)
 
