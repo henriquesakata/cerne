@@ -902,3 +902,69 @@ h2 {
 .graph-dot.t-part_of { background: #2563eb; }
 .graph-dot.t-informs { background: #0d9488; }
 .graph-dot.t-links { background: #9ca3af; }
+
+/* ---- note tags (facet/component) + filtro (F-0083) ---- */
+
+.tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+button.tag {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* closed axis (D-0002): cool/blue */
+.tag-facet { background: #e7eefb; color: #2f5aa8; border-color: #cdd9f2; }
+.tag-facet.is-active { background: #2f5aa8; color: #fff; border-color: #2f5aa8; }
+
+/* open axis (D-0002): warm/green — visually distinct from facet */
+.tag-component { background: #e6f0e6; color: #2c5e2e; border-color: #cfe3cf; }
+.tag-component.is-active { background: #2c5e2e; color: #fff; border-color: #2c5e2e; }
+
+.tag:focus-visible { outline: 2px solid #1f2421; outline-offset: 1px; }
+
+/* a note row carries the link plus its tag chips (chips sit outside the
+   anchor so a tag click toggles the filter instead of navigating). */
+.note-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.note-row > .entity-row { flex: 1 1 18rem; }
+.note-tags { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+
+.note-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.note-filter-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.note-filter-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #8a8f8b;
+}
+.note-filter-clear {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid #d8d2c6;
+  border-radius: 999px;
+  background: #fff;
+  color: #5c635e;
+  cursor: pointer;
+}
+.note-filter-clear:hover { border-color: #b9b2a4; }
