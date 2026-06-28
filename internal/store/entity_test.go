@@ -109,6 +109,8 @@ func TestNoteRoundTrip(t *testing.T) {
 		SupersededBy: "N-0002",
 		Reason:       "corrected",
 		Informs:      []string{"F-0001", "D-0003"},
+		Facets:       []string{"infra", "code"},
+		Components:   []string{"gitea", "kpack"},
 		CreatedAt:    time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC),
 		UpdatedAt:    time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC),
 	}
@@ -125,6 +127,12 @@ func TestNoteRoundTrip(t *testing.T) {
 	}
 	if len(got.Informs) != 2 || got.Informs[0] != "F-0001" || got.Informs[1] != "D-0003" {
 		t.Fatalf("informs = %v, want [F-0001 D-0003]", got.Informs)
+	}
+	if len(got.Facets) != 2 || got.Facets[0] != "infra" || got.Facets[1] != "code" {
+		t.Fatalf("facets = %v, want [infra code]", got.Facets)
+	}
+	if len(got.Components) != 2 || got.Components[0] != "gitea" || got.Components[1] != "kpack" {
+		t.Fatalf("components = %v, want [gitea kpack]", got.Components)
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("times: got %v / %v, want %v / %v",
