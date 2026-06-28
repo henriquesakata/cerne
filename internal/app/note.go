@@ -25,7 +25,7 @@ type NoteOutcome struct {
 // appends the note.created event, commits+pushes the backend and refreshes the
 // docs.lock snapshot in projDir. An empty body yields a scaffold that reads as a
 // stub (doccheck.HasRealContent false) until the author fills it.
-func CreateNote(repoDir, projDir, title, body string, informs []string) (store.Note, error) {
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("o título da nota não pode ser vazio")
@@ -34,18 +34,27 @@ func CreateNote(repoDir, projDir, title, body string, informs []string) (store.N
 	if err != nil {
 		return store.Note{}, err
 	}
+	// Validate/normalize tags before any side effect (NextID, save): an unknown
+	// facet must abort without minting an id or writing a file.
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return store.Note{}, err
+	}
+	normComponents := domain.NormalizeComponents(components)
 	id, err := store.NextID(repoDir, "N")
 	if err != nil {
 		return store.Note{}, err
 	}
 	now := time.Now().UTC()
 	n := store.Note{
-		ID:        id,
-		Title:     title,
-		State:     domain.NoteActive,
-		Informs:   cleaned,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		Title:      title,
+		State:      domain.NoteActive,
+		Informs:    cleaned,
+		Facets:     normFacets,
+		Components: normComponents,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.SaveNote(repoDir, n); err != nil {
 		return store.Note{}, err

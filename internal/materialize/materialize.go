@@ -214,6 +214,12 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 		if err != nil {
 			return nil, err
 		}
+		if len(n.Facets) > 0 {
+			line += " · facet " + strings.Join(n.Facets, ",")
+		}
+		if len(n.Components) > 0 {
+			line += " · comp " + strings.Join(n.Components, ",")
+		}
 		data.Notes = append(data.Notes, line)
 	}
 
