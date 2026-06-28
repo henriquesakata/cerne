@@ -27,6 +27,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(newNoteNewCmd(&dir))
 	cmd.AddCommand(newNoteListCmd(&dir))
 	cmd.AddCommand(newNoteShowCmd(&dir))
+	cmd.AddCommand(newNoteRetagCmd(&dir))
 	cmd.AddCommand(newNoteKeepCmd(&dir))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
@@ -321,6 +322,43 @@ func runNoteKeep(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s marcada como durável — o 'cerne lint' não a sinaliza mais (stale-note).\n", n.ID)
+	return nil
+}
+
+func newNoteRetagCmd(dir *string) *cobra.Command {
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "retag <id>",
+		Short: "Redefinir os tags (facet/componente) de uma nota ativa",
+		Long: "Define ou substitui os eixos de tag de uma nota ativa, sem criar sucessora — preserva durável, " +
+			"informs e corpo. Altera só o eixo passado: 'retag N-0001 --component gitea' mantém os facets; " +
+			"'--facet \"\"' limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteRetag(cmd, *dir, args[0], facet, component,
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+		},
+	}
+	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
+	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	return cmd
+}
+
+func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+	if !setFacets && !setComponents {
+		return fmt.Errorf("informe ao menos --facet ou --component")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	n, err := app.RetagNote(ctx.repoDir, ctx.projDir, id,
+		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+		n.ID, strings.Join(n.Facets, ", "), strings.Join(n.Components, ", "))
 	return nil
 }
 
