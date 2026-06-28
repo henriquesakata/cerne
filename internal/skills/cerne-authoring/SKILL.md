@@ -100,7 +100,7 @@ An **epic is just a feature that has children** — the role is inferred from th
 - Link, move, or detach an existing feature later: `cerne feature reparent F-NNNN F-MMMM` (or `--clear`).
 - **Epic ≠ module.** A module is the subsystem; an epic is decomposed work that may span modules. A feature can have both.
 - **Read the breakdown, don't hand-maintain it:** `cerne status` shows an `ÉPICOS` section with `n/m` progress, and `.docs/CONTEXT.md` carries an *Épico* column plus a `## Épicos` section.
-- The epic's lifecycle is independent (children completing does not auto-complete it). `cerne lint` flags inconsistencies — a live feature under a terminal epic, or an epic completed with open children.
+- The epic's lifecycle is independent (children completing does not auto-complete it). `cerne lint` flags inconsistencies — a live feature under a terminal epic, an epic completed with open children, or an epic still candidate/approved while a child is already in development (`epic-behind-children`: work started but the epic was never planned/started — write its plan and `cerne feature start` it).
 
 ## Decisions (ADRs)
 
