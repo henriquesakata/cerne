@@ -179,7 +179,7 @@ func Run(repoDir string) ([]Finding, error) {
 	}
 	findings = append(findings, gates...)
 
-	wikiSources, err := wikiSourceFindings(repoDir, features, decisions, references)
+	wikiSources, err := wikiSourceFindings(repoDir, features, decisions, references, runbooks, notes)
 	if err != nil {
 		return nil, err
 	}
@@ -563,8 +563,8 @@ func wikiPagePaths(repoDir string) ([]string, error) {
 
 // wikiSourceFindings reports wiki pages whose provenance lists a source that
 // resolves to no existing entity (a dangling synthesis input).
-func wikiSourceFindings(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]Finding, error) {
-	known := make(map[string]bool, len(features)+len(decisions)+len(references))
+func wikiSourceFindings(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, runbooks []store.Runbook, notes []store.Note) ([]Finding, error) {
+	known := make(map[string]bool, len(features)+len(decisions)+len(references)+len(runbooks)+len(notes))
 	for _, f := range features {
 		known[f.ID] = true
 	}
@@ -573,6 +573,14 @@ func wikiSourceFindings(repoDir string, features []store.Feature, decisions []st
 	}
 	for _, r := range references {
 		known[r.ID] = true
+	}
+	// Runbooks (F-0040) and notes (F-0044) are first-class entities that can
+	// legitimately source a wiki synthesis, so they count as known too (F-0091).
+	for _, rb := range runbooks {
+		known[rb.ID] = true
+	}
+	for _, n := range notes {
+		known[n.ID] = true
 	}
 	rels, err := wikiPagePaths(repoDir)
 	if err != nil {

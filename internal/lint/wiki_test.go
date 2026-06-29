@@ -112,6 +112,33 @@ func TestLintWikiRuleCoversDecisionsReferencesPages(t *testing.T) {
 	}
 }
 
+// TestLintWikiSourceRecognizesRunbooksAndNotes pins F-0091: runbook and note ids
+// are valid wiki provenance sources, so only a truly dangling id is flagged.
+func TestLintWikiSourceRecognizesRunbooksAndNotes(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	if err := store.SaveRunbook(dir, store.Runbook{ID: "RB-0024", Title: "Plugin Governance", State: domain.RunbookActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveRunbook: %v", err)
+	}
+	if err := store.SaveNote(dir, store.Note{ID: "N-0001", Title: "Nota", State: domain.NoteActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	// Wiki page whose provenance lists a real runbook, a real note, and one
+	// dangling id — only the dangling id is unknown.
+	writeWikiPage(t, dir, "content/wiki/references.md", []string{"RB-0024", "N-0001", "RB-9999"}, "# Referências\n\nSíntese.\n")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	unknown := byRule(findings, RuleWikiSourceUnknown)
+	if len(unknown) != 1 || !contains(unknown[0].Detail, "RB-9999") {
+		t.Fatalf("want exactly 1 wiki-source-unknown on RB-9999, got: %+v", unknown)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
