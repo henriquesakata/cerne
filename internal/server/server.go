@@ -812,7 +812,7 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs)
+	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, nil, nil)
 	if err != nil {
 		// Validation (empty url, dangling informs) surfaces as 422, like features.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))

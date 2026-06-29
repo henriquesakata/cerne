@@ -23,7 +23,7 @@ func ReferenceDocPath(repoDir, id string) string {
 // with URL/External/Informs, writes the pasted content as the reference's
 // content doc (indexed, so ask can cite it), appends reference.created, and
 // commits+pushes the backend refreshing the docs.lock snapshot in projDir.
-func CreateExternalReference(repoDir, projDir, title, url, content string, informs []string) (store.Reference, error) {
+func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string) (store.Reference, error) {
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	if title == "" {
@@ -36,20 +36,29 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	if err != nil {
 		return store.Reference{}, err
 	}
+	// Normalize tags before allocating an id, so an unknown facet aborts the
+	// whole create without consuming an R- id or writing anything (mirrors notes).
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return store.Reference{}, err
+	}
+	normComponents := domain.NormalizeComponents(components)
 	id, err := store.NextID(repoDir, "R")
 	if err != nil {
 		return store.Reference{}, err
 	}
 	now := time.Now().UTC()
 	r := store.Reference{
-		ID:        id,
-		Title:     title,
-		State:     domain.ReferenceCurrent,
-		URL:       url,
-		External:  true,
-		Informs:   cleaned,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		Title:      title,
+		State:      domain.ReferenceCurrent,
+		URL:        url,
+		External:   true,
+		Informs:    cleaned,
+		Facets:     normFacets,
+		Components: normComponents,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.SaveReference(repoDir, r); err != nil {
 		return store.Reference{}, err

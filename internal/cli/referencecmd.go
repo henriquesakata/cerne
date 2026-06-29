@@ -53,7 +53,7 @@ func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file string) 
 	if err != nil {
 		return err
 	}
-	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs))
+	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), nil, nil)
 	if err != nil {
 		return err
 	}
