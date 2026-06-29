@@ -33,23 +33,26 @@ func newDecisionCmd() *cobra.Command {
 }
 
 func newDecisionNewCmd(dir *string) *cobra.Command {
-	var file string
+	var file, facet, component string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a decision (active); one-shot with a --file/stdin body",
 		Long: "Cria uma decisão ativa. Com corpo (--file ou stdin com pipe) é one-shot: o ADR nasce com " +
 			"conteúdo real, já commitado e enviado — sem o ciclo draft+push. Sem corpo, nasce como stub do " +
-			"template para preencher.",
+			"template para preencher. Use --facet (eixo fechado: infra,code,data,process,auth) e --component " +
+			"(subsistema/ferramenta, ex.: keycloak,gitea) para organizar — ambos multivalor, separados por vírgula.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecisionNew(cmd, *dir, args[0], file)
+			return runDecisionNew(cmd, *dir, args[0], file, facet, component)
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "file with the ADR body (defaults to piped stdin); one-shot, skips draft+push")
+	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
+	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. keycloak,gitea)")
 	return cmd
 }
 
-func runDecisionNew(cmd *cobra.Command, dir, title, file string) error {
+func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return fmt.Errorf("o título da decisão não pode ser vazio")
@@ -62,7 +65,7 @@ func runDecisionNew(cmd *cobra.Command, dir, title, file string) error {
 	if err != nil {
 		return err
 	}
-	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body)
+	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(facet), splitInforms(component))
 	if err != nil {
 		return err
 	}

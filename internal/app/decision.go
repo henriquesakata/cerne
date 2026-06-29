@@ -25,19 +25,29 @@ type DecisionOutcome struct {
 // body when given, else a stub), appends the decision.created event,
 // commits+pushes the backend and refreshes the docs.lock snapshot in projDir. A
 // non-empty body makes 'decision new' one-shot: the ADR is born with real
-// content, no draft+push needed.
-func CreateDecision(repoDir, projDir, title, body string) (store.Decision, error) {
+// content, no draft+push needed. facets/components tag the decision on the
+// shared D-0002 axes (facet closed-set, component curated), like a note.
+func CreateDecision(repoDir, projDir, title, body string, facets, components []string) (store.Decision, error) {
+	// Validate/normalize tags before any side effect (NextID, save): an unknown
+	// facet must abort without minting an id or writing a file.
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return store.Decision{}, err
+	}
+	normComponents := domain.NormalizeComponents(components)
 	id, err := store.NextID(repoDir, "D")
 	if err != nil {
 		return store.Decision{}, err
 	}
 	now := time.Now().UTC()
 	d := store.Decision{
-		ID:        id,
-		Title:     title,
-		State:     domain.DecisionActive,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		Title:      title,
+		State:      domain.DecisionActive,
+		Facets:     normFacets,
+		Components: normComponents,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.SaveDecision(repoDir, d); err != nil {
 		return store.Decision{}, err
