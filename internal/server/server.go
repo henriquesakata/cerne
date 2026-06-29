@@ -795,10 +795,12 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 // createReferenceRequest is the POST /api/references body: an external source
 // (article/doc) with optional informs backlinks. No secret travels here.
 type createReferenceRequest struct {
-	Title   string   `json:"title"`
-	URL     string   `json:"url"`
-	Content string   `json:"content"`
-	Informs []string `json:"informs"`
+	Title      string   `json:"title"`
+	URL        string   `json:"url"`
+	Content    string   `json:"content"`
+	Informs    []string `json:"informs"`
+	Facets     []string `json:"facets"`     // closed-set axis (D-0002); unknown facet → 422
+	Components []string `json:"components"` // curated subsystem/tool axis (D-0002)
 }
 
 // createReferenceResponse is the POST /api/references 201 payload.
@@ -812,9 +814,9 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, nil, nil)
+	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, req.Facets, req.Components)
 	if err != nil {
-		// Validation (empty url, dangling informs) surfaces as 422, like features.
+		// Validation (empty url, dangling informs, unknown facet) surfaces as 422, like features.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}

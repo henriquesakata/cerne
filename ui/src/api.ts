@@ -45,6 +45,8 @@ export type Reference = {
   url?: string // external source link
   external?: boolean // true for a registered external source
   informs?: string[] // F-/D- ids this source motivated
+  facets?: string[] // closed axis (D-0002): infra|code|data|process|auth
+  components?: string[] // open, slugified subsystem/tool axis (D-0002)
   created_at: string
   updated_at: string
 }
@@ -511,11 +513,13 @@ export async function createReference(
   url: string,
   content: string,
   informs: string[],
+  facets: string[] = [],
+  components: string[] = [],
 ): Promise<CreateReferenceOutcome> {
   const r = await fetch(`${base()}/references`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, url, content, informs }),
+    body: JSON.stringify({ title, url, content, informs, facets, components }),
   })
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true, reference: ((await r.json()) as { reference: Reference }).reference }
