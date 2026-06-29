@@ -201,3 +201,41 @@ func TestLintHistoricalFlaggedByID(t *testing.T) {
 		t.Fatalf("id mention must stay flagged, got %d: %+v", len(refs), refs)
 	}
 }
+
+// TestLintHistoricalAliasCurationClears proves the end-to-end effect of the
+// forget-alias curation: an entity with a noisy alias flags a doc using that
+// word; once the alias is dropped, the finding is gone. (Simulates the post-
+// curation store state — ForgetHistoricalAliases' git sync is exercised via the
+// CLI path, not here.)
+func TestLintHistoricalAliasCurationClears(t *testing.T) {
+	dir := t.TempDir()
+	save := func(aliases []string) {
+		t.Helper()
+		if err := store.SaveHistorical(dir, store.Historical{
+			ID: "H-0001", Name: "Bills", Aliases: aliases,
+			SupersededBy: "Finance", Reason: "absorvido", State: domain.StateSuperseded,
+			CreatedAt: time.Unix(0, 0).UTC(),
+		}); err != nil {
+			t.Fatalf("SaveHistorical: %v", err)
+		}
+	}
+	writeLiveFeatureDoc(t, dir, "F-0001", "O fluxo de boletos roda no Finance.")
+
+	save([]string{"bills", "boletos"})
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 1 {
+		t.Fatalf("pre-curation want 1 ref-to-superseded (alias boletos), got %d: %+v", len(refs), refs)
+	}
+
+	save([]string{"bills"}) // forget "boletos"
+	findings, err = Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 0 {
+		t.Fatalf("post-curation want 0 ref-to-superseded, got: %+v", refs)
+	}
+}

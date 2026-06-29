@@ -151,3 +151,53 @@ func RecordHistorical(repoDir, projDir, name, supersededBy, reason string, alias
 	}
 	return h, created, nil
 }
+
+// removeAliases returns existing without the aliases in forget (case-insensitive
+// via slug.Fold), preserving order and casing of the kept entries. Entries in
+// forget that are absent are ignored; an entity may legitimately end with zero
+// aliases.
+func removeAliases(existing, forget []string) []string {
+	drop := make(map[string]bool, len(forget))
+	for _, a := range forget {
+		drop[slug.Fold(a)] = true
+	}
+	kept := make([]string, 0, len(existing))
+	for _, a := range existing {
+		if !drop[slug.Fold(a)] {
+			kept = append(kept, a)
+		}
+	}
+	return kept
+}
+
+// ForgetHistoricalAliases removes the given aliases (case-insensitive, via
+// slug.Fold) from the historical entity named name, then syncs the backend.
+// Aliases not present are silently skipped. It errors when no historical matches
+// name. This is the curation counterpart to retire's union semantics: drop a
+// noisy/ambiguous alias (e.g. a common domain word like "bills" that the lint
+// would otherwise flag in every document). Leaving an entity alias-less is
+// allowed — it then matches by id only.
+func ForgetHistoricalAliases(repoDir, projDir, name string, forget []string) (store.Historical, error) {
+	h, found, err := findHistoricalByName(repoDir, name)
+	if err != nil {
+		return store.Historical{}, err
+	}
+	if !found {
+		return store.Historical{}, fmt.Errorf("nenhuma entidade histórica com nome %q", name)
+	}
+	h.Aliases = removeAliases(h.Aliases, forget)
+	if err := store.SaveHistorical(repoDir, h); err != nil {
+		return store.Historical{}, err
+	}
+	payload := map[string]string{"name": h.Name}
+	if len(h.Aliases) > 0 {
+		payload["aliases"] = strings.Join(h.Aliases, ",")
+	}
+	if err := store.AppendEvent(repoDir, domain.NewEvent(h.ID, historicalUpdatedEvent, payload, EventActor())); err != nil {
+		return store.Historical{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: forget aliases on %s (%s)", h.ID, name)); err != nil {
+		return store.Historical{}, err
+	}
+	return h, nil
+}

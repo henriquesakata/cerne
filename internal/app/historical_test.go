@@ -152,3 +152,18 @@ func TestSaveHistoricalEntityValidationLeavesNothing(t *testing.T) {
 		t.Fatalf("validation failure appended events: %+v", evs)
 	}
 }
+
+// TestRemoveAliases covers the curation logic behind ForgetHistoricalAliases:
+// case-insensitive removal, absent entries are no-ops, removing all is allowed.
+func TestRemoveAliases(t *testing.T) {
+	got := removeAliases([]string{"bills", "boletos", "cobranca"}, []string{"BILLS", "boletos", "absent"})
+	if len(got) != 1 || got[0] != "cobranca" {
+		t.Fatalf("removeAliases = %v, want [cobranca] (case-insensitive drop, absent ignored)", got)
+	}
+	if g := removeAliases([]string{"bills"}, []string{"bills"}); len(g) != 0 {
+		t.Fatalf("removeAliases dropping all = %v, want empty", g)
+	}
+	if g := removeAliases([]string{"bills"}, []string{"x"}); len(g) != 1 || g[0] != "bills" {
+		t.Fatalf("removeAliases no-op = %v, want [bills]", g)
+	}
+}
