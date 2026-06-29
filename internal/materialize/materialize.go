@@ -190,6 +190,12 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 		if err != nil {
 			return nil, err
 		}
+		if len(d.Facets) > 0 {
+			line += " · facet " + strings.Join(d.Facets, ",")
+		}
+		if len(d.Components) > 0 {
+			line += " · comp " + strings.Join(d.Components, ",")
+		}
 		data.Decisions = append(data.Decisions, line)
 	}
 

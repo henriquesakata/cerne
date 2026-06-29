@@ -25,19 +25,29 @@ type DecisionOutcome struct {
 // body when given, else a stub), appends the decision.created event,
 // commits+pushes the backend and refreshes the docs.lock snapshot in projDir. A
 // non-empty body makes 'decision new' one-shot: the ADR is born with real
-// content, no draft+push needed.
-func CreateDecision(repoDir, projDir, title, body string) (store.Decision, error) {
+// content, no draft+push needed. facets/components tag the decision on the
+// shared D-0002 axes (facet closed-set, component curated), like a note.
+func CreateDecision(repoDir, projDir, title, body string, facets, components []string) (store.Decision, error) {
+	// Validate/normalize tags before any side effect (NextID, save): an unknown
+	// facet must abort without minting an id or writing a file.
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return store.Decision{}, err
+	}
+	normComponents := domain.NormalizeComponents(components)
 	id, err := store.NextID(repoDir, "D")
 	if err != nil {
 		return store.Decision{}, err
 	}
 	now := time.Now().UTC()
 	d := store.Decision{
-		ID:        id,
-		Title:     title,
-		State:     domain.DecisionActive,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		Title:      title,
+		State:      domain.DecisionActive,
+		Facets:     normFacets,
+		Components: normComponents,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.SaveDecision(repoDir, d); err != nil {
 		return store.Decision{}, err
@@ -101,6 +111,51 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 		return out, err
 	}
 	return DecisionOutcome{ID: id, From: oldState, To: newState}, nil
+}
+
+// RetagDecision sets the tag axes of an active decision in the backend clone at
+// repoDir. Each axis is replaced only when its set flag is true, so a caller can
+// update facets without touching components (or clear an axis by passing an empty
+// slice with set=true); state, superseded_by, reason and the ADR body are
+// preserved. Facets are validated against the closed set before any write, so an
+// unknown facet aborts leaving the decision untouched. Appends decision.retagged
+// and syncs the backend + docs.lock in projDir.
+func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Decision, error) {
+	d, err := store.LoadDecision(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Decision{}, fmt.Errorf("decisão %s não encontrada no backend", id)
+	}
+	if err != nil {
+		return store.Decision{}, err
+	}
+	if d.State != domain.DecisionActive {
+		return store.Decision{}, fmt.Errorf("decisão %s não está active (está %s) — retag só vale para decisão ativa", id, d.State)
+	}
+	if setFacets {
+		nf, err := domain.NormalizeFacets(facets)
+		if err != nil {
+			return store.Decision{}, err // unknown facet: decision untouched
+		}
+		d.Facets = nf
+	}
+	if setComponents {
+		d.Components = domain.NormalizeComponents(components)
+	}
+	d.UpdatedAt = time.Now().UTC()
+	if err := store.SaveDecision(repoDir, d); err != nil {
+		return store.Decision{}, err
+	}
+	ev := domain.NewEvent(id, "decision.retagged", map[string]string{
+		"facets":     strings.Join(d.Facets, ","),
+		"components": strings.Join(d.Components, ","),
+	}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Decision{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		return store.Decision{}, err
+	}
+	return d, nil
 }
 
 // DecisionDocPath returns the backend path of a decision's content document.

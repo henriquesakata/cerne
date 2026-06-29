@@ -50,4 +50,9 @@ func TestCerneAuthoringDocumentsTags(t *testing.T) {
 
 	// C7 — tags fold into the FTS body (search/ask find by tag).
 	contains("C7", "FTS")
+
+	// C8 (F-0087) — decisions carry the same tag surface: new, list, retag.
+	contains("C8", "decision new")
+	contains("C8", "decision list")
+	contains("C8", "decision retag")
 }

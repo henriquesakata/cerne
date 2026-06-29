@@ -202,6 +202,11 @@ func collectRows(repoDir string) ([]row, error) {
 		if exists {
 			r.doc, r.body = "doc", body
 		}
+		// Index the tags into the body so a search by facet/component finds the
+		// decision even when the term never appears in its prose (mirrors notes).
+		if tags := strings.Join(append(append([]string{}, d.Facets...), d.Components...), " "); tags != "" {
+			r.body = strings.TrimSpace(r.body + " " + tags)
+		}
 		rows = append(rows, r)
 	}
 	for _, ref := range references {

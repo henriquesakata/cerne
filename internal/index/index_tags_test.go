@@ -71,3 +71,34 @@ func TestSearchFindsReferenceByTag(t *testing.T) {
 		t.Fatalf("Search(gitea) = %+v, want R-0001 via component tag", results)
 	}
 }
+
+// TestSearchFindsDecisionByTag: a decision's facet/component tags are indexed
+// into its body, so a search by the tag surfaces it even when the term never
+// appears in the ADR prose (mirrors notes/references).
+func TestSearchFindsDecisionByTag(t *testing.T) {
+	repoDir := t.TempDir()
+	now := time.Now().UTC()
+	d := store.Decision{
+		ID: "D-0001", Title: "Escolha de IdP", State: domain.DecisionActive,
+		Facets: []string{"auth"}, Components: []string{"keycloak"},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveDecision(repoDir, d); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	// Body deliberately omits "keycloak": only the component tag carries it.
+	writeContent(t, repoDir, "content/decisions/D-0001.md",
+		"---\ncerne_id: D-0001\n---\n\n## Contexto\n\nPrecisamos de um provedor de identidade sem citar a ferramenta.\n")
+
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	results, err := Search(dbPath, "keycloak", 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 1 || results[0].EntityID != "D-0001" {
+		t.Fatalf("Search(keycloak) = %+v, want D-0001 via component tag", results)
+	}
+}

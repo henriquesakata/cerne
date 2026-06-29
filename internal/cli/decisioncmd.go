@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/dectmpl"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/llm"
+	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -26,30 +29,156 @@ func newDecisionCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newDecisionNewCmd(&dir))
+	cmd.AddCommand(newDecisionListCmd(&dir))
 	cmd.AddCommand(newDecisionDraftCmd(&dir))
+	cmd.AddCommand(newDecisionRetagCmd(&dir))
 	cmd.AddCommand(newDecisionSubstituirCmd(&dir))
 	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
 }
 
+func newDecisionListCmd(dir *string) *cobra.Command {
+	var all, asJSON bool
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "Listar decisões (ADRs) — ativas por padrão; --all inclui história",
+		Long: "Lista as decisões lidas direto do backend (store), não da projeção '.docs/'. Por padrão mostra só " +
+			"as ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
+			"(facet/componente, sucessora). Filtre por --facet e/ou --component (E lógico). --json para saída estruturada.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDecisionList(cmd, *dir, all, asJSON, facet, component)
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "incluir decisões superseded (história)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
+	cmd.Flags().StringVar(&facet, "facet", "", "filtrar por facet (ex.: auth)")
+	cmd.Flags().StringVar(&component, "component", "", "filtrar por componente (ex.: keycloak)")
+	return cmd
+}
+
+func runDecisionList(cmd *cobra.Command, dir string, all, asJSON bool, facet, component string) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	decisions, err := store.LoadAllDecisions(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	// Normalize the filters to the stored form so '--facet Auth'/'--component
+	// Keycloak' match the lower/slug values persisted on the decision.
+	facetQ := strings.ToLower(strings.TrimSpace(facet))
+	compQ := slug.Make(component)
+	w := cmd.OutOrStdout()
+	shown := make([]store.Decision, 0, len(decisions))
+	for _, d := range decisions {
+		if !all && d.State != domain.DecisionActive {
+			continue
+		}
+		if facetQ != "" && !slices.Contains(d.Facets, facetQ) {
+			continue
+		}
+		if compQ != "" && !slices.Contains(d.Components, compQ) {
+			continue
+		}
+		shown = append(shown, d)
+	}
+
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Decisions []store.Decision `json:"decisions"`
+		}{shown})
+	}
+
+	for _, d := range shown {
+		line := fmt.Sprintf("%s  [%s]  %s", d.ID, d.State, d.Title)
+		var tags []string
+		if len(d.Facets) > 0 {
+			tags = append(tags, "facet "+strings.Join(d.Facets, ","))
+		}
+		if len(d.Components) > 0 {
+			tags = append(tags, "comp "+strings.Join(d.Components, ","))
+		}
+		if d.SupersededBy != "" {
+			tags = append(tags, "→ "+d.SupersededBy)
+		}
+		if len(tags) > 0 {
+			line += "  · " + strings.Join(tags, " · ")
+		}
+		fmt.Fprintln(w, line)
+	}
+	if len(shown) == 0 {
+		if all {
+			fmt.Fprintln(w, "Nenhuma decisão registrada. Use 'cerne decision new \"<título>\"' para registrar um ADR.")
+		} else {
+			fmt.Fprintln(w, "Nenhuma decisão ativa. Use 'cerne decision new \"<título>\"', ou 'cerne decision list --all' para ver história.")
+		}
+	}
+	return nil
+}
+
+func newDecisionRetagCmd(dir *string) *cobra.Command {
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "retag <id>",
+		Short: "Redefinir os tags (facet/componente) de uma decisão ativa",
+		Long: "Define ou substitui os eixos de tag de uma decisão ativa, sem supersedir — preserva estado e corpo. " +
+			"Altera só o eixo passado: 'retag D-0001 --component keycloak' mantém os facets; '--facet \"\"' limpa os " +
+			"facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDecisionRetag(cmd, *dir, args[0], facet, component,
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+		},
+	}
+	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
+	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	return cmd
+}
+
+func runDecisionRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+	if !setFacets && !setComponents {
+		return fmt.Errorf("informe ao menos --facet ou --component")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	d, err := app.RetagDecision(ctx.repoDir, ctx.projDir, id,
+		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+		d.ID, strings.Join(d.Facets, ", "), strings.Join(d.Components, ", "))
+	return nil
+}
+
 func newDecisionNewCmd(dir *string) *cobra.Command {
-	var file string
+	var file, facet, component string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a decision (active); one-shot with a --file/stdin body",
 		Long: "Cria uma decisão ativa. Com corpo (--file ou stdin com pipe) é one-shot: o ADR nasce com " +
 			"conteúdo real, já commitado e enviado — sem o ciclo draft+push. Sem corpo, nasce como stub do " +
-			"template para preencher.",
+			"template para preencher. Use --facet (eixo fechado: infra,code,data,process,auth) e --component " +
+			"(subsistema/ferramenta, ex.: keycloak,gitea) para organizar — ambos multivalor, separados por vírgula.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecisionNew(cmd, *dir, args[0], file)
+			return runDecisionNew(cmd, *dir, args[0], file, facet, component)
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "file with the ADR body (defaults to piped stdin); one-shot, skips draft+push")
+	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
+	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. keycloak,gitea)")
 	return cmd
 }
 
-func runDecisionNew(cmd *cobra.Command, dir, title, file string) error {
+func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return fmt.Errorf("o título da decisão não pode ser vazio")
@@ -62,7 +191,7 @@ func runDecisionNew(cmd *cobra.Command, dir, title, file string) error {
 	if err != nil {
 		return err
 	}
-	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body)
+	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(facet), splitInforms(component))
 	if err != nil {
 		return err
 	}
