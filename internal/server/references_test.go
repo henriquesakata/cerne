@@ -46,7 +46,7 @@ func TestCreateReferenceEndpointDangling(t *testing.T) {
 // inform it (the reverse "Fontes" backlink).
 func TestFeatureDetailInformedBy(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"F-0001"}); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"F-0001"}, nil, nil); err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
 	var got struct {
@@ -69,7 +69,7 @@ func TestDecisionDetailInformedBy(t *testing.T) {
 	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Dec", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
 	}
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"D-0001"}); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"D-0001"}, nil, nil); err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
 	var got struct {
