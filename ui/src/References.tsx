@@ -1,5 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction,
+} from 'react'
 import Markdown from './Markdown'
+import Tag from './Tag'
 import {
   createReference,
   fetchReference,
@@ -24,9 +32,32 @@ function entityHref(id: string): string {
   return id.startsWith('D-') ? `#/d/${encodeURIComponent(id)}` : `#/f/${encodeURIComponent(id)}`
 }
 
+// toggleIn returns a handler that adds/removes a value from a Set state,
+// always producing a fresh Set so React sees the change (mirrors Notes).
+function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
+  return (v: string) =>
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(v)) next.delete(v)
+      else next.add(v)
+      return next
+    })
+}
+
+function sortedUnique(values: string[]): string[] {
+  return Array.from(new Set(values)).sort()
+}
+
+// parseCsv splits a comma-separated input into trimmed, non-empty tokens.
+function parseCsv(s: string): string[] {
+  return s.split(',').map((t) => t.trim()).filter((t) => t !== '')
+}
+
 export default function References() {
   const [references, setReferences] = useState<Reference[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
+  const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
 
   const version = useLiveVersion()
   const load = () => {
@@ -39,11 +70,40 @@ export default function References() {
   }
   useEffect(load, [version])
 
+  // Filter options derive from every loaded reference (not the filtered set), so
+  // the available chips stay stable as the user narrows down (mirrors Notes).
+  const allFacets = useMemo(
+    () => sortedUnique((references ?? []).flatMap((r) => r.facets ?? [])),
+    [references],
+  )
+  const allComponents = useMemo(
+    () => sortedUnique((references ?? []).flatMap((r) => r.components ?? [])),
+    [references],
+  )
+
   if (error) return <p className="status error">Erro ao carregar referências: {error}</p>
   if (!references) return <p className="status">Carregando…</p>
 
+  const toggleFacet = toggleIn(setSelFacets)
+  const toggleComponent = toggleIn(setSelComponents)
+  const clearFilters = () => {
+    setSelFacets(new Set())
+    setSelComponents(new Set())
+  }
+  const hasFilter = selFacets.size > 0 || selComponents.size > 0
+  const hasOptions = allFacets.length > 0 || allComponents.length > 0
+
+  // AND between axes, OR within an axis (crit. 5): mirrors Notes and the CLI's
+  // --facet/--component AND while letting a multi-select widen each axis.
+  const matches = (ref: Reference): boolean => {
+    const fOk = selFacets.size === 0 || (ref.facets ?? []).some((f) => selFacets.has(f))
+    const cOk = selComponents.size === 0 || (ref.components ?? []).some((c) => selComponents.has(c))
+    return fOk && cOk
+  }
+  const shown = references.filter(matches)
+
   const byState = new Map<string, Reference[]>()
-  for (const ref of references) {
+  for (const ref of shown) {
     const list = byState.get(ref.state) ?? []
     list.push(ref)
     byState.set(ref.state, list)
@@ -52,9 +112,51 @@ export default function References() {
   return (
     <main className="page">
       <h1>Referências</h1>
-      <p className="counts">{references.length} referência(s)</p>
+      <p className="counts">
+        {shown.length} referência(s){hasFilter && ` de ${references.length}`}
+      </p>
       <NewExternalReference onCreated={load} />
+      {hasOptions && (
+        <div className="note-filter">
+          {allFacets.length > 0 && (
+            <div className="note-filter-group">
+              <span className="note-filter-label">Facets</span>
+              {allFacets.map((f) => (
+                <Tag
+                  key={f}
+                  axis="facet"
+                  value={f}
+                  active={selFacets.has(f)}
+                  onToggle={toggleFacet}
+                />
+              ))}
+            </div>
+          )}
+          {allComponents.length > 0 && (
+            <div className="note-filter-group">
+              <span className="note-filter-label">Componentes</span>
+              {allComponents.map((c) => (
+                <Tag
+                  key={c}
+                  axis="component"
+                  value={c}
+                  active={selComponents.has(c)}
+                  onToggle={toggleComponent}
+                />
+              ))}
+            </div>
+          )}
+          {hasFilter && (
+            <button type="button" className="note-filter-clear" onClick={clearFilters}>
+              Limpar
+            </button>
+          )}
+        </div>
+      )}
       {references.length === 0 && <p className="muted">Nenhuma referência registrada.</p>}
+      {references.length > 0 && shown.length === 0 && (
+        <p className="muted">Nenhuma referência corresponde ao filtro.</p>
+      )}
       {ORDER.map((state) => {
         const list = byState.get(state) ?? []
         if (list.length === 0) return null
@@ -65,15 +167,40 @@ export default function References() {
               <span className="column-count">{list.length}</span>
             </h2>
             <ul className="entity-list">
-              {list.map((ref) => (
-                <li key={ref.id}>
-                  <a className="entity-row" href={`#/r/${encodeURIComponent(ref.id)}`}>
-                    <span className="card-id">{ref.id}</span>
-                    {ref.external && <span className="badge badge-external">externa</span>}
-                    <span className="entity-title">{ref.title}</span>
-                  </a>
-                </li>
-              ))}
+              {list.map((ref) => {
+                const hasTags = (ref.facets?.length ?? 0) > 0 || (ref.components?.length ?? 0) > 0
+                return (
+                  <li key={ref.id} className="note-row">
+                    <a className="entity-row" href={`#/r/${encodeURIComponent(ref.id)}`}>
+                      <span className="card-id">{ref.id}</span>
+                      {ref.external && <span className="badge badge-external">externa</span>}
+                      <span className="entity-title">{ref.title}</span>
+                    </a>
+                    {hasTags && (
+                      <span className="note-tags">
+                        {ref.facets?.map((f) => (
+                          <Tag
+                            key={`f-${f}`}
+                            axis="facet"
+                            value={f}
+                            active={selFacets.has(f)}
+                            onToggle={toggleFacet}
+                          />
+                        ))}
+                        {ref.components?.map((c) => (
+                          <Tag
+                            key={`c-${c}`}
+                            axis="component"
+                            value={c}
+                            active={selComponents.has(c)}
+                            onToggle={toggleComponent}
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </section>
         )
@@ -89,6 +216,8 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
   const [url, setUrl] = useState('')
   const [content, setContent] = useState('')
   const [informs, setInforms] = useState('')
+  const [facets, setFacets] = useState('')
+  const [components, setComponents] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,8 +234,10 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
     if (title.trim() === '' || url.trim() === '') return
     setBusy(true)
     setError(null)
-    const ids = informs.split(',').map((s) => s.trim()).filter((s) => s !== '')
-    createReference(title.trim(), url.trim(), content, ids).then((r) => {
+    const ids = parseCsv(informs)
+    // Facet/component validation lives in the server (ErrUnknownFacet → 422), so
+    // free CSV entry is safe — an invalid facet surfaces as the form error below.
+    createReference(title.trim(), url.trim(), content, ids, parseCsv(facets), parseCsv(components)).then((r) => {
       setBusy(false)
       if (!r.ok) {
         setError(r.error)
@@ -116,6 +247,8 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
       setUrl('')
       setContent('')
       setInforms('')
+      setFacets('')
+      setComponents('')
       setOpen(false)
       onCreated()
     })
@@ -136,6 +269,16 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
         value={informs}
         onChange={(e) => setInforms(e.target.value)}
         placeholder="Informou (opcional): F-0042, D-0007"
+      />
+      <input
+        value={facets}
+        onChange={(e) => setFacets(e.target.value)}
+        placeholder="Facets (opcional): infra, code"
+      />
+      <input
+        value={components}
+        onChange={(e) => setComponents(e.target.value)}
+        placeholder="Componentes (opcional): gitea, kpack"
       />
       {error && <p className="status error">Erro: {error}</p>}
       <div className="new-ref-actions">
@@ -180,6 +323,12 @@ export function ReferenceDetail({ id }: { id: string }) {
             {STATE_LABELS[ref.state] ?? ref.state}
           </span>
           {ref.external && <span className="badge badge-external">externa</span>}
+          {ref.facets?.map((f) => (
+            <Tag key={`f-${f}`} axis="facet" value={f} />
+          ))}
+          {ref.components?.map((c) => (
+            <Tag key={`c-${c}`} axis="component" value={c} />
+          ))}
         </p>
         {ref.url && (
           <p className="feature-note">
