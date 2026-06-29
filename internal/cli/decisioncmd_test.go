@@ -276,6 +276,102 @@ func TestDecisionDraftByoKeyWritesAndCommits(t *testing.T) {
 	}
 }
 
+// TestDecisionNewWithTags: --facet/--component are normalized and persisted on
+// the decision, mirroring 'note new'.
+func TestDecisionNewWithTags(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	out, err := execCerne(t, "decision", "new", "Usar Keycloak", "--facet", "Auth,auth", "--component", "Keycloak", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("decision new --facet: %v\n%s", err, out)
+	}
+	d, err := store.LoadDecision(repoDir, "D-0001")
+	if err != nil {
+		t.Fatalf("LoadDecision: %v", err)
+	}
+	if len(d.Facets) != 1 || d.Facets[0] != "auth" || len(d.Components) != 1 || d.Components[0] != "keycloak" {
+		t.Fatalf("tags = %v / %v, want [auth] / [keycloak]", d.Facets, d.Components)
+	}
+	// an unknown facet is rejected.
+	if _, err := execCerne(t, "decision", "new", "X", "--facet", "prod", "--dir", projDir); err == nil {
+		t.Fatalf("decision new --facet prod succeeded, want ErrUnknownFacet")
+	}
+}
+
+// TestDecisionList covers active-by-default, --all, --facet/--component filters
+// (AND), and --json, mirroring 'note list'.
+func TestDecisionList(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "decision", "new", "ADR Auth", "--facet", "auth", "--component", "keycloak", "--dir", projDir); err != nil {
+		t.Fatalf("new D-0001: %v", err)
+	}
+	if _, err := execCerne(t, "decision", "new", "ADR Infra", "--facet", "infra", "--dir", projDir); err != nil {
+		t.Fatalf("new D-0002: %v", err)
+	}
+	// supersede D-0002 (becomes superseded; D-0001 stays active).
+	if _, err := execCerne(t, "decision", "substituir", "D-0002", "--by", "D-0001", "--reason", "x", "--dir", projDir); err != nil {
+		t.Fatalf("substituir: %v", err)
+	}
+
+	// default: only active.
+	out, err := execCerne(t, "decision", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("decision list: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "D-0001") || strings.Contains(out, "D-0002") {
+		t.Fatalf("default list should show only active D-0001:\n%s", out)
+	}
+	// --all includes superseded.
+	out, _ = execCerne(t, "decision", "list", "--all", "--dir", projDir)
+	if !strings.Contains(out, "D-0001") || !strings.Contains(out, "D-0002") {
+		t.Fatalf("--all should include superseded D-0002:\n%s", out)
+	}
+	// --facet filters (AND); auth matches D-0001 only.
+	out, _ = execCerne(t, "decision", "list", "--facet", "auth", "--dir", projDir)
+	if !strings.Contains(out, "D-0001") {
+		t.Fatalf("--facet auth should show D-0001:\n%s", out)
+	}
+	// --facet infra over active set is empty (D-0002 superseded).
+	out, _ = execCerne(t, "decision", "list", "--facet", "infra", "--dir", projDir)
+	if strings.Contains(out, "D-0002") {
+		t.Fatalf("--facet infra (active only) should be empty:\n%s", out)
+	}
+	// --component filters.
+	out, _ = execCerne(t, "decision", "list", "--component", "keycloak", "--dir", projDir)
+	if !strings.Contains(out, "D-0001") {
+		t.Fatalf("--component keycloak should show D-0001:\n%s", out)
+	}
+	// --json carries the tags.
+	out, _ = execCerne(t, "decision", "list", "--json", "--dir", projDir)
+	if !strings.Contains(out, "\"facets\"") || !strings.Contains(out, "auth") {
+		t.Fatalf("--json should carry facets:\n%s", out)
+	}
+}
+
+// TestDecisionRetag: retag updates one axis, preserves the other, rejects an
+// empty invocation and an unknown facet.
+func TestDecisionRetag(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "decision", "new", "ADR", "--facet", "auth", "--dir", projDir); err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	out, err := execCerne(t, "decision", "retag", "D-0001", "--component", "keycloak", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("decision retag: %v\n%s", err, out)
+	}
+	d, _ := store.LoadDecision(repoDir, "D-0001")
+	if len(d.Facets) != 1 || d.Facets[0] != "auth" || len(d.Components) != 1 || d.Components[0] != "keycloak" {
+		t.Fatalf("after retag = %v / %v, want [auth] / [keycloak]", d.Facets, d.Components)
+	}
+	// no axis flag → error.
+	if _, err := execCerne(t, "decision", "retag", "D-0001", "--dir", projDir); err == nil {
+		t.Fatalf("retag with no axis succeeded, want error")
+	}
+	// unknown facet → error.
+	if _, err := execCerne(t, "decision", "retag", "D-0001", "--facet", "prod", "--dir", projDir); err == nil {
+		t.Fatalf("retag --facet prod succeeded, want ErrUnknownFacet")
+	}
+}
+
 // TestDecisionDraftUnknownDecision errors when the id does not exist.
 func TestDecisionDraftUnknownDecision(t *testing.T) {
 	projDir, _, _ := setupProject(t)

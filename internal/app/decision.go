@@ -113,6 +113,51 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 	return DecisionOutcome{ID: id, From: oldState, To: newState}, nil
 }
 
+// RetagDecision sets the tag axes of an active decision in the backend clone at
+// repoDir. Each axis is replaced only when its set flag is true, so a caller can
+// update facets without touching components (or clear an axis by passing an empty
+// slice with set=true); state, superseded_by, reason and the ADR body are
+// preserved. Facets are validated against the closed set before any write, so an
+// unknown facet aborts leaving the decision untouched. Appends decision.retagged
+// and syncs the backend + docs.lock in projDir.
+func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Decision, error) {
+	d, err := store.LoadDecision(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Decision{}, fmt.Errorf("decisão %s não encontrada no backend", id)
+	}
+	if err != nil {
+		return store.Decision{}, err
+	}
+	if d.State != domain.DecisionActive {
+		return store.Decision{}, fmt.Errorf("decisão %s não está active (está %s) — retag só vale para decisão ativa", id, d.State)
+	}
+	if setFacets {
+		nf, err := domain.NormalizeFacets(facets)
+		if err != nil {
+			return store.Decision{}, err // unknown facet: decision untouched
+		}
+		d.Facets = nf
+	}
+	if setComponents {
+		d.Components = domain.NormalizeComponents(components)
+	}
+	d.UpdatedAt = time.Now().UTC()
+	if err := store.SaveDecision(repoDir, d); err != nil {
+		return store.Decision{}, err
+	}
+	ev := domain.NewEvent(id, "decision.retagged", map[string]string{
+		"facets":     strings.Join(d.Facets, ","),
+		"components": strings.Join(d.Components, ","),
+	}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Decision{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		return store.Decision{}, err
+	}
+	return d, nil
+}
+
 // DecisionDocPath returns the backend path of a decision's content document.
 func DecisionDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "decisions", id+".md")
