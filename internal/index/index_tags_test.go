@@ -39,3 +39,35 @@ func TestSearchFindsNoteByTag(t *testing.T) {
 		t.Fatalf("Search(gitea) = %+v, want N-0001 via component tag", results)
 	}
 }
+
+// TestSearchFindsReferenceByTag: a reference's facet/component tags are indexed
+// into its body, so a search by the tag surfaces it even when the term never
+// appears in its prose (mirrors notes).
+func TestSearchFindsReferenceByTag(t *testing.T) {
+	repoDir := t.TempDir()
+	now := time.Now().UTC()
+	r := store.Reference{
+		ID: "R-0001", Title: "Artigo de setup", State: domain.ReferenceCurrent,
+		External: true, URL: "https://example.com/x",
+		Facets: []string{"infra"}, Components: []string{"gitea"},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveReference(repoDir, r); err != nil {
+		t.Fatalf("SaveReference: %v", err)
+	}
+	// Body deliberately omits "gitea": only the component tag carries it.
+	writeContent(t, repoDir, "content/references/R-0001.md",
+		"---\ncerne_id: R-0001\n---\n\n# Artigo de setup\n\nPassos sem citar a ferramenta.\n")
+
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	results, err := Search(dbPath, "gitea", 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 1 || results[0].EntityID != "R-0001" {
+		t.Fatalf("Search(gitea) = %+v, want R-0001 via component tag", results)
+	}
+}
