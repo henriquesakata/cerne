@@ -154,3 +154,50 @@ func TestLintHistoricalWordBoundaryAndSuccessor(t *testing.T) {
 		t.Fatalf("want no ref-to-superseded findings, got: %+v", refs)
 	}
 }
+
+// TestLintHistoricalNameNotMatchedAsTitle pins F-0092: a historical entity
+// whose Name is a common domain word ("Investments") must NOT turn every prose
+// use of that word into a ref-to-superseded. Only the id and specific aliases
+// identify the retired entity; the generic Name is a label, not a matcher.
+func TestLintHistoricalNameNotMatchedAsTitle(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.SaveHistorical(dir, store.Historical{
+		ID: "H-0002", Name: "Investments", Aliases: []string{"invest-app"},
+		SupersededBy: "Finance", Reason: "consolidado", State: domain.StateSuperseded,
+		CreatedAt: time.Unix(0, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("SaveHistorical: %v", err)
+	}
+	// Prose uses the domain word "investments" — not the id, not the alias.
+	writeLiveFeatureDoc(t, dir, "F-0001", "Os investments agora vivem no Finance.")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 0 {
+		t.Fatalf("common-word Name must not flag prose, got %d: %+v", len(refs), refs)
+	}
+}
+
+// TestLintHistoricalFlaggedByID guards criterion 2: dropping the Name needle
+// must not regress detection by id — a live doc naming H-0002 is still flagged.
+func TestLintHistoricalFlaggedByID(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.SaveHistorical(dir, store.Historical{
+		ID: "H-0002", Name: "Investments", Aliases: []string{"invest-app"},
+		SupersededBy: "Finance", Reason: "consolidado", State: domain.StateSuperseded,
+		CreatedAt: time.Unix(0, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("SaveHistorical: %v", err)
+	}
+	writeLiveFeatureDoc(t, dir, "F-0001", "Migrar o legado H-0002 para o Finance.")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 1 {
+		t.Fatalf("id mention must stay flagged, got %d: %+v", len(refs), refs)
+	}
+}
