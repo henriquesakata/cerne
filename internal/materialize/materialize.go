@@ -190,6 +190,12 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 		if err != nil {
 			return nil, err
 		}
+		if len(d.Facets) > 0 {
+			line += " · facet " + strings.Join(d.Facets, ",")
+		}
+		if len(d.Components) > 0 {
+			line += " · comp " + strings.Join(d.Components, ",")
+		}
 		data.Decisions = append(data.Decisions, line)
 	}
 
@@ -213,6 +219,12 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, okf, meta)
 		if err != nil {
 			return nil, err
+		}
+		if len(n.Facets) > 0 {
+			line += " · facet " + strings.Join(n.Facets, ",")
+		}
+		if len(n.Components) > 0 {
+			line += " · comp " + strings.Join(n.Components, ",")
 		}
 		data.Notes = append(data.Notes, line)
 	}

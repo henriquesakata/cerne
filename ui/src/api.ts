@@ -45,6 +45,8 @@ export type Reference = {
   url?: string // external source link
   external?: boolean // true for a registered external source
   informs?: string[] // F-/D- ids this source motivated
+  facets?: string[] // closed axis (D-0002): infra|code|data|process|auth
+  components?: string[] // open, slugified subsystem/tool axis (D-0002)
   created_at: string
   updated_at: string
 }
@@ -66,6 +68,8 @@ export type Note = {
   superseded_by?: string
   reason?: string
   informs?: string[] // F-/D- ids this knowledge informs
+  facets?: string[] // closed axis (D-0002): infra|code|data|process|auth
+  components?: string[] // open, slugified subsystem/tool axis (D-0002)
   created_at: string
   updated_at: string
 }
@@ -390,6 +394,21 @@ export async function setFeatureParent(
   return { ok: true }
 }
 
+// renameFeature altera o título de uma feature (PUT /api/features/{id}/title).
+// Permitido só em estados vivos; o servidor recusa (422) em estados terminais.
+export async function renameFeature(
+  id: string,
+  title: string,
+): Promise<SaveOutcome> {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
+
 // saveFeatureDoc grava um doc de ciclo de vida (spec|plan|result) como
 // markdown bruto; o servidor faz commit+push e atualiza o lock.
 export async function saveFeatureDoc(
@@ -494,11 +513,13 @@ export async function createReference(
   url: string,
   content: string,
   informs: string[],
+  facets: string[] = [],
+  components: string[] = [],
 ): Promise<CreateReferenceOutcome> {
   const r = await fetch(`${base()}/references`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, url, content, informs }),
+    body: JSON.stringify({ title, url, content, informs, facets, components }),
   })
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true, reference: ((await r.json()) as { reference: Reference }).reference }

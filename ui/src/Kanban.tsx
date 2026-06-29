@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import {
+  fetchLint,
   fetchState,
   type Feature,
   type FeatureState,
   type StateResponse,
 } from './api'
 import { useLiveVersion } from './live'
+
+// Rule name from the lint API contract (internal/lint: epic-behind-children):
+// an epic still candidate/approved while a child is already in development.
+// We read the finding, never recompute the predicate here — lint is the
+// single source of truth.
+const RULE_EPIC_BEHIND = 'epic-behind-children'
 
 // Lifecycle flow left to right: candidata → aprovada → em desenvolvimento → implementada.
 const OPEN_COLUMNS: FeatureState[] = [
@@ -32,6 +39,10 @@ export default function Kanban() {
   const [error, setError] = useState<string | null>(null)
   const [showClosed, setShowClosed] = useState(false)
   const [groupByEpic, setGroupByEpic] = useState(false)
+  // Epics flagged epic-behind-children by lint (a child already in dev while
+  // the epic itself is not started). Best-effort: lint is secondary, so a
+  // failure leaves the set empty and never breaks the board.
+  const [behind, setBehind] = useState<Set<string>>(() => new Set())
   const version = useLiveVersion()
 
   useEffect(() => {
@@ -43,6 +54,18 @@ export default function Kanban() {
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e)),
       )
+    fetchLint()
+      .then((findings) =>
+        setBehind(
+          new Set(
+            findings
+              .filter((f) => f.rule === RULE_EPIC_BEHIND)
+              .map((f) => f.entity)
+              .filter((e): e is string => !!e),
+          ),
+        ),
+      )
+      .catch(() => setBehind(new Set()))
   }, [version])
 
   if (error) return <p className="status error">Erro ao carregar o estado: {error}</p>
@@ -58,6 +81,7 @@ export default function Kanban() {
     childrenByParent.set(f.parent, list)
   }
   const isEpic = (id: string) => childrenByParent.has(id)
+  const isBehind = (id: string) => behind.has(id)
 
   const closed = state.features.filter((f) => isClosed(f.state)).length
 
@@ -91,12 +115,14 @@ export default function Kanban() {
           features={state.features}
           childrenByParent={childrenByParent}
           isEpic={isEpic}
+          isBehind={isBehind}
           showClosed={showClosed}
         />
       ) : (
         <Columns
           features={state.features}
           isEpic={isEpic}
+          isBehind={isBehind}
           showClosed={showClosed}
         />
       )}
@@ -107,10 +133,12 @@ export default function Kanban() {
 function Columns({
   features,
   isEpic,
+  isBehind,
   showClosed,
 }: {
   features: Feature[]
   isEpic: (id: string) => boolean
+  isBehind: (id: string) => boolean
   showClosed: boolean
 }) {
   const columns = showClosed ? [...OPEN_COLUMNS, ...CLOSED_COLUMNS] : OPEN_COLUMNS
@@ -131,7 +159,12 @@ function Columns({
             </h2>
             {fs.length === 0 && <p className="column-empty">—</p>}
             {fs.map((f) => (
-              <Card key={f.id} feature={f} isEpic={isEpic(f.id)} />
+              <Card
+                key={f.id}
+                feature={f}
+                isEpic={isEpic(f.id)}
+                isBehind={isBehind(f.id)}
+              />
             ))}
           </section>
         )
@@ -146,11 +179,13 @@ function EpicBoard({
   features,
   childrenByParent,
   isEpic,
+  isBehind,
   showClosed,
 }: {
   features: Feature[]
   childrenByParent: Map<string, Feature[]>
   isEpic: (id: string) => boolean
+  isBehind: (id: string) => boolean
   showClosed: boolean
 }) {
   const byId = new Map(features.map((f) => [f.id, f]))
@@ -178,11 +213,24 @@ function EpicBoard({
               <span className="column-count">
                 {done}/{all.length}
               </span>
+              {isBehind(eid) && (
+                <span
+                  className="badge badge-behind"
+                  title="um filho já está em desenvolvimento; planeje e inicie o épico"
+                >
+                  filho em dev
+                </span>
+              )}
             </h2>
             <div className="epic-lane-cards">
               {kids.length === 0 && <p className="column-empty">—</p>}
               {kids.map((f) => (
-                <Card key={f.id} feature={f} isEpic={isEpic(f.id)} />
+                <Card
+                  key={f.id}
+                  feature={f}
+                  isEpic={isEpic(f.id)}
+                  isBehind={isBehind(f.id)}
+                />
               ))}
             </div>
           </section>
@@ -204,12 +252,28 @@ function EpicBoard({
   )
 }
 
-function Card({ feature, isEpic }: { feature: Feature; isEpic: boolean }) {
+function Card({
+  feature,
+  isEpic,
+  isBehind = false,
+}: {
+  feature: Feature
+  isEpic: boolean
+  isBehind?: boolean
+}) {
   return (
     <a className={`card card-${feature.state}`} href={`#/f/${feature.id}`}>
       <span className="card-meta">
         <span className="card-id">{feature.id}</span>
         {isEpic && <span className="badge badge-epic">épico</span>}
+        {isBehind && (
+          <span
+            className="badge badge-behind"
+            title="um filho já está em desenvolvimento; planeje e inicie o épico"
+          >
+            filho em dev
+          </span>
+        )}
         {feature.module && <span className="badge">{feature.module}</span>}
       </span>
       <span className="card-title">{feature.title}</span>

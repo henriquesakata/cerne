@@ -29,6 +29,10 @@ var ErrParentNotFound = errors.New("feature-épico não encontrada")
 // (superseded/rejected): new work is not filed under a dead epic.
 var ErrParentTerminal = errors.New("a feature-épico está encerrada")
 
+// ErrTitleFrozen is returned when renaming a feature in a terminal state
+// (implemented/rejected/superseded): its title is frozen history.
+var ErrTitleFrozen = errors.New("o título da feature está congelado")
+
 // featureDocFilenames maps the API doc name to its backend filename.
 var featureDocFilenames = map[string]string{
 	"spec":   "spec.md",
@@ -169,6 +173,40 @@ func SetFeatureParent(repoDir, projDir, id, parent string) error {
 		msg = fmt.Sprintf("cerne: clear parent of %s", id)
 	}
 	return CommitAndSnapshot(repoDir, projDir, msg)
+}
+
+// RenameFeature changes a live feature's title, appends a feature.renamed event,
+// then commits, pushes and refreshes the docs.lock snapshot. A no-op (returns
+// nil, nothing committed) when the trimmed title is unchanged. The title is
+// data, mutable only while the feature is live: ErrTitleFrozen (wrapped) for a
+// terminal state (implemented/rejected/superseded). An empty/whitespace title is
+// rejected; store.ErrNotFound (wrapped) for an unknown feature.
+func RenameFeature(repoDir, projDir, id, newTitle string) error {
+	newTitle = strings.TrimSpace(newTitle)
+	if newTitle == "" {
+		return fmt.Errorf("o título da feature não pode ser vazio")
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return err
+	}
+	if f.Title == newTitle {
+		return nil // unchanged: nothing to commit
+	}
+	if !domain.TitleEditable(f.State) {
+		return fmt.Errorf("%w: %s (%s)", ErrTitleFrozen, id, f.State)
+	}
+	from := f.Title
+	f.Title = newTitle
+	f.UpdatedAt = time.Now().UTC()
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		return err
+	}
+	ev := domain.NewEvent(id, "feature.renamed", map[string]string{"from": from, "to": newTitle}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return err
+	}
+	return CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: rename %s", id))
 }
 
 // SaveFeatureDoc writes the markdown content of a feature lifecycle document

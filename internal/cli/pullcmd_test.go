@@ -268,40 +268,106 @@ func TestPullOKF(t *testing.T) {
 	}
 }
 
-// TestPullGuardsUnpushedEdits pins the footgun guard: pull refuses to wipe .docs/
-// when a tracked doc was edited locally and not pushed, preserving the edit; only
-// --force overrides it (restoring from the backend).
-func TestPullGuardsUnpushedEdits(t *testing.T) {
-	projDir, _, repoDir := setupProject(t)
+// pulledFeatureProject sets up a project with F-0001 (spec=body) pulled into
+// .docs/, returning the project, origin and the materialized spec path.
+func pulledFeatureProject(t *testing.T, body string) (projDir, origin, repoDir, specPath string) {
+	t.Helper()
+	projDir, origin, repoDir = setupProject(t)
 	id := newFeature(t, projDir, "Parcelamento", 1)
-	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Conteúdo original."))
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, body))
 	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
 		t.Fatalf("CommitAndPush: %v", err)
 	}
 	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
 		t.Fatalf("pull: %v\noutput: %s", err, out)
 	}
-	specPath := filepath.Join(projDir, ".docs", "current", "features", "F-0001-parcelamento", "spec.md")
+	specPath = filepath.Join(projDir, ".docs", "current", "features", "F-0001-parcelamento", "spec.md")
+	return projDir, origin, repoDir, specPath
+}
 
-	// Author a local edit and do NOT push it.
-	const edited = "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nEdição local não-enviada.\n"
-	if err := os.WriteFile(specPath, []byte(edited), 0o644); err != nil {
-		t.Fatalf("write edit: %v", err)
+// C2: pull 3-way merges a disjoint remote advance into .docs/, keeping the
+// unsent local edit; the next push then sends that edit.
+func TestPullMergesUnpushedEditDisjoint(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+
+	mine := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nEdição local não-enviada.\n"
+	mustWrite(t, specPath, mine)
+
+	// Another machine advances a DISJOINT document.
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	theirPlan := realDoc("F-0001", "Plano remoto disjunto.")
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "plan.md"), theirPlan)
+	if _, err := gitback.CommitAndPush(clone2, "remote disjoint plan"); err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
 	}
 
-	// pull without --force refuses, names the file, and preserves the edit.
+	// pull merges cleanly: no error, my edit kept, the remote plan brought in.
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("disjoint pull should merge, got: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(specPath); string(got) != mine {
+		t.Fatalf("pull discarded my unsent edit:\n%s", got)
+	}
+	planPath := filepath.Join(projDir, ".docs", "current", "features", "F-0001-parcelamento", "plan.md")
+	if got, err := os.ReadFile(planPath); err != nil || string(got) != theirPlan {
+		t.Fatalf("remote disjoint plan not merged in: %q err=%v", got, err)
+	}
+
+	// The kept edit is still unsent: the next push sends it.
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("push after merge: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+		t.Fatalf("push should send the merged-kept edit:\n%s", out)
+	}
+}
+
+// C3: a same-document change on both sides keeps MINE in .docs/, stashes THEIRS
+// under .docs/.conflicts/, reports the conflict, and never silently discards.
+func TestPullSameDocConflictNonDestructive(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+
+	mine := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nMinha edição não-enviada.\n"
+	mustWrite(t, specPath, mine)
+
+	// Another machine changes the SAME document.
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	theirSpec := realDoc("F-0001", "Versão remota do mesmo documento.")
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), theirSpec)
+	if _, err := gitback.CommitAndPush(clone2, "remote same-doc edit"); err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+
 	out, err := execCerne(t, "pull", "--dir", projDir)
 	if err == nil {
-		t.Fatalf("pull should refuse with unpushed edits:\n%s", out)
+		t.Fatalf("same-doc pull should report a conflict\n%s", out)
 	}
-	if !strings.Contains(err.Error(), "spec.md") || !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("guard error should name the file and --force: %v", err)
+	if !strings.Contains(out, "Conflito em 1 documento(s)") || !strings.Contains(out, ".conflicts") {
+		t.Fatalf("conflict output missing details:\n%s", out)
 	}
-	if got, rerr := os.ReadFile(specPath); rerr != nil || string(got) != edited {
-		t.Fatalf("guard must preserve the edit; err=%v got:\n%s", rerr, got)
+	// Mine kept in place.
+	if got, _ := os.ReadFile(specPath); string(got) != mine {
+		t.Fatalf("conflict must keep my version in .docs/:\n%s", got)
 	}
+	// Theirs stashed for resolution.
+	stash := filepath.Join(projDir, ".docs", ".conflicts", "current", "features", "F-0001-parcelamento", "spec.md")
+	if got, err := os.ReadFile(stash); err != nil || string(got) != theirSpec {
+		t.Fatalf("remote version not stashed under .conflicts: %q err=%v", got, err)
+	}
+}
 
-	// pull --force overrides the guard and restores from the backend.
+// --force keeps its meaning: discard unsent edits and restore from the backend.
+func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
+	projDir, _, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nEdição local não-enviada.\n")
+
 	if out, err := execCerne(t, "pull", "--force", "--dir", projDir); err != nil {
 		t.Fatalf("pull --force: %v\noutput: %s", err, out)
 	}

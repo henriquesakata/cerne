@@ -21,7 +21,7 @@ func TestCreateExternalReference(t *testing.T) {
 
 	r, err := CreateExternalReference(repoDir, projDir,
 		"  Artigo sobre PKCE  ", "https://example.com/pkce",
-		"# PKCE\n\nO fluxo PKCE protege o code grant.", []string{"F-0001"})
+		"# PKCE\n\nO fluxo PKCE protege o code grant.", []string{"F-0001"}, nil, nil)
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
@@ -70,13 +70,13 @@ func TestCreateExternalReference(t *testing.T) {
 func TestCreateExternalReferenceValidation(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "", "c", nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "", "c", nil, nil, nil); err == nil {
 		t.Fatalf("empty url should error")
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"F-9999"}); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"F-9999"}, nil, nil); err == nil {
 		t.Fatalf("dangling informs target should error")
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"X-1"}); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"X-1"}, nil, nil); err == nil {
 		t.Fatalf("non-F/D informs target should error")
 	}
 	// Nothing was written.
@@ -92,10 +92,10 @@ func TestReferencesInforming(t *testing.T) {
 	if _, err := CreateFeature(repoDir, projDir, "Feat", "", ""); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "A", "http://a", "ca", []string{"F-0001"}); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "A", "http://a", "ca", []string{"F-0001"}, nil, nil); err != nil {
 		t.Fatalf("create A: %v", err)
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "B", "http://b", "cb", nil); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "B", "http://b", "cb", nil, nil, nil); err != nil {
 		t.Fatalf("create B: %v", err)
 	}
 

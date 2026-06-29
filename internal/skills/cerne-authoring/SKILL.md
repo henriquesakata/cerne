@@ -33,6 +33,23 @@ cerne mints the canonical `F-NNNN` id and gates each transition on a real docume
 
 Terminal transitions when work is dropped or replaced: `cerne feature reject F-NNNN --reason "…"`; `cerne feature substituir F-NNNN --by F-MMMM --reason "…"`.
 
+## Validate locally before pushing
+
+Catch documentation debts **before** they churn the backend — same lint engine, no commit, no backend write:
+
+- `cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits (assembled over the pulled snapshot), without a pull. A partial `.docs/` (implemented features not materialized) yields no false positive.
+- `cerne push --dry-run` — shows exactly which documents **would** go to the backend and lints them, then stops before any commit/push. Exits non-zero if they would lint dirty, so it doubles as a pre-push gate.
+
+Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
+
+## Syncing when the backend may have advanced (parallel agents)
+
+Reconciliation is **per document**, so disjoint edits never collide:
+
+- **`cerne sync`** = pull (merge) + push, retrying transient advances — the one forward command when another agent/worktree may have changed the backend. Disjoint documents reconcile automatically; a real **same-document** conflict stops non-destructively (your version kept in `.docs/`, the remote version stashed under `.docs/.conflicts/`) and names the file with a diff, so you resolve and `cerne push`.
+- **`cerne push`** auto-rebases per document: a remote advance on a *different* document never blocks it; only the same document changed both ways is a conflict.
+- **`cerne pull`** 3-way merges: it brings in the remote advance while keeping your unsent `.docs/` edits (it does **not** refuse on unsent edits). `--force` is only the explicit "discard my edits" escape — never the only way forward.
+
 ## Spec structure (the template cerne scaffolds)
 
 cerne scaffolds a new feature's `spec.md` from a canonical template (the same one `cerne spec draft` asks the model to fill). Fill each section; the lifecycle gates treat the empty scaffold as a stub until you do. Sections, **in order**:
@@ -83,7 +100,7 @@ An **epic is just a feature that has children** — the role is inferred from th
 - Link, move, or detach an existing feature later: `cerne feature reparent F-NNNN F-MMMM` (or `--clear`).
 - **Epic ≠ module.** A module is the subsystem; an epic is decomposed work that may span modules. A feature can have both.
 - **Read the breakdown, don't hand-maintain it:** `cerne status` shows an `ÉPICOS` section with `n/m` progress, and `.docs/CONTEXT.md` carries an *Épico* column plus a `## Épicos` section.
-- The epic's lifecycle is independent (children completing does not auto-complete it). `cerne lint` flags inconsistencies — a live feature under a terminal epic, or an epic completed with open children.
+- The epic's lifecycle is independent (children completing does not auto-complete it). `cerne lint` flags inconsistencies — a live feature under a terminal epic, an epic completed with open children, or an epic still candidate/approved while a child is already in development (`epic-behind-children`: work started but the epic was never planned/started — write its plan and `cerne feature start` it).
 
 ## Decisions (ADRs)
 
@@ -93,6 +110,8 @@ Same model as a feature, with the **same two authoring flows as notes**:
 - **Stub (no body):** `cerne decision new "<title>"` mints `D-NNNN` (active) and scaffolds `content/decisions/D-NNNN.md` from the canonical ADR template (or run `cerne decision draft D-NNNN`); then `cerne pull`, fill the ADR in `.docs/current/decisions/D-NNNN-<slug>.md` (keep the `cerne_id` frontmatter), `cerne push`.
 
 Supersede with `cerne decision substituir D-NNNN --by D-MMMM --reason "…"` — the status (active/superseded) is cerne data, not prose in the ADR.
+
+Tag it (two axes, **like notes**): `cerne decision new "<title>" --facet <f> --component <c>` (both repeatable, comma-separated). **facet** is the closed, validated set — `infra`, `code`, `data`, `process`, `auth` (D-0002); an unknown facet is rejected with **no** write. **component** is open vocabulary, slug-normalized (`Keycloak` → `keycloak`). List and filter them with `cerne decision list [--facet <f>] [--component <c>] [--all] [--json]` — the **only** listing for decisions (AND across axes; active by default, `--all` includes superseded; `--json` for machine reads). Tags fold into the FTS body (so `cerne search`/`ask` find a decision by a tag absent from the ADR prose) and render on the decision's line in `.docs/CONTEXT.md`. Re-tag an active decision in place with `cerne decision retag D-NNNN --facet <f> --component <c>` — it sets only the axis you pass (`--facet ""` clears that axis) and never supersedes.
 
 ## ADR structure (the template cerne scaffolds)
 
@@ -138,6 +157,18 @@ A **note** is durable, team-relevant project knowledge an agent acquired across 
 - Retire or correct it: **`cerne note retire N-NNNN --reason "…"`** retires an obsolete note (e.g. the feature it informed has shipped) — it moves to `superseded` with no successor, leaving `.docs/CONTEXT.md` but staying searchable history. To replace it with a corrected version instead, `cerne note substituir N-NNNN --by N-MMMM --reason "…"` (the successor materializes in its place). Either way the lifecycle (active/superseded) is cerne data, not prose.
 - Let the guardian flag staleness: `cerne lint` reports a **`stale-note`** when an active note's `--informs` targets are *all* concluded (feature implemented/rejected/superseded, decision superseded). Two responses: **`cerne note keep N-NNNN`** marks it durable — it stays active and the lint stops flagging it — or `cerne note retire N-NNNN --reason "…"` retires it. cerne never auto-retires: the gotcha learned while building a feature is often the durable invariant worth keeping, so the call is yours.
 - Find it: **`cerne note list`** lists the active notes (`--all` includes superseded history); **`cerne note show <id>`** prints one note's metadata + full body (or the generic **`cerne show N-NNNN`**, which reads any entity by id). Both read straight from the backend store, so they surface the knowledge **even when `.docs/` is stale** (locked snapshot not yet re-pulled) — prefer them over hunting through files. Active notes also appear in the `## Conhecimento` section of `.docs/CONTEXT.md` and in `cerne search` / `cerne ask`; superseded ones stay reachable through search/ask as history.
+- Tag it (two axes, set at `note new`): `cerne note new "<title>" --facet <f> --component <c>` (both repeatable). **facet** is a closed, validated set — `infra`, `code`, `data`, `process`, `auth` (D-0002); an unknown facet is rejected with **no** write. **component** is open vocabulary, slug-normalized (`Gitea` → `gitea`). Filter the roster by them: `cerne note list --facet infra --component gitea` (AND across axes). Tags render inline in `note list`/`note show`, fold into the FTS body (so `cerne search`/`ask` find a note by a tag absent from its prose), and show in the `## Conhecimento` section of `.docs/CONTEXT.md`. Re-tag an active note in place with `cerne note retag N-NNNN --facet <f> --component <c>` — it sets only the axis you pass (`--facet ""` clears that axis) and never creates a successor.
+
+## Errata (correcting a concluded, immutable entity)
+
+A concluded entity — an `implemented` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead:
+
+```
+cerne <kind> errata <id> "<text>"             # kind: feature | decision | runbook | note
+cerne feature errata F-0008 --file errata.md  # or piped stdin — one-shot, like note new
+```
+
+The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). There is **no** edit/rewrite command — errata is the only correction path, by design: annotate, never rewrite.
 
 ## Knowledge routing: cerne note vs. local memory
 
@@ -152,10 +183,12 @@ When you acquire knowledge worth keeping, route it by **who it belongs to**, not
 When an external article / doc / spec informs a feature, decision, or fix, register it instead of leaving a bare URL in prose:
 
 ```
-cerne reference new "<title>" --url <url> --informs F-NNNN,D-NNNN [--file <summary> | stdin]
+cerne reference new "<title>" --url <url> --informs F-NNNN,D-NNNN [--facet <f>] [--component <c>] [--file <summary> | stdin]
 ```
 
 It is marked external, its content is indexed (so `cerne ask` cites it), and `--informs` backlinks it to the entity it motivated.
+
+References carry the **same two tag axes as notes** — `--facet` (the closed `infra`/`code`/`data`/`process`/`auth` set; an invalid facet aborts before any write) and `--component` (open, slug-normalized) — and they fold into the FTS the same way, so `cerne search`/`ask` find a reference by its tag. List and filter them with `cerne reference list [--facet <f>] [--component <c>] [--all] [--json]` — the **only** listing for references (AND across axes; `--all` includes superseded; `--json` for machine reads). Legacy references predate tags, so a `--facet` filter over them returns empty with a guidance message. Like notes, tags are set only at `reference new` — there is no `reference retag` yet.
 
 ## Hard rules
 

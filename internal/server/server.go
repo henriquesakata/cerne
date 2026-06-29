@@ -795,10 +795,12 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 // createReferenceRequest is the POST /api/references body: an external source
 // (article/doc) with optional informs backlinks. No secret travels here.
 type createReferenceRequest struct {
-	Title   string   `json:"title"`
-	URL     string   `json:"url"`
-	Content string   `json:"content"`
-	Informs []string `json:"informs"`
+	Title      string   `json:"title"`
+	URL        string   `json:"url"`
+	Content    string   `json:"content"`
+	Informs    []string `json:"informs"`
+	Facets     []string `json:"facets"`     // closed-set axis (D-0002); unknown facet → 422
+	Components []string `json:"components"` // curated subsystem/tool axis (D-0002)
 }
 
 // createReferenceResponse is the POST /api/references 201 payload.
@@ -812,9 +814,9 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs)
+	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, req.Facets, req.Components)
 	if err != nil {
-		// Validation (empty url, dangling informs) surfaces as 422, like features.
+		// Validation (empty url, dangling informs, unknown facet) surfaces as 422, like features.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}
@@ -858,6 +860,36 @@ func handleSetParent(w http.ResponseWriter, r *http.Request, repoDir, projDir, i
 		errors.Is(err, app.ErrParentTerminal),
 		errors.Is(err, domain.ErrParentSelf),
 		errors.Is(err, domain.ErrParentCycle):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		writeJSON(w, http.StatusOK, createFeatureResponse{Feature: f})
+	}
+}
+
+// renameRequest is the PUT /api/features/{id}/title body.
+type renameRequest struct {
+	Title string `json:"title"`
+}
+
+func handleRenameTitle(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req renameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		return
+	}
+	switch err := app.RenameFeature(repoDir, projDir, id, req.Title); {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+	case errors.Is(err, app.ErrTitleFrozen):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case err != nil && strings.TrimSpace(req.Title) == "":
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))

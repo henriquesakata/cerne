@@ -854,6 +854,37 @@ func TestCreateFeatureEndpointInvalidBody(t *testing.T) {
 	}
 }
 
+func TestRenameTitleEndpoint(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 (candidate)
+	h := New(repoDir, projDir, "")
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, h, http.MethodPut, "/api/features/F-0001/title", `{"title":"Título novo"}`, &got)
+	if rec.Code != http.StatusOK || got.Feature.Title != "Título novo" {
+		t.Fatalf("rename: status %d title %q, want 200 + 'Título novo'; body: %s", rec.Code, got.Feature.Title, rec.Body.String())
+	}
+
+	var e map[string]string
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-9999/title", `{"title":"X"}`, &e); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown feature status = %d, want 404", rec.Code)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-0001/title", `{"title":"   "}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("empty title status = %d, want 422", rec.Code)
+	}
+
+	// Freeze the feature into a terminal state, then a rename must be refused.
+	f, _ := store.LoadFeature(repoDir, "F-0001")
+	f.State = domain.StateRejected
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-0001/title", `{"title":"Tentativa"}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("terminal rename status = %d, want 422", rec.Code)
+	}
+}
+
 func TestSetParentEndpoint(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 (candidate)
 	h := New(repoDir, projDir, "")

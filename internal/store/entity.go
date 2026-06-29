@@ -40,6 +40,8 @@ type Decision struct {
 	State        domain.DecisionState `json:"state"`
 	SupersededBy string               `json:"superseded_by,omitempty"`
 	Reason       string               `json:"reason,omitempty"`
+	Facets       []string             `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
+	Components   []string             `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
 	CreatedAt    time.Time            `json:"created_at"`
 	UpdatedAt    time.Time            `json:"updated_at"`
 }
@@ -66,8 +68,10 @@ type Note struct {
 	State        domain.NoteState `json:"state"`
 	SupersededBy string           `json:"superseded_by,omitempty"`
 	Reason       string           `json:"reason,omitempty"`
-	Informs      []string         `json:"informs,omitempty"` // F-/D- ids this knowledge informs
-	Durable      bool             `json:"durable,omitempty"` // reviewed as durable: lint's stale-note skips it
+	Informs      []string         `json:"informs,omitempty"`    // F-/D- ids this knowledge informs
+	Facets       []string         `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
+	Components   []string         `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
+	Durable      bool             `json:"durable,omitempty"`    // reviewed as durable: lint's stale-note skips it
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }
@@ -76,14 +80,16 @@ type Note struct {
 // (registered, not imported) carry the source URL, the External marker, and an
 // Informs backlink to the features/decisions the source motivated.
 type Reference struct {
-	ID        string                `json:"id"`
-	Title     string                `json:"title"`
-	State     domain.ReferenceState `json:"state"`
-	URL       string                `json:"url,omitempty"`      // external source link
-	External  bool                  `json:"external,omitempty"` // true for a registered external source
-	Informs   []string              `json:"informs,omitempty"`  // F-/D- ids this source motivated
-	CreatedAt time.Time             `json:"created_at"`
-	UpdatedAt time.Time             `json:"updated_at"`
+	ID         string                `json:"id"`
+	Title      string                `json:"title"`
+	State      domain.ReferenceState `json:"state"`
+	URL        string                `json:"url,omitempty"`        // external source link
+	External   bool                  `json:"external,omitempty"`   // true for a registered external source
+	Informs    []string              `json:"informs,omitempty"`    // F-/D- ids this source motivated
+	Facets     []string              `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
+	Components []string              `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
+	CreatedAt  time.Time             `json:"created_at"`
+	UpdatedAt  time.Time             `json:"updated_at"`
 }
 
 // Historical is the persisted form of a historical entity: something that

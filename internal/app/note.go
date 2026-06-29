@@ -25,7 +25,7 @@ type NoteOutcome struct {
 // appends the note.created event, commits+pushes the backend and refreshes the
 // docs.lock snapshot in projDir. An empty body yields a scaffold that reads as a
 // stub (doccheck.HasRealContent false) until the author fills it.
-func CreateNote(repoDir, projDir, title, body string, informs []string) (store.Note, error) {
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("o título da nota não pode ser vazio")
@@ -34,18 +34,27 @@ func CreateNote(repoDir, projDir, title, body string, informs []string) (store.N
 	if err != nil {
 		return store.Note{}, err
 	}
+	// Validate/normalize tags before any side effect (NextID, save): an unknown
+	// facet must abort without minting an id or writing a file.
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return store.Note{}, err
+	}
+	normComponents := domain.NormalizeComponents(components)
 	id, err := store.NextID(repoDir, "N")
 	if err != nil {
 		return store.Note{}, err
 	}
 	now := time.Now().UTC()
 	n := store.Note{
-		ID:        id,
-		Title:     title,
-		State:     domain.NoteActive,
-		Informs:   cleaned,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		Title:      title,
+		State:      domain.NoteActive,
+		Informs:    cleaned,
+		Facets:     normFacets,
+		Components: normComponents,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.SaveNote(repoDir, n); err != nil {
 		return store.Note{}, err
@@ -145,6 +154,51 @@ func KeepNote(repoDir, projDir, id string) (store.Note, error) {
 		return store.Note{}, err
 	}
 	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: keep %s (durable)", id)); err != nil {
+		return store.Note{}, err
+	}
+	return n, nil
+}
+
+// RetagNote sets the tag axes of an active note in the backend clone at repoDir.
+// Each axis is replaced only when its set flag is true, so a caller can update
+// facets without touching components (or clear an axis by passing an empty slice
+// with set=true); state, durable, informs and the body are preserved. Facets are
+// validated against the closed set before any write, so an unknown facet aborts
+// leaving the note untouched. Appends note.retagged and syncs the backend +
+// docs.lock in projDir.
+func RetagNote(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Note, error) {
+	n, err := store.LoadNote(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Note{}, fmt.Errorf("nota %s não encontrada no backend", id)
+	}
+	if err != nil {
+		return store.Note{}, err
+	}
+	if n.State != domain.NoteActive {
+		return store.Note{}, fmt.Errorf("nota %s não está active (está %s) — retag só vale para nota ativa", id, n.State)
+	}
+	if setFacets {
+		nf, err := domain.NormalizeFacets(facets)
+		if err != nil {
+			return store.Note{}, err // unknown facet: note untouched
+		}
+		n.Facets = nf
+	}
+	if setComponents {
+		n.Components = domain.NormalizeComponents(components)
+	}
+	n.UpdatedAt = time.Now().UTC()
+	if err := store.SaveNote(repoDir, n); err != nil {
+		return store.Note{}, err
+	}
+	ev := domain.NewEvent(id, "note.retagged", map[string]string{
+		"facets":     strings.Join(n.Facets, ","),
+		"components": strings.Join(n.Components, ","),
+	}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Note{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
 		return store.Note{}, err
 	}
 	return n, nil
