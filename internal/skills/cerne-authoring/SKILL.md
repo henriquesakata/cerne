@@ -155,6 +155,7 @@ A **note** is durable, team-relevant project knowledge an agent acquired across 
 - Retire or correct it: **`cerne note retire N-NNNN --reason "…"`** retires an obsolete note (e.g. the feature it informed has shipped) — it moves to `superseded` with no successor, leaving `.docs/CONTEXT.md` but staying searchable history. To replace it with a corrected version instead, `cerne note substituir N-NNNN --by N-MMMM --reason "…"` (the successor materializes in its place). Either way the lifecycle (active/superseded) is cerne data, not prose.
 - Let the guardian flag staleness: `cerne lint` reports a **`stale-note`** when an active note's `--informs` targets are *all* concluded (feature implemented/rejected/superseded, decision superseded). Two responses: **`cerne note keep N-NNNN`** marks it durable — it stays active and the lint stops flagging it — or `cerne note retire N-NNNN --reason "…"` retires it. cerne never auto-retires: the gotcha learned while building a feature is often the durable invariant worth keeping, so the call is yours.
 - Find it: **`cerne note list`** lists the active notes (`--all` includes superseded history); **`cerne note show <id>`** prints one note's metadata + full body (or the generic **`cerne show N-NNNN`**, which reads any entity by id). Both read straight from the backend store, so they surface the knowledge **even when `.docs/` is stale** (locked snapshot not yet re-pulled) — prefer them over hunting through files. Active notes also appear in the `## Conhecimento` section of `.docs/CONTEXT.md` and in `cerne search` / `cerne ask`; superseded ones stay reachable through search/ask as history.
+- Tag it (two axes, set at `note new`): `cerne note new "<title>" --facet <f> --component <c>` (both repeatable). **facet** is a closed, validated set — `infra`, `code`, `data`, `process`, `auth` (D-0002); an unknown facet is rejected with **no** write. **component** is open vocabulary, slug-normalized (`Gitea` → `gitea`). Filter the roster by them: `cerne note list --facet infra --component gitea` (AND across axes). Tags render inline in `note list`/`note show`, fold into the FTS body (so `cerne search`/`ask` find a note by a tag absent from its prose), and show in the `## Conhecimento` section of `.docs/CONTEXT.md`. Tags are set **only** at `note new` — there is no `retag`; an existing note gains them only via `note substituir` by a tagged successor.
 
 ## Errata (correcting a concluded, immutable entity)
 
@@ -180,10 +181,12 @@ When you acquire knowledge worth keeping, route it by **who it belongs to**, not
 When an external article / doc / spec informs a feature, decision, or fix, register it instead of leaving a bare URL in prose:
 
 ```
-cerne reference new "<title>" --url <url> --informs F-NNNN,D-NNNN [--file <summary> | stdin]
+cerne reference new "<title>" --url <url> --informs F-NNNN,D-NNNN [--facet <f>] [--component <c>] [--file <summary> | stdin]
 ```
 
 It is marked external, its content is indexed (so `cerne ask` cites it), and `--informs` backlinks it to the entity it motivated.
+
+References carry the **same two tag axes as notes** — `--facet` (the closed `infra`/`code`/`data`/`process`/`auth` set; an invalid facet aborts before any write) and `--component` (open, slug-normalized) — and they fold into the FTS the same way, so `cerne search`/`ask` find a reference by its tag. List and filter them with `cerne reference list [--facet <f>] [--component <c>] [--all] [--json]` — the **only** listing for references (AND across axes; `--all` includes superseded; `--json` for machine reads). Legacy references predate tags, so a `--facet` filter over them returns empty with a guidance message. Like notes, tags are set only at `reference new` — there is no `reference retag` yet.
 
 ## Hard rules
 
