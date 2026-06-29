@@ -715,9 +715,19 @@ func stateLabelPT(state string) string {
 // the mention.
 func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 	var findings []Finding
+	isErrata := strings.HasPrefix(d.rel, "content/errata/")
 	for _, n := range needles {
 		detail := matchNeedle(n, text)
 		if detail == "" {
+			continue
+		}
+		// F-0094: an entity's errata legitimately names what that entity
+		// superseded — the supersession record is not stale debt. Tolerate when
+		// the mention's successor (n.use) is the errata's own entity. Errata is
+		// not materialized for editing, so it cannot carry the F-0089 marker;
+		// this is its acknowledgment path. Other stale refs in an errata still
+		// surface (F-0072 keeps scanning errata of concluded entities).
+		if isErrata && n.use != "" && n.use == d.entity {
 			continue
 		}
 		// F-0089: a per-mention marker (lint:ok-superseded) on the same line
