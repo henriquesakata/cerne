@@ -459,11 +459,10 @@ func buildNeedles(repoDir string, features []store.Feature, decisions []store.De
 	for _, h := range historicals {
 		// A historical entity is born terminal; no content doc, so its
 		// aliases (validated >= MinAliasLen at creation) are the imported-style
-		// identifiers live docs must not mention.
+		// identifiers live docs must not mention. The Name is a generic domain
+		// word (e.g. "Bills"/"Investments") — kept only as the finding label,
+		// never a needle, or every prose use of the word false-flags (F-0092).
 		n := needle{id: h.ID, title: h.Name, state: string(h.State), use: h.SupersededBy, rxID: wordRx(h.ID)}
-		if utf8.RuneCountInString(h.Name) >= minTitleNeedleLen {
-			n.rxTitle = wordRx(h.Name)
-		}
 		for _, alias := range h.Aliases {
 			if utf8.RuneCountInString(alias) < minTitleNeedleLen {
 				continue
