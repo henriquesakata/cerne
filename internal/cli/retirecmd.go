@@ -68,3 +68,40 @@ func runRetire(cmd *cobra.Command, dir, name, by, reason string, aliases []strin
 	}
 	return nil
 }
+
+func newForgetAliasCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   "forget-alias <name> <alias>...",
+		Short: "Remove aliases from a historical entity (curate noisy/ambiguous aliases)",
+		Long: "Remove um ou mais aliases de uma entidade histórica já registrada. " +
+			"Use quando um alias é palavra comum/ambígua (ex.: \"bills\", \"investments\") " +
+			"e gera falso-positivo de ref-to-superseded no lint em documentos vigentes. " +
+			"Aliases ausentes são ignorados; deixar a entidade sem aliases é permitido " +
+			"(ela passa a casar só pelo id).",
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runForgetAlias(cmd, dir, args[0], args[1:])
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	return cmd
+}
+
+func runForgetAlias(cmd *cobra.Command, dir, name string, aliases []string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("o nome da entidade histórica não pode ser vazio")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	h, err := app.ForgetHistoricalAliases(ctx.repoDir, ctx.projDir, name, aliases)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s atualizada: aliases agora [%s].\n", h.ID, strings.Join(h.Aliases, ", "))
+	return nil
+}
