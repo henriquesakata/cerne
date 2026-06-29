@@ -24,27 +24,31 @@ func newReferenceCmd() *cobra.Command {
 }
 
 func newReferenceNewCmd(dir *string) *cobra.Command {
-	var url, informs, file string
+	var url, informs, file, facet, component string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register an external source (article/doc) as a reference",
 		Long: "Registra um artigo/documento externo como referência (marca externa + URL). " +
 			"O conteúdo (texto/resumo) vem de --file ou da entrada padrão e entra no índice, " +
 			"então o 'ask' passa a citá-lo. Use --informs para ligar a fonte às features/decisões " +
-			"(F-/D-) que ela motivou.",
+			"(F-/D-) que ela motivou. Use --facet (eixo fechado: infra,code,data,process,auth) e " +
+			"--component (subsistema/ferramenta, ex.: gitea,kpack) para categorizar — ambos multivalor, " +
+			"separados por vírgula.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferenceNew(cmd, *dir, args[0], url, informs, file)
+			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
 	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D- ids this source motivated")
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
+	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
+	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	_ = cmd.MarkFlagRequired("url")
 	return cmd
 }
 
-func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file string) error {
+func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string) error {
 	content, err := readReferenceContent(cmd, file)
 	if err != nil {
 		return err
@@ -53,7 +57,7 @@ func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file string) 
 	if err != nil {
 		return err
 	}
-	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), nil, nil)
+	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component))
 	if err != nil {
 		return err
 	}

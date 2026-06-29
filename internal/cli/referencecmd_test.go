@@ -66,3 +66,29 @@ func TestReferenceNewRequiresURL(t *testing.T) {
 		t.Fatalf("reference new without --url should fail")
 	}
 }
+
+// TestReferenceNewWithTags: --facet/--component are normalized (lower/slug) and
+// persisted on the reference, mirroring note new.
+func TestReferenceNewWithTags(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	contentFile := filepath.Join(t.TempDir(), "a.md")
+	if err := os.WriteFile(contentFile, []byte("# SSH\n\nknown_hosts."), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out, err := execCerne(t, "reference", "new", "Artigo SSH no Gitea",
+		"--url", "https://example.com/ssh", "--facet", "Infra,code",
+		"--component", "Gitea,KPack", "--file", contentFile, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("reference new: %v\n%s", err, out)
+	}
+	r, err := store.LoadReference(repoDir, "R-0001")
+	if err != nil {
+		t.Fatalf("LoadReference: %v", err)
+	}
+	if len(r.Facets) != 2 || r.Facets[0] != "infra" || r.Facets[1] != "code" {
+		t.Fatalf("facets = %v, want [infra code]", r.Facets)
+	}
+	if len(r.Components) != 2 || r.Components[0] != "gitea" || r.Components[1] != "kpack" {
+		t.Fatalf("components = %v, want [gitea kpack]", r.Components)
+	}
+}
