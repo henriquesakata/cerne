@@ -20,7 +20,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/dectmpl"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -108,15 +107,12 @@ type importedNeedle struct {
 	rx   *regexp.Regexp
 }
 
-// scannedDoc is one content document subject to the text rules. For authored
-// entity docs, entity is the owning id and sources is nil. For a compiled wiki
-// page, entity is empty and sources are the provenance source ids — so a finding
-// on the generated page is attributed to the entity that must be fixed, and the
-// page's history-labeled mentions can be tolerated (it regenerates from source).
+// scannedDoc is one authored content document subject to the text rules: entity
+// is the owning id and rel its backend path. The generated wiki is not scanned
+// by these rules (F-0090) — wikiSourceFindings validates its provenance instead.
 type scannedDoc struct {
-	entity  string
-	rel     string // rel slash path within the backend
-	sources []string
+	entity string
+	rel    string // rel slash path within the backend
 }
 
 // Run lints the backend at repoDir and returns the findings in
@@ -156,12 +152,10 @@ func Run(repoDir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	wikiPages, err := wikiDocs(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	docs = append(docs, wikiPages...)
 
+	// The text rules (ref-to-superseded, broken-link) are authored-content rules
+	// and run only over authored docs — the generated wiki regenerates from
+	// source and is validated separately by wikiSourceFindings (F-0090).
 	var findings []Finding
 	for _, d := range docs {
 		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(d.rel)))
@@ -169,7 +163,7 @@ func Run(repoDir string) ([]Finding, error) {
 			return nil, err
 		}
 		text := string(data)
-		findings = append(findings, refFindings(repoDir, d, text, needles)...)
+		findings = append(findings, refFindings(d, text, needles)...)
 		findings = append(findings, linkFindings(repoDir, d, text)...)
 	}
 
@@ -567,24 +561,6 @@ func wikiPagePaths(repoDir string) ([]string, error) {
 	return rels, err
 }
 
-// wikiDocs lists the compiled wiki pages as scanned documents, so the text
-// rules (ref-to-superseded, broken-link) run over them too.
-func wikiDocs(repoDir string) ([]scannedDoc, error) {
-	rels, err := wikiPagePaths(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	docs := make([]scannedDoc, 0, len(rels))
-	for _, rel := range rels {
-		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
-		if err != nil {
-			return nil, err
-		}
-		docs = append(docs, scannedDoc{entity: "", rel: rel, sources: wiki.ParseProvenance(data).Sources})
-	}
-	return docs, nil
-}
-
 // wikiSourceFindings reports wiki pages whose provenance lists a source that
 // resolves to no existing entity (a dangling synthesis input).
 func wikiSourceFindings(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]Finding, error) {
@@ -730,80 +706,44 @@ func stateLabelPT(state string) string {
 // of the same entity collapse into one finding: an ID or title hit keeps the
 // ID-based detail; otherwise the first matching imported identifier names
 // the mention.
-func refFindings(repoDir string, d scannedDoc, text string, needles []needle) []Finding {
+func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 	var findings []Finding
-	isWiki := len(d.sources) > 0
 	for _, n := range needles {
-		detail, loc := matchNeedle(n, text)
+		detail := matchNeedle(n, text)
 		if detail == "" {
 			continue
 		}
 		// F-0089: a per-mention marker (lint:ok-superseded) on the same line
 		// declares the reference as an intentional historical mention, not a
 		// debt. Suppress only when EVERY occurrence of n is acknowledged on its
-		// own line — an unmarked mention elsewhere is still a debt (crit. 4),
-		// and the marker's own line self-suppresses the id it names (crit. 5).
+		// own line — an unmarked mention elsewhere is still a debt, and the
+		// marker's own line self-suppresses the id it names.
 		if allMentionsAcknowledged(text, n) {
-			continue
-		}
-		// On a wiki page a mention correctly labeled as historical (a marker or
-		// the terminal successor on the same line) is not a debt — the page
-		// regenerates from source. Authored docs keep the strict match (crit. 4).
-		if isWiki && toleratedOnWiki(repoDir, text, loc, n) {
 			continue
 		}
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
-		// A wiki page regenerates from its sources, so the debt belongs to the
-		// source entity, not the generated file — emit one finding per source.
-		if isWiki {
-			for _, src := range d.sources {
-				findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: src, File: d.rel, Detail: detail})
-			}
-		} else {
-			findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
-		}
+		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
 	}
 	return findings
 }
 
-// matchNeedle returns the ref-to-superseded detail and the location of the first
-// matching mention (by id, title or imported identifier), or "" when n is absent.
-func matchNeedle(n needle, text string) (string, []int) {
-	if loc := n.rxID.FindStringIndex(text); loc != nil {
-		return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state)), loc
+// matchNeedle returns the ref-to-superseded detail for the first matching
+// mention (by id, title or imported identifier), or "" when n is absent.
+func matchNeedle(n needle, text string) string {
+	if n.rxID.MatchString(text) {
+		return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state))
 	}
-	if n.rxTitle != nil {
-		if loc := n.rxTitle.FindStringIndex(text); loc != nil {
-			return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state)), loc
-		}
+	if n.rxTitle != nil && n.rxTitle.MatchString(text) {
+		return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state))
 	}
 	for _, in := range n.imported {
-		if loc := in.rx.FindStringIndex(text); loc != nil {
-			return fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, stateLabelPT(n.state)), loc
+		if in.rx.MatchString(text) {
+			return fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, stateLabelPT(n.state))
 		}
 	}
-	return "", nil
-}
-
-// historyMarkerRx matches an explicit historical-mention marker near a superseded
-// id on a wiki page ("superseded", "substituí…", "histórico").
-var historyMarkerRx = regexp.MustCompile(`(?i)superseded|substitu|hist[óo]ric`)
-
-// toleratedOnWiki reports whether a superseded mention on a wiki page is already
-// correctly labeled as historical — a history marker or the terminal successor
-// (resolved via the F-0069 graph walk) appears on the same line — so the
-// regenerated page needs no fix and the mention is not a debt.
-func toleratedOnWiki(repoDir, text string, loc []int, n needle) bool {
-	window := lineAround(text, loc)
-	if historyMarkerRx.MatchString(window) {
-		return true
-	}
-	if succ, ok, err := app.TerminalSuccessor(repoDir, n.id); err == nil && ok && succ != "" && wordRx(succ).MatchString(window) {
-		return true
-	}
-	return false
+	return ""
 }
 
 // lineAround returns the single line of text containing the match at loc, so

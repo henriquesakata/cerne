@@ -55,15 +55,14 @@ func TestLintWikiRules(t *testing.T) {
 		t.Fatalf("wiki-source-unknown detail missing F-9999: %q", unknown[0].Detail)
 	}
 
+	// F-0090: ref-to-superseded is an authored-content rule and must NOT scan
+	// the generated wiki page (it regenerates from source; the equivalent
+	// authored mention is flagged at its own doc).
 	refs := byRule(findings, RuleRefToSuperseded)
-	var onWiki bool
 	for _, f := range refs {
 		if f.File == "content/wiki/project.md" {
-			onWiki = true
+			t.Fatalf("ref-to-superseded must not scan the generated wiki page: %+v", refs)
 		}
-	}
-	if !onWiki {
-		t.Fatalf("ref-to-superseded did not scan the wiki page: %+v", refs)
 	}
 }
 
