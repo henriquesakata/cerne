@@ -6,6 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
+import Tag from './Tag'
 import {
   fetchNote,
   fetchState,
@@ -23,29 +24,6 @@ const STATE_LABELS: Record<string, string> = {
   superseded: 'Substituída',
 }
 const ORDER = ['active', 'superseded']
-
-// Tag renders one facet/component as a chip. With onToggle it is an interactive
-// filter button (aria-pressed reflects selection); without, a static label —
-// used read-only on the note detail header.
-function Tag({
-  axis,
-  value,
-  active,
-  onToggle,
-}: {
-  axis: 'facet' | 'component'
-  value: string
-  active?: boolean
-  onToggle?: (v: string) => void
-}) {
-  const cls = `tag tag-${axis}${active ? ' is-active' : ''}`
-  if (!onToggle) return <span className={cls}>{value}</span>
-  return (
-    <button type="button" className={cls} aria-pressed={!!active} onClick={() => onToggle(value)}>
-      {value}
-    </button>
-  )
-}
 
 // toggleIn returns a handler that adds/removes a value from a Set state,
 // always producing a fresh Set so React sees the change.
