@@ -34,6 +34,8 @@ export type Decision = {
   state: string
   superseded_by?: string
   reason?: string
+  facets?: string[] // closed axis (D-0002): infra|code|data|process|auth
+  components?: string[] // open, slugified subsystem/tool axis (D-0002)
   created_at: string
   updated_at: string
 }
