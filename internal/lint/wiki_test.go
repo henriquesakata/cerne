@@ -55,15 +55,14 @@ func TestLintWikiRules(t *testing.T) {
 		t.Fatalf("wiki-source-unknown detail missing F-9999: %q", unknown[0].Detail)
 	}
 
+	// F-0090: ref-to-superseded is an authored-content rule and must NOT scan
+	// the generated wiki page (it regenerates from source; the equivalent
+	// authored mention is flagged at its own doc).
 	refs := byRule(findings, RuleRefToSuperseded)
-	var onWiki bool
 	for _, f := range refs {
 		if f.File == "content/wiki/project.md" {
-			onWiki = true
+			t.Fatalf("ref-to-superseded must not scan the generated wiki page: %+v", refs)
 		}
-	}
-	if !onWiki {
-		t.Fatalf("ref-to-superseded did not scan the wiki page: %+v", refs)
 	}
 }
 
@@ -110,6 +109,33 @@ func TestLintWikiRuleCoversDecisionsReferencesPages(t *testing.T) {
 	}
 	if !sawReferences {
 		t.Fatalf("bogus source on references.md not flagged: %+v", unknown)
+	}
+}
+
+// TestLintWikiSourceRecognizesRunbooksAndNotes pins F-0091: runbook and note ids
+// are valid wiki provenance sources, so only a truly dangling id is flagged.
+func TestLintWikiSourceRecognizesRunbooksAndNotes(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	if err := store.SaveRunbook(dir, store.Runbook{ID: "RB-0024", Title: "Plugin Governance", State: domain.RunbookActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveRunbook: %v", err)
+	}
+	if err := store.SaveNote(dir, store.Note{ID: "N-0001", Title: "Nota", State: domain.NoteActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	// Wiki page whose provenance lists a real runbook, a real note, and one
+	// dangling id — only the dangling id is unknown.
+	writeWikiPage(t, dir, "content/wiki/references.md", []string{"RB-0024", "N-0001", "RB-9999"}, "# Referências\n\nSíntese.\n")
+
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	unknown := byRule(findings, RuleWikiSourceUnknown)
+	if len(unknown) != 1 || !contains(unknown[0].Detail, "RB-9999") {
+		t.Fatalf("want exactly 1 wiki-source-unknown on RB-9999, got: %+v", unknown)
 	}
 }
 
