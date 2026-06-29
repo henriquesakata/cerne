@@ -26,7 +26,45 @@ func newReferenceCmd() *cobra.Command {
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newReferenceNewCmd(&dir))
 	cmd.AddCommand(newReferenceListCmd(&dir))
+	cmd.AddCommand(newReferenceRetagCmd(&dir))
 	return cmd
+}
+
+func newReferenceRetagCmd(dir *string) *cobra.Command {
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "retag <id>",
+		Short: "Redefinir os tags (facet/componente) de uma referência current",
+		Long: "Define ou substitui os eixos de tag de uma referência current, sem torná-la obsolete — preserva url, " +
+			"informs e corpo. Altera só o eixo passado: 'retag R-0001 --component gitea' mantém os facets; '--facet \"\"' " +
+			"limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferenceRetag(cmd, *dir, args[0], facet, component,
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+		},
+	}
+	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
+	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	return cmd
+}
+
+func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+	if !setFacets && !setComponents {
+		return fmt.Errorf("informe ao menos --facet ou --component")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	r, err := app.RetagReference(ctx.repoDir, ctx.projDir, id,
+		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+		r.ID, strings.Join(r.Facets, ", "), strings.Join(r.Components, ", "))
+	return nil
 }
 
 func newReferenceNewCmd(dir *string) *cobra.Command {
