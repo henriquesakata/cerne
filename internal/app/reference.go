@@ -76,6 +76,51 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	return r, nil
 }
 
+// RetagReference sets the tag axes of a current reference in the backend clone
+// at repoDir. Each axis is replaced only when its set flag is true, so a caller
+// can update facets without touching components (or clear an axis by passing an
+// empty slice with set=true); state, url, external, informs and the content doc
+// are preserved. Facets are validated against the closed set before any write,
+// so an unknown facet aborts leaving the reference untouched. Appends
+// reference.retagged and syncs the backend + docs.lock in projDir.
+func RetagReference(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Reference, error) {
+	r, err := store.LoadReference(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Reference{}, fmt.Errorf("referência %s não encontrada no backend", id)
+	}
+	if err != nil {
+		return store.Reference{}, err
+	}
+	if r.State != domain.ReferenceCurrent {
+		return store.Reference{}, fmt.Errorf("referência %s não está current (está %s) — retag só vale para referência current", id, r.State)
+	}
+	if setFacets {
+		nf, err := domain.NormalizeFacets(facets)
+		if err != nil {
+			return store.Reference{}, err // unknown facet: reference untouched
+		}
+		r.Facets = nf
+	}
+	if setComponents {
+		r.Components = domain.NormalizeComponents(components)
+	}
+	r.UpdatedAt = time.Now().UTC()
+	if err := store.SaveReference(repoDir, r); err != nil {
+		return store.Reference{}, err
+	}
+	ev := domain.NewEvent(id, "reference.retagged", map[string]string{
+		"facets":     strings.Join(r.Facets, ","),
+		"components": strings.Join(r.Components, ","),
+	}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Reference{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		return store.Reference{}, err
+	}
+	return r, nil
+}
+
 // validateInforms trims, dedupes (preserving order) and checks each backlink
 // target: it must be a feature (F-) or decision (D-) that exists in the
 // backend, so no dangling backlink is stored. Returns the cleaned list (nil

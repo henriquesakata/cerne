@@ -55,4 +55,12 @@ func TestCerneAuthoringDocumentsTags(t *testing.T) {
 	contains("C8", "decision new")
 	contains("C8", "decision list")
 	contains("C8", "decision retag")
+
+	// C9 (F-0093) — references close the parity with an in-place retag. Assert
+	// the command form (not just the bare words, which the old "no reference
+	// retag yet" disclaimer also matched) and that the disclaimer is gone.
+	contains("C9", "cerne reference retag")
+	if strings.Contains(c, "there is no `reference retag` yet") {
+		t.Errorf("C9: skill still says reference retag does not exist")
+	}
 }
