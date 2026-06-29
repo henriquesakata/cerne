@@ -57,7 +57,7 @@ func acquireLock(lockPath string) (func(), error) {
 			_ = f.Close()
 			return func() { _ = os.Remove(lockPath) }, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !isContendedCreateErr(err) {
 			return nil, err
 		}
 		if stealStaleLock(lockPath) {
