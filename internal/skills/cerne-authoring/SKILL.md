@@ -42,6 +42,8 @@ Catch documentation debts **before** they churn the backend — same lint engine
 
 Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
 
+**Acknowledging an intentional historical mention.** Sometimes an authored doc *should* name a superseded entity — a spec/ADR/note explaining "antes usávamos D-0003 (substituída por D-0005), e o trade-off era…". That is history, not a debt, but `cerne lint` flags it as `ref-to-superseded` by default. To declare the mention intentional, append the marker on the **same line**: `<!-- lint:ok-superseded D-0003 -->` (comma-separate several ids: `<!-- lint:ok-superseded D-0003, D-0005 -->`). The rule then tolerates that line only — an unmarked mention of the same id on another line is still a debt. Use it sparingly, for genuine historical context; it is an explicit acknowledgment, not a blanket silence.
+
 ## Syncing when the backend may have advanced (parallel agents)
 
 Reconciliation is **per document**, so disjoint edits never collide:
