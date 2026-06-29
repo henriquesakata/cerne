@@ -738,6 +738,14 @@ func refFindings(repoDir string, d scannedDoc, text string, needles []needle) []
 		if detail == "" {
 			continue
 		}
+		// F-0089: a per-mention marker (lint:ok-superseded) on the same line
+		// declares the reference as an intentional historical mention, not a
+		// debt. Suppress only when EVERY occurrence of n is acknowledged on its
+		// own line — an unmarked mention elsewhere is still a debt (crit. 4),
+		// and the marker's own line self-suppresses the id it names (crit. 5).
+		if allMentionsAcknowledged(text, n) {
+			continue
+		}
 		// On a wiki page a mention correctly labeled as historical (a marker or
 		// the terminal successor on the same line) is not a debt — the page
 		// regenerates from source. Authored docs keep the strict match (crit. 4).
@@ -810,6 +818,57 @@ func lineAround(text string, loc []int) string {
 		end = loc[0] + nl
 	}
 	return text[start:end]
+}
+
+// ackRx matches the F-0089 acknowledgment marker on a line, capturing its
+// comma-separated id list: <!-- lint:ok-superseded D-0003[, D-0005…] -->.
+var ackRx = regexp.MustCompile(`(?i)<!--\s*lint:ok-superseded\s+([a-z]+-\d+(?:\s*,\s*[a-z]+-\d+)*)\s*-->`)
+
+// acknowledgedOnLine reports whether line carries a lint:ok-superseded marker
+// that names id (case-insensitive, space-tolerant). It declares a mention of a
+// superseded entity on that line as intentional history, not a debt (F-0089).
+func acknowledgedOnLine(line, id string) bool {
+	m := ackRx.FindStringSubmatch(line)
+	if m == nil {
+		return false
+	}
+	want := strings.ToUpper(strings.TrimSpace(id))
+	for _, part := range strings.Split(m[1], ",") {
+		if strings.ToUpper(strings.TrimSpace(part)) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// allMentionsAcknowledged reports whether every line on which needle n is
+// mentioned (by id, title or imported identifier) carries a lint:ok-superseded
+// marker naming n. Because refFindings collapses all hits of an entity into one
+// finding, suppression is whole-entity: a single unmarked mention keeps the
+// debt (F-0089, crit. 4-5). Returns false when n is absent.
+func allMentionsAcknowledged(text string, n needle) bool {
+	seen := false
+	allMarked := func(rx *regexp.Regexp) bool {
+		for _, loc := range rx.FindAllStringIndex(text, -1) {
+			seen = true
+			if !acknowledgedOnLine(lineAround(text, loc), n.id) {
+				return false
+			}
+		}
+		return true
+	}
+	if !allMarked(n.rxID) {
+		return false
+	}
+	if n.rxTitle != nil && !allMarked(n.rxTitle) {
+		return false
+	}
+	for _, in := range n.imported {
+		if !allMarked(in.rx) {
+			return false
+		}
+	}
+	return seen
 }
 
 // linkFindings reports markdown links whose relative target does not exist
