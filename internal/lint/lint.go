@@ -46,10 +46,11 @@ const (
 	RuleStaleCandidate     = "stale-candidate"
 	RuleStaleNote          = "stale-note"
 	RuleIncompleteDoc      = "incomplete-doc"
+	RuleUntaggedLive       = "untagged-live"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -64,6 +65,7 @@ var ruleRank = map[string]int{
 	RuleStaleCandidate:     9,
 	RuleStaleNote:          10,
 	RuleIncompleteDoc:      11,
+	RuleUntaggedLive:       12,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -200,6 +202,8 @@ func Run(repoDir string) ([]Finding, error) {
 		return nil, err
 	}
 	findings = append(findings, incomplete...)
+
+	findings = append(findings, untaggedLiveFindings(decisions, references, notes)...)
 
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
@@ -1028,6 +1032,51 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 			Entity: nt.ID,
 			Detail: fmt.Sprintf("só informa trabalho encerrado (%s) — aposente ou confirme que ainda é durável", strings.Join(terminals, ", ")),
 		})
+	}
+	return findings
+}
+
+// untaggedLiveFindings flags a live entity — an active note or decision, a
+// current reference — carrying no tag on EITHER axis (facets and components
+// both empty). Such an entity is invisible to the categorical
+// `list --facet/--component` filters and reachable only by full-text
+// search/ask, a retrieval gap that compounds as the project grows. It is
+// advisory, never blocking: D-0002 fixed the tag vocabulary but not a mandatory
+// gate, so creation stays frictionless and this rule surfaces the debt for a
+// batched `cerne <kind> retag`. Superseded/obsolete entities are history and
+// are never flagged; features are out of scope — they categorize via `module`,
+// not these axes (F-0097).
+func untaggedLiveFindings(decisions []store.Decision, references []store.Reference, notes []store.Note) []Finding {
+	untagged := func(facets, components []string) bool {
+		return len(facets) == 0 && len(components) == 0
+	}
+	var findings []Finding
+	for _, nt := range notes {
+		if nt.State == domain.NoteActive && untagged(nt.Facets, nt.Components) {
+			findings = append(findings, Finding{
+				Rule:   RuleUntaggedLive,
+				Entity: nt.ID,
+				Detail: "sem tag (facet/componente) — classifique com 'cerne note retag'",
+			})
+		}
+	}
+	for _, d := range decisions {
+		if d.State == domain.DecisionActive && untagged(d.Facets, d.Components) {
+			findings = append(findings, Finding{
+				Rule:   RuleUntaggedLive,
+				Entity: d.ID,
+				Detail: "sem tag (facet/componente) — classifique com 'cerne decision retag'",
+			})
+		}
+	}
+	for _, r := range references {
+		if r.State == domain.ReferenceCurrent && untagged(r.Facets, r.Components) {
+			findings = append(findings, Finding{
+				Rule:   RuleUntaggedLive,
+				Entity: r.ID,
+				Detail: "sem tag (facet/componente) — classifique com 'cerne reference retag'",
+			})
+		}
 	}
 	return findings
 }

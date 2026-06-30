@@ -57,7 +57,9 @@ func seedBackend(t *testing.T) string {
 		}
 	}
 	decisions := []store.Decision{
-		{ID: "D-0001", Title: "Adotar gateway", State: domain.DecisionActive},
+		// Tagged so the untagged-live rule stays silent — this fixture exercises
+		// the other rules; an untagged live entity is a separate finding (F-0097).
+		{ID: "D-0001", Title: "Adotar gateway", State: domain.DecisionActive, Facets: []string{"infra"}},
 		{ID: "D-0002", Title: "Usar boleto legado", State: domain.DecisionSuperseded, SupersededBy: "D-0003"},
 	}
 	for _, d := range decisions {
@@ -68,7 +70,7 @@ func seedBackend(t *testing.T) string {
 	}
 	references := []store.Reference{
 		{ID: "R-0001", Title: "API antiga", State: domain.ReferenceObsolete},
-		{ID: "R-0002", Title: "Guia atual", State: domain.ReferenceCurrent},
+		{ID: "R-0002", Title: "Guia atual", State: domain.ReferenceCurrent, Facets: []string{"code"}},
 	}
 	for _, r := range references {
 		r.CreatedAt, r.UpdatedAt = now, now

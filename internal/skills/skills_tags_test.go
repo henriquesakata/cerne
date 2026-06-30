@@ -63,4 +63,8 @@ func TestCerneAuthoringDocumentsTags(t *testing.T) {
 	if strings.Contains(c, "there is no `reference retag` yet") {
 		t.Errorf("C9: skill still says reference retag does not exist")
 	}
+
+	// C10 (F-0097) — the skill warns that a live entity untagged on both axes
+	// is an `untagged-live` lint debt, so agents tag proactively.
+	contains("C10", "untagged-live")
 }

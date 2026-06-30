@@ -45,12 +45,15 @@ func seedLintFixture(t *testing.T, repoDir string) {
 			t.Fatalf("SaveFeature %s: %v", f.ID, err)
 		}
 	}
-	d := store.Decision{ID: "D-0001", Title: "Adotar gateway", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}
+	// Tagged so the untagged-live rule (F-0097) stays silent — this fixture
+	// counts a fixed set of findings from the other rules.
+	d := store.Decision{ID: "D-0001", Title: "Adotar gateway", State: domain.DecisionActive, Facets: []string{"infra"}, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveDecision(repoDir, d); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
 	}
-	// An active note informing only the implemented F-0005 → stale-note.
-	note := store.Note{ID: "N-0001", Title: "Migração da exportação", State: domain.NoteActive, Informs: []string{"F-0005"}, CreatedAt: now, UpdatedAt: now}
+	// An active note informing only the implemented F-0005 → stale-note (tagged,
+	// so untagged-live stays silent and the count stays fixed).
+	note := store.Note{ID: "N-0001", Title: "Migração da exportação", State: domain.NoteActive, Informs: []string{"F-0005"}, Facets: []string{"process"}, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveNote(repoDir, note); err != nil {
 		t.Fatalf("SaveNote: %v", err)
 	}
