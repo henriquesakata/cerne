@@ -766,9 +766,11 @@ func handleEvents(w http.ResponseWriter, repoDir string) {
 
 // createFeatureRequest is the POST /api/features body.
 type createFeatureRequest struct {
-	Title  string `json:"title"`
-	Module string `json:"module"`
-	Parent string `json:"parent"`
+	Title      string   `json:"title"`
+	Module     string   `json:"module"`
+	Parent     string   `json:"parent"`
+	Facets     []string `json:"facets"`     // closed-set axis (D-0002/D-0003); unknown facet → 422
+	Components []string `json:"components"` // curated subsystem/tool axis (D-0002/D-0003)
 }
 
 // createFeatureResponse is the POST /api/features 201 payload.
@@ -782,7 +784,7 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
 		return
 	}
-	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent)
+	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent, req.Facets, req.Components)
 	if err != nil {
 		// Validation/module failures surface as 422 with the same pt-BR
 		// message the CLI prints, matching handleTransition.

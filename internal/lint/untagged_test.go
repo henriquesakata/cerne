@@ -9,11 +9,20 @@ import (
 )
 
 // TestUntaggedLiveFindings pins the untagged-live rule: a live entity (active
-// note/decision, current reference) carrying no tag on EITHER axis (facets and
-// components both empty) is flagged; a tag on either axis silences it, and a
-// superseded/obsolete entity is history and is never flagged. Features are out
-// of scope — they categorize via `module`, not these axes (D-0002).
+// note/decision, current reference, actively-worked feature) carrying no tag on
+// EITHER axis (facets and components both empty) is flagged; a tag on either axis
+// silences it, and a superseded/obsolete entity is history and is never flagged.
+// Features gained the axes in D-0003: candidate/approved/in_development are
+// flagged, but implemented (done backlog) is deliberately spared.
 func TestUntaggedLiveFindings(t *testing.T) {
+	features := []store.Feature{
+		{ID: "F-0001", Title: "candidate sem tag", State: domain.StateCandidate},                             // flagged
+		{ID: "F-0002", Title: "approved com facet", State: domain.StateApproved, Facets: []string{"infra"}}, // tagged → skip
+		{ID: "F-0003", Title: "in_dev sem tag", State: domain.StateInDevelopment},                            // flagged
+		{ID: "F-0004", Title: "implemented sem tag", State: domain.StateImplemented},                         // done backlog → skip
+		{ID: "F-0005", Title: "superseded sem tag", State: domain.StateSuperseded},                           // history → skip
+		{ID: "F-0006", Title: "rejected sem tag", State: domain.StateRejected},                               // history → skip
+	}
 	notes := []store.Note{
 		{ID: "N-0001", Title: "sem tag", State: domain.NoteActive},                                        // flagged
 		{ID: "N-0002", Title: "só facet", State: domain.NoteActive, Facets: []string{"infra"}},            // tagged → skip
@@ -32,9 +41,9 @@ func TestUntaggedLiveFindings(t *testing.T) {
 		{ID: "D-0003", Title: "superseded sem tag", State: domain.DecisionSuperseded}, // history → skip
 	}
 
-	got := untaggedLiveFindings(decisions, references, notes)
+	got := untaggedLiveFindings(features, decisions, references, notes)
 
-	want := map[string]bool{"N-0001": true, "R-0001": true, "D-0001": true}
+	want := map[string]bool{"F-0001": true, "F-0003": true, "N-0001": true, "R-0001": true, "D-0001": true}
 	if len(got) != len(want) {
 		t.Fatalf("got %d untagged-live findings, want %d: %+v", len(got), len(want), got)
 	}

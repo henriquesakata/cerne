@@ -173,6 +173,12 @@ func collectRows(repoDir string) ([]row, error) {
 	for _, f := range features {
 		base := row{entityID: f.ID, kind: "feature", state: string(f.State),
 			title: f.Title, supersededBy: f.SupersededBy}
+		// Index the tags (D-0003) so a search by facet/component finds the feature
+		// even when the term never appears in its prose (mirrors decisions/notes).
+		tags := strings.Join(append(append([]string{}, f.Facets...), f.Components...), " ")
+		if tags != "" {
+			base.body = tags // carried when the feature has no content doc yet
+		}
 		found := false
 		for _, filename := range featureDocFilenames {
 			body, exists, err := readDoc(filepath.Join(repoDir, "content", "features", f.ID, filename))
@@ -184,7 +190,7 @@ func collectRows(repoDir string) ([]row, error) {
 			}
 			r := base
 			r.doc = strings.TrimSuffix(filename, ".md")
-			r.body = body
+			r.body = strings.TrimSpace(body + " " + tags)
 			rows = append(rows, r)
 			found = true
 		}

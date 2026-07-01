@@ -43,10 +43,12 @@ func seedBackend(t *testing.T) string {
 	now := time.Now().UTC()
 
 	features := []store.Feature{
+		// Live features are tagged so the untagged-live rule stays silent — this
+		// fixture exercises the other rules (D-0003 brought features into that rule).
 		{ID: "F-0001", Title: "Bills", State: domain.StateSuperseded, SupersededBy: "F-0002"},
-		{ID: "F-0002", Title: "Carteira", State: domain.StateCandidate},
-		{ID: "F-0003", Title: "Conta digital", State: domain.StateCandidate},
-		{ID: "F-0004", Title: "Relatórios", State: domain.StateApproved},
+		{ID: "F-0002", Title: "Carteira", State: domain.StateCandidate, Facets: []string{"code"}},
+		{ID: "F-0003", Title: "Conta digital", State: domain.StateCandidate, Facets: []string{"code"}},
+		{ID: "F-0004", Title: "Relatórios", State: domain.StateApproved, Facets: []string{"data"}},
 		{ID: "F-0005", Title: "Exportação", State: domain.StateImplemented},
 		{ID: "F-0007", Title: "One", State: domain.StateSuperseded},
 	}
@@ -298,10 +300,12 @@ func seedImportedBackend(t *testing.T) string {
 	now := time.Now().UTC()
 
 	features := []store.Feature{
+		// Live features tagged so untagged-live (now covering features, D-0003)
+		// stays silent — this fixture targets the imported_from needle behavior.
 		{ID: "F-0090", Title: "Agente autônomo", State: domain.StateSuperseded, SupersededBy: "F-0091"},
-		{ID: "F-0091", Title: "Plataforma de agentes", State: domain.StateCandidate},
-		{ID: "F-0092", Title: "Relatório de uso", State: domain.StateCandidate},
-		{ID: "F-0093", Title: "Limites de uso", State: domain.StateCandidate},
+		{ID: "F-0091", Title: "Plataforma de agentes", State: domain.StateCandidate, Facets: []string{"code"}},
+		{ID: "F-0092", Title: "Relatório de uso", State: domain.StateCandidate, Facets: []string{"code"}},
+		{ID: "F-0093", Title: "Limites de uso", State: domain.StateCandidate, Facets: []string{"code"}},
 		{ID: "F-0094", Title: "Painel antigo", State: domain.StateSuperseded},
 	}
 	for _, f := range features {

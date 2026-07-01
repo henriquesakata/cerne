@@ -342,6 +342,9 @@ func writeFeatureIndex(docsDir, dirName string, f store.Feature, written []strin
 	if f.Module != "" {
 		tags = []string{f.Module}
 	}
+	// D-0003: the facet/component axes join module in the OKF tag list.
+	tags = append(tags, f.Facets...)
+	tags = append(tags, f.Components...)
 	meta := okfMeta{
 		Type:      "feature",
 		Title:     f.Title,

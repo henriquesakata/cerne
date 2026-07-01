@@ -24,9 +24,9 @@ func seedBackend(t *testing.T) (repoDir string) {
 		{ID: "F-0001", Title: "Bills (boletos)", State: domain.StateSuperseded,
 			SupersededBy: "F-0002", CreatedAt: now, UpdatedAt: now},
 		{ID: "F-0002", Title: "Pagamentos via Pix", State: domain.StateCandidate,
-			CreatedAt: now, UpdatedAt: now},
+			Components: []string{"pixgateway"}, CreatedAt: now, UpdatedAt: now}, // tag on a feature WITH a doc
 		{ID: "F-0003", Title: "Telemetria de uso", State: domain.StateCandidate,
-			CreatedAt: now, UpdatedAt: now},
+			Facets: []string{"data"}, Components: []string{"chronos"}, CreatedAt: now, UpdatedAt: now}, // tag on a title-only feature
 	}
 	for _, f := range features {
 		if err := store.SaveFeature(repoDir, f); err != nil {
@@ -102,6 +102,36 @@ func TestSearchFindsNotes(t *testing.T) {
 		}
 		if len(results) != 1 || results[0].EntityID != tt.wantID || results[0].Kind != tt.wantKnd {
 			t.Fatalf("Search(%q) = %+v, want single %s %s", tt.query, results, tt.wantKnd, tt.wantID)
+		}
+	}
+}
+
+// TestSearchFindsFeatureByTag pins that a feature's facet/component tags are
+// indexed (D-0003), so a search by a tag term finds the feature even when the
+// term is absent from its title and prose — on a feature with a doc (tags folded
+// into the doc row) and a title-only one (tags carried on the base row).
+func TestSearchFindsFeatureByTag(t *testing.T) {
+	_, dbPath := rebuild(t)
+	tests := []struct {
+		query, wantID string
+	}{
+		{"pixgateway", "F-0002"}, // component on a feature with a spec doc
+		{"chronos", "F-0003"},    // component on a title-only feature
+		{"data", "F-0003"},       // facet on a title-only feature
+	}
+	for _, tt := range tests {
+		results, err := Search(dbPath, tt.query, 10)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", tt.query, err)
+		}
+		found := false
+		for _, r := range results {
+			if r.EntityID == tt.wantID && r.Kind == "feature" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("Search(%q) did not find feature %s: %+v", tt.query, tt.wantID, results)
 		}
 	}
 }

@@ -217,3 +217,56 @@ func TestFeatureNewOutsideProject(t *testing.T) {
 		t.Fatalf("feature new outside a project succeeded, want error")
 	}
 }
+
+// TestFeatureNewTags pins the --facet/--component flags on feature new (D-0003):
+// CSV parsed, normalized, and persisted; an unknown facet errors.
+func TestFeatureNewTags(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+
+	if _, err := execCerne(t, "feature", "new", "Feat", "--facet", "infra,code", "--component", "Gitback", "--dir", projDir); err != nil {
+		t.Fatalf("feature new with tags: %v", err)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if len(f.Facets) != 2 || f.Facets[0] != "infra" || f.Facets[1] != "code" {
+		t.Fatalf("Facets = %v, want [infra code]", f.Facets)
+	}
+	if len(f.Components) != 1 || f.Components[0] != "gitback" {
+		t.Fatalf("Components = %v, want [gitback]", f.Components)
+	}
+
+	if _, err := execCerne(t, "feature", "new", "Bad", "--facet", "bogus", "--dir", projDir); err == nil {
+		t.Fatalf("feature new with unknown facet succeeded, want error")
+	}
+}
+
+// TestFeatureRetag pins the feature retag command: per-axis update, the
+// no-flags guard, and persistence.
+func TestFeatureRetag(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Feat", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+
+	// retag with no axis flag is a usage error.
+	if _, err := execCerne(t, "feature", "retag", "F-0001", "--dir", projDir); err == nil {
+		t.Fatalf("retag with no flags succeeded, want error")
+	}
+
+	out, err := execCerne(t, "feature", "retag", "F-0001", "--component", "gitback", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature retag: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0001 retaggeada") {
+		t.Fatalf("output missing confirmation:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if len(f.Components) != 1 || f.Components[0] != "gitback" {
+		t.Fatalf("Components = %v, want [gitback]", f.Components)
+	}
+}
