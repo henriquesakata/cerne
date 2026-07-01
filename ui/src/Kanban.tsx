@@ -1,4 +1,10 @@
-import { useEffect, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import {
   fetchLint,
   fetchState,
@@ -6,6 +12,7 @@ import {
   type FeatureState,
   type StateResponse,
 } from './api'
+import Tag from './Tag'
 import { useLiveVersion } from './live'
 
 // Rule name from the lint API contract (internal/lint: epic-behind-children):
@@ -34,11 +41,29 @@ const COLUMN_LABELS: Record<FeatureState, string> = {
 
 const isClosed = (s: FeatureState) => s === 'superseded' || s === 'rejected'
 
+// toggleIn returns a handler that adds/removes a value from a Set state,
+// always producing a fresh Set so React sees the change.
+function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
+  return (v: string) =>
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(v)) next.delete(v)
+      else next.add(v)
+      return next
+    })
+}
+
+function sortedUnique(values: string[]): string[] {
+  return Array.from(new Set(values)).sort()
+}
+
 export default function Kanban() {
   const [state, setState] = useState<StateResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showClosed, setShowClosed] = useState(false)
   const [groupByEpic, setGroupByEpic] = useState(false)
+  const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
+  const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
   // Epics flagged epic-behind-children by lint (a child already in dev while
   // the epic itself is not started). Best-effort: lint is secondary, so a
   // failure leaves the set empty and never breaks the board.
@@ -68,6 +93,18 @@ export default function Kanban() {
       .catch(() => setBehind(new Set()))
   }, [version])
 
+  // Filter options come from every loaded feature (not the filtered set), so the
+  // available chips stay stable as the user narrows down. Computed before the
+  // early returns so the hook order is stable.
+  const allFacets = useMemo(
+    () => sortedUnique((state?.features ?? []).flatMap((f) => f.facets ?? [])),
+    [state],
+  )
+  const allComponents = useMemo(
+    () => sortedUnique((state?.features ?? []).flatMap((f) => f.components ?? [])),
+    [state],
+  )
+
   if (error) return <p className="status error">Erro ao carregar o estado: {error}</p>
   if (!state) return <p className="status">Carregando…</p>
 
@@ -85,6 +122,25 @@ export default function Kanban() {
 
   const closed = state.features.filter((f) => isClosed(f.state)).length
 
+  const toggleFacet = toggleIn(setSelFacets)
+  const toggleComponent = toggleIn(setSelComponents)
+  const clearFilters = () => {
+    setSelFacets(new Set())
+    setSelComponents(new Set())
+  }
+  const hasFilter = selFacets.size > 0 || selComponents.size > 0
+  const hasOptions = allFacets.length > 0 || allComponents.length > 0
+
+  // AND between axes, OR within an axis: mirrors the CLI's --facet/--component
+  // AND while letting a multi-select widen each axis.
+  const matches = (f: Feature): boolean => {
+    const fOk = selFacets.size === 0 || (f.facets ?? []).some((x) => selFacets.has(x))
+    const cOk =
+      selComponents.size === 0 || (f.components ?? []).some((x) => selComponents.has(x))
+    return fOk && cOk
+  }
+  const shownCount = state.features.filter(matches).length
+
   return (
     <main className="kanban">
       <header className="kanban-header">
@@ -92,6 +148,7 @@ export default function Kanban() {
         <p className="counts">
           {state.features.length} feature(s) · {state.features.length - closed}{' '}
           aberta(s) · {closed} encerrada(s)
+          {hasFilter && ` · ${shownCount} no filtro`}
         </p>
         <label className="toggle">
           <input
@@ -110,6 +167,43 @@ export default function Kanban() {
           Mostrar encerradas
         </label>
       </header>
+      {hasOptions && (
+        <div className="note-filter">
+          {allFacets.length > 0 && (
+            <div className="note-filter-group">
+              <span className="note-filter-label">Facets</span>
+              {allFacets.map((f) => (
+                <Tag
+                  key={f}
+                  axis="facet"
+                  value={f}
+                  active={selFacets.has(f)}
+                  onToggle={toggleFacet}
+                />
+              ))}
+            </div>
+          )}
+          {allComponents.length > 0 && (
+            <div className="note-filter-group">
+              <span className="note-filter-label">Componentes</span>
+              {allComponents.map((c) => (
+                <Tag
+                  key={c}
+                  axis="component"
+                  value={c}
+                  active={selComponents.has(c)}
+                  onToggle={toggleComponent}
+                />
+              ))}
+            </div>
+          )}
+          {hasFilter && (
+            <button type="button" className="note-filter-clear" onClick={clearFilters}>
+              Limpar
+            </button>
+          )}
+        </div>
+      )}
       {groupByEpic ? (
         <EpicBoard
           features={state.features}
@@ -117,6 +211,7 @@ export default function Kanban() {
           isEpic={isEpic}
           isBehind={isBehind}
           showClosed={showClosed}
+          matches={matches}
         />
       ) : (
         <Columns
@@ -124,6 +219,7 @@ export default function Kanban() {
           isEpic={isEpic}
           isBehind={isBehind}
           showClosed={showClosed}
+          matches={matches}
         />
       )}
     </main>
@@ -135,15 +231,17 @@ function Columns({
   isEpic,
   isBehind,
   showClosed,
+  matches,
 }: {
   features: Feature[]
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
   showClosed: boolean
+  matches: (f: Feature) => boolean
 }) {
   const columns = showClosed ? [...OPEN_COLUMNS, ...CLOSED_COLUMNS] : OPEN_COLUMNS
   const byState = new Map<FeatureState, Feature[]>()
-  for (const f of features) {
+  for (const f of features.filter(matches)) {
     const list = byState.get(f.state) ?? []
     list.push(f)
     byState.set(f.state, list)
@@ -181,24 +279,30 @@ function EpicBoard({
   isEpic,
   isBehind,
   showClosed,
+  matches,
 }: {
   features: Feature[]
   childrenByParent: Map<string, Feature[]>
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
   showClosed: boolean
+  matches: (f: Feature) => boolean
 }) {
   const byId = new Map(features.map((f) => [f.id, f]))
   const epicIds = [...childrenByParent.keys()].sort()
   const visible = (f: Feature) => showClosed || !isClosed(f.state)
-  const standalone = features.filter((f) => !f.parent && !isEpic(f.id) && visible(f))
+  const standalone = features.filter(
+    (f) => !f.parent && !isEpic(f.id) && visible(f) && matches(f),
+  )
 
   return (
     <div className="epics-board">
       {epicIds.map((eid) => {
         const epic = byId.get(eid)
         const all = childrenByParent.get(eid) ?? []
-        const kids = all.filter(visible)
+        // Progress counts the full epic (structure is stable); the filter only
+        // narrows which child cards are shown.
+        const kids = all.filter((c) => visible(c) && matches(c))
         const done = all.filter((c) => c.state === 'implemented').length
         return (
           <section key={eid} className="epic-lane">
@@ -261,6 +365,10 @@ function Card({
   isEpic: boolean
   isBehind?: boolean
 }) {
+  // Read-only chips: the whole card is an <a>, so a Tag button can't live here
+  // (invalid nested interactive element). Filtering is driven by the top bar.
+  const hasTags =
+    (feature.facets?.length ?? 0) > 0 || (feature.components?.length ?? 0) > 0
   return (
     <a className={`card card-${feature.state}`} href={`#/f/${feature.id}`}>
       <span className="card-meta">
@@ -277,6 +385,16 @@ function Card({
         {feature.module && <span className="badge">{feature.module}</span>}
       </span>
       <span className="card-title">{feature.title}</span>
+      {hasTags && (
+        <span className="note-tags">
+          {feature.facets?.map((f) => (
+            <Tag key={`f-${f}`} axis="facet" value={f} />
+          ))}
+          {feature.components?.map((c) => (
+            <Tag key={`c-${c}`} axis="component" value={c} />
+          ))}
+        </span>
+      )}
       {feature.parent && <span className="card-parent">↳ {feature.parent}</span>}
       {feature.state === 'superseded' && feature.superseded_by && (
         <span className="card-superseded-by">→ {feature.superseded_by}</span>
