@@ -150,6 +150,59 @@ func TestFeatureListParentFilter(t *testing.T) {
 	}
 }
 
+// TestFeatureListTagFilter pins the --facet/--component filters (D-0003): each
+// matches on the respective axis, they AND together, and the line shows the tag
+// markers.
+func TestFeatureListTagFilter(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Infra do gitback", State: domain.StateInDevelopment, Facets: []string{"infra"}, Components: []string{"gitback"}},
+		{ID: "F-0002", Title: "Infra do índice", State: domain.StateApproved, Facets: []string{"infra"}, Components: []string{"index"}},
+		{ID: "F-0003", Title: "Código puro", State: domain.StateCandidate, Facets: []string{"code"}},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed tagged"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	// --facet infra → F-0001, F-0002 (not F-0003).
+	out, err := execCerne(t, "feature", "list", "--facet", "infra", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list --facet: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0001") || !strings.Contains(out, "F-0002") || strings.Contains(out, "F-0003") {
+		t.Fatalf("--facet infra should match F-0001,F-0002 only:\n%s", out)
+	}
+	// The marker renders (case-normalized filter still matches).
+	if !strings.Contains(out, "F-0001  [in_development]  Infra do gitback  · facet infra · comp gitback\n") {
+		t.Fatalf("tag markers missing on the line:\n%s", out)
+	}
+
+	// --component gitback → only F-0001.
+	out, err = execCerne(t, "feature", "list", "--component", "Gitback", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list --component: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0001") || strings.Contains(out, "F-0002") {
+		t.Fatalf("--component gitback (case-normalized) should match only F-0001:\n%s", out)
+	}
+
+	// AND: --facet infra --component index → only F-0002.
+	out, err = execCerne(t, "feature", "list", "--facet", "infra", "--component", "index", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list --facet --component: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0002") || strings.Contains(out, "F-0001") || strings.Contains(out, "F-0003") {
+		t.Fatalf("--facet infra --component index should match only F-0002:\n%s", out)
+	}
+}
+
 // TestFeatureListJSON pins --json: it returns the FILTERED set (not the whole
 // roster), with no human table decoration.
 func TestFeatureListJSON(t *testing.T) {

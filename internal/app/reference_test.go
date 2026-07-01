@@ -15,7 +15,7 @@ import (
 func TestCreateExternalReference(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	// A feature to link the source to (the fix it motivated).
-	if _, err := CreateFeature(repoDir, projDir, "Corrige login", "", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Corrige login", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestCreateExternalReferenceValidation(t *testing.T) {
 // Informs backlink contains the entity id.
 func TestReferencesInforming(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feat", "", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	if _, err := CreateExternalReference(repoDir, projDir, "A", "http://a", "ca", []string{"F-0001"}, nil, nil); err != nil {

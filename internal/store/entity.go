@@ -29,6 +29,8 @@ type Feature struct {
 	State        domain.FeatureState `json:"state"`
 	SupersededBy string              `json:"superseded_by,omitempty"`
 	Reason       string              `json:"reason,omitempty"`
+	Facets       []string            `json:"facets,omitempty"`     // closed-set axis (D-0002/D-0003): infra/code/data/process/auth
+	Components   []string            `json:"components,omitempty"` // curated subsystem/tool axis (D-0002/D-0003): gitback, materialize, …
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
 }

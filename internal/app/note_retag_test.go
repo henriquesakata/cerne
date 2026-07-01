@@ -84,7 +84,7 @@ func TestRetagNoteInvalidFacetNoOp(t *testing.T) {
 // TestRetagNotePreservesDurableInforms: retag touches only tags, not Durable/Informs.
 func TestRetagNotePreservesDurableInforms(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feat", "", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	n, err := CreateNote(repoDir, projDir, "Nota", "corpo", []string{"F-0001"}, nil, nil)
