@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
+import Tag from './Tag'
 import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types'
 import {
   fetchArtifactText,
@@ -264,6 +265,12 @@ export default function FeaturePage({ id }: { id: string }) {
         <p className="feature-meta">
           <span className={`chip chip-${f.state}`}>{STATE_LABELS[f.state]}</span>
           {f.module && <span className="badge">{f.module}</span>}
+          {f.facets?.map((x) => (
+            <Tag key={`f-${x}`} axis="facet" value={x} />
+          ))}
+          {f.components?.map((x) => (
+            <Tag key={`c-${x}`} axis="component" value={x} />
+          ))}
         </p>
         {f.parent && (
           <p className="feature-note">
