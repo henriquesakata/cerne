@@ -725,6 +725,14 @@ func TestLintEndpointClean(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	// A candidate with a real, template-complete spec leaves nothing stale or incomplete.
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+	// Tagged so untagged-live (features joined that rule in D-0003) stays silent —
+	// this test asserts a genuinely clean backend.
+	if f, err := store.LoadFeature(repoDir, "F-0001"); err == nil {
+		f.Facets = []string{"code"}
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("tag F-0001: %v", err)
+		}
+	}
 	writeDoc(t, repoDir, "F-0001", "spec.md",
 		"---\ncerne_id: F-0001\n---\n\n# Feature A\n\n## Problema\n\nReal.\n\n## Objetivo e critérios de aceitação\n\n1. Critério.\n\n## Decisões do design\n\nN/A\n\n## Desenho\n\nReal.\n\n## Verificação\n\nReal.\n\n## Fora de escopo\n\nN/A\n")
 

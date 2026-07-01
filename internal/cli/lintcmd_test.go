@@ -32,10 +32,12 @@ func seedLintFixture(t *testing.T, repoDir string) {
 	t.Helper()
 	now := time.Now().UTC()
 	features := []store.Feature{
+		// Live features tagged so untagged-live (features joined that rule in
+		// D-0003) stays silent — this fixture counts a fixed set from other rules.
 		{ID: "F-0001", Title: "Bills", State: domain.StateSuperseded, SupersededBy: "F-0002"},
-		{ID: "F-0002", Title: "Carteira", State: domain.StateCandidate},
-		{ID: "F-0003", Title: "Conta digital", State: domain.StateCandidate},
-		{ID: "F-0004", Title: "Relatórios", State: domain.StateApproved},
+		{ID: "F-0002", Title: "Carteira", State: domain.StateCandidate, Facets: []string{"code"}},
+		{ID: "F-0003", Title: "Conta digital", State: domain.StateCandidate, Facets: []string{"code"}},
+		{ID: "F-0004", Title: "Relatórios", State: domain.StateApproved, Facets: []string{"data"}},
 		{ID: "F-0005", Title: "Exportação", State: domain.StateImplemented},
 		{ID: "F-0007", Title: "One", State: domain.StateSuperseded},
 	}

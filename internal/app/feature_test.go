@@ -44,7 +44,7 @@ func newFeatureBackend(t *testing.T, modules ...string) (repoDir, projDir, origi
 func TestCreateFeature(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 
-	f, err := CreateFeature(repoDir, projDir, "  Minha feature  ", "", "")
+	f, err := CreateFeature(repoDir, projDir, "  Minha feature  ", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
@@ -90,18 +90,18 @@ func TestCreateFeature(t *testing.T) {
 
 func TestCreateFeatureEmptyTitle(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "   ", "", ""); err == nil {
+	if _, err := CreateFeature(repoDir, projDir, "   ", "", "", nil, nil); err == nil {
 		t.Fatalf("want error for empty title")
 	}
 }
 
 func TestCreateFeatureWithParent(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "")
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature epic: %v", err)
 	}
-	child, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID)
+	child, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID, nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature child: %v", err)
 	}
@@ -124,10 +124,10 @@ func TestCreateFeatureWithParent(t *testing.T) {
 
 func TestCreateFeatureParentErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "X", "", "F-9999"); !errors.Is(err, ErrParentNotFound) {
+	if _, err := CreateFeature(repoDir, projDir, "X", "", "F-9999", nil, nil); !errors.Is(err, ErrParentNotFound) {
 		t.Fatalf("err = %v, want ErrParentNotFound", err)
 	}
-	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "")
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature epic: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestCreateFeatureParentErrors(t *testing.T) {
 	if err := store.SaveFeature(repoDir, epic); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
-	if _, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID); !errors.Is(err, ErrParentTerminal) {
+	if _, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID, nil, nil); !errors.Is(err, ErrParentTerminal) {
 		t.Fatalf("err = %v, want ErrParentTerminal", err)
 	}
 }
@@ -143,13 +143,13 @@ func TestCreateFeatureParentErrors(t *testing.T) {
 func TestCreateFeatureModuleRules(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t, "core", "web")
 
-	if _, err := CreateFeature(repoDir, projDir, "X", "", ""); err == nil {
+	if _, err := CreateFeature(repoDir, projDir, "X", "", "", nil, nil); err == nil {
 		t.Fatalf("want error: --module required with 2+ declared modules")
 	}
-	if _, err := CreateFeature(repoDir, projDir, "X", "nope", ""); err == nil {
+	if _, err := CreateFeature(repoDir, projDir, "X", "nope", "", nil, nil); err == nil {
 		t.Fatalf("want error: undeclared module")
 	}
-	f, err := CreateFeature(repoDir, projDir, "X", "core", "")
+	f, err := CreateFeature(repoDir, projDir, "X", "core", "", nil, nil)
 	if err != nil || f.Module != "core" {
 		t.Fatalf("CreateFeature valid module = %+v, %v; want module core", f, err)
 	}
@@ -157,11 +157,11 @@ func TestCreateFeatureModuleRules(t *testing.T) {
 
 func TestSetFeatureParent(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "")
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature epic: %v", err)
 	}
-	child, err := CreateFeature(repoDir, projDir, "Filha", "", "")
+	child, err := CreateFeature(repoDir, projDir, "Filha", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature child: %v", err)
 	}
@@ -200,11 +200,11 @@ func TestSetFeatureParent(t *testing.T) {
 
 func TestSetFeatureParentErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	a, err := CreateFeature(repoDir, projDir, "A", "", "")
+	a, err := CreateFeature(repoDir, projDir, "A", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature A: %v", err)
 	}
-	b, err := CreateFeature(repoDir, projDir, "B", "", a.ID) // B is a child of A
+	b, err := CreateFeature(repoDir, projDir, "B", "", a.ID, nil, nil) // B is a child of A
 	if err != nil {
 		t.Fatalf("CreateFeature B: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestRenameFeatureLive(t *testing.T) {
 	} {
 		t.Run(string(st), func(t *testing.T) {
 			repoDir, projDir, origin := newFeatureBackend(t)
-			f, err := CreateFeature(repoDir, projDir, "Título antigo", "", "")
+			f, err := CreateFeature(repoDir, projDir, "Título antigo", "", "", nil, nil)
 			if err != nil {
 				t.Fatalf("CreateFeature: %v", err)
 			}
@@ -265,7 +265,7 @@ func TestRenameFeatureTerminalFrozen(t *testing.T) {
 	} {
 		t.Run(string(st), func(t *testing.T) {
 			repoDir, projDir, _ := newFeatureBackend(t)
-			f, err := CreateFeature(repoDir, projDir, "Congelado", "", "")
+			f, err := CreateFeature(repoDir, projDir, "Congelado", "", "", nil, nil)
 			if err != nil {
 				t.Fatalf("CreateFeature: %v", err)
 			}
@@ -286,7 +286,7 @@ func TestRenameFeatureTerminalFrozen(t *testing.T) {
 
 func TestRenameFeatureEmpty(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	f, err := CreateFeature(repoDir, projDir, "Original", "", "")
+	f, err := CreateFeature(repoDir, projDir, "Original", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestRenameFeatureEmpty(t *testing.T) {
 
 func TestRenameFeatureUnchangedNoop(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	f, err := CreateFeature(repoDir, projDir, "Estável", "", "")
+	f, err := CreateFeature(repoDir, projDir, "Estável", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestRenameFeatureUnknown(t *testing.T) {
 
 func TestSaveFeatureDoc(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feature", "", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	head0, _ := gitback.HeadSHA(origin)
@@ -364,7 +364,7 @@ func TestSaveFeatureDoc(t *testing.T) {
 
 func TestSaveFeatureDocErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feature", "", ""); err != nil {
+	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "notes", "x"); !errors.Is(err, ErrUnknownDoc) {
@@ -372,5 +372,84 @@ func TestSaveFeatureDocErrors(t *testing.T) {
 	}
 	if err := SaveFeatureDoc(repoDir, projDir, "F-9999", "spec", "x"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("err = %v, want store.ErrNotFound", err)
+	}
+}
+
+// TestCreateFeatureTags pins tag normalization on create (D-0003): facets are
+// lowercased/deduped and validated against the closed set; components are
+// slugified/deduped; an unknown facet aborts before minting an id.
+func TestCreateFeatureTags(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+
+	f, err := CreateFeature(repoDir, projDir, "Feat", "", "",
+		[]string{"infra", "Infra", "code"}, []string{"Gitback", "gitback"})
+	if err != nil {
+		t.Fatalf("CreateFeature with tags: %v", err)
+	}
+	if got := f.Facets; len(got) != 2 || got[0] != "infra" || got[1] != "code" {
+		t.Fatalf("Facets = %v, want [infra code] (lowered, deduped)", got)
+	}
+	if got := f.Components; len(got) != 1 || got[0] != "gitback" {
+		t.Fatalf("Components = %v, want [gitback] (slugged, deduped)", got)
+	}
+	// Persisted, not just returned.
+	if got, _ := store.LoadFeature(repoDir, "F-0001"); len(got.Facets) != 2 || len(got.Components) != 1 {
+		t.Fatalf("persisted tags = facets %v comps %v", got.Facets, got.Components)
+	}
+
+	// An unknown facet aborts without consuming the next id.
+	if _, err := CreateFeature(repoDir, projDir, "Bad", "", "", []string{"bogus"}, nil); !errors.Is(err, domain.ErrUnknownFacet) {
+		t.Fatalf("err = %v, want ErrUnknownFacet", err)
+	}
+	if _, err := store.LoadFeature(repoDir, "F-0002"); err == nil {
+		t.Fatalf("F-0002 minted despite invalid facet")
+	}
+}
+
+// TestRetagFeature pins RetagFeature: per-axis update via the set flags, facet
+// validation, and the gate (retaggable while live/implemented, frozen once
+// superseded/rejected).
+func TestRetagFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+
+	// Set facets only — components stay empty.
+	f, err := RetagFeature(repoDir, projDir, "F-0001", []string{"code"}, nil, true, false)
+	if err != nil {
+		t.Fatalf("retag facets: %v", err)
+	}
+	if len(f.Facets) != 1 || f.Facets[0] != "code" || len(f.Components) != 0 {
+		t.Fatalf("after facet retag = facets %v comps %v, want [code] / []", f.Facets, f.Components)
+	}
+	// Set components only — facets preserved.
+	f, err = RetagFeature(repoDir, projDir, "F-0001", nil, []string{"gitback"}, false, true)
+	if err != nil {
+		t.Fatalf("retag components: %v", err)
+	}
+	if len(f.Facets) != 1 || f.Facets[0] != "code" || len(f.Components) != 1 || f.Components[0] != "gitback" {
+		t.Fatalf("after comp retag = facets %v comps %v, want [code] / [gitback]", f.Facets, f.Components)
+	}
+	// Clear facets (empty slice with set=true).
+	f, err = RetagFeature(repoDir, projDir, "F-0001", nil, nil, true, false)
+	if err != nil {
+		t.Fatalf("clear facets: %v", err)
+	}
+	if len(f.Facets) != 0 || len(f.Components) != 1 {
+		t.Fatalf("after clear = facets %v comps %v, want [] / [gitback]", f.Facets, f.Components)
+	}
+	// Unknown facet leaves the feature untouched.
+	if _, err := RetagFeature(repoDir, projDir, "F-0001", []string{"bogus"}, nil, true, false); !errors.Is(err, domain.ErrUnknownFacet) {
+		t.Fatalf("err = %v, want ErrUnknownFacet", err)
+	}
+
+	// Gate: a rejected feature is frozen history — retag refused.
+	rej := store.Feature{ID: "F-0002", Title: "Morta", State: domain.StateRejected}
+	if err := store.SaveFeature(repoDir, rej); err != nil {
+		t.Fatalf("SaveFeature rejected: %v", err)
+	}
+	if _, err := RetagFeature(repoDir, projDir, "F-0002", []string{"code"}, nil, true, false); err == nil {
+		t.Fatalf("retag of rejected feature succeeded, want error")
 	}
 }

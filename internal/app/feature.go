@@ -44,11 +44,19 @@ var featureDocFilenames = map[string]string{
 // feature.created event, commits+pushes the backend and refreshes the
 // docs.lock snapshot. The shared core behind `cerne feature new` (CLI) and
 // POST /api/features (server). Module rules are enforced (see ValidateModule).
-func CreateFeature(repoDir, projDir, title, module, parent string) (store.Feature, error) {
+// facets/components tag the feature on the shared D-0002 axes (facet closed-set,
+// component curated), extended to features by D-0003 — validated before any side
+// effect so an unknown facet aborts without minting an id or writing a file.
+func CreateFeature(repoDir, projDir, title, module, parent string, facets, components []string) (store.Feature, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Feature{}, fmt.Errorf("o título da feature não pode ser vazio")
 	}
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	normComponents := domain.NormalizeComponents(components)
 	proj, err := store.LoadProject(repoDir)
 	if err != nil {
 		return store.Feature{}, err
@@ -67,13 +75,15 @@ func CreateFeature(repoDir, projDir, title, module, parent string) (store.Featur
 	}
 	now := time.Now().UTC()
 	f := store.Feature{
-		ID:        id,
-		Title:     title,
-		Module:    module,
-		Parent:    parent,
-		State:     domain.StateCandidate,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		Title:      title,
+		Module:     module,
+		Parent:     parent,
+		State:      domain.StateCandidate,
+		Facets:     normFacets,
+		Components: normComponents,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.SaveFeature(repoDir, f); err != nil {
 		return store.Feature{}, err
@@ -90,6 +100,51 @@ func CreateFeature(repoDir, projDir, title, module, parent string) (store.Featur
 		return store.Feature{}, err
 	}
 	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: create %s (%s)", id, title)); err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
+// RetagFeature sets the tag axes of a feature in the backend clone at repoDir.
+// Each axis is replaced only when its set flag is true, so a caller can update
+// facets without touching components (or clear an axis by passing an empty slice
+// with set=true); every other field is preserved. Unlike a decision (retaggable
+// only while active), a feature is retaggable in every state EXCEPT the dead
+// history ones (superseded/rejected): the implemented backlog is living,
+// searchable knowledge worth categorizing, so tagging it is allowed even though
+// the untagged-live lint never nags about it. Facets are validated against the
+// closed set before any write. Appends feature.retagged and syncs backend +
+// docs.lock.
+func RetagFeature(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Feature, error) {
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	if f.State == domain.StateSuperseded || f.State == domain.StateRejected {
+		return store.Feature{}, fmt.Errorf("feature %s está encerrada (%s) — retag só vale para feature viva ou implementada", id, f.State)
+	}
+	if setFacets {
+		nf, err := domain.NormalizeFacets(facets)
+		if err != nil {
+			return store.Feature{}, err // unknown facet: feature untouched
+		}
+		f.Facets = nf
+	}
+	if setComponents {
+		f.Components = domain.NormalizeComponents(components)
+	}
+	f.UpdatedAt = time.Now().UTC()
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		return store.Feature{}, err
+	}
+	ev := domain.NewEvent(id, "feature.retagged", map[string]string{
+		"facets":     strings.Join(f.Facets, ","),
+		"components": strings.Join(f.Components, ","),
+	}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Feature{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
 		return store.Feature{}, err
 	}
 	return f, nil

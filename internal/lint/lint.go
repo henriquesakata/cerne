@@ -203,7 +203,7 @@ func Run(repoDir string) ([]Finding, error) {
 	}
 	findings = append(findings, incomplete...)
 
-	findings = append(findings, untaggedLiveFindings(decisions, references, notes)...)
+	findings = append(findings, untaggedLiveFindings(features, decisions, references, notes)...)
 
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
@@ -1037,20 +1037,32 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 }
 
 // untaggedLiveFindings flags a live entity — an active note or decision, a
-// current reference — carrying no tag on EITHER axis (facets and components
-// both empty). Such an entity is invisible to the categorical
-// `list --facet/--component` filters and reachable only by full-text
+// current reference, an actively-worked feature — carrying no tag on EITHER axis
+// (facets and components both empty). Such an entity is invisible to the
+// categorical `list --facet/--component` filters and reachable only by full-text
 // search/ask, a retrieval gap that compounds as the project grows. It is
 // advisory, never blocking: D-0002 fixed the tag vocabulary but not a mandatory
 // gate, so creation stays frictionless and this rule surfaces the debt for a
-// batched `cerne <kind> retag`. Superseded/obsolete entities are history and
-// are never flagged; features are out of scope — they categorize via `module`,
-// not these axes (F-0097).
-func untaggedLiveFindings(decisions []store.Decision, references []store.Reference, notes []store.Note) []Finding {
+// batched `cerne <kind> retag`. Superseded/obsolete entities are history and are
+// never flagged. Features gained the tag axes in D-0003; only the actively-worked
+// states (candidate/approved/in_development) are flagged — the implemented
+// backlog is deliberately spared so the rule never dumps the whole done-history
+// as untagged debt.
+func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, references []store.Reference, notes []store.Note) []Finding {
 	untagged := func(facets, components []string) bool {
 		return len(facets) == 0 && len(components) == 0
 	}
 	var findings []Finding
+	for _, f := range features {
+		live := f.State == domain.StateCandidate || f.State == domain.StateApproved || f.State == domain.StateInDevelopment
+		if live && untagged(f.Facets, f.Components) {
+			findings = append(findings, Finding{
+				Rule:   RuleUntaggedLive,
+				Entity: f.ID,
+				Detail: "sem tag (facet/componente) — classifique com 'cerne feature retag'",
+			})
+		}
+	}
 	for _, nt := range notes {
 		if nt.State == domain.NoteActive && untagged(nt.Facets, nt.Components) {
 			findings = append(findings, Finding{
