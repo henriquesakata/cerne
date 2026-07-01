@@ -17,6 +17,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newFeatureNewCmd(&dir))
+	cmd.AddCommand(newFeatureListCmd(&dir))
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
 	cmd.AddCommand(newFeatureRenameCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
