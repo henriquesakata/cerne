@@ -941,6 +941,9 @@ button.tag {
 }
 .note-row > .entity-row { flex: 1 1 18rem; }
 .note-tags { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+/* on a kanban card the tags sit below the (block) title — give them air, like
+   .card-parent/.card-superseded-by. Read-only here: the whole card is a link. */
+.card .note-tags { margin-top: 0.3rem; }
 
 .note-filter {
   display: flex;
