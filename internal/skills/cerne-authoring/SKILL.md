@@ -172,6 +172,8 @@ cerne feature errata F-0008 --file errata.md  # or piped stdin — one-shot, lik
 
 The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). There is **no** edit/rewrite command — errata is the only correction path, by design: annotate, never rewrite.
 
+One tolerance is automatic: an errata may **name what its own entity superseded** (e.g. F-0001's errata saying "this feature replaced F-0002") without `cerne lint` raising `ref-to-superseded` — that supersession record is legitimate history, and since the errata is immutable it cannot carry the `lint:ok-superseded` marker used in authored docs. This holds only for the errata's *own* predecessor: a stale reference to some **other** superseded entity in an errata is still flagged — clear it by appending a correcting entry that points at the successor.
+
 ## Knowledge routing: cerne note vs. local memory
 
 When you acquire knowledge worth keeping, route it by **who it belongs to**, not by reflex:
