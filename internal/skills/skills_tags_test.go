@@ -67,4 +67,10 @@ func TestCerneAuthoringDocumentsTags(t *testing.T) {
 	// C10 (F-0097) — the skill warns that a live entity untagged on both axes
 	// is an `untagged-live` lint debt, so agents tag proactively.
 	contains("C10", "untagged-live")
+
+	// C11 (F-0101) — features carry the same tag surface: an in-place retag and a
+	// facet/component filter on the listing (F-0099 shipped the CLI; the kanban UI
+	// F-0100 reads it). Pins the skill against dropping features from the axis.
+	contains("C11", "feature retag")
+	contains("C11", "feature list --facet")
 }
