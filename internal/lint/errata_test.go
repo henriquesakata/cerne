@@ -92,3 +92,124 @@ func TestLintErrataToleratesOwnPredecessor(t *testing.T) {
 		t.Fatalf("errata naming what its own entity superseded must be tolerated, got: %+v", refs)
 	}
 }
+
+// TestLintErrataToleratesOwnPredecessorByTitle pins F-0094 crit. 3: the
+// self-supersession tolerance is per-entity, not per-match-kind — an errata that
+// names its predecessor by TITLE (not id) is tolerated just the same.
+func TestLintErrataToleratesOwnPredecessorByTitle(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	// F-0002 ("Fluxo Legado") superseded BY F-0001 — the errata's own entity.
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0002", Title: "Fluxo Legado", State: domain.StateSuperseded, SupersededBy: "F-0001", CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveFeature F-0002: %v", err)
+	}
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Novo", State: domain.StateImplemented, CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveFeature F-0001: %v", err)
+	}
+	// The errata names the predecessor by its title only — no id in the text.
+	if err := store.AppendErrata(dir, "F-0001", "esta feature substituiu o Fluxo Legado", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 0 {
+		t.Fatalf("errata naming its predecessor by title must be tolerated, got: %+v", refs)
+	}
+}
+
+// TestLintErrataMixedOwnAndForeignSuperseded pins F-0094 crit. 1+2: the
+// tolerance is per-needle. One errata may name both its own predecessor
+// (tolerated) and a foreign superseded id whose successor is someone else
+// (still a debt) — only the foreign one surfaces.
+func TestLintErrataMixedOwnAndForeignSuperseded(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	// F-0002 superseded BY F-0001 (the errata owner) — tolerated.
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0002", Title: "Velho", State: domain.StateSuperseded, SupersededBy: "F-0001", CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveFeature F-0002: %v", err)
+	}
+	// F-0003 superseded BY F-0004 (a third party) — still a debt.
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0003", Title: "Outro", State: domain.StateSuperseded, SupersededBy: "F-0004", CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveFeature F-0003: %v", err)
+	}
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Novo", State: domain.StateImplemented, CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveFeature F-0001: %v", err)
+	}
+	// One entry names both: its own predecessor F-0002 (ok) and foreign F-0003 (debt).
+	if err := store.AppendErrata(dir, "F-0001", "substituiu F-0002; mas ainda aponta para F-0003", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	refs := refToSuperseded(findings)
+	if len(refs) != 1 {
+		t.Fatalf("want exactly 1 ref-to-superseded (the foreign F-0003), got %d: %+v", len(refs), refs)
+	}
+	if !contains(refs[0].Detail, "F-0003") {
+		t.Fatalf("the surviving finding must be about F-0003, got: %+v", refs[0])
+	}
+}
+
+// TestLintErrataToleratesOwnPredecessorDecision pins F-0094 crit. 4: the
+// tolerance is generic across errata-bearing kinds, not feature-only — a
+// decision's errata may name the decision it superseded.
+func TestLintErrataToleratesOwnPredecessorDecision(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	// D-0002 superseded BY D-0001 — the errata's own decision.
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0002", Title: "Antiga", State: domain.DecisionSuperseded, SupersededBy: "D-0001", CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveDecision D-0002: %v", err)
+	}
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0001", Title: "Vigente", State: domain.DecisionActive, CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveDecision D-0001: %v", err)
+	}
+	if err := store.AppendErrata(dir, "D-0001", "esta decisão substituiu D-0002", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if refs := refToSuperseded(findings); len(refs) != 0 {
+		t.Fatalf("a decision errata naming what it superseded must be tolerated, got: %+v", refs)
+	}
+}
+
+// TestLintErrataBrokenLinkStillFlagged pins F-0094 crit. 6: the tolerance is
+// scoped to ref-to-superseded only — a broken relative link in an errata must
+// still surface (errata stays scanned by the other rules, per F-0072).
+func TestLintErrataBrokenLinkStillFlagged(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Boletos", State: domain.StateImplemented, CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveFeature F-0001: %v", err)
+	}
+	if err := store.AppendErrata(dir, "F-0001", "veja [detalhes](./inexistente.md)", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var found bool
+	for _, f := range byRule(findings, RuleBrokenLink) {
+		if f.File == "content/errata/F-0001.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a broken link in an errata must still be flagged, got: %+v", byRule(findings, RuleBrokenLink))
+	}
+}
