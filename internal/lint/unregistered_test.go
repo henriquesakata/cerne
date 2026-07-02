@@ -45,7 +45,7 @@ func TestUnregisteredSourceFindings(t *testing.T) {
 	current := func(r store.Reference) store.Reference { r.State = domain.ReferenceCurrent; return r }
 
 	// C1: URL citada, nenhuma referência → 1 finding com a forma esperada.
-	got := unregisteredSourceFindings(doc, textWith, nil)
+	got := unregisteredSourceFindings(doc, textWith, nil, nil)
 	if len(got) != 1 {
 		t.Fatalf("C1: got %d findings, want 1: %+v", len(got), got)
 	}
@@ -55,30 +55,58 @@ func TestUnregisteredSourceFindings(t *testing.T) {
 
 	// C2a: referência atual com a mesma URL (barra final difere) → 0 (URL-match normalizada).
 	refURL := []store.Reference{current(store.Reference{ID: "R-1", URL: url + "/", Informs: []string{"F-0999"}})}
-	if got := unregisteredSourceFindings(doc, textWith, refURL); len(got) != 0 {
+	if got := unregisteredSourceFindings(doc, textWith, refURL, nil); len(got) != 0 {
 		t.Fatalf("C2a: got %d findings, want 0: %+v", len(got), got)
 	}
 
 	// C2b: referência atual que informa a entidade do doc (sem casar URL) → 0 (Informs-match).
 	refInforms := []store.Reference{current(store.Reference{ID: "R-2", URL: "https://outra.fonte/x", Informs: []string{"F-0001"}})}
-	if got := unregisteredSourceFindings(doc, textWith, refInforms); len(got) != 0 {
+	if got := unregisteredSourceFindings(doc, textWith, refInforms, nil); len(got) != 0 {
 		t.Fatalf("C2b: got %d findings, want 0: %+v", len(got), got)
 	}
 
 	// C3: URL apenas dentro de bloco de código → 0.
-	if got := unregisteredSourceFindings(doc, textFenced, nil); len(got) != 0 {
+	if got := unregisteredSourceFindings(doc, textFenced, nil, nil); len(got) != 0 {
 		t.Fatalf("C3: got %d findings, want 0: %+v", len(got), got)
 	}
 
 	// C6: URL removida da prosa → 0.
-	if got := unregisteredSourceFindings(doc, textNone, nil); len(got) != 0 {
+	if got := unregisteredSourceFindings(doc, textNone, nil, nil); len(got) != 0 {
 		t.Fatalf("C6: got %d findings, want 0: %+v", len(got), got)
 	}
 
 	// Referência apenas OBSOLETA com a URL não respalda (exige atual) → 1 finding.
 	refObsolete := []store.Reference{{ID: "R-3", URL: url, State: domain.ReferenceObsolete}}
-	if got := unregisteredSourceFindings(doc, textWith, refObsolete); len(got) != 1 {
+	if got := unregisteredSourceFindings(doc, textWith, refObsolete, nil); len(got) != 1 {
 		t.Fatalf("obsolete: got %d findings, want 1: %+v", len(got), got)
+	}
+}
+
+// TestIgnoredSourceURL pins C2/C3 (F-0107): internal/local hosts and private IPs
+// are always ignored; a configured ignore substring matches; real external URLs
+// are not ignored.
+func TestIgnoredSourceURL(t *testing.T) {
+	internal := []string{
+		"https://svc.local", "http://localhost:9000", "http://10.0.0.1/x",
+		"http://192.168.1.5", "http://172.16.0.1", "http://172.31.255.1", "http://127.0.0.1:8080",
+	}
+	for _, u := range internal {
+		if !ignoredSourceURL(u, nil) {
+			t.Errorf("ignoredSourceURL(%q, nil) = false, want true (internal/local)", u)
+		}
+	}
+	external := []string{"https://ok.example.com", "http://172.32.0.1", "https://agentskills.io/spec"}
+	for _, u := range external {
+		if ignoredSourceURL(u, nil) {
+			t.Errorf("ignoredSourceURL(%q, nil) = true, want false (external)", u)
+		}
+	}
+	ignore := []string{"gitlab.com/rockt/hub"}
+	if !ignoredSourceURL("https://gitlab.com/rockt/hub/-/blob/abc/x.go", ignore) {
+		t.Errorf("ignore-list substring should match")
+	}
+	if ignoredSourceURL("https://gitlab.com/other/repo", ignore) {
+		t.Errorf("unrelated URL should not match ignore-list")
 	}
 }
 
@@ -96,5 +124,43 @@ func TestUnregisteredSource_InRuleOrderAndRank(t *testing.T) {
 	}
 	if _, ok := ruleRank[RuleUnregisteredSource]; !ok {
 		t.Fatalf("RuleUnregisteredSource ausente de ruleRank")
+	}
+}
+
+// TestInUnregisteredSourceScope pins C1 (F-0107): only decisions and feature
+// spec/plan/result are in scope; runbooks, references, notes and errata are not.
+func TestInUnregisteredSourceScope(t *testing.T) {
+	in := []string{
+		"content/features/F-0001/spec.md", "content/features/F-0001/plan.md",
+		"content/features/F-0001/result.md", "content/decisions/D-0001.md",
+	}
+	for _, r := range in {
+		if !inUnregisteredSourceScope(r) {
+			t.Errorf("%q should be in scope", r)
+		}
+	}
+	out := []string{
+		"content/runbooks/RB-0001.md", "content/references/R-0001.md",
+		"content/notes/N-0001.md", "content/errata/F-0001.md",
+	}
+	for _, r := range out {
+		if inUnregisteredSourceScope(r) {
+			t.Errorf("%q should be out of scope", r)
+		}
+	}
+}
+
+// TestUnregisteredSourceFindings_ignored pins C2/C3 at the rule level: internal
+// hosts and configured-ignore URLs are dropped, a real external URL is still flagged.
+func TestUnregisteredSourceFindings_ignored(t *testing.T) {
+	doc := scannedDoc{entity: "D-0001", rel: "content/decisions/D-0001.md"}
+	if got := unregisteredSourceFindings(doc, "veja https://auth.rockt.local e http://localhost:9000", nil, nil); len(got) != 0 {
+		t.Fatalf("C2: internal URLs should be ignored, got %+v", got)
+	}
+	if got := unregisteredSourceFindings(doc, "veja https://gitlab.com/rockt/hub/-/blob/x", nil, []string{"gitlab.com/rockt/hub"}); len(got) != 0 {
+		t.Fatalf("C3: ignore-list URL should be ignored, got %+v", got)
+	}
+	if got := unregisteredSourceFindings(doc, "veja https://real.example.com/spec", nil, nil); len(got) != 1 {
+		t.Fatalf("C4: real external URL should be flagged, got %+v", got)
 	}
 }
