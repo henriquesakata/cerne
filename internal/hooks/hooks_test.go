@@ -127,6 +127,237 @@ func TestInstall_FailsOnCorruptJSON(t *testing.T) {
 	}
 }
 
+// TestInstall_MinimalDiff_AppendsToExistingPostToolUse (F-0106): merging into a
+// rich, tracked settings.json must append ONLY the new Bash entry — every other
+// byte (key order, inline objects, indentation, &/non-ASCII escaping) stays
+// identical. Asserted by exact-string equality against the surgically-inserted
+// expectation.
+func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Keys deliberately out of alphabetical order (permissions, env, hooks);
+	// an inline object; a value with '&'; a non-ASCII value ("Olá").
+	pre := `{
+  "permissions": {"allow": ["Bash(ls:*)"], "deny": ["Read(./secret&stuff)"]},
+  "env": {"GREETING": "Olá & tchau"},
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo existing"
+          }
+        ]
+      }
+    ]
+  }
+}
+`
+	sp := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(sp, []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(sp)
+
+	// The new Bash entry, indented as a sibling (6 spaces) of the Write entry.
+	bashBlock := `      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
+          }
+        ]
+      }`
+	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
+	// block is inserted before PostToolUse's closing bracket. Nothing else moves.
+	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+"\n    ]", 1)
+
+	if string(got) != want {
+		t.Fatalf("merge was not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if !isValidJSON(got) {
+		t.Fatalf("merged settings.json is not valid JSON:\n%s", got)
+	}
+	// Escaping preserved: literal '&' and non-ASCII survive untouched (a map
+	// round-trip through json.MarshalIndent would HTML-escape '&' to &).
+	if strings.Contains(string(got), "\\u0026") {
+		t.Errorf("'&' was HTML-escaped to \\u0026:\n%s", got)
+	}
+	if !strings.Contains(string(got), "secret&stuff") || !strings.Contains(string(got), "Olá & tchau") {
+		t.Errorf("literal '&' / non-ASCII not preserved:\n%s", got)
+	}
+	// Key order preserved (would be reordered alphabetically by a map round-trip).
+	permIdx := strings.Index(string(got), `"permissions"`)
+	envIdx := strings.Index(string(got), `"env"`)
+	hooksIdx := strings.Index(string(got), `"hooks"`)
+	if !(permIdx < envIdx && envIdx < hooksIdx) {
+		t.Errorf("top-level key order not preserved (perm=%d env=%d hooks=%d):\n%s", permIdx, envIdx, hooksIdx, got)
+	}
+}
+
+// TestInstall_MinimalDiff_ScenarioB (F-0106): hooks exists without PostToolUse —
+// the PostToolUse key is inserted into the hooks object, every other byte
+// (including an inline PreToolUse entry) preserved.
+func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pre := `{
+  "permissions": {"allow": ["Bash(ls:*)"]},
+  "hooks": {
+    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]}]
+  }
+}
+`
+	sp := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(sp, []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(sp)
+
+	postBlock := `    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
+          }
+        ]
+      }
+    ]`
+	want := strings.Replace(pre, "]\n  }", "],\n"+postBlock+"\n  }", 1)
+	if string(got) != want {
+		t.Fatalf("scenario B not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	// The pre-existing inline PreToolUse line survives verbatim.
+	if !strings.Contains(string(got), `    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]}],`) {
+		t.Errorf("inline PreToolUse line not preserved verbatim:\n%s", got)
+	}
+}
+
+// TestInstall_MinimalDiff_ScenarioC (F-0106): no hooks key — the hooks object is
+// inserted into the root, other keys preserved.
+func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pre := `{
+  "permissions": {"allow": ["Bash(ls:*)"]}
+}
+`
+	sp := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(sp, []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(sp)
+
+	hooksBlock := `  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
+          }
+        ]
+      }
+    ]
+  }`
+	want := strings.Replace(pre, "]}\n}", "]},\n"+hooksBlock+"\n}", 1)
+	if string(got) != want {
+		t.Fatalf("scenario C not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if !strings.Contains(string(got), `  "permissions": {"allow": ["Bash(ls:*)"]},`) {
+		t.Errorf("permissions line not preserved verbatim:\n%s", got)
+	}
+}
+
+// TestInstall_FailsOnNonArrayPostToolUse (F-0106): a PostToolUse that is not an
+// array is malformed — fail closed rather than clobber it.
+func TestInstall_FailsOnNonArrayPostToolUse(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pre := []byte(`{"hooks":{"PostToolUse":{}}}`)
+	sp := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(sp, pre, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err == nil {
+		t.Fatalf("expected error on non-array PostToolUse")
+	}
+	if b, _ := os.ReadFile(sp); string(b) != string(pre) {
+		t.Errorf("settings.json was modified (not fail-closed):\n%s", b)
+	}
+}
+
+// TestInstall_IdempotentAfterRichMerge (F-0106): re-installing over an
+// already-merged rich settings.json changes nothing (byte-identical, unchanged).
+func TestInstall_IdempotentAfterRichMerge(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pre := `{
+  "env": {"GREETING": "Olá & tchau"},
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [{"type":"command","command":"echo existing"}]
+      }
+    ]
+  }
+}
+`
+	sp := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(sp, []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := os.ReadFile(sp)
+	results, err := Install(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Asset == "settings.json" && r.Status != StatusUnchanged {
+			t.Errorf("second install settings.json: status=%s, want unchanged", r.Status)
+		}
+	}
+	second, _ := os.ReadFile(sp)
+	if string(first) != string(second) {
+		t.Errorf("second install rewrote the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
 func isValidJSON(b []byte) bool {
 	var v any
 	return json.Unmarshal(b, &v) == nil
