@@ -63,7 +63,7 @@ func runNext(cmd *cobra.Command, dir string) error {
 	if err != nil {
 		return err
 	}
-	findings, err := lint.Run(ctx.repoDir)
+	findings, err := lint.Run(ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore...)
 	if err != nil {
 		return err
 	}

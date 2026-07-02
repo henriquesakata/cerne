@@ -155,7 +155,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 		return err
 	}
 	defer cleanup()
-	findings, err := lint.Run(root)
+	findings, err := lint.Run(root, ctx.cfg.UnregisteredSourceIgnore...)
 	if err != nil {
 		return err
 	}

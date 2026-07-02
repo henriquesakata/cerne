@@ -732,8 +732,12 @@ type lintResponse struct {
 	Findings []lintFinding `json:"findings"`
 }
 
-func handleLint(w http.ResponseWriter, repoDir string) {
-	findings, err := lint.Run(repoDir)
+func handleLint(w http.ResponseWriter, repoDir, projDir string) {
+	var ignore []string
+	if cfg, _, err := project.LoadConfig(projDir); err == nil {
+		ignore = cfg.UnregisteredSourceIgnore
+	}
+	findings, err := lint.Run(repoDir, ignore...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
