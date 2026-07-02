@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -22,7 +23,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("LoadConfig = %+v, want %+v", got, want)
 	}
 	if foundDir != dir {
@@ -44,7 +45,7 @@ func TestLoadConfigWalksUpFromNestedDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig from nested: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("LoadConfig = %+v, want %+v", got, want)
 	}
 	if foundDir != root {
@@ -162,5 +163,35 @@ func TestConfigAutocommitLockRoundTrip(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "autocommit_lock") {
 		t.Fatalf("autocommit_lock=false should be omitted:\n%s", raw)
+	}
+}
+
+// TestConfigUnregisteredSourceIgnoreRoundTrip pins the .cernerc
+// `unregistered_source_ignore` key (F-0107): the list persists and reloads, and
+// is omitted (omitempty) when empty.
+func TestConfigUnregisteredSourceIgnoreRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := []string{"gitlab.com/rockt/hub", "example.internal"}
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x", UnregisteredSourceIgnore: want}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !reflect.DeepEqual(got.UnregisteredSourceIgnore, want) {
+		t.Fatalf("loaded UnregisteredSourceIgnore = %v, want %v", got.UnregisteredSourceIgnore, want)
+	}
+
+	// omitempty: an empty list is not written to .cernerc.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig off: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(raw), "unregistered_source_ignore") {
+		t.Fatalf("empty list should be omitted:\n%s", raw)
 	}
 }
