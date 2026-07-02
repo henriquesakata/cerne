@@ -323,6 +323,66 @@ func TestPushDecisionDoc(t *testing.T) {
 	}
 }
 
+// Criterion 5 (F-0102): push reconciles from the session sidecar, so a stale
+// committed docs.lock (the normal state on a feature branch with pin_branch
+// set) does not turn the push into a false same-document conflict.
+func TestPushUsesSessionSnapshotBase(t *testing.T) {
+	projDir, _, _, specPath := pulledProject(t)
+	// Regress the committed lock to an ancient snapshot: with the old
+	// lock-as-base behavior the spec would look changed-both-ways and
+	// conflict; with the sidecar base it is only a local edit.
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	lock.Snapshot = ""
+	if err := project.SaveLock(projDir, lock); err != nil {
+		t.Fatalf("SaveLock stale: %v", err)
+	}
+	mustWrite(t, specPath, realDoc("F-0001", "Editado na feature branch."))
+
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("push with stale lock but valid sidecar: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+		t.Fatalf("push should send the edit:\n%s", out)
+	}
+}
+
+// Criterion 5 fallback (F-0102): without the sidecar (pre-0102 checkout) the
+// committed docs.lock is still the base; with neither, push asks for a pull.
+func TestPushFallsBackToLockBase(t *testing.T) {
+	projDir, _, _, specPath := pulledProject(t)
+	if err := os.Remove(filepath.Join(projDir, ".docs", ".snapshot")); err != nil {
+		t.Fatalf("remove sidecar: %v", err)
+	}
+	mustWrite(t, specPath, realDoc("F-0001", "Editado sem sidecar."))
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("push without sidecar (lock base): %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+		t.Fatalf("push should send the edit via the lock base:\n%s", out)
+	}
+
+	// Neither sidecar nor docs.lock: the pre-0102 guidance error.
+	if err := os.Remove(filepath.Join(projDir, ".docs", ".snapshot")); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove sidecar again: %v", err)
+	}
+	if err := os.Remove(filepath.Join(projDir, "docs.lock")); err != nil {
+		t.Fatalf("remove docs.lock: %v", err)
+	}
+	mustWrite(t, specPath, realDoc("F-0001", "Editado sem base nenhuma."))
+	out, err = execCerne(t, "push", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("push without any base should fail\n%s", out)
+	}
+	if !strings.Contains(out, "rode 'cerne pull' primeiro") {
+		t.Fatalf("error should guide to pull:\n%s", out)
+	}
+}
+
 func TestPushDryRunReportsAndDoesNotPush(t *testing.T) {
 	projDir, origin, repoDir, specPath := pulledProject(t)
 	repoHeadBefore, err := gitback.HeadSHA(repoDir)

@@ -50,11 +50,21 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	lock, err := project.LoadLock(ctx.projDir)
-	if errors.Is(err, project.ErrNoLock) {
-		return fmt.Errorf("nenhum docs.lock encontrado — rode 'cerne pull' primeiro")
-	}
-	if err != nil {
+	// The reconcile base is the snapshot .docs/ was last synced to: the
+	// session sidecar when present (with pin_branch set, the committed
+	// docs.lock is stale on feature branches by design — F-0102), falling
+	// back to docs.lock for a pre-0102 checkout.
+	base, err := project.LoadSessionSnapshot(ctx.projDir)
+	if errors.Is(err, project.ErrNoSessionSnapshot) {
+		lock, lerr := project.LoadLock(ctx.projDir)
+		if errors.Is(lerr, project.ErrNoLock) {
+			return fmt.Errorf("nenhum docs.lock encontrado — rode 'cerne pull' primeiro")
+		}
+		if lerr != nil {
+			return lerr
+		}
+		base = lock.Snapshot
+	} else if err != nil {
 		return err
 	}
 
@@ -88,7 +98,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
 	}
 	head, conflicts, err := app.ReconcileCommitPush(
-		ctx.repoDir, ctx.projDir, lock.Snapshot,
+		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d documento(s)", len(docs)), changes)
 	if err != nil {
 		return err
