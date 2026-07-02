@@ -2,7 +2,6 @@ package gitback
 
 import (
 	"errors"
-	"os/exec"
 	"testing"
 
 	git "github.com/go-git/go-git/v5"
@@ -93,24 +92,7 @@ func TestCurrentBranchNotRepo(t *testing.T) {
 // it produces also carries extensions.worktreeConfig-style layout (gitdir file
 // + commondir), so this doubles as the tolerant-open coverage for reads.
 func TestCurrentBranchLinkedWorktree(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git binary unavailable")
-	}
-	main := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-b", "main", main},
-		{"-C", main, "config", "user.email", "t@local"},
-		{"-C", main, "config", "user.name", "t"},
-		{"-C", main, "commit", "--allow-empty", "-m", "init"},
-	} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
-	wtDir := t.TempDir() + "/wt"
-	if out, err := exec.Command("git", "-C", main, "worktree", "add", "-b", "wt-branch", wtDir).CombinedOutput(); err != nil {
-		t.Fatalf("git worktree add: %v: %s", err, out)
-	}
+	main, wtDir := linkedWorktree(t)
 	got, err := CurrentBranch(wtDir)
 	if err != nil {
 		t.Fatalf("CurrentBranch(worktree): %v", err)
