@@ -30,14 +30,14 @@ func newLintCmd() *cobra.Command {
 }
 
 func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
-	repoDir, cleanup, err := lintRoot(dir, staged)
+	repoDir, ignore, cleanup, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
 	}
 	if cleanup != nil {
 		defer cleanup()
 	}
-	findings, err := lint.Run(repoDir)
+	findings, err := lint.Run(repoDir, ignore...)
 	if err != nil {
 		return err
 	}
@@ -60,19 +60,20 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
 // tree of the local .docs/ edits over the pulled snapshot, WITHOUT a pull and
 // without touching the backend (resolvePaths + stagedLintRoot). The returned
 // cleanup is nil in the default mode and removes the temp tree in staged mode.
-func lintRoot(dir string, staged bool) (string, func(), error) {
+func lintRoot(dir string, staged bool) (repoDir string, ignore []string, cleanup func(), err error) {
 	if staged {
 		ctx, err := resolvePaths(dir)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
-		return stagedLintRoot(ctx.repoDir, ctx.projDir)
+		root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
+		return root, ctx.cfg.UnregisteredSourceIgnore, cleanup, err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return ctx.repoDir, nil, nil
+	return ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore, nil, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.
