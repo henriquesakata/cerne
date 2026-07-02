@@ -34,18 +34,40 @@ const gitDirName = ".git"
 // .git/config keeps the extension — cerne must never mutate the project's git
 // config to work around this.
 //
+// Linked worktrees (".git" is a "gitdir:" file) skip the fast path entirely:
+// go-git's PlainOpen leaks the commondir file handle it opens during
+// resolution (dotGitCommonDirectory never closes it, go-git v5.19.1), and on
+// Windows that leak keeps .git/worktrees/<name> locked by this process until
+// the GC happens to finalize the orphaned file. portedStorage reads the same
+// files and closes them.
+//
 // Every git open in this package routes through openRepo; TestNoRawPlainOpen
 // guards that, so a new open site can't silently reintroduce the showstopper.
 func openRepo(dir string) (*git.Repository, error) {
+	if fi, err := os.Stat(filepath.Join(dir, gitDirName)); err == nil && !fi.IsDir() {
+		return openPorted(dir)
+	}
 	repo, err := git.PlainOpenWithOptions(dir, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
 	if !IsUnsupportedExtension(err) {
 		return repo, err
 	}
-	s, wt, terr := tolerantStorage(dir)
-	if terr != nil {
-		return nil, terr
+	return openPorted(dir)
+}
+
+// openPorted opens dir through portedStorage. Extension tolerance stays
+// opt-in, mirroring openRepo's fast path: only when go-git refuses the config
+// does the wrapper hide the extensions section (F-0075) — any other error
+// surfaces unchanged.
+func openPorted(dir string) (*git.Repository, error) {
+	s, wt, err := portedStorage(dir)
+	if err != nil {
+		return nil, err
 	}
-	return git.Open(s, wt)
+	repo, err := git.Open(s, wt)
+	if !IsUnsupportedExtension(err) {
+		return repo, err
+	}
+	return git.Open(extensionTolerantStorer{s}, wt)
 }
 
 // IsUnsupportedExtension reports whether err is go-git refusing a repo for an
@@ -76,12 +98,12 @@ func (s extensionTolerantStorer) Config() (*config.Config, error) {
 	return cfg, nil
 }
 
-// tolerantStorage builds the same filesystem storage PlainOpenWithOptions would,
-// wrapped so the extensions section is invisible to go-git's validator. It ports
-// go-git's own .git resolution (a real directory vs a linked-worktree "gitdir:"
-// file, plus the worktree commondir) for the no-detect case cerne always uses —
-// workdir is always an exact repo root.
-func tolerantStorage(dir string) (storage.Storer, billy.Filesystem, error) {
+// portedStorage builds the same filesystem storage PlainOpenWithOptions would,
+// porting go-git's own .git resolution (a real directory vs a linked-worktree
+// "gitdir:" file, plus the worktree commondir) for the no-detect case cerne
+// always uses — workdir is always an exact repo root. Unlike go-git's
+// resolution it closes every file it reads (the leak openRepo routes around).
+func portedStorage(dir string) (storage.Storer, billy.Filesystem, error) {
 	wt := osfs.New(dir)
 	fi, err := wt.Stat(gitDirName)
 	if err != nil {
@@ -110,8 +132,7 @@ func tolerantStorage(dir string) (storage.Storer, billy.Filesystem, error) {
 		repoFS = dotgit.NewRepositoryFilesystem(dot, common)
 	}
 
-	base := filesystem.NewStorage(repoFS, cache.NewObjectLRUDefault())
-	return extensionTolerantStorer{base}, wt, nil
+	return filesystem.NewStorage(repoFS, cache.NewObjectLRUDefault()), wt, nil
 }
 
 // dotGitFileToFS resolves a linked worktree's .git file ("gitdir: <path>") to
