@@ -1,6 +1,7 @@
 package gitback
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -45,7 +46,9 @@ func Fetch(workdir string) error {
 	if err != nil {
 		return err
 	}
-	err = repo.Fetch(&git.FetchOptions{RemoteName: remoteName, Auth: auth})
+	err = runWithNetTimeout("fetch", func(ctx context.Context) error {
+		return repo.FetchContext(ctx, &git.FetchOptions{RemoteName: remoteName, Auth: auth})
+	})
 	if errors.Is(err, git.NoErrAlreadyUpToDate) || errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return nil
 	}

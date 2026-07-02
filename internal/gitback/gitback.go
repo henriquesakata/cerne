@@ -3,6 +3,7 @@
 package gitback
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -133,10 +134,12 @@ func Push(workdir string) error {
 	if err != nil {
 		return err
 	}
-	err = repo.Push(&git.PushOptions{
-		RemoteName: remoteName,
-		RefSpecs:   []config.RefSpec{config.RefSpec("refs/heads/main:refs/heads/main")},
-		Auth:       auth,
+	err = runWithNetTimeout("push", func(ctx context.Context) error {
+		return repo.PushContext(ctx, &git.PushOptions{
+			RemoteName: remoteName,
+			RefSpecs:   []config.RefSpec{config.RefSpec("refs/heads/main:refs/heads/main")},
+			Auth:       auth,
+		})
 	})
 	if errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil
