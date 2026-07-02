@@ -19,6 +19,14 @@ import (
 // .cernerc with autocommit_lock set to `autocommit`.
 func newSnapshotBackend(t *testing.T, autocommit bool) (repoDir, projDir string) {
 	t.Helper()
+	return newSnapshotBackendWithConfig(t, project.Config{ProjectID: "demo", AutocommitLock: autocommit})
+}
+
+// newSnapshotBackendWithConfig is newSnapshotBackend with the full .cernerc
+// under test control (cfg.Backend is filled in with the origin). The projDir
+// repo starts on go-git's init default branch, "master".
+func newSnapshotBackendWithConfig(t *testing.T, cfg project.Config) (repoDir, projDir string) {
+	t.Helper()
 	base := t.TempDir()
 	origin := filepath.Join(base, "origin.git")
 	if err := gitback.InitBare(origin); err != nil {
@@ -44,8 +52,15 @@ func newSnapshotBackend(t *testing.T, autocommit bool) (repoDir, projDir string)
 	if err != nil {
 		t.Fatalf("PlainInit proj: %v", err)
 	}
-	if err := project.SaveConfig(projDir, project.Config{ProjectID: "demo", Backend: origin, AutocommitLock: autocommit}); err != nil {
+	cfg.Backend = origin
+	if err := project.SaveConfig(projDir, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
+	}
+	// Real projects gitignore .docs/ (cerne init writes this); without it the
+	// session snapshot sidecar would show up as untracked and break the
+	// worktree-clean assertions.
+	if err := os.WriteFile(filepath.Join(projDir, ".gitignore"), []byte(".docs/\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
 	}
 	if err := project.SaveLock(projDir, project.Lock{Version: 1, Backend: origin}); err != nil {
 		t.Fatalf("SaveLock initial: %v", err)
@@ -53,6 +68,9 @@ func newSnapshotBackend(t *testing.T, autocommit bool) (repoDir, projDir string)
 	wt, _ := repo.Worktree()
 	if _, err := wt.Add(".cernerc"); err != nil {
 		t.Fatalf("add .cernerc: %v", err)
+	}
+	if _, err := wt.Add(".gitignore"); err != nil {
+		t.Fatalf("add .gitignore: %v", err)
 	}
 	if _, err := wt.Add("docs.lock"); err != nil {
 		t.Fatalf("add docs.lock: %v", err)
@@ -96,6 +114,93 @@ func TestCommitAndSnapshotAutocommitOn(t *testing.T) {
 	}
 	if msg := projHeadMessage(t, projDir); msg != "chore(docs): pin docs.lock" {
 		t.Fatalf("HEAD message = %q, want the pin commit", msg)
+	}
+}
+
+// Criterion 2 (F-0102): with pin_branch set and the project on another branch,
+// a backend mutation leaves docs.lock untouched — no rewrite, no commit.
+func TestCommitAndSnapshotPinBranchOtherBranch(t *testing.T) {
+	repoDir, projDir := newSnapshotBackendWithConfig(t,
+		project.Config{ProjectID: "demo", AutocommitLock: true, PinBranch: "main"})
+	// projDir sits on go-git's init default "master" ≠ pin branch "main".
+	before, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock before: %v", err)
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, "mutation"); err != nil {
+		t.Fatalf("CommitAndSnapshot: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock after: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("docs.lock rewritten off the pin branch:\nbefore: %s\nafter: %s", before, after)
+	}
+	if !projStatusClean(t, projDir) {
+		t.Fatalf("projDir worktree dirty — nothing should be written off the pin branch")
+	}
+	if msg := projHeadMessage(t, projDir); msg != "init proj" {
+		t.Fatalf("HEAD advanced to %q — no pin commit expected off the pin branch", msg)
+	}
+	// Criterion 4: the session sidecar still tracks the new backend HEAD.
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	got, err := project.LoadSessionSnapshot(projDir)
+	if err != nil {
+		t.Fatalf("LoadSessionSnapshot: %v", err)
+	}
+	if got != head {
+		t.Fatalf("session snapshot = %q, want backend HEAD %q", got, head)
+	}
+}
+
+// Criterion 3 (F-0102): on the pin branch the behavior is today's — docs.lock
+// rewritten and (autocommit_lock on) committed.
+func TestCommitAndSnapshotPinBranchCurrent(t *testing.T) {
+	repoDir, projDir := newSnapshotBackendWithConfig(t,
+		project.Config{ProjectID: "demo", AutocommitLock: true, PinBranch: "master"})
+	if err := CommitAndSnapshot(repoDir, projDir, "mutation"); err != nil {
+		t.Fatalf("CommitAndSnapshot: %v", err)
+	}
+	if !projStatusClean(t, projDir) {
+		t.Fatalf("projDir worktree not clean — docs.lock left uncommitted on the pin branch")
+	}
+	if msg := projHeadMessage(t, projDir); msg != "chore(docs): pin docs.lock" {
+		t.Fatalf("HEAD message = %q, want the pin commit", msg)
+	}
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if lock.Snapshot != head {
+		t.Fatalf("lock.Snapshot = %q, want backend HEAD %q", lock.Snapshot, head)
+	}
+}
+
+// Criterion 4 (F-0102): every mutation records the session snapshot sidecar,
+// pin_branch or not.
+func TestCommitAndSnapshotWritesSessionSnapshot(t *testing.T) {
+	repoDir, projDir := newSnapshotBackend(t, false)
+	if err := CommitAndSnapshot(repoDir, projDir, "mutation"); err != nil {
+		t.Fatalf("CommitAndSnapshot: %v", err)
+	}
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	got, err := project.LoadSessionSnapshot(projDir)
+	if err != nil {
+		t.Fatalf("LoadSessionSnapshot: %v", err)
+	}
+	if got != head {
+		t.Fatalf("session snapshot = %q, want backend HEAD %q", got, head)
 	}
 }
 
