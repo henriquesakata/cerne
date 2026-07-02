@@ -47,10 +47,11 @@ const (
 	RuleStaleNote          = "stale-note"
 	RuleIncompleteDoc      = "incomplete-doc"
 	RuleUntaggedLive       = "untagged-live"
+	RuleUnregisteredSource = "unregistered-source"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -66,6 +67,7 @@ var ruleRank = map[string]int{
 	RuleStaleNote:          10,
 	RuleIncompleteDoc:      11,
 	RuleUntaggedLive:       12,
+	RuleUnregisteredSource: 13,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -167,6 +169,7 @@ func Run(repoDir string) ([]Finding, error) {
 		text := string(data)
 		findings = append(findings, refFindings(d, text, needles)...)
 		findings = append(findings, linkFindings(repoDir, d, text)...)
+		findings = append(findings, unregisteredSourceFindings(d, text, references)...)
 	}
 
 	orphans, err := orphanFindings(repoDir, features, decisions, references, runbooks, notes)
@@ -850,6 +853,56 @@ func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
 	findings := make([]Finding, 0, len(broken))
 	for _, target := range broken {
 		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "link quebrado: " + target})
+	}
+	return findings
+}
+
+// normalizeURL canonicalizes a URL for source matching (D2): the #fragment is
+// dropped and a trailing slash trimmed, but the scheme is kept so http and https
+// stay distinct.
+func normalizeURL(u string) string {
+	if i := strings.IndexByte(u, '#'); i >= 0 {
+		u = u[:i]
+	}
+	return strings.TrimRight(u, "/")
+}
+
+// unregisteredSourceFindings reports external http(s) URLs cited in an authored
+// doc that no registered reference backs (RuleUnregisteredSource / F-0103).
+// Backing is the union (D1): a *current* reference whose URL matches (normalized)
+// OR one whose Informs backlinks the doc's entity. The fix is to register the
+// source (cerne reference new … --informs) or remove the bare URL — so a
+// discarded dead-end never becomes a forced reference.
+func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Reference) []Finding {
+	urls := mdlink.ExternalURLs(text)
+	if len(urls) == 0 {
+		return nil
+	}
+	backed := make(map[string]bool, len(refs))
+	for _, r := range refs {
+		if r.State != domain.ReferenceCurrent {
+			continue
+		}
+		for _, id := range r.Informs {
+			if id == d.entity {
+				return nil // the doc's entity is already sourced (Informs backlink)
+			}
+		}
+		if r.URL != "" {
+			backed[normalizeURL(r.URL)] = true
+		}
+	}
+	var findings []Finding
+	for _, u := range urls {
+		if backed[normalizeURL(u)] {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleUnregisteredSource,
+			Entity: d.entity,
+			File:   d.rel,
+			Detail: "URL externa " + u + " citada sem referência registrada — registre com 'cerne reference new … --informs " + d.entity + "' ou remova a URL",
+		})
 	}
 	return findings
 }

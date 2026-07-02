@@ -25,9 +25,9 @@ func writeBackendDoc(t *testing.T, repoDir, rel, content string) {
 	}
 }
 
-// seedLintFixture seeds a backend with 9 lint findings: 2 ref-to-superseded,
+// seedLintFixture seeds a backend with 10 lint findings: 2 ref-to-superseded,
 // 1 broken-link, 1 orphan-content, 2 missing-gate-doc, 1 stale-note,
-// 2 incomplete-doc.
+// 2 incomplete-doc, 1 unregistered-source.
 func seedLintFixture(t *testing.T, repoDir string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -87,8 +87,8 @@ func TestLintFindings(t *testing.T) {
 	if err == nil {
 		t.Fatalf("lint with findings returned nil error, want exit error\noutput: %s", out)
 	}
-	if err.Error() != "9 problema(s) encontrado(s)" {
-		t.Fatalf("lint error = %q, want %q", err.Error(), "9 problema(s) encontrado(s)")
+	if err.Error() != "10 problema(s) encontrado(s)" {
+		t.Fatalf("lint error = %q, want %q", err.Error(), "10 problema(s) encontrado(s)")
 	}
 
 	// Groups in fixed rule order, each line "  <loc> — <detail>".
@@ -108,7 +108,9 @@ func TestLintFindings(t *testing.T) {
 		"INCOMPLETE-DOC (2)\n" +
 			"  content/decisions/D-0001.md — content/decisions/D-0001.md: faltam as seções do template: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações\n" +
 			"  content/features/F-0003/spec.md — content/features/F-0003/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo\n",
-		"Total: 9 problema(s).\n",
+		"UNREGISTERED-SOURCE (1)\n" +
+			"  content/features/F-0003/spec.md — URL externa https://example.com citada sem referência registrada — registre com 'cerne reference new … --informs F-0003' ou remova a URL\n",
+		"Total: 10 problema(s).\n",
 	}
 	prev := -1
 	for _, b := range blocks {
@@ -147,7 +149,7 @@ func TestLintFixTasks(t *testing.T) {
 		t.Fatalf("output missing fix-tasks block:\nwant:\n%s\ngot:\n%s", wantBlock, out)
 	}
 	// The task list comes after the findings table.
-	if strings.Index(out, "Total: 9 problema(s).") > strings.Index(out, "## Tarefas de manutenção") {
+	if strings.Index(out, "Total: 10 problema(s).") > strings.Index(out, "## Tarefas de manutenção") {
 		t.Fatalf("fix-tasks block printed before the findings table:\n%s", out)
 	}
 }
