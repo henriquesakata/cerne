@@ -71,6 +71,32 @@ func TestRunbookNewWithFileBody(t *testing.T) {
 	}
 }
 
+// TestRunbookRetag: retag updates one axis, preserves the other, rejects an empty
+// invocation and an unknown facet (parity with decision/reference retag, F-0110).
+func TestRunbookRetag(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newRunbook(t, projDir, "Deploy", 1)
+	if _, err := execCerne(t, "runbook", "retag", "RB-0001", "--facet", "infra", "--dir", projDir); err != nil {
+		t.Fatalf("runbook retag --facet: %v", err)
+	}
+	out, err := execCerne(t, "runbook", "retag", "RB-0001", "--component", "gitback", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("runbook retag --component: %v\n%s", err, out)
+	}
+	rb, _ := store.LoadRunbook(repoDir, "RB-0001")
+	if len(rb.Facets) != 1 || rb.Facets[0] != "infra" || len(rb.Components) != 1 || rb.Components[0] != "gitback" {
+		t.Fatalf("after retag = %v / %v, want [infra] / [gitback]", rb.Facets, rb.Components)
+	}
+	// no axis flag → error.
+	if _, err := execCerne(t, "runbook", "retag", "RB-0001", "--dir", projDir); err == nil {
+		t.Fatalf("retag with no axis succeeded, want error")
+	}
+	// unknown facet → error.
+	if _, err := execCerne(t, "runbook", "retag", "RB-0001", "--facet", "prod", "--dir", projDir); err == nil {
+		t.Fatalf("retag --facet prod succeeded, want ErrUnknownFacet")
+	}
+}
+
 func TestRunbookNew(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t)
 
