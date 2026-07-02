@@ -3,6 +3,7 @@ package gitback
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,6 +93,52 @@ func TestGitbackOpsTolerateWorktreeConfigExtension(t *testing.T) {
 	}
 	if _, err := CommitPath(dir, "docs.lock", "pin docs.lock"); err != nil {
 		t.Fatalf("CommitPath under worktreeConfig: %v", err)
+	}
+}
+
+// linkedWorktree creates a repo with one commit plus a linked worktree via the
+// real git binary (go-git cannot create worktrees), skipping when git is
+// unavailable. Returns the main checkout and the worktree paths.
+func linkedWorktree(t *testing.T) (mainDir, wtDir string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary unavailable")
+	}
+	mainDir = t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-b", "main", mainDir},
+		{"-C", mainDir, "config", "user.email", "t@local"},
+		{"-C", mainDir, "config", "user.name", "t"},
+		{"-C", mainDir, "commit", "--allow-empty", "-m", "init"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	wtDir = t.TempDir() + "/wt"
+	if out, err := exec.Command("git", "-C", mainDir, "worktree", "add", "-b", "wt-branch", wtDir).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v: %s", err, out)
+	}
+	return mainDir, wtDir
+}
+
+// openRepo on a linked worktree must not keep a handle on the worktree's admin
+// dir: go-git's PlainOpen leaks the commondir file it reads during resolution
+// (dotGitCommonDirectory never closes it, go-git v5.19.1), and on Windows that
+// leaked handle makes .git/worktrees/<name> undeletable — by git itself, by
+// the user, by t.TempDir cleanup — until the process exits or the GC happens
+// to finalize the orphaned file.
+func TestOpenRepoLinkedWorktreeReleasesAdminDir(t *testing.T) {
+	mainDir, wtDir := linkedWorktree(t)
+	repo, err := openRepo(wtDir)
+	if err != nil {
+		t.Fatalf("openRepo(worktree): %v", err)
+	}
+	if _, err := repo.Head(); err != nil {
+		t.Fatalf("Head(worktree): %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(mainDir, ".git", "worktrees")); err != nil {
+		t.Fatalf("admin dir still held after openRepo (leaked commondir handle): %v", err)
 	}
 }
 
