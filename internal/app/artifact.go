@@ -64,6 +64,26 @@ func CommitAndSnapshot(repoDir, projDir, msg string) error {
 	return nil
 }
 
+// PinAllowed reports whether the committed docs.lock pin may be written in
+// projDir: always when the project sets no pin_branch (pre-0102 behavior),
+// otherwise only on that branch — feature branches never touch docs.lock, so
+// MRs stop conflicting on it (F-0102). Shared by the mutation tail
+// (updateSnapshot) and `cerne pull`. Best-effort like autocommitLock: an
+// unreadable config or a non-git projDir behaves as unrestricted, so a
+// misconfiguration never silently stops the pin. A detached HEAD resolves to
+// "" and therefore never matches.
+func PinAllowed(projDir string) bool {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil || cfg.PinBranch == "" {
+		return true
+	}
+	branch, err := gitback.CurrentBranch(projDir)
+	if err != nil {
+		return true
+	}
+	return branch == cfg.PinBranch
+}
+
 // autocommitLock commits the just-written project-side docs.lock when the
 // project opts in via .cernerc (autocommit_lock = true). Best-effort by design:
 // a missing/unreadable config, an opt-out, a non-git project, an unchanged lock,

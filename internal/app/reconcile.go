@@ -261,9 +261,18 @@ func writeChanges(repoDir string, apply []FileChange) error {
 	return nil
 }
 
-// updateSnapshot rewrites the project's docs.lock pin to sha and commits it when
-// the project opts in (the shared tail of every backend mutation).
+// updateSnapshot records the new backend snapshot in projDir (the shared tail
+// of every backend mutation): always in the gitignored session sidecar, and in
+// the committed docs.lock pin — committed too when the project opts in — only
+// where pinAllowed says so (off the pin branch, docs.lock stays untouched;
+// F-0102).
 func updateSnapshot(projDir, sha string) error {
+	if err := project.SaveSessionSnapshot(projDir, sha); err != nil {
+		return err
+	}
+	if !PinAllowed(projDir) {
+		return nil
+	}
 	lock, err := project.LoadLock(projDir)
 	if err != nil {
 		return err

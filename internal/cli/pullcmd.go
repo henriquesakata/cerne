@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
 	"gitlab.com/rockt/cerne/internal/materialize"
@@ -108,15 +109,23 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 		} else if err != nil {
 			return err
 		}
-		lock, err := project.LoadLock(ctx.projDir)
-		if errors.Is(err, project.ErrNoLock) {
-			lock = project.Lock{Version: 1, Backend: ctx.cfg.Backend}
-		} else if err != nil {
+		if err := project.SaveSessionSnapshot(ctx.projDir, head); err != nil {
 			return err
 		}
-		lock.Snapshot = head
-		if err := project.SaveLock(ctx.projDir, lock); err != nil {
-			return err
+		// The committed docs.lock pin only moves where PinAllowed says so —
+		// off the pin branch it stays byte-identical, so MRs never conflict
+		// on it (F-0102).
+		if app.PinAllowed(ctx.projDir) {
+			lock, err := project.LoadLock(ctx.projDir)
+			if errors.Is(err, project.ErrNoLock) {
+				lock = project.Lock{Version: 1, Backend: ctx.cfg.Backend}
+			} else if err != nil {
+				return err
+			}
+			lock.Snapshot = head
+			if err := project.SaveLock(ctx.projDir, lock); err != nil {
+				return err
+			}
 		}
 		return project.SaveManifest(ctx.projDir, manifest)
 	})

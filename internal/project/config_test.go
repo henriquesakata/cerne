@@ -94,6 +94,42 @@ func TestConfigOKFRoundTrip(t *testing.T) {
 	}
 }
 
+// TestConfigPinBranchRoundTrip pins the .cernerc `pin_branch` key (F-0102):
+// persists and reloads when set, omitted (omitempty) when empty — an absent key
+// keeps the pre-0102 behavior (docs.lock pinned on every branch).
+func TestConfigPinBranchRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x", PinBranch: "main"}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), `pin_branch = "main"`) {
+		t.Fatalf(".cernerc missing pin_branch key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.PinBranch != "main" {
+		t.Fatalf("loaded PinBranch = %q, want %q", got.PinBranch, "main")
+	}
+
+	// omitempty: an empty PinBranch is not written to .cernerc.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig off: %v", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(raw), "pin_branch") {
+		t.Fatalf("empty pin_branch should be omitted:\n%s", raw)
+	}
+}
+
 // TestConfigAutocommitLockRoundTrip pins the .cernerc `autocommit_lock` key
 // (F-0060): persists and reloads when true, omitted (omitempty) when false.
 func TestConfigAutocommitLockRoundTrip(t *testing.T) {

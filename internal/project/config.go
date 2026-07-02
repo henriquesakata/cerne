@@ -24,6 +24,7 @@ type Config struct {
 	DefaultScope   string    `toml:"default_scope"`             // optional module filter
 	OKF            bool      `toml:"okf,omitempty"`             // emit OKF-compatible frontmatter in .docs/ (cerne pull); flag --okf overrides
 	AutocommitLock bool      `toml:"autocommit_lock,omitempty"` // F-0060: cerne commits the project-side docs.lock after a backend mutation (opt-in, default off)
+	PinBranch      string    `toml:"pin_branch,omitempty"`      // F-0102: docs.lock is written/committed only on this branch; empty = every branch (pre-0102 behavior)
 	LLM            LLMConfig `toml:"llm"`                       // optional v1.5 LLM layer config
 }
 
@@ -90,9 +91,10 @@ func SaveConfig(dir string, c Config) error {
 		DefaultScope   string     `toml:"default_scope"`
 		OKF            bool       `toml:"okf,omitempty"`
 		AutocommitLock bool       `toml:"autocommit_lock,omitempty"`
+		PinBranch      string     `toml:"pin_branch,omitempty"`
 		LLM            *LLMConfig `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm

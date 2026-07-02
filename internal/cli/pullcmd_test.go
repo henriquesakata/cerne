@@ -8,6 +8,10 @@ import (
 	"testing"
 	"time"
 
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -373,5 +377,120 @@ func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(specPath); strings.Contains(string(got), "Edição local não-enviada") {
 		t.Fatalf("pull --force should restore from backend; edit still present:\n%s", got)
+	}
+}
+
+// gitProjectOnBranch turns projDir into a git repo with .cernerc/docs.lock
+// committed and the given branch checked out (F-0102 pin_branch fixtures).
+func gitProjectOnBranch(t *testing.T, projDir, branch string) {
+	t.Helper()
+	repo, err := git.PlainInit(projDir, false)
+	if err != nil {
+		t.Fatalf("PlainInit proj: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, ".gitignore"), []byte(".docs/\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{".cernerc", ".gitignore", "docs.lock"} {
+		if _, err := wt.Add(f); err != nil {
+			t.Fatalf("add %s: %v", f, err)
+		}
+	}
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Now()}
+	if _, err := wt.Commit("init proj", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("commit init proj: %v", err)
+	}
+	if err := wt.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName(branch),
+		Create: true,
+	}); err != nil {
+		t.Fatalf("checkout -b %s: %v", branch, err)
+	}
+}
+
+// setPinBranch rewrites the project .cernerc with pin_branch set (F-0102).
+func setPinBranch(t *testing.T, projDir, branch string) {
+	t.Helper()
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.PinBranch = branch
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+}
+
+// Criteria 2+4 (F-0102): pull off the pin branch materializes and records the
+// session snapshot but leaves the committed docs.lock byte-identical.
+func TestPullPinBranchLeavesLockUntouched(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Parcelamento", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas."))
+	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	gitProjectOnBranch(t, projDir, "feature/x")
+	setPinBranch(t, projDir, "main")
+
+	before, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock before: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	after, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock after: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("docs.lock rewritten off the pin branch:\nbefore: %s\nafter: %s", before, after)
+	}
+	originHead, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	snap, err := project.LoadSessionSnapshot(projDir)
+	if err != nil {
+		t.Fatalf("LoadSessionSnapshot: %v", err)
+	}
+	if snap != originHead {
+		t.Fatalf("session snapshot = %q, want origin HEAD %q", snap, originHead)
+	}
+	// Materialization itself is unaffected.
+	if _, err := os.Stat(filepath.Join(projDir, ".docs", "current", "features", "F-0001-parcelamento", "spec.md")); err != nil {
+		t.Fatalf("spec not materialized: %v", err)
+	}
+}
+
+// Criterion 3 (F-0102): pull ON the pin branch keeps advancing docs.lock.
+func TestPullPinBranchOnPinAdvancesLock(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Parcelamento", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas."))
+	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	gitProjectOnBranch(t, projDir, "trunk")
+	setPinBranch(t, projDir, "trunk")
+
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	originHead, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if lock.Snapshot != originHead {
+		t.Fatalf("lock.Snapshot = %q, want origin HEAD %q on the pin branch", lock.Snapshot, originHead)
 	}
 }
