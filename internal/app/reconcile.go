@@ -270,7 +270,7 @@ func updateSnapshot(projDir, sha string) error {
 	if err := project.SaveSessionSnapshot(projDir, sha); err != nil {
 		return err
 	}
-	if !pinAllowed(projDir) {
+	if !PinAllowed(projDir) {
 		return nil
 	}
 	lock, err := project.LoadLock(projDir)
