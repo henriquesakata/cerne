@@ -267,6 +267,8 @@ func TestRunFindings(t *testing.T) {
 			Detail: "content/decisions/D-0001.md: faltam as seções do template: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0003/spec.md",
 			Detail: "content/features/F-0003/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+		{Rule: RuleUnregisteredSource, Entity: "F-0003", File: "content/features/F-0003/spec.md",
+			Detail: "URL externa https://example.com citada sem referência registrada — registre com 'cerne reference new … --informs F-0003' ou remova a URL"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
