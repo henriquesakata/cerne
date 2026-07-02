@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -34,11 +36,11 @@ import (
 
 // Rule names, in deterministic report order.
 const (
-	RuleRefToSuperseded   = "ref-to-superseded"
-	RuleBrokenLink        = "broken-link"
-	RuleOrphanContent     = "orphan-content"
-	RuleMissingGateDoc    = "missing-gate-doc"
-	RuleWikiSourceUnknown = "wiki-source-unknown"
+	RuleRefToSuperseded    = "ref-to-superseded"
+	RuleBrokenLink         = "broken-link"
+	RuleOrphanContent      = "orphan-content"
+	RuleMissingGateDoc     = "missing-gate-doc"
+	RuleWikiSourceUnknown  = "wiki-source-unknown"
 	RuleParentNotFound     = "parent-not-found"
 	RuleParentTerminal     = "parent-terminal"
 	RuleEpicOpenChildren   = "epic-open-children"
@@ -122,7 +124,7 @@ type scannedDoc struct {
 // Run lints the backend at repoDir and returns the findings in
 // deterministic order: by Rule (RuleOrder), then File, then Detail
 // (Entity as final tie-breaker).
-func Run(repoDir string) ([]Finding, error) {
+func Run(repoDir string, ignore ...string) ([]Finding, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return nil, err
@@ -169,7 +171,11 @@ func Run(repoDir string) ([]Finding, error) {
 		text := string(data)
 		findings = append(findings, refFindings(d, text, needles)...)
 		findings = append(findings, linkFindings(repoDir, d, text)...)
-		findings = append(findings, unregisteredSourceFindings(d, text, references)...)
+		// unregistered-source is provenance of a decision — scoped to decisions and
+		// feature spec/plan/result only (F-0107), never runbooks/references/notes/errata.
+		if inUnregisteredSourceScope(d.rel) {
+			findings = append(findings, unregisteredSourceFindings(d, text, references, ignore)...)
+		}
 	}
 
 	orphans, err := orphanFindings(repoDir, features, decisions, references, runbooks, notes)
@@ -867,13 +873,46 @@ func normalizeURL(u string) string {
 	return strings.TrimRight(u, "/")
 }
 
+// inUnregisteredSourceScope reports whether a doc is subject to unregistered-source
+// (F-0107): only decision docs and feature spec/plan/result carry decision
+// provenance. Runbooks, references, notes and errata legitimately cite operational
+// or self URLs and are out of scope.
+func inUnregisteredSourceScope(rel string) bool {
+	return strings.HasPrefix(rel, "content/features/") || strings.HasPrefix(rel, "content/decisions/")
+}
+
+// ignoredSourceURL reports whether a URL is never an external source and so is
+// skipped by unregistered-source (F-0107): an internal/local host (`.local`,
+// `localhost`, a private or loopback IP) or a URL containing any project-configured
+// ignore substring (e.g. the project's own code repo host).
+func ignoredSourceURL(u string, ignore []string) bool {
+	for _, s := range ignore {
+		if s != "" && strings.Contains(u, s) {
+			return true
+		}
+	}
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "localhost" || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {
+		return true
+	}
+	return false
+}
+
 // unregisteredSourceFindings reports external http(s) URLs cited in an authored
-// doc that no registered reference backs (RuleUnregisteredSource / F-0103).
-// Backing is the union (D1): a *current* reference whose URL matches (normalized)
-// OR one whose Informs backlinks the doc's entity. The fix is to register the
-// source (cerne reference new … --informs) or remove the bare URL — so a
-// discarded dead-end never becomes a forced reference.
-func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Reference) []Finding {
+// decision or feature doc that no registered reference backs (RuleUnregisteredSource).
+// Backing is the union (D1, F-0103): a *current* reference whose URL matches
+// (normalized) OR one whose Informs backlinks the doc's entity. URLs that are never
+// sources — internal/local hosts or a configured ignore substring (F-0107) — are
+// skipped. The fix is to register the source (cerne reference new … --informs) or
+// remove the bare URL — so a discarded dead-end never becomes a forced reference.
+func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Reference, ignore []string) []Finding {
 	urls := mdlink.ExternalURLs(text)
 	if len(urls) == 0 {
 		return nil
@@ -894,7 +933,7 @@ func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Referenc
 	}
 	var findings []Finding
 	for _, u := range urls {
-		if backed[normalizeURL(u)] {
+		if ignoredSourceURL(u, ignore) || backed[normalizeURL(u)] {
 			continue
 		}
 		findings = append(findings, Finding{
