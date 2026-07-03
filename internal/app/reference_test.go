@@ -74,14 +74,78 @@ func TestCreateExternalReferenceValidation(t *testing.T) {
 		t.Fatalf("empty url should error")
 	}
 	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"F-9999"}, nil, nil); err == nil {
-		t.Fatalf("dangling informs target should error")
+		t.Fatalf("dangling feature informs target should error")
+	}
+	// Dangling runbook/note targets error too (F-0108: RB-/N- accepted only when they exist).
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"RB-9999"}, nil, nil); err == nil {
+		t.Fatalf("dangling runbook informs target should error")
+	}
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"N-9999"}, nil, nil); err == nil {
+		t.Fatalf("dangling note informs target should error")
+	}
+	// A reference id (R-) is not a valid informs target; the error names the accepted kinds.
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"R-1"}, nil, nil); err == nil {
+		t.Fatalf("reference informs target should error")
 	}
 	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"X-1"}, nil, nil); err == nil {
-		t.Fatalf("non-F/D informs target should error")
+		t.Fatalf("unknown-kind informs target should error")
 	}
 	// Nothing was written.
 	if refs, _ := store.LoadAllReferences(repoDir); len(refs) != 0 {
 		t.Fatalf("failed creates persisted %d ref(s), want 0", len(refs))
+	}
+}
+
+// TestCreateExternalReferenceInformsRunbookNote: F-0108 — an external source may
+// inform a runbook (RB-) or a note (N-), not only features/decisions. The backlink
+// is stored on the reference and the generic reverse lookup resolves it.
+func TestCreateExternalReferenceInformsRunbookNote(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateRunbook(repoDir, projDir, "Deploy do serviço", "# Deploy\n\npassos"); err != nil {
+		t.Fatalf("CreateRunbook: %v", err)
+	}
+	if _, err := CreateNote(repoDir, projDir, "Gotcha do build", "corpo", nil, nil, nil); err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	rbRef, err := CreateExternalReference(repoDir, projDir, "Doc do fornecedor", "http://vendor/x", "conteúdo", []string{"RB-0001"}, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateExternalReference --informs RB-0001: %v", err)
+	}
+	if len(rbRef.Informs) != 1 || rbRef.Informs[0] != "RB-0001" {
+		t.Fatalf("rbRef.Informs = %v, want [RB-0001]", rbRef.Informs)
+	}
+	nRef, err := CreateExternalReference(repoDir, projDir, "Artigo da gotcha", "http://blog/y", "conteúdo", []string{"N-0001"}, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateExternalReference --informs N-0001: %v", err)
+	}
+	if len(nRef.Informs) != 1 || nRef.Informs[0] != "N-0001" {
+		t.Fatalf("nRef.Informs = %v, want [N-0001]", nRef.Informs)
+	}
+
+	// The generic reverse lookup resolves the backlink for a runbook target.
+	informing, err := ReferencesInforming(repoDir, "RB-0001")
+	if err != nil {
+		t.Fatalf("ReferencesInforming(RB-0001): %v", err)
+	}
+	if len(informing) != 1 || informing[0].ID != rbRef.ID {
+		t.Fatalf("ReferencesInforming(RB-0001) = %+v, want [%s]", informing, rbRef.ID)
+	}
+}
+
+// TestCreateNoteInformsRunbook: F-0108 — validateInforms is shared, so a note may
+// also inform a runbook.
+func TestCreateNoteInformsRunbook(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateRunbook(repoDir, projDir, "Recuperação", "# Recovery\n\npassos"); err != nil {
+		t.Fatalf("CreateRunbook: %v", err)
+	}
+	n, err := CreateNote(repoDir, projDir, "Nota operacional", "corpo", []string{"RB-0001"}, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateNote --informs RB-0001: %v", err)
+	}
+	if len(n.Informs) != 1 || n.Informs[0] != "RB-0001" {
+		t.Fatalf("note.Informs = %v, want [RB-0001]", n.Informs)
 	}
 }
 

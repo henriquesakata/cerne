@@ -122,8 +122,10 @@ func RetagReference(repoDir, projDir, id string, facets, components []string, se
 }
 
 // validateInforms trims, dedupes (preserving order) and checks each backlink
-// target: it must be a feature (F-) or decision (D-) that exists in the
-// backend, so no dangling backlink is stored. Returns the cleaned list (nil
+// target: it must be a feature (F-), decision (D-), runbook (RB-) or note (N-)
+// that exists in the backend, so no dangling backlink is stored (F-0108 added
+// runbooks/notes — a source may inform an operational procedure or a piece of
+// tacit knowledge, not only features/decisions). Returns the cleaned list (nil
 // when empty).
 func validateInforms(repoDir string, informs []string) ([]string, error) {
 	var out []string
@@ -147,8 +149,20 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 			} else if err != nil {
 				return nil, err
 			}
+		case strings.HasPrefix(id, "RB-"):
+			if _, err := store.LoadRunbook(repoDir, id); errors.Is(err, store.ErrNotFound) {
+				return nil, fmt.Errorf("--informs: runbook %s não encontrado no backend", id)
+			} else if err != nil {
+				return nil, err
+			}
+		case strings.HasPrefix(id, "N-"):
+			if _, err := store.LoadNote(repoDir, id); errors.Is(err, store.ErrNotFound) {
+				return nil, fmt.Errorf("--informs: nota %s não encontrada no backend", id)
+			} else if err != nil {
+				return nil, err
+			}
 		default:
-			return nil, fmt.Errorf("--informs: %q deve ser uma feature (F-) ou decisão (D-)", id)
+			return nil, fmt.Errorf("--informs: %q deve ser uma feature (F-), decisão (D-), runbook (RB-) ou nota (N-)", id)
 		}
 		out = append(out, id)
 	}

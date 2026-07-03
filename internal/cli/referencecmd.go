@@ -74,8 +74,8 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 		Short: "Register an external source (article/doc) as a reference",
 		Long: "Registra um artigo/documento externo como referência (marca externa + URL). " +
 			"O conteúdo (texto/resumo) vem de --file ou da entrada padrão e entra no índice, " +
-			"então o 'ask' passa a citá-lo. Use --informs para ligar a fonte às features/decisões " +
-			"(F-/D-) que ela motivou. Use --facet (eixo fechado: infra,code,data,process,auth) e " +
+			"então o 'ask' passa a citá-lo. Use --informs para ligar a fonte às entidades " +
+			"(F-/D-/RB-/N-) que ela motivou. Use --facet (eixo fechado: infra,code,data,process,auth) e " +
 			"--component (subsistema/ferramenta, ex.: gitea,kpack) para categorizar — ambos multivalor, " +
 			"separados por vírgula.",
 		Args: cobra.ExactArgs(1),
@@ -84,7 +84,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D- ids this source motivated")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this source motivated")
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")

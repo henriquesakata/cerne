@@ -44,7 +44,7 @@ func newNoteListCmd(dir *string) *cobra.Command {
 		Long: "Lista as notas lidas direto do backend (store), não da projeção '.docs/' — então enxerga o " +
 			"conhecimento mesmo quando '.docs/' está desatualizado (sem 'cerne pull'). Por padrão mostra só as " +
 			"ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
-			"(durável, informa F-/D-, facet/componente, sucessora). Filtre por --facet e/ou --component (E lógico). " +
+			"(durável, informa F-/D-/RB-/N-, facet/componente, sucessora). Filtre por --facet e/ou --component (E lógico). " +
 			"--json para saída estruturada.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -185,7 +185,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 		Short: "Register durable team knowledge as a note (active)",
 		Long: "Registra conhecimento durável de projeto (gotchas, invariantes, convenções tácitas) como uma nota " +
 			"ativa. O corpo é texto livre, vindo de --file ou da entrada padrão (quando há pipe); sem corpo a nota " +
-			"nasce como stub para você preencher. Use --informs para ligar a nota às features/decisões (F-/D-) que " +
+			"nasce como stub para você preencher. Use --informs para ligar a nota às entidades (F-/D-/RB-/N-) que " +
 			"ela informa. Use --facet (eixo fechado: infra,code,data,process,auth) e --component (subsistema/ferramenta, " +
 			"ex.: gitea,kpack) para organizar — ambos multivalor, separados por vírgula. " +
 			"Conhecimento pessoal/de-máquina (paths, preferências) NÃO vai aqui — fica na memória local.",
@@ -194,7 +194,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 			return runNoteNew(cmd, *dir, args[0], informs, file, facet, component)
 		},
 	}
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D- ids this note informs")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this note informs")
 	cmd.Flags().StringVar(&file, "file", "", "file with the note body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
