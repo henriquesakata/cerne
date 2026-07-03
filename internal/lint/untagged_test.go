@@ -40,10 +40,15 @@ func TestUntaggedLiveFindings(t *testing.T) {
 			Facets: []string{"auth"}, Components: []string{"keycloak"}}, // tagged → skip
 		{ID: "D-0003", Title: "superseded sem tag", State: domain.DecisionSuperseded}, // history → skip
 	}
+	runbooks := []store.Runbook{
+		{ID: "RB-0001", Title: "active sem tag", State: domain.RunbookActive},                              // flagged
+		{ID: "RB-0002", Title: "active com facet", State: domain.RunbookActive, Facets: []string{"infra"}}, // tagged → skip
+		{ID: "RB-0003", Title: "superseded sem tag", State: domain.RunbookSuperseded},                      // history → skip
+	}
 
-	got := untaggedLiveFindings(features, decisions, references, notes)
+	got := untaggedLiveFindings(features, decisions, references, notes, runbooks)
 
-	want := map[string]bool{"F-0001": true, "F-0003": true, "N-0001": true, "R-0001": true, "D-0001": true}
+	want := map[string]bool{"F-0001": true, "F-0003": true, "N-0001": true, "R-0001": true, "D-0001": true, "RB-0001": true}
 	if len(got) != len(want) {
 		t.Fatalf("got %d untagged-live findings, want %d: %+v", len(got), len(want), got)
 	}

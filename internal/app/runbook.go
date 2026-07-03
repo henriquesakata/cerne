@@ -103,6 +103,51 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 	return RunbookOutcome{ID: id, From: oldState, To: newState}, nil
 }
 
+// RetagRunbook sets the tag axes of an active runbook in the backend clone at
+// repoDir. Each axis is replaced only when its set flag is true, so a caller can
+// update facets without touching components (or clear an axis by passing an empty
+// slice with set=true); state, superseded_by, reason and the content doc are
+// preserved. Facets are validated against the closed set before any write, so an
+// unknown facet aborts leaving the runbook untouched. Appends runbook.retagged and
+// syncs the backend + docs.lock in projDir.
+func RetagRunbook(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Runbook, error) {
+	rb, err := store.LoadRunbook(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Runbook{}, fmt.Errorf("runbook %s não encontrado no backend", id)
+	}
+	if err != nil {
+		return store.Runbook{}, err
+	}
+	if rb.State != domain.RunbookActive {
+		return store.Runbook{}, fmt.Errorf("runbook %s não está ativo (está %s) — retag só vale para runbook ativo", id, rb.State)
+	}
+	if setFacets {
+		nf, err := domain.NormalizeFacets(facets)
+		if err != nil {
+			return store.Runbook{}, err // unknown facet: runbook untouched
+		}
+		rb.Facets = nf
+	}
+	if setComponents {
+		rb.Components = domain.NormalizeComponents(components)
+	}
+	rb.UpdatedAt = time.Now().UTC()
+	if err := store.SaveRunbook(repoDir, rb); err != nil {
+		return store.Runbook{}, err
+	}
+	ev := domain.NewEvent(id, "runbook.retagged", map[string]string{
+		"facets":     strings.Join(rb.Facets, ","),
+		"components": strings.Join(rb.Components, ","),
+	}, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return store.Runbook{}, err
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		return store.Runbook{}, err
+	}
+	return rb, nil
+}
+
 // RunbookDocPath returns the backend path of a runbook's content document.
 func RunbookDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "runbooks", id+".md")

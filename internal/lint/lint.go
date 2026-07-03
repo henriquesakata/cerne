@@ -212,7 +212,7 @@ func Run(repoDir string, ignore ...string) ([]Finding, error) {
 	}
 	findings = append(findings, incomplete...)
 
-	findings = append(findings, untaggedLiveFindings(features, decisions, references, notes)...)
+	findings = append(findings, untaggedLiveFindings(features, decisions, references, notes, runbooks)...)
 
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
@@ -1128,8 +1128,8 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 	return findings
 }
 
-// untaggedLiveFindings flags a live entity — an active note or decision, a
-// current reference, an actively-worked feature — carrying no tag on EITHER axis
+// untaggedLiveFindings flags a live entity — an active note, decision or runbook,
+// a current reference, an actively-worked feature — carrying no tag on EITHER axis
 // (facets and components both empty). Such an entity is invisible to the
 // categorical `list --facet/--component` filters and reachable only by full-text
 // search/ask, a retrieval gap that compounds as the project grows. It is
@@ -1140,7 +1140,7 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 // states (candidate/approved/in_development) are flagged — the implemented
 // backlog is deliberately spared so the rule never dumps the whole done-history
 // as untagged debt.
-func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, references []store.Reference, notes []store.Note) []Finding {
+func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, references []store.Reference, notes []store.Note, runbooks []store.Runbook) []Finding {
 	untagged := func(facets, components []string) bool {
 		return len(facets) == 0 && len(components) == 0
 	}
@@ -1179,6 +1179,15 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 				Rule:   RuleUntaggedLive,
 				Entity: r.ID,
 				Detail: "sem tag (facet/componente) — classifique com 'cerne reference retag'",
+			})
+		}
+	}
+	for _, rb := range runbooks {
+		if rb.State == domain.RunbookActive && untagged(rb.Facets, rb.Components) {
+			findings = append(findings, Finding{
+				Rule:   RuleUntaggedLive,
+				Entity: rb.ID,
+				Detail: "sem tag (facet/componente) — classifique com 'cerne runbook retag'",
 			})
 		}
 	}

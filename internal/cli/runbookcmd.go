@@ -27,10 +27,48 @@ func newRunbookCmd() *cobra.Command {
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newRunbookNewCmd(&dir))
 	cmd.AddCommand(newRunbookDraftCmd(&dir))
+	cmd.AddCommand(newRunbookRetagCmd(&dir))
 	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
 	cmd.AddCommand(newRunbookMigrateCmd(&dir))
 	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
+}
+
+func newRunbookRetagCmd(dir *string) *cobra.Command {
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "retag <id>",
+		Short: "Redefinir os tags (facet/componente) de um runbook ativo",
+		Long: "Define ou substitui os eixos de tag de um runbook ativo, sem substituí-lo — preserva corpo e " +
+			"estado. Altera só o eixo passado: 'retag RB-0001 --component gitback' mantém os facets; '--facet \"\"' " +
+			"limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRunbookRetag(cmd, *dir, args[0], facet, component,
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+		},
+	}
+	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
+	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	return cmd
+}
+
+func runRunbookRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+	if !setFacets && !setComponents {
+		return fmt.Errorf("informe ao menos --facet ou --component")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	rb, err := app.RetagRunbook(ctx.repoDir, ctx.projDir, id,
+		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeado — facets: [%s] · components: [%s]\n",
+		rb.ID, strings.Join(rb.Facets, ", "), strings.Join(rb.Components, ", "))
+	return nil
 }
 
 func newRunbookMigrateCmd(dir *string) *cobra.Command {
