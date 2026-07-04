@@ -30,7 +30,7 @@ func newLintCmd() *cobra.Command {
 }
 
 func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
-	repoDir, ignore, cleanup, err := lintRoot(dir, staged)
+	repoDir, ignore, cleanup, driftCtx, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
 	}
@@ -40,6 +40,17 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
 	findings, err := lint.Run(repoDir, ignore...)
 	if err != nil {
 		return err
+	}
+	// Drift-suspect (F-0113) needs the user's project repo, which lint.Run never
+	// sees; it only runs in the default mode (driftCtx != nil), never in --staged
+	// where there is no code diff to consider.
+	if driftCtx != nil {
+		drift, _, _, err := computeDriftFindings(*driftCtx)
+		if err != nil {
+			return err
+		}
+		findings = append(findings, drift...)
+		lint.Sort(findings)
 	}
 	out := cmd.OutOrStdout()
 	if len(findings) == 0 {
@@ -60,20 +71,23 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
 // tree of the local .docs/ edits over the pulled snapshot, WITHOUT a pull and
 // without touching the backend (resolvePaths + stagedLintRoot). The returned
 // cleanup is nil in the default mode and removes the temp tree in staged mode.
-func lintRoot(dir string, staged bool) (repoDir string, ignore []string, cleanup func(), err error) {
+// The returned driftCtx is non-nil only in the default mode: it carries the
+// resolved project so runLint can compute drift-suspect findings (F-0113). In
+// staged mode it is nil — staged validates local .docs/ edits, not a code diff.
+func lintRoot(dir string, staged bool) (repoDir string, ignore []string, cleanup func(), driftCtx *projCtx, err error) {
 	if staged {
 		ctx, err := resolvePaths(dir)
 		if err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, nil, err
 		}
 		root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
-		return root, ctx.cfg.UnregisteredSourceIgnore, cleanup, err
+		return root, ctx.cfg.UnregisteredSourceIgnore, cleanup, nil, err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, nil, err
 	}
-	return ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore, nil, nil
+	return ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore, nil, &ctx, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.

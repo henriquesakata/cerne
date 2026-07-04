@@ -112,6 +112,10 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 		if err := project.SaveSessionSnapshot(ctx.projDir, head); err != nil {
 			return err
 		}
+		// Record the user project's HEAD as the drift baseline (F-0113).
+		if err := app.RecordProjectHead(ctx.projDir); err != nil {
+			return err
+		}
 		// The committed docs.lock pin only moves where PinAllowed says so —
 		// off the pin branch it stays byte-identical, so MRs never conflict
 		// on it (F-0102).
