@@ -47,6 +47,69 @@ func seed(t *testing.T) (repoDir, dbPath string) {
 	return repoDir, dbPath
 }
 
+func TestHistoricalFlag(t *testing.T) {
+	cases := []struct {
+		kind, state string
+		want        bool
+	}{
+		{"feature", "implemented", true},
+		{"feature", "superseded", true},
+		{"feature", "approved", false},
+		{"feature", "candidate", false},
+		{"feature", "in_development", false},
+		{"decision", "active", false},
+		{"decision", "superseded", true},
+		{"runbook", "active", false},
+		{"note", "active", false},
+		{"reference", "current", false},
+		{"historical", "superseded", true},
+		{"wiki", "current", false},
+	}
+	for _, c := range cases {
+		if got := historical(c.kind, c.state); got != c.want {
+			t.Errorf("historical(%q, %q) = %v, want %v", c.kind, c.state, got, c.want)
+		}
+	}
+}
+
+func TestRetrieveMarksImplementedHistorical(t *testing.T) {
+	repoDir, dbPath := seed(t)
+	// F-0003 implemented: retrieved, but flagged as historical record.
+	f := store.Feature{ID: "F-0003", Title: "F-0003", Module: "finance", State: domain.StateImplemented, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	p := filepath.Join(repoDir, "content", "features", "F-0003", "spec.md")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, []byte("# F-0003\n\nOs boletos migraram.\n"), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	snips, err := Retrieve(repoDir, dbPath, "boletos", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	var sawImplemented bool
+	for _, s := range snips {
+		switch {
+		case s.Source == "F-0003":
+			sawImplemented = true
+			if !s.Historical {
+				t.Fatalf("implemented feature not flagged historical: %+v", s)
+			}
+		case s.Source == "F-0001" || s.Kind == "wiki":
+			if s.Historical {
+				t.Fatalf("live source wrongly flagged historical: %+v", s)
+			}
+		}
+	}
+	if !sawImplemented {
+		t.Fatalf("F-0003 (implemented) missing from snippets: %+v", snips)
+	}
+}
+
 func TestRetrieveCurrentFirstExcludesTerminal(t *testing.T) {
 	repoDir, dbPath := seed(t)
 	snips, err := Retrieve(repoDir, dbPath, "boletos", false, 10)

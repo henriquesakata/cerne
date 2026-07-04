@@ -23,9 +23,20 @@ type Snippet struct {
 	State  string `json:"state"`         // lifecycle state; "current" for wiki pages
 	URL    string `json:"url,omitempty"` // source URL for external references; empty otherwise
 	Text   string `json:"text"`
+	// Historical marks a source that records the past rather than the present:
+	// any terminal-state entity, and implemented-feature prose (spec/plan/result
+	// describe the world at implementation time, not the current state).
+	Historical bool `json:"historical,omitempty"`
 }
 
 var terminalStates = map[string]bool{"superseded": true, "rejected": true, "obsolete": true}
+
+// historical reports whether a (kind, state) pair is a historical record: every
+// terminal state, plus implemented-feature prose — a spec/plan/result is a
+// snapshot of its implementation moment, never an authority on the present.
+func historical(kind, state string) bool {
+	return terminalStates[state] || (kind == "feature" && state == "implemented")
+}
 
 // stopwords are common pt-BR + en function words dropped from a natural-language
 // question before it reaches the FTS index, so the query keeps only salient
@@ -90,7 +101,7 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 		if !history && terminalStates[h.State] {
 			continue
 		}
-		snip := Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet}
+		snip := Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet, Historical: historical(h.Kind, h.State)}
 		switch h.Kind {
 		case "feature":
 			if f, err := store.LoadFeature(repoDir, h.EntityID); err == nil && f.Module != "" {
