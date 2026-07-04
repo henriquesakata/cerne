@@ -211,6 +211,103 @@ func hasSnippet(snips []Snippet, source string) bool {
 	return false
 }
 
+// seedForRanking builds a backend where BM25 alone would rank the implemented
+// feature first: its spec repeats the query term, while the active decision and
+// the live feature mention it once inside longer bodies.
+func seedForRanking(t *testing.T) (repoDir, dbPath string) {
+	t.Helper()
+	repoDir = t.TempDir()
+	if err := store.InitLayout(repoDir, store.Project{Name: "Demo", Modules: []string{"infra"}}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	now := time.Unix(0, 0).UTC()
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Plataforma", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	feats := []struct {
+		id    string
+		state domain.FeatureState
+		spec  string
+	}{
+		{"F-0001", domain.StateApproved, "# F-0001\n\nMuda o ambiente da plataforma para o novo desenho agora aprovado.\n"},
+		{"F-0002", domain.StateImplemented, "# F-0002\n\nambiente ambiente ambiente ambiente ambiente ambiente.\n"},
+		{"F-0003", domain.StateImplemented, "# F-0003\n\nO ambiente antigo, descrito uma vez em corpo mais longo do que os demais.\n"},
+	}
+	for _, f := range feats {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: f.id, Title: f.id, Module: "infra", State: f.state, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.id, err)
+		}
+		p := filepath.Join(repoDir, "content", "features", f.id, "spec.md")
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(f.spec), 0o644); err != nil {
+			t.Fatalf("write spec: %v", err)
+		}
+	}
+	p := filepath.Join(repoDir, "content", "decisions", "D-0001.md")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, []byte("# D-0001\n\nDecidimos que o ambiente roda em k8s, entre outras coisas descritas neste corpo mais longo.\n"), 0o644); err != nil {
+		t.Fatalf("write decision: %v", err)
+	}
+	dbPath = filepath.Join(t.TempDir(), "index.db")
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	return repoDir, dbPath
+}
+
+// entityOrder extracts the non-wiki sources in retrieval order.
+func entityOrder(snips []Snippet) []string {
+	var out []string
+	for _, s := range snips {
+		if s.Kind != "wiki" {
+			out = append(out, s.Source)
+		}
+	}
+	return out
+}
+
+func TestRetrieveRanking(t *testing.T) {
+	repoDir, dbPath := seedForRanking(t)
+	snips, err := Retrieve(repoDir, dbPath, "ambiente", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	got := entityOrder(snips)
+	// Precedence tiers: live non-feature (D-0001) > live feature (F-0001) >
+	// implemented (F-0002 before F-0003 — BM25 order preserved inside the tier).
+	want := []string{"D-0001", "F-0001", "F-0002", "F-0003"}
+	if len(got) != len(want) {
+		t.Fatalf("entity order = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("entity order = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestTrimAfterRanking(t *testing.T) {
+	repoDir, dbPath := seedForRanking(t)
+	snips, err := Retrieve(repoDir, dbPath, "ambiente", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	var wikiCount int
+	for _, s := range snips {
+		if s.Kind == "wiki" {
+			wikiCount++
+		}
+	}
+	// Keep the wiki pages plus two entity slots: the live sources must survive
+	// the cut; the historical (implemented) prose is what gets dropped.
+	trimmed := Trim(snips, wikiCount+2, 0)
+	got := entityOrder(trimmed)
+	want := []string{"D-0001", "F-0001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("post-trim entity order = %v, want %v", got, want)
+	}
+}
+
 func TestRetrievePullsDecisionsAndReferencesPages(t *testing.T) {
 	repoDir, dbPath := seedWithCrossCutting(t)
 	// A query that hits the decision (gateway) and the reference (runbook).

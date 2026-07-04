@@ -38,6 +38,23 @@ func historical(kind, state string) bool {
 	return terminalStates[state] || (kind == "feature" && state == "implemented")
 }
 
+// vigencyTier ranks a source by how authoritative it is on the present, so a
+// strong BM25 match on old prose never outranks a live decision/runbook/note:
+// 0 = live non-feature entities, 1 = live features, 2 = implemented-feature
+// prose, 3 = terminal states (present only with --history).
+func vigencyTier(kind, state string) int {
+	switch {
+	case terminalStates[state]:
+		return 3
+	case kind == "feature" && state == "implemented":
+		return 2
+	case kind == "feature":
+		return 1
+	default:
+		return 0
+	}
+}
+
 // stopwords are common pt-BR + en function words dropped from a natural-language
 // question before it reaches the FTS index, so the query keeps only salient
 // terms instead of matching the whole sentence literally.
@@ -118,6 +135,13 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 		}
 		entitySnips = append(entitySnips, snip)
 	}
+
+	// Precedence by vigency (stable, so BM25 order survives inside each tier):
+	// the present must outrank the past regardless of match strength, and a
+	// later Trim then drops historical prose before live sources.
+	sort.SliceStable(entitySnips, func(i, j int) bool {
+		return vigencyTier(entitySnips[i].Kind, entitySnips[i].State) < vigencyTier(entitySnips[j].Kind, entitySnips[j].State)
+	})
 
 	// Wiki context first (high-level synthesis), then the entity hits. Order
 	// among wiki pages: project (when present), decisions, references, modules.
