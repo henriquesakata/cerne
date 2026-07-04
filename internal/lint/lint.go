@@ -50,10 +50,11 @@ const (
 	RuleIncompleteDoc      = "incomplete-doc"
 	RuleUntaggedLive       = "untagged-live"
 	RuleUnregisteredSource = "unregistered-source"
+	RuleDriftSuspect       = "drift-suspect"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -70,6 +71,7 @@ var ruleRank = map[string]int{
 	RuleIncompleteDoc:      11,
 	RuleUntaggedLive:       12,
 	RuleUnregisteredSource: 13,
+	RuleDriftSuspect:       14,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -214,6 +216,16 @@ func Run(repoDir string, ignore ...string) ([]Finding, error) {
 
 	findings = append(findings, untaggedLiveFindings(features, decisions, references, notes, runbooks)...)
 
+	Sort(findings)
+	return findings, nil
+}
+
+// Sort orders findings canonically in place: by Rule (RuleOrder), then File,
+// then Detail, with Entity as the final tie-breaker. Exported so a caller that
+// merges findings from Run with out-of-band findings (e.g. the drift-suspect
+// rule, which needs the user's project repo Run never sees) can re-establish
+// the deterministic order over the combined slice.
+func Sort(findings []Finding) {
 	sort.Slice(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
 		if ruleRank[a.Rule] != ruleRank[b.Rule] {
@@ -227,7 +239,6 @@ func Run(repoDir string, ignore ...string) ([]Finding, error) {
 		}
 		return a.Entity < b.Entity
 	})
-	return findings, nil
 }
 
 // incompleteDocFindings flags a real (non-stub) lifecycle doc of a live entity
