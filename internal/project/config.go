@@ -30,7 +30,12 @@ type Config struct {
 	// external source. Internal/local hosts (.local, localhost, private IPs) are
 	// always skipped and need no config.
 	UnregisteredSourceIgnore []string  `toml:"unregistered_source_ignore,omitempty"`
-	LLM                      LLMConfig `toml:"llm"` // optional v1.5 LLM layer config
+	// ModulePaths maps a module name to the slash-separated path globs (of the
+	// user's project repo) that make up its code, e.g. core = ["internal/domain/**"].
+	// The drift-suspect lint rule (F-0113) uses it to map a changed file to the
+	// module(s) it belongs to. Absent (nil) makes the rule inert — opt-in.
+	ModulePaths map[string][]string `toml:"module_paths,omitempty"`
+	LLM         LLMConfig           `toml:"llm"` // optional v1.5 LLM layer config
 }
 
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
@@ -96,11 +101,12 @@ func SaveConfig(dir string, c Config) error {
 		DefaultScope             string     `toml:"default_scope"`
 		OKF                      bool       `toml:"okf,omitempty"`
 		AutocommitLock           bool       `toml:"autocommit_lock,omitempty"`
-		PinBranch                string     `toml:"pin_branch,omitempty"`
-		UnregisteredSourceIgnore []string   `toml:"unregistered_source_ignore,omitempty"`
-		LLM                      *LLMConfig `toml:"llm,omitempty"`
+		PinBranch                string              `toml:"pin_branch,omitempty"`
+		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
+		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
+		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm
