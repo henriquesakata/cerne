@@ -23,9 +23,37 @@ type Snippet struct {
 	State  string `json:"state"`         // lifecycle state; "current" for wiki pages
 	URL    string `json:"url,omitempty"` // source URL for external references; empty otherwise
 	Text   string `json:"text"`
+	// Historical marks a source that records the past rather than the present:
+	// any terminal-state entity, and implemented-feature prose (spec/plan/result
+	// describe the world at implementation time, not the current state).
+	Historical bool `json:"historical,omitempty"`
 }
 
 var terminalStates = map[string]bool{"superseded": true, "rejected": true, "obsolete": true}
+
+// historical reports whether a (kind, state) pair is a historical record: every
+// terminal state, plus implemented-feature prose — a spec/plan/result is a
+// snapshot of its implementation moment, never an authority on the present.
+func historical(kind, state string) bool {
+	return terminalStates[state] || (kind == "feature" && state == "implemented")
+}
+
+// vigencyTier ranks a source by how authoritative it is on the present, so a
+// strong BM25 match on old prose never outranks a live decision/runbook/note:
+// 0 = live non-feature entities, 1 = live features, 2 = implemented-feature
+// prose, 3 = terminal states (present only with --history).
+func vigencyTier(kind, state string) int {
+	switch {
+	case terminalStates[state]:
+		return 3
+	case kind == "feature" && state == "implemented":
+		return 2
+	case kind == "feature":
+		return 1
+	default:
+		return 0
+	}
+}
 
 // stopwords are common pt-BR + en function words dropped from a natural-language
 // question before it reaches the FTS index, so the query keeps only salient
@@ -90,7 +118,7 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 		if !history && terminalStates[h.State] {
 			continue
 		}
-		snip := Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet}
+		snip := Snippet{Source: h.EntityID, Kind: h.Kind, State: h.State, Text: h.Snippet, Historical: historical(h.Kind, h.State)}
 		switch h.Kind {
 		case "feature":
 			if f, err := store.LoadFeature(repoDir, h.EntityID); err == nil && f.Module != "" {
@@ -107,6 +135,13 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 		}
 		entitySnips = append(entitySnips, snip)
 	}
+
+	// Precedence by vigency (stable, so BM25 order survives inside each tier):
+	// the present must outrank the past regardless of match strength, and a
+	// later Trim then drops historical prose before live sources.
+	sort.SliceStable(entitySnips, func(i, j int) bool {
+		return vigencyTier(entitySnips[i].Kind, entitySnips[i].State) < vigencyTier(entitySnips[j].Kind, entitySnips[j].State)
+	})
 
 	// Wiki context first (high-level synthesis), then the entity hits. Order
 	// among wiki pages: project (when present), decisions, references, modules.
@@ -190,10 +225,15 @@ func BuildAskPrompt(query string, snippets []Snippet, preamble bool) string {
 	b.WriteString("Pergunta: " + query + "\n\n")
 	if preamble {
 		b.WriteString("Responda em pt-BR usando apenas as fontes abaixo e cite-as (IDs/páginas). ")
-		b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente.\n\n")
+		b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente. ")
+		b.WriteString("Fontes marcadas como registro histórico descrevem o estado na época em que foram escritas; ")
+		b.WriteString("para o estado atual, decisions/runbooks/notes vigentes e as páginas wiki têm precedência.\n\n")
 	}
 	for _, s := range snippets {
 		header := "## " + s.Source + " (" + s.Kind + ", " + s.State
+		if s.Historical {
+			header += " — registro histórico"
+		}
 		if s.URL != "" {
 			header += ", referência externa: " + s.URL
 		}

@@ -3,6 +3,7 @@ package ask
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,69 @@ func seed(t *testing.T) (repoDir, dbPath string) {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	return repoDir, dbPath
+}
+
+func TestHistoricalFlag(t *testing.T) {
+	cases := []struct {
+		kind, state string
+		want        bool
+	}{
+		{"feature", "implemented", true},
+		{"feature", "superseded", true},
+		{"feature", "approved", false},
+		{"feature", "candidate", false},
+		{"feature", "in_development", false},
+		{"decision", "active", false},
+		{"decision", "superseded", true},
+		{"runbook", "active", false},
+		{"note", "active", false},
+		{"reference", "current", false},
+		{"historical", "superseded", true},
+		{"wiki", "current", false},
+	}
+	for _, c := range cases {
+		if got := historical(c.kind, c.state); got != c.want {
+			t.Errorf("historical(%q, %q) = %v, want %v", c.kind, c.state, got, c.want)
+		}
+	}
+}
+
+func TestRetrieveMarksImplementedHistorical(t *testing.T) {
+	repoDir, dbPath := seed(t)
+	// F-0003 implemented: retrieved, but flagged as historical record.
+	f := store.Feature{ID: "F-0003", Title: "F-0003", Module: "finance", State: domain.StateImplemented, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	p := filepath.Join(repoDir, "content", "features", "F-0003", "spec.md")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, []byte("# F-0003\n\nOs boletos migraram.\n"), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	snips, err := Retrieve(repoDir, dbPath, "boletos", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	var sawImplemented bool
+	for _, s := range snips {
+		switch {
+		case s.Source == "F-0003":
+			sawImplemented = true
+			if !s.Historical {
+				t.Fatalf("implemented feature not flagged historical: %+v", s)
+			}
+		case s.Source == "F-0001" || s.Kind == "wiki":
+			if s.Historical {
+				t.Fatalf("live source wrongly flagged historical: %+v", s)
+			}
+		}
+	}
+	if !sawImplemented {
+		t.Fatalf("F-0003 (implemented) missing from snippets: %+v", snips)
+	}
 }
 
 func TestRetrieveCurrentFirstExcludesTerminal(t *testing.T) {
@@ -146,6 +210,103 @@ func hasSnippet(snips []Snippet, source string) bool {
 		}
 	}
 	return false
+}
+
+// seedForRanking builds a backend where BM25 alone would rank the implemented
+// feature first: its spec repeats the query term, while the active decision and
+// the live feature mention it once inside longer bodies.
+func seedForRanking(t *testing.T) (repoDir, dbPath string) {
+	t.Helper()
+	repoDir = t.TempDir()
+	if err := store.InitLayout(repoDir, store.Project{Name: "Demo", Modules: []string{"infra"}}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	now := time.Unix(0, 0).UTC()
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Plataforma", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	feats := []struct {
+		id    string
+		state domain.FeatureState
+		spec  string
+	}{
+		{"F-0001", domain.StateApproved, "# F-0001\n\nMuda o ambiente da plataforma para o novo desenho agora aprovado.\n"},
+		{"F-0002", domain.StateImplemented, "# F-0002\n\nambiente ambiente ambiente ambiente ambiente ambiente.\n"},
+		{"F-0003", domain.StateImplemented, "# F-0003\n\nO ambiente antigo, descrito uma vez em corpo mais longo do que os demais.\n"},
+	}
+	for _, f := range feats {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: f.id, Title: f.id, Module: "infra", State: f.state, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.id, err)
+		}
+		p := filepath.Join(repoDir, "content", "features", f.id, "spec.md")
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(f.spec), 0o644); err != nil {
+			t.Fatalf("write spec: %v", err)
+		}
+	}
+	p := filepath.Join(repoDir, "content", "decisions", "D-0001.md")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, []byte("# D-0001\n\nDecidimos que o ambiente roda em k8s, entre outras coisas descritas neste corpo mais longo.\n"), 0o644); err != nil {
+		t.Fatalf("write decision: %v", err)
+	}
+	dbPath = filepath.Join(t.TempDir(), "index.db")
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	return repoDir, dbPath
+}
+
+// entityOrder extracts the non-wiki sources in retrieval order.
+func entityOrder(snips []Snippet) []string {
+	var out []string
+	for _, s := range snips {
+		if s.Kind != "wiki" {
+			out = append(out, s.Source)
+		}
+	}
+	return out
+}
+
+func TestRetrieveRanking(t *testing.T) {
+	repoDir, dbPath := seedForRanking(t)
+	snips, err := Retrieve(repoDir, dbPath, "ambiente", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	got := entityOrder(snips)
+	// Precedence tiers: live non-feature (D-0001) > live feature (F-0001) >
+	// implemented (F-0002 before F-0003 — BM25 order preserved inside the tier).
+	want := []string{"D-0001", "F-0001", "F-0002", "F-0003"}
+	if len(got) != len(want) {
+		t.Fatalf("entity order = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("entity order = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestTrimAfterRanking(t *testing.T) {
+	repoDir, dbPath := seedForRanking(t)
+	snips, err := Retrieve(repoDir, dbPath, "ambiente", false, 10)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	var wikiCount int
+	for _, s := range snips {
+		if s.Kind == "wiki" {
+			wikiCount++
+		}
+	}
+	// Keep the wiki pages plus two entity slots: the live sources must survive
+	// the cut; the historical (implemented) prose is what gets dropped.
+	trimmed := Trim(snips, wikiCount+2, 0)
+	got := entityOrder(trimmed)
+	want := []string{"D-0001", "F-0001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("post-trim entity order = %v, want %v", got, want)
+	}
 }
 
 func TestRetrievePullsDecisionsAndReferencesPages(t *testing.T) {
@@ -268,6 +429,32 @@ func TestBuildAskPromptNoPreamble(t *testing.T) {
 
 // TestTrim: caps the number of sources (order preserved) and truncates each
 // snippet body to the rune budget, appending an ellipsis when it cuts.
+func TestBuildAskPromptHistoricalLabel(t *testing.T) {
+	snips := []Snippet{
+		{Source: "F-0344", Kind: "feature", State: "implemented", Historical: true, Text: "era compose"},
+		{Source: "D-0047", Kind: "decision", State: "active", Text: "plataforma k8s"},
+	}
+	got := BuildAskPrompt("ambiente?", snips, false)
+	if !strings.Contains(got, "## F-0344 (feature, implemented — registro histórico)") {
+		t.Fatalf("historical header missing label:\n%s", got)
+	}
+	if strings.Contains(got, "## D-0047 (decision, active — registro histórico)") {
+		t.Fatalf("live source wrongly labeled historical:\n%s", got)
+	}
+}
+
+func TestBuildAskPromptPreamblePrecedence(t *testing.T) {
+	snips := []Snippet{{Source: "D-0001", Kind: "decision", State: "active", Text: "x"}}
+	withPre := BuildAskPrompt("q", snips, true)
+	if !strings.Contains(withPre, "registro histórico") || !strings.Contains(withPre, "precedência") {
+		t.Fatalf("preamble missing precedence instruction:\n%s", withPre)
+	}
+	noPre := BuildAskPrompt("q", snips, false)
+	if strings.Contains(noPre, "precedência") {
+		t.Fatalf("precedence instruction leaked without preamble:\n%s", noPre)
+	}
+}
+
 func TestTrim(t *testing.T) {
 	in := []Snippet{
 		{Source: "wiki:project", Kind: "wiki", State: "current", Text: "abcdefghij"},
