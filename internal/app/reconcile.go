@@ -270,6 +270,11 @@ func updateSnapshot(projDir, sha string) error {
 	if err := project.SaveSessionSnapshot(projDir, sha); err != nil {
 		return err
 	}
+	// Record the user project's HEAD as the drift baseline (F-0113); inert on a
+	// non-git project.
+	if err := RecordProjectHead(projDir); err != nil {
+		return err
+	}
 	if !PinAllowed(projDir) {
 		return nil
 	}
