@@ -3,6 +3,7 @@ package ask
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -428,6 +429,32 @@ func TestBuildAskPromptNoPreamble(t *testing.T) {
 
 // TestTrim: caps the number of sources (order preserved) and truncates each
 // snippet body to the rune budget, appending an ellipsis when it cuts.
+func TestBuildAskPromptHistoricalLabel(t *testing.T) {
+	snips := []Snippet{
+		{Source: "F-0344", Kind: "feature", State: "implemented", Historical: true, Text: "era compose"},
+		{Source: "D-0047", Kind: "decision", State: "active", Text: "plataforma k8s"},
+	}
+	got := BuildAskPrompt("ambiente?", snips, false)
+	if !strings.Contains(got, "## F-0344 (feature, implemented — registro histórico)") {
+		t.Fatalf("historical header missing label:\n%s", got)
+	}
+	if strings.Contains(got, "## D-0047 (decision, active — registro histórico)") {
+		t.Fatalf("live source wrongly labeled historical:\n%s", got)
+	}
+}
+
+func TestBuildAskPromptPreamblePrecedence(t *testing.T) {
+	snips := []Snippet{{Source: "D-0001", Kind: "decision", State: "active", Text: "x"}}
+	withPre := BuildAskPrompt("q", snips, true)
+	if !strings.Contains(withPre, "registro histórico") || !strings.Contains(withPre, "precedência") {
+		t.Fatalf("preamble missing precedence instruction:\n%s", withPre)
+	}
+	noPre := BuildAskPrompt("q", snips, false)
+	if strings.Contains(noPre, "precedência") {
+		t.Fatalf("precedence instruction leaked without preamble:\n%s", noPre)
+	}
+}
+
 func TestTrim(t *testing.T) {
 	in := []Snippet{
 		{Source: "wiki:project", Kind: "wiki", State: "current", Text: "abcdefghij"},

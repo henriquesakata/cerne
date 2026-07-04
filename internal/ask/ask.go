@@ -225,10 +225,15 @@ func BuildAskPrompt(query string, snippets []Snippet, preamble bool) string {
 	b.WriteString("Pergunta: " + query + "\n\n")
 	if preamble {
 		b.WriteString("Responda em pt-BR usando apenas as fontes abaixo e cite-as (IDs/páginas). ")
-		b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente.\n\n")
+		b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente. ")
+		b.WriteString("Fontes marcadas como registro histórico descrevem o estado na época em que foram escritas; ")
+		b.WriteString("para o estado atual, decisions/runbooks/notes vigentes e as páginas wiki têm precedência.\n\n")
 	}
 	for _, s := range snippets {
 		header := "## " + s.Source + " (" + s.Kind + ", " + s.State
+		if s.Historical {
+			header += " — registro histórico"
+		}
 		if s.URL != "" {
 			header += ", referência externa: " + s.URL
 		}
