@@ -62,8 +62,12 @@ func CreateRunbook(repoDir, projDir, title, body string) (store.Runbook, error) 
 // runbook.superseded event and syncs the backend + docs.lock in projDir.
 func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome, error) {
 	var out RunbookOutcome
-	if err := ValidateTransitionFlags(domain.ActionSupersede, by, reason); err != nil {
-		return out, err
+	// `by` is OPTIONAL (mirrors TransitionNote): with it, `by` replaces id;
+	// without it, id is merely retired (still moved to superseded, no
+	// successor). The substituir CLI still requires --by via
+	// ValidateTransitionFlags; the retire CLI passes an empty by.
+	if strings.TrimSpace(reason) == "" {
+		return out, fmt.Errorf("--reason é obrigatório")
 	}
 	rb, err := store.LoadRunbook(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -72,13 +76,15 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 	if err != nil {
 		return out, err
 	}
-	if by == id {
-		return out, fmt.Errorf("--by não pode ser o próprio runbook (%s)", id)
-	}
-	if _, err := store.LoadRunbook(repoDir, by); errors.Is(err, store.ErrNotFound) {
-		return out, fmt.Errorf("runbook %s (--by) não encontrado no backend", by)
-	} else if err != nil {
-		return out, err
+	if by != "" {
+		if by == id {
+			return out, fmt.Errorf("--by não pode ser o próprio runbook (%s)", id)
+		}
+		if _, err := store.LoadRunbook(repoDir, by); errors.Is(err, store.ErrNotFound) {
+			return out, fmt.Errorf("runbook %s (--by) não encontrado no backend", by)
+		} else if err != nil {
+			return out, err
+		}
 	}
 
 	newState, err := domain.TransitionRunbook(rb.State, domain.ActionSupersede)

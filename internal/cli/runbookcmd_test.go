@@ -189,6 +189,38 @@ func TestRunbookSubstituir(t *testing.T) {
 	}
 }
 
+func TestRunbookRetire(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newRunbook(t, projDir, "Procedimento que virou nota", 1)
+
+	// --reason is required.
+	if _, err := execCerne(t, "runbook", "retire", id, "--dir", projDir); err == nil {
+		t.Fatalf("runbook retire without --reason succeeded, want error")
+	}
+
+	// retire moves the runbook to superseded with NO successor (like substituir
+	// sem --by), and the output reads as a retirement.
+	out, err := execCerne(t, "runbook", "retire", id, "--reason", "reclassificado como N-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("runbook retire: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "aposentado") || !strings.Contains(out, "superseded") {
+		t.Fatalf("runbook retire output missing aposentado/superseded:\n%s", out)
+	}
+	rb, err := store.LoadRunbook(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadRunbook: %v", err)
+	}
+	if rb.State != domain.RunbookSuperseded || rb.SupersededBy != "" || rb.Reason != "reclassificado como N-0001" {
+		t.Fatalf("runbook = %+v, want superseded with no successor and the reason", rb)
+	}
+
+	// a terminal (already superseded) runbook cannot be retired again.
+	if _, err := execCerne(t, "runbook", "retire", id, "--reason", "again", "--dir", projDir); err == nil {
+		t.Fatalf("retire already-superseded runbook succeeded, want error")
+	}
+}
+
 func TestBuildRunbookDraftPrompt(t *testing.T) {
 	rb := store.Runbook{ID: "RB-0007", Title: "Rotacionar chave", State: domain.RunbookActive}
 	prompt := BuildRunbookDraftPrompt(rb, "# Rotacionar chave\n\n> Runbook pendente")
