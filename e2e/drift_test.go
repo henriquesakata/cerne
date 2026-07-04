@@ -106,10 +106,16 @@ func TestDriftSuspectGoldenPath(t *testing.T) {
 	mustCerne(t, "push", "--dir", proj)
 	mustCerne(t, "feature", "complete", "F-0001", "--dir", proj)
 
+	proposal := filepath.Join(proj, ".docs", ".drift-proposals", "F-0001.prompt.md")
+
 	// Baseline is the project HEAD recorded during the pushes above. No code has
-	// changed since, so there is no drift yet.
+	// changed since, so there is no drift yet — and --draft writes nothing (crit. 3).
 	if out := mustCerne(t, "drift", "--dir", proj); !strings.Contains(out, "Nenhum drift detectado.") {
 		t.Fatalf("expected no drift before code change, got:\n%s", out)
+	}
+	mustCerne(t, "drift", "--draft", "--dir", proj)
+	if _, err := os.Stat(proposal); !os.IsNotExist(err) {
+		t.Fatalf("no-drift --draft should not write a proposal, stat err = %v", err)
 	}
 
 	// Now the code under module core changes → F-0001's shipped docs may be stale.
@@ -124,6 +130,23 @@ func TestDriftSuspectGoldenPath(t *testing.T) {
 	}
 	if !strings.Contains(out, "internal/core/core.go") {
 		t.Fatalf("drift --json detail missing changed path:\n%s", out)
+	}
+
+	// --draft emits a delegation prompt bundle per finding, applies nothing (crit. 1,2,8).
+	out = mustCerne(t, "drift", "--draft", "--dir", proj)
+	if !strings.Contains(out, "cerne feature errata") {
+		t.Fatalf("drift --draft stdout missing apply contract:\n%s", out)
+	}
+	bundle := mustRead(t, proposal)
+	for _, want := range []string{"cerne feature errata F-0001 --file .docs/.drift-proposals/F-0001.md", "internal/core/core.go"} {
+		if !strings.Contains(bundle, want) {
+			t.Fatalf("prompt bundle missing %q:\n%s", want, bundle)
+		}
+	}
+
+	// --draft with --json is a usage error.
+	if _, err := cerne(t, "drift", "--draft", "--json", "--dir", proj); err == nil {
+		t.Fatalf("drift --draft --json should error")
 	}
 }
 

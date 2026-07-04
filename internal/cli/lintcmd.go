@@ -45,7 +45,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
 	// sees; it only runs in the default mode (driftCtx != nil), never in --staged
 	// where there is no code diff to consider.
 	if driftCtx != nil {
-		drift, err := computeDriftFindings(*driftCtx)
+		drift, _, _, err := computeDriftFindings(*driftCtx)
 		if err != nil {
 			return err
 		}
