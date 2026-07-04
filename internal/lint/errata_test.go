@@ -93,6 +93,35 @@ func TestLintErrataToleratesOwnPredecessor(t *testing.T) {
 	}
 }
 
+// TestLintErrataToleratesSelfMentionWhenRetired pins the retire case: an
+// entity retired with no successor (superseded, SupersededBy empty) still has
+// its own errata, whose frontmatter carries cerne_id: <id>. That self-mention
+// is a record, not stale debt — and unlike F-0094 the mention's successor is
+// the entity itself with no `by`, so the predecessor tolerance cannot fire.
+func TestLintErrataToleratesSelfMentionWhenRetired(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
+	// RB-0003 retired: superseded with NO successor (SupersededBy empty).
+	if err := store.SaveRunbook(dir, store.Runbook{ID: "RB-0003", Title: "CI/CD — Pipeline", State: domain.RunbookSuperseded, CreatedAt: time.Unix(0, 0).UTC()}); err != nil {
+		t.Fatalf("SaveRunbook: %v", err)
+	}
+	// Its own errata (frontmatter cerne_id: RB-0003 names the entity itself).
+	if err := store.AppendErrata(dir, "RB-0003", "reclassificado como N-0117", "ator", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+	findings, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range refToSuperseded(findings) {
+		if f.File == "content/errata/RB-0003.md" {
+			t.Fatalf("a retired entity's own errata self-mention must be tolerated, got: %+v", refToSuperseded(findings))
+		}
+	}
+}
+
 // TestLintErrataToleratesOwnPredecessorByTitle pins F-0094 crit. 3: the
 // self-supersession tolerance is per-entity, not per-match-kind — an errata that
 // names its predecessor by TITLE (not id) is tolerated just the same.

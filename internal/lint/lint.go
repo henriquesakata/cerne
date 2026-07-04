@@ -743,6 +743,14 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		if isErrata && n.use != "" && n.use == d.entity {
 			continue
 		}
+		// An entity's own errata carries its id in the frontmatter (cerne_id)
+		// and naturally names the entity. When that entity is itself superseded
+		// — e.g. a runbook retired with no successor, so the F-0094 predecessor
+		// tolerance above (n.use == d.entity) does not apply — this self-mention
+		// is a record, not stale debt, and errata cannot carry the F-0089 marker.
+		if isErrata && n.id == d.entity {
+			continue
+		}
 		// F-0089: a per-mention marker (lint:ok-superseded) on the same line
 		// declares the reference as an intentional historical mention, not a
 		// debt. Suppress only when EVERY occurrence of n is acknowledged on its
