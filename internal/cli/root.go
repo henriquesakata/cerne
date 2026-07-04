@@ -34,6 +34,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newImportCmd())
 	root.AddCommand(newClassifyCmd())
 	root.AddCommand(newLintCmd())
+	root.AddCommand(newDriftCmd())
 	root.AddCommand(newSearchCmd())
 	root.AddCommand(newGraphCmd())
 	root.AddCommand(newCompileCmd())
