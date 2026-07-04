@@ -29,6 +29,7 @@ func newRunbookCmd() *cobra.Command {
 	cmd.AddCommand(newRunbookDraftCmd(&dir))
 	cmd.AddCommand(newRunbookRetagCmd(&dir))
 	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
+	cmd.AddCommand(newRunbookRetireCmd(&dir))
 	cmd.AddCommand(newRunbookMigrateCmd(&dir))
 	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd
@@ -203,6 +204,42 @@ func runRunbookSubstituir(cmd *cobra.Command, dir, id, by, reason string) error 
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	return nil
+}
+
+func newRunbookRetireCmd(dir *string) *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "retire <id>",
+		Short: "Aposentar um runbook obsoleto (vai para superseded, sem sucessor; --reason obrigatório)",
+		Long: "Move um runbook de active para superseded SEM sucessor — para um procedimento que não vale mais " +
+			"(ex.: virou explicação/nota, ou o fluxo foi descontinuado). O runbook sai do estado atual " +
+			"(.docs/CONTEXT.md) e vira história pesquisável ('cerne search'/'ask'). Para trocar por outro " +
+			"runbook, use 'cerne runbook substituir --by'.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRunbookRetire(cmd, *dir, args[0], reason)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "motivo da aposentadoria (obrigatório)")
+	return cmd
+}
+
+func runRunbookRetire(cmd *cobra.Command, dir, id, reason string) error {
+	// Validate the required reason before resolveProject so bad invocations
+	// fail fast without touching origin. retire is substituir with no successor.
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("--reason é obrigatório")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	out, err := app.TransitionRunbook(ctx.repoDir, ctx.projDir, id, "", reason)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s aposentado: %s → %s\n", out.ID, out.From, out.To)
 	return nil
 }
 
