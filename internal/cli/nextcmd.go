@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -101,6 +102,13 @@ func runNext(cmd *cobra.Command, dir string) error {
 		printed = true
 		fmt.Fprintln(out, "DÉBITOS (cerne lint):")
 		printFindings(out, findings)
+	}
+
+	// Pending automatic drift updates (F-0115, D-0005): informational, so the
+	// human notices what the agent applied without being asked.
+	if pending, err := app.PendingDriftReviews(ctx.repoDir); err == nil && len(pending) > 0 {
+		printed = true
+		fmt.Fprintf(out, "⚠ %d atualização(ões) automática(s) aguardando revisão — cerne drift pending\n", len(pending))
 	}
 
 	if !printed {
