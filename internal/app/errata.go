@@ -33,7 +33,9 @@ func AddErrata(repoDir, projDir, id, text, author string) (string, error) {
 	if err := store.AppendErrata(repoDir, id, text, author, time.Now().UTC()); err != nil {
 		return "", err
 	}
-	ev := domain.NewEvent(id, "errata.added", map[string]string{}, EventActor())
+	// The author IS the event actor: a human errata records the human actor,
+	// an automatic one (drift-auto, F-0115) is distinguishable in the log.
+	ev := domain.NewEvent(id, "errata.added", map[string]string{}, author)
 	if err := store.AppendEvent(repoDir, ev); err != nil {
 		return "", err
 	}

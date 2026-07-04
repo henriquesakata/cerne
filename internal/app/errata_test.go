@@ -42,6 +42,29 @@ func TestAddErrataAppendsWithoutTouchingBody(t *testing.T) {
 	}
 }
 
+func TestAddErrataEventActor(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "X", State: domain.StateImplemented}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if _, err := AddErrata(repoDir, projDir, "F-0001", "auto texto", "drift-auto"); err != nil {
+		t.Fatalf("AddErrata: %v", err)
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Type == "errata.added" && ev.EntityID == "F-0001" {
+			if ev.Actor != "drift-auto" {
+				t.Fatalf("errata.added actor = %q, want %q", ev.Actor, "drift-auto")
+			}
+			return
+		}
+	}
+	t.Fatalf("errata.added event not found")
+}
+
 func TestAddErrataEntityNotFoundErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := AddErrata(repoDir, projDir, "F-9999", "x", "ator"); !errors.Is(err, store.ErrNotFound) {
