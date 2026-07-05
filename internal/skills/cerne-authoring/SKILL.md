@@ -177,6 +177,20 @@ The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per
 
 One tolerance is automatic: an errata may **name what its own entity superseded** (e.g. F-0001's errata saying "this feature replaced F-0002") without `cerne lint` raising `ref-to-superseded` — that supersession record is legitimate history, and since the errata is immutable it cannot carry the `lint:ok-superseded` marker used in authored docs. This holds only for the errata's *own* predecessor: a stale reference to some **other** superseded entity in an errata is still flagged — clear it by appending a correcting entry that points at the successor.
 
+## Drift: code moved, docs stood still
+
+An `implemented` feature's docs are frozen history — but the code under them keeps changing. **Drift detection** (F-0113/F-0116) maps the project repo's git diff since the last docs sync to the implemented features whose scope it touches, deterministically (no LLM). It is **opt-in**: the project's `.cernerc` must map scopes to path globs — `[module_paths]` (module → globs, for moduled projects) and/or `[component_paths]` (component tag → globs, the axis that works in a moduleless project). No config, no baseline → the rule is silent, never noisy.
+
+- **See it:** `cerne drift` (also folded into `cerne lint`). A scope with a *live* feature is suppressed — active work already tracks that change.
+- **Fix it — three paths, pick by project policy:**
+  - **Manual:** review the finding, append `cerne feature errata <id> "<text>"`.
+  - **Gated draft:** `cerne drift --draft` emits one delegation prompt per finding under `.docs/.drift-proposals/`; **you** (the host agent) write the errata draft into the sibling `<id>.md`, a human applies it via `cerne feature errata <id> --file …` (F-0114).
+  - **Automatic:** `cerne drift --auto` drafts via the configured `[llm]` provider (claude-cli/byo-key) and applies the errata itself under the `drift-auto` actor, then records a pending review (F-0115, D-0005 apply-then-notify).
+- **Review duty (D-0005):** every automatic update waits for acknowledgment. `cerne drift pending` lists them (`cerne next` shows the count) — treat a pending entry as a work item: read the applied errata (`cerne show <id>`), then `cerne drift ack <id>` to accept, or append a correcting errata / supersede if the agent got it wrong. Never leave pendings to rot.
+- **Invariant:** drift never rewrites history. All three paths end in an **additive errata**; the reading surface (`cerne show`, wiki, lint) folds erratas in, so the reader sees current truth over an intact record.
+
+Adjacent freshness knob: with `compile_on_push = true` in `.cernerc` (and a callable `[llm]` mode), every successful `cerne push` incrementally resynthesizes only the **dirty** wiki pages (F-0117) — a failed compile never fails the push. No config → recompile stays manual (`cerne compile`).
+
 ## Knowledge routing: cerne note vs. local memory
 
 When you acquire knowledge worth keeping, route it by **who it belongs to**, not by reflex:
@@ -203,5 +217,6 @@ References carry the **same two tag axes as notes** — `--facet` (the closed `i
 - **Register the sources that shaped a decision.** When an external source (article, RFC, vendor/API doc, spec) informs a feature/decision/fix, register it as you use it — `cerne reference new "<title>" --url <url> --informs <ids>` — not only when a human asks for it. Register **only the useful ones**: the sources that actually moved the outcome, never a dead-end you opened and discarded. A source worth citing in the doc is worth a reference; a bare URL left in prose is lost provenance. `cerne lint` backs this up — a **decision or feature** doc that cites an external URL with no backing registered reference is flagged **`unregistered-source`** (register the source, or drop the bare URL); internal/local hosts and any `unregistered_source_ignore` substrings in `.cernerc` are skipped. Install the proactive gate reminder with `cerne hook install`.
 - **Author through cerne**, not as loose markdown folders for tracked features/decisions — loose markdown is authoring input, not authority.
 - **Never hand-edit generated outputs:** `.docs/CONTEXT.md` and the compiled wiki regenerate (`cerne pull` / `cerne compile`).
+- **Review pending automatic updates.** When `cerne next` reports drift updates awaiting review, handle them (`cerne drift pending` → `ack` or correct) as part of the session's work — apply-then-notify (D-0005) only stays honest if someone actually reviews.
 - After a `cerne push` that changes the backend, commit the updated `docs.lock` (the code↔docs pin) alongside your code change — **unless the project sets `pin_branch` in `.cernerc` and you are on another branch** (F-0102): there cerne leaves `docs.lock` untouched on purpose (the live snapshot lives in the gitignored `.docs/.snapshot`), the pin advances on the first cerne operation on the pin branch after merge, and MRs stop conflicting on it. Don't "fix" an unchanged `docs.lock` by hand.
 - `.docs/` is gitignored; commit `.cernerc`, `docs.lock` **and `.gitattributes`** in your project repo. The `.gitattributes` wires the `docs.lock` merge driver that `cerne init`/`cerne pull` register, so parallel branches/worktrees stop conflicting on the snapshot pin — a fresh clone just runs `cerne pull` once to self-heal its local git config. Server-side merges (GitLab/GitHub MRs) can't run that driver; setting `pin_branch = "main"` removes the conflict at the source instead.
