@@ -290,3 +290,33 @@ func swapReconcileTiming(t *testing.T, attempts int, backoff time.Duration) func
 	reconcileMaxAttempts, reconcileBackoff = attempts, backoff
 	return func() { reconcileMaxAttempts, reconcileBackoff = a0, b0 }
 }
+
+// F-0121 crit. 1: the reconcile commit covers exactly the applied documents. A
+// stranger file landing in the shared worktree in the write→commit window (a
+// concurrent process's half-written state) must not be swept into the pushed
+// commit — it stays untracked, owned by whoever wrote it.
+func TestReconcileCommitsOnlyAppliedPaths(t *testing.T) {
+	origin, repoDir, projDir, base := reconcileFixture(t)
+	reconcileHookAfterWrite = func() {
+		writeBackendFile(t, repoDir, "entities/features/F-0099.json", "{\"id\":\"F-0099\"}\n")
+	}
+	defer func() { reconcileHookAfterWrite = nil }()
+
+	changes := []FileChange{{Path: "content/features/F-0002/spec.md", Content: []byte("mine\n")}}
+	head, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, "create F-0002", changes)
+	if err != nil {
+		t.Fatalf("ReconcileCommitPush: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("unexpected conflicts: %+v", conflicts)
+	}
+	if head == "" {
+		t.Fatal("expected a pushed head")
+	}
+	if got, ok := originHas(t, origin, "content/features/F-0002/spec.md"); !ok || got != "mine\n" {
+		t.Fatalf("my spec on origin = %q ok=%v, want %q", got, ok, "mine\n")
+	}
+	if _, ok := originHas(t, origin, "entities/features/F-0099.json"); ok {
+		t.Fatal("stranger file was swept into the pushed commit")
+	}
+}

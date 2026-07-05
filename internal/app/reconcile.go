@@ -86,6 +86,12 @@ var (
 // exercise the non-fast-forward retry path; production leaves it nil.
 var reconcileHookBeforePush func(attempt int)
 
+// reconcileHookAfterWrite, when non-nil, runs between materializing the merged
+// changes and committing them. It exists for tests to inject a concurrent
+// process's write into the shared worktree and pin that the commit covers only
+// the applied paths (F-0121); production leaves it nil.
+var reconcileHookAfterWrite func()
+
 // ReconcileCommitPush brings the shared backend clone to the latest origin/main
 // and applies changes as a per-document 3-way merge over base (the commit the
 // changes were authored against), then commits and pushes — retrying with
@@ -146,7 +152,16 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 			if err := writeChanges(repoDir, apply); err != nil {
 				return err
 			}
-			sha, err := gitback.CommitAll(repoDir, msg)
+			if reconcileHookAfterWrite != nil {
+				reconcileHookAfterWrite()
+			}
+			// Commit exactly the applied paths: a concurrent process's writes in
+			// the shared worktree must never be swept into this commit (F-0121).
+			paths := make([]string, len(apply))
+			for i, ch := range apply {
+				paths[i] = ch.Path
+			}
+			sha, err := gitback.CommitPaths(repoDir, paths, msg)
 			if errors.Is(err, gitback.ErrNothingToCommit) {
 				head = theirs // merged content equals theirs byte-for-byte
 				return nil
