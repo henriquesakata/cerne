@@ -117,7 +117,7 @@ func TestPullLoopAdvancesHeadFromRemote(t *testing.T) {
 		t.Fatalf("CommitAndPush mate: %v", err)
 	}
 
-	hub := newMultiHub()
+	hub := newMultiHub(nil)
 	sub := hub.subscribe()
 	ctx, cancel := context.WithCancel(context.Background())
 	baseline, _ := gitback.HeadSHA(repoDir) // HEAD before pullLoop brings the remote commit

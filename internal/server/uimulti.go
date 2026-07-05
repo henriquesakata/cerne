@@ -27,14 +27,18 @@ type liveEvent struct {
 	sha  string
 }
 
-// multiHub fans liveEvents out to every /api/stream subscriber.
+// multiHub fans liveEvents out to every /api/stream subscriber. done is the
+// server's lifetime: when it closes, every stream ends — an SSE connection
+// never goes idle on its own, so without this a graceful shutdown would wait
+// on streams that only the process death would close.
 type multiHub struct {
 	mu   sync.Mutex
 	subs map[chan liveEvent]struct{}
+	done <-chan struct{}
 }
 
-func newMultiHub() *multiHub {
-	return &multiHub{subs: make(map[chan liveEvent]struct{})}
+func newMultiHub(done <-chan struct{}) *multiHub {
+	return &multiHub{subs: make(map[chan liveEvent]struct{}), done: done}
 }
 
 func (h *multiHub) subscribe() chan liveEvent {
@@ -91,6 +95,8 @@ func (h *multiHub) handleStream(w http.ResponseWriter, r *http.Request) {
 	defer keepalive.Stop()
 	for {
 		select {
+		case <-h.done:
+			return
 		case <-r.Context().Done():
 			return
 		case ev, ok := <-ch:
@@ -249,7 +255,7 @@ func watchHeadMulti(ctx context.Context, hub *multiHub, pid, repoDir string, int
 // initialDir as the first (default) project; resolve provides per-project
 // locations. The watchers stop when ctx is cancelled.
 func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duration, initialDir string) (http.Handler, error) {
-	hub := newMultiHub()
+	hub := newMultiHub(ctx.Done())
 	reg := &registry{
 		projects: make(map[string]*registryEntry),
 		hub:      hub,
