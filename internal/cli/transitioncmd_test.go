@@ -10,13 +10,14 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // newFeature creates a feature via the CLI and returns its expected ID.
 func newFeature(t *testing.T, projDir, title string, seq int) string {
 	t.Helper()
-	out, err := execCerne(t, "feature", "new", title, "--dir", projDir)
+	out, err := execCerne(t, "feature", "new", title, "--context", "ctx de teste", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("feature new %q: %v\noutput: %s", title, err, out)
 	}
@@ -42,6 +43,11 @@ func realDoc(id, body string) string {
 func TestTransitionFullLifecycle(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)
+
+	// The CLI creation gate (F-0120) seeds context into the spec, which counts
+	// as real content — restore the pure scaffold to prove the approve gate
+	// still blocks a stub spec.
+	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n"+spectmpl.Stub("Feature A"))
 
 	// approve while the spec is still the stub: gate error with hint.
 	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)

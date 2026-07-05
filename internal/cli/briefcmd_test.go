@@ -12,7 +12,7 @@ import (
 // so brief has something to map. Returns the project dir.
 func seedBriefEntities(t *testing.T, projDir string) {
 	t.Helper()
-	if _, err := execCerne(t, "feature", "new", "Conta digital", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Conta digital", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v", err)
 	}
 	if _, err := execCerne(t, "decision", "new", "Usar Postgres", "--dir", projDir); err != nil {

@@ -10,7 +10,7 @@ import (
 func TestFeatureRename(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 
-	if out, err := execCerne(t, "feature", "new", "Título antigo", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Título antigo", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 

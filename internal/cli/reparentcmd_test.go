@@ -15,8 +15,8 @@ func TestFeatureReparent(t *testing.T) {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
 	}
-	mustExec("feature", "new", "Épico")
-	mustExec("feature", "new", "Filha")
+	mustExec("feature", "new", "Épico", "--context", "ctx de teste")
+	mustExec("feature", "new", "Filha", "--context", "ctx de teste")
 
 	out, err := execCerne(t, "feature", "reparent", "F-0002", "F-0001", "--dir", projDir)
 	if err != nil {

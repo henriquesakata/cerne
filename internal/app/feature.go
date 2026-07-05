@@ -48,6 +48,14 @@ var featureDocFilenames = map[string]string{
 // component curated), extended to features by D-0003 — validated before any side
 // effect so an unknown facet aborts without minting an id or writing a file.
 func CreateFeature(repoDir, projDir, title, module, parent string, facets, components []string) (store.Feature, error) {
+	return CreateFeatureWithSpec(repoDir, projDir, title, module, parent, facets, components, "")
+}
+
+// CreateFeatureWithSpec is CreateFeature with the one-shot spec path (F-0120):
+// a non-empty specBody is stamped with the cerne_id frontmatter and written as
+// the real spec — the feature is born with its context captured, nothing left
+// to fill or push. An empty body scaffolds the usual stub.
+func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string) (store.Feature, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Feature{}, fmt.Errorf("o título da feature não pode ser vazio")
@@ -88,7 +96,11 @@ func CreateFeature(repoDir, projDir, title, module, parent string, facets, compo
 	if err := store.SaveFeature(repoDir, f); err != nil {
 		return store.Feature{}, err
 	}
-	if err := writeSpecStub(repoDir, id, title); err != nil {
+	if strings.TrimSpace(specBody) != "" {
+		if err := writeSpecBody(repoDir, id, specBody); err != nil {
+			return store.Feature{}, err
+		}
+	} else if err := writeSpecStub(repoDir, id, title); err != nil {
 		return store.Feature{}, err
 	}
 	payload := map[string]string{"title": title, "module": module}
@@ -289,6 +301,18 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		return nil // backend already had exactly this content
 	}
 	return err
+}
+
+// writeSpecBody creates content/features/<id>/spec.md as cerne's stamped
+// cerne_id frontmatter followed by the provided body — the one-shot spec of
+// CreateFeatureWithSpec, mirroring writeNoteBody.
+func writeSpecBody(repoDir, id, body string) error {
+	path := FeatureDocPath(repoDir, id, "spec.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // writeSpecStub creates content/features/<id>/spec.md scaffolded from the

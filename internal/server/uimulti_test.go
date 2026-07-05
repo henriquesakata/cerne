@@ -54,7 +54,7 @@ type projectsList struct {
 }
 
 func TestMultiHubStreamFormatting(t *testing.T) {
-	hub := newMultiHub()
+	hub := newMultiHub(nil)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
 		hub.handleStream(w, r)
@@ -99,7 +99,7 @@ func TestRegistryWatchBroadcastsChange(t *testing.T) {
 	resolve := func(dir string) (string, string, string, string, error) {
 		return repoA, projA, "proj-a", "Projeto A", nil
 	}
-	hub := newMultiHub()
+	hub := newMultiHub(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reg := &registry{
@@ -156,7 +156,7 @@ func TestWatchHeadMultiDetectsFromBaseline(t *testing.T) {
 		t.Fatal("commit did not advance HEAD")
 	}
 
-	hub := newMultiHub()
+	hub := newMultiHub(nil)
 	sub := hub.subscribe()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -32,7 +32,7 @@ func compileOnPushProject(t *testing.T, srvURL string) (proj string) {
 		extra += fmt.Sprintf("\n[llm]\nmode = \"byo-key\"\nbase_url = %q\nkey_env = \"CERNE_TEST_KEY\"\n", srvURL)
 	}
 	appendToFile(t, filepath.Join(proj, ".cernerc"), extra)
-	mustCerne(t, "feature", "new", "Motor", "--dir", proj)
+	mustCerne(t, "feature", "new", "Motor", "--context", "ctx de teste", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 	return proj
 }

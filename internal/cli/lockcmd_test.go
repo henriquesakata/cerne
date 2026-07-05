@@ -263,7 +263,7 @@ func TestLockMergeChoosesDescendant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HeadSHA A: %v", err)
 	}
-	if out, err := execCerne(t, "feature", "new", "Descendant", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Descendant", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	b, err := gitback.HeadSHA(repoDir)
@@ -316,7 +316,7 @@ func TestLockMergeDivergent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HeadSHA A: %v", err)
 	}
-	if out, err := execCerne(t, "feature", "new", "Branch B", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Branch B", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	b, err := gitback.HeadSHA(repoDir)

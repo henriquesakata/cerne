@@ -160,7 +160,7 @@ func TestNoteListJSON(t *testing.T) {
 func TestNoteInforms(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	// A feature must exist for --informs to backlink to it.
-	if _, err := execCerne(t, "feature", "new", "Alvo", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Alvo", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v", err)
 	}
 

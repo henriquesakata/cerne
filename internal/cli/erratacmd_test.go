@@ -11,7 +11,7 @@ import (
 
 func TestErrataCreatesRecordOneShot(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	out, err := execCerne(t, "feature", "errata", "F-0001", "Correção: usar D-0002.", "--dir", projDir)
@@ -29,7 +29,7 @@ func TestErrataCreatesRecordOneShot(t *testing.T) {
 
 func TestErrataFromFile(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	bodyFile := filepath.Join(t.TempDir(), "errata.txt")
@@ -56,7 +56,7 @@ func TestErrataWiredOnEachEntity(t *testing.T) {
 
 func TestShowAppendsErrata(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "feature", "errata", "F-0001", "primeira nota", "--dir", projDir); err != nil {
@@ -79,7 +79,7 @@ func TestShowAppendsErrata(t *testing.T) {
 
 func TestShowJSONIncludesErrata(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "feature", "errata", "F-0001", "nota json", "--dir", projDir); err != nil {

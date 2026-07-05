@@ -10,7 +10,7 @@ import (
 
 func TestAskDelegationPrintsPrompt(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 
@@ -38,7 +38,7 @@ func TestAskEmptyQuestion(t *testing.T) {
 // assembled prompt (token-lean), keeping the question and the sources.
 func TestAskNoPreamble(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if _, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v", err)
 	}
 	out, err := execCerne(t, "ask", "o que é boletos?", "--no-preamble", "--dir", projDir)

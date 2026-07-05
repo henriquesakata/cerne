@@ -61,3 +61,32 @@ func TestStub(t *testing.T) {
 		t.Fatalf("Stub should embed the template Body")
 	}
 }
+
+// TestStubWithContext seeds the Problema section with the creation-time
+// context (F-0120): the text lands after the Problema heading and before the
+// next section, with every canonical section intact.
+func TestStubWithContext(t *testing.T) {
+	ctx := "Agentes registram a feature e não voltam para a spec."
+	s := spectmpl.StubWithContext("Captura de contexto", "  "+ctx+"  ")
+	problema := strings.Index(s, "## Problema")
+	objetivo := strings.Index(s, "## Objetivo")
+	seeded := strings.Index(s, ctx)
+	if seeded < 0 {
+		t.Fatalf("StubWithContext should contain the context text:\n%s", s)
+	}
+	if !(problema < seeded && seeded < objetivo) {
+		t.Fatalf("context should sit inside the Problema section (problema=%d seeded=%d objetivo=%d)", problema, seeded, objetivo)
+	}
+	for _, sec := range spectmpl.Sections {
+		if !strings.Contains(s, "## "+sec) {
+			t.Fatalf("StubWithContext lost section %q", sec)
+		}
+	}
+}
+
+// TestStubWithContextEmptyDegradesToStub pins the no-context path.
+func TestStubWithContextEmptyDegradesToStub(t *testing.T) {
+	if spectmpl.StubWithContext("X", "   ") != spectmpl.Stub("X") {
+		t.Fatal("empty context should degrade to the plain Stub")
+	}
+}

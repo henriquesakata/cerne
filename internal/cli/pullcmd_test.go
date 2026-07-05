@@ -148,10 +148,10 @@ func TestPullRebuildsIndex(t *testing.T) {
 
 func TestPullScopeFilters(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance", "core")
-	if out, err := execCerne(t, "feature", "new", "Parcelamento", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Parcelamento", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new finance: %v\noutput: %s", err, out)
 	}
-	if out, err := execCerne(t, "feature", "new", "Tema escuro", "--module", "core", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Tema escuro", "--context", "ctx de teste", "--module", "core", "--dir", projDir); err != nil {
 		t.Fatalf("feature new core: %v\noutput: %s", err, out)
 	}
 	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Spec finance."))

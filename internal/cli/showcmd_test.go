@@ -10,7 +10,7 @@ import (
 
 func TestShowFeature(t *testing.T) {
 	projDir, _, _ := setupProject(t)
-	if _, err := execCerne(t, "feature", "new", "Login com Google", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestShowNoteWithBody(t *testing.T) {
 
 func TestShowJSON(t *testing.T) {
 	projDir, _, _ := setupProject(t)
-	if _, err := execCerne(t, "feature", "new", "Login com Google", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v", err)
 	}
 

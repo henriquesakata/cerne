@@ -13,7 +13,7 @@ This skill is the **mechanics and lifecycle**. The *content* of each document (t
 
 ## When to use
 
-- **The moment you pick up a task** — register it first with `cerne feature new` so in-flight work shows on the board from the start, not after it is done. Also for new decisions (ADRs) or registering an external source that informed your work.
+- **The moment you pick up a task** — register it first with `cerne feature new "<title>" --context "<porquê>"` so in-flight work shows on the board from the start, not after it is done. Also for new decisions (ADRs) or registering an external source that informed your work.
 - Moving a feature through its lifecycle (approve / start / complete).
 - Any moment you would otherwise hand-create a tracked "case" or "feature" doc folder — don't; use this loop.
 
@@ -23,7 +23,8 @@ cerne mints the canonical `F-NNNN` id and gates each transition on a real docume
 
 **Register at the start, not the end.** The first action when you pick up a task is step 1 below — run it *before* you start building, so the work is visible on the kanban (as a candidate) from minute one instead of an agent running in the dark. The spec/plan/result you write then carry it rightward across the board; if the work is dropped, `reject` it. Creating the feature is cheap and self-limiting — you only mint one when real work actually starts, so the board never fills with speculative ideas nobody is working on.
 
-1. **Create** — `cerne feature new "<title>" [--module <module>] [--facet <f>] [--component <c>] [--parent F-NNNN]` → candidate.
+1. **Create** — `cerne feature new "<title>" --context "<1-3 frases do porquê>" [--module <module>] [--facet <f>] [--component <c>] [--parent F-NNNN]` → candidate.
+   - **Context is required at creation (F-0120):** a bare `feature new` is refused — a title-only candidate loses its creation context the moment the session that minted it is gone. The minimal path is `--context` (1-3 sentences of the *why*, seeded into the spec's Problema section). Already have the full spec? `--file <spec.md>` (or piped stdin) births the candidate with the real spec committed and pushed, one-shot like `note new` — no fill, no push. `--file`/stdin and `--context` are mutually exclusive.
    - `--module` assigns the subsystem when the project declares modules; omit for cross-cutting work.
    - **Tag it (two axes, like notes/decisions/references):** `--facet` and `--component` (both repeatable, comma-separated). **facet** is the closed, validated set — `infra`, `code`, `data`, `process`, `auth` (D-0002/D-0003); an unknown facet is rejected with **no** write. **component** is open vocabulary, slug-normalized (`Gitback` → `gitback`). Filter the board with `cerne feature list --facet <f> --component <c>` — AND across axes, and AND with `--state`/`--module`/`--parent`. Tags fold into the FTS body (so `cerne search`/`ask` find a feature by a tag absent from its prose) and render on the feature's line (and as chips in the kanban/feature page). Re-tag in place — any state except terminal history (superseded/rejected) — with `cerne feature retag F-NNNN --facet <f> --component <c>` (sets only the axis you pass; `--facet ""` clears it; never supersedes), so the implemented backlog can be categorized for retrieval too. Orthogonal to `--module` (product area) and `--parent` (epic decomposition).
    - `--parent F-NNNN` makes this feature decompose an epic. See **Epics**.
@@ -99,7 +100,7 @@ cerne scaffolds `result.md` from a canonical template when you **start** a featu
 
 An **epic is just a feature that has children** — the role is inferred from the parent link, there is no separate entity, so the epic gets the full feature lifecycle/spec/plan/result for free. Use one when a body of work is too large for a single spec and naturally splits into sub-features.
 
-- Create a child under an epic: `cerne feature new "<title>" --parent F-NNNN`.
+- Create a child under an epic: `cerne feature new "<title>" --context "<porquê>" --parent F-NNNN`.
 - Link, move, or detach an existing feature later: `cerne feature reparent F-NNNN F-MMMM` (or `--clear`).
 - **Epic ≠ module.** A module is the subsystem; an epic is decomposed work that may span modules. A feature can have both.
 - **Read the breakdown, don't hand-maintain it:** `cerne status` shows an `ÉPICOS` section with `n/m` progress, and `.docs/CONTEXT.md` carries an *Épico* column plus a `## Épicos` section.
@@ -213,7 +214,7 @@ References carry the **same two tag axes as notes** — `--facet` (the closed `i
 
 ## Hard rules
 
-- **Register the task at the start.** The first action when you pick up a task is `cerne feature new "<title>"` (it lands as a candidate, visible on the kanban) — not something you do after the work is finished. Advance it as you go (spec → `approve`, plan → `start`, result → `complete`); if it is abandoned, `cerne feature reject <id> --reason "…"` so the board stays honest. Candidates left without a real spec past the grace window are flagged by `cerne lint` (`stale-candidate`).
+- **Register the task at the start.** The first action when you pick up a task is `cerne feature new "<title>" --context "<1-3 frases do porquê>"` (it lands as a candidate, visible on the kanban, with its creation context captured — bare creation is refused) — not something you do after the work is finished. Advance it as you go (spec → `approve`, plan → `start`, result → `complete`); if it is abandoned, `cerne feature reject <id> --reason "…"` so the board stays honest. Candidates left without a real spec past the grace window are flagged by `cerne lint` (`stale-candidate`).
 - **Register the sources that shaped a decision.** When an external source (article, RFC, vendor/API doc, spec) informs a feature/decision/fix, register it as you use it — `cerne reference new "<title>" --url <url> --informs <ids>` — not only when a human asks for it. Register **only the useful ones**: the sources that actually moved the outcome, never a dead-end you opened and discarded. A source worth citing in the doc is worth a reference; a bare URL left in prose is lost provenance. `cerne lint` backs this up — a **decision or feature** doc that cites an external URL with no backing registered reference is flagged **`unregistered-source`** (register the source, or drop the bare URL); internal/local hosts and any `unregistered_source_ignore` substrings in `.cernerc` are skipped. Install the proactive gate reminder with `cerne hook install`.
 - **Author through cerne**, not as loose markdown folders for tracked features/decisions — loose markdown is authoring input, not authority.
 - **Never hand-edit generated outputs:** `.docs/CONTEXT.md` and the compiled wiki regenerate (`cerne pull` / `cerne compile`).
