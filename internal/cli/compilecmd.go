@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,41 +95,58 @@ func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, f
 	if err := reportModulelessSkipped(cmd, ctx.repoDir); err != nil {
 		return err
 	}
-	dirty, err := compile.Dirty(ctx.repoDir, pages, force)
+	done, err := compileDirtyPages(cmd.Context(), ctx, pages, force)
 	if err != nil {
 		return err
 	}
-	if len(dirty) == 0 {
+	if len(done) == 0 {
 		fmt.Fprintln(out, "Nada a recompilar.")
 		return nil
-	}
-	prov, err := llm.NewProvider(ctx.cfg.LLM)
-	if err != nil {
-		return err
-	}
-	head, err := gitback.HeadSHA(ctx.repoDir)
-	if err != nil {
-		return err
-	}
-	var done []compile.Page
-	for _, p := range dirty {
-		body, err := prov.Complete(cmd.Context(), compile.BuildPagePrompt(p))
-		if err != nil {
-			return fmt.Errorf("sintetizando a página %s: %w", p.Name, err)
-		}
-		if err := writeStampedPage(ctx.repoDir, p, head, []byte(body)); err != nil {
-			return err
-		}
-		done = append(done, p)
-	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
-		return err
 	}
 	fmt.Fprintf(out, "Compiladas %d página(s) (modo byo-key).\n", len(done))
 	for _, p := range done {
 		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
 	}
 	return nil
+}
+
+// compileDirtyPages runs the one-phase synthesis over the dirty subset of pages:
+// Complete per dirty page through the configured callable provider, provenance-
+// stamped write, one commit+push when anything was written. Returns the compiled
+// pages — empty means nothing was dirty, so no provider is built and no LLM is
+// called. Shared by `cerne compile` (byo-key/claude-cli) and the compile_on_push
+// hook (F-0117).
+func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page, force bool) ([]compile.Page, error) {
+	dirty, err := compile.Dirty(ctx.repoDir, pages, force)
+	if err != nil {
+		return nil, err
+	}
+	if len(dirty) == 0 {
+		return nil, nil
+	}
+	prov, err := llm.NewProvider(ctx.cfg.LLM)
+	if err != nil {
+		return nil, err
+	}
+	head, err := gitback.HeadSHA(ctx.repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var done []compile.Page
+	for _, p := range dirty {
+		body, err := prov.Complete(goCtx, compile.BuildPagePrompt(p))
+		if err != nil {
+			return nil, fmt.Errorf("sintetizando a página %s: %w", p.Name, err)
+		}
+		if err := writeStampedPage(ctx.repoDir, p, head, []byte(body)); err != nil {
+			return nil, err
+		}
+		done = append(done, p)
+	}
+	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
+		return nil, err
+	}
+	return done, nil
 }
 
 // reportModulelessSkipped tells the user, on the prepare phase, how many live
