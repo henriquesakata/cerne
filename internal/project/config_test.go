@@ -31,6 +31,32 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigCompileOnPushRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{ProjectID: "cerne", Backend: "/tmp/backend", CompileOnPush: true}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.CompileOnPush {
+		t.Fatalf("CompileOnPush not persisted")
+	}
+	// Absent in TOML ⇒ false (opt-in).
+	if err := SaveConfig(dir, Config{ProjectID: "x", Backend: "/b"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	got, _, err = LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if got.CompileOnPush {
+		t.Fatalf("CompileOnPush must default to false")
+	}
+}
+
 func TestConfigModulePathsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Config{

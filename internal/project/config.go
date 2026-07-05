@@ -25,6 +25,7 @@ type Config struct {
 	OKF            bool   `toml:"okf,omitempty"`             // emit OKF-compatible frontmatter in .docs/ (cerne pull); flag --okf overrides
 	AutocommitLock bool   `toml:"autocommit_lock,omitempty"` // F-0060: cerne commits the project-side docs.lock after a backend mutation (opt-in, default off)
 	PinBranch      string `toml:"pin_branch,omitempty"`      // F-0102: docs.lock is written/committed only on this branch; empty = every branch (pre-0102 behavior)
+	CompileOnPush  bool   `toml:"compile_on_push,omitempty"` // F-0117: a successful push recompiles the dirty wiki pages (callable [llm] mode only; opt-in, default off)
 	// UnregisteredSourceIgnore lists URL substrings the unregistered-source lint
 	// rule skips (F-0107) — e.g. the project's own code repo host, which is not an
 	// external source. Internal/local hosts (.local, localhost, private IPs) are
@@ -102,11 +103,12 @@ func SaveConfig(dir string, c Config) error {
 		OKF                      bool       `toml:"okf,omitempty"`
 		AutocommitLock           bool       `toml:"autocommit_lock,omitempty"`
 		PinBranch                string              `toml:"pin_branch,omitempty"`
+		CompileOnPush            bool                `toml:"compile_on_push,omitempty"`
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm
