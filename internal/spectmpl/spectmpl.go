@@ -71,3 +71,16 @@ schemas, endpoints, eventos). Inclua o HOW — não o omita. -->
 func Stub(title string) string {
 	return "# " + strings.TrimSpace(title) + "\n\n" + Body
 }
+
+// StubWithContext returns Stub(title) with the Problema section seeded with
+// context — the creation-time summary that must survive the session that
+// minted the feature (F-0120). The rest of the template stays for the author
+// to fill. An empty context degrades to the plain Stub.
+func StubWithContext(title, context string) string {
+	context = strings.TrimSpace(context)
+	if context == "" {
+		return Stub(title)
+	}
+	next := "\n## " + Sections[1] + "\n"
+	return strings.Replace(Stub(title), next, "\n"+context+"\n"+next, 1)
+}
