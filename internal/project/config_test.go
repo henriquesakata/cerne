@@ -79,6 +79,28 @@ func TestConfigModulePathsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigComponentPathsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{
+		ProjectID: "cerne",
+		Backend:   "/tmp/backend",
+		ComponentPaths: map[string][]string{
+			"drift": {"internal/lint/drift.go", "internal/cli/drift.go"},
+			"llm":   {"internal/llm/**"},
+		},
+	}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !reflect.DeepEqual(got.ComponentPaths, want.ComponentPaths) {
+		t.Fatalf("ComponentPaths = %+v, want %+v", got.ComponentPaths, want.ComponentPaths)
+	}
+}
+
 func TestLoadConfigWalksUpFromNestedDir(t *testing.T) {
 	root := t.TempDir()
 	want := Config{ProjectID: "nested", Backend: "/tmp/backend"}

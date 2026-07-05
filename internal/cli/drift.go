@@ -53,7 +53,7 @@ func computeDriftFindings(ctx projCtx) (findings []lint.Finding, changed []strin
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return lint.DriftFindings(changed, baseline, ctx.cfg.ModulePaths, features), changed, baseline, nil
+	return lint.DriftFindings(changed, baseline, ctx.cfg.ModulePaths, ctx.cfg.ComponentPaths, features), changed, baseline, nil
 }
 
 func newDriftCmd() *cobra.Command {

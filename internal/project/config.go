@@ -36,7 +36,11 @@ type Config struct {
 	// The drift-suspect lint rule (F-0113) uses it to map a changed file to the
 	// module(s) it belongs to. Absent (nil) makes the rule inert — opt-in.
 	ModulePaths map[string][]string `toml:"module_paths,omitempty"`
-	LLM         LLMConfig           `toml:"llm"` // optional v1.5 LLM layer config
+	// ComponentPaths is the second, additive drift axis (F-0116): component tag →
+	// path globs, matching a feature through its Components. It is what makes the
+	// drift rule work in a moduleless project. Same opt-in stance as ModulePaths.
+	ComponentPaths map[string][]string `toml:"component_paths,omitempty"`
+	LLM            LLMConfig           `toml:"llm"` // optional v1.5 LLM layer config
 }
 
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
@@ -106,9 +110,10 @@ func SaveConfig(dir string, c Config) error {
 		CompileOnPush            bool                `toml:"compile_on_push,omitempty"`
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
+		ComponentPaths           map[string][]string `toml:"component_paths,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm
