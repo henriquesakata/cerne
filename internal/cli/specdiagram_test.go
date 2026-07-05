@@ -19,7 +19,7 @@ import (
 // the lock snapshot is updated.
 func TestSpecDiagramByoKeyWritesAndCommits(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 
@@ -93,7 +93,7 @@ func TestSpecDiagramByoKeyWritesAndCommits(t *testing.T) {
 // diagram under the normalized <name>.mmd.
 func TestSpecDiagramByoKeyCustomName(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 
@@ -117,7 +117,7 @@ func TestSpecDiagramByoKeyCustomName(t *testing.T) {
 // artifact path, and nothing is written to the backend.
 func TestSpecDiagramDelegationPrintsPrompt(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 
@@ -154,7 +154,7 @@ func TestSpecDiagramUnknownFeature(t *testing.T) {
 // not a Mermaid sequence diagram (the ErrNotMermaidSequence path).
 func TestSpecDiagramNonSequenceErrors(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

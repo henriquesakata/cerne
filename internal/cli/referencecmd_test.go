@@ -14,7 +14,7 @@ import (
 // file, linked to a feature via --informs; the entity persists external/url/informs.
 func TestReferenceNew(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	if out, err := execCerne(t, "feature", "new", "Corrige login", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Corrige login", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	contentFile := filepath.Join(t.TempDir(), "artigo.md")

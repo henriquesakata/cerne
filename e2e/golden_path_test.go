@@ -91,7 +91,7 @@ func TestGoldenPath(t *testing.T) {
 	assertLockParity(t, proj, origin, "init")
 
 	t.Log("stage 2: feature new — F-0001 born candidate")
-	out := mustCerne(t, "feature", "new", "Carrinho persistente", "--module", "checkout", "--dir", proj)
+	out := mustCerne(t, "feature", "new", "Carrinho persistente", "--context", "ctx de teste", "--module", "checkout", "--dir", proj)
 	if !strings.Contains(out, "F-0001 criada (candidate)") {
 		t.Fatalf("feature new output missing F-0001 confirmation:\n%s", out)
 	}
@@ -165,7 +165,7 @@ func TestGoldenPath(t *testing.T) {
 	}
 
 	t.Log("stage 7: substituir F-0001 by F-0002 — gone from .docs/, kept in history")
-	out = mustCerne(t, "feature", "new", "Carrinho v2", "--module", "checkout", "--dir", proj)
+	out = mustCerne(t, "feature", "new", "Carrinho v2", "--context", "ctx de teste", "--module", "checkout", "--dir", proj)
 	if !strings.Contains(out, "F-0002 criada (candidate)") {
 		t.Fatalf("second feature new output missing F-0002 confirmation:\n%s", out)
 	}

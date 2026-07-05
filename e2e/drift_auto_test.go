@@ -43,7 +43,7 @@ func TestDriftAutoGoldenPath(t *testing.T) {
 		"\n[module_paths]\ncore = [\"internal/core/**\"]\n\n[llm]\nmode = \"byo-key\"\nbase_url = %q\nkey_env = \"CERNE_TEST_KEY\"\n", srv.URL))
 
 	// Drive F-0001 to implemented (same shape as the drift golden path).
-	mustCerne(t, "feature", "new", "Motor de core", "--module", "core", "--dir", proj)
+	mustCerne(t, "feature", "new", "Motor de core", "--context", "ctx de teste", "--module", "core", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 	writeReal(t, featureDir(t, proj), "spec.md", "Motor de core")
 	mustCerne(t, "push", "--dir", proj)
@@ -112,7 +112,7 @@ func TestDriftAutoDelegationFails(t *testing.T) {
 	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
 	appendToFile(t, filepath.Join(proj, ".cernerc"), "\n[module_paths]\ncore = [\"internal/core/**\"]\n")
 
-	mustCerne(t, "feature", "new", "Motor", "--module", "core", "--dir", proj)
+	mustCerne(t, "feature", "new", "Motor", "--context", "ctx de teste", "--module", "core", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 	writeReal(t, featureDir(t, proj), "spec.md", "Motor")
 	mustCerne(t, "push", "--dir", proj)

@@ -14,7 +14,7 @@ import (
 
 func TestCompileDelegationFlow(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance", "core")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 
@@ -86,10 +86,10 @@ func TestCompileDelegationFlow(t *testing.T) {
 func TestCompileReportsModulelessSkipped(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
 	// A moduled feature (synthesized) and a module-less one (omitted).
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new finance: %v\n%s", err, out)
 	}
-	if out, err := execCerne(t, "feature", "new", "Sem modulo", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Sem modulo", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new module-less: %v\n%s", err, out)
 	}
 
@@ -104,7 +104,7 @@ func TestCompileReportsModulelessSkipped(t *testing.T) {
 
 func TestCompileNoModulelessNoteWhenNone(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	out, err := execCerne(t, "compile", "--dir", projDir)
@@ -118,7 +118,7 @@ func TestCompileNoModulelessNoteWhenNone(t *testing.T) {
 
 func TestCompileForceRecompiles(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	// Compile once.
@@ -173,7 +173,7 @@ func fulfillPending(t *testing.T, projDir, body string) {
 
 func TestCompilePrepareWritesManifest(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance", "core")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
@@ -213,7 +213,7 @@ func TestCompilePrepareWritesManifest(t *testing.T) {
 
 func TestCompileIngestMissingResponseErrors(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance", "core")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
@@ -231,7 +231,7 @@ func TestCompileIngestMissingResponseErrors(t *testing.T) {
 
 func TestCompileIngestRejectsStale(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance", "core")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
@@ -267,10 +267,10 @@ func TestCompileIngestRejectsStale(t *testing.T) {
 
 func TestCompileIngestPerPageStatus(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance", "billing")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new finance: %v\n%s", err, out)
 	}
-	if out, err := execCerne(t, "feature", "new", "Faturas", "--module", "billing", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Faturas", "--context", "ctx de teste", "--module", "billing", "--dir", projDir); err != nil {
 		t.Fatalf("feature new billing: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
@@ -321,7 +321,7 @@ func TestCompileHelpShowsDelegationContract(t *testing.T) {
 
 func TestCompileIngestIdempotent(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "finance", "core")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {

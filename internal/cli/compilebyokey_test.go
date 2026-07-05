@@ -30,7 +30,7 @@ func enableByoKey(t *testing.T, projDir, baseURL, keyEnv string) {
 
 func TestCompileByoKeySynthesizesAndCommits(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 
@@ -106,7 +106,7 @@ func TestCompileByoKeySynthesizesAndCommits(t *testing.T) {
 // leaves the byo-key synchronous path untouched.
 func TestCompileSynchronousUnaffected(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -139,7 +139,7 @@ func TestCompileSynchronousUnaffected(t *testing.T) {
 // never called and origin does not advance.
 func TestCompileByoKeyNothingDirty(t *testing.T) {
 	projDir, origin, _ := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 

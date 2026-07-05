@@ -54,7 +54,7 @@ func TestBuildResultDraftPrompt(t *testing.T) {
 // cerne-stamped cerne_id frontmatter and origin advances.
 func TestResultDraftByoKeyWritesAndCommits(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t, "finance")
-	if out, err := execCerne(t, "feature", "new", "Boletos", "--module", "finance", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 

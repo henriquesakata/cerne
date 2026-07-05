@@ -23,7 +23,7 @@ func TestRetireThenLintFlagsAlias(t *testing.T) {
 	docsDir := filepath.Join(proj, ".docs")
 
 	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
-	mustCerne(t, "feature", "new", "Relatórios financeiros", "--dir", proj)
+	mustCerne(t, "feature", "new", "Relatórios financeiros", "--context", "ctx de teste", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 
 	// Write a real spec that still mentions the legacy module, then push it.

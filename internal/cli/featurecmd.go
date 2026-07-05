@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 )
 
 func newFeatureCmd() *cobra.Command {
@@ -27,37 +29,70 @@ func newFeatureCmd() *cobra.Command {
 	return cmd
 }
 
+// errFeatureContextRequired is the hard creation gate (F-0120): a candidate
+// born as title-only loses its creation context the moment the session that
+// minted it is gone, so the CLI refuses it and teaches the minimal path.
+var errFeatureContextRequired = errors.New(
+	"feature sem contexto: informe ao menos --context \"<1-3 frases do porquê>\", ou a spec completa via --file <spec.md>/stdin")
+
 func newFeatureNewCmd(dir *string) *cobra.Command {
-	var module, parent, facet, component string
+	var module, parent, facet, component, file, context string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a feature in candidate state",
-		Example: "  # registra a candidata (no quadro) e materializa o slot da spec\n" +
-			"  cerne feature new \"<título>\" --module <m> [--parent F-NNNN] [--facet code --component gitback]\n" +
+		Long: "Cria a candidata já com o contexto capturado: --file/stdin traz a spec completa (one-shot, " +
+			"nada a preencher depois) e --context semeia a seção Problema do rascunho com o porquê da criação. " +
+			"Sem um dos dois a criação é recusada — o título sozinho não sobrevive à sessão que o criou.",
+		Example: "  # registra a candidata com o porquê capturado (mínimo)\n" +
+			"  cerne feature new \"<título>\" --context \"<1-3 frases do porquê>\" [--module <m>] [--parent F-NNNN]\n" +
+			"  # ou já com a spec completa (one-shot)\n" +
+			"  cerne feature new \"<título>\" --file spec.md\n" +
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureNew(cmd, *dir, args[0], module, parent, facet, component)
+			return runFeatureNew(cmd, *dir, args[0], module, parent, facet, component, file, context)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
 	cmd.Flags().StringVar(&parent, "parent", "", "parent feature ID (the epic this one decomposes)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; conjunto fechado: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsistema/ferramenta, ex.: gitback,materialize)")
+	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
+	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 frases) semeado na seção Problema da spec")
 	return cmd
 }
 
-func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component string) error {
+func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string) error {
+	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	hasBody := strings.TrimSpace(body) != ""
+	hasContext := strings.TrimSpace(context) != ""
+	if hasBody && hasContext {
+		return fmt.Errorf("--file/stdin e --context são mutuamente exclusivos: a spec completa já carrega o contexto")
+	}
+	if !hasBody && !hasContext {
+		return errFeatureContextRequired
+	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	f, err := app.CreateFeature(ctx.repoDir, ctx.projDir, title, module, parent,
-		splitInforms(facet), splitInforms(component))
+	specBody := body
+	if hasContext {
+		specBody = spectmpl.StubWithContext(title, context)
+	}
+	f, err := app.CreateFeatureWithSpec(ctx.repoDir, ctx.projDir, title, module, parent,
+		splitInforms(facet), splitInforms(component), specBody)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (candidate). Próximo passo: escreva a spec e rode 'cerne pull'.\n", f.ID)
+	if hasBody {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (candidate) com spec — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", f.ID)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (candidate) com o contexto semeado na spec. Próximo passo: complete a spec ('cerne pull' materializa o rascunho).\n", f.ID)
 	return nil
 }
 

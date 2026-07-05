@@ -2,11 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -50,7 +52,7 @@ func TestFeatureNew(t *testing.T) {
 		t.Fatalf("LoadLock before: %v", err)
 	}
 
-	out, err := execCerne(t, "feature", "new", "Login com Google", "--dir", projDir)
+	out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("feature new: %v\noutput: %s", err, out)
 	}
@@ -114,7 +116,7 @@ func TestFeatureNew(t *testing.T) {
 
 	// Second feature gets the next sequential ID and the actor from CERNE_ACTOR.
 	t.Setenv("CERNE_ACTOR", "henrique")
-	out, err = execCerne(t, "feature", "new", "Exportar CSV", "--dir", projDir)
+	out, err = execCerne(t, "feature", "new", "Exportar CSV", "--context", "ctx de teste", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("second feature new: %v\noutput: %s", err, out)
 	}
@@ -132,10 +134,10 @@ func TestFeatureNew(t *testing.T) {
 
 func TestFeatureNewWithParent(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	if _, err := execCerne(t, "feature", "new", "Épico", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Épico", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("create epic: %v", err)
 	}
-	out, err := execCerne(t, "feature", "new", "Filha", "--parent", "F-0001", "--dir", projDir)
+	out, err := execCerne(t, "feature", "new", "Filha", "--context", "ctx de teste", "--parent", "F-0001", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("create child: %v\noutput: %s", err, out)
 	}
@@ -146,7 +148,7 @@ func TestFeatureNewWithParent(t *testing.T) {
 	if f.Parent != "F-0001" {
 		t.Fatalf("Parent = %q, want F-0001", f.Parent)
 	}
-	if _, err := execCerne(t, "feature", "new", "X", "--parent", "F-9999", "--dir", projDir); err == nil {
+	if _, err := execCerne(t, "feature", "new", "X", "--context", "ctx de teste", "--parent", "F-9999", "--dir", projDir); err == nil {
 		t.Fatalf("feature new with unknown parent succeeded, want error")
 	}
 }
@@ -170,7 +172,7 @@ func TestFeatureNewModuleRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projDir, _, repoDir := setupProject(t, tt.modules...)
-			args := []string{"feature", "new", "Feature X", "--dir", projDir}
+			args := []string{"feature", "new", "Feature X", "--context", "ctx de teste", "--dir", projDir}
 			if tt.moduleFlag != "" {
 				args = append(args, "--module", tt.moduleFlag)
 			}
@@ -203,7 +205,7 @@ func TestFeatureNewModuleRules(t *testing.T) {
 
 func TestFeatureNewEmptyTitle(t *testing.T) {
 	projDir, _, _ := setupProject(t)
-	_, err := execCerne(t, "feature", "new", "   ", "--dir", projDir)
+	_, err := execCerne(t, "feature", "new", "   ", "--context", "ctx de teste", "--dir", projDir)
 	if err == nil {
 		t.Fatalf("feature new with blank title succeeded, want error")
 	}
@@ -212,7 +214,7 @@ func TestFeatureNewEmptyTitle(t *testing.T) {
 func TestFeatureNewOutsideProject(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	dir := t.TempDir()
-	_, err := execCerne(t, "feature", "new", "Feature X", "--dir", dir)
+	_, err := execCerne(t, "feature", "new", "Feature X", "--context", "ctx de teste", "--dir", dir)
 	if err == nil {
 		t.Fatalf("feature new outside a project succeeded, want error")
 	}
@@ -223,7 +225,7 @@ func TestFeatureNewOutsideProject(t *testing.T) {
 func TestFeatureNewTags(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 
-	if _, err := execCerne(t, "feature", "new", "Feat", "--facet", "infra,code", "--component", "Gitback", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste", "--facet", "infra,code", "--component", "Gitback", "--dir", projDir); err != nil {
 		t.Fatalf("feature new with tags: %v", err)
 	}
 	f, err := store.LoadFeature(repoDir, "F-0001")
@@ -237,8 +239,113 @@ func TestFeatureNewTags(t *testing.T) {
 		t.Fatalf("Components = %v, want [gitback]", f.Components)
 	}
 
-	if _, err := execCerne(t, "feature", "new", "Bad", "--facet", "bogus", "--dir", projDir); err == nil {
+	if _, err := execCerne(t, "feature", "new", "Bad", "--context", "ctx de teste", "--facet", "bogus", "--dir", projDir); err == nil {
 		t.Fatalf("feature new with unknown facet succeeded, want error")
+	}
+}
+
+// TestFeatureNewOneShotSpec pins the one-shot path (F-0120 criterion 1):
+// --file births the candidate with the real spec committed and pushed —
+// nothing left to fill or push.
+func TestFeatureNewOneShotSpec(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	specFile := filepath.Join(t.TempDir(), "spec.md")
+	body := "# Título\n\n## Problema\n\nContexto real da criação.\n"
+	if err := os.WriteFile(specFile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execCerne(t, "feature", "new", "Título", "--file", specFile, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature new --file: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "✓ F-0001 criada (candidate) com spec — já sincronizada") {
+		t.Fatalf("output missing one-shot confirmation:\n%s", out)
+	}
+
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil {
+		t.Fatalf("spec: %v", err)
+	}
+	want := "---\ncerne_id: F-0001\n---\n\n" + body
+	if string(spec) != want {
+		t.Fatalf("spec.md = %q, want stamped one-shot body %q", spec, want)
+	}
+
+	ds, err := app.FeatureDocSet(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("FeatureDocSet: %v", err)
+	}
+	if !ds.HasSpec {
+		t.Fatalf("one-shot spec should count as real content (approve gate open)")
+	}
+}
+
+// TestFeatureNewContextSeed pins the minimal path (F-0120 criterion 2):
+// --context seeds the Problema section of the scaffolded spec, keeping the
+// rest of the template for the author.
+func TestFeatureNewContextSeed(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ctx := "Agentes abrem a feature e não voltam para escrever a spec."
+
+	out, err := execCerne(t, "feature", "new", "Captura", "--context", ctx, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature new --context: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0001 criada (candidate)") {
+		t.Fatalf("output missing confirmation:\n%s", out)
+	}
+
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil {
+		t.Fatalf("spec: %v", err)
+	}
+	s := string(spec)
+	problema := strings.Index(s, "## Problema")
+	seeded := strings.Index(s, ctx)
+	objetivo := strings.Index(s, "## Objetivo")
+	if seeded < 0 || !(problema < seeded && seeded < objetivo) {
+		t.Fatalf("context should be seeded inside Problema (problema=%d seeded=%d objetivo=%d):\n%s", problema, seeded, objetivo, s)
+	}
+	for _, sec := range []string{"## Decisões do design", "## Desenho", "## Verificação", "## Fora de escopo"} {
+		if !strings.Contains(s, sec) {
+			t.Fatalf("seeded spec lost template section %q:\n%s", sec, s)
+		}
+	}
+}
+
+// TestFeatureNewRequiresContext pins the hard gate (F-0120 criterion 3): a
+// bare create is refused with the instructive sentinel and nothing reaches
+// the backend.
+func TestFeatureNewRequiresContext(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	_, err := execCerne(t, "feature", "new", "Nua", "--dir", projDir)
+	if !errors.Is(err, errFeatureContextRequired) {
+		t.Fatalf("err = %v, want errFeatureContextRequired", err)
+	}
+	if !strings.Contains(err.Error(), "--context") {
+		t.Fatalf("error should teach the minimal path (--context): %v", err)
+	}
+	if _, err := store.LoadFeature(repoDir, "F-0001"); err == nil {
+		t.Fatalf("feature persisted despite the context gate")
+	}
+}
+
+// TestFeatureNewFileAndContextExclusive pins the exclusivity rule: a full
+// spec body and a context seed are different intents — both at once is a
+// usage error, and nothing is created.
+func TestFeatureNewFileAndContextExclusive(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	specFile := filepath.Join(t.TempDir(), "spec.md")
+	if err := os.WriteFile(specFile, []byte("corpo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := execCerne(t, "feature", "new", "X", "--file", specFile, "--context", "y", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "mutuamente exclusivos") {
+		t.Fatalf("err = %v, want mutual-exclusion error", err)
+	}
+	if _, err := store.LoadFeature(repoDir, "F-0001"); err == nil {
+		t.Fatalf("feature persisted despite the exclusivity error")
 	}
 }
 
@@ -246,7 +353,7 @@ func TestFeatureNewTags(t *testing.T) {
 // no-flags guard, and persistence.
 func TestFeatureRetag(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	if _, err := execCerne(t, "feature", "new", "Feat", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v", err)
 	}
 
