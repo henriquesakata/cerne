@@ -59,24 +59,29 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 		return err
 	}
 
-	// Host mode: this process owns the port and serves every registered project.
 	// A cancellable context ties the per-project live-refresh goroutines to the
 	// process; Ctrl+C cancels it and shuts the server down gracefully.
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	handler, err := server.NewUIMulti(sigCtx, uiResolver, pullInterval, dir)
+	return hostUI(sigCtx, cmd.OutOrStdout(), ln, addr, dir, pullInterval, uiResolver, !noBrowser)
+}
+
+// hostUI is host mode: this process owns the port and serves every registered
+// project until ctx is done. openTab controls the automatic browser tab.
+func hostUI(ctx context.Context, out io.Writer, ln net.Listener, addr, dir string, pullInterval time.Duration, resolve server.Resolver, openTab bool) error {
+	handler, err := server.NewUIMulti(ctx, resolve, pullInterval, dir)
 	if err != nil {
 		ln.Close()
 		return err
 	}
 	url := fmt.Sprintf("http://%s", addr)
-	fmt.Fprintf(cmd.OutOrStdout(), "UI local em %s (Ctrl+C para sair)\n", url)
-	if !noBrowser {
+	fmt.Fprintf(out, "UI local em %s (Ctrl+C para sair)\n", url)
+	if openTab {
 		go openBrowser(url)
 	}
 	srv := &http.Server{Handler: handler}
 	go func() {
-		<-sigCtx.Done()
+		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
