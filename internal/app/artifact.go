@@ -64,6 +64,61 @@ func CommitAndSnapshot(repoDir, projDir, msg string) error {
 	return nil
 }
 
+// MutateAndSnapshot runs a domain mutation and its commit+push as ONE critical
+// section of the backend lock (F-0121): reset to a clean HEAD (leftover
+// uncommitted state from a crashed process never rides along), run mutate
+// (which writes to the worktree and returns the commit message — minted ids may
+// be part of it), capture exactly those writes, then reconcile/commit/push via
+// the same per-document core as CommitAndSnapshot. Unlike CommitAndSnapshot,
+// a concurrent local process can neither sweep this mutation's half-written
+// state nor interleave an id mint with it. A failed mutate leaves no partial
+// writes behind (best-effort reset). Same tail semantics: ErrNothingToCommit
+// when mutate changed nothing, *ConflictError on a same-document collision,
+// docs.lock snapshot refreshed on success.
+func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) error {
+	var head string
+	var conflicts []Conflict
+	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
+		base, err := gitback.HeadSHA(repoDir)
+		if errors.Is(err, gitback.ErrNoCommits) {
+			base = ""
+		} else if err != nil {
+			return err
+		}
+		if base != "" {
+			if err := gitback.ResetHard(repoDir, base); err != nil {
+				return err
+			}
+		}
+		msg, err := mutate()
+		if err != nil {
+			if base != "" {
+				_ = gitback.ResetHard(repoDir, base) // best-effort: drop partial writes
+			}
+			return err
+		}
+		changes, err := captureChanges(repoDir)
+		if err != nil {
+			return err
+		}
+		if len(changes) == 0 {
+			return fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, repoDir)
+		}
+		head, conflicts, err = reconcileLocked(repoDir, base, msg, changes)
+		return err
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+	if len(conflicts) > 0 {
+		return &ConflictError{Conflicts: conflicts}
+	}
+	if head != "" {
+		return updateSnapshot(projDir, head)
+	}
+	return nil
+}
+
 // PinAllowed reports whether the committed docs.lock pin may be written in
 // projDir: always when the project sets no pin_branch (pre-0102 behavior),
 // otherwise only on that branch — feature branches never touch docs.lock, so

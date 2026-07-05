@@ -92,8 +92,13 @@ func TestAskJSON(t *testing.T) {
 // TestAskMaxSources: --max-sources caps how many sources land in the prompt.
 func TestAskMaxSources(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
+	// Create both features first: creation starts from a clean HEAD (F-0121),
+	// so an uncommitted doc write would not survive the next creation.
+	ids := make([]string, 0, 2)
 	for i, title := range []string{"Parcelamento mensal", "Parcelamento anual"} {
-		id := newFeature(t, projDir, title, i+1)
+		ids = append(ids, newFeature(t, projDir, title, i+1))
+	}
+	for _, id := range ids {
 		writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas."))
 	}
 	if _, err := gitback.CommitAndPush(repoDir, "specs"); err != nil {

@@ -71,56 +71,64 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 		return store.Feature{}, err
 	}
 	normComponents := domain.NormalizeComponents(components)
-	proj, err := store.LoadProject(repoDir)
-	if err != nil {
-		return store.Feature{}, err
-	}
-	if err := ValidateModule(module, proj.Modules); err != nil {
-		return store.Feature{}, err
-	}
-	if err := checkDuplicateTitle(repoDir, title); err != nil {
-		return store.Feature{}, err
-	}
-	id, err := store.NextID(repoDir, "F")
-	if err != nil {
-		return store.Feature{}, err
-	}
-	if parent != "" {
-		if err := validateParent(repoDir, id, parent); err != nil {
-			return store.Feature{}, err
+	// The whole creation — duplicate guard, id mint, entity+spec+event writes —
+	// runs inside ONE critical section of the backend lock (F-0121): a
+	// concurrent local process can neither sweep the half-written state into
+	// its own commit nor mint the same id.
+	var f store.Feature
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		proj, err := store.LoadProject(repoDir)
+		if err != nil {
+			return "", err
 		}
-	}
-	now := time.Now().UTC()
-	f := store.Feature{
-		ID:         id,
-		Title:      title,
-		Module:     module,
-		Parent:     parent,
-		State:      domain.StateCandidate,
-		Facets:     normFacets,
-		Components: normComponents,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := store.SaveFeature(repoDir, f); err != nil {
-		return store.Feature{}, err
-	}
-	if strings.TrimSpace(specBody) != "" {
-		if err := writeSpecBody(repoDir, id, specBody); err != nil {
-			return store.Feature{}, err
+		if err := ValidateModule(module, proj.Modules); err != nil {
+			return "", err
 		}
-	} else if err := writeSpecStub(repoDir, id, title); err != nil {
-		return store.Feature{}, err
-	}
-	payload := map[string]string{"title": title, "module": module}
-	if parent != "" {
-		payload["parent"] = parent
-	}
-	ev := domain.NewEvent(id, "feature.created", payload, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Feature{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: create %s (%s)", id, title)); err != nil {
+		if err := checkDuplicateTitle(repoDir, title); err != nil {
+			return "", err
+		}
+		id, err := store.NextID(repoDir, "F")
+		if err != nil {
+			return "", err
+		}
+		if parent != "" {
+			if err := validateParent(repoDir, id, parent); err != nil {
+				return "", err
+			}
+		}
+		now := time.Now().UTC()
+		f = store.Feature{
+			ID:         id,
+			Title:      title,
+			Module:     module,
+			Parent:     parent,
+			State:      domain.StateCandidate,
+			Facets:     normFacets,
+			Components: normComponents,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(specBody) != "" {
+			if err := writeSpecBody(repoDir, id, specBody); err != nil {
+				return "", err
+			}
+		} else if err := writeSpecStub(repoDir, id, title); err != nil {
+			return "", err
+		}
+		payload := map[string]string{"title": title, "module": module}
+		if parent != "" {
+			payload["parent"] = parent
+		}
+		ev := domain.NewEvent(id, "feature.created", payload, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
+	})
+	if err != nil {
 		return store.Feature{}, err
 	}
 	return f, nil

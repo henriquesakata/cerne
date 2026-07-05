@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"fmt"
+	"sync"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,6 +184,11 @@ func TestCreateFeatureParentErrors(t *testing.T) {
 	epic.State = domain.StateRejected // drive it terminal directly
 	if err := store.SaveFeature(repoDir, epic); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
+	}
+	// Creation starts from a clean HEAD (F-0121): the state flip must be
+	// committed to be visible to the guard.
+	if _, err := gitback.CommitAndPush(repoDir, "set state"); err != nil {
+		t.Fatalf("CommitAndPush state: %v", err)
 	}
 	if _, err := CreateFeature(repoDir, projDir, "Filha", "", epic.ID, nil, nil); !errors.Is(err, ErrParentTerminal) {
 		t.Fatalf("err = %v, want ErrParentTerminal", err)
@@ -558,5 +565,55 @@ func TestCreateFeatureDuplicateTitle(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// F-0121 crit. 5: the creation starts from a clean tree — leftover uncommitted
+// state in the shared clone (a crashed process's write) must not ride into the
+// creation commit.
+func TestCreateFeatureDoesNotSweepStrayState(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	writeBackendFile(t, repoDir, "content/features/F-0099/spec.md", "half-written by a stranger\n")
+
+	if _, err := CreateFeature(repoDir, projDir, "Criação limpa", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if _, ok := originHas(t, origin, "content/features/F-0099/spec.md"); ok {
+		t.Fatal("stray state was swept into the creation commit")
+	}
+}
+
+// F-0121 crit. 6: N concurrent creations on the same shared clone serialize on
+// the backend lock — N features, distinct ids, each spec landing on origin.
+func TestCreateFeatureConcurrent(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	const n = 4
+	var wg sync.WaitGroup
+	ids := make([]string, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			f, err := CreateFeatureWithSpec(repoDir, projDir,
+				fmt.Sprintf("Concorrente %d", i), "", "", nil, nil,
+				fmt.Sprintf("## Problema\n\ncorpo %d\n", i))
+			ids[i], errs[i] = f.ID, err
+		}(i)
+	}
+	wg.Wait()
+	seen := map[string]bool{}
+	for i := 0; i < n; i++ {
+		if errs[i] != nil {
+			t.Fatalf("create %d: %v", i, errs[i])
+		}
+		if seen[ids[i]] {
+			t.Fatalf("duplicate id minted: %s", ids[i])
+		}
+		seen[ids[i]] = true
+		spec, ok := originHas(t, origin, "content/features/"+ids[i]+"/spec.md")
+		if !ok || !strings.Contains(spec, fmt.Sprintf("corpo %d", i)) {
+			t.Fatalf("spec of %s on origin: ok=%v content=%q — want the seeded body", ids[i], ok, spec)
+		}
 	}
 }

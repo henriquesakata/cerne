@@ -112,6 +112,32 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 				return err
 			}
 		}
+		var err error
+		head, conflicts, err = reconcileLocked(repoDir, base, msg, changes)
+		return err
+	})
+	if lockErr != nil {
+		return "", nil, lockErr
+	}
+	if len(conflicts) > 0 {
+		return "", conflicts, nil
+	}
+	if head != "" {
+		if err := updateSnapshot(projDir, head); err != nil {
+			return "", nil, err
+		}
+	}
+	return head, nil, nil
+}
+
+// reconcileLocked is the fetch/merge/commit/push retry loop of
+// ReconcileCommitPush, extracted so MutateAndSnapshot can run a domain
+// mutation and this loop inside ONE critical section of the backend lock
+// (F-0121). The caller must hold the lock.
+func reconcileLocked(repoDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
+	var head string
+	var conflicts []Conflict
+	err := func() error {
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
 			if err := gitback.Fetch(repoDir); err != nil {
 				return err
@@ -190,19 +216,8 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 			return nil
 		}
 		return ErrTooConcurrent
-	})
-	if lockErr != nil {
-		return "", nil, lockErr
-	}
-	if len(conflicts) > 0 {
-		return "", conflicts, nil
-	}
-	if head != "" {
-		if err := updateSnapshot(projDir, head); err != nil {
-			return "", nil, err
-		}
-	}
-	return head, nil, nil
+	}()
+	return head, conflicts, err
 }
 
 // plan3Way decides, per change, what to apply given the base and remote (theirs)
