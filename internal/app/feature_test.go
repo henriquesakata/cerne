@@ -88,6 +88,53 @@ func TestCreateFeature(t *testing.T) {
 	}
 }
 
+// TestCreateFeatureWithSpec pins the one-shot path (F-0120): a feature born
+// with a real spec body, stamped with the cerne_id frontmatter, that already
+// counts as real content (the approve gate opens without a later push).
+func TestCreateFeatureWithSpec(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+
+	body := "# Minha feature\n\n## Problema\n\nAgentes esquecem a spec.\n"
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Minha feature", "", "", nil, nil, body)
+	if err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+
+	data, err := os.ReadFile(FeatureDocPath(repoDir, f.ID, "spec.md"))
+	if err != nil {
+		t.Fatalf("ReadFile spec: %v", err)
+	}
+	want := "---\ncerne_id: " + f.ID + "\n---\n\n" + body
+	if string(data) != want {
+		t.Fatalf("spec.md = %q, want stamped body %q", data, want)
+	}
+
+	ds, err := FeatureDocSet(repoDir, f.ID)
+	if err != nil {
+		t.Fatalf("FeatureDocSet: %v", err)
+	}
+	if !ds.HasSpec {
+		t.Fatalf("a spec born with a real body should count as real content")
+	}
+}
+
+// TestCreateFeatureWithSpecEmptyBodyScaffoldsStub pins that the empty body
+// degrades to the current stub behavior.
+func TestCreateFeatureWithSpecEmptyBodyScaffoldsStub(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Sem corpo", "", "", nil, nil, "   ")
+	if err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	ds, err := FeatureDocSet(repoDir, f.ID)
+	if err != nil {
+		t.Fatalf("FeatureDocSet: %v", err)
+	}
+	if ds.HasSpec {
+		t.Fatalf("empty body must scaffold the stub (not real content)")
+	}
+}
+
 func TestCreateFeatureEmptyTitle(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := CreateFeature(repoDir, projDir, "   ", "", "", nil, nil); err == nil {
