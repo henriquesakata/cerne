@@ -3,3 +3,9 @@ backend = "git@gitlab.com:rockt/cerne-docs.git"
 default_scope = ""
 autocommit_lock = true
 pin_branch = "main"
+
+# LLM chamável via assinatura do Claude Code (sem API key): habilita
+# `cerne compile` single-phase (sem as duas fases de delegação),
+# `cerne drift --auto` (errata automática, D-0005) e `cerne ask` direto.
+[llm]
+mode = "claude-cli"
