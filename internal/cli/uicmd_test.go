@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestUICmdPullIntervalFlag(t *testing.T) {
@@ -68,6 +72,57 @@ func TestProbeRejectsNonCerne(t *testing.T) {
 	defer srv.Close()
 	if probeCerneUI(srv.URL) {
 		t.Fatal("probeCerneUI should reject a non-cerne server on the port")
+	}
+}
+
+// fakeStreamHost stands in for a host serving /api/stream: it writes the
+// on-connect resync event and holds the connection until the server closes.
+func fakeStreamHost(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: projects\ndata: \n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	})
+	return httptest.NewServer(mux)
+}
+
+func TestMonitorHostDetectsDeath(t *testing.T) {
+	srv := fakeStreamHost(t)
+	done := make(chan error, 1)
+	go func() { done <- monitorHost(context.Background(), srv.URL) }()
+	time.Sleep(100 * time.Millisecond) // let the monitor attach
+	srv.CloseClientConnections()
+	srv.Close()
+	select {
+	case err := <-done:
+		if !errors.Is(err, errHostDied) {
+			t.Fatalf("monitorHost returned %v, want errHostDied", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("monitorHost did not detect the host death")
+	}
+}
+
+func TestMonitorHostCtxCancelIsUserExit(t *testing.T) {
+	srv := fakeStreamHost(t)
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- monitorHost(ctx, srv.URL) }()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("ctx cancellation should return nil (user exit), got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("monitorHost did not honor ctx cancellation")
 	}
 }
 

@@ -141,6 +141,39 @@ func joinRunningUI(out io.Writer, dir string, port int) error {
 	return nil
 }
 
+// errHostDied signals that the hosting cerne ui went away (its SSE stream
+// dropped), so the supervisor should race for the port.
+var errHostDied = errors.New("o cerne ui host caiu")
+
+// monitorHost blocks attached to the host's SSE stream (/api/stream) and
+// returns errHostDied when the connection drops — the OS closes the socket on
+// crash, kill or graceful shutdown alike, so no polling is needed. Returns nil
+// when ctx is done (user exit). The server-side keepalive keeps the stream
+// distinguishable from a dead peer.
+func monitorHost(ctx context.Context, base string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/stream", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return errHostDied
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, 256)
+	for {
+		if _, err := resp.Body.Read(buf); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return errHostDied
+		}
+	}
+}
+
 // isAddrInUse reports whether err is a bind failure because the port is taken.
 func isAddrInUse(err error) bool {
 	if errors.Is(err, syscall.EADDRINUSE) {
@@ -152,11 +185,15 @@ func isAddrInUse(err error) bool {
 		strings.Contains(msg, "only one usage of each socket address")
 }
 
+// probeClient bounds the probe: a host that has bound the port but is still
+// initializing (NewUIMulti pulls the backend) must not hang the caller.
+var probeClient = &http.Client{Timeout: 2 * time.Second}
+
 // probeCerneUI checks that the server on base is a cerne ui (and not some other
 // app holding the port) by confirming GET /api/projects returns the expected
 // shape.
 func probeCerneUI(base string) bool {
-	r, err := http.Get(base + "/api/projects")
+	r, err := probeClient.Get(base + "/api/projects")
 	if err != nil {
 		return false
 	}
