@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -498,5 +499,64 @@ func TestRetagFeature(t *testing.T) {
 	}
 	if _, err := RetagFeature(repoDir, projDir, "F-0002", []string{"code"}, nil, true, false); err == nil {
 		t.Fatalf("retag of rejected feature succeeded, want error")
+	}
+}
+
+// TestCreateFeatureDuplicateTitle pins the F-0121 retry guard: a title whose
+// normalized form (domain.NormalizeTitle, the F-0045 rule) matches a LIVE
+// feature is refused with ErrDuplicateTitle naming the existing id — nothing
+// minted, nothing written. Terminal states never block: history is not a veto
+// on new work.
+func TestCreateFeatureDuplicateTitle(t *testing.T) {
+	cases := []struct {
+		state   domain.FeatureState
+		wantDup bool
+	}{
+		{domain.StateCandidate, true},
+		{domain.StateApproved, true},
+		{domain.StateInDevelopment, true},
+		{domain.StateImplemented, false},
+		{domain.StateRejected, false},
+		{domain.StateSuperseded, false},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.state), func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			f, err := CreateFeature(repoDir, projDir, "Minha feature", "", "", nil, nil)
+			if err != nil {
+				t.Fatalf("seed CreateFeature: %v", err)
+			}
+			f.State = tc.state
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				t.Fatalf("SaveFeature: %v", err)
+			}
+			// candidate keeps the seeded bytes byte-identical: nothing to commit.
+			if _, err := gitback.CommitAndPush(repoDir, "set state"); err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
+				t.Fatalf("CommitAndPush state: %v", err)
+			}
+
+			// Normalized-equal title: extra internal whitespace collapses.
+			got, err := CreateFeature(repoDir, projDir, "  Minha   feature ", "", "", nil, nil)
+			if tc.wantDup {
+				if !errors.Is(err, ErrDuplicateTitle) {
+					t.Fatalf("err = %v, want ErrDuplicateTitle", err)
+				}
+				for _, frag := range []string{f.ID, string(tc.state)} {
+					if !strings.Contains(err.Error(), frag) {
+						t.Errorf("error %q should name %q", err.Error(), frag)
+					}
+				}
+				if _, err := store.LoadFeature(repoDir, "F-0002"); !errors.Is(err, store.ErrNotFound) {
+					t.Fatalf("duplicate was minted anyway: LoadFeature F-0002 err = %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("CreateFeature over terminal title: %v", err)
+				}
+				if got.ID != "F-0002" {
+					t.Fatalf("id = %s, want F-0002", got.ID)
+				}
+			}
+		})
 	}
 }

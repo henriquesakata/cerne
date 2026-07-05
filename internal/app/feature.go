@@ -33,6 +33,12 @@ var ErrParentTerminal = errors.New("a feature-épico está encerrada")
 // (implemented/rejected/superseded): its title is frozen history.
 var ErrTitleFrozen = errors.New("o título da feature está congelado")
 
+// ErrDuplicateTitle is returned when creating a feature whose normalized title
+// (domain.NormalizeTitle, the F-0045 rule) matches a live feature: the usual
+// cause is a retry of a creation that failed after the entity already reached
+// the backend (F-0121). Terminal states never block — history is not a veto.
+var ErrDuplicateTitle = errors.New("já existe uma feature viva com este título")
+
 // featureDocFilenames maps the API doc name to its backend filename.
 var featureDocFilenames = map[string]string{
 	"spec":   "spec.md",
@@ -70,6 +76,9 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 		return store.Feature{}, err
 	}
 	if err := ValidateModule(module, proj.Modules); err != nil {
+		return store.Feature{}, err
+	}
+	if err := checkDuplicateTitle(repoDir, title); err != nil {
 		return store.Feature{}, err
 	}
 	id, err := store.NextID(repoDir, "F")
@@ -160,6 +169,26 @@ func RetagFeature(repoDir, projDir, id string, facets, components []string, setF
 		return store.Feature{}, err
 	}
 	return f, nil
+}
+
+// checkDuplicateTitle refuses a creation whose normalized title collides with
+// a live (candidate/approved/in_development) feature — the F-0121 retry guard,
+// same identity rule as the F-0045 import guard. Terminal features never block.
+func checkDuplicateTitle(repoDir, title string) error {
+	feats, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return err
+	}
+	norm := domain.NormalizeTitle(title)
+	for _, f := range feats {
+		switch f.State {
+		case domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment:
+			if domain.NormalizeTitle(f.Title) == norm {
+				return fmt.Errorf("%w: %s (%s) — se isto é retry de uma criação que falhou, a feature já está no backend; avance a existente ou use outro título", ErrDuplicateTitle, f.ID, f.State)
+			}
+		}
+	}
+	return nil
 }
 
 // ValidateModule enforces the project module rules: with 2+ declared modules a
