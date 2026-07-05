@@ -15,7 +15,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/compile"
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -120,7 +122,36 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Enviado: %d documento(s) (snapshot %s).\n", len(docs), shortSHA(head))
+	maybeCompileOnPush(cmd, ctx)
 	return nil
+}
+
+// maybeCompileOnPush (F-0117) recompiles the dirty wiki pages right after a
+// successful push when the project opts in (compile_on_push = true). It is
+// strictly informational: any failure is a stderr warning and never fails the
+// push — the wiki is a derived projection, recoverable with `cerne compile`.
+// Delegation mode has no callable provider, so the hook warns instead of
+// leaving surprise two-phase .pending files behind. `cerne sync` inherits the
+// hook through runPush.
+func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
+	if !ctx.cfg.CompileOnPush {
+		return
+	}
+	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
+		fmt.Fprintln(cmd.ErrOrStderr(), "aviso: compile_on_push exige [llm] chamável (claude-cli/byo-key) — rode 'cerne compile' para recompilar a wiki")
+		return
+	}
+	pages, err := compile.Pages(ctx.repoDir)
+	if err == nil {
+		done, cerr := compileDirtyPages(cmd.Context(), ctx, compilablePages(pages, ""), false)
+		err = cerr
+		if cerr == nil && len(done) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Wiki recompilada: %d página(s).\n", len(done))
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: recompilação da wiki pós-push falhou (push OK): %v\n", err)
+	}
 }
 
 // reportPushConflicts prints each same-document conflict with its diff and a

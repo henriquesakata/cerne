@@ -3,6 +3,19 @@ backend = "git@gitlab.com:rockt/cerne-docs.git"
 default_scope = ""
 autocommit_lock = true
 pin_branch = "main"
+# F-0117: todo push recompila (incremental) as páginas sujas da wiki via [llm].
+compile_on_push = true
+
+# Drift código→doc (F-0113/F-0116): este projeto não tem módulos, então o
+# eixo é component (tags das features). Cobertura cresce com `cerne feature
+# retag` no backlog; component sem feature correspondente é inócuo.
+[component_paths]
+drift = ["internal/lint/drift.go", "internal/cli/drift.go", "internal/app/autodrift.go", "internal/app/draft.go", "internal/app/projecthead.go", "internal/gitback/changedpaths.go", "internal/project/projecthead.go"]
+lint = ["internal/lint/**"]
+llm = ["internal/llm/**"]
+compile = ["internal/compile/**", "internal/cli/compilecmd.go"]
+wiki = ["internal/wiki/**"]
+gitback = ["internal/gitback/**"]
 
 # LLM chamável via assinatura do Claude Code (sem API key): habilita
 # `cerne compile` single-phase (sem as duas fases de delegação),
