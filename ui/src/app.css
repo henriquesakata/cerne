@@ -616,6 +616,29 @@ h2 {
 
 .theme-toggle:hover { border-color: var(--border-strong); }
 
+/* seletor de idioma (F-0125): par PT | EN ao lado do toggle de tema */
+.lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.lang-option {
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.35rem 0.45rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.lang-option.active { background: var(--fg); color: var(--bg); }
+.lang-toggle:hover { border-color: var(--border-strong); }
+
 /* seletor de projeto (multi-projeto, case 0032): canto direito do header */
 .nav-project-wrap { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
 .nav-project-label { font-size: 0.8rem; color: var(--faint); }
