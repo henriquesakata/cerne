@@ -127,10 +127,11 @@ func TestInstall_FailsOnCorruptJSON(t *testing.T) {
 	}
 }
 
-// TestInstall_MinimalDiff_AppendsToExistingPostToolUse (F-0106): merging into a
-// rich, tracked settings.json must append ONLY the new Bash entry — every other
-// byte (key order, inline objects, indentation, &/non-ASCII escaping) stays
-// identical. Asserted by exact-string equality against the surgically-inserted
+// TestInstall_MinimalDiff_AppendsToExistingPostToolUse (F-0106, env merge
+// F-0131): merging into a rich, tracked settings.json must append ONLY the
+// new Bash entry and the CERNE_ACTOR env key — every other byte (key order,
+// inline objects, indentation, &/non-ASCII escaping) stays identical.
+// Asserted by exact-string equality against the surgically-inserted
 // expectation.
 func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
 	dir := t.TempDir()
@@ -179,8 +180,11 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         ]
       }`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
-	// block is inserted before PostToolUse's closing bracket. Nothing else moves.
+	// block is inserted before PostToolUse's closing bracket; the CERNE_ACTOR
+	// key is appended inside the existing inline env object. Nothing else moves.
 	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+"\n    ]", 1)
+	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
+		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
 	if string(got) != want {
 		t.Fatalf("merge was not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
@@ -230,7 +234,11 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
 	}
 	got, _ := os.ReadFile(sp)
 
-	postBlock := `    "PostToolUse": [
+	want := `{
+  "permissions": {"allow": ["Bash(ls:*)"]},
+  "hooks": {
+    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]}],
+    "PostToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
@@ -240,8 +248,13 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           }
         ]
       }
-    ]`
-	want := strings.Replace(pre, "]\n  }", "],\n"+postBlock+"\n  }", 1)
+    ]
+  },
+  "env": {
+    "CERNE_ACTOR": "agent"
+  }
+}
+`
 	if string(got) != want {
 		t.Fatalf("scenario B not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
@@ -272,7 +285,9 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
 	}
 	got, _ := os.ReadFile(sp)
 
-	hooksBlock := `  "hooks": {
+	want := `{
+  "permissions": {"allow": ["Bash(ls:*)"]},
+  "hooks": {
     "PostToolUse": [
       {
         "matcher": "Bash",
@@ -284,8 +299,12 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
         ]
       }
     ]
-  }`
-	want := strings.Replace(pre, "]}\n}", "]},\n"+hooksBlock+"\n}", 1)
+  },
+  "env": {
+    "CERNE_ACTOR": "agent"
+  }
+}
+`
 	if string(got) != want {
 		t.Fatalf("scenario C not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
@@ -361,4 +380,92 @@ func TestInstall_IdempotentAfterRichMerge(t *testing.T) {
 func isValidJSON(b []byte) bool {
 	var v any
 	return json.Unmarshal(b, &v) == nil
+}
+
+// TestInstall_WritesActorEnv (F-0131 crit. 11): a fresh install (no
+// .claude/settings.json) writes env.CERNE_ACTOR=agent alongside the hook
+// wiring — the marker `internal/app.EventActor`/`CheckHumanGate` read to tell
+// an agent session apart from a human terminal.
+func TestInstall_WritesActorEnv(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("settings.json invalid: %v\n%s", err, b)
+	}
+	env, _ := got["env"].(map[string]any)
+	if env == nil || env["CERNE_ACTOR"] != "agent" {
+		t.Fatalf("settings.json missing env.CERNE_ACTOR=agent:\n%s", b)
+	}
+}
+
+// TestInstall_ActorEnvPreservesExistingEnvKeys (F-0131 crit. 11): installing
+// over a settings.json that already has its own env keys adds CERNE_ACTOR
+// without disturbing them.
+func TestInstall_ActorEnvPreservesExistingEnvKeys(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pre := `{
+  "env": {"MY_VAR": "keep-me", "OTHER": "also-keep"}
+}
+`
+	sp := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(sp, []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("merged settings.json invalid: %v\n%s", err, b)
+	}
+	env, _ := got["env"].(map[string]any)
+	if env == nil {
+		t.Fatalf("env key lost:\n%s", b)
+	}
+	if env["MY_VAR"] != "keep-me" || env["OTHER"] != "also-keep" {
+		t.Errorf("existing env keys not preserved: %+v", env)
+	}
+	if env["CERNE_ACTOR"] != "agent" {
+		t.Errorf("CERNE_ACTOR not added: %+v", env)
+	}
+}
+
+// TestInstall_ActorEnvIdempotent: a second install over an already-marked
+// settings.json changes nothing (byte-identical, unchanged status).
+func TestInstall_ActorEnvIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	sp := filepath.Join(dir, ".claude", "settings.json")
+	first, _ := os.ReadFile(sp)
+
+	results, err := Install(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Asset == "settings.json" && r.Status != StatusUnchanged {
+			t.Errorf("second install settings.json: status=%s, want unchanged", r.Status)
+		}
+	}
+	second, _ := os.ReadFile(sp)
+	if string(first) != string(second) {
+		t.Errorf("second install rewrote the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
 }
