@@ -70,6 +70,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	// Starting a child pulls its ready ancestor epics into development too:
+	// report them so the author sees the board moved without a second command.
+	for _, epic := range out.Propagated {
+		fmt.Fprintf(cmd.OutOrStdout(), "  ↳ épico %s iniciado junto (filho entrou em desenvolvimento)\n", epic)
+	}
 	// Approving a feature scaffolds its plan stub; starting scaffolds its result
 	// stub: point the author at the doc the next gate will require.
 	if action == domain.ActionApprove {

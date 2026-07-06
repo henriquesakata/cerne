@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
@@ -20,6 +21,10 @@ type TransitionOutcome struct {
 	ID   string
 	From domain.FeatureState
 	To   domain.FeatureState
+	// Propagated holds the ancestor epics that a start pulled into development
+	// alongside this feature, nearest-first. Empty for the common case and for
+	// every action other than start. See propagateStartToAncestors.
+	Propagated []string
 }
 
 // eventTypes maps each lifecycle action to the event type it appends.
@@ -111,15 +116,89 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	}
 	// Starting development opens the result phase: scaffold the result stub so it
 	// is committed alongside the transition (mirrors the plan stub at approve).
+	var propagated []string
 	if action == domain.ActionStart {
 		if err := writeResultStub(repoDir, id, f.Title); err != nil {
 			return out, err
 		}
+		// A child entering development pulls its ancestor epics along: each one
+		// that is ready (approved, with a real plan) starts in the same commit,
+		// so the epic never lags its own decomposition. Bundled before the
+		// single CommitAndSnapshot below — all or nothing, no mid-state commit.
+		if propagated, err = propagateStartToAncestors(repoDir, id); err != nil {
+			return out, err
+		}
 	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: %s %s", action, id)); err != nil {
+	msg := fmt.Sprintf("cerne: %s %s", action, id)
+	if len(propagated) > 0 {
+		msg += fmt.Sprintf(" (+ épico %s)", strings.Join(propagated, ", "))
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, msg); err != nil {
 		return out, err
 	}
-	return TransitionOutcome{ID: id, From: oldState, To: newState}, nil
+	return TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated}, nil
+}
+
+// propagateStartToAncestors walks up the epic chain from a feature that just
+// entered development and starts each ancestor that is ready — in `approved`
+// state with its start gate satisfied (a real plan, the same gate a manual
+// start enforces). It never bypasses the gate: an approved epic without a plan
+// is left untouched (lint's epic-behind-children still flags it), and a parent
+// that is not approved (candidate/in_development/terminal) stops the walk with
+// no change. Mutations persist to the store but are committed by the caller's
+// CommitAndSnapshot, so the child start and every propagated epic land in one
+// commit. Returns the ancestors it started, nearest-first (empty when none).
+// A visited set guards against a cyclic parent link so a corrupt graph cannot
+// loop forever.
+func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
+	cur, err := store.LoadFeature(repoDir, childID)
+	if err != nil {
+		return nil, err
+	}
+	var started []string
+	visited := map[string]bool{childID: true}
+	for cur.Parent != "" {
+		if visited[cur.Parent] {
+			break // cyclic parent link: stop rather than loop
+		}
+		visited[cur.Parent] = true
+		parent, err := store.LoadFeature(repoDir, cur.Parent)
+		if errors.Is(err, store.ErrNotFound) {
+			break // dangling parent: lint's parent-not-found reports it
+		}
+		if err != nil {
+			return started, err
+		}
+		if parent.State != domain.StateApproved {
+			break // candidate needs approval; in_development/terminal: nothing to do
+		}
+		docs, err := FeatureDocSet(repoDir, parent.ID)
+		if err != nil {
+			return started, err
+		}
+		if err := domain.CheckGate(domain.ActionStart, docs); err != nil {
+			break // epic not ready (no real plan): don't force it, leave it to lint
+		}
+		newState, err := domain.Transition(parent.State, domain.ActionStart)
+		if err != nil {
+			break
+		}
+		parent.State = newState
+		parent.UpdatedAt = time.Now().UTC()
+		if err := store.SaveFeature(repoDir, parent); err != nil {
+			return started, err
+		}
+		ev := domain.NewEvent(parent.ID, "feature.started", map[string]string{"via": childID}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return started, err
+		}
+		if err := writeResultStub(repoDir, parent.ID, parent.Title); err != nil {
+			return started, err
+		}
+		started = append(started, parent.ID)
+		cur = parent
+	}
+	return started, nil
 }
 
 // ValidateTransitionFlags enforces which flags each action accepts:
