@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,6 +63,16 @@ func seedFeature(t *testing.T, repoDir, id, title string, state domain.FeatureSt
 	f := store.Feature{ID: id, Title: title, State: state, CreatedAt: now, UpdatedAt: now}
 	if err := store.SaveFeature(repoDir, f); err != nil {
 		t.Fatalf("SaveFeature %s: %v", id, err)
+	}
+}
+
+// commitBackend commits (and pushes) state a test staged directly in the
+// backend clone: mutations start from a clean HEAD (F-0121/F-0122), so staged
+// state must be committed to be visible to them.
+func commitBackend(t *testing.T, repoDir string) {
+	t.Helper()
+	if _, err := gitback.CommitAndPush(repoDir, "test: stage state"); err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
+		t.Fatalf("commitBackend: %v", err)
 	}
 }
 
@@ -523,6 +534,7 @@ func TestReferenceDetailNotFound(t *testing.T) {
 func TestTransitionApprove(t *testing.T) {
 	repoDir, projDir, origin := newGitBackend(t)
 	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
 
 	var got map[string]string
 	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition",
@@ -888,6 +900,7 @@ func TestRenameTitleEndpoint(t *testing.T) {
 	if err := store.SaveFeature(repoDir, f); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
+	commitBackend(t, repoDir)
 	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-0001/title", `{"title":"Tentativa"}`, &e); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("terminal rename status = %d, want 422", rec.Code)
 	}

@@ -11,14 +11,17 @@ func TestAskJSONHistorical(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Parcelamento", 1)
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas mensais."))
+	commitBackend(t, repoDir)
 	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar parcelas."))
+	commitBackend(t, repoDir)
 	if _, err := execCerne(t, "feature", "start", id, "--dir", projDir); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Parcelas entregues conforme o plano."))
+	commitBackend(t, repoDir)
 	if _, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
 		t.Fatalf("complete: %v", err)
 	}

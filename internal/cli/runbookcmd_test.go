@@ -348,6 +348,7 @@ func TestRunbookMigrateYes(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t)
 	plantRunbookRef(t, repoDir, "R-0001", "Deploy", "docs/runbooks/deploy.md")
 	plantRunbookRef(t, repoDir, "R-0002", "Smoke", "docs/runbooks/smoke.md")
+	commitBackend(t, repoDir)
 
 	headBefore, err := gitback.HeadSHA(origin)
 	if err != nil {

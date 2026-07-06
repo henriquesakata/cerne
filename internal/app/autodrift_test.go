@@ -27,6 +27,7 @@ func autoDriftFixture(t *testing.T) (repoDir, projDir string) {
 	if err := os.WriteFile(docPath, []byte("# Motor\n\nUsa o parser antigo.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	commitBackend(t, repoDir)
 	return repoDir, projDir
 }
 
@@ -109,6 +110,7 @@ func TestPendingAndAck(t *testing.T) {
 	if err := os.WriteFile(doc2, []byte("# Outro\n\nCorpo.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	commitBackend(t, repoDir)
 	fake := &llm.Fake{Reply: "errata"}
 	for _, id := range []string{"F-0001", "F-0002"} {
 		if _, err := AutoDriftErrata(context.Background(), repoDir, projDir, id, "abc123", []string{"x.go"}, fake); err != nil {
