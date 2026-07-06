@@ -49,94 +49,101 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	if !ok {
 		return out, fmt.Errorf("ação desconhecida: %s", action)
 	}
-	f, err := store.LoadFeature(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return out, fmt.Errorf("feature %s não encontrada no backend", id)
-	}
-	if err != nil {
-		return out, err
-	}
-	if action == domain.ActionSupersede {
-		if by == id {
-			return out, fmt.Errorf("--by não pode ser a própria feature (%s)", id)
+	// State reads, gate checks and writes run inside the backend lock's critical
+	// section (F-0122): the FSM check is a compare-and-set against the state
+	// serialized by the lock, and no concurrent process can sweep the writes.
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		f, err := store.LoadFeature(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("feature %s não encontrada no backend", id)
 		}
-		if _, err := store.LoadFeature(repoDir, by); errors.Is(err, store.ErrNotFound) {
-			return out, fmt.Errorf("feature %s (--by) não encontrada no backend", by)
-		} else if err != nil {
-			return out, err
+		if err != nil {
+			return "", err
 		}
-	}
+		if action == domain.ActionSupersede {
+			if by == id {
+				return "", fmt.Errorf("--by não pode ser a própria feature (%s)", id)
+			}
+			if _, err := store.LoadFeature(repoDir, by); errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("feature %s (--by) não encontrada no backend", by)
+			} else if err != nil {
+				return "", err
+			}
+		}
 
-	newState, err := domain.Transition(f.State, action)
-	if err != nil {
-		return out, err
-	}
-	docs, err := FeatureDocSet(repoDir, id)
-	if err != nil {
-		return out, err
-	}
-	if err := domain.CheckGate(action, docs); err != nil {
-		return out, fmt.Errorf("%w — escreva content/features/%s/%s no backend e rode 'cerne push'", err, id, gateDocFilename(err))
-	}
+		newState, err := domain.Transition(f.State, action)
+		if err != nil {
+			return "", err
+		}
+		docs, err := FeatureDocSet(repoDir, id)
+		if err != nil {
+			return "", err
+		}
+		if err := domain.CheckGate(action, docs); err != nil {
+			return "", fmt.Errorf("%w — escreva content/features/%s/%s no backend e rode 'cerne push'", err, id, gateDocFilename(err))
+		}
 
-	oldState := f.State
-	f.State = newState
-	f.UpdatedAt = time.Now().UTC()
-	switch action {
-	case domain.ActionSupersede:
-		f.SupersededBy = by
-		f.Reason = reason
-	case domain.ActionReject:
-		f.Reason = reason
-	}
-	if err := store.SaveFeature(repoDir, f); err != nil {
-		return out, err
-	}
+		oldState := f.State
+		f.State = newState
+		f.UpdatedAt = time.Now().UTC()
+		switch action {
+		case domain.ActionSupersede:
+			f.SupersededBy = by
+			f.Reason = reason
+		case domain.ActionReject:
+			f.Reason = reason
+		}
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
 
-	var payload map[string]string
-	if by != "" || reason != "" {
-		payload = map[string]string{}
-		if by != "" {
-			payload["by"] = by
+		var payload map[string]string
+		if by != "" || reason != "" {
+			payload = map[string]string{}
+			if by != "" {
+				payload["by"] = by
+			}
+			if reason != "" {
+				payload["reason"] = reason
+			}
 		}
-		if reason != "" {
-			payload["reason"] = reason
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
+			return "", err
 		}
-	}
-	if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
-		return out, err
-	}
-	// Approving a candidate opens the plan phase: scaffold the plan stub from the
-	// canonical template so it is committed alongside the approval (mirrors the
-	// spec stub written at create time). No-op if a real plan already exists.
-	if action == domain.ActionApprove {
-		if err := writePlanStub(repoDir, id, f.Title); err != nil {
-			return out, err
+		// Approving a candidate opens the plan phase: scaffold the plan stub from the
+		// canonical template so it is committed alongside the approval (mirrors the
+		// spec stub written at create time). No-op if a real plan already exists.
+		if action == domain.ActionApprove {
+			if err := writePlanStub(repoDir, id, f.Title); err != nil {
+				return "", err
+			}
 		}
-	}
-	// Starting development opens the result phase: scaffold the result stub so it
-	// is committed alongside the transition (mirrors the plan stub at approve).
-	var propagated []string
-	if action == domain.ActionStart {
-		if err := writeResultStub(repoDir, id, f.Title); err != nil {
-			return out, err
+		// Starting development opens the result phase: scaffold the result stub so it
+		// is committed alongside the transition (mirrors the plan stub at approve).
+		var propagated []string
+		if action == domain.ActionStart {
+			if err := writeResultStub(repoDir, id, f.Title); err != nil {
+				return "", err
+			}
+			// A child entering development pulls its ancestor epics along: each one
+			// that is ready (approved, with a real plan) starts in the same commit,
+			// so the epic never lags its own decomposition. Bundled inside the same
+			// critical section — all or nothing, no mid-state commit.
+			if propagated, err = propagateStartToAncestors(repoDir, id); err != nil {
+				return "", err
+			}
 		}
-		// A child entering development pulls its ancestor epics along: each one
-		// that is ready (approved, with a real plan) starts in the same commit,
-		// so the epic never lags its own decomposition. Bundled before the
-		// single CommitAndSnapshot below — all or nothing, no mid-state commit.
-		if propagated, err = propagateStartToAncestors(repoDir, id); err != nil {
-			return out, err
+		msg := fmt.Sprintf("cerne: %s %s", action, id)
+		if len(propagated) > 0 {
+			msg += fmt.Sprintf(" (+ épico %s)", strings.Join(propagated, ", "))
 		}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated}
+		return msg, nil
+	})
+	if err != nil {
+		return TransitionOutcome{}, err
 	}
-	msg := fmt.Sprintf("cerne: %s %s", action, id)
-	if len(propagated) > 0 {
-		msg += fmt.Sprintf(" (+ épico %s)", strings.Join(propagated, ", "))
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, msg); err != nil {
-		return out, err
-	}
-	return TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated}, nil
+	return out, nil
 }
 
 // propagateStartToAncestors walks up the epic chain from a feature that just
@@ -145,9 +152,10 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 // start enforces). It never bypasses the gate: an approved epic without a plan
 // is left untouched (lint's epic-behind-children still flags it), and a parent
 // that is not approved (candidate/in_development/terminal) stops the walk with
-// no change. Mutations persist to the store but are committed by the caller's
-// CommitAndSnapshot, so the child start and every propagated epic land in one
-// commit. Returns the ancestors it started, nearest-first (empty when none).
+// no change. Mutations persist to the store and are committed by the caller's
+// critical section (MutateAndSnapshot), so the child start and every propagated
+// epic land in one commit. Returns the ancestors it started, nearest-first
+// (empty when none).
 // A visited set guards against a cyclic parent link so a corrupt graph cannot
 // loop forever.
 func propagateStartToAncestors(repoDir, childID string) ([]string, error) {

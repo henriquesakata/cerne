@@ -145,35 +145,40 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 // closed set before any write. Appends feature.retagged and syncs backend +
 // docs.lock.
 func RetagFeature(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Feature, error) {
-	f, err := store.LoadFeature(repoDir, id)
-	if err != nil {
-		return store.Feature{}, err
-	}
-	if f.State == domain.StateSuperseded || f.State == domain.StateRejected {
-		return store.Feature{}, fmt.Errorf("feature %s está encerrada (%s) — retag só vale para feature viva ou implementada", id, f.State)
-	}
-	if setFacets {
-		nf, err := domain.NormalizeFacets(facets)
+	var f store.Feature
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		f, err = store.LoadFeature(repoDir, id)
 		if err != nil {
-			return store.Feature{}, err // unknown facet: feature untouched
+			return "", err
 		}
-		f.Facets = nf
-	}
-	if setComponents {
-		f.Components = domain.NormalizeComponents(components)
-	}
-	f.UpdatedAt = time.Now().UTC()
-	if err := store.SaveFeature(repoDir, f); err != nil {
-		return store.Feature{}, err
-	}
-	ev := domain.NewEvent(id, "feature.retagged", map[string]string{
-		"facets":     strings.Join(f.Facets, ","),
-		"components": strings.Join(f.Components, ","),
-	}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Feature{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		if f.State == domain.StateSuperseded || f.State == domain.StateRejected {
+			return "", fmt.Errorf("feature %s está encerrada (%s) — retag só vale para feature viva ou implementada", id, f.State)
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: feature untouched
+			}
+			f.Facets = nf
+		}
+		if setComponents {
+			f.Components = domain.NormalizeComponents(components)
+		}
+		f.UpdatedAt = time.Now().UTC()
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "feature.retagged", map[string]string{
+			"facets":     strings.Join(f.Facets, ","),
+			"components": strings.Join(f.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retag %s", id), nil
+	})
+	if err != nil {
 		return store.Feature{}, err
 	}
 	return f, nil
@@ -250,33 +255,39 @@ func validateParent(repoDir, childID, parent string) error {
 // store.ErrNotFound (wrapped) for an unknown feature; the validateParent
 // sentinels for an invalid link.
 func SetFeatureParent(repoDir, projDir, id, parent string) error {
-	f, err := store.LoadFeature(repoDir, id)
-	if err != nil {
-		return err
-	}
-	if f.Parent == parent {
-		return nil // unchanged: nothing to commit
-	}
-	if parent != "" {
-		if err := validateParent(repoDir, id, parent); err != nil {
-			return err
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			return "", err
 		}
+		if f.Parent == parent {
+			return "", nil // unchanged: writes nothing, surfaces as ErrNothingToCommit
+		}
+		if parent != "" {
+			if err := validateParent(repoDir, id, parent); err != nil {
+				return "", err
+			}
+		}
+		from := f.Parent
+		f.Parent = parent
+		f.UpdatedAt = time.Now().UTC()
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "feature.reparented", map[string]string{"from": from, "to": parent}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		msg := fmt.Sprintf("cerne: reparent %s to %s", id, parent)
+		if parent == "" {
+			msg = fmt.Sprintf("cerne: clear parent of %s", id)
+		}
+		return msg, nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return nil // unchanged parent: a successful no-op
 	}
-	from := f.Parent
-	f.Parent = parent
-	f.UpdatedAt = time.Now().UTC()
-	if err := store.SaveFeature(repoDir, f); err != nil {
-		return err
-	}
-	ev := domain.NewEvent(id, "feature.reparented", map[string]string{"from": from, "to": parent}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return err
-	}
-	msg := fmt.Sprintf("cerne: reparent %s to %s", id, parent)
-	if parent == "" {
-		msg = fmt.Sprintf("cerne: clear parent of %s", id)
-	}
-	return CommitAndSnapshot(repoDir, projDir, msg)
+	return err
 }
 
 // RenameFeature changes a live feature's title, appends a feature.renamed event,
@@ -290,27 +301,33 @@ func RenameFeature(repoDir, projDir, id, newTitle string) error {
 	if newTitle == "" {
 		return fmt.Errorf("o título da feature não pode ser vazio")
 	}
-	f, err := store.LoadFeature(repoDir, id)
-	if err != nil {
-		return err
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			return "", err
+		}
+		if f.Title == newTitle {
+			return "", nil // unchanged: writes nothing, surfaces as ErrNothingToCommit
+		}
+		if !domain.TitleEditable(f.State) {
+			return "", fmt.Errorf("%w: %s (%s)", ErrTitleFrozen, id, f.State)
+		}
+		from := f.Title
+		f.Title = newTitle
+		f.UpdatedAt = time.Now().UTC()
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "feature.renamed", map[string]string{"from": from, "to": newTitle}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: rename %s", id), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return nil // unchanged title: a successful no-op
 	}
-	if f.Title == newTitle {
-		return nil // unchanged: nothing to commit
-	}
-	if !domain.TitleEditable(f.State) {
-		return fmt.Errorf("%w: %s (%s)", ErrTitleFrozen, id, f.State)
-	}
-	from := f.Title
-	f.Title = newTitle
-	f.UpdatedAt = time.Now().UTC()
-	if err := store.SaveFeature(repoDir, f); err != nil {
-		return err
-	}
-	ev := domain.NewEvent(id, "feature.renamed", map[string]string{"from": from, "to": newTitle}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return err
-	}
-	return CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: rename %s", id))
+	return err
 }
 
 // SaveFeatureDoc writes the markdown content of a feature lifecycle document
@@ -323,17 +340,19 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
 	}
-	if _, err := store.LoadFeature(repoDir, id); err != nil {
-		return err
-	}
-	path := FeatureDocPath(repoDir, id, filename)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return err
-	}
-	err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: update %s/%s", id, filename))
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		if _, err := store.LoadFeature(repoDir, id); err != nil {
+			return "", err
+		}
+		path := FeatureDocPath(repoDir, id, filename)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: update %s/%s", id, filename), nil
+	})
 	if errors.Is(err, gitback.ErrNothingToCommit) {
 		return nil // backend already had exactly this content
 	}

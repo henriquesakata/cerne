@@ -328,6 +328,7 @@ func TestRenameFeatureTerminalFrozen(t *testing.T) {
 			if err := store.SaveFeature(repoDir, f); err != nil {
 				t.Fatalf("SaveFeature: %v", err)
 			}
+			commitBackend(t, repoDir)
 			if err := RenameFeature(repoDir, projDir, f.ID, "Tentativa"); !errors.Is(err, ErrTitleFrozen) {
 				t.Fatalf("err = %v, want ErrTitleFrozen", err)
 			}
