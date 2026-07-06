@@ -6,6 +6,7 @@ export type FeatureState =
   | 'approved'
   | 'in_development'
   | 'implemented'
+  | 'done'
   | 'rejected'
   | 'superseded'
 
@@ -13,6 +14,7 @@ export type TransitionAction =
   | 'approve'
   | 'start'
   | 'complete'
+  | 'accept'
   | 'reject'
   | 'supersede'
 

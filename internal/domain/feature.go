@@ -15,14 +15,19 @@ const (
 	StateApproved      FeatureState = "approved"
 	StateInDevelopment FeatureState = "in_development"
 	StateImplemented   FeatureState = "implemented"
-	StateRejected      FeatureState = "rejected"
-	StateSuperseded    FeatureState = "superseded"
+	// StateDone is the post-implementation human acceptance (F-0131): the UI
+	// shows implemented as "Ready" (awaiting validation) and done as "Done".
+	StateDone       FeatureState = "done"
+	StateRejected   FeatureState = "rejected"
+	StateSuperseded FeatureState = "superseded"
 )
 
 const (
 	ActionApprove   Action = "approve"
 	ActionStart     Action = "start"
 	ActionComplete  Action = "complete"
+	// ActionAccept is the human validation gate (F-0131): implemented → done.
+	ActionAccept    Action = "accept"
 	ActionReject    Action = "reject"
 	ActionSupersede Action = "supersede"
 )
@@ -48,19 +53,21 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 		ActionSupersede: StateSuperseded,
 	},
 	StateImplemented: {
+		ActionAccept:    StateDone,
 		ActionSupersede: StateSuperseded,
 	},
 	// Terminal states: explicitly present with no actions, so they report
 	// ErrInvalidTransition rather than ErrUnknownState.
+	StateDone:       {},
 	StateRejected:   {},
 	StateSuperseded: {},
 }
 
 // TitleEditable reports whether a feature's title may still be changed: true for
 // the live states (candidate/approved/in_development), false for the terminal
-// ones (implemented/rejected/superseded), whose records are frozen history.
+// ones (implemented/done/rejected/superseded), whose records are frozen history.
 func TitleEditable(s FeatureState) bool {
-	return s != StateImplemented && s != StateRejected && s != StateSuperseded
+	return s != StateImplemented && s != StateDone && s != StateRejected && s != StateSuperseded
 }
 
 // Transition returns the state reached by applying action to from.
