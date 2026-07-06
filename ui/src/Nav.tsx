@@ -1,4 +1,5 @@
 import { useProjects } from './live'
+import { useTheme } from './theme'
 
 // Barra de navegação persistente: o shell que torna as páginas alcançáveis.
 const LINKS: { href: string; label: string }[] = [
@@ -50,7 +51,25 @@ export default function Nav({ hash }: { hash: string }) {
         ))}
       </div>
       <ProjectSelector />
+      <ThemeToggle />
     </nav>
+  )
+}
+
+// Alterna claro/escuro; a escolha persiste em localStorage (F-0126).
+function ThemeToggle() {
+  const [theme, setTheme] = useTheme()
+  const dark = theme === 'dark'
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      title={dark ? 'Tema claro' : 'Tema escuro'}
+      aria-label={dark ? 'Tema claro' : 'Tema escuro'}
+      onClick={() => setTheme(dark ? 'light' : 'dark')}
+    >
+      {dark ? '☀' : '🌙'}
+    </button>
   )
 }
 

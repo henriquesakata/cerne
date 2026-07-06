@@ -10,6 +10,7 @@ import type {
 } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
 import { fetchArtifactJSON, putArtifact } from './api'
+import { getTheme } from './theme'
 
 // Este módulo é carregado via React.lazy em FeaturePage: o bundle do
 // Excalidraw (pesado) só é baixado quando um diagrama é aberto.
@@ -111,6 +112,7 @@ export default function DiagramPanel({
           <Excalidraw
             initialData={scene}
             langCode="pt-BR"
+            theme={getTheme()}
             excalidrawAPI={(api) => {
               apiRef.current = api
               // Cena convertida (Mermaid→Excalidraw) começa "alterada" para

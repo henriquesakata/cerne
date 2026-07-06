@@ -36,7 +36,13 @@ export default function MermaidView({
         source = await fetchArtifactText(featureId, name)
         // Import dinâmico: o mermaid fica num chunk lazy, fora do bundle de entrada.
         const mermaid = (await import('mermaid')).default
-        mermaid.initialize({ startOnLoad: false })
+        mermaid.initialize({
+          startOnLoad: false,
+          theme:
+            document.documentElement.dataset.theme === 'dark'
+              ? 'dark'
+              : 'default',
+        })
         const { svg } = await mermaid.render(renderId.current, source)
         if (!cancelled) setView({ kind: 'ok', svg, source })
       } catch (e: unknown) {
