@@ -27,29 +27,35 @@ type RunbookOutcome struct {
 // the docs.lock snapshot in projDir. A non-empty body makes 'runbook new'
 // one-shot: the runbook is born with real content, no draft+push needed.
 func CreateRunbook(repoDir, projDir, title, body string) (store.Runbook, error) {
-	id, err := store.NextID(repoDir, "RB")
+	// Id mint and writes run inside the backend lock's critical section
+	// (F-0122): concurrent creations serialize instead of minting the same id.
+	var rb store.Runbook
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		id, err := store.NextID(repoDir, "RB")
+		if err != nil {
+			return "", err
+		}
+		now := time.Now().UTC()
+		rb = store.Runbook{
+			ID:        id,
+			Title:     title,
+			State:     domain.RunbookActive,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := store.SaveRunbook(repoDir, rb); err != nil {
+			return "", err
+		}
+		if err := writeRunbookBody(repoDir, id, title, body); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "runbook.created", map[string]string{"title": title}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
+	})
 	if err != nil {
-		return store.Runbook{}, err
-	}
-	now := time.Now().UTC()
-	rb := store.Runbook{
-		ID:        id,
-		Title:     title,
-		State:     domain.RunbookActive,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := store.SaveRunbook(repoDir, rb); err != nil {
-		return store.Runbook{}, err
-	}
-	if err := writeRunbookBody(repoDir, id, title, body); err != nil {
-		return store.Runbook{}, err
-	}
-	ev := domain.NewEvent(id, "runbook.created", map[string]string{"title": title}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Runbook{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: create %s (%s)", id, title)); err != nil {
 		return store.Runbook{}, err
 	}
 	return rb, nil
@@ -69,44 +75,48 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 	if strings.TrimSpace(reason) == "" {
 		return out, fmt.Errorf("--reason é obrigatório")
 	}
-	rb, err := store.LoadRunbook(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return out, fmt.Errorf("runbook %s não encontrado no backend", id)
-	}
-	if err != nil {
-		return out, err
-	}
-	if by != "" {
-		if by == id {
-			return out, fmt.Errorf("--by não pode ser o próprio runbook (%s)", id)
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		rb, err := store.LoadRunbook(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("runbook %s não encontrado no backend", id)
 		}
-		if _, err := store.LoadRunbook(repoDir, by); errors.Is(err, store.ErrNotFound) {
-			return out, fmt.Errorf("runbook %s (--by) não encontrado no backend", by)
-		} else if err != nil {
-			return out, err
+		if err != nil {
+			return "", err
 		}
-	}
+		if by != "" {
+			if by == id {
+				return "", fmt.Errorf("--by não pode ser o próprio runbook (%s)", id)
+			}
+			if _, err := store.LoadRunbook(repoDir, by); errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("runbook %s (--by) não encontrado no backend", by)
+			} else if err != nil {
+				return "", err
+			}
+		}
 
-	newState, err := domain.TransitionRunbook(rb.State, domain.ActionSupersede)
+		newState, err := domain.TransitionRunbook(rb.State, domain.ActionSupersede)
+		if err != nil {
+			return "", err
+		}
+		oldState := rb.State
+		rb.State = newState
+		rb.SupersededBy = by
+		rb.Reason = reason
+		rb.UpdatedAt = time.Now().UTC()
+		if err := store.SaveRunbook(repoDir, rb); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "runbook.superseded", map[string]string{"by": by, "reason": reason}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		out = RunbookOutcome{ID: id, From: oldState, To: newState}
+		return fmt.Sprintf("cerne: supersede %s", id), nil
+	})
 	if err != nil {
-		return out, err
+		return RunbookOutcome{}, err
 	}
-	oldState := rb.State
-	rb.State = newState
-	rb.SupersededBy = by
-	rb.Reason = reason
-	rb.UpdatedAt = time.Now().UTC()
-	if err := store.SaveRunbook(repoDir, rb); err != nil {
-		return out, err
-	}
-	ev := domain.NewEvent(id, "runbook.superseded", map[string]string{"by": by, "reason": reason}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return out, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: supersede %s", id)); err != nil {
-		return out, err
-	}
-	return RunbookOutcome{ID: id, From: oldState, To: newState}, nil
+	return out, nil
 }
 
 // RetagRunbook sets the tag axes of an active runbook in the backend clone at
@@ -117,38 +127,43 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 // unknown facet aborts leaving the runbook untouched. Appends runbook.retagged and
 // syncs the backend + docs.lock in projDir.
 func RetagRunbook(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Runbook, error) {
-	rb, err := store.LoadRunbook(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Runbook{}, fmt.Errorf("runbook %s não encontrado no backend", id)
-	}
-	if err != nil {
-		return store.Runbook{}, err
-	}
-	if rb.State != domain.RunbookActive {
-		return store.Runbook{}, fmt.Errorf("runbook %s não está ativo (está %s) — retag só vale para runbook ativo", id, rb.State)
-	}
-	if setFacets {
-		nf, err := domain.NormalizeFacets(facets)
-		if err != nil {
-			return store.Runbook{}, err // unknown facet: runbook untouched
+	var rb store.Runbook
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		rb, err = store.LoadRunbook(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("runbook %s não encontrado no backend", id)
 		}
-		rb.Facets = nf
-	}
-	if setComponents {
-		rb.Components = domain.NormalizeComponents(components)
-	}
-	rb.UpdatedAt = time.Now().UTC()
-	if err := store.SaveRunbook(repoDir, rb); err != nil {
-		return store.Runbook{}, err
-	}
-	ev := domain.NewEvent(id, "runbook.retagged", map[string]string{
-		"facets":     strings.Join(rb.Facets, ","),
-		"components": strings.Join(rb.Components, ","),
-	}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Runbook{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		if err != nil {
+			return "", err
+		}
+		if rb.State != domain.RunbookActive {
+			return "", fmt.Errorf("runbook %s não está ativo (está %s) — retag só vale para runbook ativo", id, rb.State)
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: runbook untouched
+			}
+			rb.Facets = nf
+		}
+		if setComponents {
+			rb.Components = domain.NormalizeComponents(components)
+		}
+		rb.UpdatedAt = time.Now().UTC()
+		if err := store.SaveRunbook(repoDir, rb); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "runbook.retagged", map[string]string{
+			"facets":     strings.Join(rb.Facets, ","),
+			"components": strings.Join(rb.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retag %s", id), nil
+	})
+	if err != nil {
 		return store.Runbook{}, err
 	}
 	return rb, nil

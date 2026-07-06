@@ -32,10 +32,6 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	if url == "" {
 		return store.Reference{}, fmt.Errorf("url não pode ser vazia (referência externa)")
 	}
-	cleaned, err := validateInforms(repoDir, informs)
-	if err != nil {
-		return store.Reference{}, err
-	}
 	// Normalize tags before allocating an id, so an unknown facet aborts the
 	// whole create without consuming an R- id or writing anything (mirrors notes).
 	normFacets, err := domain.NormalizeFacets(facets)
@@ -43,34 +39,44 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		return store.Reference{}, err
 	}
 	normComponents := domain.NormalizeComponents(components)
-	id, err := store.NextID(repoDir, "R")
+	// Reads, id mint and writes run inside the backend lock's critical section
+	// (F-0122): concurrent creations serialize instead of minting the same id.
+	var r store.Reference
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		cleaned, err := validateInforms(repoDir, informs)
+		if err != nil {
+			return "", err
+		}
+		id, err := store.NextID(repoDir, "R")
+		if err != nil {
+			return "", err
+		}
+		now := time.Now().UTC()
+		r = store.Reference{
+			ID:         id,
+			Title:      title,
+			State:      domain.ReferenceCurrent,
+			URL:        url,
+			External:   true,
+			Informs:    cleaned,
+			Facets:     normFacets,
+			Components: normComponents,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", err
+		}
+		if err := writeReferenceDoc(repoDir, id, title, content); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "reference.created", map[string]string{"url": url, "source": "external"}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
+	})
 	if err != nil {
-		return store.Reference{}, err
-	}
-	now := time.Now().UTC()
-	r := store.Reference{
-		ID:         id,
-		Title:      title,
-		State:      domain.ReferenceCurrent,
-		URL:        url,
-		External:   true,
-		Informs:    cleaned,
-		Facets:     normFacets,
-		Components: normComponents,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := store.SaveReference(repoDir, r); err != nil {
-		return store.Reference{}, err
-	}
-	if err := writeReferenceDoc(repoDir, id, title, content); err != nil {
-		return store.Reference{}, err
-	}
-	ev := domain.NewEvent(id, "reference.created", map[string]string{"url": url, "source": "external"}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Reference{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: create %s (%s)", id, title)); err != nil {
 		return store.Reference{}, err
 	}
 	return r, nil
@@ -84,38 +90,43 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 // so an unknown facet aborts leaving the reference untouched. Appends
 // reference.retagged and syncs the backend + docs.lock in projDir.
 func RetagReference(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Reference, error) {
-	r, err := store.LoadReference(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Reference{}, fmt.Errorf("referência %s não encontrada no backend", id)
-	}
-	if err != nil {
-		return store.Reference{}, err
-	}
-	if r.State != domain.ReferenceCurrent {
-		return store.Reference{}, fmt.Errorf("referência %s não está current (está %s) — retag só vale para referência current", id, r.State)
-	}
-	if setFacets {
-		nf, err := domain.NormalizeFacets(facets)
-		if err != nil {
-			return store.Reference{}, err // unknown facet: reference untouched
+	var r store.Reference
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		r, err = store.LoadReference(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("referência %s não encontrada no backend", id)
 		}
-		r.Facets = nf
-	}
-	if setComponents {
-		r.Components = domain.NormalizeComponents(components)
-	}
-	r.UpdatedAt = time.Now().UTC()
-	if err := store.SaveReference(repoDir, r); err != nil {
-		return store.Reference{}, err
-	}
-	ev := domain.NewEvent(id, "reference.retagged", map[string]string{
-		"facets":     strings.Join(r.Facets, ","),
-		"components": strings.Join(r.Components, ","),
-	}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Reference{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		if err != nil {
+			return "", err
+		}
+		if r.State != domain.ReferenceCurrent {
+			return "", fmt.Errorf("referência %s não está current (está %s) — retag só vale para referência current", id, r.State)
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: reference untouched
+			}
+			r.Facets = nf
+		}
+		if setComponents {
+			r.Components = domain.NormalizeComponents(components)
+		}
+		r.UpdatedAt = time.Now().UTC()
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "reference.retagged", map[string]string{
+			"facets":     strings.Join(r.Facets, ","),
+			"components": strings.Join(r.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retag %s", id), nil
+	})
+	if err != nil {
 		return store.Reference{}, err
 	}
 	return r, nil

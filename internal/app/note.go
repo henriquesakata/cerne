@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -30,10 +31,6 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 	if title == "" {
 		return store.Note{}, fmt.Errorf("o título da nota não pode ser vazio")
 	}
-	cleaned, err := validateInforms(repoDir, informs)
-	if err != nil {
-		return store.Note{}, err
-	}
 	// Validate/normalize tags before any side effect (NextID, save): an unknown
 	// facet must abort without minting an id or writing a file.
 	normFacets, err := domain.NormalizeFacets(facets)
@@ -41,32 +38,42 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 		return store.Note{}, err
 	}
 	normComponents := domain.NormalizeComponents(components)
-	id, err := store.NextID(repoDir, "N")
+	// Reads, id mint and writes run inside the backend lock's critical section
+	// (F-0122): concurrent creations serialize instead of minting the same id.
+	var n store.Note
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		cleaned, err := validateInforms(repoDir, informs)
+		if err != nil {
+			return "", err
+		}
+		id, err := store.NextID(repoDir, "N")
+		if err != nil {
+			return "", err
+		}
+		now := time.Now().UTC()
+		n = store.Note{
+			ID:         id,
+			Title:      title,
+			State:      domain.NoteActive,
+			Informs:    cleaned,
+			Facets:     normFacets,
+			Components: normComponents,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		if err := writeNoteBody(repoDir, id, title, body); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "note.created", map[string]string{"title": title}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
+	})
 	if err != nil {
-		return store.Note{}, err
-	}
-	now := time.Now().UTC()
-	n := store.Note{
-		ID:         id,
-		Title:      title,
-		State:      domain.NoteActive,
-		Informs:    cleaned,
-		Facets:     normFacets,
-		Components: normComponents,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := store.SaveNote(repoDir, n); err != nil {
-		return store.Note{}, err
-	}
-	if err := writeNoteBody(repoDir, id, title, body); err != nil {
-		return store.Note{}, err
-	}
-	ev := domain.NewEvent(id, "note.created", map[string]string{"title": title}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Note{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: create %s (%s)", id, title)); err != nil {
 		return store.Note{}, err
 	}
 	return n, nil
@@ -84,44 +91,48 @@ func TransitionNote(repoDir, projDir, id, by, reason string) (NoteOutcome, error
 	if strings.TrimSpace(reason) == "" {
 		return out, fmt.Errorf("--reason é obrigatório")
 	}
-	n, err := store.LoadNote(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return out, fmt.Errorf("nota %s não encontrada no backend", id)
-	}
-	if err != nil {
-		return out, err
-	}
-	if by != "" {
-		if by == id {
-			return out, fmt.Errorf("--by não pode ser a própria nota (%s)", id)
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		n, err := store.LoadNote(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("nota %s não encontrada no backend", id)
 		}
-		if _, err := store.LoadNote(repoDir, by); errors.Is(err, store.ErrNotFound) {
-			return out, fmt.Errorf("nota %s (--by) não encontrada no backend", by)
-		} else if err != nil {
-			return out, err
+		if err != nil {
+			return "", err
 		}
-	}
+		if by != "" {
+			if by == id {
+				return "", fmt.Errorf("--by não pode ser a própria nota (%s)", id)
+			}
+			if _, err := store.LoadNote(repoDir, by); errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("nota %s (--by) não encontrada no backend", by)
+			} else if err != nil {
+				return "", err
+			}
+		}
 
-	newState, err := domain.TransitionNote(n.State, domain.ActionSupersede)
+		newState, err := domain.TransitionNote(n.State, domain.ActionSupersede)
+		if err != nil {
+			return "", err
+		}
+		oldState := n.State
+		n.State = newState
+		n.SupersededBy = by
+		n.Reason = reason
+		n.UpdatedAt = time.Now().UTC()
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "note.superseded", map[string]string{"by": by, "reason": reason}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		out = NoteOutcome{ID: id, From: oldState, To: newState}
+		return fmt.Sprintf("cerne: supersede %s", id), nil
+	})
 	if err != nil {
-		return out, err
+		return NoteOutcome{}, err
 	}
-	oldState := n.State
-	n.State = newState
-	n.SupersededBy = by
-	n.Reason = reason
-	n.UpdatedAt = time.Now().UTC()
-	if err := store.SaveNote(repoDir, n); err != nil {
-		return out, err
-	}
-	ev := domain.NewEvent(id, "note.superseded", map[string]string{"by": by, "reason": reason}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return out, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: supersede %s", id)); err != nil {
-		return out, err
-	}
-	return NoteOutcome{ID: id, From: oldState, To: newState}, nil
+	return out, nil
 }
 
 // KeepNote marks note id as durable in the backend clone at repoDir: the note
@@ -131,29 +142,37 @@ func TransitionNote(repoDir, projDir, id, by, reason string) (NoteOutcome, error
 // commit when already durable), appends the note.kept event and syncs the backend
 // + docs.lock in projDir.
 func KeepNote(repoDir, projDir, id string) (store.Note, error) {
-	n, err := store.LoadNote(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Note{}, fmt.Errorf("nota %s não encontrada no backend", id)
+	var n store.Note
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		n, err = store.LoadNote(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("nota %s não encontrada no backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if n.State != domain.NoteActive {
+			return "", fmt.Errorf("nota %s não está active (está %s) — keep só vale para nota ativa", id, n.State)
+		}
+		if n.Durable {
+			return "", nil // idempotent: writes nothing, surfaces as ErrNothingToCommit
+		}
+		n.Durable = true
+		n.UpdatedAt = time.Now().UTC()
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "note.kept", map[string]string{}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: keep %s (durable)", id), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return n, nil // already durable: a successful no-op
 	}
 	if err != nil {
-		return store.Note{}, err
-	}
-	if n.State != domain.NoteActive {
-		return store.Note{}, fmt.Errorf("nota %s não está active (está %s) — keep só vale para nota ativa", id, n.State)
-	}
-	if n.Durable {
-		return n, nil // idempotent: already durable, nothing to commit
-	}
-	n.Durable = true
-	n.UpdatedAt = time.Now().UTC()
-	if err := store.SaveNote(repoDir, n); err != nil {
-		return store.Note{}, err
-	}
-	ev := domain.NewEvent(id, "note.kept", map[string]string{}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Note{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: keep %s (durable)", id)); err != nil {
 		return store.Note{}, err
 	}
 	return n, nil
@@ -167,38 +186,43 @@ func KeepNote(repoDir, projDir, id string) (store.Note, error) {
 // leaving the note untouched. Appends note.retagged and syncs the backend +
 // docs.lock in projDir.
 func RetagNote(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Note, error) {
-	n, err := store.LoadNote(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Note{}, fmt.Errorf("nota %s não encontrada no backend", id)
-	}
-	if err != nil {
-		return store.Note{}, err
-	}
-	if n.State != domain.NoteActive {
-		return store.Note{}, fmt.Errorf("nota %s não está active (está %s) — retag só vale para nota ativa", id, n.State)
-	}
-	if setFacets {
-		nf, err := domain.NormalizeFacets(facets)
-		if err != nil {
-			return store.Note{}, err // unknown facet: note untouched
+	var n store.Note
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		n, err = store.LoadNote(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("nota %s não encontrada no backend", id)
 		}
-		n.Facets = nf
-	}
-	if setComponents {
-		n.Components = domain.NormalizeComponents(components)
-	}
-	n.UpdatedAt = time.Now().UTC()
-	if err := store.SaveNote(repoDir, n); err != nil {
-		return store.Note{}, err
-	}
-	ev := domain.NewEvent(id, "note.retagged", map[string]string{
-		"facets":     strings.Join(n.Facets, ","),
-		"components": strings.Join(n.Components, ","),
-	}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Note{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		if err != nil {
+			return "", err
+		}
+		if n.State != domain.NoteActive {
+			return "", fmt.Errorf("nota %s não está active (está %s) — retag só vale para nota ativa", id, n.State)
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: note untouched
+			}
+			n.Facets = nf
+		}
+		if setComponents {
+			n.Components = domain.NormalizeComponents(components)
+		}
+		n.UpdatedAt = time.Now().UTC()
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "note.retagged", map[string]string{
+			"facets":     strings.Join(n.Facets, ","),
+			"components": strings.Join(n.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retag %s", id), nil
+	})
+	if err != nil {
 		return store.Note{}, err
 	}
 	return n, nil
