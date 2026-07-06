@@ -32,6 +32,10 @@ var contextGroupOrder = []domain.FeatureState{
 	domain.StateApproved,
 	domain.StateCandidate,
 	domain.StateImplemented,
+	// StateDone (F-0131) lists alongside implemented, terminal but still
+	// worth surfacing in the roster ("Ready"/"Done" are both post-code
+	// states); its content is not materialized (see materializedStates).
+	domain.StateDone,
 }
 
 // materializedStates are the feature states whose content documents are

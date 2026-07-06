@@ -46,6 +46,7 @@ const (
 	RuleEpicOpenChildren   = "epic-open-children"
 	RuleEpicBehindChildren = "epic-behind-children"
 	RuleStaleCandidate     = "stale-candidate"
+	RuleStaleReady         = "stale-ready"
 	RuleStaleNote          = "stale-note"
 	RuleIncompleteDoc      = "incomplete-doc"
 	RuleUntaggedLive       = "untagged-live"
@@ -54,7 +55,7 @@ const (
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -67,11 +68,12 @@ var ruleRank = map[string]int{
 	RuleEpicOpenChildren:   7,
 	RuleEpicBehindChildren: 8,
 	RuleStaleCandidate:     9,
-	RuleStaleNote:          10,
-	RuleIncompleteDoc:      11,
-	RuleUntaggedLive:       12,
-	RuleUnregisteredSource: 13,
-	RuleDriftSuspect:       14,
+	RuleStaleReady:         10,
+	RuleStaleNote:          11,
+	RuleIncompleteDoc:      12,
+	RuleUntaggedLive:       13,
+	RuleUnregisteredSource: 14,
+	RuleDriftSuspect:       15,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -125,8 +127,20 @@ type scannedDoc struct {
 
 // Run lints the backend at repoDir and returns the findings in
 // deterministic order: by Rule (RuleOrder), then File, then Detail
-// (Entity as final tie-breaker).
+// (Entity as final tie-breaker). staleReadyDays is the project's
+// stale_ready_days window (F-0131); 0 falls back to the 14-day default
+// (mirroring project.Config.StaleReadyWindowDays, which the caller already
+// applies) — pass staleReadyDays via RunConfig for callers that need a
+// non-default window, or use Run for the common case with the default.
 func Run(repoDir string, ignore ...string) ([]Finding, error) {
+	return RunConfig(repoDir, 0, ignore...)
+}
+
+// RunConfig is Run with an explicit staleReadyDays window (0 = default 14
+// days). Kept separate from Run so every existing call site (CLI, server)
+// keeps compiling unchanged; callers that read stale_ready_days from
+// .cernerc pass it here instead.
+func RunConfig(repoDir string, staleReadyDays int, ignore ...string) ([]Finding, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return nil, err
@@ -207,6 +221,8 @@ func Run(repoDir string, ignore ...string) ([]Finding, error) {
 	findings = append(findings, stale...)
 
 	findings = append(findings, staleNoteFindings(features, decisions, notes)...)
+
+	findings = append(findings, staleReadyFindings(features, staleReadyDays, time.Now())...)
 
 	incomplete, err := incompleteDocFindings(repoDir, features, decisions, runbooks)
 	if err != nil {
@@ -331,12 +347,14 @@ func missingSections(data []byte, sections []string) []string {
 //   - parent-not-found: a feature points at a parent that does not exist.
 //   - parent-terminal: a live feature sits under an epic that is terminal
 //     (superseded/rejected) — the children were orphaned.
-//   - epic-open-children: an implemented feature still has open (non-terminal)
-//     children — the epic was marked done but its decomposition is not.
+//   - epic-open-children: an implemented or done feature still has open
+//     (non-terminal) children — the epic was marked done but its decomposition
+//     is not. done counts the same as implemented (F-0131): it is the
+//     human-accepted successor, strictly further along, never less concluded.
 //   - epic-behind-children: a not-yet-started epic (candidate/approved) already
-//     has a child in development or beyond — work began but the epic was never
-//     planned/started. The forward mirror of epic-open-children; the two are
-//     disjoint by epic state.
+//     has a child in development or beyond (implemented or done) — work began
+//     but the epic was never planned/started. The forward mirror of
+//     epic-open-children; the two are disjoint by epic state.
 func parentFindings(features []store.Feature) []Finding {
 	byID := make(map[string]store.Feature, len(features))
 	for _, f := range features {
@@ -378,7 +396,7 @@ func parentFindings(features []store.Feature) []Finding {
 			continue
 		}
 		switch epic.State {
-		case domain.StateImplemented:
+		case domain.StateImplemented, domain.StateDone:
 			open := 0
 			for _, c := range children {
 				if isLive(c.State) {
@@ -389,13 +407,13 @@ func parentFindings(features []store.Feature) []Finding {
 				findings = append(findings, Finding{
 					Rule:   RuleEpicOpenChildren,
 					Entity: epicID,
-					Detail: fmt.Sprintf("o épico %s está implementado, mas tem %d filho(s) ainda em aberto", epicID, open),
+					Detail: fmt.Sprintf("o épico %s está %s, mas tem %d filho(s) ainda em aberto", epicID, epic.State, open),
 				})
 			}
 		case domain.StateCandidate, domain.StateApproved:
 			started := 0
 			for _, c := range children {
-				if c.State == domain.StateInDevelopment || c.State == domain.StateImplemented {
+				if c.State == domain.StateInDevelopment || c.State == domain.StateImplemented || c.State == domain.StateDone {
 					started++
 				}
 			}
@@ -1090,6 +1108,41 @@ func staleCandidateFindings(repoDir string, features []store.Feature, now time.T
 	return findings, nil
 }
 
+// defaultStaleReadyDays mirrors project.Config.StaleReadyWindowDays' 14-day
+// fallback (an unconfigured stale_ready_days). Kept local to lint so this
+// package does not import project just for one constant.
+const defaultStaleReadyDays = 14
+
+// staleReadyFindings flags a feature parked in implemented ("Ready") past the
+// project's stale_ready_days window (F-0131 crit. 6) with no human accept yet
+// — the board differentiates "code done" from "a human validated it", and a
+// Ready card that lingers is exactly the debt this advisory rule surfaces.
+// done is excluded: it already crossed the human gate, so it is never
+// "waiting" for one. windowDays<=0 falls back to the 14-day default; now is
+// injected so the rule is deterministic under test (Run passes time.Now()).
+func staleReadyFindings(features []store.Feature, windowDays int, now time.Time) []Finding {
+	if windowDays <= 0 {
+		windowDays = defaultStaleReadyDays
+	}
+	threshold := time.Duration(windowDays) * 24 * time.Hour
+	var findings []Finding
+	for _, f := range features {
+		if f.State != domain.StateImplemented {
+			continue
+		}
+		age := now.Sub(f.UpdatedAt)
+		if age < threshold {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleStaleReady,
+			Entity: f.ID,
+			Detail: fmt.Sprintf("implementada (Ready) há %d dias sem aceite — rode 'cerne feature accept %s' para validar", int(age.Hours()/24), f.ID),
+		})
+	}
+	return findings
+}
+
 // staleNoteFindings flags an active note whose --informs targets are ALL
 // terminal — every informed feature is implemented/rejected/superseded and every
 // informed decision is superseded — so the work the note documented is settled.
@@ -1215,9 +1268,9 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 
 // gateFindings enforces the entity-state document invariants: approved and
 // later states require a real spec.md, in_development and later a real
-// plan.md, implemented a real result.md. "Real" reuses the gate stub check
-// (doccheck.HasRealContent), so a missing file and an untouched stub are
-// reported the same way.
+// plan.md, implemented (and done, its accepted successor — F-0131) a real
+// result.md. "Real" reuses the gate stub check (doccheck.HasRealContent), so
+// a missing file and an untouched stub are reported the same way.
 func gateFindings(repoDir string, features []store.Feature) ([]Finding, error) {
 	var findings []Finding
 	for _, f := range features {
@@ -1227,7 +1280,7 @@ func gateFindings(repoDir string, features []store.Feature) ([]Finding, error) {
 			required = []string{"spec.md"}
 		case domain.StateInDevelopment:
 			required = []string{"spec.md", "plan.md"}
-		case domain.StateImplemented:
+		case domain.StateImplemented, domain.StateDone:
 			required = []string{"spec.md", "plan.md", "result.md"}
 		default:
 			continue

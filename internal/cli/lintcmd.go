@@ -30,14 +30,14 @@ func newLintCmd() *cobra.Command {
 }
 
 func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
-	repoDir, ignore, cleanup, driftCtx, err := lintRoot(dir, staged)
+	repoDir, ignore, staleReadyDays, cleanup, driftCtx, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
 	}
 	if cleanup != nil {
 		defer cleanup()
 	}
-	findings, err := lint.Run(repoDir, ignore...)
+	findings, err := lint.RunConfig(repoDir, staleReadyDays, ignore...)
 	if err != nil {
 		return err
 	}
@@ -74,20 +74,20 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
 // The returned driftCtx is non-nil only in the default mode: it carries the
 // resolved project so runLint can compute drift-suspect findings (F-0113). In
 // staged mode it is nil — staged validates local .docs/ edits, not a code diff.
-func lintRoot(dir string, staged bool) (repoDir string, ignore []string, cleanup func(), driftCtx *projCtx, err error) {
+func lintRoot(dir string, staged bool) (repoDir string, ignore []string, staleReadyDays int, cleanup func(), driftCtx *projCtx, err error) {
 	if staged {
 		ctx, err := resolvePaths(dir)
 		if err != nil {
-			return "", nil, nil, nil, err
+			return "", nil, 0, nil, nil, err
 		}
 		root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
-		return root, ctx.cfg.UnregisteredSourceIgnore, cleanup, nil, err
+		return root, ctx.cfg.UnregisteredSourceIgnore, ctx.cfg.StaleReadyWindowDays(), cleanup, nil, err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
-		return "", nil, nil, nil, err
+		return "", nil, 0, nil, nil, err
 	}
-	return ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore, nil, &ctx, nil
+	return ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore, ctx.cfg.StaleReadyWindowDays(), nil, &ctx, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.
@@ -157,6 +157,8 @@ func taskAction(f lint.Finding) string {
 		return "escrever o plano do épico e iniciá-lo (cerne feature start)"
 	case lint.RuleStaleCandidate:
 		return "rejeitar a candidata (cerne feature reject) ou escrever a spec e aprovar"
+	case lint.RuleStaleReady:
+		return "validar e aceitar (cerne feature accept) ou investigar por que ficou parada"
 	case lint.RuleStaleNote:
 		return "aposentar (cerne note retire) ou marcar durável (cerne note keep)"
 	}

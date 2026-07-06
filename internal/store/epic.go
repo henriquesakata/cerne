@@ -23,12 +23,13 @@ func ChildrenByParent(features []Feature) map[string][]Feature {
 	return byParent
 }
 
-// EpicProgress counts how many of children reached the implemented state (done)
-// out of the total — the rollup shown for an epic in status, CONTEXT.md and the
-// UI.
+// EpicProgress counts how many of children reached implemented or done
+// (F-0131: done is the human-accepted successor of implemented, so it counts
+// as concluded too) out of the total — the rollup shown for an epic in
+// status, CONTEXT.md and the UI.
 func EpicProgress(children []Feature) (done, total int) {
 	for _, c := range children {
-		if c.State == domain.StateImplemented {
+		if c.State == domain.StateImplemented || c.State == domain.StateDone {
 			done++
 		}
 	}

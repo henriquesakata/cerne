@@ -234,6 +234,57 @@ func TestEpicBehindChildren(t *testing.T) {
 	}
 }
 
+// TestGateFindingsDoneRequiresDocs (F-0131): done is implemented's accepted
+// successor, so it carries the same document requirements — a done feature
+// missing result.md is flagged exactly like an implemented one would be.
+func TestGateFindingsDoneRequiresDocs(t *testing.T) {
+	dir := t.TempDir()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Aceita sem result", State: domain.StateDone},
+	}
+	writeDoc(t, dir, "content/features/F-0001/spec.md",
+		"---\ncerne_id: F-0001\n---\n\n# Aceita sem result\n\nProblema real.\n")
+	writeDoc(t, dir, "content/features/F-0001/plan.md",
+		"---\ncerne_id: F-0001\n---\n\n# Aceita sem result\n\nPlano real.\n")
+
+	got, err := gateFindings(dir, features)
+	if err != nil {
+		t.Fatalf("gateFindings: %v", err)
+	}
+	if len(got) != 1 || got[0].Rule != RuleMissingGateDoc || got[0].Entity != "F-0001" || !strings.Contains(got[0].Detail, "result.md") {
+		t.Fatalf("gateFindings = %+v, want one missing-gate-doc for F-0001 naming result.md", got)
+	}
+}
+
+// TestEpicRulesCountDone (F-0131): done counts the same as implemented in
+// both epic rules — it is implemented's human-accepted successor, never less
+// concluded.
+func TestEpicRulesCountDone(t *testing.T) {
+	features := []store.Feature{
+		// A done epic with an open child still fires epic-open-children.
+		{ID: "F-0001", Title: "Épico aceito", State: domain.StateDone},
+		{ID: "F-0002", Title: "Filha em aberto", Parent: "F-0001", State: domain.StateInDevelopment},
+		// A done child counts as "started" for epic-behind-children.
+		{ID: "F-0003", Title: "Épico não iniciado", State: domain.StateCandidate},
+		{ID: "F-0004", Title: "Filha aceita", Parent: "F-0003", State: domain.StateDone},
+	}
+	got := parentFindings(features)
+
+	want := map[string]string{
+		"F-0001": RuleEpicOpenChildren,
+		"F-0003": RuleEpicBehindChildren,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("findings = %d (%+v), want %d matching %v", len(got), got, len(want), want)
+	}
+	for _, f := range got {
+		wantRule, ok := want[f.Entity]
+		if !ok || f.Rule != wantRule {
+			t.Fatalf("finding %+v unexpected; want rule %q for entity %s", f, wantRule, f.Entity)
+		}
+	}
+}
+
 func TestRunFindings(t *testing.T) {
 	dir := seedBackend(t)
 
@@ -461,5 +512,68 @@ func TestRunFlagsStaleCandidate(t *testing.T) {
 	}
 	if len(stale) != 1 || stale[0].Entity != "F-0001" {
 		t.Fatalf("stale-candidate findings = %+v, want exactly one for F-0001", stale)
+	}
+}
+
+// TestStaleReadyFindings (F-0131 crit. 6): a fresh implemented feature is
+// silent; one older than the window is flagged; a done feature past the same
+// age is never flagged (it already crossed the human gate).
+func TestStaleReadyFindings(t *testing.T) {
+	now := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	stale := now.Add(-20 * 24 * time.Hour)
+	fresh := now.Add(-5 * 24 * time.Hour)
+
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Ready antiga", State: domain.StateImplemented, UpdatedAt: stale},
+		{ID: "F-0002", Title: "Ready recente", State: domain.StateImplemented, UpdatedAt: fresh},
+		{ID: "F-0003", Title: "Aceita há muito", State: domain.StateDone, UpdatedAt: stale},
+	}
+
+	got := staleReadyFindings(features, 14, now)
+	want := []Finding{
+		{Rule: RuleStaleReady, Entity: "F-0001",
+			Detail: "implementada (Ready) há 20 dias sem aceite — rode 'cerne feature accept F-0001' para validar"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+}
+
+// TestStaleReadyFindingsDefaultWindow: windowDays<=0 falls back to the
+// 14-day default, matching project.Config.StaleReadyWindowDays.
+func TestStaleReadyFindingsDefaultWindow(t *testing.T) {
+	now := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	justOverTwoWeeks := now.Add(-15 * 24 * time.Hour)
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Ready", State: domain.StateImplemented, UpdatedAt: justOverTwoWeeks},
+	}
+	got := staleReadyFindings(features, 0, now)
+	if len(got) != 1 || got[0].Entity != "F-0001" {
+		t.Fatalf("staleReadyFindings with windowDays=0 = %+v, want one finding for F-0001 (14-day default)", got)
+	}
+}
+
+// TestRunConfigFlagsStaleReady proves the rule is wired into RunConfig: an
+// old Ready feature surfaces exactly one stale-ready finding.
+func TestRunConfigFlagsStaleReady(t *testing.T) {
+	dir := t.TempDir()
+	ancient := time.Now().UTC().Add(-30 * 24 * time.Hour)
+	f := store.Feature{ID: "F-0001", Title: "Ready", State: domain.StateImplemented, CreatedAt: ancient, UpdatedAt: ancient}
+	if err := store.SaveFeature(dir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+
+	got, err := RunConfig(dir, 14)
+	if err != nil {
+		t.Fatalf("RunConfig: %v", err)
+	}
+	var stale []Finding
+	for _, fnd := range got {
+		if fnd.Rule == RuleStaleReady {
+			stale = append(stale, fnd)
+		}
+	}
+	if len(stale) != 1 || stale[0].Entity != "F-0001" {
+		t.Fatalf("stale-ready findings = %+v, want exactly one for F-0001", stale)
 	}
 }
