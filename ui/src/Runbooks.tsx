@@ -14,15 +14,8 @@ import {
   type RunbookDetail as RunbookDetailData,
 } from './api'
 import { useLiveVersion } from './live'
+import { useT } from './i18n'
 
-const GROUP_LABELS: Record<string, string> = {
-  active: 'Ativos',
-  superseded: 'Substituídos',
-}
-const STATE_LABELS: Record<string, string> = {
-  active: 'Ativo',
-  superseded: 'Substituído',
-}
 const ORDER = ['active', 'superseded']
 
 // toggleIn returns a handler that adds/removes a value from a Set state, always
@@ -47,6 +40,7 @@ export default function Runbooks() {
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
   const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
   const version = useLiveVersion()
+  const { t } = useT()
 
   useEffect(() => {
     fetchState()
@@ -68,8 +62,8 @@ export default function Runbooks() {
     [runbooks],
   )
 
-  if (error) return <p className="status error">Erro ao carregar runbooks: {error}</p>
-  if (!runbooks) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.runbooks.loadError(error)}</p>
+  if (!runbooks) return <p className="status">{t.common.loading}</p>
 
   const toggleFacet = toggleIn(setSelFacets)
   const toggleComponent = toggleIn(setSelComponents)
@@ -98,15 +92,15 @@ export default function Runbooks() {
 
   return (
     <main className="page">
-      <h1>Runbooks</h1>
+      <h1>{t.runbooks.title}</h1>
       <p className="counts">
-        {shown.length} runbook(s){hasFilter && ` de ${runbooks.length}`}
+        {t.runbooks.counts(shown.length)}{hasFilter && t.common.ofTotal(runbooks.length)}
       </p>
       {hasOptions && (
         <div className="note-filter">
           {allFacets.length > 0 && (
             <div className="note-filter-group">
-              <span className="note-filter-label">Facets</span>
+              <span className="note-filter-label">{t.common.facets}</span>
               {allFacets.map((f) => (
                 <Tag key={f} axis="facet" value={f} active={selFacets.has(f)} onToggle={toggleFacet} />
               ))}
@@ -114,7 +108,7 @@ export default function Runbooks() {
           )}
           {allComponents.length > 0 && (
             <div className="note-filter-group">
-              <span className="note-filter-label">Componentes</span>
+              <span className="note-filter-label">{t.common.components}</span>
               {allComponents.map((c) => (
                 <Tag
                   key={c}
@@ -128,14 +122,14 @@ export default function Runbooks() {
           )}
           {hasFilter && (
             <button type="button" className="note-filter-clear" onClick={clearFilters}>
-              Limpar
+              {t.common.clear}
             </button>
           )}
         </div>
       )}
-      {runbooks.length === 0 && <p className="muted">Nenhum runbook registrado.</p>}
+      {runbooks.length === 0 && <p className="muted">{t.runbooks.none}</p>}
       {runbooks.length > 0 && shown.length === 0 && (
-        <p className="muted">Nenhum runbook corresponde ao filtro.</p>
+        <p className="muted">{t.runbooks.noneMatch}</p>
       )}
       {ORDER.map((state) => {
         const list = byState.get(state) ?? []
@@ -143,7 +137,7 @@ export default function Runbooks() {
         return (
           <section key={state} className="entity-group">
             <h2>
-              {GROUP_LABELS[state] ?? state}{' '}
+              {(t.runbooks.groupLabels as Record<string, string>)[state] ?? state}{' '}
               <span className="column-count">{list.length}</span>
             </h2>
             <ul className="entity-list">
@@ -195,6 +189,7 @@ export function RunbookDetail({ id }: { id: string }) {
   const [data, setData] = useState<RunbookDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const version = useLiveVersion()
+  const { t } = useT()
 
   useEffect(() => {
     fetchRunbook(id)
@@ -205,19 +200,20 @@ export function RunbookDetail({ id }: { id: string }) {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [id, version])
 
-  if (error) return <p className="status error">Erro ao carregar o runbook: {error}</p>
-  if (!data) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.runbooks.loadOneError(error)}</p>
+  if (!data) return <p className="status">{t.common.loading}</p>
 
   const rb = data.runbook
+  const stateLabel = (t.runbooks.stateLabels as Record<string, string>)[rb.state] ?? rb.state
   return (
     <main className="page">
-      <a className="back" href="#/runbooks">← Runbooks</a>
+      <a className="back" href="#/runbooks">{t.runbooks.back}</a>
       <header className="feature-header">
         <h1>
           <span className="feature-id">{rb.id}</span> {rb.title}
         </h1>
         <p className="feature-meta">
-          <span className={`chip chip-${rb.state}`}>{STATE_LABELS[rb.state] ?? rb.state}</span>
+          <span className={`chip chip-${rb.state}`}>{stateLabel}</span>
           {rb.facets?.map((f) => (
             <Tag key={`f-${f}`} axis="facet" value={f} />
           ))}
@@ -225,14 +221,14 @@ export function RunbookDetail({ id }: { id: string }) {
             <Tag key={`c-${c}`} axis="component" value={c} />
           ))}
         </p>
-        {rb.superseded_by && <p className="feature-note">Substituído por {rb.superseded_by}</p>}
-        {rb.reason && <p className="feature-note">Motivo: {rb.reason}</p>}
+        {rb.superseded_by && <p className="feature-note">{t.runbooks.supersededBy(rb.superseded_by)}</p>}
+        {rb.reason && <p className="feature-note">{t.common.reasonLabel} {rb.reason}</p>}
       </header>
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>
         ) : (
-          <p className="muted">Sem documento de conteúdo.</p>
+          <p className="muted">{t.common.noDoc}</p>
         )}
       </article>
     </main>

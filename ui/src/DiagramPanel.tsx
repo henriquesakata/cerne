@@ -11,6 +11,7 @@ import type {
 import '@excalidraw/excalidraw/index.css'
 import { fetchArtifactJSON, putArtifact } from './api'
 import { getTheme } from './theme'
+import { useT } from './i18n'
 
 // Este módulo é carregado via React.lazy em FeaturePage: o bundle do
 // Excalidraw (pesado) só é baixado quando um diagrama é aberto.
@@ -44,6 +45,7 @@ export default function DiagramPanel({
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
   // Versão da cena no último load/save: base do flag "alterado".
   const savedVersionRef = useRef<number | null>(null)
+  const { t, lang } = useT()
 
   useEffect(() => {
     // Cena nova vazia ou já fornecida (conversão): nada a buscar.
@@ -60,10 +62,10 @@ export default function DiagramPanel({
       .catch((e: unknown) =>
         setMsg({
           kind: 'err',
-          text: `Erro ao carregar o diagrama: ${e instanceof Error ? e.message : String(e)}`,
+          text: t.diagram.loadError(e instanceof Error ? e.message : String(e)),
         }),
       )
-  }, [featureId, name, isNew, initialScene])
+  }, [featureId, name, isNew, initialScene, t])
 
   const save = () => {
     const api = apiRef.current
@@ -81,7 +83,7 @@ export default function DiagramPanel({
       if (res.ok) {
         savedVersionRef.current = getSceneVersion(api.getSceneElements())
         setDirty(false)
-        setMsg({ kind: 'ok', text: 'Diagrama salvo.' })
+        setMsg({ kind: 'ok', text: t.diagram.saved })
         onSaved()
       } else {
         setMsg({ kind: 'err', text: res.error })
@@ -100,18 +102,18 @@ export default function DiagramPanel({
             </span>
           )}
           <button onClick={save} disabled={busy || !dirty}>
-            Salvar diagrama
+            {t.diagram.save}
           </button>
-          <button onClick={onClose}>Fechar</button>
+          <button onClick={onClose}>{t.diagram.close}</button>
         </div>
       </header>
       {scene === null ? (
-        <p className="status">Carregando diagrama…</p>
+        <p className="status">{t.diagram.loading}</p>
       ) : (
         <div className="diagram-canvas">
           <Excalidraw
             initialData={scene}
-            langCode="pt-BR"
+            langCode={lang}
             theme={getTheme()}
             excalidrawAPI={(api) => {
               apiRef.current = api

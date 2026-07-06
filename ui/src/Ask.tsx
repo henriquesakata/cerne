@@ -8,12 +8,7 @@ import {
   type AskSource,
   type LLMMode,
 } from './api'
-
-const MODE_LABELS: Record<LLMMode, string> = {
-  delegation: 'Delegação (o agente responde)',
-  'claude-cli': 'Assinatura (claude-cli)',
-  'byo-key': 'Chave de API (byo-key)',
-}
+import { useT } from './i18n'
 
 // ModeSelector lê e troca o [llm] mode do projeto. O servidor relê a config a
 // cada pergunta (case 0017), então a troca vale já na próxima pergunta.
@@ -21,6 +16,7 @@ function ModeSelector() {
   const [mode, setMode] = useState<LLMMode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const { t } = useT()
 
   useEffect(() => {
     fetchLLMMode()
@@ -47,9 +43,9 @@ function ModeSelector() {
 
   return (
     <div className="ask-mode">
-      <span className="ask-mode-label">Modo de IA:</span>{' '}
+      <span className="ask-mode-label">{t.ask.aiMode}</span>{' '}
       {mode === null ? (
-        <span className="muted">{error ? `erro: ${error}` : 'carregando…'}</span>
+        <span className="muted">{error ? t.ask.errPrefix(error) : t.ask.loadingLower}</span>
       ) : (
         <>
           <select
@@ -57,27 +53,20 @@ function ModeSelector() {
             disabled={saving}
             onChange={(e) => change(e.target.value as LLMMode)}
           >
-            {(Object.keys(MODE_LABELS) as LLMMode[]).map((m) => (
+            {(Object.keys(t.ask.modeLabels) as LLMMode[]).map((m) => (
               <option key={m} value={m}>
-                {MODE_LABELS[m]}
+                {t.ask.modeLabels[m]}
               </option>
             ))}
           </select>
           {mode === 'byo-key' && (
-            <span className="ask-mode-hint"> requer a chave no env configurado no .cernerc</span>
+            <span className="ask-mode-hint">{t.ask.byoKeyHint}</span>
           )}
           {error && <span className="form-error"> {error}</span>}
         </>
       )}
     </div>
   )
-}
-
-const KIND_LABELS: Record<string, string> = {
-  feature: 'feature',
-  decision: 'decisão',
-  reference: 'referência',
-  wiki: 'wiki',
 }
 
 // sourceHref leva ao detalhe da fonte: páginas de wiki (#/wiki/<rel>) ou
@@ -90,14 +79,17 @@ function sourceHref(source: string): string {
 }
 
 function Sources({ sources }: { sources: AskSource[] }) {
-  if (sources.length === 0) return <p className="muted">Nenhuma fonte recuperada.</p>
+  const { t } = useT()
+  if (sources.length === 0) return <p className="muted">{t.ask.noSources}</p>
   return (
     <ul className="entity-list">
       {sources.map((s, i) => (
         <li key={`${s.source}-${i}`}>
           <a className="entity-row" href={sourceHref(s.source)}>
             <span className="card-id">{s.source}</span>
-            <span className="badge">{KIND_LABELS[s.kind] ?? s.kind}</span>
+            <span className="badge">
+              {(t.ask.kindLabels as Record<string, string>)[s.kind] ?? s.kind}
+            </span>
             <span className="entity-title">{s.state}</span>
           </a>
         </li>
@@ -107,6 +99,7 @@ function Sources({ sources }: { sources: AskSource[] }) {
 }
 
 function AnswerView({ result }: { result: AskAnswer }) {
+  const { t } = useT()
   return (
     <>
       {result.answered ? (
@@ -115,13 +108,14 @@ function AnswerView({ result }: { result: AskAnswer }) {
         </article>
       ) : (
         <p className="ask-notice">
-          Modo <strong>delegação</strong>: nesse modo quem responde é o agente, não o
-          servidor — então aqui só mostramos as fontes recuperadas (abaixo). Para
-          respostas em linguagem natural, troque o <strong>Modo de IA</strong> acima
-          para <em>Assinatura</em> ou <em>Chave de API</em> e pergunte de novo.
+          {t.ask.notice1}<strong>{t.ask.noticeMode}</strong>
+          {t.ask.notice2}<strong>{t.ask.noticeAiMode}</strong>
+          {t.ask.notice3}<em>{t.ask.noticeSub}</em>
+          {t.ask.notice4}<em>{t.ask.noticeKey}</em>
+          {t.ask.notice5}
         </p>
       )}
-      <h2 className="ask-sources-title">Fontes</h2>
+      <h2 className="ask-sources-title">{t.ask.sourcesTitle}</h2>
       <Sources sources={result.sources} />
     </>
   )
@@ -133,6 +127,7 @@ export default function Ask() {
   const [result, setResult] = useState<AskAnswer | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { t } = useT()
 
   const run = (e: FormEvent) => {
     e.preventDefault()
@@ -153,22 +148,20 @@ export default function Ask() {
 
   return (
     <main className="page">
-      <h1>Perguntar</h1>
+      <h1>{t.ask.title}</h1>
       <p className="muted">
-        Pergunte em linguagem natural sobre o estado vigente do projeto — a
-        resposta vem do provider configurado (assinatura/byo-key). Para busca por
-        palavra-chave, use <a href="#/search">Busca</a>.
+        {t.ask.intro1}<a href="#/search">{t.ask.introLink}</a>{t.ask.intro2}
       </p>
       <ModeSelector />
       <form className="search-form" onSubmit={run}>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Como funciona o SSO entre os apps?"
+          placeholder={t.ask.placeholder}
           autoFocus
         />
         <button type="submit" disabled={busy || query.trim() === ''}>
-          Perguntar
+          {t.ask.button}
         </button>
       </form>
       <label className="ask-history">
@@ -177,10 +170,10 @@ export default function Ask() {
           checked={history}
           onChange={(e) => setHistory(e.target.checked)}
         />
-        Incluir histórico (substituídas, rejeitadas, obsoletas)
+        {t.ask.includeHistory}
       </label>
-      {busy && <p className="status">Consultando…</p>}
-      {error && <p className="status error">Erro ao perguntar: {error}</p>}
+      {busy && <p className="status">{t.ask.querying}</p>}
+      {error && <p className="status error">{t.ask.askError(error)}</p>}
       {result && !busy && <AnswerView result={result} />}
     </main>
   )

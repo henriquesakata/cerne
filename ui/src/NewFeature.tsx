@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { createFeature, fetchState, type Feature, type Project } from './api'
+import { useT } from './i18n'
 
 export default function NewFeature() {
   const [project, setProject] = useState<Project | null>(null)
@@ -9,6 +10,7 @@ export default function NewFeature() {
   const [parent, setParent] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { t } = useT()
 
   useEffect(() => {
     fetchState()
@@ -41,21 +43,21 @@ export default function NewFeature() {
 
   return (
     <main className="page">
-      <a className="back" href="#/manage">← Gestão</a>
-      <h1>Nova feature</h1>
+      <a className="back" href="#/manage">{t.newFeature.backToManage}</a>
+      <h1>{t.newFeature.title}</h1>
       <form className="new-feature-form" onSubmit={submit}>
         <label>
-          Título
+          {t.newFeature.fieldTitle}
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="título da feature"
+            placeholder={t.newFeature.titlePlaceholder}
             autoFocus
           />
         </label>
         {modules.length > 0 && (
           <label>
-            Módulo{modules.length >= 2 ? ' (obrigatório)' : ' (opcional)'}
+            {t.newFeature.module}{modules.length >= 2 ? t.newFeature.required : t.newFeature.optional}
             <select value={module} onChange={(e) => setModule(e.target.value)}>
               <option value="">—</option>
               {modules.map((m) => (
@@ -68,7 +70,7 @@ export default function NewFeature() {
         )}
         {epicOptions.length > 0 && (
           <label>
-            Épico (opcional)
+            {t.newFeature.epicOptional}
             <select value={parent} onChange={(e) => setParent(e.target.value)}>
               <option value="">—</option>
               {epicOptions.map((f) => (
@@ -80,13 +82,12 @@ export default function NewFeature() {
           </label>
         )}
         <button type="submit" disabled={busy || title.trim() === ''}>
-          Criar (candidata)
+          {t.newFeature.createCandidate}
         </button>
         {error && <p className="form-error">{error}</p>}
       </form>
       <p className="muted">
-        A feature nasce candidata com um stub de spec. Escreva a spec na página
-        dela e aprove quando estiver pronta.
+        {t.newFeature.hint}
       </p>
     </main>
   )

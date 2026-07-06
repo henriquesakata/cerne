@@ -12,7 +12,6 @@ import {
   renameFeature,
   saveFeatureDoc,
   setFeatureParent,
-  STATE_LABELS,
   type Feature,
   type FeatureDetail,
   type FeatureState,
@@ -21,6 +20,7 @@ import {
   type TransitionResult,
 } from './api'
 import { useLiveVersion } from './live'
+import { useT, type Lang } from './i18n'
 
 // Carregados sob demanda: os bundles do Excalidraw e do mermaid só chegam ao
 // navegador quando o usuário abre um diagrama (cada um no seu chunk lazy).
@@ -47,6 +47,7 @@ function TitleEditor({
   feature: Feature
   onSaved: () => void
 }) {
+  const { t } = useT()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(feature.title)
   const [busy, setBusy] = useState(false)
@@ -87,10 +88,10 @@ function TitleEditor({
           }}
         />
         <button onClick={save} disabled={busy || draft.trim() === ''}>
-          Salvar
+          {t.common.save}
         </button>
         <button onClick={() => setEditing(false)} disabled={busy}>
-          Cancelar
+          {t.common.cancel}
         </button>
         {error && <span className="status error">{error}</span>}
       </div>
@@ -101,7 +102,7 @@ function TitleEditor({
     <h1>
       <span className="feature-id">{feature.id}</span> {feature.title}
       {titleEditable(feature.state) && (
-        <button className="title-edit-btn" onClick={start} title="Editar título">
+        <button className="title-edit-btn" onClick={start} title={t.feature.editTitle}>
           ✎
         </button>
       )}
@@ -111,17 +112,11 @@ function TitleEditor({
 
 type DocTab = 'spec' | 'plan' | 'result'
 
-const TAB_LABELS: Record<DocTab, string> = {
-  spec: 'Spec',
-  plan: 'Plano',
-  result: 'Resultado',
-}
-
-// formatUpdatedAt devolve um rótulo relativo em pt-BR ("há 3 dias", "ontem") a
+// formatUpdatedAt devolve um rótulo relativo ("há 3 dias", "ontem") a
 // partir de um instante ISO, escolhendo a maior unidade que couber.
-function formatUpdatedAt(iso: string): string {
+function formatUpdatedAt(iso: string, lang: Lang): string {
   const sec = Math.round((new Date(iso).getTime() - Date.now()) / 1000)
-  const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' })
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' })
   const units: [Intl.RelativeTimeFormatUnit, number][] = [
     ['year', 31536000],
     ['month', 2592000],
@@ -136,9 +131,9 @@ function formatUpdatedAt(iso: string): string {
   return rtf.format(sec, 'second')
 }
 
-// dateTooltip é a data/hora absoluta (pt-BR) para o title do rótulo relativo.
-function dateTooltip(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR')
+// dateTooltip é a data/hora absoluta (locale ativo) para o title do rótulo relativo.
+function dateTooltip(iso: string, lang: Lang): string {
+  return new Date(iso).toLocaleString(lang)
 }
 
 // diagramFilename normaliza o nome digitado para slug + sufixo .excalidraw.
@@ -201,6 +196,7 @@ export default function FeaturePage({ id }: { id: string }) {
   // Modo de IA do projeto (case 0019): habilita/desabilita "Gerar com IA".
   const [llmMode, setLlmMode] = useState<LLMMode | null>(null)
   const version = useLiveVersion()
+  const { t } = useT()
 
   const load = useCallback(() => {
     fetchFeature(id)
@@ -232,13 +228,11 @@ export default function FeaturePage({ id }: { id: string }) {
         .catch((e: unknown) => {
           setConverting(false)
           setConvertError(
-            `Não foi possível converter o diagrama para Excalidraw: ${
-              e instanceof Error ? e.message : String(e)
-            }`,
+            t.feature.convertError(e instanceof Error ? e.message : String(e)),
           )
         })
     },
-    [],
+    [t],
   )
 
   useEffect(() => {
@@ -252,18 +246,18 @@ export default function FeaturePage({ id }: { id: string }) {
       .catch(() => setLlmMode(null))
   }, [])
 
-  if (error) return <p className="status error">Erro ao carregar a feature: {error}</p>
-  if (!detail) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.feature.loadError(error)}</p>
+  if (!detail) return <p className="status">{t.common.loading}</p>
 
   const f = detail.feature
 
   return (
     <main className="feature">
-      <a className="back" href="#/">← Kanban</a>
+      <a className="back" href="#/">{t.feature.backToKanban}</a>
       <header className="feature-header">
         <TitleEditor feature={f} onSaved={load} />
         <p className="feature-meta">
-          <span className={`chip chip-${f.state}`}>{STATE_LABELS[f.state]}</span>
+          <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>
           {f.module && <span className="badge">{f.module}</span>}
           {f.facets?.map((x) => (
             <Tag key={`f-${x}`} axis="facet" value={x} />
@@ -274,22 +268,22 @@ export default function FeaturePage({ id }: { id: string }) {
         </p>
         {f.parent && (
           <p className="feature-note">
-            Épico:{' '}
+            {t.feature.epicLabel}{' '}
             <a href={`#/f/${encodeURIComponent(f.parent)}`}>{f.parent}</a>
           </p>
         )}
         {f.superseded_by && (
-          <p className="feature-note">Substituída por {f.superseded_by}</p>
+          <p className="feature-note">{t.feature.supersededBy(f.superseded_by)}</p>
         )}
-        {f.reason && <p className="feature-note">Motivo: {f.reason}</p>}
+        {f.reason && <p className="feature-note">{t.common.reasonLabel} {f.reason}</p>}
         {detail.informed_by.length > 0 && (
           <p className="feature-note">
-            Fontes:{' '}
+            {t.common.sourcesLabel}{' '}
             {detail.informed_by.map((r, i) => (
               <span key={r.id}>
                 {i > 0 && ', '}
                 <a href={`#/r/${encodeURIComponent(r.id)}`}>{r.id}</a>
-                {r.external && <span className="badge badge-external"> externa</span>}
+                {r.external && <span className="badge badge-external"> {t.common.external}</span>}
               </span>
             ))}
           </p>
@@ -297,12 +291,12 @@ export default function FeaturePage({ id }: { id: string }) {
         {notice && <p className="notice">{notice}</p>}
       </header>
       {diagram ? (
-        <Suspense fallback={<p className="status">Carregando…</p>}>
+        <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           {diagram.mode === 'mermaid' ? (
             <>
               {convertError && <p className="form-error">{convertError}</p>}
               {converting && (
-                <p className="status">Convertendo para Excalidraw…</p>
+                <p className="status">{t.feature.convertingToExcalidraw}</p>
               )}
               <MermaidView
                 featureId={f.id}
@@ -332,13 +326,13 @@ export default function FeaturePage({ id }: { id: string }) {
         <div className="feature-body">
           <section className="docs">
             <nav className="tabs">
-              {(['spec', 'plan', 'result'] as DocTab[]).map((t) => (
+              {(['spec', 'plan', 'result'] as DocTab[]).map((d) => (
                 <button
-                  key={t}
-                  className={t === tab ? 'tab active' : 'tab'}
-                  onClick={() => setTab(t)}
+                  key={d}
+                  className={d === tab ? 'tab active' : 'tab'}
+                  onClick={() => setTab(d)}
                 >
-                  {TAB_LABELS[t]}
+                  {t.feature.tabs[d]}
                 </button>
               ))}
             </nav>
@@ -356,7 +350,7 @@ export default function FeaturePage({ id }: { id: string }) {
               id={f.id}
               state={f.state}
               onDone={(r: TransitionResult) => {
-                setNotice(`${STATE_LABELS[r.from]} → ${STATE_LABELS[r.to]}`)
+                setNotice(`${t.state[r.from]} → ${t.state[r.to]}`)
                 load()
               }}
             />
@@ -393,6 +387,7 @@ function DocEditor({
   updatedAt: string | null
   onSaved: () => void
 }) {
+  const { t, lang } = useT()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(content)
   const [saving, setSaving] = useState(false)
@@ -431,10 +426,10 @@ function DocEditor({
               })
             }}
           >
-            Salvar
+            {t.common.save}
           </button>
           <button disabled={saving} onClick={() => setEditing(false)}>
-            Cancelar
+            {t.common.cancel}
           </button>
           {error && <span className="form-error">{error}</span>}
         </div>
@@ -445,11 +440,11 @@ function DocEditor({
   return (
     <div className="doc-view">
       <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
-        Editar
+        {t.feature.edit}
       </button>
       {updatedAt && (
-        <p className="doc-updated muted" title={dateTooltip(updatedAt)}>
-          Atualizado {formatUpdatedAt(updatedAt)}
+        <p className="doc-updated muted" title={dateTooltip(updatedAt, lang)}>
+          {t.feature.updatedAgo(formatUpdatedAt(updatedAt, lang))}
         </p>
       )}
       {hasRealContent ? (
@@ -460,7 +455,7 @@ function DocEditor({
         // Stub: só scaffold (títulos + comentários-guia do template) ou vazio.
         // Não renderiza a orientação do template como se fosse conteúdo; o
         // scaffold continua no textarea ao clicar em Editar (guia de autoria).
-        <p className="muted">Vazio — clique em Editar para escrever.</p>
+        <p className="muted">{t.feature.emptyDoc}</p>
       )}
     </div>
   )
@@ -479,6 +474,7 @@ function DiagramsSection({
   onOpen: (d: OpenDiagram) => void
   onRefresh: () => void
 }) {
+  const { t } = useT()
   const [naming, setNaming] = useState(false)
   const [newName, setNewName] = useState('')
   // Geração por IA em andamento / falha (ou dica de modo em delegação).
@@ -506,9 +502,7 @@ function DiagramsSection({
           return
         }
         if (!res.generated) {
-          setGenError(
-            'A geração automática precisa do modo de IA “assinatura” ou “chave própria”. Troque o modo em Gestão.',
-          )
+          setGenError(t.feature.generateNeedsMode)
           return
         }
         const scene = await convertMermaidToScene(res.mermaid)
@@ -540,7 +534,7 @@ function DiagramsSection({
 
   return (
     <section className="artifacts">
-      <h2>Diagramas</h2>
+      <h2>{t.feature.diagrams}</h2>
       {artifacts.length > 0 && (
         <ul>
           {artifacts.map((a) => {
@@ -570,13 +564,9 @@ function DiagramsSection({
         <button
           onClick={generate}
           disabled={generating || delegated}
-          title={
-            delegated
-              ? 'Disponível nos modos de IA “assinatura” ou “chave própria” — troque o modo em Gestão.'
-              : undefined
-          }
+          title={delegated ? t.feature.generateDisabledTitle : undefined}
         >
-          {generating ? 'Gerando…' : 'Gerar com IA'}
+          {generating ? t.feature.generating : t.feature.generateWithAI}
         </button>
         {naming ? (
           <form
@@ -589,15 +579,15 @@ function DiagramsSection({
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="nome-do-diagrama"
+              placeholder={t.feature.diagramNamePlaceholder}
               autoFocus
             />
             <button type="submit" disabled={diagramFilename(newName) === ''}>
-              Criar
+              {t.feature.create}
             </button>
           </form>
         ) : (
-          <button onClick={() => setNaming(true)}>Novo diagrama</button>
+          <button onClick={() => setNaming(true)}>{t.feature.newDiagram}</button>
         )}
       </div>
     </section>
@@ -606,26 +596,26 @@ function DiagramsSection({
 
 type ActionSpec = {
   action: TransitionAction
-  label: string
   form: 'none' | 'reason' | 'supersede'
 }
 
 // Espelha exatamente a máquina de estados de internal/domain/feature.go.
+// Labels vêm do dicionário (t.feature.actionLabels).
 const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   candidate: [
-    { action: 'approve', label: 'Aprovar', form: 'none' },
-    { action: 'reject', label: 'Rejeitar', form: 'reason' },
-    { action: 'supersede', label: 'Substituir', form: 'supersede' },
+    { action: 'approve', form: 'none' },
+    { action: 'reject', form: 'reason' },
+    { action: 'supersede', form: 'supersede' },
   ],
   approved: [
-    { action: 'start', label: 'Iniciar', form: 'none' },
-    { action: 'supersede', label: 'Substituir', form: 'supersede' },
+    { action: 'start', form: 'none' },
+    { action: 'supersede', form: 'supersede' },
   ],
   in_development: [
-    { action: 'complete', label: 'Concluir', form: 'none' },
-    { action: 'supersede', label: 'Substituir', form: 'supersede' },
+    { action: 'complete', form: 'none' },
+    { action: 'supersede', form: 'supersede' },
   ],
-  implemented: [{ action: 'supersede', label: 'Substituir', form: 'supersede' }],
+  implemented: [{ action: 'supersede', form: 'supersede' }],
   rejected: [],
   superseded: [],
 }
@@ -639,6 +629,7 @@ function ActionsPanel({
   state: FeatureState
   onDone: (r: TransitionResult) => void
 }) {
+  const { t } = useT()
   const [openForm, setOpenForm] = useState<TransitionAction | null>(null)
   const [by, setBy] = useState('')
   const [reason, setReason] = useState('')
@@ -649,8 +640,8 @@ function ActionsPanel({
   if (actions.length === 0) {
     return (
       <section className="actions">
-        <h2>Ações</h2>
-        <p className="muted">Encerrada.</p>
+        <h2>{t.feature.actions}</h2>
+        <p className="muted">{t.feature.closed}</p>
       </section>
     )
   }
@@ -680,7 +671,7 @@ function ActionsPanel({
 
   return (
     <section className="actions">
-      <h2>Ações</h2>
+      <h2>{t.feature.actions}</h2>
       <div className="action-buttons">
         {actions.map((a) => (
           <button
@@ -690,7 +681,7 @@ function ActionsPanel({
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
           >
-            {a.label}
+            {t.feature.actionLabels[a.action]}
           </button>
         ))}
       </div>
@@ -708,7 +699,7 @@ function ActionsPanel({
         >
           {spec.form === 'supersede' && (
             <label>
-              Substituída por (ID)
+              {t.feature.supersededByField}
               <input
                 value={by}
                 onChange={(e) => setBy(e.target.value)}
@@ -717,7 +708,7 @@ function ActionsPanel({
             </label>
           )}
           <label>
-            Motivo (obrigatório)
+            {t.feature.reasonRequired}
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -725,7 +716,7 @@ function ActionsPanel({
             />
           </label>
           <button type="submit" disabled={busy}>
-            Confirmar {spec.label.toLowerCase()}
+            {t.feature.confirmAction(t.feature.actionLabels[spec.action])}
           </button>
         </form>
       )}
@@ -746,6 +737,7 @@ function EpicPanel({
   childFeatures: Feature[]
   onChanged: () => void
 }) {
+  const { t } = useT()
   const [editing, setEditing] = useState(false)
   const [features, setFeatures] = useState<Feature[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -783,19 +775,19 @@ function EpicPanel({
 
   return (
     <section className="epic">
-      <h2>Épico</h2>
+      <h2>{t.feature.epic}</h2>
 
       {childFeatures.length > 0 ? (
         <div className="epic-children">
           <p className="epic-progress">
-            {done}/{childFeatures.length} filho(s) implementado(s)
+            {t.feature.childrenProgress(done, childFeatures.length)}
           </p>
           <ul>
             {childFeatures.map((c) => (
               <li key={c.id}>
                 <a href={`#/f/${encodeURIComponent(c.id)}`}>{c.id}</a>{' '}
                 <span className={`chip chip-${c.state}`}>
-                  {STATE_LABELS[c.state]}
+                  {t.state[c.state]}
                 </span>{' '}
                 {c.title}
               </li>
@@ -803,20 +795,20 @@ function EpicPanel({
           </ul>
         </div>
       ) : (
-        <p className="muted">Sem filhos.</p>
+        <p className="muted">{t.feature.noChildren}</p>
       )}
 
       {editing ? (
         <div className="epic-edit">
           {features === null ? (
-            <p className="muted">Carregando…</p>
+            <p className="muted">{t.common.loading}</p>
           ) : (
             <select
               disabled={busy}
               defaultValue={feature.parent ?? ''}
               onChange={(e) => change(e.target.value)}
             >
-              <option value="">— sem épico —</option>
+              <option value="">{t.feature.noEpicOption}</option>
               {eligible.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.id} — {f.title}
@@ -825,13 +817,13 @@ function EpicPanel({
             </select>
           )}
           <button disabled={busy} onClick={() => setEditing(false)}>
-            Cancelar
+            {t.common.cancel}
           </button>
           {error && <p className="form-error">{error}</p>}
         </div>
       ) : (
         <button onClick={() => setEditing(true)}>
-          {feature.parent ? 'Trocar épico' : 'Definir épico'}
+          {feature.parent ? t.feature.changeEpic : t.feature.setEpic}
         </button>
       )}
     </section>

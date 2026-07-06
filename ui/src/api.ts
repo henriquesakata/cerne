@@ -138,15 +138,6 @@ export type TransitionResult = {
   to: FeatureState
 }
 
-export const STATE_LABELS: Record<FeatureState, string> = {
-  candidate: 'Candidata',
-  approved: 'Aprovada',
-  in_development: 'Em desenvolvimento',
-  implemented: 'Implementada',
-  rejected: 'Rejeitada',
-  superseded: 'Substituída',
-}
-
 async function errorMessage(r: Response): Promise<string> {
   try {
     const body = (await r.json()) as { error?: string }

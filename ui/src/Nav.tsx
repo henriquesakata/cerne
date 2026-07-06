@@ -1,20 +1,21 @@
 import { useProjects } from './live'
 import { useTheme } from './theme'
+import { useT, type Lang, type Messages } from './i18n'
 
 // Barra de navegação persistente: o shell que torna as páginas alcançáveis.
-const LINKS: { href: string; label: string }[] = [
-  { href: '#/', label: 'Kanban' },
-  { href: '#/manage', label: 'Gestão' },
-  { href: '#/decisions', label: 'Decisões' },
-  { href: '#/references', label: 'Referências' },
-  { href: '#/runbooks', label: 'Runbooks' },
-  { href: '#/notes', label: 'Notas' },
-  { href: '#/wiki', label: 'Wiki' },
-  { href: '#/graph', label: 'Grafo' },
-  { href: '#/ask', label: 'Perguntar' },
-  { href: '#/search', label: 'Busca' },
-  { href: '#/lint', label: 'Lint' },
-  { href: '#/history', label: 'Histórico' },
+const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
+  { href: '#/', key: 'kanban' },
+  { href: '#/manage', key: 'manage' },
+  { href: '#/decisions', key: 'decisions' },
+  { href: '#/references', key: 'references' },
+  { href: '#/runbooks', key: 'runbooks' },
+  { href: '#/notes', key: 'notes' },
+  { href: '#/wiki', key: 'wiki' },
+  { href: '#/graph', key: 'graph' },
+  { href: '#/ask', key: 'ask' },
+  { href: '#/search', key: 'search' },
+  { href: '#/lint', key: 'lint' },
+  { href: '#/history', key: 'history' },
 ]
 
 // activeHref mapeia a rota atual para o link de seção que deve ficar ativo.
@@ -35,6 +36,7 @@ function activeHref(hash: string): string {
 }
 
 export default function Nav({ hash }: { hash: string }) {
+  const { t } = useT()
   const active = activeHref(hash)
   return (
     <nav className="nav">
@@ -46,11 +48,12 @@ export default function Nav({ hash }: { hash: string }) {
             href={l.href}
             className={l.href === active ? 'nav-link active' : 'nav-link'}
           >
-            {l.label}
+            {t.nav[l.key]}
           </a>
         ))}
       </div>
       <ProjectSelector />
+      <LangToggle />
       <ThemeToggle />
     </nav>
   )
@@ -58,14 +61,15 @@ export default function Nav({ hash }: { hash: string }) {
 
 // Alterna claro/escuro; a escolha persiste em localStorage (F-0126).
 function ThemeToggle() {
+  const { t } = useT()
   const [theme, setTheme] = useTheme()
   const dark = theme === 'dark'
   return (
     <button
       type="button"
       className="theme-toggle"
-      title={dark ? 'Tema claro' : 'Tema escuro'}
-      aria-label={dark ? 'Tema claro' : 'Tema escuro'}
+      title={dark ? t.nav.themeLight : t.nav.themeDark}
+      aria-label={dark ? t.nav.themeLight : t.nav.themeDark}
       onClick={() => setTheme(dark ? 'light' : 'dark')}
     >
       {dark ? '☀' : '🌙'}
@@ -73,23 +77,48 @@ function ThemeToggle() {
   )
 }
 
+// Seletor compacto de idioma (PT | EN); a escolha persiste em localStorage (F-0125).
+function LangToggle() {
+  const { t, lang, setLang } = useT()
+  const opts: { value: Lang; label: string }[] = [
+    { value: 'pt-BR', label: 'PT' },
+    { value: 'en', label: 'EN' },
+  ]
+  return (
+    <span className="lang-toggle" role="group" aria-label={t.nav.language}>
+      {opts.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={o.value === lang ? 'lang-option active' : 'lang-option'}
+          aria-pressed={o.value === lang}
+          onClick={() => setLang(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </span>
+  )
+}
+
 // ProjectSelector mostra o projeto ativo no canto direito: com 1 projeto, só o
 // nome; com vários, um seletor (com "•" nos que receberam mudanças). Trocar o
 // projeto re-busca as telas e limpa o badge do escolhido.
 function ProjectSelector() {
+  const { t } = useT()
   const { projects, activePid, setActivePid, changed } = useProjects()
   if (projects.length <= 1) {
     const only = projects[0]
     return (
       <span className="nav-project-wrap">
-        <span className="nav-project-label">projeto</span>
+        <span className="nav-project-label">{t.nav.project}</span>
         <span className="nav-project-name">{only ? only.name : '—'}</span>
       </span>
     )
   }
   return (
     <span className="nav-project-wrap">
-      <span className="nav-project-label">projeto</span>
+      <span className="nav-project-label">{t.nav.project}</span>
       <select
         className="nav-project-select"
         value={activePid}

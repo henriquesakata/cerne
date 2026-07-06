@@ -14,15 +14,8 @@ import {
   type NoteDetail as NoteDetailData,
 } from './api'
 import { useLiveVersion } from './live'
+import { useT } from './i18n'
 
-const GROUP_LABELS: Record<string, string> = {
-  active: 'Ativas',
-  superseded: 'Substituídas',
-}
-const STATE_LABELS: Record<string, string> = {
-  active: 'Ativa',
-  superseded: 'Substituída',
-}
 const ORDER = ['active', 'superseded']
 
 // toggleIn returns a handler that adds/removes a value from a Set state,
@@ -47,6 +40,7 @@ export default function Notes() {
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
   const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
   const version = useLiveVersion()
+  const { t } = useT()
 
   useEffect(() => {
     fetchState()
@@ -68,8 +62,8 @@ export default function Notes() {
     [notes],
   )
 
-  if (error) return <p className="status error">Erro ao carregar notas: {error}</p>
-  if (!notes) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.notes.loadError(error)}</p>
+  if (!notes) return <p className="status">{t.common.loading}</p>
 
   const toggleFacet = toggleIn(setSelFacets)
   const toggleComponent = toggleIn(setSelComponents)
@@ -98,15 +92,15 @@ export default function Notes() {
 
   return (
     <main className="page">
-      <h1>Notas</h1>
+      <h1>{t.notes.title}</h1>
       <p className="counts">
-        {shown.length} nota(s){hasFilter && ` de ${notes.length}`}
+        {t.notes.counts(shown.length)}{hasFilter && t.common.ofTotal(notes.length)}
       </p>
       {hasOptions && (
         <div className="note-filter">
           {allFacets.length > 0 && (
             <div className="note-filter-group">
-              <span className="note-filter-label">Facets</span>
+              <span className="note-filter-label">{t.common.facets}</span>
               {allFacets.map((f) => (
                 <Tag
                   key={f}
@@ -120,7 +114,7 @@ export default function Notes() {
           )}
           {allComponents.length > 0 && (
             <div className="note-filter-group">
-              <span className="note-filter-label">Componentes</span>
+              <span className="note-filter-label">{t.common.components}</span>
               {allComponents.map((c) => (
                 <Tag
                   key={c}
@@ -134,14 +128,14 @@ export default function Notes() {
           )}
           {hasFilter && (
             <button type="button" className="note-filter-clear" onClick={clearFilters}>
-              Limpar
+              {t.common.clear}
             </button>
           )}
         </div>
       )}
-      {notes.length === 0 && <p className="muted">Nenhuma nota registrada.</p>}
+      {notes.length === 0 && <p className="muted">{t.notes.none}</p>}
       {notes.length > 0 && shown.length === 0 && (
-        <p className="muted">Nenhuma nota corresponde ao filtro.</p>
+        <p className="muted">{t.notes.noneMatch}</p>
       )}
       {ORDER.map((state) => {
         const list = byState.get(state) ?? []
@@ -149,7 +143,7 @@ export default function Notes() {
         return (
           <section key={state} className="entity-group">
             <h2>
-              {GROUP_LABELS[state] ?? state}{' '}
+              {(t.notes.groupLabels as Record<string, string>)[state] ?? state}{' '}
               <span className="column-count">{list.length}</span>
             </h2>
             <ul className="entity-list">
@@ -201,6 +195,7 @@ export function NoteDetail({ id }: { id: string }) {
   const [data, setData] = useState<NoteDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const version = useLiveVersion()
+  const { t } = useT()
 
   useEffect(() => {
     fetchNote(id)
@@ -211,19 +206,20 @@ export function NoteDetail({ id }: { id: string }) {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [id, version])
 
-  if (error) return <p className="status error">Erro ao carregar a nota: {error}</p>
-  if (!data) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.notes.loadOneError(error)}</p>
+  if (!data) return <p className="status">{t.common.loading}</p>
 
   const n = data.note
+  const stateLabel = (t.notes.stateLabels as Record<string, string>)[n.state] ?? n.state
   return (
     <main className="page">
-      <a className="back" href="#/notes">← Notas</a>
+      <a className="back" href="#/notes">{t.notes.back}</a>
       <header className="feature-header">
         <h1>
           <span className="feature-id">{n.id}</span> {n.title}
         </h1>
         <p className="feature-meta">
-          <span className={`chip chip-${n.state}`}>{STATE_LABELS[n.state] ?? n.state}</span>
+          <span className={`chip chip-${n.state}`}>{stateLabel}</span>
           {n.facets?.map((f) => (
             <Tag key={`f-${f}`} axis="facet" value={f} />
           ))}
@@ -231,14 +227,14 @@ export function NoteDetail({ id }: { id: string }) {
             <Tag key={`c-${c}`} axis="component" value={c} />
           ))}
         </p>
-        {n.superseded_by && <p className="feature-note">Substituída por {n.superseded_by}</p>}
-        {n.reason && <p className="feature-note">Motivo: {n.reason}</p>}
+        {n.superseded_by && <p className="feature-note">{t.notes.supersededBy(n.superseded_by)}</p>}
+        {n.reason && <p className="feature-note">{t.common.reasonLabel} {n.reason}</p>}
       </header>
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>
         ) : (
-          <p className="muted">Sem documento de conteúdo.</p>
+          <p className="muted">{t.common.noDoc}</p>
         )}
       </article>
     </main>
