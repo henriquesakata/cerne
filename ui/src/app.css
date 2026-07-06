@@ -1124,8 +1124,12 @@ h2 {
   vertical-align: middle;
 }
 
+/* id shrink-to-fit sem quebrar no hífen; escopado — .card-id também vive no kanban */
+.manage-table .card-id { white-space: nowrap; width: 1%; }
 .manage-title { color: inherit; text-decoration: none; }
 .manage-title:hover { text-decoration: underline; }
+/* o td fica table-cell (border-bottom contínuo com a linha); o flex vive no div interno */
+.manage-actions-cell { white-space: nowrap; }
 .manage-actions { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; }
 
 .manage-actions button {
