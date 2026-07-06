@@ -19,6 +19,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newDecisionCmd())
 	root.AddCommand(newRunbookCmd())
 	root.AddCommand(newNoteCmd())
+	root.AddCommand(newWorkCmd())
 	root.AddCommand(newReferenceCmd())
 	root.AddCommand(newRetireCmd())
 	root.AddCommand(newForgetAliasCmd())
