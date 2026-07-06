@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh
 var files embed.FS
 
 const (
@@ -27,6 +27,11 @@ const (
 	hookScript = "register-reference-reminder.sh"
 	// hookCommand is the settings.json command that runs the installed script.
 	hookCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh"`
+	// registerScript is the SessionStart registration reminder (F-0139): the
+	// feature/work/human-gates rules injected at the start of every session.
+	registerScript = "cerne-register-reminder.sh"
+	// registerCommand is the settings.json command that runs registerScript.
+	registerCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-register-reminder.sh"`
 )
 
 // Status is the outcome of installing one asset.
@@ -58,6 +63,13 @@ func Install(projDir string) ([]Result, error) {
 		return nil, err
 	}
 	results = append(results, Result{Asset: hookScript, Status: st})
+
+	registerDst := filepath.Join(projDir, ".claude", "hooks", registerScript)
+	st, err = writeIfChanged(registerDst, []byte(mustRead("assets/"+registerScript)))
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, Result{Asset: registerScript, Status: st})
 
 	settingsDst := filepath.Join(projDir, ".claude", "settings.json")
 	st, err = mergeSettingsFile(settingsDst)
@@ -185,6 +197,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needHook := !hookPresent(post)
 
+	var sessionStart []any
+	hasSS := false
+	if hooksMap != nil {
+		if sv, ok := hooksMap["SessionStart"]; ok {
+			arr, ok := sv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "SessionStart" with an unexpected type`)
+			}
+			sessionStart = arr
+			hasSS = true
+		}
+	}
+	needRegister := !scriptWired(sessionStart, registerScript)
+
 	envVal, hasEnv := root["env"]
 	var envMap map[string]any
 	if hasEnv {
@@ -196,7 +222,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needActor {
+	if !needHook && !needRegister && !needActor {
 		return nil, false, nil
 	}
 
@@ -207,6 +233,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		fresh := map[string]any{}
 		if needHook {
 			fresh = withHookEntry(fresh)
+		}
+		if needRegister {
+			fresh = withRegisterEntry(fresh)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -229,6 +258,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if needHook {
 		expected = withHookEntry(expected)
 	}
+	if needRegister {
+		expected = withRegisterEntry(expected)
+	}
 	if needActor {
 		expected = withActorEntry(expected)
 	}
@@ -237,6 +269,24 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	ok := true
 	if needHook {
 		spliced, spliceOK := spliceHook(cur, hasHooks, hasPTU, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needRegister {
+		// Re-detect structure: the hook splice above may have created "hooks".
+		var curRoot map[string]any
+		curHasHooks, curHasSS := hasHooks, hasSS
+		if json.Unmarshal(cur, &curRoot) == nil {
+			hm, _ := curRoot["hooks"].(map[string]any)
+			curHasHooks = hm != nil
+			if hm != nil {
+				_, curHasSS = hm["SessionStart"]
+			}
+		}
+		spliced, spliceOK := spliceRegister(cur, curHasHooks, curHasSS, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
@@ -282,6 +332,75 @@ func withHookEntry(root map[string]any) map[string]any {
 	hooksMap["PostToolUse"] = post
 	root["hooks"] = hooksMap
 	return root
+}
+
+// withRegisterEntry ensures root carries the SessionStart wiring for the
+// registration reminder (F-0139), creating the hooks object and SessionStart
+// array as needed. Canonical merge — seed, fallback render and splice oracle.
+func withRegisterEntry(root map[string]any) map[string]any {
+	hooksMap, _ := root["hooks"].(map[string]any)
+	if hooksMap == nil {
+		hooksMap = map[string]any{}
+	}
+	ss, _ := hooksMap["SessionStart"].([]any)
+	ss = append(ss, map[string]any{
+		"hooks": []any{map[string]any{"type": "command", "command": registerCommand}},
+	})
+	hooksMap["SessionStart"] = ss
+	root["hooks"] = hooksMap
+	return root
+}
+
+// sessionEntry renders the new SessionStart entry (no matcher — fires on every
+// session start) with conventional field order.
+type sessionEntry struct {
+	Hooks []hookCmd `json:"hooks"`
+}
+
+func newSessionEntry() sessionEntry {
+	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: registerCommand}}}
+}
+
+// spliceRegister returns raw with the SessionStart reminder entry surgically
+// inserted: appended to hooks.SessionStart when it exists, else SessionStart
+// added to the hooks object, else hooks added to the root. ok=false when the
+// target span cannot be located (caller falls back to a render).
+func spliceRegister(raw []byte, hasHooks, hasSS bool, nl, unit string) ([]byte, bool) {
+	entryText, err := marshalIndentNoHTML(newSessionEntry(), "", unit)
+	if err != nil {
+		return nil, false
+	}
+	switch {
+	case hasSS:
+		start, end, empty, ok := findSpan(raw, "hooks", "SessionStart")
+		if !ok {
+			return nil, false
+		}
+		return spliceArrayAppend(raw, start, end, empty, string(entryText), nl, unit), true
+	case hasHooks:
+		start, end, empty, ok := findSpan(raw, "hooks")
+		if !ok {
+			return nil, false
+		}
+		arrText, err := marshalIndentNoHTML([]sessionEntry{newSessionEntry()}, "", unit)
+		if err != nil {
+			return nil, false
+		}
+		return spliceObjectAppend(raw, start, end, empty, "SessionStart", string(arrText), nl, unit), true
+	default:
+		start, end, empty, ok := findSpan(raw)
+		if !ok {
+			return nil, false
+		}
+		hooksVal := struct {
+			SessionStart []sessionEntry `json:"SessionStart"`
+		}{SessionStart: []sessionEntry{newSessionEntry()}}
+		hooksText, err := marshalIndentNoHTML(hooksVal, "", unit)
+		if err != nil {
+			return nil, false
+		}
+		return spliceObjectAppend(raw, start, end, empty, "hooks", string(hooksText), nl, unit), true
+	}
 }
 
 // actorEnvKey/actorEnvValue are the env marker `cerne hook install` writes
@@ -397,6 +516,12 @@ func newMatcherEntry() matcherEntry {
 // hookPresent reports whether any PostToolUse entry already wires our script (by
 // command substring), which makes install idempotent.
 func hookPresent(entries []any) bool {
+	return scriptWired(entries, hookScript)
+}
+
+// scriptWired reports whether any hook entry in entries already runs script
+// (by command substring) — the shared idempotency check for hook wiring.
+func scriptWired(entries []any, script string) bool {
 	for _, e := range entries {
 		m, ok := e.(map[string]any)
 		if !ok {
@@ -411,7 +536,7 @@ func hookPresent(entries []any) bool {
 			if !ok {
 				continue
 			}
-			if cmd, ok := hm["command"].(string); ok && strings.Contains(cmd, hookScript) {
+			if cmd, ok := hm["command"].(string); ok && strings.Contains(cmd, script) {
 				return true
 			}
 		}
