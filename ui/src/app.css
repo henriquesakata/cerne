@@ -1220,6 +1220,14 @@ button.tag {
 
 .tag:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 
+/* entity count on filter chips: inherits the chip color (so the is-active
+   inversion keeps it legible), demoted by weight/opacity like .column-count */
+.tag-count {
+  margin-left: 0.25em;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
 /* a note row carries the link plus its tag chips (chips sit outside the
    anchor so a tag click toggles the filter instead of navigating). */
 .note-row {
