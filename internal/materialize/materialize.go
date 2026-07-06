@@ -43,6 +43,17 @@ var materializedStates = map[domain.FeatureState]bool{
 	domain.StateInDevelopment: true,
 }
 
+// The *IsCurrent predicates below are the single source of truth for "does the
+// materializer project this entity into .docs/". Materialize and ComputeStats
+// (F-0127) both use them, so the context-savings metric can never diverge from
+// what the projection actually delivers.
+
+func featureIsCurrent(f store.Feature) bool     { return materializedStates[f.State] }
+func decisionIsCurrent(d store.Decision) bool   { return d.State == domain.DecisionActive }
+func runbookIsCurrent(rb store.Runbook) bool    { return rb.State == domain.RunbookActive }
+func noteIsCurrent(n store.Note) bool           { return n.State == domain.NoteActive }
+func referenceIsCurrent(r store.Reference) bool { return r.State == domain.ReferenceCurrent }
+
 const contextTemplate = `# {{.ProjectName}} — estado atual
 
 > Gerado por cerne. Não edite: rode 'cerne pull' para atualizar.
@@ -168,7 +179,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 				continue
 			}
 			row := featureRow{ID: f.ID, State: string(f.State), Parent: f.Parent, Module: f.Module, Title: f.Title}
-			if materializedStates[f.State] {
+			if featureIsCurrent(f) {
 				docs, err := copyFeatureDocs(repoDir, docsDir, f, okf, manifest)
 				if err != nil {
 					return nil, err
@@ -182,7 +193,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 	data.Epics = epicSections(shown)
 
 	for _, d := range decisions {
-		if d.State != domain.DecisionActive {
+		if !decisionIsCurrent(d) {
 			continue
 		}
 		meta := okfMeta{Type: "decision", Title: d.Title, Timestamp: okfTime(d.UpdatedAt)}
@@ -200,7 +211,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 	}
 
 	for _, rb := range runbooks {
-		if rb.State != domain.RunbookActive {
+		if !runbookIsCurrent(rb) {
 			continue
 		}
 		meta := okfMeta{Type: "runbook", Title: rb.Title, Timestamp: okfTime(rb.UpdatedAt)}
@@ -212,7 +223,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 	}
 
 	for _, n := range notes {
-		if n.State != domain.NoteActive {
+		if !noteIsCurrent(n) {
 			continue
 		}
 		meta := okfMeta{Type: "note", Title: n.Title, Timestamp: okfTime(n.UpdatedAt), Informs: n.Informs}
@@ -230,7 +241,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 	}
 
 	for _, r := range references {
-		if r.State != domain.ReferenceCurrent {
+		if !referenceIsCurrent(r) {
 			continue
 		}
 		meta := okfMeta{Type: "reference", Title: r.Title, Timestamp: okfTime(r.UpdatedAt), Resource: r.URL, External: r.External, Informs: r.Informs}
