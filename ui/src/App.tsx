@@ -14,6 +14,7 @@ import History from './History'
 import Manage from './Manage'
 import NewFeature from './NewFeature'
 import StatsPage from './Stats'
+import Activity from './Activity'
 import { LiveProvider } from './live'
 import { useT } from './i18n'
 import './app.css'
@@ -73,6 +74,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/lint') return <Lint />
   if (hash === '#/history') return <History />
   if (hash === '#/stats') return <StatsPage />
+  if (hash === '#/activity') return <Activity />
   if (hash === '#/manage') return <Manage />
   if (hash === '#/new') return <NewFeature />
   return <Kanban />

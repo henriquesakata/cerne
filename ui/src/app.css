@@ -613,6 +613,27 @@ h2 {
   color: var(--faint);
 }
 
+/* ---- atividade de agentes (#/activity, F-0130): read-only ---- */
+
+.work-row { flex-wrap: wrap; }
+.work-refs { display: inline-flex; gap: 0.35rem; }
+
+.work-ref {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.work-ref:hover { text-decoration: underline; }
+
+.work-actor {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
 /* ---- economia de contexto (#/stats, F-0127) ---- */
 
 .stats-hero {
