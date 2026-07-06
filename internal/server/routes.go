@@ -38,6 +38,9 @@ func dataRoutes() []dataRoute {
 		{"GET", "/stats", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleStats(w, repoDir)
 		}},
+		{"GET", "/version", true, func(w http.ResponseWriter, _ *http.Request, _, _, _ string) {
+			handleVersion(w)
+		}},
 		{"GET", "/features/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleFeatureDetail(w, repoDir, r.PathValue("id"))
 		}},
