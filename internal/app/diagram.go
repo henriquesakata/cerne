@@ -51,6 +51,9 @@ func BuildSequenceDiagramPrompt(f store.Feature, specContent, projectStructure s
 	b.WriteString("- Messages must reflect real calls and interactions between those components in this feature's flow.\n")
 	b.WriteString("- If you have access to the repository, examine the relevant source files (via the paths above) before drawing, so the flow matches the implementation.\n\n")
 	b.WriteString("Produce a Mermaid sequence diagram (a block starting with `sequenceDiagram`) that represents this feature's main flow, using the title and module as context.\n")
+	// Interim (F-0135): the diagram renders next to pt-BR docs, so its labels
+	// follow that language until UI locale support (F-0125) makes it a choice.
+	b.WriteString("Write the diagram labels (participants, messages, notes) in Brazilian Portuguese (pt-BR); keep identifiers such as package, type and function names exactly as they appear in the code.\n")
 	b.WriteString("Reply with ONLY the Mermaid code, with no markdown fences and no text before or after.\n")
 	return b.String()
 }

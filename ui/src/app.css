@@ -59,6 +59,7 @@
   /* grafo */
   --teal: #0d9488;
   --gray: #9ca3af;
+  --gnode-shadow: 0 1px 3px rgba(31, 36, 33, 0.1);
 
   /* estados terminais (rejeitado/superseded) */
   --state-terminal-bg: #efece6;
@@ -115,6 +116,7 @@
 
   --teal: #41bfb1;
   --gray: #8d949f;
+  --gnode-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 
   --state-terminal-bg: #2b2a26;
 }
@@ -126,6 +128,9 @@
 }
 
 body { margin: 0; }
+/* Coluna flex de viewport inteira: páginas normais fluem como blocos; a do
+   grafo estica (flex: 1) para ocupar a altura restante dinamicamente. */
+#root { display: flex; flex-direction: column; min-height: 100dvh; }
 h1 { margin: 0; font-size: 1.5rem; }
 
 h2 {
@@ -1078,9 +1083,12 @@ h2 {
 .manage-close:hover { color: var(--muted); text-decoration: underline; }
 
 /* ---- grafo explicativo (case 0021) ---- */
-.graph-page { display: flex; flex-direction: column; height: calc(100vh - 7rem); box-sizing: border-box; }
+/* Full-bleed + altura dinâmica: #root é flex-column (100dvh), o grafo ocupa
+   o resto da viewport — sem magic numbers, sobrevive à nav quebrando linha. */
+.page.graph-page { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: none; width: 100%; padding: 1rem 1.25rem 1.25rem; }
 .graph-wrap { display: flex; gap: 1rem; flex: 1; min-height: 0; margin-top: 0.75rem; }
 .graph-canvas { flex: 1; min-width: 0; border: 1px solid var(--border-warm); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.graph-canvas .react-flow { --xy-background-color: var(--surface); }
 .graph-panel { width: 17rem; flex-shrink: 0; overflow-y: auto; font-size: 0.9rem; }
 
 .gnode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; width: 100%; height: 100%; padding: 0 0.4rem; box-sizing: border-box; line-height: 1.15; overflow: hidden; }
