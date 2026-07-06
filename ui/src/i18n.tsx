@@ -19,6 +19,7 @@ import type {
 
 const ptBR = {
   nav: {
+    dashboard: 'Dashboard',
     kanban: 'Kanban',
     manage: 'Gestão',
     decisions: 'Decisões',
@@ -38,6 +39,22 @@ const ptBR = {
     themeDark: 'Tema escuro',
     language: 'Idioma',
     versionTitle: 'Versão do cerne',
+  },
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'O resumo do projeto num olhar — cada card abre a tela detalhada.',
+    cardError: 'Erro ao carregar este card.',
+    roster: 'Features por estado',
+    totalFeatures: (n: number) => `${n} feature(s) no total`,
+    epics: 'Épicos',
+    noEpics: 'Nenhum épico.',
+    lint: 'Débitos de lint',
+    lintClean: 'Sem débitos. ✓',
+    savings: 'Economia de contexto',
+    savingsFoot: (ktokens: number) => `~${ktokens}k tokens fora do contexto do agente`,
+    activity: 'Atividade',
+    events: 'Últimos eventos',
+    noEvents: 'Nenhum evento.',
   },
   activity: {
     title: 'Atividade',
@@ -418,6 +435,7 @@ export type Messages = typeof ptBR
 
 const en: Messages = {
   nav: {
+    dashboard: 'Dashboard',
     kanban: 'Kanban',
     manage: 'Manage',
     decisions: 'Decisions',
@@ -437,6 +455,22 @@ const en: Messages = {
     themeDark: 'Dark theme',
     language: 'Language',
     versionTitle: 'cerne version',
+  },
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'The project at a glance — each card opens the detailed view.',
+    cardError: 'Failed to load this card.',
+    roster: 'Features by state',
+    totalFeatures: (n: number) => `${n} feature(s) total`,
+    epics: 'Epics',
+    noEpics: 'No epics.',
+    lint: 'Lint debts',
+    lintClean: 'No debts. ✓',
+    savings: 'Context savings',
+    savingsFoot: (ktokens: number) => `~${ktokens}k tokens kept out of the agent's context`,
+    activity: 'Activity',
+    events: 'Recent events',
+    noEvents: 'No events.',
   },
   activity: {
     title: 'Activity',
