@@ -47,7 +47,7 @@ func TestDecisionNewWithFileBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decision new --file: %v", err)
 	}
-	if !strings.Contains(out, "já sincronizada") || !strings.Contains(out, "com corpo") {
+	if !strings.Contains(out, "already synced") || !strings.Contains(out, "with a body") {
 		t.Fatalf("decision new --file output must confirm a synced body:\n%s", out)
 	}
 	if !strings.Contains(out, "cerne pull") {
@@ -79,7 +79,7 @@ func TestDecisionNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decision new: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "D-0001 criada (active)") {
+	if !strings.Contains(out, "D-0001 created (active)") {
 		t.Fatalf("decision new output missing D-0001 confirmation:\n%s", out)
 	}
 
@@ -271,7 +271,7 @@ func TestDecisionDraftByoKeyWritesAndCommits(t *testing.T) {
 	if headAfter == headBefore {
 		t.Fatalf("origin HEAD did not advance after decision draft")
 	}
-	if !strings.Contains(out, "rascunhado e enviado") {
+	if !strings.Contains(out, "drafted and pushed") {
 		t.Fatalf("decision draft output missing confirmation:\n%s", out)
 	}
 }

@@ -23,9 +23,9 @@ type nextGroup struct {
 // nextGroups is the work-queue order of cerne next: what to finish, then what
 // to start, then what to specify. Implemented/terminal states are omitted.
 var nextGroups = []nextGroup{
-	{domain.StateInDevelopment, "EM ANDAMENTO", "termine e rode 'cerne feature complete'"},
-	{domain.StateApproved, "PRONTAS PARA COMEÇAR", "rode 'cerne feature start'"},
-	{domain.StateCandidate, "CANDIDATAS", "escreva a spec e rode 'cerne feature approve'"},
+	{domain.StateInDevelopment, "IN PROGRESS", "finish and run 'cerne feature complete'"},
+	{domain.StateApproved, "READY TO START", "run 'cerne feature start'"},
+	{domain.StateCandidate, "CANDIDATES", "write the spec and run 'cerne feature approve'"},
 }
 
 func isNextState(s domain.FeatureState) bool {
@@ -100,7 +100,7 @@ func runNext(cmd *cobra.Command, dir string) error {
 
 	if len(findings) > 0 {
 		printed = true
-		fmt.Fprintln(out, "DÉBITOS (cerne lint):")
+		fmt.Fprintln(out, "DEBTS (cerne lint):")
 		printFindings(out, findings)
 	}
 
@@ -108,11 +108,11 @@ func runNext(cmd *cobra.Command, dir string) error {
 	// human notices what the agent applied without being asked.
 	if pending, err := app.PendingDriftReviews(ctx.repoDir); err == nil && len(pending) > 0 {
 		printed = true
-		fmt.Fprintf(out, "⚠ %d atualização(ões) automática(s) aguardando revisão — cerne drift pending\n", len(pending))
+		fmt.Fprintf(out, "⚠ %d automatic update(s) awaiting review — cerne drift pending\n", len(pending))
 	}
 
 	if !printed {
-		fmt.Fprintln(out, "Nada pendente. ✓")
+		fmt.Fprintln(out, "Nothing pending. ✓")
 	}
 	return nil
 }

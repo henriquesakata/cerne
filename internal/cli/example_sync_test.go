@@ -13,8 +13,8 @@ import (
 func TestTransitionHelpShowsGatePrecondition(t *testing.T) {
 	tests := []struct{ cmd, gate string }{
 		{"approve", "spec"},
-		{"start", "plano"},
-		{"complete", "resultado"},
+		{"start", "plan"},
+		{"complete", "result"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cmd, func(t *testing.T) {

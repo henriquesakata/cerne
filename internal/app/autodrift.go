@@ -19,12 +19,12 @@ const DriftAutoActor = "drift-auto"
 
 // ErrEmptyAutoErrata is returned when the provider replies with no usable text —
 // nothing is applied in that case.
-var ErrEmptyAutoErrata = errors.New("provider respondeu vazio — errata não aplicada")
+var ErrEmptyAutoErrata = errors.New("provider replied empty — errata not applied")
 
 // autoErrataInstruction is appended to the delegation prompt when the errata is
 // drafted by a called provider instead of the host agent: the raw completion is
 // applied verbatim, so it must be the errata text alone.
-const autoErrataInstruction = "\nIMPORTANTE: responda APENAS o texto da errata, sem preâmbulo, sem cercas de código e sem repetir o documento.\n"
+const autoErrataInstruction = "\nIMPORTANT: reply with ONLY the errata text, with no preamble, no code fences, and without repeating the document.\n"
 
 // AutoDriftErrata closes the drift loop for one finding (F-0115, D-0005
 // apply-then-notify): it builds the same grounded prompt --draft emits, asks
@@ -115,7 +115,7 @@ func PendingDriftReviews(repoDir string) ([]PendingReview, error) {
 
 // ErrNoPendingDrift is the sentinel for an AckDrift on an entity with nothing
 // pending.
-var ErrNoPendingDrift = errors.New("nenhuma atualização automática pendente")
+var ErrNoPendingDrift = errors.New("no pending automatic update")
 
 // AckDrift acknowledges every pending drift.auto of an entity: it appends a
 // drift.ack event (human actor, payload citing the covered event ids) and

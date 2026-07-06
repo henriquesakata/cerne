@@ -130,7 +130,7 @@ func TestCompileSynchronousUnaffected(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected --ingest rejected in byo-key mode, got success:\n%s", out)
 	}
-	if !strings.Contains(out, "exclusivo do modo delegação") {
+	if !strings.Contains(out, "exclusive to delegation mode") {
 		t.Fatalf("expected byo-key --ingest rejection message, got:\n%s", out)
 	}
 }
@@ -170,7 +170,7 @@ func TestCompileByoKeyNothingDirty(t *testing.T) {
 	if called {
 		t.Fatalf("provider called on a clean compile")
 	}
-	if !strings.Contains(out, "Nada a recompilar") {
+	if !strings.Contains(out, "Nothing to recompile") {
 		t.Fatalf("expected nothing-dirty message:\n%s", out)
 	}
 	head2, err := gitback.HeadSHA(origin)

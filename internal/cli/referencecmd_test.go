@@ -28,7 +28,7 @@ func TestReferenceNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reference new: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "R-0001 registrada") || !strings.Contains(out, "example.com/pkce") {
+	if !strings.Contains(out, "R-0001 registered") || !strings.Contains(out, "example.com/pkce") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 

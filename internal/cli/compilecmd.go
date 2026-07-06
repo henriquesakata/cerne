@@ -29,16 +29,16 @@ func newCompileCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "compile",
 		Short: "Compile per-module synthesis wiki pages (LLM layer)",
-		Long: "Compila páginas de síntese por módulo em content/wiki/, de forma incremental " +
-			"(só o que mudou, por input-hash). No modo delegação (default) emite prompts em " +
-			pendingRelDir + "/ para o agente hospedeiro processar; depois rode 'cerne compile --ingest'. " +
-			"O contrato de máquina (onde escrever cada resposta e como confirmar) está em " +
-			pendingRelDir + "/manifest.json — um response_path por página.",
-		Example: "  # 1) emitir os prompts (modo delegação, default)\n" +
+		Long: "Compiles per-module synthesis pages into content/wiki/, incrementally " +
+			"(only what changed, by input-hash). In delegation mode (default) it emits prompts in " +
+			pendingRelDir + "/ for the host agent to process; then run 'cerne compile --ingest'. " +
+			"The machine contract (where to write each response and how to confirm) is in " +
+			pendingRelDir + "/manifest.json — one response_path per page.",
+		Example: "  # 1) emit the prompts (delegation mode, default)\n" +
 			"  cerne compile\n" +
-			"  # 2) para cada página, escreva a resposta no response_path declarado em\n" +
-			"  #    " + pendingRelDir + "/manifest.json (campos: page, prompt_path, response_path, run_id)\n" +
-			"  # 3) ingerir: carimba a provenance e commita só as respostas desta rodada\n" +
+			"  # 2) for each page, write the response to the response_path declared in\n" +
+			"  #    " + pendingRelDir + "/manifest.json (fields: page, prompt_path, response_path, run_id)\n" +
+			"  # 3) ingest: stamp provenance and commit only this round's responses\n" +
 			"  cerne compile --ingest",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -67,7 +67,7 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 	// byo-key: one-phase synchronous synthesis via the configured Provider.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
 		if ingest {
-			return fmt.Errorf("--ingest é exclusivo do modo delegação; no modo byo-key a compilação é síncrona")
+			return fmt.Errorf("--ingest is exclusive to delegation mode; in byo-key mode compilation is synchronous")
 		}
 		return compileSynchronous(cmd, ctx, pages, force)
 	}
@@ -100,10 +100,10 @@ func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, f
 		return err
 	}
 	if len(done) == 0 {
-		fmt.Fprintln(out, "Nada a recompilar.")
+		fmt.Fprintln(out, "Nothing to recompile.")
 		return nil
 	}
-	fmt.Fprintf(out, "Compiladas %d página(s) (modo byo-key).\n", len(done))
+	fmt.Fprintf(out, "Compiled %d page(s) (byo-key mode).\n", len(done))
 	for _, p := range done {
 		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
 	}
@@ -136,14 +136,14 @@ func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page,
 	for _, p := range dirty {
 		body, err := prov.Complete(goCtx, compile.BuildPagePrompt(p))
 		if err != nil {
-			return nil, fmt.Errorf("sintetizando a página %s: %w", p.Name, err)
+			return nil, fmt.Errorf("synthesizing page %s: %w", p.Name, err)
 		}
 		if err := writeStampedPage(ctx.repoDir, p, head, []byte(body)); err != nil {
 			return nil, err
 		}
 		done = append(done, p)
 	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
+	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
 		return nil, err
 	}
 	return done, nil
@@ -161,7 +161,7 @@ func reportModulelessSkipped(cmd *cobra.Command, repoDir string) error {
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"%d feature(s) sem módulo não entram na wiki (veja CONTEXT.md / cerne search); atribua módulos para sintetizá-las.\n", n)
+		"%d feature(s) without a module are left out of the wiki (see CONTEXT.md / cerne search); assign modules to synthesize them.\n", n)
 	return nil
 }
 
@@ -193,7 +193,7 @@ const pendingRelDir = ".docs/wiki/.pending"
 func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope string) error {
 	out := cmd.OutOrStdout()
 	if len(dirty) == 0 {
-		fmt.Fprintln(out, "Nada a recompilar.")
+		fmt.Fprintln(out, "Nothing to recompile.")
 		return nil
 	}
 	pendingRoot := filepath.Join(ctx.projDir, filepath.FromSlash(pendingRelDir))
@@ -209,7 +209,7 @@ func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope
 		if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
 			return err
 		}
-		header := fmt.Sprintf("<!-- cerne-run-id: %s — ecoe como 'run_id:' no frontmatter da resposta em %s -->\n\n", runID, responseRel)
+		header := fmt.Sprintf("<!-- cerne-run-id: %s — echo it as 'run_id:' in the response frontmatter at %s -->\n\n", runID, responseRel)
 		if err := os.WriteFile(promptPath, []byte(header+compile.BuildPagePrompt(p)), 0o644); err != nil {
 			return err
 		}
@@ -228,11 +228,11 @@ func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope
 	if err := os.WriteFile(filepath.Join(pendingRoot, compile.ManifestName), manifestData, 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%d página(s) para compilar (prompts em %s/):\n", len(dirty), pendingRelDir)
+	fmt.Fprintf(out, "%d page(s) to compile (prompts in %s/):\n", len(dirty), pendingRelDir)
 	for _, p := range dirty {
 		fmt.Fprintf(out, "  %s → %s\n", p.Name, path.Join(pendingRelDir, p.Rel+".md"))
 	}
-	fmt.Fprintf(out, "Contrato em %s/%s: escreva cada response_path (ecoando run_id: <id> no frontmatter) e rode 'cerne compile --ingest'.\n", pendingRelDir, compile.ManifestName)
+	fmt.Fprintf(out, "Contract in %s/%s: write each response_path (echoing run_id: <id> in the frontmatter) and run 'cerne compile --ingest'.\n", pendingRelDir, compile.ManifestName)
 	return nil
 }
 
@@ -240,26 +240,26 @@ func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope
 // response_path was not written by the agent for this round. It is a hard error
 // (the exact expected path is reported) — the indiscoverable "write somewhere
 // and hope" path is gone.
-var ErrPendingResponseMissing = errors.New("resposta pendente ausente")
+var ErrPendingResponseMissing = errors.New("pending response missing")
 
 // ErrPendingResponseStale is the marker for a response that does not belong to
 // the current run (a stale page from a previous round). Such a page is reported
 // and skipped, never committed as success — the bug this contract fixes.
-var ErrPendingResponseStale = errors.New("resposta pendente obsoleta")
+var ErrPendingResponseStale = errors.New("pending response stale")
 
 // ingestPending (delegation phase 2) reads the round's manifest and, per
 // declared entry, validates the response the agent wrote at the declared
 // response_path and stamps provenance on the fresh ones, commits them, and
-// reports an honest per-page status (ingerido / obsoleto / pulado). A stale
+// reports an honest per-page status (ingested / stale / skipped). A stale
 // response is skipped (not committed); a missing one keeps pending and returns
-// a hard error naming the exact path (crit. 2). "Compilado: N" counts only the
+// a hard error naming the exact path (crit. 2). "Compiled: N" counts only the
 // pages actually ingested this round.
 func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error {
 	out := cmd.OutOrStdout()
 	pendingRoot := filepath.Join(ctx.projDir, filepath.FromSlash(pendingRelDir))
 	manifest, err := readManifest(pendingRoot)
 	if errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprintln(out, "Nenhuma página pendente para ingerir.")
+		fmt.Fprintln(out, "No pending page to ingest.")
 		return nil
 	}
 	if err != nil {
@@ -283,7 +283,7 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 		promptPath := filepath.Join(ctx.projDir, filepath.FromSlash(e.PromptPath))
 		body, err := os.ReadFile(responsePath)
 		if errors.Is(err, fs.ErrNotExist) {
-			statuses = append(statuses, pageStatus{e.Page, fmt.Sprintf("pulado (sem resposta em %s)", e.ResponsePath)})
+			statuses = append(statuses, pageStatus{e.Page, fmt.Sprintf("skipped (no response at %s)", e.ResponsePath)})
 			missing = append(missing, e.ResponsePath)
 			continue
 		}
@@ -292,32 +292,32 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 		}
 		p, ok := byName[e.Page]
 		if !ok {
-			return fmt.Errorf("página %s do manifesto não corresponde a nenhuma página compilável", e.Page)
+			return fmt.Errorf("page %s from the manifest matches no compilable page", e.Page)
 		}
 		if !isFresh(e, body, promptPath, responsePath) {
-			statuses = append(statuses, pageStatus{e.Page, "obsoleto"})
+			statuses = append(statuses, pageStatus{e.Page, "stale"})
 			continue
 		}
 		if err := writeStampedPage(ctx.repoDir, p, head, body); err != nil {
 			return err
 		}
 		done = append(done, p)
-		statuses = append(statuses, pageStatus{e.Page, "ingerido"})
+		statuses = append(statuses, pageStatus{e.Page, "ingested"})
 	}
 
 	if len(done) > 0 {
-		if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d página(s)", len(done))); err != nil {
+		if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
 			return err
 		}
 	}
 	for _, s := range statuses {
 		fmt.Fprintf(out, "  %s: %s\n", s.page, s.status)
 	}
-	fmt.Fprintf(out, "Compilado: %d página(s).\n", len(done))
+	fmt.Fprintf(out, "Compiled: %d page(s).\n", len(done))
 
 	if len(missing) > 0 {
 		// Keep pending so the agent can write the missing responses and re-ingest.
-		return fmt.Errorf("%d resposta(s) declarada(s) ausente(s) (ex.: %s): %w", len(missing), missing[0], ErrPendingResponseMissing)
+		return fmt.Errorf("%d declared response(s) missing (e.g. %s): %w", len(missing), missing[0], ErrPendingResponseMissing)
 	}
 	// A fully-consumed round (every declared page ingested) clears pending so a
 	// re-run is a clean no-op; an incomplete round (some obsolete) keeps it so
@@ -358,7 +358,7 @@ func readManifest(pendingRoot string) (compile.Manifest, error) {
 	}
 	var m compile.Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return compile.Manifest{}, fmt.Errorf("lendo o manifesto de delegação em %s: %w", pendingRoot, err)
+		return compile.Manifest{}, fmt.Errorf("reading the delegation manifest at %s: %w", pendingRoot, err)
 	}
 	return m, nil
 }

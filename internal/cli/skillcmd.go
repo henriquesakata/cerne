@@ -33,11 +33,11 @@ func newSkillInstallCmd() *cobra.Command {
 	return cmd
 }
 
-// skillStatusLabel maps an install outcome to its pt-BR label.
+// skillStatusLabel maps an install outcome to its label.
 var skillStatusLabel = map[skills.Status]string{
-	skills.StatusCreated:   "criada",
-	skills.StatusUpdated:   "atualizada",
-	skills.StatusUnchanged: "já atual",
+	skills.StatusCreated:   "created",
+	skills.StatusUpdated:   "updated",
+	skills.StatusUnchanged: "up to date",
 }
 
 func runSkillInstall(cmd *cobra.Command, dir string) error {
@@ -56,7 +56,7 @@ func runSkillInstall(cmd *cobra.Command, dir string) error {
 	return nil
 }
 
-// printSkillResults writes one pt-BR status line per installed skill. Shared by
+// printSkillResults writes one status line per installed skill. Shared by
 // `cerne skill install` and `cerne init`.
 func printSkillResults(out io.Writer, results []skills.Result) {
 	for _, r := range results {
@@ -64,6 +64,6 @@ func printSkillResults(out io.Writer, results []skills.Result) {
 		if label == "" {
 			label = string(r.Status)
 		}
-		fmt.Fprintf(out, "%s: %s em .claude/skills/%s\n", r.Skill, label, r.Skill)
+		fmt.Fprintf(out, "%s: %s in .claude/skills/%s\n", r.Skill, label, r.Skill)
 	}
 }

@@ -124,7 +124,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	// the agent guide. The project is already provisioned at this point, so a
 	// skills failure must not fail init — warn and continue.
 	if results, err := skills.Install(targetDir); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível instalar as skills do cerne: %v\n", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's skills: %v\n", err)
 	} else {
 		printSkillResults(out, results)
 	}
@@ -132,7 +132,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	// Wire docs.lock to the merge driver so concurrent branches don't conflict
 	// on the snapshot pin. Non-fatal: the project is already provisioned.
 	if err := ensureLockMergeDriver(targetDir); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível registrar o merge driver do docs.lock: %v\n", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not register the docs.lock merge driver: %v\n", err)
 	}
 
 	fmt.Fprintln(out, "Next steps:")

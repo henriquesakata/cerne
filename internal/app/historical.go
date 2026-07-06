@@ -195,7 +195,7 @@ func ForgetHistoricalAliases(repoDir, projDir, name string, forget []string) (st
 			return "", err
 		}
 		if !found {
-			return "", fmt.Errorf("nenhuma entidade histórica com nome %q", name)
+			return "", fmt.Errorf("no historical entity named %q", name)
 		}
 		h.Aliases = removeAliases(h.Aliases, forget)
 		if err := store.SaveHistorical(repoDir, h); err != nil {

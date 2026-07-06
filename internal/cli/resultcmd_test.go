@@ -101,7 +101,7 @@ func TestResultDraftByoKeyWritesAndCommits(t *testing.T) {
 	if headAfter == headBefore {
 		t.Fatalf("origin HEAD did not advance after result draft")
 	}
-	if !strings.Contains(out, "rascunhado e enviado") {
+	if !strings.Contains(out, "drafted and pushed") {
 		t.Fatalf("result draft output missing confirmation:\n%s", out)
 	}
 }

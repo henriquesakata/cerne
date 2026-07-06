@@ -30,7 +30,7 @@ func TestNoteGoldenPath(t *testing.T) {
 	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 
 	out := mustCerne(t, "note", "new", "go-git ignora ssh config", "--dir", proj)
-	if !strings.Contains(out, "N-0001 criada (active)") {
+	if !strings.Contains(out, "N-0001 created (active)") {
 		t.Fatalf("note new output missing N-0001 confirmation:\n%s", out)
 	}
 
@@ -41,8 +41,8 @@ func TestNoteGoldenPath(t *testing.T) {
 		t.Fatalf("materialized note does not start with the expected frontmatter:\n%s", stub)
 	}
 	ctx := mustRead(t, ctxPath)
-	if !strings.Contains(ctx, "## Conhecimento") || !strings.Contains(ctx, "N-0001 — go-git ignora ssh config") {
-		t.Fatalf("CONTEXT.md missing active note N-0001 under Conhecimento:\n%s", ctx)
+	if !strings.Contains(ctx, "## Knowledge") || !strings.Contains(ctx, "N-0001 — go-git ignora ssh config") {
+		t.Fatalf("CONTEXT.md missing active note N-0001 under Knowledge:\n%s", ctx)
 	}
 
 	realNote := frontmatter + "\n# go-git ignora ssh config\n\n" +
@@ -71,7 +71,7 @@ func TestNoteGoldenPath(t *testing.T) {
 	}
 
 	out = mustCerne(t, "note", "new", "Nota sucessora", "--dir", proj)
-	if !strings.Contains(out, "N-0002 criada (active)") {
+	if !strings.Contains(out, "N-0002 created (active)") {
 		t.Fatalf("second note new output missing N-0002 confirmation:\n%s", out)
 	}
 	out = mustCerne(t, "note", "substituir", "N-0001", "--by", "N-0002", "--reason", "corrigida", "--dir", proj)

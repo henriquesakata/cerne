@@ -195,7 +195,7 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	// 2. Key files under the .ssh dir.
 	dir, err := sshDir()
 	if err != nil {
-		return nil, fmt.Errorf("não foi possível localizar o diretório .ssh: %w", err)
+		return nil, fmt.Errorf("could not locate the .ssh directory: %w", err)
 	}
 	for _, name := range sshKeyFiles {
 		path := filepath.Join(dir, name)
@@ -205,7 +205,7 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 		auth, keyErr := ssh.NewPublicKeysFromFile(user, path, "")
 		if keyErr != nil {
 			return nil, fmt.Errorf(
-				"chave %s protegida por passphrase — inicie o ssh-agent e rode 'ssh-add': %w",
+				"key %s is passphrase-protected — start ssh-agent and run 'ssh-add': %w",
 				path, keyErr)
 		}
 		if err := pinKnownHosts(auth, host); err != nil {
@@ -215,8 +215,8 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	}
 
 	return nil, fmt.Errorf(
-		"nenhuma chave SSH utilizável em %s (procurei id_ed25519, id_rsa, id_ecdsa) — "+
-			"configure uma chave ou inicie o ssh-agent", dir)
+		"no usable SSH key in %s (looked for id_ed25519, id_rsa, id_ecdsa) — "+
+			"configure a key or start ssh-agent", dir)
 }
 
 // pinKnownHosts configures host-key verification on auth using the user's
@@ -240,7 +240,7 @@ func pinKnownHosts(auth transport.AuthMethod, host string) error {
 
 	dir, err := sshDir()
 	if err != nil {
-		return fmt.Errorf("não foi possível localizar o diretório .ssh: %w", err)
+		return fmt.Errorf("could not locate the .ssh directory: %w", err)
 	}
 	khPath := filepath.Join(dir, "known_hosts")
 	if _, statErr := os.Stat(khPath); statErr != nil {
@@ -249,11 +249,11 @@ func pinKnownHosts(auth transport.AuthMethod, host string) error {
 
 	cb, err := knownhosts.New(khPath)
 	if err != nil {
-		return fmt.Errorf("não foi possível ler known_hosts (%s): %w", khPath, err)
+		return fmt.Errorf("could not read known_hosts (%s): %w", khPath, err)
 	}
 	algos, err := hostKeyAlgorithms(khPath, host+":22")
 	if err != nil {
-		return fmt.Errorf("não foi possível ler known_hosts (%s): %w", khPath, err)
+		return fmt.Errorf("could not read known_hosts (%s): %w", khPath, err)
 	}
 
 	helper.HostKeyCallback = cb

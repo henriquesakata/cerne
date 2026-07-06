@@ -30,9 +30,9 @@ func newSpecDraftCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "draft <id>",
 		Short: "AI-draft a feature's spec",
-		Long: "Rascunha a spec de uma feature usando o provider configurado. No modo delegação " +
-			"(default) imprime o prompt montado para o agente hospedeiro escrever a spec; nos modos " +
-			"byo-key e claude-cli gera o texto, escreve em content/features/<id>/spec.md e dá push.",
+		Long: "Drafts a feature's spec using the configured provider. In delegation mode " +
+			"(default) it prints the assembled prompt for the host agent to write the spec; in " +
+			"byo-key and claude-cli modes it generates the text, writes it to content/features/<id>/spec.md and pushes.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpecDraft(cmd, dir, args[0])
@@ -51,7 +51,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	f, err := store.LoadFeature(ctx.repoDir, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("feature %s não encontrada no backend", id)
+			return fmt.Errorf("feature %s not found in the backend", id)
 		}
 		return err
 	}
@@ -62,7 +62,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	// delegation (default): print the prompt for the host agent to draft inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
 		fmt.Fprint(out, prompt)
-		fmt.Fprintf(out, "\n\nEscreva o resultado em content/features/%s/spec.md (mantendo o frontmatter cerne_id) e rode 'cerne push'.\n", id)
+		fmt.Fprintf(out, "\n\nWrite the result to content/features/%s/spec.md (keeping the cerne_id frontmatter) and run 'cerne push'.\n", id)
 		return nil
 	}
 
@@ -86,7 +86,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "spec de %s rascunhada e enviada — rode 'cerne pull' para revisar.\n", id)
+	fmt.Fprintf(out, "%s's spec drafted and pushed — run 'cerne pull' to review.\n", id)
 	return nil
 }
 

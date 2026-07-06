@@ -19,20 +19,20 @@ type transitionSpec struct {
 
 // lifecycleSeq is the feature lifecycle, repeated in each gate example so the
 // reader always sees where the transition sits.
-const lifecycleSeq = "  # ciclo de vida: new → approve → start → complete"
+const lifecycleSeq = "  # lifecycle: new → approve → start → complete"
 
 var transitionSpecs = []transitionSpec{
 	{"approve", "Approve a candidate feature (requires a real spec)", domain.ActionApprove,
-		"  # gate: a spec precisa estar preenchida (não o stub) e pushada\n" +
+		"  # gate: the spec must be filled in (not the stub) and pushed\n" +
 			"  cerne push && cerne feature approve <id>\n" + lifecycleSeq},
 	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject, ""},
 	{"start", "Start development (requires a real plan)", domain.ActionStart,
-		"  # gate: o plano precisa estar preenchido (não o stub) e pushado\n" +
+		"  # gate: the plan must be filled in (not the stub) and pushed\n" +
 			"  cerne push && cerne feature start <id>\n" + lifecycleSeq},
 	{"complete", "Complete development (requires a real result)", domain.ActionComplete,
-		"  # gate: o resultado precisa estar preenchido (não o stub) e pushado\n" +
+		"  # gate: the result must be filled in (not the stub) and pushed\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
-	{"substituir", "Substituir uma feature por outra (requer --by e --reason)", domain.ActionSupersede, ""},
+	{"substituir", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
 }
 
 func newTransitionCmds(dir *string) []*cobra.Command {
@@ -73,15 +73,15 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	// Starting a child pulls its ready ancestor epics into development too:
 	// report them so the author sees the board moved without a second command.
 	for _, epic := range out.Propagated {
-		fmt.Fprintf(cmd.OutOrStdout(), "  ↳ épico %s iniciado junto (filho entrou em desenvolvimento)\n", epic)
+		fmt.Fprintf(cmd.OutOrStdout(), "  ↳ epic %s started along with it (a child entered development)\n", epic)
 	}
 	// Approving a feature scaffolds its plan stub; starting scaffolds its result
 	// stub: point the author at the doc the next gate will require.
 	if action == domain.ActionApprove {
-		fmt.Fprintf(cmd.OutOrStdout(), "Próximo passo: preencha o plano em content/features/%s/plan.md (cerne plan draft %s ajuda) e rode 'cerne push' antes de 'cerne feature start'.\n", id, id)
+		fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
 	}
 	if action == domain.ActionStart {
-		fmt.Fprintf(cmd.OutOrStdout(), "Próximo passo: ao concluir, preencha o resultado em content/features/%s/result.md (cerne result draft %s ajuda) e rode 'cerne push' antes de 'cerne feature complete'.\n", id, id)
+		fmt.Fprintf(cmd.OutOrStdout(), "Next step: when done, fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'.\n", id, id)
 	}
 	return nil
 }

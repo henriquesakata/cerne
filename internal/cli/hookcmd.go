@@ -33,11 +33,11 @@ func newHookInstallCmd() *cobra.Command {
 	return cmd
 }
 
-// hookStatusLabel maps an install outcome to its pt-BR label.
+// hookStatusLabel maps an install outcome to its label.
 var hookStatusLabel = map[hooks.Status]string{
-	hooks.StatusCreated:   "criado",
-	hooks.StatusUpdated:   "atualizado",
-	hooks.StatusUnchanged: "já atual",
+	hooks.StatusCreated:   "created",
+	hooks.StatusUpdated:   "updated",
+	hooks.StatusUnchanged: "up to date",
 }
 
 func runHookInstall(cmd *cobra.Command, dir string) error {
@@ -56,7 +56,7 @@ func runHookInstall(cmd *cobra.Command, dir string) error {
 	return nil
 }
 
-// printHookResults writes one pt-BR status line per installed hook asset.
+// printHookResults writes one status line per installed hook asset.
 func printHookResults(out io.Writer, results []hooks.Result) {
 	for _, r := range results {
 		label := hookStatusLabel[r.Status]

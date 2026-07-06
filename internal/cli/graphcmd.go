@@ -45,7 +45,7 @@ func runGraph(cmd *cobra.Command, dir, format string) error {
 	case "dot":
 		return writeGraphDOT(out, g)
 	default:
-		return fmt.Errorf("formato inválido: %q (use json ou dot)", format)
+		return fmt.Errorf("invalid format: %q (use json or dot)", format)
 	}
 }
 

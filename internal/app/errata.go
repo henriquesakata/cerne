@@ -11,11 +11,11 @@ import (
 )
 
 // ErrEmptyErrata is returned when an errata has no text.
-var ErrEmptyErrata = errors.New("errata sem texto")
+var ErrEmptyErrata = errors.New("errata has no text")
 
 // ErrUnsupportedErrataKind is returned for an id whose prefix has no
 // errata-bearing entity type.
-var ErrUnsupportedErrataKind = errors.New("tipo de entidade não suporta errata")
+var ErrUnsupportedErrataKind = errors.New("entity type does not support errata")
 
 // AddErrata appends an additive errata entry to an entity (typically a concluded,
 // immutable one), after validating the entity exists. It records an event and

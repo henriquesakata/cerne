@@ -41,7 +41,7 @@ func TestImportAppliesHistoricalSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import dry-run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Históricas: 2") {
+	if !strings.Contains(out, "Historicals: 2") {
 		t.Fatalf("dry-run missing historicals count:\n%s", out)
 	}
 	if all, _ := store.LoadAllHistoricals(repoDir); len(all) != 0 {
@@ -53,7 +53,7 @@ func TestImportAppliesHistoricalSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import apply: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "2 históricas") {
+	if !strings.Contains(out, "2 historicals") {
 		t.Fatalf("apply summary missing historicals:\n%s", out)
 	}
 	all, err := store.LoadAllHistoricals(repoDir)

@@ -14,7 +14,7 @@ func TestSkillInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("skill install: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "cerne-authoring: criada em .claude/skills/cerne-authoring") {
+	if !strings.Contains(out, "cerne-authoring: created in .claude/skills/cerne-authoring") {
 		t.Fatalf("output missing created line:\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".claude", "skills", "cerne-authoring", "SKILL.md")); err != nil {
@@ -25,7 +25,7 @@ func TestSkillInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "cerne-authoring: já atual") {
-		t.Fatalf("rerun output missing 'já atual':\n%s", out)
+	if !strings.Contains(out, "cerne-authoring: up to date") {
+		t.Fatalf("rerun output missing 'up to date':\n%s", out)
 	}
 }

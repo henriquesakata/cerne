@@ -128,7 +128,7 @@ func TestPushGoldenPath(t *testing.T) {
 	if manifest[rel] != sha256OfString(edited) {
 		t.Fatalf("manifest[%s] = %s, want sha256 of the edited content", rel, manifest[rel])
 	}
-	want := "Enviado: 1 documento(s) (snapshot " + originHead[:8] + ")."
+	want := "Sent: 1 document(s) (snapshot " + originHead[:8] + ")."
 	if !strings.Contains(out, want) {
 		t.Fatalf("output missing %q:\n%s", want, out)
 	}
@@ -138,8 +138,8 @@ func TestPushGoldenPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second push: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Nada para enviar.") {
-		t.Fatalf("second push output = %q, want 'Nada para enviar.'", out)
+	if !strings.Contains(out, "Nothing to send.") {
+		t.Fatalf("second push output = %q, want 'Nothing to send.'", out)
 	}
 }
 
@@ -166,7 +166,7 @@ func TestPushAutoRebasesDisjointAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("disjoint push should succeed: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("output missing success:\n%s", out)
 	}
 
@@ -212,7 +212,7 @@ func TestPushSameDocConflict(t *testing.T) {
 	if err == nil {
 		t.Fatalf("same-document push should conflict\noutput: %s", out)
 	}
-	if !strings.Contains(out, "Conflito em 1 documento(s)") ||
+	if !strings.Contains(out, "Conflict in 1 document(s)") ||
 		!strings.Contains(out, "content/features/F-0001/spec.md") {
 		t.Fatalf("conflict output missing doc name:\n%s", out)
 	}
@@ -239,7 +239,7 @@ func TestPushEditedContextErrors(t *testing.T) {
 	if err == nil {
 		t.Fatalf("push with edited CONTEXT.md succeeded\noutput: %s", out)
 	}
-	if !strings.Contains(err.Error(), "CONTEXT.md é gerado") || !strings.Contains(err.Error(), "rode 'cerne pull' para restaurar") {
+	if !strings.Contains(err.Error(), "CONTEXT.md is generated") || !strings.Contains(err.Error(), "run 'cerne pull' to restore") {
 		t.Fatalf("error %q, want the generated-CONTEXT.md message", err)
 	}
 }
@@ -256,7 +256,7 @@ func TestPushMissingCerneID(t *testing.T) {
 	for _, want := range []string{
 		"cerne_id",
 		"current/features/F-0001-parcelamento/spec.md",
-		"novos documentos nascem com 'cerne feature new'",
+		"new documents are born from 'cerne feature new'",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("error %q missing %q", msg, want)
@@ -274,9 +274,9 @@ func TestPushUntrackedFile(t *testing.T) {
 	}
 	msg := err.Error()
 	for _, want := range []string{
-		"não rastreado",
+		"untracked file",
 		"current/features/F-0001-parcelamento/notes.md",
-		"rode 'cerne pull' para ressincronizar",
+		"run 'cerne pull' to resync",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("error %q missing %q", msg, want)
@@ -318,7 +318,7 @@ func TestPushDecisionDoc(t *testing.T) {
 	if string(backendDoc) != edited {
 		t.Fatalf("backend decision doc = %q, want the edited content mapped to content/decisions/D-0001.md", backendDoc)
 	}
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("output missing 'Enviado: 1 documento(s)':\n%s", out)
 	}
 }
@@ -345,7 +345,7 @@ func TestPushUsesSessionSnapshotBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("push with stale lock but valid sidecar: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("push should send the edit:\n%s", out)
 	}
 }
@@ -362,7 +362,7 @@ func TestPushFallsBackToLockBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("push without sidecar (lock base): %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("push should send the edit via the lock base:\n%s", out)
 	}
 
@@ -378,7 +378,7 @@ func TestPushFallsBackToLockBase(t *testing.T) {
 	if err == nil {
 		t.Fatalf("push without any base should fail\n%s", out)
 	}
-	if !strings.Contains(out, "rode 'cerne pull' primeiro") {
+	if !strings.Contains(out, "run 'cerne pull' first") {
 		t.Fatalf("error should guide to pull:\n%s", out)
 	}
 }
@@ -412,7 +412,7 @@ func TestPushDryRunReportsAndDoesNotPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("real push after dry-run: %v\n%s", err, out2)
 	}
-	if !strings.Contains(out2, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out2, "Sent: 1 document(s)") {
 		t.Fatalf("real push should send the still-pending edit:\n%s", out2)
 	}
 }

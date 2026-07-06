@@ -23,7 +23,7 @@ const bom = "\xef\xbb\xbf"
 
 // supersededImportReason is recorded on features imported in superseded
 // state; the superseding feature is unknown at import time.
-const supersededImportReason = "importado como substituído"
+const supersededImportReason = "imported as superseded"
 
 // featureDocNames is the copy order of a case folder's lifecycle documents.
 var featureDocNames = []string{"spec.md", "plan.md", "result.md"}

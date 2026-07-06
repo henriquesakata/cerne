@@ -27,10 +27,10 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	if title == "" {
-		return store.Reference{}, fmt.Errorf("título não pode ser vazio")
+		return store.Reference{}, fmt.Errorf("title cannot be empty")
 	}
 	if url == "" {
-		return store.Reference{}, fmt.Errorf("url não pode ser vazia (referência externa)")
+		return store.Reference{}, fmt.Errorf("url cannot be empty (external reference)")
 	}
 	// Normalize tags before allocating an id, so an unknown facet aborts the
 	// whole create without consuming an R- id or writing anything (mirrors notes).
@@ -95,13 +95,13 @@ func RetagReference(repoDir, projDir, id string, facets, components []string, se
 		var err error
 		r, err = store.LoadReference(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("referência %s não encontrada no backend", id)
+			return "", fmt.Errorf("reference %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if r.State != domain.ReferenceCurrent {
-			return "", fmt.Errorf("referência %s não está current (está %s) — retag só vale para referência current", id, r.State)
+			return "", fmt.Errorf("reference %s is not current (it is %s) — retag only applies to a current reference", id, r.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)
@@ -150,30 +150,30 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 		switch {
 		case strings.HasPrefix(id, "F-"):
 			if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: feature %s não encontrada no backend", id)
+				return nil, fmt.Errorf("--informs: feature %s not found in backend", id)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "D-"):
 			if _, err := store.LoadDecision(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: decisão %s não encontrada no backend", id)
+				return nil, fmt.Errorf("--informs: decision %s not found in backend", id)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "RB-"):
 			if _, err := store.LoadRunbook(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: runbook %s não encontrado no backend", id)
+				return nil, fmt.Errorf("--informs: runbook %s not found in backend", id)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "N-"):
 			if _, err := store.LoadNote(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: nota %s não encontrada no backend", id)
+				return nil, fmt.Errorf("--informs: note %s not found in backend", id)
 			} else if err != nil {
 				return nil, err
 			}
 		default:
-			return nil, fmt.Errorf("--informs: %q deve ser uma feature (F-), decisão (D-), runbook (RB-) ou nota (N-)", id)
+			return nil, fmt.Errorf("--informs: %q must be a feature (F-), decision (D-), runbook (RB-) or note (N-)", id)
 		}
 		out = append(out, id)
 	}

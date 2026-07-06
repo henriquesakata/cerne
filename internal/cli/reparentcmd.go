@@ -28,12 +28,12 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 	switch {
 	case clear:
 		if len(args) > 1 {
-			return fmt.Errorf("--clear não aceita um <parent-id>")
+			return fmt.Errorf("--clear does not take a <parent-id>")
 		}
 	case len(args) == 2:
 		parent = args[1]
 	default:
-		return fmt.Errorf("informe o <parent-id> ou use --clear")
+		return fmt.Errorf("pass the <parent-id> or use --clear")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -43,9 +43,9 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 		return err
 	}
 	if parent == "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s desvinculada do épico.\n", id)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s detached from its epic.\n", id)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s agora é filha de %s.\n", id, parent)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s is now a child of %s.\n", id, parent)
 	}
 	return nil
 }

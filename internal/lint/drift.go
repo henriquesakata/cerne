@@ -131,8 +131,8 @@ func matchGlob(glob, path string) bool {
 	return false
 }
 
-// driftDetail renders the pt-BR detail: the short baseline sha and up to
-// driftMaxPaths changed paths, the remainder collapsed into "(+k mais)".
+// driftDetail renders the detail: the short baseline sha and up to
+// driftMaxPaths changed paths, the remainder collapsed into "(+k more)".
 func driftDetail(baseline string, paths []string) string {
 	short := baseline
 	if len(short) > 7 {
@@ -142,9 +142,9 @@ func driftDetail(baseline string, paths []string) string {
 	if len(paths) > driftMaxPaths {
 		shown, extra = paths[:driftMaxPaths], len(paths)-driftMaxPaths
 	}
-	s := fmt.Sprintf("código mudou desde %s em: %s", short, strings.Join(shown, ", "))
+	s := fmt.Sprintf("code changed since %s in: %s", short, strings.Join(shown, ", "))
 	if extra > 0 {
-		s += fmt.Sprintf(" (+%d mais)", extra)
+		s += fmt.Sprintf(" (+%d more)", extra)
 	}
 	return s
 }

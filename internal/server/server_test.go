@@ -342,8 +342,8 @@ func TestFeatureDetailNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "feature não encontrada" {
-		t.Fatalf("error = %q, want %q", got["error"], "feature não encontrada")
+	if got["error"] != "feature not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "feature not found")
 	}
 }
 
@@ -379,8 +379,8 @@ func TestDecisionDetailNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "decisão não encontrada" {
-		t.Fatalf("error = %q, want %q", got["error"], "decisão não encontrada")
+	if got["error"] != "decision not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "decision not found")
 	}
 }
 
@@ -416,8 +416,8 @@ func TestRunbookDetailNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "runbook não encontrado" {
-		t.Fatalf("error = %q, want %q", got["error"], "runbook não encontrado")
+	if got["error"] != "runbook not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "runbook not found")
 	}
 }
 
@@ -471,8 +471,8 @@ func TestNoteDetailNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "nota não encontrada" {
-		t.Fatalf("error = %q, want %q", got["error"], "nota não encontrada")
+	if got["error"] != "note not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "note not found")
 	}
 }
 
@@ -526,8 +526,8 @@ func TestReferenceDetailNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "referência não encontrada" {
-		t.Fatalf("error = %q, want %q", got["error"], "referência não encontrada")
+	if got["error"] != "reference not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "reference not found")
 	}
 }
 
@@ -584,8 +584,8 @@ func TestTransitionGateFailure(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(got["error"], "spec.md") || !strings.Contains(got["error"], "escreva") {
-		t.Fatalf("error = %q, want pt-BR gate message naming spec.md", got["error"])
+	if !strings.Contains(got["error"], "spec.md") || !strings.Contains(got["error"], "write") {
+		t.Fatalf("error = %q, want gate message naming spec.md", got["error"])
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateCandidate {
 		t.Fatalf("state after failed gate = %s, want candidate", f.State)
@@ -600,8 +600,8 @@ func TestTransitionUnknownFeature(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "feature não encontrada" {
-		t.Fatalf("error = %q, want %q", got["error"], "feature não encontrada")
+	if got["error"] != "feature not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "feature not found")
 	}
 }
 
@@ -986,7 +986,7 @@ func TestFeatureDocPutUnknownFeature(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "feature não encontrada" {
-		t.Fatalf("error = %q, want 'feature não encontrada'", got["error"])
+	if got["error"] != "feature not found" {
+		t.Fatalf("error = %q, want 'feature not found'", got["error"])
 	}
 }

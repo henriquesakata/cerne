@@ -23,21 +23,21 @@ import (
 var ErrUnknownDoc = errors.New("documento de feature desconhecido")
 
 // ErrParentNotFound is returned when a feature's parent (epic) does not exist.
-var ErrParentNotFound = errors.New("feature-épico não encontrada")
+var ErrParentNotFound = errors.New("parent feature (epic) not found")
 
 // ErrParentTerminal is returned when the parent (epic) is in a terminal state
 // (superseded/rejected): new work is not filed under a dead epic.
-var ErrParentTerminal = errors.New("a feature-épico está encerrada")
+var ErrParentTerminal = errors.New("the parent feature (epic) is closed")
 
 // ErrTitleFrozen is returned when renaming a feature in a terminal state
 // (implemented/rejected/superseded): its title is frozen history.
-var ErrTitleFrozen = errors.New("o título da feature está congelado")
+var ErrTitleFrozen = errors.New("the feature's title is frozen")
 
 // ErrDuplicateTitle is returned when creating a feature whose normalized title
 // (domain.NormalizeTitle, the F-0045 rule) matches a live feature: the usual
 // cause is a retry of a creation that failed after the entity already reached
 // the backend (F-0121). Terminal states never block — history is not a veto.
-var ErrDuplicateTitle = errors.New("já existe uma feature viva com este título")
+var ErrDuplicateTitle = errors.New("a live feature with this title already exists")
 
 // featureDocFilenames maps the API doc name to its backend filename.
 var featureDocFilenames = map[string]string{
@@ -64,7 +64,7 @@ func CreateFeature(repoDir, projDir, title, module, parent string, facets, compo
 func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string) (store.Feature, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return store.Feature{}, fmt.Errorf("o título da feature não pode ser vazio")
+		return store.Feature{}, fmt.Errorf("the feature title cannot be empty")
 	}
 	normFacets, err := domain.NormalizeFacets(facets)
 	if err != nil {
@@ -153,7 +153,7 @@ func RetagFeature(repoDir, projDir, id string, facets, components []string, setF
 			return "", err
 		}
 		if f.State == domain.StateSuperseded || f.State == domain.StateRejected {
-			return "", fmt.Errorf("feature %s está encerrada (%s) — retag só vale para feature viva ou implementada", id, f.State)
+			return "", fmt.Errorf("feature %s is closed (%s) — retag only applies to a live or implemented feature", id, f.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)
@@ -197,7 +197,7 @@ func checkDuplicateTitle(repoDir, title string) error {
 		switch f.State {
 		case domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment:
 			if domain.NormalizeTitle(f.Title) == norm {
-				return fmt.Errorf("%w: %s (%s) — se isto é retry de uma criação que falhou, a feature já está no backend; avance a existente ou use outro título", ErrDuplicateTitle, f.ID, f.State)
+				return fmt.Errorf("%w: %s (%s) — if this is a retry of a failed creation, the feature is already in the backend; advance the existing one or use a different title", ErrDuplicateTitle, f.ID, f.State)
 			}
 		}
 	}
@@ -209,10 +209,10 @@ func checkDuplicateTitle(repoDir, title string) error {
 // non-empty module must be one of them.
 func ValidateModule(module string, modules []string) error {
 	if len(modules) >= 2 && module == "" {
-		return fmt.Errorf("--module é obrigatório neste projeto (módulos: %s)", strings.Join(modules, ", "))
+		return fmt.Errorf("--module is required in this project (modules: %s)", strings.Join(modules, ", "))
 	}
 	if module != "" && len(modules) > 0 && !slices.Contains(modules, module) {
-		return fmt.Errorf("módulo %q não existe no projeto (módulos: %s)", module, strings.Join(modules, ", "))
+		return fmt.Errorf("module %q does not exist in the project (modules: %s)", module, strings.Join(modules, ", "))
 	}
 	return nil
 }
@@ -244,7 +244,7 @@ func validateParent(repoDir, childID, parent string) error {
 		}
 	}
 	if err := domain.ValidateParentLink(childID, parent, parentOf); err != nil {
-		return fmt.Errorf("vínculo de épico inválido: %w", err)
+		return fmt.Errorf("invalid epic link: %w", err)
 	}
 	return nil
 }
@@ -299,7 +299,7 @@ func SetFeatureParent(repoDir, projDir, id, parent string) error {
 func RenameFeature(repoDir, projDir, id, newTitle string) error {
 	newTitle = strings.TrimSpace(newTitle)
 	if newTitle == "" {
-		return fmt.Errorf("o título da feature não pode ser vazio")
+		return fmt.Errorf("the feature title cannot be empty")
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)

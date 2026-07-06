@@ -33,20 +33,20 @@ func newFeatureCmd() *cobra.Command {
 // born as title-only loses its creation context the moment the session that
 // minted it is gone, so the CLI refuses it and teaches the minimal path.
 var errFeatureContextRequired = errors.New(
-	"feature sem contexto: informe ao menos --context \"<1-3 frases do porquê>\", ou a spec completa via --file <spec.md>/stdin")
+	"feature has no context: pass at least --context \"<1-3 sentences on why>\", or the full spec via --file <spec.md>/stdin")
 
 func newFeatureNewCmd(dir *string) *cobra.Command {
 	var module, parent, facet, component, file, context string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a feature in candidate state",
-		Long: "Cria a candidata já com o contexto capturado: --file/stdin traz a spec completa (one-shot, " +
-			"nada a preencher depois) e --context semeia a seção Problema do rascunho com o porquê da criação. " +
-			"Sem um dos dois a criação é recusada — o título sozinho não sobrevive à sessão que o criou.",
-		Example: "  # registra a candidata com o porquê capturado (mínimo)\n" +
-			"  cerne feature new \"<título>\" --context \"<1-3 frases do porquê>\" [--module <m>] [--parent F-NNNN]\n" +
-			"  # ou já com a spec completa (one-shot)\n" +
-			"  cerne feature new \"<título>\" --file spec.md\n" +
+		Long: "Creates the candidate with its context already captured: --file/stdin brings the full spec (one-shot, " +
+			"nothing to fill in later) and --context seeds the draft's Problem section with why it was created. " +
+			"Without one of the two, creation is refused — the title alone does not survive the session that minted it.",
+		Example: "  # register the candidate with the why captured (minimum)\n" +
+			"  cerne feature new \"<title>\" --context \"<1-3 sentences on why>\" [--module <m>] [--parent F-NNNN]\n" +
+			"  # or with the full spec already (one-shot)\n" +
+			"  cerne feature new \"<title>\" --file spec.md\n" +
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,10 +55,10 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
 	cmd.Flags().StringVar(&parent, "parent", "", "parent feature ID (the epic this one decomposes)")
-	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; conjunto fechado: infra,code,data,process,auth)")
-	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsistema/ferramenta, ex.: gitback,materialize)")
+	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; closed set: infra,code,data,process,auth)")
+	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsystem/tool, e.g. gitback,materialize)")
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
-	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 frases) semeado na seção Problema da spec")
+	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 sentences) seeded into the spec's Problem section")
 	return cmd
 }
 
@@ -70,7 +70,7 @@ func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, compon
 	hasBody := strings.TrimSpace(body) != ""
 	hasContext := strings.TrimSpace(context) != ""
 	if hasBody && hasContext {
-		return fmt.Errorf("--file/stdin e --context são mutuamente exclusivos: a spec completa já carrega o contexto")
+		return fmt.Errorf("--file/stdin and --context are mutually exclusive: the full spec already carries the context")
 	}
 	if !hasBody && !hasContext {
 		return errFeatureContextRequired
@@ -89,10 +89,10 @@ func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, compon
 		return err
 	}
 	if hasBody {
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (candidate) com spec — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", f.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (candidate) with spec — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID)
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (candidate) com o contexto semeado na spec. Próximo passo: complete a spec ('cerne pull' materializa o rascunho).\n", f.ID)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s created (candidate) with its context seeded into the spec. Next step: complete the spec ('cerne pull' materializes the draft).\n", f.ID)
 	return nil
 }
 
@@ -100,25 +100,25 @@ func newFeatureRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Redefinir os tags (facet/componente) de uma feature",
-		Long: "Define ou substitui os eixos de tag de uma feature, sem tocar no ciclo de vida — preserva estado, " +
-			"módulo, épico e docs. Altera só o eixo passado: 'retag F-0001 --component gitback' mantém os facets; " +
-			"'--facet \"\"' limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada. " +
-			"Vale para feature viva ou implementada; feature encerrada (superseded/rejected) é história congelada.",
+		Short: "Redefine a feature's tags (facet/component)",
+		Long: "Sets or replaces a feature's tag axes without touching the lifecycle — preserves state, " +
+			"module, epic and docs. Changes only the axis passed: 'retag F-0001 --component gitback' keeps the facets; " +
+			"'--facet \"\"' clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected. " +
+			"Applies to a live or implemented feature; a terminal feature (superseded/rejected) is frozen history.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFeatureRetag(cmd, *dir, args[0], facet, component,
 				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
 		},
 	}
-	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
-	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
 	return cmd
 }
 
 func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
 	if !setFacets && !setComponents {
-		return fmt.Errorf("informe ao menos --facet ou --component")
+		return fmt.Errorf("pass at least --facet or --component")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -129,7 +129,7 @@ func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		f.ID, strings.Join(f.Facets, ", "), strings.Join(f.Components, ", "))
 	return nil
 }

@@ -29,13 +29,13 @@ func newAskCmd() *cobra.Command {
 	var dir string
 	var opts askOpts
 	cmd := &cobra.Command{
-		Use:   "ask <pergunta>",
+		Use:   "ask <question>",
 		Short: "Q&A over current state, diving into history (LLM layer)",
-		Long: "Monta o contexto (wiki + índice FTS), vigente-primeiro, cada fonte marcada por " +
-			"estado. No modo delegação (default) imprime o prompt montado para o agente hospedeiro " +
-			"responder inline. Use --history para incluir entidades substituídas/obsoletas (marcadas). " +
-			"Para economizar tokens: --max-sources N (limita o nº de fontes), --max-snippet N (corta cada " +
-			"trecho), --no-preamble (omite a instrução de resposta), --json (emite só as fontes, estruturadas).",
+		Long: "Assembles the context (wiki + FTS index), current-first, each source tagged by " +
+			"state. In delegation mode (default) it prints the assembled prompt for the host agent " +
+			"to answer inline. Use --history to include superseded/obsolete entities (tagged). " +
+			"To save tokens: --max-sources N (limits the number of sources), --max-snippet N (truncates each " +
+			"snippet), --no-preamble (omits the answer instruction), --json (emits just the sources, structured).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAsk(cmd, dir, args[0], opts)
@@ -44,17 +44,17 @@ func newAskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&opts.history, "history", false, "include superseded/rejected/obsolete entities (state-tagged)")
-	cmd.Flags().IntVar(&opts.maxSources, "max-sources", 0, "limite de fontes no contexto (0 = todas)")
-	cmd.Flags().IntVar(&opts.maxSnippet, "max-snippet", 0, "limite de caracteres por trecho (0 = inteiro)")
-	cmd.Flags().BoolVar(&opts.noPreamble, "no-preamble", false, "omite a instrução de resposta (economiza tokens)")
-	cmd.Flags().BoolVar(&opts.asJSON, "json", false, "emite só as fontes recuperadas, em JSON")
+	cmd.Flags().IntVar(&opts.maxSources, "max-sources", 0, "limit of sources in the context (0 = all)")
+	cmd.Flags().IntVar(&opts.maxSnippet, "max-snippet", 0, "limit of characters per snippet (0 = whole)")
+	cmd.Flags().BoolVar(&opts.noPreamble, "no-preamble", false, "omit the answer instruction (saves tokens)")
+	cmd.Flags().BoolVar(&opts.asJSON, "json", false, "emit just the retrieved sources, in JSON")
 	return cmd
 }
 
 func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return fmt.Errorf("a pergunta não pode ser vazia")
+		return fmt.Errorf("the question cannot be empty")
 	}
 	// Offline by design, like search: reads the cached clone and local index.
 	ctx, err := resolvePaths(dir)
@@ -69,7 +69,7 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
 		// In --json mode stdout must stay pure JSON: build the index silently.
 		if !opts.asJSON {
-			fmt.Fprintln(out, "Construindo índice...")
+			fmt.Fprintln(out, "Building index...")
 		}
 		if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
 			return err

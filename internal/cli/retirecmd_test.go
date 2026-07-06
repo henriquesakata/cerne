@@ -22,7 +22,7 @@ func TestRetire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retire: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "H-0001 registrada") || !strings.Contains(out, "Finance") {
+	if !strings.Contains(out, "H-0001 registered") || !strings.Contains(out, "Finance") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 
@@ -63,8 +63,8 @@ func TestRetireIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first retire: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "H-0001 registrada") {
-		t.Fatalf("first retire output missing 'registrada':\n%s", out)
+	if !strings.Contains(out, "H-0001 registered") {
+		t.Fatalf("first retire output missing 'registered':\n%s", out)
 	}
 
 	// Re-retire the same name (different case, an extra alias). Must update
@@ -75,8 +75,8 @@ func TestRetireIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second retire: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "H-0001 atualizada") {
-		t.Fatalf("second retire output missing 'atualizada':\n%s", out)
+	if !strings.Contains(out, "H-0001 updated") {
+		t.Fatalf("second retire output missing 'updated':\n%s", out)
 	}
 
 	all, err := store.LoadAllHistoricals(repoDir)

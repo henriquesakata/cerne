@@ -41,8 +41,8 @@ func TestBrief(t *testing.T) {
 	}
 	for _, want := range []string{
 		"FEATURES", "F-0001", "candidate", "Conta digital",
-		"DECISÕES", "D-0001", "active", "Usar Postgres",
-		"NOTAS", "N-0001", "SSH gotcha",
+		"DECISIONS", "D-0001", "active", "Usar Postgres",
+		"NOTES", "N-0001", "SSH gotcha",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("brief output missing %q:\n%s", want, out)

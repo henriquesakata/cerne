@@ -40,10 +40,10 @@ func TestNext(t *testing.T) {
 		t.Fatalf("next must not fail with findings: %v\noutput: %s", err, out)
 	}
 	for _, want := range []string{
-		"EM ANDAMENTO (1) — termine",
-		"PRONTAS PARA COMEÇAR (1) — rode 'cerne feature start'",
-		"CANDIDATAS (1) — escreva a spec",
-		"DÉBITOS (cerne lint):",
+		"IN PROGRESS (1) — finish",
+		"READY TO START (1) — run 'cerne feature start'",
+		"CANDIDATES (1) — write the spec",
+		"DEBTS (cerne lint):",
 		"MISSING-GATE-DOC",
 	} {
 		if !strings.Contains(out, want) {
@@ -65,7 +65,7 @@ func TestNextEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("next: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Nada pendente. ✓") {
+	if !strings.Contains(out, "Nothing pending. ✓") {
 		t.Fatalf("empty project should report nothing pending:\n%s", out)
 	}
 }

@@ -95,8 +95,8 @@ func TestClassifyDryRun(t *testing.T) {
 	for _, want := range []string{
 		"F-0001 → finance",  // 0021_finance-consolidation
 		"F-0002 → identity", // 0033_identity-roles
-		"2 feature(s) sem módulo permanecem (transversais/ambíguas).",
-		"Rode com --yes para aplicar.",
+		"2 feature(s) remain module-less (cross-cutting/ambiguous).",
+		"Run with --yes to apply.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q:\n%s", want, out)
@@ -133,7 +133,7 @@ func TestClassifyYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("classify --yes: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Classificadas 2 feature(s).") {
+	if !strings.Contains(out, "Classified 2 feature(s).") {
 		t.Fatalf("output missing apply confirmation:\n%s", out)
 	}
 
@@ -192,8 +192,8 @@ func TestClassifyYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second classify --yes: %v\noutput: %s", err, out2)
 	}
-	if !strings.Contains(out2, "Nada a classificar.") {
-		t.Fatalf("second --yes output missing 'Nada a classificar.':\n%s", out2)
+	if !strings.Contains(out2, "Nothing to classify.") {
+		t.Fatalf("second --yes output missing 'Nothing to classify.':\n%s", out2)
 	}
 	headAfter2, err := gitback.HeadSHA(origin)
 	if err != nil {

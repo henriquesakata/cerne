@@ -16,14 +16,14 @@ import (
 func newErrataCmd(dir *string) *cobra.Command {
 	var file string
 	cmd := &cobra.Command{
-		Use:   "errata <id> [texto]",
-		Short: "Anexar uma errata (anotação aditiva) a uma entidade concluída, sem reescrever o corpo",
+		Use:   "errata <id> [text]",
+		Short: "Append an erratum (additive annotation) to a concluded entity, without rewriting the body",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runErrata(cmd, *dir, args, file)
 		},
 	}
-	cmd.Flags().StringVar(&file, "file", "", "ler o texto da errata de um arquivo (ou stdin)")
+	cmd.Flags().StringVar(&file, "file", "", "read the erratum text from a file (or stdin)")
 	return cmd
 }
 
@@ -39,7 +39,7 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file string) error
 		text = body
 	}
 	if strings.TrimSpace(text) == "" {
-		return fmt.Errorf("errata sem texto: passe o texto como argumento ou via --file/stdin")
+		return fmt.Errorf("erratum with no text: pass the text as an argument or via --file/stdin")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -49,6 +49,6 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file string) error
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ errata anexada a %s — já sincronizada. Rode 'cerne pull' para materializar.\n", id)
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ erratum appended to %s — already synced. Run 'cerne pull' to materialize.\n", id)
 	return nil
 }

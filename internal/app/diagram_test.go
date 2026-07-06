@@ -21,14 +21,14 @@ func TestBuildSequenceDiagramPrompt(t *testing.T) {
 	for _, want := range []string{
 		"F-0007", "Conciliação bancária", "finance", "sequenceDiagram",
 		"internal/finance/recon.go", // the structure is embedded
-		"componentes reais",         // anchoring instruction
+		"real components",           // anchoring instruction
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
 	// The model must be told to answer with bare Mermaid, no markdown fences.
-	if !strings.Contains(prompt, "sem cercas") {
+	if !strings.Contains(prompt, "no markdown fences") {
 		t.Fatalf("prompt missing the no-fences instruction:\n%s", prompt)
 	}
 }
@@ -38,7 +38,7 @@ func TestBuildSequenceDiagramPrompt(t *testing.T) {
 func TestBuildSequenceDiagramPromptNoStructure(t *testing.T) {
 	f := store.Feature{ID: "F-0001", Title: "Login", State: domain.StateCandidate}
 	prompt := BuildSequenceDiagramPrompt(f, "", "")
-	if strings.Contains(prompt, "Estrutura do projeto") {
+	if strings.Contains(prompt, "Project structure") {
 		t.Fatalf("empty structure should omit the structure section:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "sequenceDiagram") {
