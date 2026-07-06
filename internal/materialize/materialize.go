@@ -63,7 +63,11 @@ const contextTemplate = `# {{.ProjectName}} — estado atual
 > Gerado por cerne. Não edite: rode 'cerne pull' para atualizar.
 > Histórico e documentos substituídos: 'cerne search'.
 > Para "por quê/como decidimos X", use 'cerne ask "<pergunta>"' — resposta sintetizada e citada, sem abrir arquivo por arquivo.
+{{if .ActiveWorks}}
+## Em andamento
 
+{{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, desde {{.Since}})
+{{end}}{{end}}
 ## Features
 
 {{if .Features}}| ID | Estado | Épico | Módulo | Título | Docs |
@@ -104,12 +108,19 @@ const contextTemplate = `# {{.ProjectName}} — estado atual
 // already-rendered bullet text (markdown link or plain title).
 type contextData struct {
 	ProjectName string
+	ActiveWorks []workRow
 	Features    []featureRow
 	Epics       []epicSection
 	Decisions   []string
 	Runbooks    []string
 	Notes       []string
 	References  []string
+}
+
+// workRow is one active work (agent activity, F-0130) in the CONTEXT.md
+// "Em andamento" section. Since is CreatedAt formatted YYYY-MM-DD.
+type workRow struct {
+	ID, Title, Actor, Since string
 }
 
 type featureRow struct {
@@ -159,6 +170,10 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 	if err != nil {
 		return nil, err
 	}
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := os.RemoveAll(docsDir); err != nil {
 		return nil, err
@@ -172,6 +187,17 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 
 	manifest := map[string]string{}
 	data := contextData{ProjectName: proj.Name}
+	for _, w := range works {
+		if w.State != domain.WorkActive {
+			continue
+		}
+		data.ActiveWorks = append(data.ActiveWorks, workRow{
+			ID:    w.ID,
+			Title: w.Title,
+			Actor: w.Actor,
+			Since: w.CreatedAt.Format("2006-01-02"),
+		})
+	}
 
 	var shown []store.Feature // in-scope, non-terminal features, for the epic breakdown
 	for _, state := range contextGroupOrder {
