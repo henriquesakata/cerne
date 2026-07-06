@@ -22,12 +22,14 @@ import { useT } from './i18n'
 // single source of truth.
 const RULE_EPIC_BEHIND = 'epic-behind-children'
 
-// Lifecycle flow left to right: candidata → aprovada → em desenvolvimento → implementada.
+// Lifecycle flow left to right (F-0131): candidata → aprovada → em
+// desenvolvimento → Ready (implemented, aguarda aceite humano) → Done.
 const OPEN_COLUMNS: FeatureState[] = [
   'candidate',
   'approved',
   'in_development',
   'implemented',
+  'done',
 ]
 const CLOSED_COLUMNS: FeatureState[] = ['superseded', 'rejected']
 
@@ -297,7 +299,7 @@ function EpicBoard({
         // Progress counts the full epic (structure is stable); the filter only
         // narrows which child cards are shown.
         const kids = all.filter((c) => visible(c) && matches(c))
-        const done = all.filter((c) => c.state === 'implemented').length
+        const done = all.filter((c) => c.state === 'implemented' || c.state === 'done').length
         return (
           <section key={eid} className="epic-lane">
             <h2>

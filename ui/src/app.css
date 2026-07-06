@@ -265,6 +265,8 @@ h2 {
 .chip-approved { background: var(--green-bg); color: var(--green); }
 .chip-candidate { background: var(--surface-3); color: var(--muted); }
 .chip-implemented { background: var(--purple-bg); color: var(--purple); }
+/* done (F-0131): aceite humano — o verde "sucesso" mais forte do ciclo. */
+.chip-done { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
 .chip-rejected,
 .chip-superseded { background: var(--state-terminal-bg); color: var(--faint); text-decoration: line-through; }
 
