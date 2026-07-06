@@ -17,11 +17,11 @@ func newServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve many projects over HTTP for a host (multi-project, S2S)",
-		Long: "Sobe um serviço HTTP multi-projeto: um processo serve os docs de N " +
-			"projetos sob /api/projects/{pid}/* (reusa os mesmos endpoints do 'cerne ui'). " +
-			"O host registra o backend de cada projeto via PUT /api/projects/{pid}. Toda rota " +
-			"exige o shared-secret S2S em CERNE_SERVE_SECRET (sem ele, o serviço não sobe). " +
-			"A autorização por usuário/projeto é responsabilidade do host (ex.: o BFF do Studio).",
+		Long: "Starts a multi-project HTTP service: one process serves the docs of N " +
+			"projects under /api/projects/{pid}/* (reuses the same endpoints as 'cerne ui'). " +
+			"The host registers each project's backend via PUT /api/projects/{pid}. Every route " +
+			"requires the S2S shared-secret in CERNE_SERVE_SECRET (without it, the service won't start). " +
+			"Per-user/per-project authorization is the host's responsibility (e.g. the Studio BFF).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServe(cmd, root, port)
@@ -35,7 +35,7 @@ func newServeCmd() *cobra.Command {
 func runServe(cmd *cobra.Command, root string, port int) error {
 	secret := os.Getenv("CERNE_SERVE_SECRET")
 	if secret == "" {
-		return fmt.Errorf("CERNE_SERVE_SECRET não definido — defina o shared-secret S2S antes de subir o serviço")
+		return fmt.Errorf("CERNE_SERVE_SECRET not set — set the S2S shared-secret before starting the service")
 	}
 	// Per-project caches live under root; the path helpers (CacheDir/IndexPath)
 	// read CERNE_CACHE_DIR, so point it at --root when given.
@@ -49,6 +49,6 @@ func runServe(cmd *cobra.Command, root string, port int) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "cerne serve (multi-projeto) em %s\n", addr)
+	fmt.Fprintf(cmd.OutOrStdout(), "cerne serve (multi-project) at %s\n", addr)
 	return http.Serve(ln, server.NewMultiProject(secret))
 }

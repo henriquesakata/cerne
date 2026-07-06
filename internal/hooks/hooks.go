@@ -154,7 +154,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) > 0 {
 		if err := json.Unmarshal(raw, &root); err != nil {
-			return nil, false, fmt.Errorf("hooks: settings.json inválido, não será sobrescrito: %w", err)
+			return nil, false, fmt.Errorf("hooks: invalid settings.json, will not overwrite: %w", err)
 		}
 	}
 
@@ -165,7 +165,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if hasHooks {
 		m, ok := hooksVal.(map[string]any)
 		if !ok {
-			return nil, false, errors.New(`hooks: settings.json tem "hooks" com tipo inesperado`)
+			return nil, false, errors.New(`hooks: settings.json has "hooks" with an unexpected type`)
 		}
 		hooksMap = m
 	}
@@ -175,7 +175,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		if pv, ok := hooksMap["PostToolUse"]; ok {
 			arr, ok := pv.([]any)
 			if !ok {
-				return nil, false, errors.New(`hooks: settings.json tem "PostToolUse" com tipo inesperado`)
+				return nil, false, errors.New(`hooks: settings.json has "PostToolUse" with an unexpected type`)
 			}
 			post = arr
 			hasPTU = true

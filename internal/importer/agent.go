@@ -164,43 +164,43 @@ const planSchemaJSON = `{
   "items": [
     {
       "kind": "feature|decision|reference|runbook|note",
-      "title": "título da entidade",
-      "module": "(opcional) subsistema, só para feature",
-      "state": "estado válido para o kind (veja o modelo acima)",
-      "body": "conteúdo markdown sintetizado a partir da(s) fonte(s)",
-      "url": "(obrigatório quando kind=reference) link externo",
+      "title": "entity title",
+      "module": "(optional) subsystem, feature only",
+      "state": "a state valid for the kind (see the model above)",
+      "body": "markdown content synthesized from the source(s)",
+      "url": "(required when kind=reference) external link",
       "informs": ["F-0001", "D-0002"],
-      "source": "caminho/relativo/da/fonte.md"
+      "source": "relative/path/to/source.md"
     }
   ]
 }`
 
-// BuildPlanPrompt assembles the pt-BR mapping prompt the agent fills: the cerne
+// BuildPlanPrompt assembles the mapping prompt the agent fills: the cerne
 // model (the five kinds and their lifecycle states), the JSON plan schema it
 // must emit, and the discovered sources (each capped at sourceCap). The agent
 // classifies each source into the right kind; cerne validates and persists.
 func BuildPlanPrompt(sources []Source) string {
 	var b strings.Builder
-	b.WriteString("Você é um agente que conhece o modelo do cerne e vai mapear a documentação ")
-	b.WriteString("deste projeto para entidades do cerne. Leia as fontes abaixo, descubra o padrão ")
-	b.WriteString("de documentação e produza um plano de entidades. O cerne valida e persiste o seu plano — ")
-	b.WriteString("você propõe, o cerne é a autoridade.\n\n")
+	b.WriteString("You are an agent that knows the cerne model and will map this project's ")
+	b.WriteString("documentation to cerne entities. Read the sources below, discover the ")
+	b.WriteString("documentation pattern, and produce an entity plan. cerne validates and persists your plan — ")
+	b.WriteString("you propose, cerne is the authority.\n\n")
 
-	b.WriteString("## Modelo do cerne (kinds e estados válidos)\n\n")
+	b.WriteString("## cerne model (kinds and valid states)\n\n")
 	for _, kind := range planKinds {
 		states, _ := domain.ValidStates(kind)
-		fmt.Fprintf(&b, "- **%s** — estados: %s\n", kind, strings.Join(states, ", "))
+		fmt.Fprintf(&b, "- **%s** — states: %s\n", kind, strings.Join(states, ", "))
 	}
-	b.WriteString("\nClassifique cada fonte no tipo certo: changelog/histórico cronológico → ")
-	b.WriteString("decision/note/feature; doc de estado-atual (ex.: CLAUDE.md) → note/runbook; ")
-	b.WriteString("procedimento operacional → runbook; link externo que informou o projeto → ")
-	b.WriteString("reference (com url e informs). Sintetize o body em markdown; não copie a fonte cru.\n")
+	b.WriteString("\nClassify each source into the right kind: changelog/chronological history → ")
+	b.WriteString("decision/note/feature; current-state doc (e.g. CLAUDE.md) → note/runbook; ")
+	b.WriteString("operational procedure → runbook; external link that informed the project → ")
+	b.WriteString("reference (with url and informs). Synthesize the body in markdown; do not copy the source verbatim.\n")
 
-	b.WriteString("\n## Schema do plano (emita SÓ este JSON, sem cercas nem prosa)\n\n```json\n")
+	b.WriteString("\n## Plan schema (emit ONLY this JSON, no fences, no prose)\n\n```json\n")
 	b.WriteString(planSchemaJSON)
 	b.WriteString("\n```\n")
 
-	b.WriteString("\n## Fontes do projeto\n")
+	b.WriteString("\n## Project sources\n")
 	for _, s := range sources {
 		fmt.Fprintf(&b, "\n### %s\n\n", s.RelPath)
 		b.WriteString(capContent(s.Content))
@@ -215,7 +215,7 @@ func capContent(content string) string {
 	if len(content) <= sourceCap {
 		return content
 	}
-	return content[:sourceCap] + "\n… [truncado]"
+	return content[:sourceCap] + "\n… [truncated]"
 }
 
 // ApplyPlan persists each validated plan item into the backend at repoDir: a

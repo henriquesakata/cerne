@@ -30,10 +30,10 @@ func newResultDraftCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "draft <id>",
 		Short: "AI-draft a feature's result",
-		Long: "Rascunha o resultado (registro de entrega) de uma feature usando o provider configurado, " +
-			"com a spec e o plano como contexto. No modo delegação (default) imprime o prompt montado para o " +
-			"agente hospedeiro escrever o resultado; nos modos byo-key e claude-cli gera o texto, escreve em " +
-			"content/features/<id>/result.md e dá push.",
+		Long: "Drafts a feature's result (delivery record) using the configured provider, " +
+			"with the spec and plan as context. In delegation mode (default) it prints the assembled prompt for the " +
+			"host agent to write the result; in byo-key and claude-cli modes it generates the text, writes it to " +
+			"content/features/<id>/result.md and pushes.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runResultDraft(cmd, dir, args[0])
@@ -52,7 +52,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	f, err := store.LoadFeature(ctx.repoDir, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("feature %s não encontrada no backend", id)
+			return fmt.Errorf("feature %s not found in the backend", id)
 		}
 		return err
 	}
@@ -65,7 +65,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	// delegation (default): print the prompt for the host agent to draft inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
 		fmt.Fprint(out, prompt)
-		fmt.Fprintf(out, "\n\nEscreva o resultado em content/features/%s/result.md (mantendo o frontmatter cerne_id) e rode 'cerne push'.\n", id)
+		fmt.Fprintf(out, "\n\nWrite the result to content/features/%s/result.md (keeping the cerne_id frontmatter) and run 'cerne push'.\n", id)
 		return nil
 	}
 
@@ -89,7 +89,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "resultado de %s rascunhado e enviado — rode 'cerne pull' para revisar.\n", id)
+	fmt.Fprintf(out, "%s's result drafted and pushed — run 'cerne pull' to review.\n", id)
 	return nil
 }
 

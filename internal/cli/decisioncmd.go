@@ -42,19 +42,19 @@ func newDecisionListCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "Listar decisões (ADRs) — ativas por padrão; --all inclui história",
-		Long: "Lista as decisões lidas direto do backend (store), não da projeção '.docs/'. Por padrão mostra só " +
-			"as ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
-			"(facet/componente, sucessora). Filtre por --facet e/ou --component (E lógico). --json para saída estruturada.",
+		Short: "List decisions (ADRs) — active by default; --all includes history",
+		Long: "Lists decisions read straight from the backend (store), not from the '.docs/' projection. By default shows only " +
+			"the active ones; --all includes the superseded (history). Each line carries id, state, title and markers " +
+			"(facet/component, successor). Filter by --facet and/or --component (logical AND). --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionList(cmd, *dir, all, asJSON, facet, component)
 		},
 	}
-	cmd.Flags().BoolVar(&all, "all", false, "incluir decisões superseded (história)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
-	cmd.Flags().StringVar(&facet, "facet", "", "filtrar por facet (ex.: auth)")
-	cmd.Flags().StringVar(&component, "component", "", "filtrar por componente (ex.: keycloak)")
+	cmd.Flags().BoolVar(&all, "all", false, "include superseded decisions (history)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. auth)")
+	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. keycloak)")
 	return cmd
 }
 
@@ -113,9 +113,9 @@ func runDecisionList(cmd *cobra.Command, dir string, all, asJSON bool, facet, co
 	}
 	if len(shown) == 0 {
 		if all {
-			fmt.Fprintln(w, "Nenhuma decisão registrada. Use 'cerne decision new \"<título>\"' para registrar um ADR.")
+			fmt.Fprintln(w, "No decisions registered. Use 'cerne decision new \"<title>\"' to register an ADR.")
 		} else {
-			fmt.Fprintln(w, "Nenhuma decisão ativa. Use 'cerne decision new \"<título>\"', ou 'cerne decision list --all' para ver história.")
+			fmt.Fprintln(w, "No active decisions. Use 'cerne decision new \"<title>\"', or 'cerne decision list --all' to see history.")
 		}
 	}
 	return nil
@@ -125,24 +125,24 @@ func newDecisionRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Redefinir os tags (facet/componente) de uma decisão ativa",
-		Long: "Define ou substitui os eixos de tag de uma decisão ativa, sem supersedir — preserva estado e corpo. " +
-			"Altera só o eixo passado: 'retag D-0001 --component keycloak' mantém os facets; '--facet \"\"' limpa os " +
-			"facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Short: "Reset the tags (facet/component) of an active decision",
+		Long: "Sets or replaces the tag axes of an active decision, without superseding — preserves state and body. " +
+			"Changes only the axis passed: 'retag D-0001 --component keycloak' keeps the facets; '--facet \"\"' clears the " +
+			"facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionRetag(cmd, *dir, args[0], facet, component,
 				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
 		},
 	}
-	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
-	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
 	return cmd
 }
 
 func runDecisionRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
 	if !setFacets && !setComponents {
-		return fmt.Errorf("informe ao menos --facet ou --component")
+		return fmt.Errorf("provide at least --facet or --component")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -153,7 +153,7 @@ func runDecisionRetag(cmd *cobra.Command, dir, id, facet, component string, setF
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		d.ID, strings.Join(d.Facets, ", "), strings.Join(d.Components, ", "))
 	return nil
 }
@@ -163,10 +163,10 @@ func newDecisionNewCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a decision (active); one-shot with a --file/stdin body",
-		Long: "Cria uma decisão ativa. Com corpo (--file ou stdin com pipe) é one-shot: o ADR nasce com " +
-			"conteúdo real, já commitado e enviado — sem o ciclo draft+push. Sem corpo, nasce como stub do " +
-			"template para preencher. Use --facet (eixo fechado: infra,code,data,process,auth) e --component " +
-			"(subsistema/ferramenta, ex.: keycloak,gitea) para organizar — ambos multivalor, separados por vírgula.",
+		Long: "Creates an active decision. With a body (--file or piped stdin) it is one-shot: the ADR is born with " +
+			"real content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +
+			"template to fill in. Use --facet (closed axis: infra,code,data,process,auth) and --component " +
+			"(subsystem/tool, e.g. keycloak,gitea) to organize — both multi-valued, comma-separated.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionNew(cmd, *dir, args[0], file, facet, component)
@@ -181,7 +181,7 @@ func newDecisionNewCmd(dir *string) *cobra.Command {
 func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return fmt.Errorf("o título da decisão não pode ser vazio")
+		return fmt.Errorf("the decision title cannot be empty")
 	}
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
@@ -199,10 +199,10 @@ func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component strin
 	// by CreateDecision (CommitAndSnapshot) — nothing to draft or push. A bodyless
 	// decision is a stub: keep the draft + push next step.
 	if strings.TrimSpace(body) != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (active) com corpo — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", d.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (active) with a body — already synced. Run 'cerne pull' to materialize locally.\n", d.ID)
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (active). Próximo passo: preencha o ADR ('cerne decision draft %s' ajuda) e rode 'cerne push'.\n", d.ID, d.ID)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active). Next step: fill in the ADR ('cerne decision draft %s' scaffolds it) and run 'cerne push'.\n", d.ID, d.ID)
 	return nil
 }
 
@@ -210,14 +210,14 @@ func newDecisionSubstituirCmd(dir *string) *cobra.Command {
 	var by, reason string
 	cmd := &cobra.Command{
 		Use:   "substituir <id>",
-		Short: "Substituir uma decisão por outra (requer --by e --reason)",
+		Short: "Supersede one decision with another (requires --by and --reason)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionSubstituir(cmd, *dir, args[0], by, reason)
 		},
 	}
-	cmd.Flags().StringVar(&by, "by", "", "id da decisão que substitui")
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da substituição")
+	cmd.Flags().StringVar(&by, "by", "", "id of the decision that supersedes")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession")
 	return cmd
 }
 
@@ -243,9 +243,9 @@ func newDecisionDraftCmd(dir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "draft <id>",
 		Short: "AI-draft a decision's ADR",
-		Long: "Rascunha o ADR de uma decisão usando o provider configurado. No modo delegação (default) " +
-			"imprime o prompt montado para o agente hospedeiro escrever o ADR; nos modos byo-key e claude-cli " +
-			"gera o texto, escreve em content/decisions/<id>.md e dá push.",
+		Long: "Drafts a decision's ADR using the configured provider. In delegation mode (default) it " +
+			"prints the assembled prompt for the host agent to write the ADR; in byo-key and claude-cli modes " +
+			"it generates the text, writes it to content/decisions/<id>.md and pushes.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionDraft(cmd, *dir, args[0])
@@ -261,7 +261,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 	d, err := store.LoadDecision(ctx.repoDir, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("decisão %s não encontrada no backend", id)
+			return fmt.Errorf("decision %s not found in the backend", id)
 		}
 		return err
 	}
@@ -272,7 +272,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 	// delegation (default): print the prompt for the host agent to draft inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
 		fmt.Fprint(out, prompt)
-		fmt.Fprintf(out, "\n\nEscreva o resultado em content/decisions/%s.md (mantendo o frontmatter cerne_id) e rode 'cerne push'.\n", id)
+		fmt.Fprintf(out, "\n\nWrite the result to content/decisions/%s.md (keeping the cerne_id frontmatter) and run 'cerne push'.\n", id)
 		return nil
 	}
 
@@ -296,7 +296,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "ADR de %s rascunhado e enviado — rode 'cerne pull' para revisar.\n", id)
+	fmt.Fprintf(out, "%s's ADR drafted and pushed — run 'cerne pull' to review.\n", id)
 	return nil
 }
 

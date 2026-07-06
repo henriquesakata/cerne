@@ -15,9 +15,9 @@ func newClassifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "classify [id]",
 		Short: "Assign a module to module-less features",
-		Long: "Sem argumentos, faz backfill heurístico: atribui módulo às features sem " +
-			"módulo quando exatamente um módulo declarado casa (dry-run por padrão; --yes aplica). " +
-			"Com um id e --module, atribui o módulo a uma feature manualmente.",
+		Long: "With no arguments, does a heuristic backfill: assigns a module to module-less " +
+			"features when exactly one declared module matches (dry-run by default; --yes applies). " +
+			"With an id and --module, assigns the module to a feature manually.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
@@ -44,7 +44,7 @@ func runClassifyBackfill(cmd *cobra.Command, dir string, yes bool) error {
 	}
 	out := cmd.OutOrStdout()
 	if len(assigned) == 0 {
-		fmt.Fprintln(out, "Nada a classificar.")
+		fmt.Fprintln(out, "Nothing to classify.")
 		return nil
 	}
 	sort.Slice(assigned, func(i, j int) bool { return assigned[i].ID < assigned[j].ID })
@@ -52,20 +52,20 @@ func runClassifyBackfill(cmd *cobra.Command, dir string, yes bool) error {
 		fmt.Fprintf(out, "%s → %s\n", a.ID, a.Module)
 	}
 	if yes {
-		fmt.Fprintf(out, "Classificadas %d feature(s).\n", len(assigned))
+		fmt.Fprintf(out, "Classified %d feature(s).\n", len(assigned))
 		if skipped > 0 {
-			fmt.Fprintf(out, "%d feature(s) sem módulo permanecem (transversais/ambíguas).\n", skipped)
+			fmt.Fprintf(out, "%d feature(s) remain module-less (cross-cutting/ambiguous).\n", skipped)
 		}
 		return nil
 	}
-	fmt.Fprintf(out, "%d feature(s) sem módulo permanecem (transversais/ambíguas).\n", skipped)
-	fmt.Fprintln(out, "Rode com --yes para aplicar.")
+	fmt.Fprintf(out, "%d feature(s) remain module-less (cross-cutting/ambiguous).\n", skipped)
+	fmt.Fprintln(out, "Run with --yes to apply.")
 	return nil
 }
 
 func runClassifyManual(cmd *cobra.Command, dir, id, module string) error {
 	if module == "" {
-		return fmt.Errorf("--module é obrigatório na atribuição manual (cerne classify %s --module <m>)", id)
+		return fmt.Errorf("--module is required for manual assignment (cerne classify %s --module <m>)", id)
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {

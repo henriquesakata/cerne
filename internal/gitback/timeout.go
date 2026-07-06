@@ -11,7 +11,7 @@ import (
 // ErrNetworkTimeout is the sentinel for a network operation (push, fetch)
 // aborted because the remote did not complete within netTimeout. It wraps
 // context.DeadlineExceeded, so errors.Is matches either.
-var ErrNetworkTimeout = errors.New("tempo limite de rede excedido")
+var ErrNetworkTimeout = errors.New("network timeout exceeded")
 
 // defaultNetTimeout leaves room for a large repo on a slow-but-alive network
 // without ever leaving the operator hung for minutes.
@@ -57,5 +57,5 @@ func runWithNetTimeout(name string, op func(ctx context.Context) error) error {
 }
 
 func timeoutErr(name string, cause error) error {
-	return fmt.Errorf("%w: %s após %s: %w", ErrNetworkTimeout, name, netTimeout, cause)
+	return fmt.Errorf("%w: %s after %s: %w", ErrNetworkTimeout, name, netTimeout, cause)
 }

@@ -14,18 +14,18 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// statusStateShort is the compact pt-BR label for a feature state, used in the
-// ÉPICOS child list.
+// statusStateShort is the compact label for a feature state, used in the
+// EPICS child list.
 var statusStateShort = map[domain.FeatureState]string{
-	domain.StateCandidate:     "candidata",
-	domain.StateApproved:      "aprovada",
-	domain.StateInDevelopment: "em desenvolvimento",
-	domain.StateImplemented:   "implementada",
-	domain.StateSuperseded:    "substituída",
-	domain.StateRejected:      "rejeitada",
+	domain.StateCandidate:     "candidate",
+	domain.StateApproved:      "approved",
+	domain.StateInDevelopment: "in development",
+	domain.StateImplemented:   "implemented",
+	domain.StateSuperseded:    "superseded",
+	domain.StateRejected:      "rejected",
 }
 
-// statusGroup pairs a feature state with its pt-BR table header, in the
+// statusGroup pairs a feature state with its table header, in the
 // fixed display order of `cerne status`.
 type statusGroup struct {
 	state  domain.FeatureState
@@ -33,24 +33,24 @@ type statusGroup struct {
 }
 
 var statusDefaultGroups = []statusGroup{
-	{domain.StateInDevelopment, "EM DESENVOLVIMENTO"},
-	{domain.StateApproved, "APROVADAS"},
-	{domain.StateCandidate, "CANDIDATAS"},
-	{domain.StateImplemented, "IMPLEMENTADAS"},
+	{domain.StateInDevelopment, "IN DEVELOPMENT"},
+	{domain.StateApproved, "APPROVED"},
+	{domain.StateCandidate, "CANDIDATES"},
+	{domain.StateImplemented, "IMPLEMENTED"},
 }
 
 var statusTerminalGroups = []statusGroup{
-	{domain.StateSuperseded, "SUBSTITUÍDAS"},
-	{domain.StateRejected, "REJEITADAS"},
+	{domain.StateSuperseded, "SUPERSEDED"},
+	{domain.StateRejected, "REJECTED"},
 }
 
 // activeGroups is the lean view (cerne status --active): only the non-terminal
 // work an agent is likely picking up. Implemented history is omitted — it is the
 // bulk of a mature board and pure noise for "what should I work on".
 var activeGroups = []statusGroup{
-	{domain.StateInDevelopment, "EM DESENVOLVIMENTO"},
-	{domain.StateApproved, "APROVADAS"},
-	{domain.StateCandidate, "CANDIDATAS"},
+	{domain.StateInDevelopment, "IN DEVELOPMENT"},
+	{domain.StateApproved, "APPROVED"},
+	{domain.StateCandidate, "CANDIDATES"},
 }
 
 func newStatusCmd() *cobra.Command {
@@ -67,7 +67,7 @@ func newStatusCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&all, "all", false, "include superseded and rejected features")
-	cmd.Flags().BoolVar(&active, "active", false, "mostrar apenas o trabalho ativo (oculta IMPLEMENTADAS e terminais)")
+	cmd.Flags().BoolVar(&active, "active", false, "show only active work (hides IMPLEMENTED and terminals)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output (all features)")
 	return cmd
 }
@@ -97,7 +97,7 @@ func runStatus(cmd *cobra.Command, dir string, all, active, asJSON bool) error {
 	}
 
 	if len(features) == 0 && !(all && len(historicals) > 0) {
-		fmt.Fprintln(out, "Nenhuma feature ainda. Crie a primeira com 'cerne feature new'.")
+		fmt.Fprintln(out, "No features yet. Create the first one with 'cerne feature new'.")
 		return nil
 	}
 
@@ -149,7 +149,7 @@ func runStatus(cmd *cobra.Command, dir string, all, active, asJSON bool) error {
 	// Historical entities are terminal by definition; they only show under
 	// --all, in their own section after the feature totals.
 	if all && !active && len(historicals) > 0 {
-		fmt.Fprintf(out, "\nHISTÓRICAS (%d)\n", len(historicals))
+		fmt.Fprintf(out, "\nHISTORICALS (%d)\n", len(historicals))
 		for _, h := range historicals {
 			line := "  " + h.ID + "  " + h.Name
 			if h.SupersededBy != "" {
@@ -178,7 +178,7 @@ func statusLine(f store.Feature, width int) string {
 	return b.String()
 }
 
-// renderEpics prints the ÉPICOS section: every feature that has at least one
+// renderEpics prints the EPICS section: every feature that has at least one
 // live child (not superseded/rejected), with its implemented/total progress and
 // the live children listed underneath. Epics are sorted by ID; a child pointing
 // at a missing parent is left to the lint, not shown here. No output when there
@@ -221,10 +221,10 @@ func renderEpics(out io.Writer, features []store.Feature) {
 		return
 	}
 
-	fmt.Fprintf(out, "\nÉPICOS (%d)\n", len(rows))
+	fmt.Fprintf(out, "\nEPICS (%d)\n", len(rows))
 	for _, r := range rows {
 		done, total := store.EpicProgress(r.children)
-		fmt.Fprintf(out, "  %s  %s — %d/%d implementadas\n", r.epic.ID, r.epic.Title, done, total)
+		fmt.Fprintf(out, "  %s  %s — %d/%d implemented\n", r.epic.ID, r.epic.Title, done, total)
 		for _, c := range r.children {
 			fmt.Fprintf(out, "    %s  [%s]  %s\n", c.ID, statusStateShort[c.State], c.Title)
 		}

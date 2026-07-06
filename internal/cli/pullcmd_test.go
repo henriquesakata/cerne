@@ -34,7 +34,7 @@ func TestPullScopeImplementedExplainsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pull --scope: %v\n%s", err, out)
 	}
-	for _, want := range []string{"implementadas não materializam", "cerne show", "cerne errata"} {
+	for _, want := range []string{"don't materialize content", "cerne show", "cerne errata"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pull --scope no-op output missing %q:\n%s", want, out)
 		}
@@ -103,7 +103,7 @@ func TestPullGoldenPath(t *testing.T) {
 		t.Fatalf("lock.Snapshot = %s, want origin HEAD %s", lock.Snapshot, originHead)
 	}
 
-	want := "Materializado: 1 feature(s), 0 decisão(ões), 0 referência(s) em .docs/ (snapshot " + originHead[:8] + ")."
+	want := "Materialized: 1 feature(s), 0 decision(s), 0 reference(s) into .docs/ (snapshot " + originHead[:8] + ")."
 	if !strings.Contains(out, want) {
 		t.Fatalf("output missing summary %q:\n%s", want, out)
 	}
@@ -178,7 +178,7 @@ func TestPullScopeFilters(t *testing.T) {
 	if strings.Contains(string(ctx), "F-0002") {
 		t.Fatalf("CONTEXT.md leaks out-of-scope feature:\n%s", ctx)
 	}
-	if !strings.Contains(out, "Materializado: 1 feature(s)") {
+	if !strings.Contains(out, "Materialized: 1 feature(s)") {
 		t.Fatalf("output summary should count only scoped features:\n%s", out)
 	}
 
@@ -325,7 +325,7 @@ func TestPullMergesUnpushedEditDisjoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("push after merge: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("push should send the merged-kept edit:\n%s", out)
 	}
 }
@@ -353,7 +353,7 @@ func TestPullSameDocConflictNonDestructive(t *testing.T) {
 	if err == nil {
 		t.Fatalf("same-doc pull should report a conflict\n%s", out)
 	}
-	if !strings.Contains(out, "Conflito em 1 documento(s)") || !strings.Contains(out, ".conflicts") {
+	if !strings.Contains(out, "Conflict in 1 document(s)") || !strings.Contains(out, ".conflicts") {
 		t.Fatalf("conflict output missing details:\n%s", out)
 	}
 	// Mine kept in place.

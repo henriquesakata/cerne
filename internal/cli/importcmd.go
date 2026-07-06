@@ -30,10 +30,10 @@ func newImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import an existing documentation tree into the backend",
-		Long: "Importa uma árvore de documentação existente. Sem flags, usa a convenção do " +
-			"Rockt Hub (determinístico). Com --agent, faz import genérico assistido por IA de " +
-			"qualquer estrutura: emite um prompt de mapeamento (modo delegação) ou gera o plano " +
-			"(byo-key); depois 'cerne import --agent --ingest' valida e aplica (--yes).",
+		Long: "Imports an existing documentation tree. Without flags, it uses the " +
+			"Rockt Hub convention (deterministic). With --agent, it does an AI-assisted generic import of " +
+			"any structure: it emits a mapping prompt (delegation mode) or generates the plan " +
+			"(byo-key); then 'cerne import --agent --ingest' validates and applies it (--yes).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runImport(cmd, dir, root, yes, agent, ingest)
@@ -68,7 +68,7 @@ func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) er
 		return runImportAgent(cmd, ctx, root)
 	}
 	if ingest {
-		return fmt.Errorf("--ingest requer --agent")
+		return fmt.Errorf("--ingest requires --agent")
 	}
 	proj, err := store.LoadProject(ctx.repoDir)
 	if err != nil {
@@ -157,14 +157,14 @@ func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) er
 			}
 		}
 		total := sum.Features + sum.Decisions + sum.References + sum.Runbooks + len(seeds)
-		sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import %d documento(s)", total))
+		sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import %d document(s)", total))
 		if err != nil {
 			return err
 		}
 		if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "Importado: %d features, %d decisões, %d runbooks, %d referências, %d históricas (snapshot %s).\n",
+		fmt.Fprintf(out, "Imported: %d features, %d decisions, %d runbooks, %d references, %d historicals (snapshot %s).\n",
 			sum.Features, sum.Decisions, sum.Runbooks, sum.References, len(seeds), shortSHA(sha))
 	}
 
@@ -185,9 +185,9 @@ func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) er
 // everything was already imported, or the tree had nothing to import.
 func reportNothingNew(out io.Writer, skipped int) {
 	if skipped > 0 {
-		fmt.Fprintf(out, "Tudo já importado (%d documento(s) já no backend).\n", skipped)
+		fmt.Fprintf(out, "Everything already imported (%d document(s) already in the backend).\n", skipped)
 	} else {
-		fmt.Fprintln(out, "Nada para importar.")
+		fmt.Fprintln(out, "Nothing to import.")
 	}
 }
 
@@ -196,7 +196,7 @@ func reportNothingNew(out io.Writer, skipped int) {
 // noise (compile already reports the standing module-less count).
 func reportClassifyProjection(out io.Writer, assigned, residual int) {
 	if assigned > 0 {
-		fmt.Fprintf(out, "Inferência classificaria %d feature(s) sem módulo (%d permaneceriam).\n", assigned, residual)
+		fmt.Fprintf(out, "Inference would classify %d feature(s) without a module (%d would remain).\n", assigned, residual)
 	}
 }
 
@@ -204,7 +204,7 @@ func reportClassifyProjection(out io.Writer, assigned, residual int) {
 // it assigned at least one.
 func reportClassifyResult(out io.Writer, assigned, residual int) {
 	if assigned > 0 {
-		fmt.Fprintf(out, "Classificadas %d feature(s) por inferência (%d sem módulo permanecem).\n", assigned, residual)
+		fmt.Fprintf(out, "Classified %d feature(s) by inference (%d without a module remain).\n", assigned, residual)
 	}
 }
 
@@ -243,23 +243,23 @@ func printImportPlan(w io.Writer, cands []importer.Candidate, seeds []importer.H
 		}
 		counts[c.Kind][c.State]++
 	}
-	fmt.Fprintln(w, "Plano de importação (dry-run):")
+	fmt.Fprintln(w, "Import plan (dry-run):")
 	if skipped > 0 {
-		fmt.Fprintf(w, "  Já importados (pulados): %d\n", skipped)
+		fmt.Fprintf(w, "  Already imported (skipped): %d\n", skipped)
 	}
 	fmt.Fprintf(w, "  Features: %d%s\n", kindTotal(counts["feature"]), stateBreakdown(counts["feature"], planFeatureStates))
-	fmt.Fprintf(w, "  Decisões: %d%s\n", kindTotal(counts["decision"]), stateBreakdown(counts["decision"], planDecisionStates))
+	fmt.Fprintf(w, "  Decisions: %d%s\n", kindTotal(counts["decision"]), stateBreakdown(counts["decision"], planDecisionStates))
 	fmt.Fprintf(w, "  Runbooks: %d\n", kindTotal(counts["runbook"]))
-	fmt.Fprintf(w, "  Referências: %d\n", kindTotal(counts["reference"]))
-	fmt.Fprintf(w, "  Históricas: %d\n", len(seeds))
-	fmt.Fprintln(w, "Amostra:")
+	fmt.Fprintf(w, "  References: %d\n", kindTotal(counts["reference"]))
+	fmt.Fprintf(w, "  Historicals: %d\n", len(seeds))
+	fmt.Fprintln(w, "Sample:")
 	for _, line := range sampleLines(cands) {
 		fmt.Fprintln(w, line)
 	}
 	for _, s := range seeds {
 		fmt.Fprintf(w, "  H? %s → historical superseded_by %s\n", s.Name, s.SupersededBy)
 	}
-	fmt.Fprintln(w, "Rode com --yes para aplicar.")
+	fmt.Fprintln(w, "Run with --yes to apply.")
 }
 
 // kindTotal sums one kind's per-state counts.
@@ -329,7 +329,7 @@ func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
 		return err
 	}
 	if len(sources) == 0 {
-		fmt.Fprintln(out, "Nenhuma fonte de documentação encontrada para mapear.")
+		fmt.Fprintln(out, "No documentation source found to map.")
 		return nil
 	}
 	prompt := importer.BuildPlanPrompt(sources)
@@ -346,13 +346,13 @@ func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
 		}
 		planJSON, err := prov.Complete(cmd.Context(), prompt)
 		if err != nil {
-			return fmt.Errorf("gerando o plano: %w", err)
+			return fmt.Errorf("generating the plan: %w", err)
 		}
 		if err := os.WriteFile(planPath, []byte(planJSON), 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "%d fonte(s) mapeada(s). Plano em %s.\n", len(sources), agentPlanRel)
-		fmt.Fprintln(out, "Revise e rode 'cerne import --agent --ingest' (--yes para aplicar).")
+		fmt.Fprintf(out, "%d source(s) mapped. Plan at %s.\n", len(sources), agentPlanRel)
+		fmt.Fprintln(out, "Review it and run 'cerne import --agent --ingest' (--yes to apply).")
 		return nil
 	}
 
@@ -361,8 +361,8 @@ func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%d fonte(s) coletada(s). Prompt de mapeamento em %s.\n", len(sources), agentPromptRel)
-	fmt.Fprintf(out, "Processe o prompt, escreva o plano JSON em %s e rode 'cerne import --agent --ingest' (--yes para aplicar).\n", agentPlanRel)
+	fmt.Fprintf(out, "%d source(s) collected. Mapping prompt at %s.\n", len(sources), agentPromptRel)
+	fmt.Fprintf(out, "Process the prompt, write the JSON plan to %s and run 'cerne import --agent --ingest' (--yes to apply).\n", agentPlanRel)
 	return nil
 }
 
@@ -374,7 +374,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
 	planPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPlanRel))
 	data, err := os.ReadFile(planPath)
 	if err != nil {
-		return fmt.Errorf("lendo o plano em %s: %w — rode 'cerne import --agent' primeiro", agentPlanRel, err)
+		return fmt.Errorf("reading the plan at %s: %w — run 'cerne import --agent' first", agentPlanRel, err)
 	}
 	plan, err := importer.ParsePlan(data)
 	if err != nil {
@@ -390,9 +390,9 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
 
 	if len(kept) == 0 {
 		if skipped > 0 {
-			fmt.Fprintf(out, "Tudo já importado (%d item(ns) já no backend).\n", skipped)
+			fmt.Fprintf(out, "Everything already imported (%d item(s) already in the backend).\n", skipped)
 		} else {
-			fmt.Fprintln(out, "Nada para importar.")
+			fmt.Fprintln(out, "Nothing to import.")
 		}
 		return nil
 	}
@@ -408,7 +408,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
 		return err
 	}
 	total := sum.Features + sum.Decisions + sum.References + sum.Runbooks + sum.Notes
-	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import (agente) %d documento(s)", total))
+	sha, err := gitback.CommitAndPush(ctx.repoDir, fmt.Sprintf("cerne: import (agent) %d document(s)", total))
 	if err != nil {
 		return err
 	}
@@ -416,7 +416,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
 		return err
 	}
 	_ = os.RemoveAll(filepath.Join(ctx.projDir, filepath.FromSlash(".docs/import/.pending")))
-	fmt.Fprintf(out, "Importado (agente): %d features, %d decisões, %d referências, %d runbooks, %d notes (snapshot %s).\n",
+	fmt.Fprintf(out, "Imported (agent): %d features, %d decisions, %d references, %d runbooks, %d notes (snapshot %s).\n",
 		sum.Features, sum.Decisions, sum.References, sum.Runbooks, sum.Notes, shortSHA(sha))
 	return nil
 }
@@ -428,16 +428,16 @@ func printAgentPlan(w io.Writer, items []importer.PlanItem, skipped int) {
 	for _, it := range items {
 		counts[it.Kind]++
 	}
-	fmt.Fprintln(w, "Plano de importação (agente, dry-run):")
+	fmt.Fprintln(w, "Import plan (agent, dry-run):")
 	if skipped > 0 {
-		fmt.Fprintf(w, "  Já importados (pulados): %d\n", skipped)
+		fmt.Fprintf(w, "  Already imported (skipped): %d\n", skipped)
 	}
 	fmt.Fprintf(w, "  Features: %d\n", counts["feature"])
-	fmt.Fprintf(w, "  Decisões: %d\n", counts["decision"])
-	fmt.Fprintf(w, "  Referências: %d\n", counts["reference"])
+	fmt.Fprintf(w, "  Decisions: %d\n", counts["decision"])
+	fmt.Fprintf(w, "  References: %d\n", counts["reference"])
 	fmt.Fprintf(w, "  Runbooks: %d\n", counts["runbook"])
 	fmt.Fprintf(w, "  Notes: %d\n", counts["note"])
-	fmt.Fprintln(w, "Amostra:")
+	fmt.Fprintln(w, "Sample:")
 	for i, it := range items {
 		if i >= 8 {
 			fmt.Fprintf(w, "  … (+%d)\n", len(items)-8)
@@ -445,5 +445,5 @@ func printAgentPlan(w io.Writer, items []importer.PlanItem, skipped int) {
 		}
 		fmt.Fprintf(w, "  %s? %s → %s %s\n", strings.ToUpper(it.Kind[:1]), it.Source, it.Kind, it.State)
 	}
-	fmt.Fprintln(w, "Rode com --yes para aplicar.")
+	fmt.Fprintln(w, "Run with --yes to apply.")
 }

@@ -83,8 +83,8 @@ func TestSpecDiagramByoKeyWritesAndCommits(t *testing.T) {
 		t.Fatalf("lock.Snapshot = %s, want new origin HEAD %s", lockAfter.Snapshot, headAfter)
 	}
 
-	// pt-BR confirmation naming the .mmd artifact.
-	if !strings.Contains(out, "rascunhado e enviado") || !strings.Contains(out, "sequence.mmd") {
+	// Confirmation naming the .mmd artifact.
+	if !strings.Contains(out, "drafted and sent") || !strings.Contains(out, "sequence.mmd") {
 		t.Fatalf("spec diagram output missing confirmation:\n%s", out)
 	}
 }

@@ -63,7 +63,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 
 - **TDD, strictly**: write the failing test, run it red, implement minimally, run green, commit. One concern per commit.
 - **Error style**: sentinel errors (`var ErrX = errors.New(...)`) wrapped with `%w`, matched via `errors.Is`. Table-driven tests, error paths pinned with `errors.Is`.
-- **Language**: user-facing CLI/UI strings are **pt-BR**; all code, comments, identifiers, and these AI-facing docs are **English**.
+- **Language**: user-facing **CLI output** (messages, errors, cobra help) is **English** (F-0124); the **React UI** (`ui/`) strings stay **pt-BR**; all code, comments, identifiers, and these AI-facing docs are **English**. Exception: LLM **doc-authoring prompts** (spec/plan/result/decision/runbook draft builders, `ask`/`compile`) stay **pt-BR** on purpose — they set the language of the *generated documents*, not CLI chrome.
 - **Data vs UI**: lifecycle states are English strings in data (`candidate`, `approved`, `in_development`, `implemented`, `rejected`, `superseded`); pt-BR labels live only in the UI.
 - **Commits**: Conventional Commits; end the body with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - **Minimal surface**: no speculative API; keep exported identifiers to what is used.

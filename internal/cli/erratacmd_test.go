@@ -18,7 +18,7 @@ func TestErrataCreatesRecordOneShot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("errata: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "errata anexada a F-0001") {
+	if !strings.Contains(out, "erratum appended to F-0001") {
 		t.Fatalf("missing confirmation:\n%s", out)
 	}
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", "errata", "F-0001.md"))

@@ -53,12 +53,12 @@ func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
 func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) {
 	var req llmConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo inválido: "+err.Error()))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid body: "+err.Error()))
 		return
 	}
 	if !validLLMMode(req.Mode) {
 		writeJSON(w, http.StatusBadRequest,
-			errorBody(`modo inválido (esperado "delegation", "claude-cli" ou "byo-key")`))
+			errorBody(`invalid mode (expected "delegation", "claude-cli" or "byo-key")`))
 		return
 	}
 	cfg, dir, err := project.LoadConfig(projDir)

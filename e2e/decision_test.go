@@ -32,7 +32,7 @@ func TestDecisionGoldenPath(t *testing.T) {
 
 	t.Log("stage 2: decision new — D-0001 born active")
 	out := mustCerne(t, "decision", "new", "ADR A", "--dir", proj)
-	if !strings.Contains(out, "D-0001 criada (active)") {
+	if !strings.Contains(out, "D-0001 created (active)") {
 		t.Fatalf("decision new output missing D-0001 confirmation:\n%s", out)
 	}
 	assertLockParity(t, proj, origin, "decision new")
@@ -73,7 +73,7 @@ func TestDecisionGoldenPath(t *testing.T) {
 
 	t.Log("stage 5: substituir D-0001 by D-0002 — gone from .docs/, kept in history")
 	out = mustCerne(t, "decision", "new", "ADR B", "--dir", proj)
-	if !strings.Contains(out, "D-0002 criada (active)") {
+	if !strings.Contains(out, "D-0002 created (active)") {
 		t.Fatalf("second decision new output missing D-0002 confirmation:\n%s", out)
 	}
 	out = mustCerne(t, "decision", "substituir", "D-0001", "--by", "D-0002", "--reason", "decisão revista", "--dir", proj)

@@ -56,7 +56,7 @@ func TestFeatureNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("feature new: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "F-0001 criada (candidate)") {
+	if !strings.Contains(out, "F-0001 created (candidate)") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 
@@ -120,7 +120,7 @@ func TestFeatureNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second feature new: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "F-0002 criada (candidate)") {
+	if !strings.Contains(out, "F-0002 created (candidate)") {
 		t.Fatalf("second output missing F-0002:\n%s", out)
 	}
 	events, err = store.ReadEvents(repoDir)
@@ -259,7 +259,7 @@ func TestFeatureNewOneShotSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("feature new --file: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "✓ F-0001 criada (candidate) com spec — já sincronizada") {
+	if !strings.Contains(out, "✓ F-0001 created (candidate) with spec — already synced") {
 		t.Fatalf("output missing one-shot confirmation:\n%s", out)
 	}
 
@@ -292,7 +292,7 @@ func TestFeatureNewContextSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("feature new --context: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "F-0001 criada (candidate)") {
+	if !strings.Contains(out, "F-0001 created (candidate)") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 
@@ -341,7 +341,7 @@ func TestFeatureNewFileAndContextExclusive(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := execCerne(t, "feature", "new", "X", "--file", specFile, "--context", "y", "--dir", projDir)
-	if err == nil || !strings.Contains(err.Error(), "mutuamente exclusivos") {
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("err = %v, want mutual-exclusion error", err)
 	}
 	if _, err := store.LoadFeature(repoDir, "F-0001"); err == nil {
@@ -366,7 +366,7 @@ func TestFeatureRetag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("feature retag: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "F-0001 retaggeada") {
+	if !strings.Contains(out, "F-0001 retagged") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 	f, err := store.LoadFeature(repoDir, "F-0001")

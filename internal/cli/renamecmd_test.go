@@ -18,7 +18,7 @@ func TestFeatureRename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rename: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "F-0001 renomeada") {
+	if !strings.Contains(out, "F-0001 renamed") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.Title != "Título novo" {

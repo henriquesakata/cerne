@@ -6,11 +6,11 @@ func newSyncCmd() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Reconciliar com o backend e enviar (pull com merge + push) — sempre um caminho à frente",
-		Long: "Sincroniza o projeto com o backend sem deadlock: primeiro funde o avanço remoto em " +
-			".docs/ preservando suas edições não-enviadas (como 'cerne pull'), depois envia suas edições " +
-			"reconciliando por documento (como 'cerne push'). Um conflito real de mesmo-documento " +
-			"interrompe antes do envio, de forma não-destrutiva, para você resolver.",
+		Short: "Reconcile with the backend and send (pull with merge + push) — always a path forward",
+		Long: "Syncs the project with the backend without deadlock: first it merges the remote advance into " +
+			".docs/ while preserving your unpushed edits (like 'cerne pull'), then it sends your edits " +
+			"reconciling per document (like 'cerne push'). A real same-document conflict " +
+			"stops before sending, non-destructively, for you to resolve.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSync(cmd, dir)

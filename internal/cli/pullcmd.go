@@ -32,8 +32,8 @@ func newPullCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&scope, "scope", "", "materialize only features of this module")
-	cmd.Flags().BoolVar(&okf, "okf", false, "emitir frontmatter compatível com o Open Knowledge Format em .docs/")
-	cmd.Flags().BoolVar(&force, "force", false, "descartar edições locais não-enviadas em .docs/ (sobrescreve o guard)")
+	cmd.Flags().BoolVar(&okf, "okf", false, "emit Open Knowledge Format-compatible frontmatter in .docs/")
+	cmd.Flags().BoolVar(&force, "force", false, "discard unpushed local edits in .docs/ (overrides the guard)")
 	return cmd
 }
 
@@ -134,13 +134,13 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 		return project.SaveManifest(ctx.projDir, manifest)
 	})
 	if lockErr != nil {
-		return fmt.Errorf("sincronizando o clone de cache em %s falhou (apague esse diretório e rode de novo para forçar um clone novo): %w", ctx.repoDir, lockErr)
+		return fmt.Errorf("syncing the cache clone at %s failed (delete that directory and run again to force a fresh clone): %w", ctx.repoDir, lockErr)
 	}
 
 	// Self-heal the merge driver: .git/config never travels in a clone, so the
 	// routine sync point re-registers it. Non-fatal.
 	if err := ensureLockMergeDriver(ctx.projDir); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: não foi possível registrar o merge driver do docs.lock: %v\n", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not register the docs.lock merge driver: %v\n", err)
 	}
 	// pull is the sync point: refresh the local search index alongside .docs/.
 	dbPath, err := project.IndexPath(ctx.cfg.ProjectID)
@@ -156,15 +156,15 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 		snap = snap[:8]
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"Materializado: %d feature(s), %d decisão(ões), %d referência(s) em .docs/ (snapshot %s).\n",
+		"Materialized: %d feature(s), %d decision(s), %d reference(s) into .docs/ (snapshot %s).\n",
 		nFeatures, nDecisions, nReferences, snap)
 	// Explain a known no-op instead of a mute "0 feature(s)": a scoped pull that
 	// materializes nothing usually means the module's features are implemented
 	// (concluded entities don't materialize — they are history).
 	if scope != "" && nFeatures == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(),
-			"Nenhuma feature do módulo %q materializou: features implementadas não materializam conteúdo (viram histórico). "+
-				"Use 'cerne show <id>' para ler, ou 'cerne errata <id>' para anotar/corrigir.\n", scope)
+			"No feature in module %q materialized: implemented features don't materialize content (they become history). "+
+				"Use 'cerne show <id>' to read one, or 'cerne errata <id>' to annotate/correct it.\n", scope)
 	}
 	if len(conflicts) > 0 {
 		return reportPullConflicts(cmd, conflicts)
@@ -256,12 +256,12 @@ func saveConflictCopy(docsDir, rel string, theirs []byte) error {
 // the exit code signals that resolution is needed.
 func reportPullConflicts(cmd *cobra.Command, conflicts []string) error {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "\nConflito em %d documento(s): sua versão foi mantida em .docs/; a versão remota está em .docs/.conflicts/:\n", len(conflicts))
+	fmt.Fprintf(out, "\nConflict in %d document(s): your version was kept in .docs/; the remote version is in .docs/.conflicts/:\n", len(conflicts))
 	for _, rel := range conflicts {
 		fmt.Fprintf(out, "  %s\n", rel)
 	}
-	fmt.Fprintln(out, "Reconcilie cada documento e rode 'cerne push' (a versão remota está em .docs/.conflicts/).")
-	return fmt.Errorf("%d documento(s) em conflito no pull", len(conflicts))
+	fmt.Fprintln(out, "Reconcile each document and run 'cerne push' (the remote version is in .docs/.conflicts/).")
+	return fmt.Errorf("%d document(s) in conflict on pull", len(conflicts))
 }
 
 // countManifest derives the summary counts from the manifest paths:

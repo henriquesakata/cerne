@@ -22,18 +22,18 @@ func newRetireCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "retire <name>",
 		Short: "Register a historical entity superseded before it had its own case",
-		Long: "Registra uma entidade que existiu e foi absorvida/descontinuada antes " +
-			"de ter spec/case próprio (ex.: um módulo legado). Nasce substituída; os " +
-			"aliases declarados passam a ser flagrados pelo lint em documentos vigentes.",
+		Long: "Registers an entity that existed and was absorbed/discontinued before " +
+			"it had its own spec/case (e.g. a legacy module). It is born superseded; the " +
+			"declared aliases start being flagged by lint in current documents.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRetire(cmd, dir, args[0], by, reason, aliases, importedFrom)
 		},
 	}
-	cmd.Flags().StringVar(&by, "by", "", "sucessor que absorveu a entidade (ID cerne ou rótulo, ex.: Finance)")
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da substituição/absorção")
-	cmd.Flags().StringArrayVar(&aliases, "alias", nil, fmt.Sprintf("identificador original a flagrar (repetível, mínimo %d caracteres)", domain.MinAliasLen))
-	cmd.Flags().StringVar(&importedFrom, "imported-from", "", "proveniência opcional (caminho/id na árvore legada)")
+	cmd.Flags().StringVar(&by, "by", "", "successor that absorbed the entity (cerne ID or label, e.g. Finance)")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession/absorption")
+	cmd.Flags().StringArrayVar(&aliases, "alias", nil, fmt.Sprintf("original identifier to flag (repeatable, minimum %d characters)", domain.MinAliasLen))
+	cmd.Flags().StringVar(&importedFrom, "imported-from", "", "optional provenance (path/id in the legacy tree)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	return cmd
@@ -42,13 +42,13 @@ func newRetireCmd() *cobra.Command {
 func runRetire(cmd *cobra.Command, dir, name, by, reason string, aliases []string, importedFrom string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("o nome da entidade histórica não pode ser vazio")
+		return fmt.Errorf("the historical entity name cannot be empty")
 	}
 	if by == "" {
-		return fmt.Errorf("--by é obrigatório (ID cerne ou rótulo do sucessor)")
+		return fmt.Errorf("--by is required (cerne ID or label of the successor)")
 	}
 	if reason == "" {
-		return fmt.Errorf("--reason é obrigatório")
+		return fmt.Errorf("--reason is required")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -57,14 +57,14 @@ func runRetire(cmd *cobra.Command, dir, name, by, reason string, aliases []strin
 	h, created, err := app.RecordHistorical(ctx.repoDir, ctx.projDir, name, by, reason, aliases, importedFrom)
 	if err != nil {
 		if errors.Is(err, domain.ErrAliasTooShort) {
-			return fmt.Errorf("alias muito curto: mínimo %d caracteres", domain.MinAliasLen)
+			return fmt.Errorf("alias too short: minimum %d characters", domain.MinAliasLen)
 		}
 		return err
 	}
 	if created {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s registrada como histórica (substituída por %s).\n", h.ID, by)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s registered as historical (superseded by %s).\n", h.ID, by)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s atualizada (já existia como histórica, substituída por %s).\n", h.ID, by)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s updated (already existed as historical, superseded by %s).\n", h.ID, by)
 	}
 	return nil
 }
@@ -74,11 +74,11 @@ func newForgetAliasCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "forget-alias <name> <alias>...",
 		Short: "Remove aliases from a historical entity (curate noisy/ambiguous aliases)",
-		Long: "Remove um ou mais aliases de uma entidade histórica já registrada. " +
-			"Use quando um alias é palavra comum/ambígua (ex.: \"bills\", \"investments\") " +
-			"e gera falso-positivo de ref-to-superseded no lint em documentos vigentes. " +
-			"Aliases ausentes são ignorados; deixar a entidade sem aliases é permitido " +
-			"(ela passa a casar só pelo id).",
+		Long: "Removes one or more aliases from an already-registered historical entity. " +
+			"Use when an alias is a common/ambiguous word (e.g. \"bills\", \"investments\") " +
+			"and causes a ref-to-superseded false positive in lint on current documents. " +
+			"Missing aliases are ignored; leaving the entity with no aliases is allowed " +
+			"(it then matches by id only).",
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runForgetAlias(cmd, dir, args[0], args[1:])
@@ -92,7 +92,7 @@ func newForgetAliasCmd() *cobra.Command {
 func runForgetAlias(cmd *cobra.Command, dir, name string, aliases []string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("o nome da entidade histórica não pode ser vazio")
+		return fmt.Errorf("the historical entity name cannot be empty")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -102,6 +102,6 @@ func runForgetAlias(cmd *cobra.Command, dir, name string, aliases []string) erro
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s atualizada: aliases agora [%s].\n", h.ID, strings.Join(h.Aliases, ", "))
+	fmt.Fprintf(cmd.OutOrStdout(), "%s updated: aliases now [%s].\n", h.ID, strings.Join(h.Aliases, ", "))
 	return nil
 }

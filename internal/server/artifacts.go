@@ -29,12 +29,12 @@ func artifactPath(repoDir, featureID, name string) string {
 // generic byte stream.
 func handleArtifactGet(w http.ResponseWriter, repoDir, featureID, name string) {
 	if !safeSegment(featureID) || !safeSegment(name) {
-		writeJSON(w, http.StatusBadRequest, errorBody("nome de artefato inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid artifact name"))
 		return
 	}
 	data, err := os.ReadFile(artifactPath(repoDir, featureID, name))
 	if errors.Is(err, os.ErrNotExist) {
-		writeJSON(w, http.StatusNotFound, errorBody("artefato não encontrado"))
+		writeJSON(w, http.StatusNotFound, errorBody("artifact not found"))
 		return
 	}
 	if err != nil {
@@ -62,11 +62,11 @@ func handleArtifactPut(w http.ResponseWriter, r *http.Request, repoDir, projDir,
 	isMmd := strings.HasSuffix(name, ".mmd")
 	if !safeSegment(featureID) || !safeSegment(name) || (!isExcalidraw && !isMmd) {
 		writeJSON(w, http.StatusBadRequest,
-			errorBody("nome de artefato inválido (esperado um único segmento terminado em .excalidraw ou .mmd)"))
+			errorBody("invalid artifact name (expected a single segment ending in .excalidraw or .mmd)"))
 		return
 	}
 	if _, err := store.LoadFeature(repoDir, featureID); errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 		return
 	} else if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -79,11 +79,11 @@ func handleArtifactPut(w http.ResponseWriter, r *http.Request, repoDir, projDir,
 	}
 	if isExcalidraw {
 		if !json.Valid(body) {
-			writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição não é JSON válido"))
+			writeJSON(w, http.StatusBadRequest, errorBody("request body is not valid JSON"))
 			return
 		}
 	} else if len(body) == 0 {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo do artefato .mmd não pode ser vazio"))
+		writeJSON(w, http.StatusBadRequest, errorBody(".mmd artifact body cannot be empty"))
 		return
 	}
 	if err := app.SaveArtifact(repoDir, projDir, featureID, name, body); err != nil {

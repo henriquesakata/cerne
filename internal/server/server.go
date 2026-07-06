@@ -47,7 +47,7 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 	}
 	mountDataRoutes(mux, "", bind, false)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
 	mux.Handle("/", spaHandler())
 	return mux
@@ -164,7 +164,7 @@ type artifact struct {
 func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 		return
 	}
 	if err != nil {
@@ -279,7 +279,7 @@ type decisionDetailResponse struct {
 func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
 	d, err := store.LoadDecision(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("decisão não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("decision not found"))
 		return
 	}
 	if err != nil {
@@ -308,7 +308,7 @@ type referenceDetailResponse struct {
 func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
 	ref, err := store.LoadReference(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("referência não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("reference not found"))
 		return
 	}
 	if err != nil {
@@ -332,7 +332,7 @@ type runbookDetailResponse struct {
 func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
 	rb, err := store.LoadRunbook(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("runbook não encontrado"))
+		writeJSON(w, http.StatusNotFound, errorBody("runbook not found"))
 		return
 	}
 	if err != nil {
@@ -356,7 +356,7 @@ type noteDetailResponse struct {
 func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
 	n, err := store.LoadNote(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("nota não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("note not found"))
 		return
 	}
 	if err != nil {
@@ -405,7 +405,7 @@ type searchResponse struct {
 func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("informe o termo de busca (parâmetro q)"))
+		writeJSON(w, http.StatusBadRequest, errorBody("provide the search term (parameter q)"))
 		return
 	}
 	limit := 10
@@ -484,12 +484,12 @@ type askResponse struct {
 func handleAsk(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 	var req askRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo inválido: "+err.Error()))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid body: "+err.Error()))
 		return
 	}
 	query := strings.TrimSpace(req.Query)
 	if query == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("informe a pergunta (campo query)"))
+		writeJSON(w, http.StatusBadRequest, errorBody("provide the question (field query)"))
 		return
 	}
 	dbPath, err := project.IndexPath(projectID)
@@ -566,14 +566,14 @@ type generateDiagramResponse struct {
 func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
 	var req generateDiagramRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	name := app.MermaidArtifactName(req.Name)
 
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 		return
 	}
 	if err != nil {
@@ -611,7 +611,7 @@ func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, proj
 	if err != nil {
 		if errors.Is(err, app.ErrNotMermaidSequence) {
 			writeJSON(w, http.StatusUnprocessableEntity,
-				errorBody("o modelo não retornou um diagrama de sequência Mermaid — tente novamente"))
+				errorBody("the model did not return a Mermaid sequence diagram — try again"))
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -706,12 +706,12 @@ func handleWikiIndex(w http.ResponseWriter, repoDir string) {
 // relative path, guarding traversal via safeWikiRel.
 func handleWikiPage(w http.ResponseWriter, repoDir, rel string) {
 	if !safeWikiRel(rel) {
-		writeJSON(w, http.StatusBadRequest, errorBody("caminho de página inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid page path"))
 		return
 	}
 	body, ok := ask.ReadWikiPage(repoDir, rel)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, errorBody("página de wiki não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("wiki page not found"))
 		return
 	}
 	writeJSON(w, http.StatusOK, wikiPageResponse{Rel: rel, Body: body})
@@ -785,7 +785,7 @@ type createFeatureResponse struct {
 func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
 	var req createFeatureRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent, req.Facets, req.Components)
@@ -817,7 +817,7 @@ type createReferenceResponse struct {
 func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
 	var req createReferenceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, req.Facets, req.Components)
@@ -832,14 +832,14 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, id, doc string) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	switch err := app.SaveFeatureDoc(repoDir, projDir, id, doc, string(body)); {
 	case errors.Is(err, app.ErrUnknownDoc):
-		writeJSON(w, http.StatusBadRequest, errorBody("documento inválido (use spec, plan ou result)"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
 	case errors.Is(err, store.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	default:
@@ -856,12 +856,12 @@ type setParentRequest struct {
 func handleSetParent(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
 	var req setParentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	switch err := app.SetFeatureParent(repoDir, projDir, id, req.Parent); {
 	case errors.Is(err, store.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 	case errors.Is(err, app.ErrParentNotFound),
 		errors.Is(err, app.ErrParentTerminal),
 		errors.Is(err, domain.ErrParentSelf),
@@ -887,12 +887,12 @@ type renameRequest struct {
 func handleRenameTitle(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
 	var req renameRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	switch err := app.RenameFeature(repoDir, projDir, id, req.Title); {
 	case errors.Is(err, store.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 	case errors.Is(err, app.ErrTitleFrozen):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case err != nil && strings.TrimSpace(req.Title) == "":
@@ -919,11 +919,11 @@ type transitionRequest struct {
 func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
 	var req transitionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo da requisição inválido"))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, errorBody("feature não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 		return
 	} else if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))

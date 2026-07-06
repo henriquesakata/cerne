@@ -33,7 +33,7 @@ func TestSyncAdvancesFromDeadlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sync should advance from deadlock without --force: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("sync did not push the local edit:\n%s", out)
 	}
 
@@ -54,7 +54,7 @@ func TestSyncAdvancesFromDeadlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second sync: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Nada para enviar.") {
+	if !strings.Contains(out, "Nothing to send.") {
 		t.Fatalf("second sync should be a no-op send:\n%s", out)
 	}
 }
@@ -82,7 +82,7 @@ func TestSyncStopsOnSameDocConflict(t *testing.T) {
 	if err == nil {
 		t.Fatalf("sync should stop on a same-document conflict\n%s", out)
 	}
-	if strings.Contains(out, "Enviado:") {
+	if strings.Contains(out, "Sent:") {
 		t.Fatalf("sync must not push when the pull step conflicts:\n%s", out)
 	}
 	// Mine kept; remote untouched.

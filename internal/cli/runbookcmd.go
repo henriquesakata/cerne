@@ -40,24 +40,24 @@ func newRunbookRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Redefinir os tags (facet/componente) de um runbook ativo",
-		Long: "Define ou substitui os eixos de tag de um runbook ativo, sem substituí-lo — preserva corpo e " +
-			"estado. Altera só o eixo passado: 'retag RB-0001 --component gitback' mantém os facets; '--facet \"\"' " +
-			"limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Short: "Reset the tags (facet/component) of an active runbook",
+		Long: "Sets or replaces the tag axes of an active runbook, without superseding it — preserves body and " +
+			"state. Changes only the axis passed: 'retag RB-0001 --component gitback' keeps the facets; '--facet \"\"' " +
+			"clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookRetag(cmd, *dir, args[0], facet, component,
 				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
 		},
 	}
-	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
-	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
 	return cmd
 }
 
 func runRunbookRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
 	if !setFacets && !setComponents {
-		return fmt.Errorf("informe ao menos --facet ou --component")
+		return fmt.Errorf("provide at least --facet or --component")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -68,7 +68,7 @@ func runRunbookRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeado — facets: [%s] · components: [%s]\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		rb.ID, strings.Join(rb.Facets, ", "), strings.Join(rb.Components, ", "))
 	return nil
 }
@@ -77,16 +77,16 @@ func newRunbookMigrateCmd(dir *string) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "Reclassifica referências importadas de docs/runbooks em runbooks",
-		Long: "Encontra referências cujo doc foi importado de docs/runbooks/ (antes de o runbook existir) e as " +
-			"reclassifica em runbooks: cunha um id RB-, move o conteúdo, reescreve os cross-links (R-→RB-, " +
-			"references/→runbooks/) e remove a referência antiga. Sem --yes, apenas lista o que faria.",
+		Short: "Reclassify references imported from docs/runbooks into runbooks",
+		Long: "Finds references whose doc was imported from docs/runbooks/ (before the runbook existed) and " +
+			"reclassifies them into runbooks: mints an RB- id, moves the content, rewrites the cross-links (R-→RB-, " +
+			"references/→runbooks/) and removes the old reference. Without --yes, it only lists what it would do.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookMigrate(cmd, *dir, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "aplica a migração (sem isto, dry-run)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "apply the migration (without this, dry-run)")
 	return cmd
 }
 
@@ -102,10 +102,10 @@ func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
 			return err
 		}
 		if len(plan) == 0 {
-			fmt.Fprintln(out, "Nenhuma referência de docs/runbooks para migrar.")
+			fmt.Fprintln(out, "No docs/runbooks references to migrate.")
 			return nil
 		}
-		fmt.Fprintf(out, "%d referência(s) virariam runbooks (use --yes para aplicar):\n", len(plan))
+		fmt.Fprintf(out, "%d reference(s) would become runbooks (use --yes to apply):\n", len(plan))
 		for _, m := range plan {
 			fmt.Fprintf(out, "  %s  %s  (%s)\n", m.FromRef, m.Title, m.Source)
 		}
@@ -122,17 +122,17 @@ func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
 		return fmt.Sprintf("cerne: migrate %d runbook(s) from references", len(migrated)), nil
 	})
 	if errors.Is(mErr, gitback.ErrNothingToCommit) || len(migrated) == 0 {
-		fmt.Fprintln(out, "Nenhuma referência de docs/runbooks para migrar.")
+		fmt.Fprintln(out, "No docs/runbooks references to migrate.")
 		return nil
 	}
 	if mErr != nil {
 		return mErr
 	}
-	fmt.Fprintf(out, "Migradas %d referência(s) para runbooks:\n", len(migrated))
+	fmt.Fprintf(out, "Migrated %d reference(s) to runbooks:\n", len(migrated))
 	for _, m := range migrated {
 		fmt.Fprintf(out, "  %s → %s  %s\n", m.FromRef, m.ToRunbook, m.Title)
 	}
-	fmt.Fprintln(out, "Rode 'cerne pull' para materializar.")
+	fmt.Fprintln(out, "Run 'cerne pull' to materialize.")
 	return nil
 }
 
@@ -141,9 +141,9 @@ func newRunbookNewCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a runbook (active); one-shot with a --file/stdin body",
-		Long: "Cria um runbook ativo. Com corpo (--file ou stdin com pipe) é one-shot: nasce com conteúdo " +
-			"real, já commitado e enviado — sem o ciclo draft+push. Sem corpo, nasce como stub do template " +
-			"para preencher.",
+		Long: "Creates an active runbook. With a body (--file or piped stdin) it is one-shot: born with real " +
+			"content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +
+			"template to fill in.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookNew(cmd, *dir, args[0], file)
@@ -156,7 +156,7 @@ func newRunbookNewCmd(dir *string) *cobra.Command {
 func runRunbookNew(cmd *cobra.Command, dir, title, file string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return fmt.Errorf("o título do runbook não pode ser vazio")
+		return fmt.Errorf("the runbook title cannot be empty")
 	}
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
@@ -174,10 +174,10 @@ func runRunbookNew(cmd *cobra.Command, dir, title, file string) error {
 	// by CreateRunbook (CommitAndSnapshot) — nothing to draft or push. A bodyless
 	// runbook is a stub: keep the draft + push next step.
 	if strings.TrimSpace(body) != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criado (active) com corpo — já sincronizado. Rode 'cerne pull' para materializar localmente.\n", rb.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (active) with a body — already synced. Run 'cerne pull' to materialize locally.\n", rb.ID)
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s criado (active). Próximo passo: preencha o runbook ('cerne runbook draft %s' ajuda) e rode 'cerne push'.\n", rb.ID, rb.ID)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active). Next step: fill in the runbook ('cerne runbook draft %s' scaffolds it) and run 'cerne push'.\n", rb.ID, rb.ID)
 	return nil
 }
 
@@ -185,14 +185,14 @@ func newRunbookSubstituirCmd(dir *string) *cobra.Command {
 	var by, reason string
 	cmd := &cobra.Command{
 		Use:   "substituir <id>",
-		Short: "Substituir um runbook por outro (requer --by e --reason)",
+		Short: "Supersede one runbook with another (requires --by and --reason)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookSubstituir(cmd, *dir, args[0], by, reason)
 		},
 	}
-	cmd.Flags().StringVar(&by, "by", "", "id do runbook que substitui")
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da substituição")
+	cmd.Flags().StringVar(&by, "by", "", "id of the runbook that supersedes")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession")
 	return cmd
 }
 
@@ -218,17 +218,17 @@ func newRunbookRetireCmd(dir *string) *cobra.Command {
 	var reason string
 	cmd := &cobra.Command{
 		Use:   "retire <id>",
-		Short: "Aposentar um runbook obsoleto (vai para superseded, sem sucessor; --reason obrigatório)",
-		Long: "Move um runbook de active para superseded SEM sucessor — para um procedimento que não vale mais " +
-			"(ex.: virou explicação/nota, ou o fluxo foi descontinuado). O runbook sai do estado atual " +
-			"(.docs/CONTEXT.md) e vira história pesquisável ('cerne search'/'ask'). Para trocar por outro " +
+		Short: "Retire an obsolete runbook (goes to superseded, no successor; --reason required)",
+		Long: "Moves a runbook from active to superseded WITHOUT a successor — for a procedure that no longer holds " +
+			"(e.g. it became an explanation/note, or the flow was discontinued). The runbook leaves the current state " +
+			"(.docs/CONTEXT.md) and becomes searchable history ('cerne search'/'ask'). To swap it for another " +
 			"runbook, use 'cerne runbook substituir --by'.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookRetire(cmd, *dir, args[0], reason)
 		},
 	}
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da aposentadoria (obrigatório)")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
 	return cmd
 }
 
@@ -236,7 +236,7 @@ func runRunbookRetire(cmd *cobra.Command, dir, id, reason string) error {
 	// Validate the required reason before resolveProject so bad invocations
 	// fail fast without touching origin. retire is substituir with no successor.
 	if strings.TrimSpace(reason) == "" {
-		return fmt.Errorf("--reason é obrigatório")
+		return fmt.Errorf("--reason is required")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -246,7 +246,7 @@ func runRunbookRetire(cmd *cobra.Command, dir, id, reason string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s aposentado: %s → %s\n", out.ID, out.From, out.To)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retired: %s → %s\n", out.ID, out.From, out.To)
 	return nil
 }
 
@@ -254,9 +254,9 @@ func newRunbookDraftCmd(dir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "draft <id>",
 		Short: "AI-draft a runbook",
-		Long: "Rascunha um runbook usando o provider configurado. No modo delegação (default) imprime o " +
-			"prompt montado para o agente hospedeiro escrever o runbook; nos modos byo-key e claude-cli gera " +
-			"o texto, escreve em content/runbooks/<id>.md e dá push.",
+		Long: "Drafts a runbook using the configured provider. In delegation mode (default) it prints the " +
+			"assembled prompt for the host agent to write the runbook; in byo-key and claude-cli modes it generates " +
+			"the text, writes it to content/runbooks/<id>.md and pushes.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookDraft(cmd, *dir, args[0])
@@ -272,7 +272,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 	rb, err := store.LoadRunbook(ctx.repoDir, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("runbook %s não encontrado no backend", id)
+			return fmt.Errorf("runbook %s not found in the backend", id)
 		}
 		return err
 	}
@@ -283,7 +283,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 	// delegation (default): print the prompt for the host agent to draft inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
 		fmt.Fprint(out, prompt)
-		fmt.Fprintf(out, "\n\nEscreva o resultado em content/runbooks/%s.md (mantendo o frontmatter cerne_id) e rode 'cerne push'.\n", id)
+		fmt.Fprintf(out, "\n\nWrite the result to content/runbooks/%s.md (keeping the cerne_id frontmatter) and run 'cerne push'.\n", id)
 		return nil
 	}
 
@@ -307,7 +307,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "runbook %s rascunhado e enviado — rode 'cerne pull' para revisar.\n", id)
+	fmt.Fprintf(out, "runbook %s drafted and pushed — run 'cerne pull' to review.\n", id)
 	return nil
 }
 

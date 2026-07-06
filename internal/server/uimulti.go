@@ -78,7 +78,7 @@ func (h *multiHub) broadcast(ev liveEvent) {
 func (h *multiHub) handleStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeJSON(w, http.StatusInternalServerError, errorBody("streaming não suportado"))
+		writeJSON(w, http.StatusInternalServerError, errorBody("streaming not supported"))
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -280,7 +280,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 			Dir string `json:"dir"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Dir == "" {
-			writeJSON(w, http.StatusBadRequest, errorBody("informe o diretório do projeto (campo dir)"))
+			writeJSON(w, http.StatusBadRequest, errorBody("provide the project directory (field dir)"))
 			return
 		}
 		pid, name, err := reg.add(req.Dir)
@@ -292,7 +292,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	})
 	mux.HandleFunc("DELETE /api/projects/{pid}", func(w http.ResponseWriter, r *http.Request) {
 		if !reg.remove(r.PathValue("pid")) {
-			writeJSON(w, http.StatusNotFound, errorBody("projeto não registrado"))
+			writeJSON(w, http.StatusNotFound, errorBody("project not registered"))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"removed": true})
@@ -308,7 +308,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 		return func(w http.ResponseWriter, r *http.Request) {
 			e, ok := reg.get(r.PathValue("pid"))
 			if !ok {
-				writeJSON(w, http.StatusNotFound, errorBody("projeto não registrado: "+r.PathValue("pid")))
+				writeJSON(w, http.StatusNotFound, errorBody("project not registered: "+r.PathValue("pid")))
 				return
 			}
 			h(w, r, e.repoDir, e.projDir, e.pid)
@@ -318,7 +318,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	mountDataRoutes(mux, "/projects/{pid}", withProject, false)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
 	mux.Handle("/", spaHandler())
 	return mux, nil

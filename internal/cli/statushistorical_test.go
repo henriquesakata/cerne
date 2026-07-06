@@ -17,7 +17,7 @@ func TestStatusAllListsHistoricals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if strings.Contains(out, "HISTÓRICAS") || strings.Contains(out, "Bills") {
+	if strings.Contains(out, "HISTORICALS") || strings.Contains(out, "Bills") {
 		t.Fatalf("default status leaked historicals:\n%s", out)
 	}
 
@@ -26,7 +26,7 @@ func TestStatusAllListsHistoricals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status --all: %v", err)
 	}
-	for _, want := range []string{"HISTÓRICAS", "H-0001", "Bills", "Finance"} {
+	for _, want := range []string{"HISTORICALS", "H-0001", "Bills", "Finance"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status --all missing %q:\n%s", want, out)
 		}

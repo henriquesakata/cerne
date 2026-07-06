@@ -52,8 +52,8 @@ func TestArtifactGetNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "artefato não encontrado" {
-		t.Fatalf("error = %q, want %q", got["error"], "artefato não encontrado")
+	if got["error"] != "artifact not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "artifact not found")
 	}
 }
 
@@ -180,8 +180,8 @@ func TestArtifactPutUnknownFeature(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
-	if got["error"] != "feature não encontrada" {
-		t.Fatalf("error = %q, want %q", got["error"], "feature não encontrada")
+	if got["error"] != "feature not found" {
+		t.Fatalf("error = %q, want %q", got["error"], "feature not found")
 	}
 }
 

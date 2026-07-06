@@ -17,7 +17,7 @@ import (
 
 // ErrUnknownIDPrefix is returned by `cerne show` when a cerne_id's prefix maps
 // to no known entity kind (F/D/R/N/RB/H).
-var ErrUnknownIDPrefix = errors.New("prefixo de cerne_id desconhecido")
+var ErrUnknownIDPrefix = errors.New("unknown cerne_id prefix")
 
 // showResult is one resolved cerne_id: its kind, the loaded entity value, and
 // any markdown content sections read straight from the backend store. Feature
@@ -38,10 +38,10 @@ func newShowCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
-		Short: "Mostrar qualquer entidade (feature, decision, reference, note, runbook, histórico) por id",
-		Long: "Resolve um cerne_id pelo prefixo (F-/D-/R-/N-/RB-/H-) e imprime os metadados mais o corpo " +
-			"markdown da entidade, lidos direto do backend (store) — funciona para qualquer entidade, inclusive " +
-			"features já implementadas que não estão materializadas em '.docs/'. Use --json para saída de máquina.",
+		Short: "Show any entity (feature, decision, reference, note, runbook, historical) by id",
+		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-) and prints the metadata plus the entity's " +
+			"markdown body, read straight from the backend (store) — works for any entity, including " +
+			"already-implemented features that are not materialized in '.docs/'. Use --json for machine output.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runShow(cmd, dir, args[0], asJSON)
@@ -145,7 +145,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 	case "historical":
 		h, err := store.LoadHistorical(repoDir, id)
 		if err != nil {
-			return showResult{}, fmt.Errorf("histórico %s: %w", id, err)
+			return showResult{}, fmt.Errorf("historical %s: %w", id, err)
 		}
 		return showResult{kind, h, nil}, nil
 	}
@@ -190,10 +190,10 @@ func (r showResult) renderText(w io.Writer) {
 	case store.Feature:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		if e.Module != "" {
-			fmt.Fprintf(w, "módulo: %s\n", e.Module)
+			fmt.Fprintf(w, "module: %s\n", e.Module)
 		}
 		if e.Parent != "" {
-			fmt.Fprintf(w, "épico: %s\n", e.Parent)
+			fmt.Fprintf(w, "epic: %s\n", e.Parent)
 		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 	case store.Decision:
@@ -205,18 +205,18 @@ func (r showResult) renderText(w io.Writer) {
 			fmt.Fprintf(w, "url: %s\n", e.URL)
 		}
 		if e.External {
-			fmt.Fprintln(w, "externa: sim")
+			fmt.Fprintln(w, "external: yes")
 		}
 		if len(e.Informs) > 0 {
-			fmt.Fprintf(w, "informa: %s\n", strings.Join(e.Informs, ", "))
+			fmt.Fprintf(w, "informs: %s\n", strings.Join(e.Informs, ", "))
 		}
 	case store.Note:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		if e.Durable {
-			fmt.Fprintln(w, "durável: sim")
+			fmt.Fprintln(w, "durable: yes")
 		}
 		if len(e.Informs) > 0 {
-			fmt.Fprintf(w, "informa: %s\n", strings.Join(e.Informs, ", "))
+			fmt.Fprintf(w, "informs: %s\n", strings.Join(e.Informs, ", "))
 		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 	case store.Runbook:
@@ -238,14 +238,14 @@ func (r showResult) renderText(w io.Writer) {
 	}
 }
 
-// writeSuccession prints the shared "substituída por" / "motivo" tail used by
+// writeSuccession prints the shared "superseded by" / "reason" tail used by
 // every entity that carries it.
 func writeSuccession(w io.Writer, supersededBy, reason string) {
 	if supersededBy != "" {
-		fmt.Fprintf(w, "substituída por: %s\n", supersededBy)
+		fmt.Fprintf(w, "superseded by: %s\n", supersededBy)
 	}
 	if reason != "" {
-		fmt.Fprintf(w, "motivo: %s\n", reason)
+		fmt.Fprintf(w, "reason: %s\n", reason)
 	}
 }
 

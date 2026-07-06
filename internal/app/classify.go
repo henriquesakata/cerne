@@ -92,11 +92,11 @@ func ClassifyFeatureManually(repoDir, projDir, id, module string) error {
 			return "", err
 		}
 		if !moduleDeclared(proj.Modules, module) {
-			return "", fmt.Errorf("módulo desconhecido: %q (módulos declarados: %s)", module, joinModules(proj.Modules))
+			return "", fmt.Errorf("unknown module: %q (declared modules: %s)", module, joinModules(proj.Modules))
 		}
 		f, err := store.LoadFeature(repoDir, id)
 		if err != nil {
-			return "", fmt.Errorf("feature %s não encontrada no backend", id)
+			return "", fmt.Errorf("feature %s not found in backend", id)
 		}
 		if err := assignFeatureModule(repoDir, f, module, "manual"); err != nil {
 			return "", err
@@ -141,7 +141,7 @@ func moduleDeclared(modules []string, name string) bool {
 // joinModules renders the declared modules for an error message.
 func joinModules(modules []string) string {
 	if len(modules) == 0 {
-		return "(nenhum)"
+		return "(none)"
 	}
 	out := modules[0]
 	for _, m := range modules[1:] {

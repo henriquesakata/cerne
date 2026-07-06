@@ -32,12 +32,12 @@ func TestNoteNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note new: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "N-0001 criada (active)") {
+	if !strings.Contains(out, "N-0001 created (active)") {
 		t.Fatalf("note new output missing N-0001 confirmation:\n%s", out)
 	}
 	// A bodyless note is born a stub: the CLI keeps pointing the author at the
 	// fill + push flow.
-	if !strings.Contains(out, "preencha") || !strings.Contains(out, "cerne push") {
+	if !strings.Contains(out, "fill in") || !strings.Contains(out, "cerne push") {
 		t.Fatalf("note new (stub) output missing the fill+push next step:\n%s", out)
 	}
 
@@ -103,7 +103,7 @@ func TestNoteNewWithFileBody(t *testing.T) {
 	// (CreateNote → CommitAndSnapshot). The CLI must confirm it is synced and
 	// point at 'cerne pull', NOT the stub fill+push hint — otherwise the agent
 	// pulls and cats the note just to verify a complete operation.
-	if !strings.Contains(out, "já sincronizada") || !strings.Contains(out, "com corpo") {
+	if !strings.Contains(out, "already synced") || !strings.Contains(out, "with a body") {
 		t.Fatalf("note new --file output must confirm a synced body:\n%s", out)
 	}
 	if !strings.Contains(out, "cerne pull") {
@@ -234,8 +234,8 @@ func TestNoteRetire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note retire: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "aposentada") || !strings.Contains(out, "superseded") {
-		t.Fatalf("note retire output missing aposentada/superseded:\n%s", out)
+	if !strings.Contains(out, "retired") || !strings.Contains(out, "superseded") {
+		t.Fatalf("note retire output missing retired/superseded:\n%s", out)
 	}
 	n, err := store.LoadNote(repoDir, id)
 	if err != nil {
@@ -254,8 +254,8 @@ func TestNoteKeep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note keep: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "durável") {
-		t.Fatalf("note keep output missing durável confirmation:\n%s", out)
+	if !strings.Contains(out, "durable") {
+		t.Fatalf("note keep output missing durable confirmation:\n%s", out)
 	}
 	n, err := store.LoadNote(repoDir, id)
 	if err != nil {
@@ -298,7 +298,7 @@ func TestNoteList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note list (empty): %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Nenhuma") {
+	if !strings.Contains(out, "No active notes") {
 		t.Fatalf("empty note list must state there are no notes:\n%s", out)
 	}
 
@@ -318,7 +318,7 @@ func TestNoteList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note list: %v\noutput: %s", err, out)
 	}
-	for _, want := range []string{a, "go-git não lê ssh config", b, "Índice é derivado", "durá"} {
+	for _, want := range []string{a, "go-git não lê ssh config", b, "Índice é derivado", "durable"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("note list missing %q:\n%s", want, out)
 		}

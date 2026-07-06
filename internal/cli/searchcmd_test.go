@@ -45,7 +45,7 @@ func TestSearchAutoBuildsIndexAndFindsSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Construindo índice...") {
+	if !strings.Contains(out, "Building index...") {
 		t.Fatalf("missing index auto-build message:\n%s", out)
 	}
 	if !strings.Contains(out, "F-0001 [feature/spec] candidate — Parcelamento") {
@@ -63,7 +63,7 @@ func TestSearchAutoBuildsIndexAndFindsSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second search: %v\noutput: %s", err, out)
 	}
-	if strings.Contains(out, "Construindo índice...") {
+	if strings.Contains(out, "Building index...") {
 		t.Fatalf("second search rebuilt the index:\n%s", out)
 	}
 }
@@ -138,7 +138,7 @@ func TestSearchNoResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, `Nada encontrado para "zzzz".`) {
+	if !strings.Contains(out, `Nothing found for "zzzz".`) {
 		t.Fatalf("missing no-results message:\n%s", out)
 	}
 }
