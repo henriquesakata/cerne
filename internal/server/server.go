@@ -138,6 +138,21 @@ func handleState(w http.ResponseWriter, repoDir string) {
 	})
 }
 
+// workResponse is the GET /api/work payload (F-0130): every work regardless of
+// state (active/done/abandoned) — the UI filters, same contract as GET /state.
+type workResponse struct {
+	Works []store.Work `json:"works"`
+}
+
+func handleWork(w http.ResponseWriter, repoDir string) {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, workResponse{Works: works})
+}
+
 // featureDetailResponse is the GET /api/features/{id} payload.
 type featureDetailResponse struct {
 	Feature     store.Feature     `json:"feature"`
@@ -754,11 +769,13 @@ type lintResponse struct {
 func handleLint(w http.ResponseWriter, repoDir, projDir string) {
 	var ignore []string
 	staleReadyDays := 0
+	staleWorkHours := 0
 	if cfg, _, err := project.LoadConfig(projDir); err == nil {
 		ignore = cfg.UnregisteredSourceIgnore
 		staleReadyDays = cfg.StaleReadyWindowDays()
+		staleWorkHours = cfg.StaleWorkWindowHours()
 	}
-	findings, err := lint.RunConfig(repoDir, staleReadyDays, ignore...)
+	findings, err := lint.RunConfig(repoDir, staleReadyDays, staleWorkHours, ignore...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
