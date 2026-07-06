@@ -110,7 +110,7 @@ func TestDriftSuspectGoldenPath(t *testing.T) {
 
 	// Baseline is the project HEAD recorded during the pushes above. No code has
 	// changed since, so there is no drift yet — and --draft writes nothing (crit. 3).
-	if out := mustCerne(t, "drift", "--dir", proj); !strings.Contains(out, "Nenhum drift detectado.") {
+	if out := mustCerne(t, "drift", "--dir", proj); !strings.Contains(out, "No drift detected.") {
 		t.Fatalf("expected no drift before code change, got:\n%s", out)
 	}
 	mustCerne(t, "drift", "--draft", "--dir", proj)

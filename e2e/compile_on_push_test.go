@@ -50,7 +50,7 @@ func TestCompileOnPushGoldenPath(t *testing.T) {
 	// Push a real spec → the wiki project page turns dirty → the hook compiles it.
 	writeReal(t, featureDir(t, proj), "spec.md", "Motor")
 	out := mustCerne(t, "push", "--dir", proj)
-	if !strings.Contains(out, "Wiki recompilada:") {
+	if !strings.Contains(out, "Wiki recompiled:") {
 		t.Fatalf("push output missing wiki recompile notice:\n%s", out)
 	}
 	if calls.Load() == 0 {
@@ -60,7 +60,7 @@ func TestCompileOnPushGoldenPath(t *testing.T) {
 	// calls — compile.Dirty sees clean provenance stamps (crit. 2).
 	before := calls.Load()
 	out = mustCerne(t, "push", "--dir", proj)
-	if !strings.Contains(out, "Nada para enviar.") {
+	if !strings.Contains(out, "Nothing to send.") {
 		t.Fatalf("second push should have nothing to send:\n%s", out)
 	}
 	if calls.Load() != before {
@@ -88,7 +88,7 @@ func TestCompileOnPushFailureDoesNotFailPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("push must succeed even when wiki compile fails: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "recompilação da wiki pós-push falhou") {
+	if !strings.Contains(out, "post-push wiki recompilation failed") {
 		t.Fatalf("missing non-fatal warning:\n%s", out)
 	}
 }
@@ -101,7 +101,7 @@ func TestCompileOnPushDelegationWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("push must succeed in delegation: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "compile_on_push exige [llm] chamável") {
+	if !strings.Contains(out, "compile_on_push requires a callable [llm]") {
 		t.Fatalf("missing delegation warning:\n%s", out)
 	}
 	// No .pending side effects.

@@ -84,16 +84,16 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		d, err := store.LoadDecision(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("decisão %s não encontrada no backend", id)
+			return "", fmt.Errorf("decision %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if by == id {
-			return "", fmt.Errorf("--by não pode ser a própria decisão (%s)", id)
+			return "", fmt.Errorf("--by cannot be the decision itself (%s)", id)
 		}
 		if _, err := store.LoadDecision(repoDir, by); errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("decisão %s (--by) não encontrada no backend", by)
+			return "", fmt.Errorf("decision %s (--by) not found in backend", by)
 		} else if err != nil {
 			return "", err
 		}
@@ -136,13 +136,13 @@ func RetagDecision(repoDir, projDir, id string, facets, components []string, set
 		var err error
 		d, err = store.LoadDecision(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("decisão %s não encontrada no backend", id)
+			return "", fmt.Errorf("decision %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if d.State != domain.DecisionActive {
-			return "", fmt.Errorf("decisão %s não está active (está %s) — retag só vale para decisão ativa", id, d.State)
+			return "", fmt.Errorf("decision %s is not active (it is %s) — retag only applies to an active decision", id, d.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)

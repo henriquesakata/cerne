@@ -294,7 +294,7 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 			findings = append(findings, Finding{
 				Rule:   RuleIncompleteDoc,
 				File:   rel,
-				Detail: rel + ": faltam as seções do template: " + strings.Join(missing, ", "),
+				Detail: rel + ": missing template sections: " + strings.Join(missing, ", "),
 			})
 		}
 		return nil
@@ -386,7 +386,7 @@ func parentFindings(features []store.Feature) []Finding {
 			findings = append(findings, Finding{
 				Rule:   RuleParentNotFound,
 				Entity: f.ID,
-				Detail: fmt.Sprintf("%s aponta para o épico %s, que não existe", f.ID, f.Parent),
+				Detail: fmt.Sprintf("%s points to epic %s, which does not exist", f.ID, f.Parent),
 			})
 			continue
 		}
@@ -394,7 +394,7 @@ func parentFindings(features []store.Feature) []Finding {
 			findings = append(findings, Finding{
 				Rule:   RuleParentTerminal,
 				Entity: f.ID,
-				Detail: fmt.Sprintf("%s está sob o épico %s, que está %s", f.ID, parent.ID, parent.State),
+				Detail: fmt.Sprintf("%s is under epic %s, which is %s", f.ID, parent.ID, parent.State),
 			})
 		}
 	}
@@ -416,7 +416,7 @@ func parentFindings(features []store.Feature) []Finding {
 				findings = append(findings, Finding{
 					Rule:   RuleEpicOpenChildren,
 					Entity: epicID,
-					Detail: fmt.Sprintf("o épico %s está %s, mas tem %d filho(s) ainda em aberto", epicID, epic.State, open),
+					Detail: fmt.Sprintf("epic %s is %s, but has %d open child(ren)", epicID, epic.State, open),
 				})
 			}
 		case domain.StateCandidate, domain.StateApproved:
@@ -430,7 +430,7 @@ func parentFindings(features []store.Feature) []Finding {
 				findings = append(findings, Finding{
 					Rule:   RuleEpicBehindChildren,
 					Entity: epicID,
-					Detail: fmt.Sprintf("o épico %s está %s, mas %d filho(s) já entraram em desenvolvimento", epicID, epic.State, started),
+					Detail: fmt.Sprintf("epic %s is %s, but %d child(ren) already entered development", epicID, epic.State, started),
 				})
 			}
 		}
@@ -644,7 +644,7 @@ func wikiSourceFindings(repoDir string, features []store.Feature, decisions []st
 		}
 		for _, src := range wiki.ParseProvenance(data).Sources {
 			if !known[src] {
-				findings = append(findings, Finding{Rule: RuleWikiSourceUnknown, File: rel, Detail: "fonte desconhecida: " + src})
+				findings = append(findings, Finding{Rule: RuleWikiSourceUnknown, File: rel, Detail: "unknown source: " + src})
 			}
 		}
 	}
@@ -745,18 +745,10 @@ func scannedDocs(repoDir string, features []store.Feature, decisions []store.Dec
 	return docs, nil
 }
 
-// stateLabelPT maps an English lifecycle state to the pt-BR adjective used in
-// user-facing ref-to-superseded findings. Feminine, to agree with "entidade"
-// (the rule's UI/CLI label is "menção a entidade substituída").
-func stateLabelPT(state string) string {
-	switch state {
-	case "superseded":
-		return "substituída"
-	case "rejected":
-		return "rejeitada"
-	case "obsolete":
-		return "obsoleta"
-	}
+// stateLabel maps an English lifecycle state to the word used in
+// user-facing ref-to-superseded findings (the rule's UI/CLI label is
+// "mention of a superseded entity").
+func stateLabel(state string) string {
 	return state
 }
 
@@ -809,14 +801,14 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 // mention (by id, title or imported identifier), or "" when n is absent.
 func matchNeedle(n needle, text string) string {
 	if n.rxID.MatchString(text) {
-		return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state))
+		return fmt.Sprintf("mentions %s (\"%s\"), which is %s", n.id, n.title, stateLabel(n.state))
 	}
 	if n.rxTitle != nil && n.rxTitle.MatchString(text) {
-		return fmt.Sprintf("menciona %s (\"%s\") que está %s", n.id, n.title, stateLabelPT(n.state))
+		return fmt.Sprintf("mentions %s (\"%s\"), which is %s", n.id, n.title, stateLabel(n.state))
 	}
 	for _, in := range n.imported {
 		if in.rx.MatchString(text) {
-			return fmt.Sprintf("menciona %s (%s \"%s\") que está %s", in.text, n.id, n.title, stateLabelPT(n.state))
+			return fmt.Sprintf("mentions %s (%s \"%s\"), which is %s", in.text, n.id, n.title, stateLabel(n.state))
 		}
 	}
 	return ""
@@ -904,7 +896,7 @@ func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
 	})
 	findings := make([]Finding, 0, len(broken))
 	for _, target := range broken {
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "link quebrado: " + target})
+		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken link: " + target})
 	}
 	return findings
 }
@@ -986,7 +978,7 @@ func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Referenc
 			Rule:   RuleUnregisteredSource,
 			Entity: d.entity,
 			File:   d.rel,
-			Detail: "URL externa " + u + " citada sem referência registrada — registre com 'cerne reference new … --informs " + d.entity + "' ou remova a URL",
+			Detail: "external URL " + u + " cited without a registered reference — register it with 'cerne reference new … --informs " + d.entity + "' or remove the URL",
 		})
 	}
 	return findings
@@ -1024,7 +1016,7 @@ func orphanFindings(repoDir string, features []store.Feature, decisions []store.
 				return err
 			}
 			relSlash := filepath.ToSlash(rel)
-			findings = append(findings, Finding{Rule: RuleOrphanContent, File: relSlash, Detail: "conteúdo sem entidade: " + relSlash})
+			findings = append(findings, Finding{Rule: RuleOrphanContent, File: relSlash, Detail: "content without an entity: " + relSlash})
 			return nil
 		})
 		if walkErr != nil {
@@ -1069,7 +1061,7 @@ func orphanFindings(repoDir string, features []store.Feature, decisions []store.
 				continue
 			}
 			rel := kind.subdir + "/" + e.Name()
-			findings = append(findings, Finding{Rule: RuleOrphanContent, File: rel, Detail: "conteúdo sem entidade: " + rel})
+			findings = append(findings, Finding{Rule: RuleOrphanContent, File: rel, Detail: "content without an entity: " + rel})
 		}
 	}
 	return findings, nil
@@ -1111,7 +1103,7 @@ func staleCandidateFindings(repoDir string, features []store.Feature, now time.T
 		findings = append(findings, Finding{
 			Rule:   RuleStaleCandidate,
 			Entity: f.ID,
-			Detail: fmt.Sprintf("candidata há %d dias sem spec — rejeite ou avance com uma spec", int(age.Hours()/24)),
+			Detail: fmt.Sprintf("candidate for %d days without a spec — reject it or advance it with a spec", int(age.Hours()/24)),
 		})
 	}
 	return findings, nil
@@ -1237,7 +1229,7 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 		findings = append(findings, Finding{
 			Rule:   RuleStaleNote,
 			Entity: nt.ID,
-			Detail: fmt.Sprintf("só informa trabalho encerrado (%s) — aposente ou confirme que ainda é durável", strings.Join(terminals, ", ")),
+			Detail: fmt.Sprintf("only informs concluded work (%s) — retire it or confirm it is still durable", strings.Join(terminals, ", ")),
 		})
 	}
 	return findings
@@ -1266,7 +1258,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: f.ID,
-				Detail: "sem tag (facet/componente) — classifique com 'cerne feature retag'",
+				Detail: "no tag (facet/component) — classify it with 'cerne feature retag'",
 			})
 		}
 	}
@@ -1275,7 +1267,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: nt.ID,
-				Detail: "sem tag (facet/componente) — classifique com 'cerne note retag'",
+				Detail: "no tag (facet/component) — classify it with 'cerne note retag'",
 			})
 		}
 	}
@@ -1284,7 +1276,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: d.ID,
-				Detail: "sem tag (facet/componente) — classifique com 'cerne decision retag'",
+				Detail: "no tag (facet/component) — classify it with 'cerne decision retag'",
 			})
 		}
 	}
@@ -1293,7 +1285,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: r.ID,
-				Detail: "sem tag (facet/componente) — classifique com 'cerne reference retag'",
+				Detail: "no tag (facet/component) — classify it with 'cerne reference retag'",
 			})
 		}
 	}
@@ -1302,7 +1294,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: rb.ID,
-				Detail: "sem tag (facet/componente) — classifique com 'cerne runbook retag'",
+				Detail: "no tag (facet/component) — classify it with 'cerne runbook retag'",
 			})
 		}
 	}
@@ -1339,7 +1331,7 @@ func gateFindings(repoDir string, features []store.Feature) ([]Finding, error) {
 			findings = append(findings, Finding{
 				Rule:   RuleMissingGateDoc,
 				Entity: f.ID,
-				Detail: fmt.Sprintf("feature %s sem %s real", f.State, doc),
+				Detail: fmt.Sprintf("%s feature without a real %s", f.State, doc),
 			})
 		}
 	}

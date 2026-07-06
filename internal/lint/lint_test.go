@@ -295,31 +295,31 @@ func TestRunFindings(t *testing.T) {
 
 	want := []Finding{
 		{Rule: RuleRefToSuperseded, Entity: "D-0001", File: "content/decisions/D-0001.md",
-			Detail: `menciona F-0007 ("One") que está substituída`},
+			Detail: `mentions F-0007 ("One"), which is superseded`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: `menciona D-0002 ("Usar boleto legado") que está substituída — use D-0003`},
+			Detail: `mentions D-0002 ("Usar boleto legado"), which is superseded — use D-0003`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: `menciona F-0001 ("Bills") que está substituída — use F-0002`},
+			Detail: `mentions F-0001 ("Bills"), which is superseded — use F-0002`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: `menciona R-0001 ("API antiga") que está obsoleta`},
+			Detail: `mentions R-0001 ("API antiga"), which is obsolete`},
 		{Rule: RuleBrokenLink, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: "link quebrado: ../missing.md"},
+			Detail: "broken link: ../missing.md"},
 		{Rule: RuleBrokenLink, Entity: "R-0002", File: "content/references/R-0002.md",
-			Detail: "link quebrado: ./nada.md"},
+			Detail: "broken link: ./nada.md"},
 		{Rule: RuleOrphanContent, Entity: "", File: "content/decisions/D-0099.md",
-			Detail: "conteúdo sem entidade: content/decisions/D-0099.md"},
+			Detail: "content without an entity: content/decisions/D-0099.md"},
 		{Rule: RuleOrphanContent, Entity: "", File: "content/features/F-0099/spec.md",
-			Detail: "conteúdo sem entidade: content/features/F-0099/spec.md"},
+			Detail: "content without an entity: content/features/F-0099/spec.md"},
 		{Rule: RuleMissingGateDoc, Entity: "F-0004", File: "",
-			Detail: "feature approved sem spec.md real"},
+			Detail: "approved feature without a real spec.md"},
 		{Rule: RuleMissingGateDoc, Entity: "F-0005", File: "",
-			Detail: "feature implemented sem result.md real"},
+			Detail: "implemented feature without a real result.md"},
 		{Rule: RuleIncompleteDoc, File: "content/decisions/D-0001.md",
-			Detail: "content/decisions/D-0001.md: faltam as seções do template: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações"},
+			Detail: "content/decisions/D-0001.md: missing template sections: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0003/spec.md",
-			Detail: "content/features/F-0003/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
 		{Rule: RuleUnregisteredSource, Entity: "F-0003", File: "content/features/F-0003/spec.md",
-			Detail: "URL externa https://example.com citada sem referência registrada — registre com 'cerne reference new … --informs F-0003' ou remova a URL"},
+			Detail: "external URL https://example.com cited without a registered reference — register it with 'cerne reference new … --informs F-0003' or remove the URL"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
@@ -415,19 +415,19 @@ func TestRunImportedFromNeedles(t *testing.T) {
 
 	want := []Finding{
 		{Rule: RuleRefToSuperseded, Entity: "F-0091", File: "content/features/F-0091/spec.md",
-			Detail: `menciona 0090_plugin-autonomous-agent (F-0090 "Agente autônomo") que está substituída — use F-0091`},
+			Detail: `mentions 0090_plugin-autonomous-agent (F-0090 "Agente autônomo"), which is superseded — use F-0091`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0091", File: "content/features/F-0091/spec.md",
-			Detail: `menciona roadmap-2024 (R-0050 "Roadmap antigo") que está obsoleta`},
+			Detail: `mentions roadmap-2024 (R-0050 "Roadmap antigo"), which is obsolete`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
-			Detail: `menciona adr-045 (D-0045 "Identity como biblioteca") que está substituída — use D-0046`},
+			Detail: `mentions adr-045 (D-0045 "Identity como biblioteca"), which is superseded — use D-0046`},
 		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
-			Detail: `menciona case 0090 (F-0090 "Agente autônomo") que está substituída — use F-0091`},
+			Detail: `mentions case 0090 (F-0090 "Agente autônomo"), which is superseded — use F-0091`},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0091/spec.md",
-			Detail: "content/features/F-0091/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0091/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0092/spec.md",
-			Detail: "content/features/F-0092/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0092/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0093/spec.md",
-			Detail: "content/features/F-0093/spec.md: faltam as seções do template: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0093/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
@@ -481,7 +481,7 @@ func TestStaleCandidateFindings(t *testing.T) {
 	}
 	want := []Finding{
 		{Rule: RuleStaleCandidate, Entity: "F-0001",
-			Detail: "candidata há 40 dias sem spec — rejeite ou avance com uma spec"},
+			Detail: "candidate for 40 days without a spec — reject it or advance it with a spec"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)

@@ -23,3 +23,16 @@ export function useTheme(): [Theme, (t: Theme) => void] {
   }, [theme])
   return [theme, set]
 }
+
+// useEffectiveTheme observa o data-theme do <html> — reage ao toggle da nav
+// mesmo estando noutra árvore de componentes (o Graph precisa disso para o
+// colorMode do React Flow acompanhar o tema ao vivo).
+export function useEffectiveTheme(): Theme {
+  const [theme, set] = useState<Theme>(getTheme)
+  useEffect(() => {
+    const obs = new MutationObserver(() => set(getTheme()))
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
+  return theme
+}

@@ -46,7 +46,7 @@ func TestRunbookNewWithFileBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runbook new --file: %v", err)
 	}
-	if !strings.Contains(out, "já sincronizado") || !strings.Contains(out, "com corpo") {
+	if !strings.Contains(out, "already synced") || !strings.Contains(out, "with a body") {
 		t.Fatalf("runbook new --file output must confirm a synced body:\n%s", out)
 	}
 	if !strings.Contains(out, "cerne pull") {
@@ -104,7 +104,7 @@ func TestRunbookNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runbook new: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "RB-0001 criado (active)") {
+	if !strings.Contains(out, "RB-0001 created (active)") {
 		t.Fatalf("runbook new output missing RB-0001 confirmation:\n%s", out)
 	}
 
@@ -204,8 +204,8 @@ func TestRunbookRetire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runbook retire: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "aposentado") || !strings.Contains(out, "superseded") {
-		t.Fatalf("runbook retire output missing aposentado/superseded:\n%s", out)
+	if !strings.Contains(out, "retired") || !strings.Contains(out, "superseded") {
+		t.Fatalf("runbook retire output missing retired/superseded:\n%s", out)
 	}
 	rb, err := store.LoadRunbook(repoDir, id)
 	if err != nil {
@@ -293,7 +293,7 @@ func TestRunbookDraftByoKeyWritesAndCommits(t *testing.T) {
 	if headAfter == headBefore {
 		t.Fatalf("origin HEAD did not advance after runbook draft")
 	}
-	if !strings.Contains(out, "rascunhado e enviado") {
+	if !strings.Contains(out, "drafted and pushed") {
 		t.Fatalf("runbook draft output missing confirmation:\n%s", out)
 	}
 }

@@ -16,10 +16,10 @@ func newSpecDiagramCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diagram <id>",
 		Short: "AI-draft a Mermaid sequence diagram for a feature",
-		Long: "Gera um diagrama de sequência em Mermaid para uma feature usando o provider " +
-			"configurado. No modo delegação (default) imprime o prompt montado para o agente " +
-			"hospedeiro escrever o diagrama; nos modos byo-key e claude-cli gera o Mermaid, " +
-			"salva em content/artifacts/<id>/<name>.mmd e dá push.",
+		Long: "Generates a Mermaid sequence diagram for a feature using the configured " +
+			"provider. In delegation mode (default) it prints the assembled prompt for the host " +
+			"agent to write the diagram; in byo-key and claude-cli modes it generates the Mermaid, " +
+			"saves it to content/artifacts/<id>/<name>.mmd and pushes it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpecDiagram(cmd, dir, args[0], name)
@@ -39,7 +39,7 @@ func runSpecDiagram(cmd *cobra.Command, dir, id, rawName string) error {
 	f, err := store.LoadFeature(ctx.repoDir, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("feature %s não encontrada no backend", id)
+			return fmt.Errorf("feature %s not found in the backend", id)
 		}
 		return err
 	}
@@ -54,7 +54,7 @@ func runSpecDiagram(cmd *cobra.Command, dir, id, rawName string) error {
 	// delegation (default): print the prompt for the host agent to draft inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
 		fmt.Fprint(out, prompt)
-		fmt.Fprintf(out, "\n\nEscreva o resultado em content/artifacts/%s/%s e rode 'cerne push'.\n", id, name)
+		fmt.Fprintf(out, "\n\nWrite the result to content/artifacts/%s/%s and run 'cerne push'.\n", id, name)
 		return nil
 	}
 
@@ -70,13 +70,13 @@ func runSpecDiagram(cmd *cobra.Command, dir, id, rawName string) error {
 	mermaid, err := app.SanitizeMermaid(body)
 	if err != nil {
 		if errors.Is(err, app.ErrNotMermaidSequence) {
-			return fmt.Errorf("o modelo não retornou um diagrama de sequência Mermaid para %s — tente novamente", id)
+			return fmt.Errorf("the model did not return a Mermaid sequence diagram for %s — try again", id)
 		}
 		return err
 	}
 	if err := app.SaveArtifact(ctx.repoDir, ctx.projDir, id, name, []byte(mermaid+"\n")); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "diagrama de sequência de %s rascunhado e enviado (artefato %s) — rode 'cerne pull' para revisar.\n", id, name)
+	fmt.Fprintf(out, "sequence diagram for %s drafted and sent (artifact %s) — run 'cerne pull' to review it.\n", id, name)
 	return nil
 }

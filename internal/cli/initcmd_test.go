@@ -197,7 +197,7 @@ func TestInitInstallsSkills(t *testing.T) {
 	if _, err := os.Stat(skillFile); err != nil {
 		t.Fatalf("expected canonical skill installed at %s: %v", skillFile, err)
 	}
-	if !strings.Contains(out, "cerne-authoring: criada em .claude/skills/cerne-authoring") {
+	if !strings.Contains(out, "cerne-authoring: created in .claude/skills/cerne-authoring") {
 		t.Fatalf("output missing skill install status:\n%s", out)
 	}
 }

@@ -42,10 +42,10 @@ func execRun(ctx context.Context, name string, args []string, stdin string) (str
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return "", fmt.Errorf("%q saiu com %s: %s", name, exitErr.ProcessState.String(), truncate(stderr.Bytes(), maxStderrBytes))
+		return "", fmt.Errorf("%q exited with %s: %s", name, exitErr.ProcessState.String(), truncate(stderr.Bytes(), maxStderrBytes))
 	}
 	// Non-exit error: the binary could not be started (not in PATH, etc.).
-	return "", fmt.Errorf("não foi possível executar %q (instale o Claude Code e garanta que está no PATH): %w", name, err)
+	return "", fmt.Errorf("could not run %q (install Claude Code and ensure it is on PATH): %w", name, err)
 }
 
 // cliProvider is a Provider that performs one completion per call by shelling to
@@ -68,7 +68,7 @@ type cliProvider struct {
 func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, error) {
 	out, err := p.run(ctx, p.bin, []string{"-p", "--output-format", "text"}, prompt)
 	if err != nil {
-		return "", fmt.Errorf("%w: falha ao chamar o Claude Code (claude -p): %w — verifique 'claude /login' (assinatura) ou use [llm] mode=\"byo-key\"", ErrClaudeCLI, err)
+		return "", fmt.Errorf("%w: failed to call Claude Code (claude -p): %w — check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"", ErrClaudeCLI, err)
 	}
 	return strings.TrimSpace(out), nil
 }

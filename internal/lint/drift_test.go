@@ -167,7 +167,7 @@ func TestDriftDetailCitesBaselineAndTruncates(t *testing.T) {
 	if !strings.Contains(d, baseSHA[:7]) {
 		t.Fatalf("detail %q must cite baseline %q", d, baseSHA[:7])
 	}
-	if !strings.Contains(d, "(+2 mais)") { // 7 changed, 5 shown
+	if !strings.Contains(d, "(+2 more)") { // 7 changed, 5 shown
 		t.Fatalf("detail %q must truncate to 5 + remainder", d)
 	}
 }

@@ -28,6 +28,6 @@ func browserCommand(goos, url string) (string, []string) {
 func openBrowser(url string) {
 	name, args := browserCommand(runtime.GOOS, url)
 	if err := exec.Command(name, args...).Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "cerne: não consegui abrir o browser (%v) — acesse %s manualmente\n", err, url)
+		fmt.Fprintf(os.Stderr, "cerne: could not open the browser (%v) — open %s manually\n", err, url)
 	}
 }

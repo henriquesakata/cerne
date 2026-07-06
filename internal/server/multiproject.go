@@ -56,7 +56,7 @@ func projectRegistered(pid string) bool {
 func (s *MultiServer) requireSecret(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+s.secret {
-			writeJSON(w, http.StatusUnauthorized, errorBody("não autorizado"))
+			writeJSON(w, http.StatusUnauthorized, errorBody("unauthorized"))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -82,7 +82,7 @@ func (s *MultiServer) mux() http.Handler {
 				return
 			}
 			if !projectRegistered(pid) {
-				writeJSON(w, http.StatusNotFound, errorBody("projeto não registrado: "+pid))
+				writeJSON(w, http.StatusNotFound, errorBody("project not registered: "+pid))
 				return
 			}
 			h(w, r, repoDir, projDir, pid)
@@ -92,7 +92,7 @@ func (s *MultiServer) mux() http.Handler {
 	mountDataRoutes(mux, "/projects/{pid}", withProject, true)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotFound, errorBody("rota não encontrada"))
+		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
 	return mux
 }
@@ -106,11 +106,11 @@ func (s *MultiServer) handleRegister(w http.ResponseWriter, r *http.Request, pid
 		Modules []string `json:"modules"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("corpo inválido: "+err.Error()))
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid body: "+err.Error()))
 		return
 	}
 	if req.Backend == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("informe o backend (git URL)"))
+		writeJSON(w, http.StatusBadRequest, errorBody("provide the backend (git URL)"))
 		return
 	}
 	repoDir, projDir, err := projectPaths(pid)

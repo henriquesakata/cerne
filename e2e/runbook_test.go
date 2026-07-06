@@ -30,7 +30,7 @@ func TestRunbookGoldenPath(t *testing.T) {
 	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 
 	out := mustCerne(t, "runbook", "new", "Runbook A", "--dir", proj)
-	if !strings.Contains(out, "RB-0001 criado (active)") {
+	if !strings.Contains(out, "RB-0001 created (active)") {
 		t.Fatalf("runbook new output missing RB-0001 confirmation:\n%s", out)
 	}
 
@@ -65,7 +65,7 @@ func TestRunbookGoldenPath(t *testing.T) {
 	}
 
 	out = mustCerne(t, "runbook", "new", "Runbook B", "--dir", proj)
-	if !strings.Contains(out, "RB-0002 criado (active)") {
+	if !strings.Contains(out, "RB-0002 created (active)") {
 		t.Fatalf("second runbook new output missing RB-0002 confirmation:\n%s", out)
 	}
 	out = mustCerne(t, "runbook", "substituir", "RB-0001", "--by", "RB-0002", "--reason", "obsoleto", "--dir", proj)

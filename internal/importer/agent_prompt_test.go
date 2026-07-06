@@ -42,7 +42,7 @@ func TestBuildPlanPromptTruncatesLargeSource(t *testing.T) {
 	if strings.Contains(prompt, "TAILMARKER_SHOULD_BE_CUT") {
 		t.Error("prompt kept content past the cap")
 	}
-	if !strings.Contains(prompt, "[truncado]") {
+	if !strings.Contains(prompt, "[truncated]") {
 		t.Error("prompt missing truncation marker")
 	}
 }

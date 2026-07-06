@@ -22,7 +22,7 @@ func TestFeatureReparent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reparent: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "F-0002 agora é filha de F-0001") {
+	if !strings.Contains(out, "F-0002 is now a child of F-0001") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "F-0001" {
@@ -33,7 +33,7 @@ func TestFeatureReparent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clear: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "F-0002 desvinculada do épico") {
+	if !strings.Contains(out, "F-0002 detached from its epic") {
 		t.Fatalf("clear output missing confirmation:\n%s", out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "" {

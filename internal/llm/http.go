@@ -56,11 +56,11 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 		return &cliProvider{bin: cfg.ClaudeBin, run: execRun}, nil
 	}
 	if cfg.Provider != providerAnthropic {
-		return nil, fmt.Errorf("provider LLM %q não suportado (apenas %q)", cfg.Provider, providerAnthropic)
+		return nil, fmt.Errorf("LLM provider %q not supported (only %q)", cfg.Provider, providerAnthropic)
 	}
 	key := os.Getenv(cfg.KeyEnv)
 	if key == "" {
-		return nil, fmt.Errorf("%w: defina a variável de ambiente %s", ErrAPIKeyMissing, cfg.KeyEnv)
+		return nil, fmt.Errorf("%w: set the %s environment variable", ErrAPIKeyMissing, cfg.KeyEnv)
 	}
 	return &httpProvider{
 		baseURL:    cfg.BaseURL,
@@ -131,12 +131,12 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Anthropic Messages API retornou status %d: %s", resp.StatusCode, truncate(respBody, maxErrBodyBytes))
+		return "", fmt.Errorf("Anthropic Messages API returned status %d: %s", resp.StatusCode, truncate(respBody, maxErrBodyBytes))
 	}
 
 	var parsed messagesResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("resposta da API ilegível: %w", err)
+		return "", fmt.Errorf("unreadable API response: %w", err)
 	}
 	var b bytes.Buffer
 	for _, block := range parsed.Content {

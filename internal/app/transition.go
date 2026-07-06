@@ -49,7 +49,7 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	}
 	eventType, ok := eventTypes[action]
 	if !ok {
-		return out, fmt.Errorf("ação desconhecida: %s", action)
+		return out, fmt.Errorf("unknown action: %s", action)
 	}
 	// State reads, gate checks and writes run inside the backend lock's critical
 	// section (F-0122): the FSM check is a compare-and-set against the state
@@ -57,17 +57,17 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("feature %s não encontrada no backend", id)
+			return "", fmt.Errorf("feature %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if action == domain.ActionSupersede {
 			if by == id {
-				return "", fmt.Errorf("--by não pode ser a própria feature (%s)", id)
+				return "", fmt.Errorf("--by cannot be the feature itself (%s)", id)
 			}
 			if _, err := store.LoadFeature(repoDir, by); errors.Is(err, store.ErrNotFound) {
-				return "", fmt.Errorf("feature %s (--by) não encontrada no backend", by)
+				return "", fmt.Errorf("feature %s (--by) not found in backend", by)
 			} else if err != nil {
 				return "", err
 			}
@@ -82,7 +82,7 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 			return "", err
 		}
 		if err := domain.CheckGate(action, docs); err != nil {
-			return "", fmt.Errorf("%w — escreva content/features/%s/%s no backend e rode 'cerne push'", err, id, gateDocFilename(err))
+			return "", fmt.Errorf("%w — write content/features/%s/%s in the backend and run 'cerne push'", err, id, gateDocFilename(err))
 		}
 
 		oldState := f.State
@@ -157,7 +157,7 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 		}
 		msg := fmt.Sprintf("cerne: %s %s", action, id)
 		if len(propagated) > 0 {
-			msg += fmt.Sprintf(" (+ épico %s)", strings.Join(propagated, ", "))
+			msg += fmt.Sprintf(" (+ epic %s)", strings.Join(propagated, ", "))
 		}
 		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated}
 		return msg, nil
@@ -238,17 +238,17 @@ func ValidateTransitionFlags(action domain.Action, by, reason string) error {
 	switch action {
 	case domain.ActionSupersede:
 		if by == "" {
-			return fmt.Errorf("--by é obrigatório para a substituição")
+			return fmt.Errorf("--by is required for substitution")
 		}
 		if reason == "" {
-			return fmt.Errorf("--reason é obrigatório para a substituição")
+			return fmt.Errorf("--reason is required for substitution")
 		}
 	case domain.ActionReject:
 		if by != "" {
-			return fmt.Errorf("--by não é permitido para reject")
+			return fmt.Errorf("--by is not allowed for reject")
 		}
 		if reason == "" {
-			return fmt.Errorf("--reason é obrigatório para reject")
+			return fmt.Errorf("--reason is required for reject")
 		}
 	case domain.ActionAccept:
 		// The acceptance note is optional: the accept is an act, not a document.
@@ -257,7 +257,7 @@ func ValidateTransitionFlags(action domain.Action, by, reason string) error {
 		}
 	default:
 		if by != "" || reason != "" {
-			return fmt.Errorf("--by/--reason não são permitidos para %s", action)
+			return fmt.Errorf("--by/--reason are not allowed for %s", action)
 		}
 	}
 	return nil

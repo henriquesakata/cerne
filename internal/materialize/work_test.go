@@ -18,9 +18,9 @@ func addWork(t *testing.T, backendDir, id, title, actor string, state domain.Wor
 	}
 }
 
-// TestContextWorkSectionListsActive: CONTEXT.md gains a '## Em andamento'
+// TestContextWorkSectionListsActive: CONTEXT.md gains a '## In progress'
 // section listing active works only (not done/abandoned), each rendered as
-// "id — title (actor, desde YYYY-MM-DD)".
+// "id — title (actor, since YYYY-MM-DD)".
 func TestContextWorkSectionListsActive(t *testing.T) {
 	backend := seedBackend(t)
 	started := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
@@ -33,10 +33,10 @@ func TestContextWorkSectionListsActive(t *testing.T) {
 	}
 	ctx := readContext(t, docsDir)
 
-	if !strings.Contains(ctx, "## Em andamento") {
-		t.Fatalf("missing '## Em andamento' section:\n%s", ctx)
+	if !strings.Contains(ctx, "## In progress") {
+		t.Fatalf("missing '## In progress' section:\n%s", ctx)
 	}
-	if !strings.Contains(ctx, "W-0001 — Investigar erro X (henrique@laptop, desde 2026-07-01)") {
+	if !strings.Contains(ctx, "W-0001 — Investigar erro X (henrique@laptop, since 2026-07-01)") {
 		t.Fatalf("missing active work line:\n%s", ctx)
 	}
 	if strings.Contains(ctx, "W-0002") {
@@ -56,7 +56,7 @@ func TestContextWorkSectionOmittedWhenEmpty(t *testing.T) {
 	}
 	ctx := readContext(t, docsDir)
 
-	if strings.Contains(ctx, "Em andamento") {
+	if strings.Contains(ctx, "In progress") {
 		t.Fatalf("section should be omitted when no active work:\n%s", ctx)
 	}
 }

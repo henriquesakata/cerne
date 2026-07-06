@@ -63,7 +63,7 @@ func newDriftCmd() *cobra.Command {
 	var auto bool
 	cmd := &cobra.Command{
 		Use:   "drift",
-		Short: "Sinaliza features implementadas cujo código mudou desde o último sync",
+		Short: "Flag implemented features whose code changed since the last sync",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDrift(cmd, dir, asJSON, draft, auto)
@@ -71,9 +71,9 @@ func newDriftCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída em JSON")
-	cmd.Flags().BoolVar(&draft, "draft", false, "emite um prompt de errata por finding em .docs/.drift-proposals/ (o agente redige; nada é aplicado)")
-	cmd.Flags().BoolVar(&auto, "auto", false, "redige via LLM e aplica a errata automaticamente, registrando pendência de revisão (D-0005)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
+	cmd.Flags().BoolVar(&draft, "draft", false, "emit an errata prompt per finding in .docs/.drift-proposals/ (the agent drafts it; nothing is applied)")
+	cmd.Flags().BoolVar(&auto, "auto", false, "draft via LLM and apply the errata automatically, recording a review pending (D-0005)")
 	cmd.AddCommand(newDriftPendingCmd())
 	cmd.AddCommand(newDriftAckCmd())
 	return cmd
@@ -81,11 +81,11 @@ func newDriftCmd() *cobra.Command {
 
 // ErrDraftJSON is returned when --draft is combined with --json: the draft path
 // emits prompt bundles and a human contract, not machine output.
-var ErrDraftJSON = errors.New("--draft e --json são incompatíveis")
+var ErrDraftJSON = errors.New("--draft and --json are incompatible")
 
 // ErrAutoExclusive is returned when --auto is combined with --draft or --json:
 // the auto path applies erratas and reports a human summary.
-var ErrAutoExclusive = errors.New("--auto é incompatível com --draft e --json")
+var ErrAutoExclusive = errors.New("--auto is incompatible with --draft and --json")
 
 // driftRow is the machine-readable form of a drift-suspect finding.
 type driftRow struct {
@@ -127,7 +127,7 @@ func runDrift(cmd *cobra.Command, dir string, asJSON, draft, auto bool) error {
 		return enc.Encode(rows)
 	}
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "Nenhum drift detectado.")
+		fmt.Fprintln(out, "No drift detected.")
 		return nil
 	}
 	printFindings(out, findings)
@@ -146,14 +146,14 @@ const driftProposalsRelDir = ".docs/.drift-proposals"
 // the human runs `cerne feature errata`.
 func emitDriftDrafts(out io.Writer, ctx projCtx, findings []lint.Finding, changed []string, baseline string) error {
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "Nenhum drift detectado.")
+		fmt.Fprintln(out, "No drift detected.")
 		return nil
 	}
 	dir := filepath.Join(ctx.projDir, filepath.FromSlash(driftProposalsRelDir))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%d rascunho(s) de errata para redigir (prompts em %s/):\n", len(findings), driftProposalsRelDir)
+	fmt.Fprintf(out, "%d errata draft(s) to write (prompts in %s/):\n", len(findings), driftProposalsRelDir)
 	for _, f := range findings {
 		prompt, err := app.DriftDraftPrompt(ctx.repoDir, f.Entity, baseline, changed)
 		if err != nil {
@@ -163,7 +163,7 @@ func emitDriftDrafts(out io.Writer, ctx projCtx, findings []lint.Finding, change
 		if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "  %s → escreva %s/%s.md, depois: cerne feature errata %s --file %s/%s.md\n",
+		fmt.Fprintf(out, "  %s → write %s/%s.md, then: cerne feature errata %s --file %s/%s.md\n",
 			f.Entity, driftProposalsRelDir, f.Entity, f.Entity, driftProposalsRelDir, f.Entity)
 	}
 	return nil
@@ -177,12 +177,12 @@ func emitDriftDrafts(out io.Writer, ctx projCtx, findings []lint.Finding, change
 func runDriftAuto(cmd *cobra.Command, ctx projCtx, findings []lint.Finding, changed []string, baseline string) error {
 	out := cmd.OutOrStdout()
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "Nenhum drift detectado.")
+		fmt.Fprintln(out, "No drift detected.")
 		return nil
 	}
 	provider, err := llm.NewProvider(ctx.cfg.LLM)
 	if errors.Is(err, llm.ErrNoProviderForDelegation) {
-		return fmt.Errorf("modo [llm] delegation não tem provider chamável — configure mode=\"claude-cli\" ou \"byo-key\" no .cernerc, ou use 'cerne drift --draft' (o agente host redige)")
+		return fmt.Errorf("[llm] delegation mode has no callable provider — set mode=\"claude-cli\" or \"byo-key\" in .cernerc, or use 'cerne drift --draft' (the host agent drafts it)")
 	}
 	if err != nil {
 		return err
@@ -195,13 +195,13 @@ func runDriftAuto(cmd *cobra.Command, ctx projCtx, findings []lint.Finding, chan
 			continue
 		}
 		applied++
-		fmt.Fprintf(out, "✓ %s: errata automática aplicada\n", f.Entity)
+		fmt.Fprintf(out, "✓ %s: automatic errata applied\n", f.Entity)
 	}
 	if applied > 0 {
-		fmt.Fprintf(out, "%d errata(s) aplicada(s) — revise com 'cerne drift pending' e reconheça com 'cerne drift ack <id>'.\n", applied)
+		fmt.Fprintf(out, "%d errata(s) applied — review with 'cerne drift pending' and acknowledge with 'cerne drift ack <id>'.\n", applied)
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d finding(s) falharam", failed)
+		return fmt.Errorf("%d finding(s) failed", failed)
 	}
 	return nil
 }
@@ -219,7 +219,7 @@ func newDriftPendingCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "pending",
-		Short: "Lista atualizações automáticas de drift aguardando revisão humana",
+		Short: "List automatic drift updates awaiting human review",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(dir)
@@ -241,20 +241,20 @@ func newDriftPendingCmd() *cobra.Command {
 				return enc.Encode(rows)
 			}
 			if len(pending) == 0 {
-				fmt.Fprintln(out, "Nenhuma atualização automática pendente de revisão.")
+				fmt.Fprintln(out, "No automatic update pending review.")
 				return nil
 			}
-			fmt.Fprintf(out, "%d atualização(ões) automática(s) aguardando revisão:\n", len(pending))
+			fmt.Fprintf(out, "%d automatic update(s) awaiting review:\n", len(pending))
 			for _, p := range pending {
-				fmt.Fprintf(out, "  %s  %s  (desde %s: %s)\n", p.Entity, p.At.Format("2006-01-02 15:04"), p.Baseline, p.Paths)
+				fmt.Fprintf(out, "  %s  %s  (since %s: %s)\n", p.Entity, p.At.Format("2006-01-02 15:04"), p.Baseline, p.Paths)
 			}
-			fmt.Fprintln(out, "Revise com 'cerne show <id>' e reconheça com 'cerne drift ack <id>' (ou corrija com nova errata).")
+			fmt.Fprintln(out, "Review with 'cerne show <id>' and acknowledge with 'cerne drift ack <id>' (or fix with a new errata).")
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída em JSON")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	return cmd
 }
 
@@ -262,7 +262,7 @@ func newDriftAckCmd() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "ack <id>",
-		Short: "Reconhece as atualizações automáticas de drift de uma entidade",
+		Short: "Acknowledge an entity's automatic drift updates",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(dir)
@@ -271,13 +271,13 @@ func newDriftAckCmd() *cobra.Command {
 			}
 			err = app.AckDrift(ctx.repoDir, ctx.projDir, args[0], eventActor())
 			if errors.Is(err, app.ErrNoPendingDrift) {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s não tem atualização automática pendente.\n", args[0])
+				fmt.Fprintf(cmd.OutOrStdout(), "%s has no pending automatic update.\n", args[0])
 				return nil
 			}
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ %s reconhecida — fora da lista de pendências.\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "✓ %s acknowledged — off the pending list.\n", args[0])
 			return nil
 		},
 	}

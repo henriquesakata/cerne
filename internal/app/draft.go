@@ -10,7 +10,7 @@ import (
 
 // ErrNoEntityDoc is returned by DriftDraftPrompt when the entity has neither a
 // result.md nor a spec.md to ground the errata draft on.
-var ErrNoEntityDoc = errors.New("entidade sem documento para rascunhar")
+var ErrNoEntityDoc = errors.New("entity has no document to draft from")
 
 // DriftDraftPrompt builds the delegation prompt for a drift-suspect finding
 // (F-0114): the host agent reads it and writes an errata draft. It is pure —
@@ -30,21 +30,21 @@ func DriftDraftPrompt(repoDir, entityID, baseline string, changed []string) (str
 		short = short[:7]
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "<!-- cerne drift-draft para %s — escreva a errata em .docs/.drift-proposals/%s.md -->\n\n", entityID, entityID)
-	fmt.Fprintf(&b, "Contexto: %s está implemented; o código do seu módulo mudou desde %s.\n\n", entityID, short)
-	b.WriteString("Arquivos alterados:\n")
+	fmt.Fprintf(&b, "<!-- cerne drift-draft for %s — write the errata in .docs/.drift-proposals/%s.md -->\n\n", entityID, entityID)
+	fmt.Fprintf(&b, "Context: %s is implemented; its module's code has changed since %s.\n\n", entityID, short)
+	b.WriteString("Changed files:\n")
 	for _, p := range changed {
 		fmt.Fprintf(&b, "- %s\n", p)
 	}
-	b.WriteString("\nDocumento atual da entidade:\n---\n")
+	b.WriteString("\nEntity's current document:\n---\n")
 	b.WriteString(doc)
 	if !strings.HasSuffix(doc, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString("---\n\n")
-	b.WriteString("Tarefa: redija uma errata concisa — o que o código mudou, o que o doc dizia, o que passa a valer. ")
-	b.WriteString("Não reescreva o documento; a errata é um anexo datado.\n\n")
-	fmt.Fprintf(&b, "Para aplicar após revisão:\ncerne feature errata %s --file .docs/.drift-proposals/%s.md\n", entityID, entityID)
+	b.WriteString("Task: write a concise errata — what the code changed, what the doc said, what now holds. ")
+	b.WriteString("Do not rewrite the document; the errata is a dated addendum.\n\n")
+	fmt.Fprintf(&b, "To apply after review:\ncerne feature errata %s --file .docs/.drift-proposals/%s.md\n", entityID, entityID)
 	return b.String(), nil
 }
 

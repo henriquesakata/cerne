@@ -19,6 +19,7 @@ import {
 } from './api'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
+import { useEffectiveTheme } from './theme'
 
 // Grafo explicativo das entidades: arestas tipadas + com motivo, layout em
 // camadas (a espinha de substituição é um DAG). Determinístico — os dados vêm
@@ -29,17 +30,19 @@ const NODE_W = 184
 const NODE_H = 56
 const EDGE_TYPES: GraphEdgeType[] = ['superseded_by', 'part_of', 'informs', 'links']
 
+// Cores via tokens do tema (app.css define a variante clara e a escura) —
+// funcionam em style inline e em fill/stroke de SVG (minimap, arestas).
 const KIND_COLOR: Record<GraphKind, string> = {
-  feature: '#2563eb',
-  decision: '#7c3aed',
-  reference: '#0d9488',
-  historical: '#6b7280',
+  feature: 'var(--blue)',
+  decision: 'var(--purple)',
+  reference: 'var(--teal)',
+  historical: 'var(--gray)',
 }
 const EDGE_STROKE: Record<GraphEdgeType, string> = {
-  superseded_by: '#d97706',
-  part_of: '#2563eb',
-  informs: '#0d9488',
-  links: '#9ca3af',
+  superseded_by: 'var(--orange)',
+  part_of: 'var(--blue)',
+  informs: 'var(--teal)',
+  links: 'var(--gray)',
 }
 const EDGE_DASH: Record<GraphEdgeType, string | undefined> = {
   superseded_by: undefined,
@@ -66,6 +69,7 @@ type Conn = { dir: 'out' | 'in'; other: string; type: GraphEdgeType; reason?: st
 
 export default function Graph() {
   const { t } = useT()
+  const theme = useEffectiveTheme()
   const [data, setData] = useState<GraphData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
@@ -135,16 +139,23 @@ export default function Graph() {
           style: {
             width: NODE_W,
             height: NODE_H,
-            border: `1.5px solid ${color}`,
-            borderRadius: 10,
-            background: '#fff',
+            border: '1px solid var(--border-card)',
+            borderLeft: `4px solid ${color}`,
+            borderRadius: 8,
+            background: 'var(--surface)',
+            boxShadow: 'var(--gnode-shadow)',
             padding: 0,
             overflow: 'hidden',
             boxSizing: 'border-box',
-            opacity: TERMINAL.has(n.state) ? 0.6 : 1,
+            opacity: TERMINAL.has(n.state) ? 0.55 : 1,
           },
         } satisfies Node
       })
+
+    // Reencaixa a viewport após o layout assíncrono — o fitView do init roda
+    // antes das posições finais existirem (e antes do canvas full-bleed).
+    const refit = () =>
+      requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08 }))
 
     if (visibleEdges.length === 0) {
       const cols = Math.max(1, Math.ceil(Math.sqrt(data.nodes.length)))
@@ -155,6 +166,7 @@ export default function Graph() {
         ]),
       )
       setBaseNodes(mkNodes(pos))
+      refit()
       return
     }
 
@@ -167,6 +179,10 @@ export default function Graph() {
           'elk.direction': 'DOWN',
           'elk.spacing.nodeNode': '40',
           'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+          // Componentes desconexos (a maioria num backend maduro) empacotados
+          // perto da proporção da tela, em vez de uma faixa comprida no topo.
+          'elk.spacing.componentComponent': '56',
+          'elk.aspectRatio': '1.8',
         },
         children: data.nodes.map((n) => ({ id: n.id, width: NODE_W, height: NODE_H })),
         edges: visibleEdges.map((e, i) => ({
@@ -182,6 +198,7 @@ export default function Graph() {
         )
         setBaseNodes(mkNodes(pos))
         setLaying(false)
+        refit()
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -208,13 +225,18 @@ export default function Graph() {
 
   const nodes = useMemo<Node[]>(() => {
     if (selected == null) return baseNodes
-    return baseNodes.map((n) => ({
-      ...n,
-      style: {
-        ...n.style,
-        opacity: n.id === selected || neighbors.has(n.id) ? 1 : 0.2,
-      },
-    }))
+    return baseNodes.map((n) => {
+      const isSel = n.id === selected
+      const color = KIND_COLOR[(n.data as { kind: GraphKind }).kind]
+      return {
+        ...n,
+        style: {
+          ...n.style,
+          opacity: isSel || neighbors.has(n.id) ? 1 : 0.15,
+          boxShadow: isSel ? `0 0 0 2px ${color}` : n.style?.boxShadow,
+        },
+      }
+    })
   }, [baseNodes, selected, neighbors])
 
   // Drawn edges: the type-filtered set, PLUS the selected node's own edges even
@@ -239,15 +261,16 @@ export default function Graph() {
         id: `e${i}`,
         source: e.from,
         target: e.to,
+        type: 'smoothstep',
         label: touches ? t.graph.edgeLabels[e.type] : undefined,
         labelStyle: { fill: stroke, fontSize: 11 },
-        labelBgStyle: { fill: '#fff', fillOpacity: 0.85 },
+        labelBgStyle: { fill: 'var(--surface)', fillOpacity: 0.9 },
         markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
         style: {
           stroke,
           strokeWidth: e.type === 'superseded_by' || e.type === 'part_of' ? 2 : 1.5,
           strokeDasharray: EDGE_DASH[e.type],
-          opacity: selected == null ? 0.8 : touches ? 1 : 0.06,
+          opacity: selected == null ? 0.75 : touches ? 1 : 0.05,
         },
       } satisfies Edge
     })
@@ -302,10 +325,12 @@ export default function Graph() {
             onNodeClick={(_, n) => setSelected(n.id)}
             onPaneClick={() => setSelected(null)}
             fitView
+            fitViewOptions={{ padding: 0.08 }}
             minZoom={0.1}
+            colorMode={theme}
             proOptions={{ hideAttribution: true }}
           >
-            <Background />
+            <Background gap={24} />
             <Controls />
             <MiniMap
               nodeColor={(n) =>

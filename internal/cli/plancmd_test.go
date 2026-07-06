@@ -119,7 +119,7 @@ func TestPlanDraftByoKeyWritesAndCommits(t *testing.T) {
 	}
 
 	// pt-BR confirmation.
-	if !strings.Contains(out, "rascunhado e enviado") {
+	if !strings.Contains(out, "drafted and pushed") {
 		t.Fatalf("plan draft output missing confirmation:\n%s", out)
 	}
 }

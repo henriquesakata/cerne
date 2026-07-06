@@ -42,7 +42,7 @@ func newUICmd() *cobra.Command {
 	cmd.Flags().IntVar(&port, "port", 7717, "port for the local UI server")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open the browser automatically")
 	cmd.Flags().DurationVar(&pullInterval, "pull-interval", 15*time.Second,
-		"intervalo de sincronização com o backend remoto (0 desliga)")
+		"sync interval with the remote backend (0 disables it)")
 	return cmd
 }
 
@@ -123,7 +123,7 @@ func hostUI(ctx context.Context, out io.Writer, ln net.Listener, addr, dir strin
 		return err
 	}
 	url := fmt.Sprintf("http://%s", addr)
-	fmt.Fprintf(out, "UI local em %s (Ctrl+C para sair)\n", url)
+	fmt.Fprintf(out, "Local UI at %s (Ctrl+C to exit)\n", url)
 	if openTab {
 		go openBrowser(url)
 	}
@@ -178,7 +178,7 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	if !probeCerneUI(base) {
 		if firstJoin {
-			return 0, fmt.Errorf("a porta %d já está em uso por outro processo (não parece um cerne ui)", port)
+			return 0, fmt.Errorf("port %d is already in use by another process (does not look like a cerne ui)", port)
 		}
 		return joinRetry, nil
 	}
@@ -192,36 +192,36 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin 
 	pid, name, err := registerProject(base, absDir)
 	if err != nil {
 		if firstJoin {
-			return 0, fmt.Errorf("não foi possível adicionar o projeto ao cerne ui em %s: %w", base, err)
+			return 0, fmt.Errorf("could not add the project to the cerne ui at %s: %w", base, err)
 		}
 		return joinRetry, nil
 	}
 	if firstJoin {
-		fmt.Fprintf(out, "projeto %q adicionado ao cerne ui em %s (Ctrl+C para remover)\n", name, base)
+		fmt.Fprintf(out, "project %q added to the cerne ui at %s (Ctrl+C to remove)\n", name, base)
 	} else {
-		fmt.Fprintf(out, "reconectado: projeto %q registrado no cerne ui em %s\n", name, base)
+		fmt.Fprintf(out, "reconnected: project %q registered with the cerne ui at %s\n", name, base)
 	}
 
 	if err := monitorHost(ctx, base); err != nil {
 		if !errors.Is(err, errHostDied) {
 			return 0, err
 		}
-		fmt.Fprintf(out, "o cerne ui em %s caiu; disputando a porta para assumir\n", base)
+		fmt.Fprintf(out, "the cerne ui at %s went down; racing for the port to take over\n", base)
 		return joinHostDied, nil
 	}
 
 	// ctx done: user exit — remove the project from the panel on the way out.
 	if err := deregisterProject(base, pid); err != nil {
-		fmt.Fprintf(out, "\naviso: não foi possível remover o projeto do painel: %v\n", err)
+		fmt.Fprintf(out, "\nwarning: could not remove the project from the panel: %v\n", err)
 		return joinExitUser, nil
 	}
-	fmt.Fprintf(out, "\nprojeto %q removido do painel\n", name)
+	fmt.Fprintf(out, "\nproject %q removed from the panel\n", name)
 	return joinExitUser, nil
 }
 
 // errHostDied signals that the hosting cerne ui went away (its SSE stream
 // dropped), so the supervisor should race for the port.
-var errHostDied = errors.New("o cerne ui host caiu")
+var errHostDied = errors.New("the cerne ui host went down")
 
 // monitorHost blocks attached to the host's SSE stream (/api/stream) and
 // returns errHostDied when the connection drops — the OS closes the socket on

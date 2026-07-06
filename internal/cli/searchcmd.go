@@ -28,7 +28,7 @@ func newSearchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().IntVar(&limit, "limit", 10, "maximum number of results")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
 }
 
@@ -60,7 +60,7 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
 		// In --json mode stdout must stay pure JSON, so build the index silently.
 		if !asJSON {
-			fmt.Fprintln(out, "Construindo índice...")
+			fmt.Fprintln(out, "Building index...")
 		}
 		if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
 			return err
@@ -95,7 +95,7 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 	}
 
 	if len(results) == 0 {
-		fmt.Fprintf(out, "Nada encontrado para \"%s\".\n", query)
+		fmt.Fprintf(out, "Nothing found for \"%s\".\n", query)
 		return nil
 	}
 	for _, r := range results {

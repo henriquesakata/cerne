@@ -29,7 +29,7 @@ type NoteOutcome struct {
 func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return store.Note{}, fmt.Errorf("o título da nota não pode ser vazio")
+		return store.Note{}, fmt.Errorf("the note title cannot be empty")
 	}
 	// Validate/normalize tags before any side effect (NextID, save): an unknown
 	// facet must abort without minting an id or writing a file.
@@ -89,22 +89,22 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 func TransitionNote(repoDir, projDir, id, by, reason string) (NoteOutcome, error) {
 	var out NoteOutcome
 	if strings.TrimSpace(reason) == "" {
-		return out, fmt.Errorf("--reason é obrigatório")
+		return out, fmt.Errorf("--reason is required")
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		n, err := store.LoadNote(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("nota %s não encontrada no backend", id)
+			return "", fmt.Errorf("note %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if by != "" {
 			if by == id {
-				return "", fmt.Errorf("--by não pode ser a própria nota (%s)", id)
+				return "", fmt.Errorf("--by cannot be the note itself (%s)", id)
 			}
 			if _, err := store.LoadNote(repoDir, by); errors.Is(err, store.ErrNotFound) {
-				return "", fmt.Errorf("nota %s (--by) não encontrada no backend", by)
+				return "", fmt.Errorf("note %s (--by) not found in backend", by)
 			} else if err != nil {
 				return "", err
 			}
@@ -147,13 +147,13 @@ func KeepNote(repoDir, projDir, id string) (store.Note, error) {
 		var err error
 		n, err = store.LoadNote(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("nota %s não encontrada no backend", id)
+			return "", fmt.Errorf("note %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if n.State != domain.NoteActive {
-			return "", fmt.Errorf("nota %s não está active (está %s) — keep só vale para nota ativa", id, n.State)
+			return "", fmt.Errorf("note %s is not active (it is %s) — keep only applies to an active note", id, n.State)
 		}
 		if n.Durable {
 			return "", nil // idempotent: writes nothing, surfaces as ErrNothingToCommit
@@ -191,13 +191,13 @@ func RetagNote(repoDir, projDir, id string, facets, components []string, setFace
 		var err error
 		n, err = store.LoadNote(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("nota %s não encontrada no backend", id)
+			return "", fmt.Errorf("note %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if n.State != domain.NoteActive {
-			return "", fmt.Errorf("nota %s não está active (está %s) — retag só vale para nota ativa", id, n.State)
+			return "", fmt.Errorf("note %s is not active (it is %s) — retag only applies to an active note", id, n.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)
@@ -259,7 +259,7 @@ func writeNoteStub(repoDir, id, title string) error {
 		return err
 	}
 	content := "---\ncerne_id: " + id + "\n---\n\n# " + strings.TrimSpace(title) + "\n\n" +
-		"<!-- Registre aqui o conhecimento durável: a gotcha, o invariante, a convenção tácita " +
-		"e o porquê. Texto livre — sem seções obrigatórias. Substitua esta linha. -->\n"
+		"<!-- Record the durable knowledge here: the gotcha, the invariant, the tacit convention " +
+		"and the why. Free text — no required sections. Replace this line. -->\n"
 	return os.WriteFile(path, []byte(content), 0o644)
 }

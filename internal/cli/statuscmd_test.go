@@ -45,14 +45,14 @@ func TestStatusDefault(t *testing.T) {
 	}
 
 	// Superseded and rejected hidden by default.
-	for _, banned := range []string{"F-0005", "F-0006", "SUBSTITUÍDAS", "REJEITADAS"} {
+	for _, banned := range []string{"F-0005", "F-0006", "SUPERSEDED", "REJECTED"} {
 		if strings.Contains(out, banned) {
 			t.Fatalf("default output contains %q, want hidden:\n%s", banned, out)
 		}
 	}
 
 	// Fixed group order with counts.
-	headers := []string{"EM DESENVOLVIMENTO (1)", "APROVADAS (1)", "CANDIDATAS (1)", "IMPLEMENTADAS (1)"}
+	headers := []string{"IN DEVELOPMENT (1)", "APPROVED (1)", "CANDIDATES (1)", "IMPLEMENTED (1)"}
 	prev := -1
 	for _, h := range headers {
 		idx := strings.Index(out, h)
@@ -93,8 +93,8 @@ func TestStatusAll(t *testing.T) {
 	}
 
 	headers := []string{
-		"EM DESENVOLVIMENTO (1)", "APROVADAS (1)", "CANDIDATAS (1)",
-		"IMPLEMENTADAS (1)", "SUBSTITUÍDAS (1)", "REJEITADAS (1)",
+		"IN DEVELOPMENT (1)", "APPROVED (1)", "CANDIDATES (1)",
+		"IMPLEMENTED (1)", "SUPERSEDED (1)", "REJECTED (1)",
 	}
 	prev := -1
 	for _, h := range headers {
@@ -148,7 +148,7 @@ func TestStatusJSON(t *testing.T) {
 	if f5.State != domain.StateSuperseded || f5.SupersededBy != "F-0004" || f5.Reason != "duplicada" {
 		t.Fatalf("F-0005 = %+v, want superseded by F-0004 with reason", f5)
 	}
-	if strings.Contains(out, "EM DESENVOLVIMENTO") {
+	if strings.Contains(out, "IN DEVELOPMENT") {
 		t.Fatalf("--json output contains table header:\n%s", out)
 	}
 }
@@ -176,15 +176,15 @@ func TestStatusEpics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "ÉPICOS (1)") {
-		t.Fatalf("missing ÉPICOS section:\n%s", out)
+	if !strings.Contains(out, "EPICS (1)") {
+		t.Fatalf("missing EPICS section:\n%s", out)
 	}
-	if !strings.Contains(out, "  F-0001  Revamp de assinaturas — 1/2 implementadas\n") {
+	if !strings.Contains(out, "  F-0001  Revamp de assinaturas — 1/2 implemented\n") {
 		t.Fatalf("missing epic progress line:\n%s", out)
 	}
 	for _, l := range []string{
-		"    F-0002  [implementada]  Tela de planos\n",
-		"    F-0003  [aprovada]  Cobrança recorrente\n",
+		"    F-0002  [implemented]  Tela de planos\n",
+		"    F-0003  [approved]  Cobrança recorrente\n",
 	} {
 		if !strings.Contains(out, l) {
 			t.Fatalf("missing child line %q:\n%s", l, out)
@@ -195,6 +195,66 @@ func TestStatusEpics(t *testing.T) {
 	}
 }
 
+// TestStatusDone pins the F-0131 acceptance state: a done feature gets its own
+// DONE group after IMPLEMENTED in the default view, counts in the total, shows
+// the [done] short label in the EPICS child list (counting toward the epic
+// rollup), and is hidden by --active like the rest of the finished history.
+func TestStatusDone(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Epico ativo", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filho aceito", Parent: "F-0001", State: domain.StateDone},
+		{ID: "F-0003", Title: "Filho aprovado", Parent: "F-0001", State: domain.StateApproved},
+		{ID: "F-0004", Title: "Pronta aguardando aceite", State: domain.StateImplemented},
+		{ID: "F-0005", Title: "Aceita solta", State: domain.StateDone},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed done"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "status", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status: %v\noutput: %s", err, out)
+	}
+	// DONE comes after IMPLEMENTED, both done features counted (child + loose).
+	implIdx := strings.Index(out, "IMPLEMENTED (1)")
+	doneIdx := strings.Index(out, "DONE (2)")
+	if implIdx < 0 || doneIdx < 0 || doneIdx < implIdx {
+		t.Fatalf("want DONE (2) after IMPLEMENTED (1):\n%s", out)
+	}
+	if !strings.Contains(out, "  F-0005  Aceita solta\n") {
+		t.Fatalf("done feature row missing:\n%s", out)
+	}
+	if !strings.Contains(out, "Total: 5 feature(s)\n") {
+		t.Fatalf("total should count done features:\n%s", out)
+	}
+	// Epic rollup counts the accepted child; short label is [done].
+	if !strings.Contains(out, "  F-0001  Epico ativo — 1/2 implemented\n") {
+		t.Fatalf("epic progress should count done child:\n%s", out)
+	}
+	if !strings.Contains(out, "    F-0002  [done]  Filho aceito\n") {
+		t.Fatalf("epic child missing [done] label:\n%s", out)
+	}
+
+	// --active hides DONE together with IMPLEMENTED.
+	out, err = execCerne(t, "status", "--active", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status --active: %v\noutput: %s", err, out)
+	}
+	for _, banned := range []string{"DONE", "Aceita solta", "IMPLEMENTED"} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("--active leaks %q:\n%s", banned, out)
+		}
+	}
+}
+
 func TestStatusEmptyProject(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 
@@ -202,7 +262,7 @@ func TestStatusEmptyProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Nenhuma feature ainda. Crie a primeira com 'cerne feature new'.") {
+	if !strings.Contains(out, "No features yet. Create the first one with 'cerne feature new'.") {
 		t.Fatalf("empty project message missing:\n%s", out)
 	}
 
@@ -222,7 +282,7 @@ func TestStatusEmptyProject(t *testing.T) {
 }
 
 // TestStatusActive pins the lean view: --active shows only the active groups
-// (+ ÉPICOS), hides IMPLEMENTADAS and terminals, counts only active features,
+// (+ EPICS), hides IMPLEMENTED and terminals, counts only active features,
 // and takes precedence over --all.
 func TestStatusActive(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
@@ -249,13 +309,13 @@ func TestStatusActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status --active: %v\noutput: %s", err, out)
 	}
-	for _, want := range []string{"EM DESENVOLVIMENTO (1)", "APROVADAS (1)", "CANDIDATAS (1)", "ÉPICOS (1)"} {
+	for _, want := range []string{"IN DEVELOPMENT (1)", "APPROVED (1)", "CANDIDATES (1)", "EPICS (1)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--active missing %q:\n%s", want, out)
 		}
 	}
 	// Implemented + terminal groups and their standalone rows are hidden.
-	for _, banned := range []string{"IMPLEMENTADAS", "SUBSTITUÍDAS", "REJEITADAS", "Implementada solta", "Substituida"} {
+	for _, banned := range []string{"IMPLEMENTED", "SUPERSEDED", "REJECTED", "Implementada solta", "Substituida"} {
 		if strings.Contains(out, banned) {
 			t.Errorf("--active leaks %q:\n%s", banned, out)
 		}
@@ -270,7 +330,7 @@ func TestStatusActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status --active --all: %v\noutput: %s", err, out2)
 	}
-	if strings.Contains(out2, "IMPLEMENTADAS") || strings.Contains(out2, "SUBSTITUÍDAS") {
+	if strings.Contains(out2, "IMPLEMENTED") || strings.Contains(out2, "SUPERSEDED") {
 		t.Errorf("--active must override --all:\n%s", out2)
 	}
 }

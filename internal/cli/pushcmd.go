@@ -34,7 +34,7 @@ func newPushCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validar e mostrar o que iria pro backend, sem commitar nem enviar")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and show what would go to the backend, without committing or sending")
 	return cmd
 }
 
@@ -60,7 +60,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if errors.Is(err, project.ErrNoSessionSnapshot) {
 		lock, lerr := project.LoadLock(ctx.projDir)
 		if errors.Is(lerr, project.ErrNoLock) {
-			return fmt.Errorf("nenhum docs.lock encontrado — rode 'cerne pull' primeiro")
+			return fmt.Errorf("no docs.lock found — run 'cerne pull' first")
 		}
 		if lerr != nil {
 			return lerr
@@ -83,7 +83,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		return err
 	}
 	if len(docs) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "Nada para enviar.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Nothing to send.")
 		return nil
 	}
 
@@ -101,7 +101,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	}
 	head, conflicts, err := app.ReconcileCommitPush(
 		ctx.repoDir, ctx.projDir, base,
-		fmt.Sprintf("cerne: push %d documento(s)", len(docs)), changes)
+		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes)
 	if err != nil {
 		return err
 	}
@@ -118,10 +118,10 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		return err
 	}
 	if head == "" {
-		fmt.Fprintln(cmd.OutOrStdout(), "Nada para enviar.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Nothing to send.")
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Enviado: %d documento(s) (snapshot %s).\n", len(docs), shortSHA(head))
+	fmt.Fprintf(cmd.OutOrStdout(), "Sent: %d document(s) (snapshot %s).\n", len(docs), shortSHA(head))
 	maybeCompileOnPush(cmd, ctx)
 	return nil
 }
@@ -138,7 +138,7 @@ func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
 		return
 	}
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
-		fmt.Fprintln(cmd.ErrOrStderr(), "aviso: compile_on_push exige [llm] chamável (claude-cli/byo-key) — rode 'cerne compile' para recompilar a wiki")
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: compile_on_push requires a callable [llm] (claude-cli/byo-key) — run 'cerne compile' to recompile the wiki")
 		return
 	}
 	pages, err := compile.Pages(ctx.repoDir)
@@ -146,11 +146,11 @@ func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
 		done, cerr := compileDirtyPages(cmd.Context(), ctx, compilablePages(pages, ""), false)
 		err = cerr
 		if cerr == nil && len(done) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Wiki recompilada: %d página(s).\n", len(done))
+			fmt.Fprintf(cmd.OutOrStdout(), "Wiki recompiled: %d page(s).\n", len(done))
 		}
 	}
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "aviso: recompilação da wiki pós-push falhou (push OK): %v\n", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: post-push wiki recompilation failed (push OK): %v\n", err)
 	}
 }
 
@@ -159,15 +159,15 @@ func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
 // exits non-zero. Nothing was written to the backend.
 func reportPushConflicts(cmd *cobra.Command, conflicts []app.Conflict) error {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Conflito em %d documento(s) — push abortado, nada enviado:\n", len(conflicts))
+	fmt.Fprintf(out, "Conflict in %d document(s) — push aborted, nothing sent:\n", len(conflicts))
 	for _, c := range conflicts {
 		fmt.Fprintf(out, "\n  %s\n", c.Path)
 		for _, line := range strings.Split(strings.TrimRight(c.Diff, "\n"), "\n") {
 			fmt.Fprintf(out, "    %s\n", line)
 		}
 	}
-	fmt.Fprintln(out, "\nO mesmo documento mudou no backend. Reconcilie e rode 'cerne push' de novo, ou 'cerne pull' para trazer a versão remota.")
-	return fmt.Errorf("%d documento(s) em conflito", len(conflicts))
+	fmt.Fprintln(out, "\nThe same document changed in the backend. Reconcile and run 'cerne push' again, or 'cerne pull' to bring in the remote version.")
+	return fmt.Errorf("%d document(s) in conflict", len(conflicts))
 }
 
 // reportDryRun validates a push without performing it: it lists the documents
@@ -177,7 +177,7 @@ func reportPushConflicts(cmd *cobra.Command, conflicts []app.Conflict) error {
 // already enforced before this point, identical to a real push.
 func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Dry-run: %d documento(s) iriam para o backend (nada commitado/enviado):\n", len(docs))
+	fmt.Fprintf(out, "Dry-run: %d document(s) would go to the backend (nothing committed/sent):\n", len(docs))
 	for _, d := range docs {
 		fmt.Fprintf(out, "  %s\n", d.backendRel)
 	}
@@ -191,11 +191,11 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 		return err
 	}
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "Lint: nenhum problema encontrado.")
+		fmt.Fprintln(out, "Lint: no problems found.")
 		return nil
 	}
 	printFindings(out, findings)
-	return fmt.Errorf("%d problema(s) encontrado(s)", len(findings))
+	return fmt.Errorf("%d problem(s) found", len(findings))
 }
 
 // checkContextUntouched errors when the generated CONTEXT.md was edited
@@ -213,7 +213,7 @@ func checkContextUntouched(docsDir string, manifest map[string]string) error {
 		return err
 	}
 	if sha256Hex(body) != want {
-		return fmt.Errorf("CONTEXT.md é gerado — não edite (rode 'cerne pull' para restaurar)")
+		return fmt.Errorf("CONTEXT.md is generated — don't edit it (run 'cerne pull' to restore)")
 	}
 	return nil
 }
@@ -252,11 +252,11 @@ func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc
 		case tracked && sum == want:
 			return nil // tracked and unchanged
 		case !tracked && !acceptableNewDoc(rel, manifest):
-			return fmt.Errorf("arquivo não rastreado: %s — rode 'cerne pull' para ressincronizar", rel)
+			return fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
 		}
 		id := parseCerneID(body)
 		if id == "" {
-			return fmt.Errorf("documento sem cerne_id no frontmatter: %s — novos documentos nascem com 'cerne feature new'", rel)
+			return fmt.Errorf("document without cerne_id in frontmatter: %s — new documents are born from 'cerne feature new'", rel)
 		}
 		backendRel, err := backendRelPath(rel, id)
 		if err != nil {
@@ -309,7 +309,7 @@ func backendRelPath(rel, id string) (string, error) {
 	case strings.HasPrefix(rel, "current/references/"):
 		return "content/references/" + id + ".md", nil
 	}
-	return "", fmt.Errorf("arquivo não rastreado: %s — rode 'cerne pull' para ressincronizar", rel)
+	return "", fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
 }
 
 // parseCerneID extracts the cerne_id value from the leading frontmatter

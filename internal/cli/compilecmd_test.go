@@ -78,7 +78,7 @@ func TestCompileDelegationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile re-run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Nada a recompilar") {
+	if !strings.Contains(out, "Nothing to recompile") {
 		t.Fatalf("expected nothing-dirty message:\n%s", out)
 	}
 }
@@ -97,7 +97,7 @@ func TestCompileReportsModulelessSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "sem módulo não entram na wiki") {
+	if !strings.Contains(out, "left out of the wiki") {
 		t.Fatalf("compile output missing module-less note:\n%s", out)
 	}
 }
@@ -111,7 +111,7 @@ func TestCompileNoModulelessNoteWhenNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "sem módulo não entram na wiki") {
+	if strings.Contains(out, "left out of the wiki") {
 		t.Fatalf("compile printed module-less note when none apply:\n%s", out)
 	}
 }
@@ -134,7 +134,7 @@ func TestCompileForceRecompiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile --force: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "Nada a recompilar") {
+	if strings.Contains(out, "Nothing to recompile") {
 		t.Fatalf("--force should recompile, got:\n%s", out)
 	}
 }
@@ -252,10 +252,10 @@ func TestCompileIngestRejectsStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stale-only ingest should not hard-error: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "obsoleto") {
-		t.Fatalf("expected the page reported obsoleto, got:\n%s", out)
+	if !strings.Contains(out, "stale") {
+		t.Fatalf("expected the page reported stale, got:\n%s", out)
 	}
-	if !strings.Contains(out, "Compilado: 0") {
+	if !strings.Contains(out, "Compiled: 0") {
 		t.Fatalf("stale page must not count as compiled, got:\n%s", out)
 	}
 	// The stale body must NOT have been stamped into the backend clone.
@@ -295,14 +295,14 @@ func TestCompileIngestPerPageStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "finance: ingerido") {
-		t.Errorf("expected finance ingerido, got:\n%s", out)
+	if !strings.Contains(out, "finance: ingested") {
+		t.Errorf("expected finance ingested, got:\n%s", out)
 	}
-	if !strings.Contains(out, "billing: obsoleto") {
-		t.Errorf("expected billing obsoleto, got:\n%s", out)
+	if !strings.Contains(out, "billing: stale") {
+		t.Errorf("expected billing stale, got:\n%s", out)
 	}
-	if !strings.Contains(out, "Compilado: 1") {
-		t.Errorf("expected Compilado: 1 (only the fresh page), got:\n%s", out)
+	if !strings.Contains(out, "Compiled: 1") {
+		t.Errorf("expected Compiled: 1 (only the fresh page), got:\n%s", out)
 	}
 }
 
@@ -340,7 +340,7 @@ func TestCompileIngestIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second ingest: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Nenhuma página pendente") {
+	if !strings.Contains(out, "No pending page") {
 		t.Fatalf("expected nothing-pending message, got:\n%s", out)
 	}
 	headAfter, err := gitback.HeadSHA(repoDir)

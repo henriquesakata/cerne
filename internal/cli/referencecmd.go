@@ -34,24 +34,24 @@ func newReferenceRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Redefinir os tags (facet/componente) de uma referência current",
-		Long: "Define ou substitui os eixos de tag de uma referência current, sem torná-la obsolete — preserva url, " +
-			"informs e corpo. Altera só o eixo passado: 'retag R-0001 --component gitea' mantém os facets; '--facet \"\"' " +
-			"limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Short: "Reset the tags (facet/component) of a current reference",
+		Long: "Sets or replaces the tag axes of a current reference, without making it obsolete — preserves url, " +
+			"informs and body. Changes only the axis passed: 'retag R-0001 --component gitea' keeps the facets; '--facet \"\"' " +
+			"clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReferenceRetag(cmd, *dir, args[0], facet, component,
 				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
 		},
 	}
-	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
-	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
 	return cmd
 }
 
 func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
 	if !setFacets && !setComponents {
-		return fmt.Errorf("informe ao menos --facet ou --component")
+		return fmt.Errorf("provide at least --facet or --component")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -62,7 +62,7 @@ func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, set
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		r.ID, strings.Join(r.Facets, ", "), strings.Join(r.Components, ", "))
 	return nil
 }
@@ -72,12 +72,12 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register an external source (article/doc) as a reference",
-		Long: "Registra um artigo/documento externo como referência (marca externa + URL). " +
-			"O conteúdo (texto/resumo) vem de --file ou da entrada padrão e entra no índice, " +
-			"então o 'ask' passa a citá-lo. Use --informs para ligar a fonte às entidades " +
-			"(F-/D-/RB-/N-) que ela motivou. Use --facet (eixo fechado: infra,code,data,process,auth) e " +
-			"--component (subsistema/ferramenta, ex.: gitea,kpack) para categorizar — ambos multivalor, " +
-			"separados por vírgula.",
+		Long: "Registers an external article/document as a reference (marked external + URL). " +
+			"The content (text/summary) comes from --file or standard input and enters the index, " +
+			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
+			"(F-/D-/RB-/N-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
+			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
+			"comma-separated.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component)
@@ -105,7 +105,7 @@ func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s registrada (externa: %s).\n", r.ID, r.URL)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s registered (external: %s).\n", r.ID, r.URL)
 	return nil
 }
 
@@ -114,20 +114,20 @@ func newReferenceListCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "Listar referências — current por padrão; --all inclui obsoletas",
-		Long: "Lista as referências lidas direto do backend (store). Por padrão mostra só as " +
-			"current; --all inclui as obsolete. Cada linha traz id, estado, título e marcadores " +
-			"(externa, facet/componente, informa F-/D-, URL). Filtre por --facet e/ou --component " +
-			"(E lógico). --json para saída estruturada.",
+		Short: "List references — current by default; --all includes obsolete",
+		Long: "Lists references read straight from the backend (store). By default shows only the " +
+			"current ones; --all includes the obsolete. Each line carries id, state, title and markers " +
+			"(external, facet/component, informs F-/D-, URL). Filter by --facet and/or --component " +
+			"(logical AND). --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReferenceList(cmd, *dir, all, asJSON, facet, component)
 		},
 	}
-	cmd.Flags().BoolVar(&all, "all", false, "incluir referências obsolete")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
-	cmd.Flags().StringVar(&facet, "facet", "", "filtrar por facet (ex.: infra)")
-	cmd.Flags().StringVar(&component, "component", "", "filtrar por componente (ex.: gitea)")
+	cmd.Flags().BoolVar(&all, "all", false, "include obsolete references")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")
+	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. gitea)")
 	return cmd
 }
 
@@ -171,7 +171,7 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 		line := fmt.Sprintf("%s  [%s]  %s", r.ID, r.State, r.Title)
 		var tags []string
 		if r.External {
-			tags = append(tags, "externa")
+			tags = append(tags, "external")
 		}
 		if len(r.Facets) > 0 {
 			tags = append(tags, "facet "+strings.Join(r.Facets, ","))
@@ -180,7 +180,7 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 			tags = append(tags, "comp "+strings.Join(r.Components, ","))
 		}
 		if len(r.Informs) > 0 {
-			tags = append(tags, "informa "+strings.Join(r.Informs, ","))
+			tags = append(tags, "informs "+strings.Join(r.Informs, ","))
 		}
 		if r.URL != "" {
 			tags = append(tags, r.URL)
@@ -192,9 +192,9 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 	}
 	if len(shown) == 0 {
 		if all {
-			fmt.Fprintln(w, "Nenhuma referência registrada. Use 'cerne reference new \"<título>\" --url <url>' para registrar.")
+			fmt.Fprintln(w, "No references registered. Use 'cerne reference new \"<title>\" --url <url>' to register one.")
 		} else {
-			fmt.Fprintln(w, "Nenhuma referência current. Use 'cerne reference list --all' para ver as obsolete.")
+			fmt.Fprintln(w, "No current references. Use 'cerne reference list --all' to see the obsolete ones.")
 		}
 	}
 	return nil

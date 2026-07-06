@@ -32,7 +32,8 @@ go test ./internal/<pkg>/ -run TestX -v # focused
 cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (embedded). npm ci (not install) = exact lockfile → reproducible dist
 ```
 
-- CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`.
+- **`ui/dist` is `go:embed`-ed → the committed dist is what ships.** A UI change lands only if `ui/dist` is rebuilt *and* committed (F-0136 — F-0125/F-0126 shipped stale because only `ui/src` was merged). **Canonical build platform = CI Linux (`node:24`).** Do **not** commit a dist built on darwin/Windows — the vite output is not bit-identical across toolchains (hash-churn on locale chunks), so a foreign dist fails the drift gate. Build the baseline in a `node:24` Linux container (`docker run --platform linux/amd64 -v "$PWD":/app -w /app/ui node:24 sh -c "npm ci && npm run build"`) and commit that.
+- CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`, plus **`ui:dist-drift`** (`node:24`, on `ui/**` changes): rebuilds the UI and fails if the committed `ui/dist` differs from a fresh build — the guard against stale embedded UI.
 - `go install ./cmd/cerne` installs `cerne` to `C:\Users\Henrique\go\bin` (on PATH).
 - **RULE — reinstall the dogfood binary after changing cerne.** This repo runs its *own* `cerne` (the binary on PATH), so a behavior change (new command/entity/flag/lifecycle) is **invisible until you reinstall**: `go install ./cmd/cerne`. Otherwise `cerne …` silently runs the previous build — e.g. `cerne note` does not exist until the F-0044 build is installed. Always reinstall before dogfooding the change you just made.
 - Try the UI: `cerne ui` (serves `localhost:7717`).
@@ -63,7 +64,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 
 - **TDD, strictly**: write the failing test, run it red, implement minimally, run green, commit. One concern per commit.
 - **Error style**: sentinel errors (`var ErrX = errors.New(...)`) wrapped with `%w`, matched via `errors.Is`. Table-driven tests, error paths pinned with `errors.Is`.
-- **Language**: user-facing CLI/UI strings are **pt-BR**; all code, comments, identifiers, and these AI-facing docs are **English**.
+- **Language**: user-facing **CLI output** (messages, errors, cobra help) is **English** (F-0124); the **React UI** (`ui/`) strings stay **pt-BR**; all code, comments, identifiers, and these AI-facing docs are **English**. Exception: LLM **doc-authoring prompts** (spec/plan/result/decision/runbook draft builders, `ask`/`compile`) stay **pt-BR** on purpose — they set the language of the *generated documents*, not CLI chrome.
 - **Data vs UI**: lifecycle states are English strings in data (`candidate`, `approved`, `in_development`, `implemented`, `rejected`, `superseded`); pt-BR labels live only in the UI.
 - **Commits**: Conventional Commits; end the body with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - **Minimal surface**: no speculative API; keep exported identifiers to what is used.

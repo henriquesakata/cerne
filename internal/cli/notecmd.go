@@ -40,21 +40,21 @@ func newNoteListCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "Listar notas (conhecimento durável) — ativas por padrão; --all inclui história",
-		Long: "Lista as notas lidas direto do backend (store), não da projeção '.docs/' — então enxerga o " +
-			"conhecimento mesmo quando '.docs/' está desatualizado (sem 'cerne pull'). Por padrão mostra só as " +
-			"ativas; --all inclui as superseded (história). Cada linha traz id, estado, título e marcadores " +
-			"(durável, informa F-/D-/RB-/N-, facet/componente, sucessora). Filtre por --facet e/ou --component (E lógico). " +
-			"--json para saída estruturada.",
+		Short: "List notes (durable knowledge) — active by default; --all includes history",
+		Long: "Lists notes read straight from the backend (store), not from the '.docs/' projection — so it sees the " +
+			"knowledge even when '.docs/' is stale (no 'cerne pull'). By default shows only the " +
+			"active ones; --all includes the superseded (history). Each line carries id, state, title and markers " +
+			"(durable, informs F-/D-/RB-/N-, facet/component, successor). Filter by --facet and/or --component (logical AND). " +
+			"--json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteList(cmd, *dir, all, asJSON, facet, component)
 		},
 	}
-	cmd.Flags().BoolVar(&all, "all", false, "incluir notas superseded (história)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
-	cmd.Flags().StringVar(&facet, "facet", "", "filtrar por facet (ex.: infra)")
-	cmd.Flags().StringVar(&component, "component", "", "filtrar por componente (ex.: gitea)")
+	cmd.Flags().BoolVar(&all, "all", false, "include superseded notes (history)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")
+	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. gitea)")
 	return cmd
 }
 
@@ -98,7 +98,7 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 		line := fmt.Sprintf("%s  [%s]  %s", n.ID, n.State, n.Title)
 		var tags []string
 		if n.Durable {
-			tags = append(tags, "durável")
+			tags = append(tags, "durable")
 		}
 		if len(n.Facets) > 0 {
 			tags = append(tags, "facet "+strings.Join(n.Facets, ","))
@@ -107,7 +107,7 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 			tags = append(tags, "comp "+strings.Join(n.Components, ","))
 		}
 		if len(n.Informs) > 0 {
-			tags = append(tags, "informa "+strings.Join(n.Informs, ","))
+			tags = append(tags, "informs "+strings.Join(n.Informs, ","))
 		}
 		if n.SupersededBy != "" {
 			tags = append(tags, "→ "+n.SupersededBy)
@@ -119,9 +119,9 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 	}
 	if len(shown) == 0 {
 		if all {
-			fmt.Fprintln(w, "Nenhuma nota registrada. Use 'cerne note new \"<título>\"' para registrar conhecimento durável.")
+			fmt.Fprintln(w, "No notes registered. Use 'cerne note new \"<title>\"' to register durable knowledge.")
 		} else {
-			fmt.Fprintln(w, "Nenhuma nota ativa. Use 'cerne note new \"<título>\"' para registrar, ou 'cerne note list --all' para ver história.")
+			fmt.Fprintln(w, "No active notes. Use 'cerne note new \"<title>\"' to register one, or 'cerne note list --all' to see history.")
 		}
 	}
 	return nil
@@ -130,9 +130,9 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 func newNoteShowCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id>",
-		Short: "Mostrar uma nota (metadados + corpo) lida direto do backend",
-		Long: "Imprime os metadados (id, estado, durável, informa, motivo/sucessora) e o corpo markdown da nota, " +
-			"ambos lidos direto do backend (store) — imune a uma projeção '.docs/' desatualizada.",
+		Short: "Show a note (metadata + body) read straight from the backend",
+		Long: "Prints the metadata (id, state, durable, informs, reason/successor) and the note's markdown body, " +
+			"both read straight from the backend (store) — immune to a stale '.docs/' projection.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteShow(cmd, *dir, args[0])
@@ -148,12 +148,12 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 	}
 	n, err := store.LoadNote(ctx.repoDir, id)
 	if err != nil {
-		return fmt.Errorf("nota %s: %w", id, err)
+		return fmt.Errorf("note %s: %w", id, err)
 	}
 	w := cmd.OutOrStdout()
 	fmt.Fprintf(w, "%s  [%s]  %s\n", n.ID, n.State, n.Title)
 	if n.Durable {
-		fmt.Fprintln(w, "durável: sim")
+		fmt.Fprintln(w, "durable: yes")
 	}
 	if len(n.Facets) > 0 {
 		fmt.Fprintf(w, "facets: %s\n", strings.Join(n.Facets, ", "))
@@ -162,17 +162,17 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 		fmt.Fprintf(w, "components: %s\n", strings.Join(n.Components, ", "))
 	}
 	if len(n.Informs) > 0 {
-		fmt.Fprintf(w, "informa: %s\n", strings.Join(n.Informs, ", "))
+		fmt.Fprintf(w, "informs: %s\n", strings.Join(n.Informs, ", "))
 	}
 	if n.SupersededBy != "" {
-		fmt.Fprintf(w, "substituída por: %s\n", n.SupersededBy)
+		fmt.Fprintf(w, "superseded by: %s\n", n.SupersededBy)
 	}
 	if n.Reason != "" {
-		fmt.Fprintf(w, "motivo: %s\n", n.Reason)
+		fmt.Fprintf(w, "reason: %s\n", n.Reason)
 	}
 	body, err := store.LoadNoteContent(ctx.repoDir, id)
 	if err != nil {
-		return fmt.Errorf("corpo da nota %s: %w", id, err)
+		return fmt.Errorf("note %s body: %w", id, err)
 	}
 	fmt.Fprintf(w, "\n%s\n", strings.TrimRight(body, "\n"))
 	return nil
@@ -183,12 +183,12 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register durable team knowledge as a note (active)",
-		Long: "Registra conhecimento durável de projeto (gotchas, invariantes, convenções tácitas) como uma nota " +
-			"ativa. O corpo é texto livre, vindo de --file ou da entrada padrão (quando há pipe); sem corpo a nota " +
-			"nasce como stub para você preencher. Use --informs para ligar a nota às entidades (F-/D-/RB-/N-) que " +
-			"ela informa. Use --facet (eixo fechado: infra,code,data,process,auth) e --component (subsistema/ferramenta, " +
-			"ex.: gitea,kpack) para organizar — ambos multivalor, separados por vírgula. " +
-			"Conhecimento pessoal/de-máquina (paths, preferências) NÃO vai aqui — fica na memória local.",
+		Long: "Registers durable project knowledge (gotchas, invariants, tacit conventions) as an active " +
+			"note. The body is free text, from --file or standard input (when piped); without a body the note " +
+			"is born as a stub for you to fill in. Use --informs to link the note to the entities (F-/D-/RB-/N-) it " +
+			"informs. Use --facet (closed axis: infra,code,data,process,auth) and --component (subsystem/tool, " +
+			"e.g. gitea,kpack) to organize — both multi-valued, comma-separated. " +
+			"Personal/machine knowledge (paths, preferences) does NOT go here — it stays in local memory.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteNew(cmd, *dir, args[0], informs, file, facet, component)
@@ -220,10 +220,10 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component 
 	// pull+inspect just to verify a complete operation. A bodyless note is a
 	// stub: keep the fill + push next step.
 	if strings.TrimSpace(body) != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s criada (active) com corpo — já sincronizada. Rode 'cerne pull' para materializar localmente.\n", n.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (active) with a body — already synced. Run 'cerne pull' to materialize locally.\n", n.ID)
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (active). Próximo passo: preencha a nota em '.docs/current/notes/%s-<slug>.md' e rode 'cerne push'.\n", n.ID, n.ID)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active). Next step: fill in the note at '.docs/current/notes/%s-<slug>.md' and run 'cerne push'.\n", n.ID, n.ID)
 	return nil
 }
 
@@ -265,17 +265,17 @@ func newNoteRetireCmd(dir *string) *cobra.Command {
 	var reason string
 	cmd := &cobra.Command{
 		Use:   "retire <id>",
-		Short: "Aposentar uma nota obsoleta (vai para superseded, sem sucessora; --reason obrigatório)",
-		Long: "Move uma nota de active para superseded SEM sucessora — para conhecimento que não vale mais " +
-			"(ex.: a feature que a nota informava já entregou). A nota sai do estado atual (.docs/CONTEXT.md) e " +
-			"vira história pesquisável ('cerne search'/'ask'). Para trocar por uma versão corrigida, use " +
-			"'cerne note substituir --by'. O 'cerne lint' sinaliza (stale-note) notas cujo --informs já encerrou.",
+		Short: "Retire an obsolete note (goes to superseded, no successor; --reason required)",
+		Long: "Moves a note from active to superseded WITHOUT a successor — for knowledge that no longer holds " +
+			"(e.g. the feature the note informed already shipped). The note leaves the current state (.docs/CONTEXT.md) and " +
+			"becomes searchable history ('cerne search'/'ask'). To swap it for a corrected version, use " +
+			"'cerne note substituir --by'. 'cerne lint' flags (stale-note) notes whose --informs already closed.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteRetire(cmd, *dir, args[0], reason)
 		},
 	}
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da aposentadoria (obrigatório)")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
 	return cmd
 }
 
@@ -283,7 +283,7 @@ func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
 	// Validate the required reason before resolveProject so bad invocations
 	// fail fast without touching origin. retire is substituir with no successor.
 	if strings.TrimSpace(reason) == "" {
-		return fmt.Errorf("--reason é obrigatório")
+		return fmt.Errorf("--reason is required")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -293,17 +293,17 @@ func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s aposentada: %s → %s\n", out.ID, out.From, out.To)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retired: %s → %s\n", out.ID, out.From, out.To)
 	return nil
 }
 
 func newNoteKeepCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "keep <id>",
-		Short: "Marcar uma nota como durável (o lint para de sinalizá-la como stale-note)",
-		Long: "Marca uma nota ativa como conhecimento durável: o veredito humano de que ela vale, mesmo que " +
-			"informe (--informs) uma feature/decisão já encerrada. A nota continua active e materializada; o " +
-			"'cerne lint' deixa de sinalizá-la como stale-note. Idempotente. Para aposentar de vez, use 'cerne note retire'.",
+		Short: "Mark a note as durable (lint stops flagging it as stale-note)",
+		Long: "Marks an active note as durable knowledge: the human verdict that it still holds, even if it " +
+			"informs (--informs) an already-closed feature/decision. The note stays active and materialized; " +
+			"'cerne lint' stops flagging it as stale-note. Idempotent. To retire it for good, use 'cerne note retire'.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteKeep(cmd, *dir, args[0])
@@ -321,7 +321,7 @@ func runNoteKeep(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s marcada como durável — o 'cerne lint' não a sinaliza mais (stale-note).\n", n.ID)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s marked as durable — 'cerne lint' no longer flags it (stale-note).\n", n.ID)
 	return nil
 }
 
@@ -329,24 +329,24 @@ func newNoteRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Redefinir os tags (facet/componente) de uma nota ativa",
-		Long: "Define ou substitui os eixos de tag de uma nota ativa, sem criar sucessora — preserva durável, " +
-			"informs e corpo. Altera só o eixo passado: 'retag N-0001 --component gitea' mantém os facets; " +
-			"'--facet \"\"' limpa os facets. Facet fora do conjunto fechado (infra,code,data,process,auth) é rejeitada.",
+		Short: "Reset the tags (facet/component) of an active note",
+		Long: "Sets or replaces the tag axes of an active note, without creating a successor — preserves durable, " +
+			"informs and body. Changes only the axis passed: 'retag N-0001 --component gitea' keeps the facets; " +
+			"'--facet \"\"' clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteRetag(cmd, *dir, args[0], facet, component,
 				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
 		},
 	}
-	cmd.Flags().StringVar(&facet, "facet", "", "novos facets (CSV; conjunto fechado) — vazio limpa")
-	cmd.Flags().StringVar(&component, "component", "", "novos componentes (CSV) — vazio limpa")
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
 	return cmd
 }
 
 func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
 	if !setFacets && !setComponents {
-		return fmt.Errorf("informe ao menos --facet ou --component")
+		return fmt.Errorf("provide at least --facet or --component")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -357,7 +357,7 @@ func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacet
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s retaggeada — facets: [%s] · components: [%s]\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		n.ID, strings.Join(n.Facets, ", "), strings.Join(n.Components, ", "))
 	return nil
 }
@@ -366,17 +366,17 @@ func newNoteSubstituirCmd(dir *string) *cobra.Command {
 	var by, reason string
 	cmd := &cobra.Command{
 		Use:   "substituir <id>",
-		Short: "Substituir ou retirar uma nota (--by opcional; --reason obrigatório)",
-		Long: "Move uma nota de active para superseded. Com --by, a nota sucessora a substitui (o conhecimento " +
-			"corrigido materializa no lugar); sem --by, a nota é apenas retirada. A nota antiga vira história " +
-			"pesquisável ('cerne search'/'ask').",
+		Short: "Supersede or retire a note (--by optional; --reason required)",
+		Long: "Moves a note from active to superseded. With --by, the successor note supersedes it (the corrected " +
+			"knowledge materializes in its place); without --by, the note is simply retired. The old note becomes " +
+			"searchable history ('cerne search'/'ask').",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteSubstituir(cmd, *dir, args[0], by, reason)
 		},
 	}
-	cmd.Flags().StringVar(&by, "by", "", "id da nota que substitui (opcional; vazio = apenas retira)")
-	cmd.Flags().StringVar(&reason, "reason", "", "motivo da substituição/retirada (obrigatório)")
+	cmd.Flags().StringVar(&by, "by", "", "id of the note that supersedes (optional; empty = just retire)")
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession/retirement (required)")
 	return cmd
 }
 
@@ -384,7 +384,7 @@ func runNoteSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
 	// Validate the required reason before resolveProject so bad invocations
 	// fail fast without touching origin.
 	if strings.TrimSpace(reason) == "" {
-		return fmt.Errorf("--reason é obrigatório")
+		return fmt.Errorf("--reason is required")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {

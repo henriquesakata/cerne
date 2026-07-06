@@ -36,10 +36,10 @@ func newBriefCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "brief",
 		Short: "Cheap project map: id + state + title of every entity (priming)",
-		Long: "Imprime um mapa barato do projeto — id, estado e título de cada entidade (feature, decisão, " +
-			"runbook, nota, referência), agrupado por tipo, SEM caminhos nem prosa. Pensado para carregar o " +
-			"mapa inteiro de uma vez e então 'cerne show <id>' só nos que importam. Por padrão mostra o estado " +
-			"vigente; --all inclui superseded/rejected (história). --json para saída estruturada.",
+		Long: "Prints a cheap project map — id, state and title of every entity (feature, decision, " +
+			"runbook, note, reference), grouped by kind, WITHOUT paths or prose. Meant for loading the " +
+			"whole map at once and then 'cerne show <id>' only on the ones that matter. By default shows the current " +
+			"state; --all includes superseded/rejected (history). --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBrief(cmd, dir, all, asJSON)
@@ -47,8 +47,8 @@ func newBriefCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	cmd.Flags().BoolVar(&all, "all", false, "incluir entidades superseded/rejected (história)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "saída JSON legível por máquina")
+	cmd.Flags().BoolVar(&all, "all", false, "include superseded/rejected entities (history)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
 }
 
@@ -149,10 +149,10 @@ func renderBrief(out io.Writer, d briefData) {
 		items  []briefItem
 	}{
 		{"FEATURES", d.Features},
-		{"DECISÕES", d.Decisions},
+		{"DECISIONS", d.Decisions},
 		{"RUNBOOKS", d.Runbooks},
-		{"NOTAS", d.Notes},
-		{"REFERÊNCIAS", d.References},
+		{"NOTES", d.Notes},
+		{"REFERENCES", d.References},
 	}
 	total := 0
 	for _, g := range groups {
@@ -173,8 +173,8 @@ func renderBrief(out io.Writer, d briefData) {
 		total += len(g.items)
 	}
 	if total == 0 {
-		fmt.Fprintln(out, "Projeto vazio. Crie a primeira entidade com 'cerne feature new'.")
+		fmt.Fprintln(out, "Empty project. Create the first entity with 'cerne feature new'.")
 		return
 	}
-	fmt.Fprintf(out, "Total: %d entidade(s)\n", total)
+	fmt.Fprintf(out, "Total: %d entity(ies)\n", total)
 }

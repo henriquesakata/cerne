@@ -76,7 +76,7 @@ func TestImportAgentIngestDryRunThenApply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest dry-run: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Plano de importação (agente, dry-run):", "Features: 1", "Notes: 1", "Referências: 1", "Rode com --yes"} {
+	for _, want := range []string{"Import plan (agent, dry-run):", "Features: 1", "Notes: 1", "References: 1", "Run with --yes"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q:\n%s", want, out)
 		}
@@ -90,7 +90,7 @@ func TestImportAgentIngestDryRunThenApply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest --yes: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Importado (agente): 1 features, 0 decisões, 1 referências, 0 runbooks, 1 notes") {
+	if !strings.Contains(out, "Imported (agent): 1 features, 0 decisions, 1 references, 0 runbooks, 1 notes") {
 		t.Fatalf("apply confirmation missing:\n%s", out)
 	}
 	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 || fs[0].Title != "Detecção go2rtc" {
@@ -111,7 +111,7 @@ func TestImportAgentIngestDryRunThenApply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("idempotent re-run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Tudo já importado") {
+	if !strings.Contains(out, "Everything already imported") {
 		t.Fatalf("re-run not idempotent:\n%s", out)
 	}
 	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 {

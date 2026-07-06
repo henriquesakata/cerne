@@ -249,7 +249,7 @@ func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileC
 			case bytes.Equal(theirsBlob, baseBlob):
 				apply = append(apply, FileChange{Path: ch.Path, Deleted: true})
 			default:
-				conflicts = append(conflicts, Conflict{Path: ch.Path, Diff: "remoto alterou um documento que você removeu localmente"})
+				conflicts = append(conflicts, Conflict{Path: ch.Path, Diff: "remote changed a document you removed locally"})
 			}
 		default: // whole-file write
 			switch {

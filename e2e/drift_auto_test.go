@@ -62,7 +62,7 @@ func TestDriftAutoGoldenPath(t *testing.T) {
 
 	// --auto applies the errata and reports the review contract (crit. 1, 2).
 	out := mustCerne(t, "drift", "--auto", "--dir", proj)
-	if !strings.Contains(out, "✓ F-0001: errata automática aplicada") || !strings.Contains(out, "cerne drift pending") {
+	if !strings.Contains(out, "✓ F-0001: automatic errata applied") || !strings.Contains(out, "cerne drift pending") {
 		t.Fatalf("drift --auto output unexpected:\n%s", out)
 	}
 
@@ -75,23 +75,23 @@ func TestDriftAutoGoldenPath(t *testing.T) {
 	if out := mustCerne(t, "drift", "pending", "--dir", proj); !strings.Contains(out, "F-0001") || !strings.Contains(out, "internal/core/core.go") {
 		t.Fatalf("drift pending missing entry:\n%s", out)
 	}
-	if out := mustCerne(t, "next", "--dir", proj); !strings.Contains(out, "aguardando revisão") {
+	if out := mustCerne(t, "next", "--dir", proj); !strings.Contains(out, "awaiting review") {
 		t.Fatalf("next missing pending-review count:\n%s", out)
 	}
 
 	// The baseline advanced with the applied errata: no re-flag (crit. 8).
-	if out := mustCerne(t, "drift", "--dir", proj); !strings.Contains(out, "Nenhum drift detectado.") {
+	if out := mustCerne(t, "drift", "--dir", proj); !strings.Contains(out, "No drift detected.") {
 		t.Fatalf("drift should be clean after --auto:\n%s", out)
 	}
 
 	// Ack clears the pending list; a second ack is a friendly no-op (crit. 6).
-	if out := mustCerne(t, "drift", "ack", "F-0001", "--dir", proj); !strings.Contains(out, "✓ F-0001 reconhecida") {
+	if out := mustCerne(t, "drift", "ack", "F-0001", "--dir", proj); !strings.Contains(out, "✓ F-0001 acknowledged") {
 		t.Fatalf("ack output unexpected:\n%s", out)
 	}
-	if out := mustCerne(t, "drift", "pending", "--dir", proj); !strings.Contains(out, "Nenhuma atualização automática pendente") {
+	if out := mustCerne(t, "drift", "pending", "--dir", proj); !strings.Contains(out, "No automatic update pending review.") {
 		t.Fatalf("pending should be empty after ack:\n%s", out)
 	}
-	if out := mustCerne(t, "drift", "ack", "F-0001", "--dir", proj); !strings.Contains(out, "não tem atualização automática pendente") {
+	if out := mustCerne(t, "drift", "ack", "F-0001", "--dir", proj); !strings.Contains(out, "has no pending automatic update.") {
 		t.Fatalf("second ack should be a no-op message:\n%s", out)
 	}
 }
@@ -132,7 +132,7 @@ func TestDriftAutoDelegationFails(t *testing.T) {
 		t.Fatalf("delegation --auto must fail pointing at --draft, got err=%v out:\n%s", err, out)
 	}
 	// Nothing applied.
-	if o := mustCerne(t, "drift", "pending", "--dir", proj); !strings.Contains(o, "Nenhuma atualização automática pendente") {
+	if o := mustCerne(t, "drift", "pending", "--dir", proj); !strings.Contains(o, "No automatic update pending review.") {
 		t.Fatalf("nothing should be pending on failure:\n%s", o)
 	}
 }

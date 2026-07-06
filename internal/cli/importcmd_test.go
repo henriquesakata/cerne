@@ -58,17 +58,17 @@ func TestImportDryRun(t *testing.T) {
 		t.Fatalf("import dry-run: %v\noutput: %s", err, out)
 	}
 	for _, want := range []string{
-		"Plano de importação (dry-run):",
+		"Import plan (dry-run):",
 		"Features: 2 (candidate 1, implemented 1)",
-		"Decisões: 1 (active 1)",
+		"Decisions: 1 (active 1)",
 		"Runbooks: 1",
-		"Referências: 0",
-		"Amostra:",
+		"References: 0",
+		"Sample:",
 		"F? docs/process/cases/0001_login/ → feature implemented",
 		"F? docs/process/cases/0002_export/ → feature candidate",
 		"D? docs/architecture/adr/adr-001-db.md → decision active",
 		"R? docs/runbooks/setup.md → runbook active",
-		"Rode com --yes para aplicar.",
+		"Run with --yes to apply.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q:\n%s", want, out)
@@ -108,7 +108,7 @@ func TestImportYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import --yes: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Importado: 2 features, 1 decisões, 1 runbooks, 0 referências, 0 históricas (snapshot ") {
+	if !strings.Contains(out, "Imported: 2 features, 1 decisions, 1 runbooks, 0 references, 0 historicals (snapshot ") {
 		t.Fatalf("output missing import confirmation:\n%s", out)
 	}
 
@@ -177,8 +177,8 @@ func TestImportYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-run dry-run: %v\noutput: %s", err, out2)
 	}
-	if !strings.Contains(out2, "Tudo já importado") {
-		t.Errorf("re-run output missing 'Tudo já importado':\n%s", out2)
+	if !strings.Contains(out2, "Everything already imported") {
+		t.Errorf("re-run output missing 'Everything already imported':\n%s", out2)
 	}
 	headAfterRerun, err := gitback.HeadSHA(origin)
 	if err != nil {
@@ -209,7 +209,7 @@ func TestImportIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("incremental import: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Importado: 0 features, 0 decisões, 1 runbooks, 0 referências") {
+	if !strings.Contains(out, "Imported: 0 features, 0 decisions, 1 runbooks, 0 references") {
 		t.Fatalf("incremental import should add only the new runbook:\n%s", out)
 	}
 
@@ -236,8 +236,8 @@ func TestImportNothingToImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import on empty tree: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Nada para importar.") {
-		t.Fatalf("output missing 'Nada para importar.':\n%s", out)
+	if !strings.Contains(out, "Nothing to import.") {
+		t.Fatalf("output missing 'Nothing to import.':\n%s", out)
 	}
 }
 
@@ -294,7 +294,7 @@ func TestImportBackfillsModuleDeclaredAfterImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "classificaria 1") {
+	if !strings.Contains(out, "would classify 1") {
 		t.Fatalf("dry-run missing classify projection:\n%s", out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.Module != "" {
@@ -306,7 +306,7 @@ func TestImportBackfillsModuleDeclaredAfterImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-import: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Classificadas 1") {
+	if !strings.Contains(out, "Classified 1") {
 		t.Fatalf("apply missing classify result:\n%s", out)
 	}
 	if f, err := store.LoadFeature(repoDir, "F-0001"); err != nil || f.Module != "finance" {

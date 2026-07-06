@@ -92,13 +92,13 @@ func TestGoldenPath(t *testing.T) {
 
 	t.Log("stage 2: feature new — F-0001 born candidate")
 	out := mustCerne(t, "feature", "new", "Carrinho persistente", "--context", "ctx de teste", "--module", "checkout", "--dir", proj)
-	if !strings.Contains(out, "F-0001 criada (candidate)") {
+	if !strings.Contains(out, "F-0001 created (candidate)") {
 		t.Fatalf("feature new output missing F-0001 confirmation:\n%s", out)
 	}
 	assertLockParity(t, proj, origin, "feature new")
 
 	t.Log("stage 2b: rename — title is editable while the feature is live")
-	if out := mustCerne(t, "feature", "rename", "F-0001", "Carrinho temporário", "--dir", proj); !strings.Contains(out, "F-0001 renomeada") {
+	if out := mustCerne(t, "feature", "rename", "F-0001", "Carrinho temporário", "--dir", proj); !strings.Contains(out, "F-0001 renamed") {
 		t.Fatalf("rename output missing confirmation:\n%s", out)
 	}
 	assertLockParity(t, proj, origin, "feature rename")
@@ -133,7 +133,7 @@ func TestGoldenPath(t *testing.T) {
 		t.Fatalf("write real spec: %v", err)
 	}
 	out = mustCerne(t, "push", "--dir", proj)
-	if !strings.Contains(out, "Enviado: 1 documento(s)") {
+	if !strings.Contains(out, "Sent: 1 document(s)") {
 		t.Fatalf("push output missing send summary:\n%s", out)
 	}
 	verify := filepath.Join(t.TempDir(), "verify")
@@ -152,7 +152,7 @@ func TestGoldenPath(t *testing.T) {
 		t.Fatalf("approve output missing old→new state:\n%s", out)
 	}
 	out = mustCerne(t, "status", "--dir", proj)
-	if !strings.Contains(out, "APROVADAS (1)\n  F-0001  checkout  Carrinho persistente\n") {
+	if !strings.Contains(out, "APPROVED (1)\n  F-0001  checkout  Carrinho persistente\n") {
 		t.Fatalf("status missing F-0001 under APROVADAS:\n%s", out)
 	}
 	assertLockParity(t, proj, origin, "approve")
@@ -166,7 +166,7 @@ func TestGoldenPath(t *testing.T) {
 
 	t.Log("stage 7: substituir F-0001 by F-0002 — gone from .docs/, kept in history")
 	out = mustCerne(t, "feature", "new", "Carrinho v2", "--context", "ctx de teste", "--module", "checkout", "--dir", proj)
-	if !strings.Contains(out, "F-0002 criada (candidate)") {
+	if !strings.Contains(out, "F-0002 created (candidate)") {
 		t.Fatalf("second feature new output missing F-0002 confirmation:\n%s", out)
 	}
 	mustCerne(t, "feature", "substituir", "F-0001", "--by", "F-0002", "--reason", "redesign", "--dir", proj)

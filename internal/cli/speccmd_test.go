@@ -111,7 +111,7 @@ func TestSpecDraftByoKeyWritesAndCommits(t *testing.T) {
 	}
 
 	// pt-BR confirmation.
-	if !strings.Contains(out, "rascunhada e enviada") {
+	if !strings.Contains(out, "drafted and pushed") {
 		t.Fatalf("spec draft output missing confirmation:\n%s", out)
 	}
 }

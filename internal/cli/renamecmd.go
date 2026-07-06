@@ -10,7 +10,7 @@ import (
 
 func newFeatureRenameCmd(dir *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "rename <id> <novo título>",
+		Use:   "rename <id> <new title>",
 		Short: "Rename a feature's title (allowed until development; frozen in terminal states)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -22,7 +22,7 @@ func newFeatureRenameCmd(dir *string) *cobra.Command {
 			if err := app.RenameFeature(ctx.repoDir, ctx.projDir, id, args[1]); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s renomeada.\n", id)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s renamed.\n", id)
 			return nil
 		},
 	}

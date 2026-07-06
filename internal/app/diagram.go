@@ -15,9 +15,9 @@ import (
 // ErrNotMermaidSequence is returned by SanitizeMermaid when the cleaned model
 // output is not a Mermaid sequence diagram (does not start with the
 // `sequenceDiagram` keyword).
-var ErrNotMermaidSequence = errors.New("a saída do modelo não é um diagrama de sequência Mermaid")
+var ErrNotMermaidSequence = errors.New("the model output is not a Mermaid sequence diagram")
 
-// BuildSequenceDiagramPrompt assembles the pt-BR prompt instructing the LLM to
+// BuildSequenceDiagramPrompt assembles the prompt instructing the LLM to
 // produce a Mermaid sequence diagram for the feature, using its id/title/module,
 // the current spec and the project structure as context. When projectStructure
 // is non-empty it is embedded and the model is told to ground participants and
@@ -28,30 +28,33 @@ var ErrNotMermaidSequence = errors.New("a saída do modelo não é um diagrama d
 func BuildSequenceDiagramPrompt(f store.Feature, specContent, projectStructure string) string {
 	module := f.Module
 	if module == "" {
-		module = "(sem módulo)"
+		module = "(no module)"
 	}
 	var b strings.Builder
-	b.WriteString("Você está desenhando um diagrama de sequência (em Mermaid) para uma feature de software, em português do Brasil.\n\n")
+	b.WriteString("You are drawing a sequence diagram (in Mermaid) for a software feature.\n\n")
 	b.WriteString("Feature:\n")
 	fmt.Fprintf(&b, "- id: %s\n", f.ID)
-	fmt.Fprintf(&b, "- título: %s\n", f.Title)
-	fmt.Fprintf(&b, "- módulo: %s\n\n", module)
-	b.WriteString("Spec da feature (contexto; pode estar vazia):\n")
+	fmt.Fprintf(&b, "- title: %s\n", f.Title)
+	fmt.Fprintf(&b, "- module: %s\n\n", module)
+	b.WriteString("Feature spec (context; may be empty):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(specContent))
 	b.WriteString("\n---\n\n")
 	if s := strings.TrimSpace(projectStructure); s != "" {
-		b.WriteString("Estrutura do projeto (arquivos versionados; use para identificar os componentes reais):\n")
+		b.WriteString("Project structure (tracked files; use it to identify the real components):\n")
 		b.WriteString("---\n")
 		b.WriteString(s)
 		b.WriteString("\n---\n\n")
 	}
-	b.WriteString("Ancore o diagrama no código real do projeto:\n")
-	b.WriteString("- Os participantes devem ser componentes reais (pacotes, módulos, serviços, tipos), não papéis genéricos.\n")
-	b.WriteString("- As mensagens devem refletir chamadas e interações reais entre esses componentes no fluxo desta feature.\n")
-	b.WriteString("- Se você tem acesso ao repositório, examine os arquivos-fonte relevantes (pelos caminhos acima) antes de desenhar, para que o fluxo corresponda à implementação.\n\n")
-	b.WriteString("Produza um diagrama de sequência Mermaid (bloco começando com `sequenceDiagram`) que represente o fluxo principal desta feature, usando o título e o módulo como contexto.\n")
-	b.WriteString("Responda APENAS com o código Mermaid, sem cercas de markdown e sem texto antes ou depois.\n")
+	b.WriteString("Anchor the diagram in the project's real code:\n")
+	b.WriteString("- Participants must be real components (packages, modules, services, types), not generic roles.\n")
+	b.WriteString("- Messages must reflect real calls and interactions between those components in this feature's flow.\n")
+	b.WriteString("- If you have access to the repository, examine the relevant source files (via the paths above) before drawing, so the flow matches the implementation.\n\n")
+	b.WriteString("Produce a Mermaid sequence diagram (a block starting with `sequenceDiagram`) that represents this feature's main flow, using the title and module as context.\n")
+	// Interim (F-0135): the diagram renders next to pt-BR docs, so its labels
+	// follow that language until UI locale support (F-0125) makes it a choice.
+	b.WriteString("Write the diagram labels (participants, messages, notes) in Brazilian Portuguese (pt-BR); keep identifiers such as package, type and function names exactly as they appear in the code.\n")
+	b.WriteString("Reply with ONLY the Mermaid code, with no markdown fences and no text before or after.\n")
 	return b.String()
 }
 

@@ -73,22 +73,22 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 	// successor). The substituir CLI still requires --by via
 	// ValidateTransitionFlags; the retire CLI passes an empty by.
 	if strings.TrimSpace(reason) == "" {
-		return out, fmt.Errorf("--reason é obrigatório")
+		return out, fmt.Errorf("--reason is required")
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		rb, err := store.LoadRunbook(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("runbook %s não encontrado no backend", id)
+			return "", fmt.Errorf("runbook %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if by != "" {
 			if by == id {
-				return "", fmt.Errorf("--by não pode ser o próprio runbook (%s)", id)
+				return "", fmt.Errorf("--by cannot be the runbook itself (%s)", id)
 			}
 			if _, err := store.LoadRunbook(repoDir, by); errors.Is(err, store.ErrNotFound) {
-				return "", fmt.Errorf("runbook %s (--by) não encontrado no backend", by)
+				return "", fmt.Errorf("runbook %s (--by) not found in backend", by)
 			} else if err != nil {
 				return "", err
 			}
@@ -132,13 +132,13 @@ func RetagRunbook(repoDir, projDir, id string, facets, components []string, setF
 		var err error
 		rb, err = store.LoadRunbook(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("runbook %s não encontrado no backend", id)
+			return "", fmt.Errorf("runbook %s not found in backend", id)
 		}
 		if err != nil {
 			return "", err
 		}
 		if rb.State != domain.RunbookActive {
-			return "", fmt.Errorf("runbook %s não está ativo (está %s) — retag só vale para runbook ativo", id, rb.State)
+			return "", fmt.Errorf("runbook %s is not active (it is %s) — retag only applies to an active runbook", id, rb.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)
