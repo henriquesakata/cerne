@@ -20,6 +20,8 @@ func ValidStates(kind string) ([]string, bool) {
 		return []string{string(RunbookActive), string(RunbookSuperseded)}, true
 	case "note":
 		return []string{string(NoteActive), string(NoteSuperseded)}, true
+	case "work":
+		return []string{string(WorkActive), string(WorkDone), string(WorkAbandoned)}, true
 	}
 	return nil, false
 }
