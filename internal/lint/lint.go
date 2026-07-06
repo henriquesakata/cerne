@@ -47,6 +47,7 @@ const (
 	RuleEpicBehindChildren = "epic-behind-children"
 	RuleStaleCandidate     = "stale-candidate"
 	RuleStaleReady         = "stale-ready"
+	RuleStaleWork          = "stale-work"
 	RuleStaleNote          = "stale-note"
 	RuleIncompleteDoc      = "incomplete-doc"
 	RuleUntaggedLive       = "untagged-live"
@@ -55,7 +56,7 @@ const (
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -69,11 +70,12 @@ var ruleRank = map[string]int{
 	RuleEpicBehindChildren: 8,
 	RuleStaleCandidate:     9,
 	RuleStaleReady:         10,
-	RuleStaleNote:          11,
-	RuleIncompleteDoc:      12,
-	RuleUntaggedLive:       13,
-	RuleUnregisteredSource: 14,
-	RuleDriftSuspect:       15,
+	RuleStaleWork:          11,
+	RuleStaleNote:          12,
+	RuleIncompleteDoc:      13,
+	RuleUntaggedLive:       14,
+	RuleUnregisteredSource: 15,
+	RuleDriftSuspect:       16,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -133,14 +135,15 @@ type scannedDoc struct {
 // applies) — pass staleReadyDays via RunConfig for callers that need a
 // non-default window, or use Run for the common case with the default.
 func Run(repoDir string, ignore ...string) ([]Finding, error) {
-	return RunConfig(repoDir, 0, ignore...)
+	return RunConfig(repoDir, 0, 0, ignore...)
 }
 
-// RunConfig is Run with an explicit staleReadyDays window (0 = default 14
-// days). Kept separate from Run so every existing call site (CLI, server)
-// keeps compiling unchanged; callers that read stale_ready_days from
-// .cernerc pass it here instead.
-func RunConfig(repoDir string, staleReadyDays int, ignore ...string) ([]Finding, error) {
+// RunConfig is Run with explicit staleReadyDays (0 = default 14 days) and
+// staleWorkHours (0 = default 8 hours, F-0130) windows. Kept separate from Run
+// so every existing call site (CLI, server) keeps compiling unchanged;
+// callers that read stale_ready_days/stale_work_hours from .cernerc pass them
+// here instead.
+func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...string) ([]Finding, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return nil, err
@@ -162,6 +165,10 @@ func RunConfig(repoDir string, staleReadyDays int, ignore ...string) ([]Finding,
 		return nil, err
 	}
 	historicals, err := store.LoadAllHistoricals(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	works, err := store.LoadAllWorks(repoDir)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +230,8 @@ func RunConfig(repoDir string, staleReadyDays int, ignore ...string) ([]Finding,
 	findings = append(findings, staleNoteFindings(features, decisions, notes)...)
 
 	findings = append(findings, staleReadyFindings(features, staleReadyDays, time.Now())...)
+
+	findings = append(findings, staleWorkFindings(works, staleWorkHours, time.Now())...)
 
 	incomplete, err := incompleteDocFindings(repoDir, features, decisions, runbooks)
 	if err != nil {
@@ -1138,6 +1147,40 @@ func staleReadyFindings(features []store.Feature, windowDays int, now time.Time)
 			Rule:   RuleStaleReady,
 			Entity: f.ID,
 			Detail: fmt.Sprintf("implementada (Ready) há %d dias sem aceite — rode 'cerne feature accept %s' para validar", int(age.Hours()/24), f.ID),
+		})
+	}
+	return findings
+}
+
+// defaultStaleWorkHours mirrors project.Config.StaleWorkWindowHours' 8-hour
+// fallback (an unconfigured stale_work_hours). Kept local to lint so this
+// package does not import project just for one constant.
+const defaultStaleWorkHours = 8
+
+// staleWorkFindings flags an active work (agent activity, F-0130) whose
+// UpdatedAt is older than the project's stale_work_hours window with no
+// done/abandon yet — an agent that died without closing it never becomes an
+// eternal ghost on the board. done/abandoned works are excluded: they already
+// closed. hours<=0 falls back to the 8-hour default; now is injected so the
+// rule is deterministic under test (Run passes time.Now()).
+func staleWorkFindings(works []store.Work, hours int, now time.Time) []Finding {
+	if hours <= 0 {
+		hours = defaultStaleWorkHours
+	}
+	threshold := time.Duration(hours) * time.Hour
+	var findings []Finding
+	for _, w := range works {
+		if w.State != domain.WorkActive {
+			continue
+		}
+		age := now.Sub(w.UpdatedAt)
+		if age < threshold {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleStaleWork,
+			Entity: w.ID,
+			Detail: fmt.Sprintf("ativa há %.0fh sem done/abandon — rode 'cerne work done %s' ou 'cerne work abandon %s'", age.Hours(), w.ID, w.ID),
 		})
 	}
 	return findings
