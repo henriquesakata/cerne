@@ -65,6 +65,14 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if err != nil {
 		return err
 	}
+	// Approve is the start-of-flow human gate (F-0131 crit. 9): checked here,
+	// in the CLI, rather than inside app.TransitionFeature — the server/UI path
+	// is a human interaction by definition and carries no such check.
+	if action == domain.ActionApprove {
+		if err := app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()); err != nil {
+			return err
+		}
+	}
 	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, action, by, reason)
 	if err != nil {
 		return err
