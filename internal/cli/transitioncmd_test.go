@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,16 @@ func writeDoc(t *testing.T, repoDir, id, filename, content string) {
 	}
 }
 
+// commitBackend commits (and pushes) state a test staged directly in the
+// backend clone: mutations start from a clean HEAD (F-0121/F-0122), so staged
+// state must be committed to be visible to them.
+func commitBackend(t *testing.T, repoDir string) {
+	t.Helper()
+	if _, err := gitback.CommitAndPush(repoDir, "test: stage state"); err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
+		t.Fatalf("commitBackend: %v", err)
+	}
+}
+
 func realDoc(id, body string) string {
 	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n"
 }
@@ -48,6 +59,7 @@ func TestTransitionFullLifecycle(t *testing.T) {
 	// as real content — restore the pure scaffold to prove the approve gate
 	// still blocks a stub spec.
 	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n"+spectmpl.Stub("Feature A"))
+	commitBackend(t, repoDir)
 
 	// approve while the spec is still the stub: gate error with hint.
 	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
@@ -62,6 +74,7 @@ func TestTransitionFullLifecycle(t *testing.T) {
 	}
 
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
 	out, err = execCerne(t, "feature", "approve", id, "--dir", projDir)
 	if err != nil {
 		t.Fatalf("approve: %v\noutput: %s", err, out)
@@ -98,6 +111,7 @@ func TestTransitionFullLifecycle(t *testing.T) {
 		t.Fatalf("start without plan err = %v, want plan.md gate error", err)
 	}
 	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar."))
+	commitBackend(t, repoDir)
 	if out, err := execCerne(t, "feature", "start", id, "--dir", projDir); err != nil {
 		t.Fatalf("start: %v\noutput: %s", err, out)
 	}
@@ -107,6 +121,7 @@ func TestTransitionFullLifecycle(t *testing.T) {
 		t.Fatalf("complete without result err = %v, want result.md gate error", err)
 	}
 	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Entregue conforme o plano."))
+	commitBackend(t, repoDir)
 	if out, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
 		t.Fatalf("complete: %v\noutput: %s", err, out)
 	}
@@ -167,10 +182,12 @@ func TestStartScaffoldsResultStub(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
 	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar."))
+	commitBackend(t, repoDir)
 
 	out, err := execCerne(t, "feature", "start", id, "--dir", projDir)
 	if err != nil {

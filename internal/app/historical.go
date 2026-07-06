@@ -138,15 +138,23 @@ func unionAliases(existing, added []string) []string {
 // updated). This is the single-shot path behind the `cerne retire` command; the
 // import command reuses SaveHistoricalEntity in a loop under one commit instead.
 func RecordHistorical(repoDir, projDir, name, supersededBy, reason string, aliases []string, importedFrom string) (store.Historical, bool, error) {
-	h, created, err := SaveHistoricalEntity(repoDir, name, supersededBy, reason, aliases, importedFrom, "cli")
+	var (
+		h       store.Historical
+		created bool
+	)
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		h, created, err = SaveHistoricalEntity(repoDir, name, supersededBy, reason, aliases, importedFrom, "cli")
+		if err != nil {
+			return "", err
+		}
+		verb := "retire"
+		if !created {
+			verb = "update"
+		}
+		return fmt.Sprintf("cerne: %s %s (%s)", verb, h.ID, name), nil
+	})
 	if err != nil {
-		return store.Historical{}, false, err
-	}
-	verb := "retire"
-	if !created {
-		verb = "update"
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: %s %s (%s)", verb, h.ID, name)); err != nil {
 		return store.Historical{}, false, err
 	}
 	return h, created, nil
@@ -178,25 +186,31 @@ func removeAliases(existing, forget []string) []string {
 // would otherwise flag in every document). Leaving an entity alias-less is
 // allowed — it then matches by id only.
 func ForgetHistoricalAliases(repoDir, projDir, name string, forget []string) (store.Historical, error) {
-	h, found, err := findHistoricalByName(repoDir, name)
+	var h store.Historical
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var found bool
+		var err error
+		h, found, err = findHistoricalByName(repoDir, name)
+		if err != nil {
+			return "", err
+		}
+		if !found {
+			return "", fmt.Errorf("nenhuma entidade histórica com nome %q", name)
+		}
+		h.Aliases = removeAliases(h.Aliases, forget)
+		if err := store.SaveHistorical(repoDir, h); err != nil {
+			return "", err
+		}
+		payload := map[string]string{"name": h.Name}
+		if len(h.Aliases) > 0 {
+			payload["aliases"] = strings.Join(h.Aliases, ",")
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(h.ID, historicalUpdatedEvent, payload, EventActor())); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: forget aliases on %s (%s)", h.ID, name), nil
+	})
 	if err != nil {
-		return store.Historical{}, err
-	}
-	if !found {
-		return store.Historical{}, fmt.Errorf("nenhuma entidade histórica com nome %q", name)
-	}
-	h.Aliases = removeAliases(h.Aliases, forget)
-	if err := store.SaveHistorical(repoDir, h); err != nil {
-		return store.Historical{}, err
-	}
-	payload := map[string]string{"name": h.Name}
-	if len(h.Aliases) > 0 {
-		payload["aliases"] = strings.Join(h.Aliases, ",")
-	}
-	if err := store.AppendEvent(repoDir, domain.NewEvent(h.ID, historicalUpdatedEvent, payload, EventActor())); err != nil {
-		return store.Historical{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: forget aliases on %s (%s)", h.ID, name)); err != nil {
 		return store.Historical{}, err
 	}
 	return h, nil

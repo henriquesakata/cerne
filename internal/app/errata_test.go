@@ -24,6 +24,7 @@ func TestAddErrataAppendsWithoutTouchingBody(t *testing.T) {
 	if err := os.WriteFile(specPath, specBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	commitBackend(t, repoDir)
 
 	if _, err := AddErrata(repoDir, projDir, "F-0001", "Correção: usar D-0002.", "ator"); err != nil {
 		t.Fatalf("AddErrata: %v", err)
@@ -47,6 +48,7 @@ func TestAddErrataEventActor(t *testing.T) {
 	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "X", State: domain.StateImplemented}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
+	commitBackend(t, repoDir)
 	if _, err := AddErrata(repoDir, projDir, "F-0001", "auto texto", "drift-auto"); err != nil {
 		t.Fatalf("AddErrata: %v", err)
 	}

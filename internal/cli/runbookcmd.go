@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/runtmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
@@ -110,16 +111,22 @@ func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
 		}
 		return nil
 	}
-	migrated, err := app.MigrateRunbooksFromReferences(ctx.repoDir)
-	if err != nil {
-		return err
-	}
-	if len(migrated) == 0 {
+	// Scan, convert and commit inside the backend lock (F-0122).
+	var migrated []app.RunbookMigration
+	mErr := app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
+		var err error
+		migrated, err = app.MigrateRunbooksFromReferences(ctx.repoDir)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: migrate %d runbook(s) from references", len(migrated)), nil
+	})
+	if errors.Is(mErr, gitback.ErrNothingToCommit) || len(migrated) == 0 {
 		fmt.Fprintln(out, "Nenhuma referência de docs/runbooks para migrar.")
 		return nil
 	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: migrate %d runbook(s) from references", len(migrated))); err != nil {
-		return err
+	if mErr != nil {
+		return mErr
 	}
 	fmt.Fprintf(out, "Migradas %d referência(s) para runbooks:\n", len(migrated))
 	for _, m := range migrated {
@@ -289,10 +296,15 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeRunbookDraft(ctx.repoDir, id, body); err != nil {
-		return err
-	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, "cerne: draft runbook "+id); err != nil {
+	// Write and commit inside the backend lock (F-0122); the provider call
+	// above stays outside it.
+	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
+		if err := writeRunbookDraft(ctx.repoDir, id, body); err != nil {
+			return "", err
+		}
+		return "cerne: draft runbook " + id, nil
+	})
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "runbook %s rascunhado e enviado — rode 'cerne pull' para revisar.\n", id)

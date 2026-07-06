@@ -134,6 +134,7 @@ func TestDecisionDetailInformedBy(t *testing.T) {
 	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Dec", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
 	}
+	commitBackend(t, repoDir)
 	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"D-0001"}, nil, nil); err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}

@@ -1,7 +1,10 @@
 package app
 
 import (
+	"errors"
+
 	"fmt"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"os"
 	"time"
 
@@ -33,38 +36,46 @@ type Assignment struct {
 // (source "heuristic") per assignment, then makes ONE commit+push and refreshes
 // the docs.lock snapshot — only when at least one feature was assigned.
 func ClassifyBackfill(repoDir, projDir string, apply bool) (assigned []Assignment, skipped int, err error) {
-	proj, err := store.LoadProject(repoDir)
-	if err != nil {
-		return nil, 0, err
-	}
-	features, err := store.LoadAllFeatures(repoDir)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	for _, f := range features {
-		if f.Module != "" {
-			continue // never reclassify an already-moduled feature
+	// The scan+assign runs inside the backend lock when applying (F-0122); a
+	// dry-run reads outside it (no writes, nothing to protect).
+	run := func() (string, error) {
+		assigned, skipped = nil, 0
+		proj, err := store.LoadProject(repoDir)
+		if err != nil {
+			return "", err
 		}
-		importedFrom, content := featureSpecSignal(repoDir, f.ID)
-		module, ok := classify.InferModule(importedFrom, content, proj.Modules)
-		if !ok {
-			skipped++
-			continue
+		features, err := store.LoadAllFeatures(repoDir)
+		if err != nil {
+			return "", err
 		}
-		assigned = append(assigned, Assignment{ID: f.ID, Module: module})
-		if apply {
-			if err := assignFeatureModule(repoDir, f, module, "heuristic"); err != nil {
-				return nil, 0, err
+		for _, f := range features {
+			if f.Module != "" {
+				continue // never reclassify an already-moduled feature
+			}
+			importedFrom, content := featureSpecSignal(repoDir, f.ID)
+			module, ok := classify.InferModule(importedFrom, content, proj.Modules)
+			if !ok {
+				skipped++
+				continue
+			}
+			assigned = append(assigned, Assignment{ID: f.ID, Module: module})
+			if apply {
+				if err := assignFeatureModule(repoDir, f, module, "heuristic"); err != nil {
+					return "", err
+				}
 			}
 		}
+		return fmt.Sprintf("cerne: classify %d feature(s)", len(assigned)), nil
 	}
-
-	if apply && len(assigned) > 0 {
-		msg := fmt.Sprintf("cerne: classify %d feature(s)", len(assigned))
-		if err := CommitAndSnapshot(repoDir, projDir, msg); err != nil {
+	if !apply {
+		if _, err := run(); err != nil {
 			return nil, 0, err
 		}
+		return assigned, skipped, nil
+	}
+	mErr := MutateAndSnapshot(repoDir, projDir, run)
+	if mErr != nil && !errors.Is(mErr, gitback.ErrNothingToCommit) {
+		return nil, 0, mErr // nothing assignable surfaces as a successful no-op
 	}
 	return assigned, skipped, nil
 }
@@ -75,21 +86,23 @@ func ClassifyBackfill(repoDir, projDir string, apply bool) (assigned []Assignmen
 // feature.classified event (source "manual"), then commits+pushes and refreshes
 // the lock. Unknown module or id yields a pt-BR error and writes nothing.
 func ClassifyFeatureManually(repoDir, projDir, id, module string) error {
-	proj, err := store.LoadProject(repoDir)
-	if err != nil {
-		return err
-	}
-	if !moduleDeclared(proj.Modules, module) {
-		return fmt.Errorf("módulo desconhecido: %q (módulos declarados: %s)", module, joinModules(proj.Modules))
-	}
-	f, err := store.LoadFeature(repoDir, id)
-	if err != nil {
-		return fmt.Errorf("feature %s não encontrada no backend", id)
-	}
-	if err := assignFeatureModule(repoDir, f, module, "manual"); err != nil {
-		return err
-	}
-	return CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: classify %s", id))
+	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		proj, err := store.LoadProject(repoDir)
+		if err != nil {
+			return "", err
+		}
+		if !moduleDeclared(proj.Modules, module) {
+			return "", fmt.Errorf("módulo desconhecido: %q (módulos declarados: %s)", module, joinModules(proj.Modules))
+		}
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			return "", fmt.Errorf("feature %s não encontrada no backend", id)
+		}
+		if err := assignFeatureModule(repoDir, f, module, "manual"); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: classify %s", id), nil
+	})
 }
 
 // assignFeatureModule sets f.Module, persists the feature and appends the

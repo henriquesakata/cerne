@@ -35,31 +35,37 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 		return store.Decision{}, err
 	}
 	normComponents := domain.NormalizeComponents(components)
-	id, err := store.NextID(repoDir, "D")
+	// Id mint and writes run inside the backend lock's critical section
+	// (F-0122): concurrent creations serialize instead of minting the same id.
+	var d store.Decision
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		id, err := store.NextID(repoDir, "D")
+		if err != nil {
+			return "", err
+		}
+		now := time.Now().UTC()
+		d = store.Decision{
+			ID:         id,
+			Title:      title,
+			State:      domain.DecisionActive,
+			Facets:     normFacets,
+			Components: normComponents,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", err
+		}
+		if err := writeDecisionBody(repoDir, id, title, body); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "decision.created", map[string]string{"title": title}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
+	})
 	if err != nil {
-		return store.Decision{}, err
-	}
-	now := time.Now().UTC()
-	d := store.Decision{
-		ID:         id,
-		Title:      title,
-		State:      domain.DecisionActive,
-		Facets:     normFacets,
-		Components: normComponents,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := store.SaveDecision(repoDir, d); err != nil {
-		return store.Decision{}, err
-	}
-	if err := writeDecisionBody(repoDir, id, title, body); err != nil {
-		return store.Decision{}, err
-	}
-	ev := domain.NewEvent(id, "decision.created", map[string]string{"title": title}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Decision{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: create %s (%s)", id, title)); err != nil {
 		return store.Decision{}, err
 	}
 	return d, nil
@@ -75,42 +81,46 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 	if err := ValidateTransitionFlags(domain.ActionSupersede, by, reason); err != nil {
 		return out, err
 	}
-	d, err := store.LoadDecision(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return out, fmt.Errorf("decisão %s não encontrada no backend", id)
-	}
-	if err != nil {
-		return out, err
-	}
-	if by == id {
-		return out, fmt.Errorf("--by não pode ser a própria decisão (%s)", id)
-	}
-	if _, err := store.LoadDecision(repoDir, by); errors.Is(err, store.ErrNotFound) {
-		return out, fmt.Errorf("decisão %s (--by) não encontrada no backend", by)
-	} else if err != nil {
-		return out, err
-	}
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		d, err := store.LoadDecision(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("decisão %s não encontrada no backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if by == id {
+			return "", fmt.Errorf("--by não pode ser a própria decisão (%s)", id)
+		}
+		if _, err := store.LoadDecision(repoDir, by); errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("decisão %s (--by) não encontrada no backend", by)
+		} else if err != nil {
+			return "", err
+		}
 
-	newState, err := domain.TransitionDecision(d.State, domain.ActionSupersede)
+		newState, err := domain.TransitionDecision(d.State, domain.ActionSupersede)
+		if err != nil {
+			return "", err
+		}
+		oldState := d.State
+		d.State = newState
+		d.SupersededBy = by
+		d.Reason = reason
+		d.UpdatedAt = time.Now().UTC()
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "decision.superseded", map[string]string{"by": by, "reason": reason}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		out = DecisionOutcome{ID: id, From: oldState, To: newState}
+		return fmt.Sprintf("cerne: supersede %s", id), nil
+	})
 	if err != nil {
-		return out, err
+		return DecisionOutcome{}, err
 	}
-	oldState := d.State
-	d.State = newState
-	d.SupersededBy = by
-	d.Reason = reason
-	d.UpdatedAt = time.Now().UTC()
-	if err := store.SaveDecision(repoDir, d); err != nil {
-		return out, err
-	}
-	ev := domain.NewEvent(id, "decision.superseded", map[string]string{"by": by, "reason": reason}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return out, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: supersede %s", id)); err != nil {
-		return out, err
-	}
-	return DecisionOutcome{ID: id, From: oldState, To: newState}, nil
+	return out, nil
 }
 
 // RetagDecision sets the tag axes of an active decision in the backend clone at
@@ -121,38 +131,43 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 // unknown facet aborts leaving the decision untouched. Appends decision.retagged
 // and syncs the backend + docs.lock in projDir.
 func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Decision, error) {
-	d, err := store.LoadDecision(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Decision{}, fmt.Errorf("decisão %s não encontrada no backend", id)
-	}
-	if err != nil {
-		return store.Decision{}, err
-	}
-	if d.State != domain.DecisionActive {
-		return store.Decision{}, fmt.Errorf("decisão %s não está active (está %s) — retag só vale para decisão ativa", id, d.State)
-	}
-	if setFacets {
-		nf, err := domain.NormalizeFacets(facets)
-		if err != nil {
-			return store.Decision{}, err // unknown facet: decision untouched
+	var d store.Decision
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		d, err = store.LoadDecision(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("decisão %s não encontrada no backend", id)
 		}
-		d.Facets = nf
-	}
-	if setComponents {
-		d.Components = domain.NormalizeComponents(components)
-	}
-	d.UpdatedAt = time.Now().UTC()
-	if err := store.SaveDecision(repoDir, d); err != nil {
-		return store.Decision{}, err
-	}
-	ev := domain.NewEvent(id, "decision.retagged", map[string]string{
-		"facets":     strings.Join(d.Facets, ","),
-		"components": strings.Join(d.Components, ","),
-	}, EventActor())
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return store.Decision{}, err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: retag %s", id)); err != nil {
+		if err != nil {
+			return "", err
+		}
+		if d.State != domain.DecisionActive {
+			return "", fmt.Errorf("decisão %s não está active (está %s) — retag só vale para decisão ativa", id, d.State)
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: decision untouched
+			}
+			d.Facets = nf
+		}
+		if setComponents {
+			d.Components = domain.NormalizeComponents(components)
+		}
+		d.UpdatedAt = time.Now().UTC()
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "decision.retagged", map[string]string{
+			"facets":     strings.Join(d.Facets, ","),
+			"components": strings.Join(d.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retag %s", id), nil
+	})
+	if err != nil {
 		return store.Decision{}, err
 	}
 	return d, nil

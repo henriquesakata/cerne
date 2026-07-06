@@ -78,10 +78,15 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeResultDraft(ctx.repoDir, id, body); err != nil {
-		return err
-	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, "cerne: draft result "+id); err != nil {
+	// Write and commit inside the backend lock (F-0122); the provider call
+	// above stays outside it.
+	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
+		if err := writeResultDraft(ctx.repoDir, id, body); err != nil {
+			return "", err
+		}
+		return "cerne: draft result " + id, nil
+	})
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "resultado de %s rascunhado e enviado — rode 'cerne pull' para revisar.\n", id)

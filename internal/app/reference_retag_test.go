@@ -94,6 +94,7 @@ func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 	if err := store.SaveReference(repoDir, r); err != nil {
 		t.Fatalf("SaveReference obsolete: %v", err)
 	}
+	commitBackend(t, repoDir)
 	if _, err := RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false); err == nil {
 		t.Fatalf("retag of obsolete reference should error")
 	}
