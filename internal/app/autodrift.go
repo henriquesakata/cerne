@@ -52,14 +52,20 @@ func AutoDriftErrata(ctx context.Context, repoDir, projDir, entityID, baseline s
 	if len(short) > 7 {
 		short = short[:7]
 	}
-	ev := domain.NewEvent(entityID, "drift.auto", map[string]string{
-		"baseline": short,
-		"paths":    strings.Join(changed, ","),
-	}, DriftAutoActor)
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return "", err
-	}
-	if err := CommitAndSnapshot(repoDir, projDir, "cerne: drift auto "+entityID); err != nil {
+	// The provider call above stays outside any lock (it can take minutes —
+	// lockStaleAfter would let another process steal the lock mid-section);
+	// only this event append runs in the critical section (F-0122).
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		ev := domain.NewEvent(entityID, "drift.auto", map[string]string{
+			"baseline": short,
+			"paths":    strings.Join(changed, ","),
+		}, DriftAutoActor)
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return "cerne: drift auto " + entityID, nil
+	})
+	if err != nil {
 		return "", err
 	}
 	return text, nil
@@ -115,23 +121,25 @@ var ErrNoPendingDrift = errors.New("nenhuma atualização automática pendente")
 // drift.ack event (human actor, payload citing the covered event ids) and
 // commits+pushes. ErrNoPendingDrift when the entity has nothing pending.
 func AckDrift(repoDir, projDir, entityID, actor string) error {
-	pending, err := PendingDriftReviews(repoDir)
-	if err != nil {
-		return err
-	}
-	var covers []string
-	for _, pr := range pending {
-		if pr.Entity == entityID {
-			covers = pr.EventIDs
-			break
+	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		pending, err := PendingDriftReviews(repoDir)
+		if err != nil {
+			return "", err
 		}
-	}
-	if len(covers) == 0 {
-		return fmt.Errorf("%w: %s", ErrNoPendingDrift, entityID)
-	}
-	ev := domain.NewEvent(entityID, "drift.ack", map[string]string{"covers": strings.Join(covers, ",")}, actor)
-	if err := store.AppendEvent(repoDir, ev); err != nil {
-		return err
-	}
-	return CommitAndSnapshot(repoDir, projDir, "cerne: drift ack "+entityID)
+		var covers []string
+		for _, pr := range pending {
+			if pr.Entity == entityID {
+				covers = pr.EventIDs
+				break
+			}
+		}
+		if len(covers) == 0 {
+			return "", fmt.Errorf("%w: %s", ErrNoPendingDrift, entityID)
+		}
+		ev := domain.NewEvent(entityID, "drift.ack", map[string]string{"covers": strings.Join(covers, ",")}, actor)
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return "cerne: drift ack " + entityID, nil
+	})
 }

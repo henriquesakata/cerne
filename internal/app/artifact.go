@@ -15,14 +15,16 @@ import (
 // and refreshes the docs.lock snapshot. A byte-identical write leaves the
 // worktree clean and is treated as a successful no-op.
 func SaveArtifact(repoDir, projDir, id, name string, data []byte) error {
-	dir := filepath.Join(repoDir, "content", "artifacts", id)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-		return err
-	}
-	err := CommitAndSnapshot(repoDir, projDir, fmt.Sprintf("cerne: update artifact %s/%s", id, name))
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		dir := filepath.Join(repoDir, "content", "artifacts", id)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: update artifact %s/%s", id, name), nil
+	})
 	if errors.Is(err, gitback.ErrNothingToCommit) {
 		return nil // backend already had exactly this content
 	}
@@ -31,8 +33,10 @@ func SaveArtifact(repoDir, projDir, id, name string, data []byte) error {
 
 // CommitAndSnapshot lands the backend clone's pending mutation on the latest
 // origin/main and pushes it, then rewrites the docs.lock snapshot in projDir to
-// the new HEAD — the sync tail shared by every backend mutation (transitions,
-// artifact saves, compile). It routes through the reconcile core, so it holds
+// the new HEAD. Since F-0122 every app mutation runs through MutateAndSnapshot
+// (writes inside the lock) — this remains only for `cerne compile`, whose LLM
+// synthesis writes pages as it goes and cannot hold the lock for minutes.
+// It routes through the reconcile core, so it holds
 // the backend lock (serializing concurrent local processes on the shared clone),
 // merges per document, union-merges the append-only event log, and retries on a
 // concurrent advance. ErrNothingToCommit when the worktree is clean; a
