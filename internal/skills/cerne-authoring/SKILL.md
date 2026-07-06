@@ -28,12 +28,23 @@ cerne mints the canonical `F-NNNN` id and gates each transition on a real docume
    - `--module` assigns the subsystem when the project declares modules; omit for cross-cutting work.
    - **Tag it (two axes, like notes/decisions/references):** `--facet` and `--component` (both repeatable, comma-separated). **facet** is the closed, validated set — `infra`, `code`, `data`, `process`, `auth` (D-0002/D-0003); an unknown facet is rejected with **no** write. **component** is open vocabulary, slug-normalized (`Gitback` → `gitback`). Filter the board with `cerne feature list --facet <f> --component <c>` — AND across axes, and AND with `--state`/`--module`/`--parent`. Tags fold into the FTS body (so `cerne search`/`ask` find a feature by a tag absent from its prose) and render on the feature's line (and as chips in the kanban/feature page). Re-tag in place — any state except terminal history (superseded/rejected) — with `cerne feature retag F-NNNN --facet <f> --component <c>` (sets only the axis you pass; `--facet ""` clears it; never supersedes), so the implemented backlog can be categorized for retrieval too. Orthogonal to `--module` (product area) and `--parent` (epic decomposition).
    - `--parent F-NNNN` makes this feature decompose an epic. See **Epics**.
-2. **Spec** — `cerne pull`, author `.docs/current/features/F-NNNN-<slug>/spec.md` (keep the `cerne_id` frontmatter), `cerne push`, then `cerne feature approve F-NNNN` (gate: a real spec, not the stub).
+2. **Spec** — `cerne pull`, author `.docs/current/features/F-NNNN-<slug>/spec.md` (keep the `cerne_id` frontmatter), `cerne push`, then ask a human to run `cerne feature approve F-NNNN` (gate: a real spec, not the stub — and, by default, a human act; see **Human gates** below).
 3. **Plan** — `cerne feature approve` scaffolds `plan.md` from a canonical template (or run `cerne plan draft F-NNNN`); fill it in, `cerne push`, then `cerne feature start F-NNNN` (gate: a real plan, not the stub).
 4. **Implement** — build it per your project's stack and conventions; add tests; review.
-5. **Result** — `cerne feature start` scaffolds `result.md` from a canonical template (or run `cerne result draft F-NNNN`); fill it as you finish, `cerne push`, then `cerne feature complete F-NNNN` (gate: a real result, not the stub). No manual "Done" status, no index edits — `cerne feature complete` is the source of truth.
+5. **Result** — `cerne feature start` scaffolds `result.md` from a canonical template (or run `cerne result draft F-NNNN`); fill it as you finish, `cerne push`, then `cerne feature complete F-NNNN` (gate: a real result, not the stub). This lands the feature on `implemented` ("Ready" on the kanban) — code done, awaiting human validation. No manual "Done" status, no index edits — `cerne feature accept` (see below) is the only way to reach the actual `done` state.
 
 Terminal transitions when work is dropped or replaced: `cerne feature reject F-NNNN --reason "…"`; `cerne feature substituir F-NNNN --by F-MMMM --reason "…"`.
+
+### Human gates: approve and accept (F-0131)
+
+**Approval and acceptance are human gates by default.** Two points in the loop are reserved for a human unless the project's `.cernerc` explicitly opts out:
+
+- **Start of the loop —** after writing the spec, **ask for approval and stop.** Do not run `cerne feature approve` yourself — an agent approving its own spec defeats the gate. Report the candidate is ready and wait.
+- **End of the loop —** `cerne feature complete` lands the feature on `implemented` ("Ready" — code done, not yet validated), never `done`. `cerne feature accept F-NNNN` is the separate human-validation step that moves it to `done` (terminal, "Done" on the kanban). Do not run `cerne feature accept` yourself either — report the feature is implemented and ask a human to accept it.
+
+Both gates read the project's `.cernerc` `[gates]` block (`approve`/`accept`, each `"human"` (default) or `"auto"`) together with the `CERNE_ACTOR` environment variable (`cerne hook install` stamps `CERNE_ACTOR=agent` into the project's `.claude/settings.json`, so an agent session is recognized). **Only run `cerne feature approve`/`accept` yourself when `[gates]` explicitly sets that gate to `"auto"`** for this project — check `.cernerc` if unsure; when in doubt, ask a human instead of guessing.
+
+`cerne lint` flags a feature stuck on `implemented` past the project's stale-ready window (`stale-ready` rule) — that is your cue to ask a human to accept it, not to accept it yourself.
 
 ## Validate locally before pushing
 
