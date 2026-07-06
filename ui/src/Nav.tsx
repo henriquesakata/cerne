@@ -6,7 +6,8 @@ import { fetchVersion } from './api'
 
 // Barra de navegação persistente: o shell que torna as páginas alcançáveis.
 const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
-  { href: '#/', key: 'kanban' },
+  { href: '#/', key: 'dashboard' },
+  { href: '#/kanban', key: 'kanban' },
   { href: '#/manage', key: 'manage' },
   { href: '#/decisions', key: 'decisions' },
   { href: '#/references', key: 'references' },
@@ -25,6 +26,8 @@ const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
 // activeHref mapeia a rota atual para o link de seção que deve ficar ativo.
 // Rotas de detalhe (#/f, #/d, #/r) destacam a seção pai.
 function activeHref(hash: string): string {
+  // Kanban e detalhe de feature destacam Kanban; '#/' (dashboard) é o fallback.
+  if (hash.startsWith('#/kanban') || hash.startsWith('#/f/')) return '#/kanban'
   if (hash.startsWith('#/manage') || hash.startsWith('#/new')) return '#/manage'
   if (hash.startsWith('#/decisions') || hash.startsWith('#/d/')) return '#/decisions'
   if (hash.startsWith('#/references') || hash.startsWith('#/r/')) return '#/references'
@@ -38,7 +41,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/history')) return '#/history'
   if (hash.startsWith('#/activity')) return '#/activity'
   if (hash.startsWith('#/stats')) return '#/stats'
-  return '#/' // kanban e detalhe de feature (#/f/<id>)
+  return '#/' // dashboard (tela inicial, F-0132)
 }
 
 export default function Nav({ hash }: { hash: string }) {

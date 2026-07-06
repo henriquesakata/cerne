@@ -15,6 +15,7 @@ import Manage from './Manage'
 import NewFeature from './NewFeature'
 import StatsPage from './Stats'
 import Activity from './Activity'
+import Dashboard from './Dashboard'
 import { LiveProvider } from './live'
 import { useT } from './i18n'
 import './app.css'
@@ -77,5 +78,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/activity') return <Activity />
   if (hash === '#/manage') return <Manage />
   if (hash === '#/new') return <NewFeature />
-  return <Kanban />
+  if (hash === '#/kanban') return <Kanban />
+  // Tela inicial (F-0132): o dashboard responde "como está o projeto?".
+  return <Dashboard />
 }
