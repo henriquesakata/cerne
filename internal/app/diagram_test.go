@@ -13,7 +13,9 @@ import (
 
 // TestBuildSequenceDiagramPrompt asserts the assembled prompt carries the
 // feature's id, title and module, includes the project structure, instructs the
-// model to ground the diagram in real components, and asks for bare Mermaid.
+// model to ground the diagram in real components, asks for bare Mermaid, and
+// pins the interim label language to pt-BR (F-0135; locale-driven once F-0125
+// lands).
 func TestBuildSequenceDiagramPrompt(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
 	structure := "internal/finance/ledger.go\ninternal/finance/recon.go"
@@ -22,6 +24,7 @@ func TestBuildSequenceDiagramPrompt(t *testing.T) {
 		"F-0007", "Conciliação bancária", "finance", "sequenceDiagram",
 		"internal/finance/recon.go", // the structure is embedded
 		"real components",           // anchoring instruction
+		"Brazilian Portuguese (pt-BR)", // interim label language (F-0135)
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
