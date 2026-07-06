@@ -49,16 +49,18 @@ function Card({
   title,
   href,
   error,
+  className,
   children,
 }: {
   title: string
   href: string
   error: string | null
+  className?: string
   children: ReactNode
 }) {
   const { t } = useT()
   return (
-    <section className="dash-card">
+    <section className={className ? `dash-card ${className}` : 'dash-card'}>
       <h2>
         <a href={href}>{title}</a>
       </h2>
@@ -73,11 +75,13 @@ export default function Dashboard() {
     <main className="page">
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
+      {/* Composição fixa (F-0143): linha 1 = contadores compactos; linha 2 =
+          Épicos (2 col) + Atividade; linha 3 = Eventos em largura total. */}
       <div className="dash-grid">
         <RosterCard />
-        <EpicsCard />
         <LintCard />
         <SavingsCard />
+        <EpicsCard />
         <ActivityCard />
         <EventsCard />
       </div>
@@ -117,7 +121,7 @@ function EpicsCard() {
   }
   const epics = features.filter((f) => byParent.has(f.id))
   return (
-    <Card title={t.dashboard.epics} href="#/kanban" error={error}>
+    <Card title={t.dashboard.epics} href="#/kanban" error={error} className="dash-span-2">
       {epics.length === 0 && <p className="muted">{t.dashboard.noEpics}</p>}
       <ul className="dash-list">
         {epics.slice(0, 6).map((e) => {
@@ -214,7 +218,7 @@ function EventsCard() {
   // O endpoint já devolve newest-first (handleEvents inverte a ordem do log).
   const recent = (data ?? []).slice(0, 5)
   return (
-    <Card title={t.dashboard.events} href="#/history" error={error}>
+    <Card title={t.dashboard.events} href="#/history" error={error} className="dash-span-full">
       {recent.length === 0 && <p className="muted">{t.dashboard.noEvents}</p>}
       <ul className="dash-list">
         {recent.map((ev, i) => (
