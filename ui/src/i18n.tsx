@@ -98,10 +98,10 @@ const ptBR = {
     candidate: 'Candidata',
     approved: 'Aprovada',
     in_development: 'Em desenvolvimento',
-    // Jargão kanban mantido em pt (decisão da F-0131): implemented = Ready
-    // (aguarda aceite humano), done = Done (validada).
-    implemented: 'Ready',
-    done: 'Done',
+    // F-0140 reverte a F-0131: labels em pt. implemented = Pronta (aguarda
+    // aceite humano), done = Concluída (validada).
+    implemented: 'Pronta',
+    done: 'Concluída',
     rejected: 'Rejeitada',
     superseded: 'Substituída',
   } satisfies Record<FeatureState, string>,
@@ -130,8 +130,8 @@ const ptBR = {
       in_development: 'Em desenvolvimento',
       approved: 'Aprovadas',
       candidate: 'Candidatas',
-      implemented: 'Ready',
-      done: 'Done',
+      implemented: 'Prontas',
+      done: 'Concluídas',
       superseded: 'Substituídas',
       rejected: 'Rejeitadas',
     } satisfies Record<FeatureState, string>,

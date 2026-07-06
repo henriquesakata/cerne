@@ -105,17 +105,19 @@ export default function Manage() {
                 <td>
                   <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>
                 </td>
-                <td className="manage-actions">
-                  {adv && (
-                    <button disabled={busy === f.id} onClick={() => quick(f, adv.action)}>
-                      {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete' | 'accept']}
-                    </button>
-                  )}
-                  {closeable && (
-                    <a className="manage-close" href={`#/f/${encodeURIComponent(f.id)}`}>
-                      {t.manage.close}
-                    </a>
-                  )}
+                <td className="manage-actions-cell">
+                  <div className="manage-actions">
+                    {adv && (
+                      <button disabled={busy === f.id} onClick={() => quick(f, adv.action)}>
+                        {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete' | 'accept']}
+                      </button>
+                    )}
+                    {closeable && (
+                      <a className="manage-close" href={`#/f/${encodeURIComponent(f.id)}`}>
+                        {t.manage.close}
+                      </a>
+                    )}
+                  </div>
                 </td>
               </tr>
             )
