@@ -828,7 +828,7 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	}
 	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent, req.Facets, req.Components)
 	if err != nil {
-		// Validation/module failures surface as 422 with the same pt-BR
+		// Validation/module failures surface as 422 with the same
 		// message the CLI prints, matching handleTransition.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
@@ -970,7 +970,7 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 	out, err := app.TransitionFeature(repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason)
 	if err != nil {
 		// Domain, gate and validation failures surface as 422 with the
-		// same pt-BR message the CLI prints.
+		// same message the CLI prints.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}
