@@ -19,6 +19,7 @@ import type {
 
 const ptBR = {
   nav: {
+    dashboard: 'Dashboard',
     kanban: 'Kanban',
     manage: 'Gestão',
     decisions: 'Decisões',
@@ -31,12 +32,43 @@ const ptBR = {
     search: 'Busca',
     lint: 'Lint',
     history: 'Histórico',
+    activity: 'Atividade',
     stats: 'Economia',
     project: 'projeto',
     themeLight: 'Tema claro',
     themeDark: 'Tema escuro',
     language: 'Idioma',
     versionTitle: 'Versão do cerne',
+  },
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'O resumo do projeto num olhar — cada card abre a tela detalhada.',
+    cardError: 'Erro ao carregar este card.',
+    roster: 'Features por estado',
+    totalFeatures: (n: number) => `${n} feature(s) no total`,
+    epics: 'Épicos',
+    noEpics: 'Nenhum épico.',
+    lint: 'Débitos de lint',
+    lintClean: 'Sem débitos. ✓',
+    savings: 'Economia de contexto',
+    savingsFoot: (ktokens: number) => `~${ktokens}k tokens fora do contexto do agente`,
+    activity: 'Atividade',
+    events: 'Últimos eventos',
+    noEvents: 'Nenhum evento.',
+  },
+  activity: {
+    title: 'Atividade',
+    subtitle:
+      'O que os agentes estão fazendo agora — registrado via CLI (cerne work start/done); esta aba é somente leitura.',
+    loadError: (e: string) => `Erro ao carregar a atividade: ${e}`,
+    activeGroup: 'Em andamento',
+    finishedGroup: 'Encerradas recentes',
+    emptyActive: 'Nenhuma atividade em andamento.',
+    stateLabels: {
+      active: 'Ativa',
+      done: 'Concluída',
+      abandoned: 'Abandonada',
+    },
   },
   stats: {
     title: 'Economia de contexto',
@@ -403,6 +435,7 @@ export type Messages = typeof ptBR
 
 const en: Messages = {
   nav: {
+    dashboard: 'Dashboard',
     kanban: 'Kanban',
     manage: 'Manage',
     decisions: 'Decisions',
@@ -415,12 +448,43 @@ const en: Messages = {
     search: 'Search',
     lint: 'Lint',
     history: 'History',
+    activity: 'Activity',
     stats: 'Savings',
     project: 'project',
     themeLight: 'Light theme',
     themeDark: 'Dark theme',
     language: 'Language',
     versionTitle: 'cerne version',
+  },
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'The project at a glance — each card opens the detailed view.',
+    cardError: 'Failed to load this card.',
+    roster: 'Features by state',
+    totalFeatures: (n: number) => `${n} feature(s) total`,
+    epics: 'Epics',
+    noEpics: 'No epics.',
+    lint: 'Lint debts',
+    lintClean: 'No debts. ✓',
+    savings: 'Context savings',
+    savingsFoot: (ktokens: number) => `~${ktokens}k tokens kept out of the agent's context`,
+    activity: 'Activity',
+    events: 'Recent events',
+    noEvents: 'No events.',
+  },
+  activity: {
+    title: 'Activity',
+    subtitle:
+      'What agents are working on right now — registered via CLI (cerne work start/done); this tab is read-only.',
+    loadError: (e: string) => `Failed to load activity: ${e}`,
+    activeGroup: 'In progress',
+    finishedGroup: 'Recently finished',
+    emptyActive: 'No activity in progress.',
+    stateLabels: {
+      active: 'Active',
+      done: 'Done',
+      abandoned: 'Abandoned',
+    },
   },
   stats: {
     title: 'Context savings',

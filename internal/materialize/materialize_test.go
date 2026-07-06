@@ -184,6 +184,34 @@ func TestMaterializeStateProjection(t *testing.T) {
 	}
 }
 
+// TestMaterializeDoneNotMaterializedButListed (F-0131 crit. 5): a done
+// feature yields no .docs/ content files (same as implemented) yet still
+// appears in the CONTEXT.md roster, so the guardian doesn't hide accepted
+// work from the map.
+func TestMaterializeDoneNotMaterializedButListed(t *testing.T) {
+	backend := seedBackend(t, "core")
+	addFeature(t, backend, "F-0001", "Tema escuro", "core", domain.StateDone,
+		map[string]string{"spec.md": "spec F-0001\n", "plan.md": "plan F-0001\n", "result.md": "result F-0001\n"})
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	manifest, err := Materialize(backend, docsDir, "", false)
+	if err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+
+	mustNotExist(t, filepath.Join(docsDir, "current", "features", "F-0001-tema-escuro"))
+	for rel := range manifest {
+		if strings.Contains(rel, "F-0001") {
+			t.Errorf("manifest leaks done feature content: %s", rel)
+		}
+	}
+
+	ctx := readContext(t, docsDir)
+	if !strings.Contains(ctx, "| F-0001 | done |  | core | Tema escuro |  |") {
+		t.Errorf("CONTEXT.md missing done row without docs:\n%s", ctx)
+	}
+}
+
 func TestMaterializeScope(t *testing.T) {
 	backend := seedBackend(t, "finance", "core")
 	addFeature(t, backend, "F-0001", "Parcelamento", "finance", domain.StateInDevelopment,

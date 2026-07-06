@@ -30,7 +30,7 @@ type Config struct {
 	// rule skips (F-0107) — e.g. the project's own code repo host, which is not an
 	// external source. Internal/local hosts (.local, localhost, private IPs) are
 	// always skipped and need no config.
-	UnregisteredSourceIgnore []string  `toml:"unregistered_source_ignore,omitempty"`
+	UnregisteredSourceIgnore []string `toml:"unregistered_source_ignore,omitempty"`
 	// ModulePaths maps a module name to the slash-separated path globs (of the
 	// user's project repo) that make up its code, e.g. core = ["internal/domain/**"].
 	// The drift-suspect lint rule (F-0113) uses it to map a changed file to the
@@ -43,7 +43,12 @@ type Config struct {
 	// StaleReadyDays is the window (days) an implemented ("Ready") feature may
 	// wait for human acceptance before the stale-ready lint flags it (F-0131).
 	// 0 (absent) means the 14-day default — read it via StaleReadyWindowDays.
-	StaleReadyDays int         `toml:"stale_ready_days,omitzero"`
+	StaleReadyDays int `toml:"stale_ready_days,omitzero"`
+	// StaleWorkHours is the window (hours) an active work (agent activity,
+	// F-0130) may go without a done/abandon before the stale-work lint flags
+	// it. 0 (absent) means the 8-hour default — read it via
+	// StaleWorkWindowHours.
+	StaleWorkHours int         `toml:"stale_work_hours,omitzero"`
 	Gates          GatesConfig `toml:"gates"` // F-0131: who may cross the human gates
 	LLM            LLMConfig   `toml:"llm"`   // optional v1.5 LLM layer config
 }
@@ -87,6 +92,15 @@ func (c Config) StaleReadyWindowDays() int {
 		return c.StaleReadyDays
 	}
 	return 14
+}
+
+// StaleWorkWindowHours returns the configured stale_work_hours or the 8-hour
+// default when absent/zero (F-0130).
+func (c Config) StaleWorkWindowHours() int {
+	if c.StaleWorkHours > 0 {
+		return c.StaleWorkHours
+	}
+	return 8
 }
 
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
@@ -147,21 +161,22 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 // would collide with when adding their own [llm] config.
 func SaveConfig(dir string, c Config) error {
 	type wire struct {
-		ProjectID                string     `toml:"project_id"`
-		Backend                  string     `toml:"backend"`
-		DefaultScope             string     `toml:"default_scope"`
-		OKF                      bool       `toml:"okf,omitempty"`
-		AutocommitLock           bool       `toml:"autocommit_lock,omitempty"`
+		ProjectID                string              `toml:"project_id"`
+		Backend                  string              `toml:"backend"`
+		DefaultScope             string              `toml:"default_scope"`
+		OKF                      bool                `toml:"okf,omitempty"`
+		AutocommitLock           bool                `toml:"autocommit_lock,omitempty"`
 		PinBranch                string              `toml:"pin_branch,omitempty"`
 		CompileOnPush            bool                `toml:"compile_on_push,omitempty"`
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
 		ComponentPaths           map[string][]string `toml:"component_paths,omitempty"`
 		StaleReadyDays           int                 `toml:"stale_ready_days,omitzero"`
+		StaleWorkHours           int                 `toml:"stale_work_hours,omitzero"`
 		Gates                    *GatesConfig        `toml:"gates,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if c.Gates != (GatesConfig{}) {
 		gates := c.Gates
 		w.Gates = &gates

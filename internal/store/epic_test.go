@@ -33,3 +33,17 @@ func TestChildrenByParentAndProgress(t *testing.T) {
 		t.Fatalf("EpicProgress(nil) = %d/%d, want 0/0", done, total)
 	}
 }
+
+// TestEpicProgressCountsDone (F-0131): done is the human-accepted successor
+// of implemented, so it counts as concluded in the epic n/m rollup too.
+func TestEpicProgressCountsDone(t *testing.T) {
+	children := []Feature{
+		{ID: "F-0002", State: domain.StateDone},
+		{ID: "F-0003", State: domain.StateImplemented},
+		{ID: "F-0004", State: domain.StateCandidate},
+	}
+	done, total := EpicProgress(children)
+	if done != 2 || total != 3 {
+		t.Fatalf("EpicProgress = %d/%d, want 2/3 (done + implemented both count)", done, total)
+	}
+}

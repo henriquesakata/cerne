@@ -112,6 +112,22 @@ type Historical struct {
 	CreatedAt    time.Time           `json:"created_at"`
 }
 
+// Work is the persisted form of a work entity: a transient agent activity
+// (F-0130) — "investigate error X", "review MR Y" — that is not a feature (no
+// gates/docs) but still needs to be visible so a second agent doesn't
+// duplicate it. It has no content document; Note is a short closing remark
+// captured at done/abandon time, not a body.
+type Work struct {
+	ID        string           `json:"id"`
+	Title     string           `json:"title"` // the activity description
+	State     domain.WorkState `json:"state"`
+	Actor     string           `json:"actor"`          // who is doing it: "<agent>" or "<user>@<hostname>"
+	Refs      []string         `json:"refs,omitempty"` // F-/D- ids this activity relates to
+	Note      string           `json:"note,omitempty"` // closing note (done) or reason (abandoned)
+	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
+}
+
 const (
 	featuresSubdir    = "entities/features"
 	decisionsSubdir   = "entities/decisions"
@@ -119,6 +135,7 @@ const (
 	runbooksSubdir    = "entities/runbooks"
 	notesSubdir       = "entities/notes"
 	historicalsSubdir = "entities/historicals"
+	worksSubdir       = "entities/works"
 )
 
 // SaveFeature writes the feature to entities/features/<ID>.json.
@@ -227,6 +244,25 @@ func LoadHistorical(backendDir, id string) (Historical, error) {
 // LoadAllHistoricals returns all historical entities sorted by ID ascending.
 func LoadAllHistoricals(backendDir string) ([]Historical, error) {
 	return loadAllEntities[Historical](backendDir, historicalsSubdir)
+}
+
+// SaveWork writes the work to entities/works/<ID>.json. saveEntity/
+// writeJSONFile create the subdir on demand, so a legacy backend (initialized
+// before F-0130, without entities/works/) works unchanged.
+func SaveWork(backendDir string, w Work) error {
+	return saveEntity(backendDir, worksSubdir, w.ID, w)
+}
+
+// LoadWork reads one work by id; ErrNotFound when the file is missing.
+func LoadWork(backendDir, id string) (Work, error) {
+	return loadEntity[Work](backendDir, worksSubdir, id)
+}
+
+// LoadAllWorks returns all works sorted by ID ascending; an empty slice (not
+// an error) when entities/works/ is absent — a legacy backend that predates
+// F-0130.
+func LoadAllWorks(backendDir string) ([]Work, error) {
+	return loadAllEntities[Work](backendDir, worksSubdir)
 }
 
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.

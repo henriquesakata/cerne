@@ -137,18 +137,20 @@ func mergeSettingsFile(dst string) (Status, error) {
 	}
 }
 
-// mergeSettings folds the PostToolUse/Bash hook entry into raw Claude Code
+// mergeSettings folds the PostToolUse/Bash hook entry and the
+// env.CERNE_ACTOR=agent marker (F-0131 crit. 11) into raw Claude Code
 // settings JSON (nil/empty → a fresh document). It returns the new content, a
-// changed flag (false when the entry is already present), and an error only when
+// changed flag (false when both are already present), and an error only when
 // raw is present but not valid JSON (fail-closed — the caller must not write).
 //
-// To keep tracked settings.json diffs honest, the entry is spliced into the raw
-// bytes surgically: existing key order, indentation, and escaping are preserved,
-// and only the new entry (plus a comma on the previous last element) is added —
-// not the whole-file reformat a map round-trip through json.MarshalIndent causes.
-// The splice is verified to be semantically identical to the map-based merge; on
-// any mismatch it falls back to a clean re-render (correct, just a coarser diff),
-// so a splicing bug can never write invalid or wrong JSON.
+// To keep tracked settings.json diffs honest, each entry is spliced into the
+// raw bytes surgically: existing key order, indentation, and escaping are
+// preserved, and only the new entry (plus a comma on the previous last
+// element) is added — not the whole-file reformat a map round-trip through
+// json.MarshalIndent causes. Each splice is verified to be semantically
+// identical to the map-based merge; on any mismatch the whole merge falls
+// back to a clean re-render (correct, just a coarser diff), so a splicing bug
+// can never write invalid or wrong JSON.
 func mergeSettings(raw []byte) ([]byte, bool, error) {
 	root := map[string]any{}
 	trimmed := bytes.TrimSpace(raw)
@@ -181,7 +183,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 			hasPTU = true
 		}
 	}
-	if hookPresent(post) {
+	needHook := !hookPresent(post)
+
+	envVal, hasEnv := root["env"]
+	var envMap map[string]any
+	if hasEnv {
+		m, ok := envVal.(map[string]any)
+		if !ok {
+			return nil, false, errors.New(`hooks: settings.json tem "env" com tipo inesperado`)
+		}
+		envMap = m
+	}
+	needActor := !actorPresent(envMap)
+
+	if !needHook && !needActor {
 		return nil, false, nil
 	}
 
@@ -189,19 +204,57 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 
 	// Fresh document: nothing to preserve, emit a clean (escape-safe) render.
 	if len(trimmed) == 0 {
-		out, err := marshalIndentNoHTML(withHookEntry(map[string]any{}), "", unit)
+		fresh := map[string]any{}
+		if needHook {
+			fresh = withHookEntry(fresh)
+		}
+		if needActor {
+			fresh = withActorEntry(fresh)
+		}
+		out, err := marshalIndentNoHTML(fresh, "", unit)
 		if err != nil {
 			return nil, false, err
 		}
 		return append(out, '\n'), true, nil
 	}
 
-	// Surgical splice on the raw bytes, verified against the canonical merge.
-	expected := withHookEntry(root)
-	if spliced, ok := spliceHook(raw, hasHooks, hasPTU, detectNewline(raw), unit); ok {
+	// Surgical splice on the raw bytes, verified against the canonical merge,
+	// one entry at a time (each re-parses the previous splice's output so the
+	// second splice sees the first's result). Any failure at any step falls
+	// back to a single clean re-render of the full expected document.
+	expected := map[string]any{}
+	for k, v := range root {
+		expected[k] = v
+	}
+	if needHook {
+		expected = withHookEntry(expected)
+	}
+	if needActor {
+		expected = withActorEntry(expected)
+	}
+
+	cur := raw
+	ok := true
+	if needHook {
+		spliced, spliceOK := spliceHook(cur, hasHooks, hasPTU, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needActor {
+		spliced, spliceOK := spliceActor(cur, hasEnv, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok {
 		var got map[string]any
-		if json.Unmarshal(spliced, &got) == nil && reflect.DeepEqual(got, expected) {
-			return spliced, true, nil
+		if json.Unmarshal(cur, &got) == nil && reflect.DeepEqual(got, expected) {
+			return cur, true, nil
 		}
 	}
 	// Fallback: correct but coarser diff (escaping still preserved).
@@ -229,6 +282,95 @@ func withHookEntry(root map[string]any) map[string]any {
 	hooksMap["PostToolUse"] = post
 	root["hooks"] = hooksMap
 	return root
+}
+
+// actorEnvKey/actorEnvValue are the env marker `cerne hook install` writes
+// (F-0131 crit. 11): CERNE_ACTOR=agent, so app.EventActor/CheckHumanGate can
+// tell an agent session apart from a human terminal (which never loads this
+// settings.json).
+const (
+	actorEnvKey   = "CERNE_ACTOR"
+	actorEnvValue = "agent"
+)
+
+// withActorEntry ensures root carries env.CERNE_ACTOR=agent, creating the env
+// object as needed and preserving any other env key already present.
+func withActorEntry(root map[string]any) map[string]any {
+	envMap, _ := root["env"].(map[string]any)
+	if envMap == nil {
+		envMap = map[string]any{}
+	} else {
+		clone := make(map[string]any, len(envMap)+1)
+		for k, v := range envMap {
+			clone[k] = v
+		}
+		envMap = clone
+	}
+	envMap[actorEnvKey] = actorEnvValue
+	root["env"] = envMap
+	return root
+}
+
+// actorPresent reports whether env already carries CERNE_ACTOR=agent — the
+// idempotency check for the actor merge.
+func actorPresent(envMap map[string]any) bool {
+	if envMap == nil {
+		return false
+	}
+	v, ok := envMap[actorEnvKey]
+	if !ok {
+		return false
+	}
+	s, ok := v.(string)
+	return ok && s == actorEnvValue
+}
+
+// spliceActor returns raw with env.CERNE_ACTOR=agent surgically inserted:
+// appended to the existing env object when present, else a new top-level env
+// object added to the root. ok=false if the target span cannot be located
+// (caller falls back to a render).
+func spliceActor(raw []byte, hasEnv bool, nl, unit string) ([]byte, bool) {
+	if hasEnv {
+		start, end, empty, ok := findSpan(raw, "env")
+		if !ok {
+			return nil, false
+		}
+		valText, err := marshalIndentNoHTML(actorEnvValue, "", unit)
+		if err != nil {
+			return nil, false
+		}
+		return spliceObjectAppendRaw(raw, start, end, empty, quoteKey(actorEnvKey)+": "+string(valText), nl, unit), true
+	}
+	start, end, empty, ok := findSpan(raw)
+	if !ok {
+		return nil, false
+	}
+	envVal := map[string]string{actorEnvKey: actorEnvValue}
+	envText, err := marshalIndentNoHTML(envVal, "", unit)
+	if err != nil {
+		return nil, false
+	}
+	return spliceObjectAppend(raw, start, end, empty, "env", string(envText), nl, unit), true
+}
+
+// spliceObjectAppendRaw is spliceObjectAppend for a caller that already
+// rendered the full "key": value member text (spliceObjectAppend renders the
+// value only and prefixes the key itself).
+func spliceObjectAppendRaw(raw []byte, start, end int, empty bool, member, nl, unit string) []byte {
+	objIndent := lineIndent(raw, start)
+	memberIndent := objIndent + unit
+	member = indentBlock(member, memberIndent)
+	var newObj string
+	if empty {
+		newObj = "{" + nlify("\n"+memberIndent+member+"\n"+objIndent, nl) + "}"
+	} else {
+		inner := string(raw[start+1 : end-1])
+		kept := strings.TrimRight(inner, " \t\r\n")
+		origTrail := inner[len(kept):]
+		frag := nlify(","+"\n"+memberIndent+member, nl)
+		newObj = "{" + kept + frag + origTrail + "}"
+	}
+	return concat(raw, start, end, newObj)
 }
 
 // hookCmd and matcherEntry render the new PostToolUse entry with conventional

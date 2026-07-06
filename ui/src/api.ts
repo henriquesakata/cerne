@@ -208,6 +208,26 @@ export async function fetchStats(): Promise<Stats> {
   return (await r.json()) as Stats
 }
 
+// Atividade de agentes (F-0130): work-in-progress compartilhado no backend.
+export type WorkState = 'active' | 'done' | 'abandoned'
+
+export type Work = {
+  id: string
+  title: string
+  state: WorkState
+  actor: string
+  refs?: string[]
+  note?: string
+  created_at: string
+  updated_at: string
+}
+
+export async function fetchWork(): Promise<Work[]> {
+  const r = await fetch(`${base()}/work`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { works: Work[] }).works ?? []
+}
+
 // fetchVersion devolve a versão do binário que está servindo a UI (F-0129).
 export async function fetchVersion(): Promise<string> {
   const r = await fetch(`${base()}/version`)
