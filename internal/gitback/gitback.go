@@ -118,6 +118,62 @@ func CommitAll(workdir, msg string) (string, error) {
 	return hash.String(), nil
 }
 
+// commitPathsHookAfterAdd, when non-nil, runs between staging and the status
+// check in CommitPaths. It exists for tests to inject a concurrent write into
+// the shared worktree and pin the race window of F-0121; production leaves it
+// nil.
+var commitPathsHookAfterAdd func()
+
+// CommitPaths stages and commits EXACTLY paths (modifications, additions and
+// deletions) in workdir's repository, with no push — the reconcile commit
+// primitive (F-0121). Unlike CommitAll it never sweeps the rest of the
+// worktree, so a concurrent process's uncommitted writes in the shared clone
+// cannot leak into this commit. ErrNothingToCommit when no declared path
+// differs from HEAD; go-git's raw ErrEmptyCommit is mapped to the same
+// sentinel, so the generic "cannot create empty commit" never escapes to a
+// caller after the guard.
+func CommitPaths(workdir string, paths []string, msg string) (string, error) {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return "", err
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return "", err
+	}
+	for _, p := range paths {
+		if _, err := wt.Add(p); err != nil {
+			return "", fmt.Errorf("stage %s: %w", p, err)
+		}
+	}
+	if commitPathsHookAfterAdd != nil {
+		commitPathsHookAfterAdd()
+	}
+	status, err := wt.Status()
+	if err != nil {
+		return "", err
+	}
+	staged := false
+	for _, p := range paths {
+		if s := status.File(p).Staging; s != git.Unmodified && s != git.Untracked {
+			staged = true
+			break
+		}
+	}
+	if !staged {
+		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
+	}
+	sig := &object.Signature{Name: "cerne", Email: "cerne@local", When: time.Now()}
+	hash, err := wt.Commit(msg, &git.CommitOptions{Author: sig, Committer: sig})
+	if errors.Is(err, git.ErrEmptyCommit) {
+		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
+	}
+	if err != nil {
+		return "", err
+	}
+	return hash.String(), nil
+}
+
 // Push pushes main to origin. NoErrAlreadyUpToDate is not an error. A
 // non-fast-forward rejection (the remote advanced) is returned as-is so callers
 // can classify it with IsNonFastForward and retry.

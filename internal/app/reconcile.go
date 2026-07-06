@@ -86,6 +86,12 @@ var (
 // exercise the non-fast-forward retry path; production leaves it nil.
 var reconcileHookBeforePush func(attempt int)
 
+// reconcileHookAfterWrite, when non-nil, runs between materializing the merged
+// changes and committing them. It exists for tests to inject a concurrent
+// process's write into the shared worktree and pin that the commit covers only
+// the applied paths (F-0121); production leaves it nil.
+var reconcileHookAfterWrite func()
+
 // ReconcileCommitPush brings the shared backend clone to the latest origin/main
 // and applies changes as a per-document 3-way merge over base (the commit the
 // changes were authored against), then commits and pushes — retrying with
@@ -106,6 +112,32 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 				return err
 			}
 		}
+		var err error
+		head, conflicts, err = reconcileLocked(repoDir, base, msg, changes)
+		return err
+	})
+	if lockErr != nil {
+		return "", nil, lockErr
+	}
+	if len(conflicts) > 0 {
+		return "", conflicts, nil
+	}
+	if head != "" {
+		if err := updateSnapshot(projDir, head); err != nil {
+			return "", nil, err
+		}
+	}
+	return head, nil, nil
+}
+
+// reconcileLocked is the fetch/merge/commit/push retry loop of
+// ReconcileCommitPush, extracted so MutateAndSnapshot can run a domain
+// mutation and this loop inside ONE critical section of the backend lock
+// (F-0121). The caller must hold the lock.
+func reconcileLocked(repoDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
+	var head string
+	var conflicts []Conflict
+	err := func() error {
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
 			if err := gitback.Fetch(repoDir); err != nil {
 				return err
@@ -146,7 +178,16 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 			if err := writeChanges(repoDir, apply); err != nil {
 				return err
 			}
-			sha, err := gitback.CommitAll(repoDir, msg)
+			if reconcileHookAfterWrite != nil {
+				reconcileHookAfterWrite()
+			}
+			// Commit exactly the applied paths: a concurrent process's writes in
+			// the shared worktree must never be swept into this commit (F-0121).
+			paths := make([]string, len(apply))
+			for i, ch := range apply {
+				paths[i] = ch.Path
+			}
+			sha, err := gitback.CommitPaths(repoDir, paths, msg)
 			if errors.Is(err, gitback.ErrNothingToCommit) {
 				head = theirs // merged content equals theirs byte-for-byte
 				return nil
@@ -175,19 +216,8 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 			return nil
 		}
 		return ErrTooConcurrent
-	})
-	if lockErr != nil {
-		return "", nil, lockErr
-	}
-	if len(conflicts) > 0 {
-		return "", conflicts, nil
-	}
-	if head != "" {
-		if err := updateSnapshot(projDir, head); err != nil {
-			return "", nil, err
-		}
-	}
-	return head, nil, nil
+	}()
+	return head, conflicts, err
 }
 
 // plan3Way decides, per change, what to apply given the base and remote (theirs)
