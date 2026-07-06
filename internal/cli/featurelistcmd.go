@@ -21,6 +21,7 @@ var featureStateOrder = []domain.FeatureState{
 	domain.StateApproved,
 	domain.StateInDevelopment,
 	domain.StateImplemented,
+	domain.StateDone,
 	domain.StateSuperseded,
 	domain.StateRejected,
 }
@@ -49,7 +50,7 @@ func newFeatureListCmd(dir *string) *cobra.Command {
 			return runFeatureList(cmd, *dir, state, module, parent, facet, component, all, asJSON)
 		},
 	}
-	cmd.Flags().StringVar(&state, "state", "", "filter by exact state (candidate|approved|in_development|implemented|superseded|rejected)")
+	cmd.Flags().StringVar(&state, "state", "", "filter by exact state (candidate|approved|in_development|implemented|done|superseded|rejected)")
 	cmd.Flags().StringVar(&module, "module", "", "filter by module (e.g. gitback)")
 	cmd.Flags().StringVar(&parent, "parent", "", "filter by the children of this epic (e.g. F-0050)")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")

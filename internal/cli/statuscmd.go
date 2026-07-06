@@ -21,6 +21,7 @@ var statusStateShort = map[domain.FeatureState]string{
 	domain.StateApproved:      "approved",
 	domain.StateInDevelopment: "in development",
 	domain.StateImplemented:   "implemented",
+	domain.StateDone:          "done",
 	domain.StateSuperseded:    "superseded",
 	domain.StateRejected:      "rejected",
 }
@@ -37,6 +38,9 @@ var statusDefaultGroups = []statusGroup{
 	{domain.StateApproved, "APPROVED"},
 	{domain.StateCandidate, "CANDIDATES"},
 	{domain.StateImplemented, "IMPLEMENTED"},
+	// done (F-0131) is accepted history: shown by default like implemented
+	// (the kanban's Done column), hidden by --active with the rest.
+	{domain.StateDone, "DONE"},
 }
 
 var statusTerminalGroups = []statusGroup{
