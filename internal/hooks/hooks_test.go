@@ -179,10 +179,24 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
           }
         ]
       }`
+	// The SessionStart reminder block (F-0139), inserted as a new member of the
+	// hooks object after PostToolUse.
+	ssBlock := `    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-register-reminder.sh\""
+          }
+        ]
+      }
+    ]`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
-	// block is inserted before PostToolUse's closing bracket; the CERNE_ACTOR
-	// key is appended inside the existing inline env object. Nothing else moves.
+	// block is inserted before PostToolUse's closing bracket; the SessionStart
+	// member is appended to the hooks object; the CERNE_ACTOR key is appended
+	// inside the existing inline env object. Nothing else moves.
 	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+"\n    ]", 1)
+	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
@@ -248,6 +262,16 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-register-reminder.sh\""
+          }
+        ]
+      }
     ]
   },
   "env": {
@@ -295,6 +319,16 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-register-reminder.sh\""
           }
         ]
       }

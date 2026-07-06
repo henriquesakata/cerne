@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/hooks"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/skills"
 	"gitlab.com/rockt/cerne/internal/slug"
@@ -127,6 +128,15 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's skills: %v\n", err)
 	} else {
 		printSkillResults(out, results)
+	}
+
+	// Install cerne's Claude Code hooks too (F-0139): the provenance gate and
+	// the SessionStart registration reminder, so a new project is born with the
+	// register-before-implementing rules injected. Same non-fatal stance.
+	if results, err := hooks.Install(targetDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's hooks: %v\n", err)
+	} else {
+		printHookResults(out, results)
 	}
 
 	// Wire docs.lock to the merge driver so concurrent branches don't conflict

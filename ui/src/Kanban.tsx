@@ -12,7 +12,7 @@ import {
   type FeatureState,
   type StateResponse,
 } from './api'
-import Tag from './Tag'
+import Tag, { tagCounts } from './Tag'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -45,10 +45,6 @@ function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
       else next.add(v)
       return next
     })
-}
-
-function sortedUnique(values: string[]): string[] {
-  return Array.from(new Set(values)).sort()
 }
 
 export default function Kanban() {
@@ -92,11 +88,11 @@ export default function Kanban() {
   // available chips stay stable as the user narrows down. Computed before the
   // early returns so the hook order is stable.
   const allFacets = useMemo(
-    () => sortedUnique((state?.features ?? []).flatMap((f) => f.facets ?? [])),
+    () => tagCounts((state?.features ?? []).flatMap((f) => f.facets ?? [])),
     [state],
   )
   const allComponents = useMemo(
-    () => sortedUnique((state?.features ?? []).flatMap((f) => f.components ?? [])),
+    () => tagCounts((state?.features ?? []).flatMap((f) => f.components ?? [])),
     [state],
   )
 
@@ -168,10 +164,11 @@ export default function Kanban() {
               <span className="note-filter-label">{t.common.facets}</span>
               {allFacets.map((f) => (
                 <Tag
-                  key={f}
+                  key={f.value}
                   axis="facet"
-                  value={f}
-                  active={selFacets.has(f)}
+                  value={f.value}
+                  count={f.count}
+                  active={selFacets.has(f.value)}
                   onToggle={toggleFacet}
                 />
               ))}
@@ -182,10 +179,11 @@ export default function Kanban() {
               <span className="note-filter-label">{t.common.components}</span>
               {allComponents.map((c) => (
                 <Tag
-                  key={c}
+                  key={c.value}
                   axis="component"
-                  value={c}
-                  active={selComponents.has(c)}
+                  value={c.value}
+                  count={c.count}
+                  active={selComponents.has(c.value)}
                   onToggle={toggleComponent}
                 />
               ))}
