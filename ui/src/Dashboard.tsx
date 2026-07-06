@@ -211,7 +211,8 @@ function ActivityCard() {
 function EventsCard() {
   const { t, lang } = useT()
   const { data, error } = useCard<LifecycleEvent[]>(fetchEvents)
-  const recent = (data ?? []).slice(-5).reverse()
+  // O endpoint já devolve newest-first (handleEvents inverte a ordem do log).
+  const recent = (data ?? []).slice(0, 5)
   return (
     <Card title={t.dashboard.events} href="#/history" error={error}>
       {recent.length === 0 && <p className="muted">{t.dashboard.noEvents}</p>}
