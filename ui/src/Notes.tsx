@@ -6,7 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
-import Tag from './Tag'
+import Tag, { tagCounts } from './Tag'
 import {
   fetchNote,
   fetchState,
@@ -30,10 +30,6 @@ function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
     })
 }
 
-function sortedUnique(values: string[]): string[] {
-  return Array.from(new Set(values)).sort()
-}
-
 export default function Notes() {
   const [notes, setNotes] = useState<Note[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -54,11 +50,11 @@ export default function Notes() {
   // Filter options are derived from every loaded note (not the filtered set), so
   // the available chips stay stable as the user narrows down (crit. 6).
   const allFacets = useMemo(
-    () => sortedUnique((notes ?? []).flatMap((n) => n.facets ?? [])),
+    () => tagCounts((notes ?? []).flatMap((n) => n.facets ?? [])),
     [notes],
   )
   const allComponents = useMemo(
-    () => sortedUnique((notes ?? []).flatMap((n) => n.components ?? [])),
+    () => tagCounts((notes ?? []).flatMap((n) => n.components ?? [])),
     [notes],
   )
 
@@ -103,10 +99,11 @@ export default function Notes() {
               <span className="note-filter-label">{t.common.facets}</span>
               {allFacets.map((f) => (
                 <Tag
-                  key={f}
+                  key={f.value}
                   axis="facet"
-                  value={f}
-                  active={selFacets.has(f)}
+                  value={f.value}
+                  count={f.count}
+                  active={selFacets.has(f.value)}
                   onToggle={toggleFacet}
                 />
               ))}
@@ -117,10 +114,11 @@ export default function Notes() {
               <span className="note-filter-label">{t.common.components}</span>
               {allComponents.map((c) => (
                 <Tag
-                  key={c}
+                  key={c.value}
                   axis="component"
-                  value={c}
-                  active={selComponents.has(c)}
+                  value={c.value}
+                  count={c.count}
+                  active={selComponents.has(c.value)}
                   onToggle={toggleComponent}
                 />
               ))}

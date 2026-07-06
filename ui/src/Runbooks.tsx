@@ -6,7 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
-import Tag from './Tag'
+import Tag, { tagCounts } from './Tag'
 import {
   fetchRunbook,
   fetchState,
@@ -30,10 +30,6 @@ function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
     })
 }
 
-function sortedUnique(values: string[]): string[] {
-  return Array.from(new Set(values)).sort()
-}
-
 export default function Runbooks() {
   const [runbooks, setRunbooks] = useState<Runbook[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -54,11 +50,11 @@ export default function Runbooks() {
   // Filter options derive from every loaded runbook (not the filtered set), so the
   // available chips stay stable as the user narrows down (mirrors References).
   const allFacets = useMemo(
-    () => sortedUnique((runbooks ?? []).flatMap((rb) => rb.facets ?? [])),
+    () => tagCounts((runbooks ?? []).flatMap((rb) => rb.facets ?? [])),
     [runbooks],
   )
   const allComponents = useMemo(
-    () => sortedUnique((runbooks ?? []).flatMap((rb) => rb.components ?? [])),
+    () => tagCounts((runbooks ?? []).flatMap((rb) => rb.components ?? [])),
     [runbooks],
   )
 
@@ -102,7 +98,14 @@ export default function Runbooks() {
             <div className="note-filter-group">
               <span className="note-filter-label">{t.common.facets}</span>
               {allFacets.map((f) => (
-                <Tag key={f} axis="facet" value={f} active={selFacets.has(f)} onToggle={toggleFacet} />
+                <Tag
+                  key={f.value}
+                  axis="facet"
+                  value={f.value}
+                  count={f.count}
+                  active={selFacets.has(f.value)}
+                  onToggle={toggleFacet}
+                />
               ))}
             </div>
           )}
@@ -111,10 +114,11 @@ export default function Runbooks() {
               <span className="note-filter-label">{t.common.components}</span>
               {allComponents.map((c) => (
                 <Tag
-                  key={c}
+                  key={c.value}
                   axis="component"
-                  value={c}
-                  active={selComponents.has(c)}
+                  value={c.value}
+                  count={c.count}
+                  active={selComponents.has(c.value)}
                   onToggle={toggleComponent}
                 />
               ))}
