@@ -13,6 +13,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -33,6 +34,7 @@ var eventTypes = map[domain.Action]string{
 	domain.ActionReject:    "feature.rejected",
 	domain.ActionStart:     "feature.started",
 	domain.ActionComplete:  "feature.completed",
+	domain.ActionAccept:    "feature.accepted",
 	domain.ActionSupersede: "feature.superseded",
 }
 
@@ -109,6 +111,26 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
 			return "", err
+		}
+		// End-of-flow bypass (F-0131): with [gates] accept = "auto" the complete
+		// carries the feature straight to done in the same critical section —
+		// both events land in one commit. Default (human) stops at implemented
+		// ("Ready") and waits for the explicit human accept.
+		if action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto {
+			promoted, err := domain.Transition(f.State, domain.ActionAccept)
+			if err != nil {
+				return "", err
+			}
+			f.State = promoted
+			f.UpdatedAt = time.Now().UTC()
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				return "", err
+			}
+			ev := domain.NewEvent(id, eventTypes[domain.ActionAccept], map[string]string{"via": "auto"}, EventActor())
+			if err := store.AppendEvent(repoDir, ev); err != nil {
+				return "", err
+			}
+			newState = promoted
 		}
 		// Approving a candidate opens the plan phase: scaffold the plan stub from the
 		// canonical template so it is committed alongside the approval (mirrors the
@@ -227,6 +249,11 @@ func ValidateTransitionFlags(action domain.Action, by, reason string) error {
 		}
 		if reason == "" {
 			return fmt.Errorf("--reason é obrigatório para reject")
+		}
+	case domain.ActionAccept:
+		// The acceptance note is optional: the accept is an act, not a document.
+		if by != "" {
+			return fmt.Errorf("--by não é permitido para accept")
 		}
 	default:
 		if by != "" || reason != "" {
