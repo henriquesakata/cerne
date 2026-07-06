@@ -40,7 +40,53 @@ type Config struct {
 	// path globs, matching a feature through its Components. It is what makes the
 	// drift rule work in a moduleless project. Same opt-in stance as ModulePaths.
 	ComponentPaths map[string][]string `toml:"component_paths,omitempty"`
-	LLM            LLMConfig           `toml:"llm"` // optional v1.5 LLM layer config
+	// StaleReadyDays is the window (days) an implemented ("Ready") feature may
+	// wait for human acceptance before the stale-ready lint flags it (F-0131).
+	// 0 (absent) means the 14-day default — read it via StaleReadyWindowDays.
+	StaleReadyDays int         `toml:"stale_ready_days,omitzero"`
+	Gates          GatesConfig `toml:"gates"` // F-0131: who may cross the human gates
+	LLM            LLMConfig   `toml:"llm"`   // optional v1.5 LLM layer config
+}
+
+// Gate values for the [gates] block (F-0131). Default is human on both ends;
+// "auto" is the explicit per-project bypass. Any other value reads as human
+// (fail-safe: a typo must not silently open a gate).
+const (
+	GateHuman = "human"
+	GateAuto  = "auto"
+)
+
+// GatesConfig is the optional [gates] block of .cernerc (F-0131): approve is
+// the start-of-flow gate (spec approval), accept the end-of-flow gate (human
+// validation of an implemented feature).
+type GatesConfig struct {
+	Approve string `toml:"approve,omitempty"` // "human" (default) | "auto"
+	Accept  string `toml:"accept,omitempty"`  // "human" (default) | "auto"
+}
+
+// ApproveGate resolves the start gate: auto only when explicitly configured.
+func (g GatesConfig) ApproveGate() string {
+	if g.Approve == GateAuto {
+		return GateAuto
+	}
+	return GateHuman
+}
+
+// AcceptGate resolves the end gate: auto only when explicitly configured.
+func (g GatesConfig) AcceptGate() string {
+	if g.Accept == GateAuto {
+		return GateAuto
+	}
+	return GateHuman
+}
+
+// StaleReadyWindowDays returns the configured stale_ready_days or the 14-day
+// default when absent/zero.
+func (c Config) StaleReadyWindowDays() int {
+	if c.StaleReadyDays > 0 {
+		return c.StaleReadyDays
+	}
+	return 14
 }
 
 // LLMConfig is the optional [llm] block of .cernerc. A secret never lives
@@ -111,9 +157,15 @@ func SaveConfig(dir string, c Config) error {
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
 		ComponentPaths           map[string][]string `toml:"component_paths,omitempty"`
+		StaleReadyDays           int                 `toml:"stale_ready_days,omitzero"`
+		Gates                    *GatesConfig        `toml:"gates,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays}
+	if c.Gates != (GatesConfig{}) {
+		gates := c.Gates
+		w.Gates = &gates
+	}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm

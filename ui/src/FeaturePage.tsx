@@ -615,7 +615,12 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
     { action: 'complete', form: 'none' },
     { action: 'supersede', form: 'supersede' },
   ],
-  implemented: [{ action: 'supersede', form: 'supersede' }],
+  implemented: [
+    // Accept é o gate humano (F-0131): valida o implementado → done.
+    { action: 'accept', form: 'none' },
+    { action: 'supersede', form: 'supersede' },
+  ],
+  done: [],
   rejected: [],
   superseded: [],
 }
@@ -751,7 +756,9 @@ function EpicPanel({
     }
   }, [editing, features])
 
-  const done = childFeatures.filter((c) => c.state === 'implemented').length
+  const done = childFeatures.filter(
+    (c) => c.state === 'implemented' || c.state === 'done',
+  ).length
   const eligible = (features ?? []).filter(
     (f) =>
       f.id !== feature.id &&

@@ -195,6 +195,66 @@ func TestStatusEpics(t *testing.T) {
 	}
 }
 
+// TestStatusDone pins the F-0131 acceptance state: a done feature gets its own
+// DONE group after IMPLEMENTED in the default view, counts in the total, shows
+// the [done] short label in the EPICS child list (counting toward the epic
+// rollup), and is hidden by --active like the rest of the finished history.
+func TestStatusDone(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Epico ativo", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filho aceito", Parent: "F-0001", State: domain.StateDone},
+		{ID: "F-0003", Title: "Filho aprovado", Parent: "F-0001", State: domain.StateApproved},
+		{ID: "F-0004", Title: "Pronta aguardando aceite", State: domain.StateImplemented},
+		{ID: "F-0005", Title: "Aceita solta", State: domain.StateDone},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed done"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "status", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status: %v\noutput: %s", err, out)
+	}
+	// DONE comes after IMPLEMENTED, both done features counted (child + loose).
+	implIdx := strings.Index(out, "IMPLEMENTED (1)")
+	doneIdx := strings.Index(out, "DONE (2)")
+	if implIdx < 0 || doneIdx < 0 || doneIdx < implIdx {
+		t.Fatalf("want DONE (2) after IMPLEMENTED (1):\n%s", out)
+	}
+	if !strings.Contains(out, "  F-0005  Aceita solta\n") {
+		t.Fatalf("done feature row missing:\n%s", out)
+	}
+	if !strings.Contains(out, "Total: 5 feature(s)\n") {
+		t.Fatalf("total should count done features:\n%s", out)
+	}
+	// Epic rollup counts the accepted child; short label is [done].
+	if !strings.Contains(out, "  F-0001  Epico ativo — 1/2 implemented\n") {
+		t.Fatalf("epic progress should count done child:\n%s", out)
+	}
+	if !strings.Contains(out, "    F-0002  [done]  Filho aceito\n") {
+		t.Fatalf("epic child missing [done] label:\n%s", out)
+	}
+
+	// --active hides DONE together with IMPLEMENTED.
+	out, err = execCerne(t, "status", "--active", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status --active: %v\noutput: %s", err, out)
+	}
+	for _, banned := range []string{"DONE", "Aceita solta", "IMPLEMENTED"} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("--active leaks %q:\n%s", banned, out)
+		}
+	}
+}
+
 func TestStatusEmptyProject(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 

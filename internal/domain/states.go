@@ -10,7 +10,7 @@ func ValidStates(kind string) ([]string, bool) {
 	case "feature":
 		return []string{
 			string(StateCandidate), string(StateApproved), string(StateInDevelopment),
-			string(StateImplemented), string(StateRejected), string(StateSuperseded),
+			string(StateImplemented), string(StateDone), string(StateRejected), string(StateSuperseded),
 		}, true
 	case "decision":
 		return []string{string(DecisionActive), string(DecisionSuperseded)}, true

@@ -239,6 +239,49 @@ func TestFeatureListInvalidState(t *testing.T) {
 	}
 }
 
+// TestFeatureListDone pins the F-0131 acceptance state in the flat listing: a
+// done feature is visible by default (like implemented — only superseded and
+// rejected are hidden), --state done filters to it, and the valid-states hint
+// includes done.
+func TestFeatureListDone(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Pronta", State: domain.StateImplemented},
+		{ID: "F-0002", Title: "Aceita", State: domain.StateDone},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed done"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "feature", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0002  [done]  Aceita\n") {
+		t.Fatalf("done feature hidden in default listing:\n%s", out)
+	}
+
+	out, err = execCerne(t, "feature", "list", "--state", "done", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list --state done: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0002  [") || strings.Contains(out, "F-0001  [") {
+		t.Fatalf("--state done should show only F-0002:\n%s", out)
+	}
+
+	_, err = execCerne(t, "feature", "list", "--state", "nope", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "done") {
+		t.Fatalf("valid-states hint should include done, got: %v", err)
+	}
+}
+
 // TestFeatureListEmpty pins the two empty cases: no features at all vs. filters
 // matching nothing.
 func TestFeatureListEmpty(t *testing.T) {

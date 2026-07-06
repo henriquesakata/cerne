@@ -13,6 +13,7 @@ const STATE_ORDER: FeatureState[] = [
   'approved',
   'in_development',
   'implemented',
+  'done',
   'rejected',
   'superseded',
 ]
@@ -26,6 +27,8 @@ const QUICK_ADVANCE: Partial<
   candidate: { action: 'approve' },
   approved: { action: 'start' },
   in_development: { action: 'complete' },
+  // Accept é o gate humano (F-0131) — a UI é interação humana por definição.
+  implemented: { action: 'accept' },
 }
 
 export default function Manage() {
@@ -105,7 +108,7 @@ export default function Manage() {
                 <td className="manage-actions">
                   {adv && (
                     <button disabled={busy === f.id} onClick={() => quick(f, adv.action)}>
-                      {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete']}
+                      {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete' | 'accept']}
                     </button>
                   )}
                   {closeable && (
