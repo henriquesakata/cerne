@@ -602,6 +602,62 @@ h2 {
 .nav-link:hover { background: var(--surface-3); }
 .nav-link.active { background: var(--fg); color: var(--bg); }
 
+/* versão do binário ao lado da marca (F-0129) */
+.nav-version {
+  margin-left: 0.45rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--faint);
+}
+
+/* ---- economia de contexto (#/stats, F-0127) ---- */
+
+.stats-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 1rem;
+}
+
+.stats-pct {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-hero-caption { color: var(--muted); font-size: 0.95rem; }
+
+.stats-cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+
+.stats-card {
+  flex: 1 1 12rem;
+  min-width: 12rem;
+  background: var(--surface);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+.stats-card-saved { border-color: var(--green-border); background: var(--green-bg-2); }
+.stats-card-main { margin: 0.3rem 0 0; font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats-unit { font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+.stats-card-sub { margin: 0.15rem 0 0; font-size: 0.85rem; color: var(--muted); }
+
+.stats-table th {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.8rem;
+  text-align: left;
+  color: var(--muted);
+}
+
+.stats-subhead th { font-size: 0.72rem; font-weight: 400; }
+.stats-note { margin-top: 0.75rem; font-size: 0.8rem; }
+
 /* toggle de tema (F-0126): botão ícone no canto direito do header */
 .theme-toggle {
   font: inherit;

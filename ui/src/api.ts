@@ -178,6 +178,41 @@ export async function fetchState(): Promise<StateResponse> {
   return (await r.json()) as StateResponse
 }
 
+// Métrica de economia de contexto (F-0127): acervo completo vs projeção
+// corrente, por tipo e no total — espelho de materialize.Stats.
+export type KindStats = {
+  count: number
+  bytes: number
+  current_count: number
+  current_bytes: number
+}
+
+export type Stats = {
+  kinds: Record<string, KindStats>
+  total_count: number
+  current_count: number
+  total_bytes: number
+  current_bytes: number
+  saved_bytes: number
+  saved_pct: number
+  total_tokens_est: number
+  current_tokens_est: number
+  saved_tokens_est: number
+}
+
+export async function fetchStats(): Promise<Stats> {
+  const r = await fetch(`${base()}/stats`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Stats
+}
+
+// fetchVersion devolve a versão do binário que está servindo a UI (F-0129).
+export async function fetchVersion(): Promise<string> {
+  const r = await fetch(`${base()}/version`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { version: string }).version
+}
+
 export async function fetchFeature(id: string): Promise<FeatureDetail> {
   const r = await fetch(`${base()}/features/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))

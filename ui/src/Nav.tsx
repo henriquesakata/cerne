@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useProjects } from './live'
 import { useTheme } from './theme'
 import { useT, type Lang, type Messages } from './i18n'
+import { fetchVersion } from './api'
 
 // Barra de navegação persistente: o shell que torna as páginas alcançáveis.
 const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
@@ -16,6 +18,7 @@ const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
   { href: '#/search', key: 'search' },
   { href: '#/lint', key: 'lint' },
   { href: '#/history', key: 'history' },
+  { href: '#/stats', key: 'stats' },
 ]
 
 // activeHref mapeia a rota atual para o link de seção que deve ficar ativo.
@@ -32,6 +35,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/search')) return '#/search'
   if (hash.startsWith('#/lint')) return '#/lint'
   if (hash.startsWith('#/history')) return '#/history'
+  if (hash.startsWith('#/stats')) return '#/stats'
   return '#/' // kanban e detalhe de feature (#/f/<id>)
 }
 
@@ -40,7 +44,10 @@ export default function Nav({ hash }: { hash: string }) {
   const active = activeHref(hash)
   return (
     <nav className="nav">
-      <span className="nav-brand">cerne</span>
+      <span className="nav-brand">
+        cerne
+        <NavVersion />
+      </span>
       <div className="nav-links">
         {LINKS.map((l) => (
           <a
@@ -56,6 +63,25 @@ export default function Nav({ hash }: { hash: string }) {
       <LangToggle />
       <ThemeToggle />
     </nav>
+  )
+}
+
+// Versão do binário que está servindo a UI (F-0129), discreta ao lado da marca.
+function NavVersion() {
+  const { t } = useT()
+  const { activePid } = useProjects()
+  const [v, setV] = useState('')
+  useEffect(() => {
+    if (!activePid) return // a rota é escopada por projeto; espera o pid
+    fetchVersion()
+      .then(setV)
+      .catch(() => setV('')) // sem versão ≠ erro de UI: só omite
+  }, [activePid])
+  if (!v) return null
+  return (
+    <span className="nav-version" title={t.nav.versionTitle}>
+      {v}
+    </span>
   )
 }
 
