@@ -753,10 +753,12 @@ type lintResponse struct {
 
 func handleLint(w http.ResponseWriter, repoDir, projDir string) {
 	var ignore []string
+	staleReadyDays := 0
 	if cfg, _, err := project.LoadConfig(projDir); err == nil {
 		ignore = cfg.UnregisteredSourceIgnore
+		staleReadyDays = cfg.StaleReadyWindowDays()
 	}
-	findings, err := lint.Run(repoDir, ignore...)
+	findings, err := lint.RunConfig(repoDir, staleReadyDays, ignore...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
