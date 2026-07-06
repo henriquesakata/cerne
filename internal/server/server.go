@@ -23,8 +23,10 @@ import (
 	"gitlab.com/rockt/cerne/internal/index"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
+	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/version"
 	"gitlab.com/rockt/cerne/ui"
 )
 
@@ -51,6 +53,23 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 	})
 	mux.Handle("/", spaHandler())
 	return mux
+}
+
+// handleVersion returns the binary's build version (F-0129) — the same string
+// `cerne --version` reports, so the UI can show which build is serving it.
+func handleVersion(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
+}
+
+// handleStats returns the context-savings metric (F-0127): full corpus vs
+// current projection, per kind and total, computed by materialize.ComputeStats.
+func handleStats(w http.ResponseWriter, repoDir string) {
+	s, err := materialize.ComputeStats(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
 }
 
 // handleGraph returns the deterministic entity relationship graph

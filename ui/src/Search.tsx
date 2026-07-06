@@ -1,11 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { search, type SearchHit } from './api'
-
-const KIND_LABELS: Record<string, string> = {
-  feature: 'feature',
-  decision: 'decisão',
-  reference: 'referência',
-}
+import { useT } from './i18n'
 
 // hitHref leva ao detalhe da entidade conforme o tipo (#/f, #/d, #/r).
 function hitHref(h: SearchHit): string {
@@ -18,6 +13,7 @@ export default function Search() {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { t } = useT()
 
   const run = (e: FormEvent) => {
     e.preventDefault()
@@ -38,23 +34,23 @@ export default function Search() {
 
   return (
     <main className="page">
-      <h1>Busca</h1>
+      <h1>{t.search.title}</h1>
       <p className="muted">
-        Busca full-text sobre todo o histórico (inclui substituídas e rejeitadas).
+        {t.search.intro}
       </p>
       <form className="search-form" onSubmit={run}>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="termo…"
+          placeholder={t.search.placeholder}
           autoFocus
         />
         <button type="submit" disabled={busy || query.trim() === ''}>
-          Buscar
+          {t.search.button}
         </button>
       </form>
-      {error && <p className="status error">Erro na busca: {error}</p>}
-      {hits && hits.length === 0 && <p className="muted">Nada encontrado.</p>}
+      {error && <p className="status error">{t.search.error(error)}</p>}
+      {hits && hits.length === 0 && <p className="muted">{t.search.nothing}</p>}
       {hits && hits.length > 0 && (
         <ul className="entity-list">
           {hits.map((h, i) => (
@@ -62,7 +58,7 @@ export default function Search() {
               <a className="entity-row" href={hitHref(h)}>
                 <span className="card-id">{h.entity_id}</span>
                 <span className="badge">
-                  {KIND_LABELS[h.kind] ?? h.kind}
+                  {(t.search.kindLabels as Record<string, string>)[h.kind] ?? h.kind}
                   {h.doc ? `/${h.doc}` : ''}
                 </span>
                 <span className="entity-title">{h.title}</span>

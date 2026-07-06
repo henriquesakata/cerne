@@ -18,6 +18,7 @@ import {
   type GraphEdgeType,
 } from './api'
 import { useLiveVersion } from './live'
+import { useT } from './i18n'
 
 // Grafo explicativo das entidades: arestas tipadas + com motivo, layout em
 // camadas (a espinha de substituição é um DAG). Determinístico — os dados vêm
@@ -34,12 +35,6 @@ const KIND_COLOR: Record<GraphKind, string> = {
   reference: '#0d9488',
   historical: '#6b7280',
 }
-const KIND_LABEL: Record<GraphKind, string> = {
-  feature: 'feature',
-  decision: 'decisão',
-  reference: 'referência',
-  historical: 'histórico',
-}
 const EDGE_STROKE: Record<GraphEdgeType, string> = {
   superseded_by: '#d97706',
   part_of: '#2563eb',
@@ -51,12 +46,6 @@ const EDGE_DASH: Record<GraphEdgeType, string | undefined> = {
   part_of: undefined,
   informs: '6 3',
   links: '2 4',
-}
-const EDGE_LABEL: Record<GraphEdgeType, string> = {
-  superseded_by: 'substituída por',
-  part_of: 'parte de',
-  informs: 'informa',
-  links: 'cita',
 }
 const TERMINAL = new Set(['superseded', 'rejected', 'obsolete'])
 
@@ -75,21 +64,8 @@ function nodeHref(kind: GraphKind, id: string): string {
 
 type Conn = { dir: 'out' | 'in'; other: string; type: GraphEdgeType; reason?: string }
 
-// connText renders one connection of the selected node as a pt-BR phrase.
-function connText(c: Conn): string {
-  switch (c.type) {
-    case 'superseded_by':
-      return c.dir === 'out' ? `substituída por ${c.other}` : `substitui ${c.other}`
-    case 'informs':
-      return c.dir === 'out' ? `informa ${c.other}` : `fonte ${c.other}`
-    case 'links':
-      return c.dir === 'out' ? `cita ${c.other}` : `citada por ${c.other}`
-    case 'part_of':
-      return c.dir === 'out' ? `parte de ${c.other}` : `contém ${c.other}`
-  }
-}
-
 export default function Graph() {
+  const { t } = useT()
   const [data, setData] = useState<GraphData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
@@ -263,7 +239,7 @@ export default function Graph() {
         id: `e${i}`,
         source: e.from,
         target: e.to,
-        label: touches ? EDGE_LABEL[e.type] : undefined,
+        label: touches ? t.graph.edgeLabels[e.type] : undefined,
         labelStyle: { fill: stroke, fontSize: 11 },
         labelBgStyle: { fill: '#fff', fillOpacity: 0.85 },
         markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
@@ -275,7 +251,7 @@ export default function Graph() {
         },
       } satisfies Edge
     })
-  }, [visibleEdges, selected, data])
+  }, [visibleEdges, selected, data, t])
 
   const selNode = useMemo(
     () => data?.nodes.find((n) => n.id === selected) ?? null,
@@ -295,24 +271,24 @@ export default function Graph() {
       }))
   }, [data, selected])
 
-  if (error) return <p className="status error">Erro ao montar o grafo: {error}</p>
-  if (!data) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.graph.loadError(error)}</p>
+  if (!data) return <p className="status">{t.common.loading}</p>
 
-  const toggleType = (t: GraphEdgeType) =>
+  const toggleType = (et: GraphEdgeType) =>
     setHidden((h) => {
       const next = new Set(h)
-      if (next.has(t)) next.delete(t)
-      else next.add(t)
+      if (next.has(et)) next.delete(et)
+      else next.add(et)
       return next
     })
 
   return (
     <main className="page graph-page">
       <h1>
-        Grafo{' '}
+        {t.graph.title}{' '}
         <span className="graph-count">
-          {data.nodes.length} nós · {edges.length}/{data.edges.length} arestas
-          {laying ? ' · calculando layout…' : ''}
+          {t.graph.stats(data.nodes.length, edges.length, data.edges.length)}
+          {laying ? t.graph.layouting : ''}
         </span>
       </h1>
       <div className="graph-wrap">
@@ -343,17 +319,17 @@ export default function Graph() {
 
         <aside className="graph-panel">
           <div className="graph-filters">
-            <h3>Arestas</h3>
-            {EDGE_TYPES.map((t) => (
+            <h3>{t.graph.edges}</h3>
+            {EDGE_TYPES.map((et) => (
               <button
-                key={t}
-                className={hidden.has(t) ? 'filter' : 'filter active'}
-                disabled={typeCounts[t] === 0}
-                onClick={() => toggleType(t)}
-                title={EDGE_LABEL[t]}
+                key={et}
+                className={hidden.has(et) ? 'filter' : 'filter active'}
+                disabled={typeCounts[et] === 0}
+                onClick={() => toggleType(et)}
+                title={t.graph.edgeLabels[et]}
               >
-                <span className={`graph-line t-${t}`} aria-hidden="true" /> {EDGE_LABEL[t]}{' '}
-                <span className="column-count">{typeCounts[t]}</span>
+                <span className={`graph-line t-${et}`} aria-hidden="true" /> {t.graph.edgeLabels[et]}{' '}
+                <span className="column-count">{typeCounts[et]}</span>
               </button>
             ))}
           </div>
@@ -362,16 +338,16 @@ export default function Graph() {
             <div className="graph-node-info">
               <h2>{selNode.id}</h2>
               <p className="graph-node-sub">
-                {KIND_LABEL[selNode.kind]} · {selNode.title}
+                {t.graph.kindLabels[selNode.kind]} · {selNode.title}
               </p>
               {nodeHref(selNode.kind, selNode.id) && (
                 <a className="graph-open" href={nodeHref(selNode.kind, selNode.id)}>
-                  abrir página →
+                  {t.graph.openPage}
                 </a>
               )}
-              <h3>Conexões ({connections.length})</h3>
+              <h3>{t.graph.connections} ({connections.length})</h3>
               {connections.length === 0 ? (
-                <p className="status">Sem conexões.</p>
+                <p className="status">{t.graph.noConnections}</p>
               ) : (
                 <ul className="graph-conns">
                   {connections.map((c, i) => (
@@ -379,13 +355,13 @@ export default function Graph() {
                       <button
                         className="graph-conn"
                         onClick={() => focusNode(c.other)}
-                        title={`ir para ${c.other}`}
+                        title={t.graph.goTo(c.other)}
                       >
                         <span className={`graph-dot t-${c.type}`} aria-hidden="true" />
-                        {connText(c)}
+                        {t.graph.conn(c.type, c.dir, c.other)}
                       </button>
                       {c.type === 'superseded_by' && c.reason && (
-                        <span className="graph-reason">motivo: {c.reason}</span>
+                        <span className="graph-reason">{t.graph.reasonPrefix} {c.reason}</span>
                       )}
                     </li>
                   ))}
@@ -394,17 +370,16 @@ export default function Graph() {
             </div>
           ) : (
             <p className="status">
-              Clique num nó para desenhar e listar suas conexões — ou ligue um
-              tipo de aresta acima para ver toda a malha.
+              {t.graph.clickHint}
             </p>
           )}
 
           <div className="graph-legend">
-            <h3>Tipos de nó</h3>
+            <h3>{t.graph.nodeTypes}</h3>
             <ul className="graph-legend-kinds">
-              {(Object.keys(KIND_LABEL) as GraphKind[]).map((k) => (
+              {(Object.keys(t.graph.kindLabels) as GraphKind[]).map((k) => (
                 <li key={k}>
-                  <span className="graph-dot" style={{ background: KIND_COLOR[k] }} /> {KIND_LABEL[k]}
+                  <span className="graph-dot" style={{ background: KIND_COLOR[k] }} /> {t.graph.kindLabels[k]}
                 </li>
               ))}
             </ul>

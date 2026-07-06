@@ -13,7 +13,9 @@ import Lint from './Lint'
 import History from './History'
 import Manage from './Manage'
 import NewFeature from './NewFeature'
+import StatsPage from './Stats'
 import { LiveProvider } from './live'
+import { useT } from './i18n'
 import './app.css'
 
 // Grafo carrega React Flow (pesado) sob demanda, como o Excalidraw.
@@ -42,6 +44,7 @@ export default function App() {
 }
 
 function Routed({ hash }: { hash: string }) {
+  const { t } = useT()
   const feature = /^#\/f\/(.+)$/.exec(hash)
   if (feature) return <FeaturePage key={feature[1]} id={decodeURIComponent(feature[1])} />
   const decision = /^#\/d\/(.+)$/.exec(hash)
@@ -61,7 +64,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/wiki') return <Wiki />
   if (hash === '#/graph')
     return (
-      <Suspense fallback={<p className="status">Carregando grafo…</p>}>
+      <Suspense fallback={<p className="status">{t.graph.loadingChunk}</p>}>
         <Graph />
       </Suspense>
     )
@@ -69,6 +72,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />
   if (hash === '#/history') return <History />
+  if (hash === '#/stats') return <StatsPage />
   if (hash === '#/manage') return <Manage />
   if (hash === '#/new') return <NewFeature />
   return <Kanban />

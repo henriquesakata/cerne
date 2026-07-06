@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   fetchState,
   postTransition,
-  STATE_LABELS,
   type Feature,
   type FeatureState,
   type TransitionAction,
 } from './api'
+import { useT } from './i18n'
 
 const STATE_ORDER: FeatureState[] = [
   'candidate',
@@ -21,11 +21,11 @@ const STATE_ORDER: FeatureState[] = [
 // Reject/supersede need a reason (and a successor), so they happen on the
 // feature page where that form already lives.
 const QUICK_ADVANCE: Partial<
-  Record<FeatureState, { action: TransitionAction; label: string }>
+  Record<FeatureState, { action: TransitionAction }>
 > = {
-  candidate: { action: 'approve', label: 'Aprovar' },
-  approved: { action: 'start', label: 'Iniciar' },
-  in_development: { action: 'complete', label: 'Concluir' },
+  candidate: { action: 'approve' },
+  approved: { action: 'start' },
+  in_development: { action: 'complete' },
 }
 
 export default function Manage() {
@@ -33,6 +33,7 @@ export default function Manage() {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FeatureState | 'all'>('all')
   const [busy, setBusy] = useState<string | null>(null)
+  const { t } = useT()
 
   const load = () => {
     fetchState()
@@ -43,8 +44,8 @@ export default function Manage() {
     load()
   }, [])
 
-  if (error) return <p className="status error">Erro ao carregar features: {error}</p>
-  if (!features) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.manage.loadError(error)}</p>
+  if (!features) return <p className="status">{t.common.loading}</p>
 
   const counts = new Map<FeatureState, number>()
   for (const f of features) counts.set(f.state, (counts.get(f.state) ?? 0) + 1)
@@ -62,9 +63,9 @@ export default function Manage() {
   return (
     <main className="page">
       <header className="manage-header">
-        <h1>Gestão de features</h1>
+        <h1>{t.manage.title}</h1>
         <a className="new-feature-btn" href="#/new">
-          + Nova feature
+          {t.manage.newFeature}
         </a>
       </header>
       <div className="filters">
@@ -72,7 +73,7 @@ export default function Manage() {
           className={filter === 'all' ? 'filter active' : 'filter'}
           onClick={() => setFilter('all')}
         >
-          Todas <span className="column-count">{features.length}</span>
+          {t.manage.all} <span className="column-count">{features.length}</span>
         </button>
         {STATE_ORDER.map((s) => (
           <button
@@ -80,7 +81,7 @@ export default function Manage() {
             className={filter === s ? 'filter active' : 'filter'}
             onClick={() => setFilter(s)}
           >
-            {STATE_LABELS[s]} <span className="column-count">{counts.get(s) ?? 0}</span>
+            {t.state[s]} <span className="column-count">{counts.get(s) ?? 0}</span>
           </button>
         ))}
       </div>
@@ -99,17 +100,17 @@ export default function Manage() {
                 </td>
                 <td>{f.module && <span className="badge">{f.module}</span>}</td>
                 <td>
-                  <span className={`chip chip-${f.state}`}>{STATE_LABELS[f.state]}</span>
+                  <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>
                 </td>
                 <td className="manage-actions">
                   {adv && (
                     <button disabled={busy === f.id} onClick={() => quick(f, adv.action)}>
-                      {adv.label}
+                      {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete']}
                     </button>
                   )}
                   {closeable && (
                     <a className="manage-close" href={`#/f/${encodeURIComponent(f.id)}`}>
-                      Encerrar…
+                      {t.manage.close}
                     </a>
                   )}
                 </td>
@@ -118,7 +119,7 @@ export default function Manage() {
           })}
         </tbody>
       </table>
-      {shown.length === 0 && <p className="muted">Nenhuma feature neste filtro.</p>}
+      {shown.length === 0 && <p className="muted">{t.manage.emptyFilter}</p>}
     </main>
   )
 }

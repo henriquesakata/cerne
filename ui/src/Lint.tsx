@@ -1,20 +1,9 @@
 import { useEffect, useState } from 'react'
 import { fetchLint, type LintFinding } from './api'
 import { useLiveVersion } from './live'
+import { useT } from './i18n'
 
 // Espelha as regras de internal/lint, na mesma ordem de relatório (RuleOrder).
-const RULE_LABELS: Record<string, string> = {
-  'ref-to-superseded': 'Menção a entidade substituída',
-  'broken-link': 'Link quebrado',
-  'orphan-content': 'Conteúdo órfão',
-  'missing-gate-doc': 'Documento de gate ausente',
-  'wiki-source-unknown': 'Fonte de wiki desconhecida',
-  'parent-not-found': 'Épico inexistente',
-  'parent-terminal': 'Feature sob épico terminal',
-  'epic-open-children': 'Épico concluído com filhos abertos',
-  'stale-candidate': 'Candidata parada (sem spec)',
-  'stale-note': 'Nota obsoleta (trabalho informado encerrado)',
-}
 const RULE_ORDER = [
   'ref-to-superseded',
   'broken-link',
@@ -32,6 +21,7 @@ export default function Lint() {
   const [findings, setFindings] = useState<LintFinding[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const version = useLiveVersion()
+  const { t } = useT()
 
   useEffect(() => {
     fetchLint()
@@ -42,14 +32,14 @@ export default function Lint() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [version])
 
-  if (error) return <p className="status error">Erro ao rodar o lint: {error}</p>
-  if (!findings) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.lint.error(error)}</p>
+  if (!findings) return <p className="status">{t.common.loading}</p>
 
   if (findings.length === 0) {
     return (
       <main className="page">
-        <h1>Lint</h1>
-        <p className="notice">Nenhum problema encontrado.</p>
+        <h1>{t.lint.title}</h1>
+        <p className="notice">{t.lint.noProblems}</p>
       </main>
     )
   }
@@ -63,15 +53,15 @@ export default function Lint() {
 
   return (
     <main className="page">
-      <h1>Lint</h1>
-      <p className="counts">{findings.length} problema(s)</p>
+      <h1>{t.lint.title}</h1>
+      <p className="counts">{t.lint.counts(findings.length)}</p>
       {RULE_ORDER.map((rule) => {
         const list = byRule.get(rule) ?? []
         if (list.length === 0) return null
         return (
           <section key={rule} className="entity-group">
             <h2>
-              {RULE_LABELS[rule] ?? rule}{' '}
+              {(t.lint.rules as Record<string, string>)[rule] ?? rule}{' '}
               <span className="column-count">{list.length}</span>
             </h2>
             <ul className="lint-list">

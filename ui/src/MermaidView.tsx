@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchArtifactText } from './api'
+import { useT } from './i18n'
 
 // Este módulo é carregado via React.lazy em FeaturePage: o bundle do mermaid
 // (pesado) só é baixado quando o usuário abre um diagrama .mmd.
@@ -27,6 +28,7 @@ export default function MermaidView({
 }) {
   const [view, setView] = useState<View>({ kind: 'loading' })
   const renderId = useRef(`mermaid-${renderSeq++}`)
+  const { t } = useT()
 
   useEffect(() => {
     let cancelled = false
@@ -36,7 +38,13 @@ export default function MermaidView({
         source = await fetchArtifactText(featureId, name)
         // Import dinâmico: o mermaid fica num chunk lazy, fora do bundle de entrada.
         const mermaid = (await import('mermaid')).default
-        mermaid.initialize({ startOnLoad: false })
+        mermaid.initialize({
+          startOnLoad: false,
+          theme:
+            document.documentElement.dataset.theme === 'dark'
+              ? 'dark'
+              : 'default',
+        })
         const { svg } = await mermaid.render(renderId.current, source)
         if (!cancelled) setView({ kind: 'ok', svg, source })
       } catch (e: unknown) {
@@ -66,13 +74,13 @@ export default function MermaidView({
             onClick={() => onEdit(source)}
             disabled={view.kind === 'loading' || source.trim() === ''}
           >
-            Editar como Excalidraw
+            {t.diagram.editAsExcalidraw}
           </button>
-          <button onClick={onClose}>Fechar</button>
+          <button onClick={onClose}>{t.diagram.close}</button>
         </div>
       </header>
       {view.kind === 'loading' && (
-        <p className="status">Renderizando diagrama…</p>
+        <p className="status">{t.diagram.rendering}</p>
       )}
       {view.kind === 'ok' && (
         <div
@@ -85,7 +93,7 @@ export default function MermaidView({
       {view.kind === 'error' && (
         <div className="mermaid-error">
           <p className="form-error">
-            Não foi possível renderizar o Mermaid: {view.message}
+            {t.diagram.mermaidError(view.message)}
           </p>
           <pre>{view.source}</pre>
         </div>

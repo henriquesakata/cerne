@@ -1,18 +1,16 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
 
-// version is the build version reported by `cerne --version`. It defaults to
-// "dev" for local builds and is stamped at release time via:
-//
-//	-ldflags "-X gitlab.com/rockt/cerne/internal/cli.version=<tag>"
-var version = "dev"
+	"gitlab.com/rockt/cerne/internal/version"
+)
 
 func Root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "cerne",
 		Short:         "Living documentation for AI-assisted software projects",
-		Version:       version,
+		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
@@ -28,6 +26,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newNextCmd())
 	root.AddCommand(newBriefCmd())
+	root.AddCommand(newStatsCmd())
 	root.AddCommand(newPullCmd())
 	root.AddCommand(newPushCmd())
 	root.AddCommand(newSyncCmd())

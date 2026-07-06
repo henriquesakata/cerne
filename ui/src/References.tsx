@@ -16,15 +16,8 @@ import {
   type ReferenceDetail as ReferenceDetailData,
 } from './api'
 import { useLiveVersion } from './live'
+import { useT } from './i18n'
 
-const GROUP_LABELS: Record<string, string> = {
-  current: 'Vigentes',
-  obsolete: 'Obsoletas',
-}
-const STATE_LABELS: Record<string, string> = {
-  current: 'Vigente',
-  obsolete: 'Obsoleta',
-}
 const ORDER = ['current', 'obsolete']
 
 // entityHref links an informs target to its detail page (D- → decision, else feature).
@@ -58,6 +51,7 @@ export default function References() {
   const [error, setError] = useState<string | null>(null)
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
   const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
+  const { t } = useT()
 
   const version = useLiveVersion()
   const load = () => {
@@ -81,8 +75,8 @@ export default function References() {
     [references],
   )
 
-  if (error) return <p className="status error">Erro ao carregar referências: {error}</p>
-  if (!references) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.references.loadError(error)}</p>
+  if (!references) return <p className="status">{t.common.loading}</p>
 
   const toggleFacet = toggleIn(setSelFacets)
   const toggleComponent = toggleIn(setSelComponents)
@@ -111,16 +105,16 @@ export default function References() {
 
   return (
     <main className="page">
-      <h1>Referências</h1>
+      <h1>{t.references.title}</h1>
       <p className="counts">
-        {shown.length} referência(s){hasFilter && ` de ${references.length}`}
+        {t.references.counts(shown.length)}{hasFilter && t.common.ofTotal(references.length)}
       </p>
       <NewExternalReference onCreated={load} />
       {hasOptions && (
         <div className="note-filter">
           {allFacets.length > 0 && (
             <div className="note-filter-group">
-              <span className="note-filter-label">Facets</span>
+              <span className="note-filter-label">{t.common.facets}</span>
               {allFacets.map((f) => (
                 <Tag
                   key={f}
@@ -134,7 +128,7 @@ export default function References() {
           )}
           {allComponents.length > 0 && (
             <div className="note-filter-group">
-              <span className="note-filter-label">Componentes</span>
+              <span className="note-filter-label">{t.common.components}</span>
               {allComponents.map((c) => (
                 <Tag
                   key={c}
@@ -148,14 +142,14 @@ export default function References() {
           )}
           {hasFilter && (
             <button type="button" className="note-filter-clear" onClick={clearFilters}>
-              Limpar
+              {t.common.clear}
             </button>
           )}
         </div>
       )}
-      {references.length === 0 && <p className="muted">Nenhuma referência registrada.</p>}
+      {references.length === 0 && <p className="muted">{t.references.none}</p>}
       {references.length > 0 && shown.length === 0 && (
-        <p className="muted">Nenhuma referência corresponde ao filtro.</p>
+        <p className="muted">{t.references.noneMatch}</p>
       )}
       {ORDER.map((state) => {
         const list = byState.get(state) ?? []
@@ -163,7 +157,7 @@ export default function References() {
         return (
           <section key={state} className="entity-group">
             <h2>
-              {GROUP_LABELS[state] ?? state}{' '}
+              {(t.references.groupLabels as Record<string, string>)[state] ?? state}{' '}
               <span className="column-count">{list.length}</span>
             </h2>
             <ul className="entity-list">
@@ -173,7 +167,7 @@ export default function References() {
                   <li key={ref.id} className="note-row">
                     <a className="entity-row" href={`#/r/${encodeURIComponent(ref.id)}`}>
                       <span className="card-id">{ref.id}</span>
-                      {ref.external && <span className="badge badge-external">externa</span>}
+                      {ref.external && <span className="badge badge-external">{t.common.external}</span>}
                       <span className="entity-title">{ref.title}</span>
                     </a>
                     {hasTags && (
@@ -220,11 +214,12 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
   const [components, setComponents] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useT()
 
   if (!open) {
     return (
       <button className="new-ref-toggle" onClick={() => setOpen(true)}>
-        + Nova referência externa
+        {t.references.newToggle}
       </button>
     )
   }
@@ -256,37 +251,37 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
 
   return (
     <form className="new-ref-form" onSubmit={submit}>
-      <h2>Nova referência externa</h2>
-      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título do artigo/doc" autoFocus />
-      <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="URL (https://…)" />
+      <h2>{t.references.formTitle}</h2>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t.references.phTitle} autoFocus />
+      <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t.references.phUrl} />
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        placeholder="Conteúdo / resumo (vai pro índice, o ask passa a citar)"
+        placeholder={t.references.phContent}
         rows={6}
       />
       <input
         value={informs}
         onChange={(e) => setInforms(e.target.value)}
-        placeholder="Informou (opcional): F-0042, D-0007"
+        placeholder={t.references.phInforms}
       />
       <input
         value={facets}
         onChange={(e) => setFacets(e.target.value)}
-        placeholder="Facets (opcional): infra, code"
+        placeholder={t.references.phFacets}
       />
       <input
         value={components}
         onChange={(e) => setComponents(e.target.value)}
-        placeholder="Componentes (opcional): gitea, kpack"
+        placeholder={t.references.phComponents}
       />
-      {error && <p className="status error">Erro: {error}</p>}
+      {error && <p className="status error">{t.references.formError(error)}</p>}
       <div className="new-ref-actions">
         <button type="submit" disabled={busy || title.trim() === '' || url.trim() === ''}>
-          {busy ? 'Registrando…' : 'Registrar'}
+          {busy ? t.references.registering : t.references.register}
         </button>
         <button type="button" onClick={() => setOpen(false)} disabled={busy}>
-          Cancelar
+          {t.common.cancel}
         </button>
       </div>
     </form>
@@ -297,6 +292,7 @@ export function ReferenceDetail({ id }: { id: string }) {
   const [data, setData] = useState<ReferenceDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const version = useLiveVersion()
+  const { t } = useT()
 
   useEffect(() => {
     fetchReference(id)
@@ -307,22 +303,23 @@ export function ReferenceDetail({ id }: { id: string }) {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [id, version])
 
-  if (error) return <p className="status error">Erro ao carregar a referência: {error}</p>
-  if (!data) return <p className="status">Carregando…</p>
+  if (error) return <p className="status error">{t.references.loadOneError(error)}</p>
+  if (!data) return <p className="status">{t.common.loading}</p>
 
   const ref = data.reference
+  const stateLabel = (t.references.stateLabels as Record<string, string>)[ref.state] ?? ref.state
   return (
     <main className="page">
-      <a className="back" href="#/references">← Referências</a>
+      <a className="back" href="#/references">{t.references.back}</a>
       <header className="feature-header">
         <h1>
           <span className="feature-id">{ref.id}</span> {ref.title}
         </h1>
         <p className="feature-meta">
           <span className={`chip chip-${ref.state}`}>
-            {STATE_LABELS[ref.state] ?? ref.state}
+            {stateLabel}
           </span>
-          {ref.external && <span className="badge badge-external">externa</span>}
+          {ref.external && <span className="badge badge-external">{t.common.external}</span>}
           {ref.facets?.map((f) => (
             <Tag key={`f-${f}`} axis="facet" value={f} />
           ))}
@@ -332,7 +329,7 @@ export function ReferenceDetail({ id }: { id: string }) {
         </p>
         {ref.url && (
           <p className="feature-note">
-            Fonte:{' '}
+            {t.references.sourceLabel}{' '}
             <a href={ref.url} target="_blank" rel="noreferrer noopener">
               {ref.url}
             </a>
@@ -340,7 +337,7 @@ export function ReferenceDetail({ id }: { id: string }) {
         )}
         {ref.informs && ref.informs.length > 0 && (
           <p className="feature-note">
-            Informou:{' '}
+            {t.references.informsLabel}{' '}
             {ref.informs.map((iid, i) => (
               <span key={iid}>
                 {i > 0 && ', '}
@@ -354,7 +351,7 @@ export function ReferenceDetail({ id }: { id: string }) {
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>
         ) : (
-          <p className="muted">Sem documento de conteúdo.</p>
+          <p className="muted">{t.common.noDoc}</p>
         )}
       </article>
     </main>

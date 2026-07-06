@@ -12,6 +12,7 @@ import {
   subscribeLive,
   type ProjectInfo,
 } from './api'
+import { useT } from './i18n'
 
 // Multi-projeto + atualização ao vivo (casos 0031/0032). O painel serve N
 // projetos; este provider mantém a lista, o projeto ativo (global, em
@@ -36,6 +37,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [changed, setChanged] = useState<Set<string>>(() => new Set())
   const [version, setVersion] = useState(0)
   const [ready, setReady] = useState(false)
+  const { t } = useT()
 
   // activeRef espelha o pid ativo para uso síncrono fora do ciclo de render
   // (callbacks de SSE e o reload da lista), evitando closures velhas.
@@ -114,7 +116,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     apply(pid)
   }
 
-  if (!ready) return <p className="status">Carregando…</p>
+  if (!ready) return <p className="status">{t.live.loading}</p>
 
   return (
     <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version }}>
@@ -133,6 +135,7 @@ export function useLiveVersion(): number {
 // useProjects expõe a lista, o ativo e o seletor para o Nav.
 export function useProjects(): ProjectsState {
   const c = useContext(Ctx)
-  if (!c) throw new Error('useProjects deve ser usado dentro de LiveProvider')
+  const { t } = useT()
+  if (!c) throw new Error(t.live.useProjectsError)
   return c
 }

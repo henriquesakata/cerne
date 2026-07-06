@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cerne</title>
+    <script>
+      // Tema antes do primeiro paint (F-0126): escolha persistida > preferência
+      // do sistema. Inline para não haver flash de tema errado (FOUC).
+      document.documentElement.dataset.theme =
+        localStorage.getItem('cerne-theme') ??
+        (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    </script>
   </head>
   <body>
     <div id="root"></div>
