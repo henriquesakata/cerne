@@ -7,6 +7,23 @@ test:
     - go vet ./...
     - go test ./... -count=1
 
+# ui/dist is go:embed-ed into the binary, so the *committed* dist is what ships —
+# a change to ui/src that forgets to rebuild ui/dist serves a stale UI (F-0136).
+# This gate rebuilds on the canonical platform (node:24 Linux — the same image the
+# baseline dist is built with) and fails if the committed dist drifts. The build is
+# deterministic via npm ci (exact lockfile) + pinned image. `git add` before the diff
+# so new/removed chunk files count as drift, not just modified ones.
+ui:dist-drift:
+  stage: test
+  image: node:24
+  rules:
+    - changes:
+        - ui/**/*
+  script:
+    - cd ui && npm ci && npm run build && cd ..
+    - git add -A ui/dist
+    - git diff --cached --exit-code -- ui/dist
+
 # On a tag (vX.Y.Z): cross-compile the matrix with the tag stamped as version,
 # then upload each binary + SHA256SUMS to the generic package registry.
 build:release:
