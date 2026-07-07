@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -50,5 +51,6 @@ func runServe(cmd *cobra.Command, root string, port int) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "cerne serve (multi-project) at %s\n", addr)
+	defer initServerTelemetry(context.Background(), "")()
 	return http.Serve(ln, server.NewMultiProject(secret))
 }

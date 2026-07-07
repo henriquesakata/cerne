@@ -8,6 +8,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 // SaveArtifact writes an artifact file under content/artifacts/<id>/ in the
@@ -79,10 +80,28 @@ func CommitAndSnapshot(repoDir, projDir, msg string) error {
 // writes behind (best-effort reset). Same tail semantics: ErrNothingToCommit
 // when mutate changed nothing, *ConflictError on a same-document collision,
 // docs.lock snapshot refreshed on success.
+// It mints its own telemetry Op (kind "backend") so CLI one-shots record
+// phases too; the server path uses MutateAndSnapshotOp with the request's Op.
 func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) error {
+	op := telemetry.StartOp("backend")
+	err := MutateAndSnapshotOp(op, repoDir, projDir, mutate)
+	status := "ok"
+	if err != nil {
+		status = "error"
+	}
+	op.End(status)
+	return err
+}
+
+// MutateAndSnapshotOp is MutateAndSnapshot recording its phases (lock_wait,
+// reset, mutate, then the reconcile loop's fetch/merge/commit/push, snapshot)
+// on the caller's Op (F-0149) — nil-safe, the caller owns End().
+func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func() (string, error)) error {
 	var head string
 	var conflicts []Conflict
+	stopLockWait := op.Phase("lock_wait")
 	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
+		stopLockWait()
 		base, err := gitback.HeadSHA(repoDir)
 		if errors.Is(err, gitback.ErrNoCommits) {
 			base = ""
@@ -90,11 +109,16 @@ func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) e
 			return err
 		}
 		if base != "" {
-			if err := gitback.ResetHard(repoDir, base); err != nil {
+			stop := op.Phase("reset")
+			err := gitback.ResetHard(repoDir, base)
+			stop()
+			if err != nil {
 				return err
 			}
 		}
+		stop := op.Phase("mutate")
 		msg, err := mutate()
+		stop()
 		if err != nil {
 			if base != "" {
 				_ = gitback.ResetHard(repoDir, base) // best-effort: drop partial writes
@@ -108,7 +132,7 @@ func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) e
 		if len(changes) == 0 {
 			return fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, repoDir)
 		}
-		head, conflicts, err = reconcileLocked(repoDir, base, msg, changes)
+		head, conflicts, err = reconcileLocked(op, repoDir, base, msg, changes)
 		return err
 	})
 	if lockErr != nil {
@@ -118,7 +142,10 @@ func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) e
 		return &ConflictError{Conflicts: conflicts}
 	}
 	if head != "" {
-		return updateSnapshot(projDir, head)
+		stop := op.Phase("snapshot")
+		err := updateSnapshot(projDir, head)
+		stop()
+		return err
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 // FileChange is one backend-relative document the caller wants to land:
@@ -113,7 +114,7 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 			}
 		}
 		var err error
-		head, conflicts, err = reconcileLocked(repoDir, base, msg, changes)
+		head, conflicts, err = reconcileLocked(nil, repoDir, base, msg, changes)
 		return err
 	})
 	if lockErr != nil {
@@ -133,13 +134,18 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 // reconcileLocked is the fetch/merge/commit/push retry loop of
 // ReconcileCommitPush, extracted so MutateAndSnapshot can run a domain
 // mutation and this loop inside ONE critical section of the backend lock
-// (F-0121). The caller must hold the lock.
-func reconcileLocked(repoDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
+// (F-0121). The caller must hold the lock. Phases and non-fast-forward
+// retries are recorded on op (nil-safe, F-0149) — a retried attempt repeats
+// its phase names in order, so a slow op shows exactly where each round went.
+func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
 	var head string
 	var conflicts []Conflict
 	err := func() error {
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
-			if err := gitback.Fetch(repoDir); err != nil {
+			stop := op.Phase("fetch")
+			err := gitback.Fetch(repoDir)
+			stop()
+			if err != nil {
 				return err
 			}
 			theirs, err := gitback.TrackingHeadSHA(repoDir)
@@ -149,7 +155,9 @@ func reconcileLocked(repoDir, base, msg string, changes []FileChange) (string, [
 				return err
 			}
 
+			stop = op.Phase("merge")
 			apply, conf, err := plan3Way(repoDir, base, theirs, changes)
+			stop()
 			if err != nil {
 				return err
 			}
@@ -187,7 +195,9 @@ func reconcileLocked(repoDir, base, msg string, changes []FileChange) (string, [
 			for i, ch := range apply {
 				paths[i] = ch.Path
 			}
+			stop = op.Phase("commit")
 			sha, err := gitback.CommitPaths(repoDir, paths, msg)
+			stop()
 			if errors.Is(err, gitback.ErrNothingToCommit) {
 				head = theirs // merged content equals theirs byte-for-byte
 				return nil
@@ -198,9 +208,12 @@ func reconcileLocked(repoDir, base, msg string, changes []FileChange) (string, [
 			if reconcileHookBeforePush != nil {
 				reconcileHookBeforePush(attempt)
 			}
+			stop = op.Phase("push")
 			pushErr := gitback.Push(repoDir)
+			stop()
 			if gitback.IsNonFastForward(pushErr) {
 				// Remote advanced between fetch and push: rewind and retry.
+				op.AddRetry()
 				if base != "" {
 					if err := gitback.ResetHard(repoDir, base); err != nil {
 						return err

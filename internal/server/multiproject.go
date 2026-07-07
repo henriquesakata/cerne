@@ -90,6 +90,7 @@ func (s *MultiServer) mux() http.Handler {
 	}
 	// Remote serve exposes the deliberate subset — routes flagged remote.
 	mountDataRoutes(mux, "/projects/{pid}", withProject, true)
+	mountTelemetry(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))

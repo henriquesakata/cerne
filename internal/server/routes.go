@@ -104,8 +104,8 @@ func dataRoutes() []dataRoute {
 		{"GET", "/wiki/{rel...}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleWikiPage(w, repoDir, r.PathValue("rel"))
 		}},
-		{"GET", "/lint", true, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
-			handleLint(w, repoDir, projDir)
+		{"GET", "/lint", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
+			handleLint(w, r, repoDir, projDir, projectID)
 		}},
 		{"GET", "/graph", false, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleGraph(w, repoDir)
@@ -125,6 +125,6 @@ func mountDataRoutes(mux *http.ServeMux, prefix string, bind projectBinder, remo
 		if remoteOnly && !rt.remote {
 			continue
 		}
-		mux.HandleFunc(rt.method+" /api"+prefix+rt.pattern, bind(rt.handler))
+		mux.HandleFunc(rt.method+" /api"+prefix+rt.pattern, bind(instrumented(rt)))
 	}
 }
