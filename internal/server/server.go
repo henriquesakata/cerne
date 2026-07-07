@@ -21,7 +21,6 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
-	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -779,13 +778,14 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		staleReadyDays = cfg.StaleReadyWindowDays()
 		staleWorkHours = cfg.StaleWorkWindowHours()
 	}
-	// The full pass re-scans the backend on every call (no cache yet) — the
-	// phase + histogram are what make that cost visible per project (F-0149).
-	stop := telemetry.OpFromContext(r.Context()).Phase("lint")
+	// Cached per backend HEAD + TTL (F-0153); the phase + histogram keep the
+	// cost of a real pass visible per project (F-0149) — a hit records its
+	// own near-zero lint_cache phase instead.
 	start := time.Now()
-	findings, err := lint.RunConfig(repoDir, staleReadyDays, staleWorkHours, ignore...)
-	stop()
-	telemetry.Default.ObserveLint(projectID, time.Since(start))
+	findings, hit, err := cachedLintFindings(telemetry.OpFromContext(r.Context()), repoDir, staleReadyDays, staleWorkHours, ignore)
+	if !hit && err == nil {
+		telemetry.Default.ObserveLint(projectID, time.Since(start))
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

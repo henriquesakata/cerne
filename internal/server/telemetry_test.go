@@ -126,10 +126,13 @@ func TestTransitionRecordsPhasesWithRequestOp(t *testing.T) {
 // phase: a lint request is an operation, so it reaches the ring.
 func TestLintObservedPerProject(t *testing.T) {
 	repoDir, projDir := newBackend(t)
+	// A unique project label: CollectAndCount counts SERIES, so reusing a
+	// label another test already touched would read as "not observed".
+	const proj = "demo-lint-histogram"
 	before := testutil.CollectAndCount(telemetry.Default.LintDur)
 
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "demo").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/lint", nil))
+	New(repoDir, projDir, proj).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/lint", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lint status = %d", rec.Code)
 	}
