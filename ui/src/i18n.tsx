@@ -29,6 +29,7 @@ const ptBR = {
     wiki: 'Wiki',
     graph: 'Grafo',
     ask: 'Perguntar',
+    prompt: 'Compor prompt',
     search: 'Busca',
     lint: 'Lint',
     history: 'Histórico',
@@ -371,6 +372,24 @@ const ptBR = {
     querying: 'Consultando…',
     askError: (e: string) => `Erro ao perguntar: ${e}`,
   },
+  prompt: {
+    title: 'Compor prompt',
+    intro:
+      'Componha um prompt para despachar trabalho a outro agente ou dev: intenção + template do tipo + estado vivo do board (works ativos, features vivas, débitos de lint).',
+    typeLabel: 'Tipo',
+    textLabel: 'Intenção',
+    placeholder: 'Descreva o trabalho a despachar…',
+    registerLabel: 'Registrar work (W-) no despacho',
+    compose: 'Compor',
+    composing: 'Compondo…',
+    resultTitle: 'Prompt composto',
+    copy: 'Copiar',
+    copied: 'Copiado!',
+    registered: (id: string) => `Work registrado: ${id}`,
+    noTypes:
+      'Nenhum template ainda — crie uma nota com component prompt-template (cerne note new "<título>" --component prompt-template).',
+    error: (e: string) => `Erro ao compor: ${e}`,
+  },
   search: {
     kindLabels: {
       feature: 'feature',
@@ -448,6 +467,7 @@ const en: Messages = {
     wiki: 'Wiki',
     graph: 'Graph',
     ask: 'Ask',
+    prompt: 'Compose prompt',
     search: 'Search',
     lint: 'Lint',
     history: 'History',
@@ -787,6 +807,24 @@ const en: Messages = {
     includeHistory: 'Include history (superseded, rejected, obsolete)',
     querying: 'Querying…',
     askError: (e: string) => `Failed to ask: ${e}`,
+  },
+  prompt: {
+    title: 'Compose prompt',
+    intro:
+      'Compose a prompt to dispatch work to another agent or dev: intent + type template + live board state (active works, live features, lint debt).',
+    typeLabel: 'Type',
+    textLabel: 'Intent',
+    placeholder: 'Describe the work to dispatch…',
+    registerLabel: 'Register a work (W-) on dispatch',
+    compose: 'Compose',
+    composing: 'Composing…',
+    resultTitle: 'Composed prompt',
+    copy: 'Copy',
+    copied: 'Copied!',
+    registered: (id: string) => `Registered work: ${id}`,
+    noTypes:
+      'No templates yet — create a note with component prompt-template (cerne note new "<title>" --component prompt-template).',
+    error: (e: string) => `Compose failed: ${e}`,
   },
   search: {
     kindLabels: {

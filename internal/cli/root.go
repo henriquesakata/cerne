@@ -40,6 +40,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newRunbookCmd())
 	root.AddCommand(newNoteCmd())
 	root.AddCommand(newWorkCmd())
+	root.AddCommand(newPromptCmd())
 	root.AddCommand(newReferenceCmd())
 	root.AddCommand(newRetireCmd())
 	root.AddCommand(newForgetAliasCmd())
