@@ -24,7 +24,7 @@ type WorkOutcome struct {
 // pushes the backend, refreshing the docs.lock snapshot in projDir. actor is
 // agent when non-empty, else "<os user>@<hostname>" — the default identity of
 // whoever/whatever is running this activity.
-func StartWork(repoDir, projDir, title string, refs []string, agent string) (store.Work, error) {
+func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool) (store.Work, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Work{}, fmt.Errorf("a descrição da atividade não pode ser vazia")
@@ -36,6 +36,13 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string) (sto
 	var w store.Work
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateWorkRefs(repoDir, refs)
+		if err != nil {
+			return "", err
+		}
+		// Duplicate-registration guard (F-0147): someone may already be on
+		// this. The auto-registered works (F-0146) never pass through here —
+		// they are idempotent by construction.
+		forced, err := guardRegistration(repoDir, title, force)
 		if err != nil {
 			return "", err
 		}
@@ -56,7 +63,11 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string) (sto
 		if err := store.SaveWork(repoDir, w); err != nil {
 			return "", err
 		}
-		ev := domain.NewEvent(id, "work.started", map[string]string{"title": title, "actor": actor}, EventActor())
+		payload := map[string]string{"title": title, "actor": actor}
+		if forced {
+			payload["guard"] = "forced"
+		}
+		ev := domain.NewEvent(id, "work.started", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}

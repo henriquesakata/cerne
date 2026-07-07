@@ -98,7 +98,7 @@ func TestCreateFeatureWithSpec(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 
 	body := "# Minha feature\n\n## Problema\n\nAgentes esquecem a spec.\n"
-	f, err := CreateFeatureWithSpec(repoDir, projDir, "Minha feature", "", "", nil, nil, body)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Minha feature", "", "", nil, nil, body, false)
 	if err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestCreateFeatureWithSpec(t *testing.T) {
 // degrades to the current stub behavior.
 func TestCreateFeatureWithSpecEmptyBodyScaffoldsStub(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	f, err := CreateFeatureWithSpec(repoDir, projDir, "Sem corpo", "", "", nil, nil, "   ")
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Sem corpo", "", "", nil, nil, "   ", false)
 	if err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}
@@ -598,7 +598,7 @@ func TestCreateFeatureConcurrent(t *testing.T) {
 			defer wg.Done()
 			f, err := CreateFeatureWithSpec(repoDir, projDir,
 				fmt.Sprintf("Concorrente %d", i), "", "", nil, nil,
-				fmt.Sprintf("## Problema\n\ncorpo %d\n", i))
+				fmt.Sprintf("## Problema\n\ncorpo %d\n", i), false)
 			ids[i], errs[i] = f.ID, err
 		}(i)
 	}

@@ -828,6 +828,12 @@ func handleCreateFeature(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		return
 	}
 	f, err := app.CreateFeature(repoDir, projDir, req.Title, req.Module, req.Parent, req.Facets, req.Components)
+	if errors.Is(err, app.ErrSimilarExists) {
+		// Duplicate-registration guard (F-0147): the human sees the same
+		// match list the CLI prints. 409: the conflict is with existing state.
+		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+		return
+	}
 	if err != nil {
 		// Validation/module failures surface as 422 with the same
 		// message the CLI prints, matching handleTransition.

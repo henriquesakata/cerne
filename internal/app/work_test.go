@@ -12,7 +12,7 @@ import (
 
 func TestStartWorkDefaultActor(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "")
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestStartWorkDefaultActor(t *testing.T) {
 
 func TestStartWorkExplicitAgent(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "Revisar MR Y", nil, "claude-cli")
+	w, err := StartWork(repoDir, projDir, "Revisar MR Y", nil, "claude-cli", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestStartWorkValidatesRefs(t *testing.T) {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 
-	w, err := StartWork(repoDir, projDir, "Trabalhar em cima", []string{f.ID}, "")
+	w, err := StartWork(repoDir, projDir, "Trabalhar em cima", []string{f.ID}, "", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestStartWorkValidatesRefs(t *testing.T) {
 
 func TestStartWorkUnknownRefAborts(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	_, err := StartWork(repoDir, projDir, "Trabalhar em cima", []string{"F-9999"}, "")
+	_, err := StartWork(repoDir, projDir, "Trabalhar em cima", []string{"F-9999"}, "", false)
 	if err == nil {
 		t.Fatal("StartWork with unknown ref: want error, got nil")
 	}
@@ -81,7 +81,7 @@ func TestStartWorkUnknownRefAborts(t *testing.T) {
 
 func TestFinishWorkDone(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "")
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestFinishWorkDone(t *testing.T) {
 
 func TestFinishWorkAbandon(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "")
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestFinishWorkAbandon(t *testing.T) {
 
 func TestFinishWorkAbandonRequiresReason(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "")
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestFinishWorkAbandonRequiresReason(t *testing.T) {
 
 func TestFinishWorkTerminalRefused(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "")
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false)
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}

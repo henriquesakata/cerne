@@ -29,6 +29,7 @@ func newWorkCmd() *cobra.Command {
 
 func newWorkStartCmd(dir *string) *cobra.Command {
 	var ref, agent string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "start <description>",
 		Short: "Register a new active agent activity (work-in-progress)",
@@ -38,20 +39,21 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 			"--ref links the activity to existing features/decisions (F-/D- ids; unknown id aborts, nothing written).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWorkStart(cmd, *dir, args[0], ref, agent)
+			return runWorkStart(cmd, *dir, args[0], ref, agent, force)
 		},
 	}
 	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/D- ids this activity relates to")
 	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to '<user>@<hostname>')")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
 	return cmd
 }
 
-func runWorkStart(cmd *cobra.Command, dir, title, ref, agent string) error {
+func runWorkStart(cmd *cobra.Command, dir, title, ref, agent string, force bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	w, err := app.StartWork(ctx.repoDir, ctx.projDir, title, splitInforms(ref), agent)
+	w, err := app.StartWork(ctx.repoDir, ctx.projDir, title, splitInforms(ref), agent, force)
 	if err != nil {
 		return err
 	}

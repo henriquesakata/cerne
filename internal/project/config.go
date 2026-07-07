@@ -48,9 +48,22 @@ type Config struct {
 	// F-0130) may go without a done/abandon before the stale-work lint flags
 	// it. 0 (absent) means the 8-hour default — read it via
 	// StaleWorkWindowHours.
-	StaleWorkHours int         `toml:"stale_work_hours,omitzero"`
-	Gates          GatesConfig `toml:"gates"` // F-0131: who may cross the human gates
-	LLM            LLMConfig   `toml:"llm"`   // optional v1.5 LLM layer config
+	StaleWorkHours int            `toml:"stale_work_hours,omitzero"`
+	Gates          GatesConfig    `toml:"gates"`    // F-0131: who may cross the human gates
+	Activity       ActivityConfig `toml:"activity"` // F-0146: auto-registered activity on feature transitions
+	LLM            LLMConfig      `toml:"llm"`      // optional v1.5 LLM layer config
+}
+
+// ActivityConfig is the optional [activity] block of .cernerc (F-0146).
+// Auto is a pointer so "absent" (nil → enabled, the default) is distinguishable
+// from an explicit `auto = false` opt-out.
+type ActivityConfig struct {
+	Auto *bool `toml:"auto"`
+}
+
+// AutoEnabled resolves the auto-registration switch: on unless explicitly off.
+func (a ActivityConfig) AutoEnabled() bool {
+	return a.Auto == nil || *a.Auto
 }
 
 // Gate values for the [gates] block (F-0131). Default is human on both ends;
@@ -174,12 +187,17 @@ func SaveConfig(dir string, c Config) error {
 		StaleReadyDays           int                 `toml:"stale_ready_days,omitzero"`
 		StaleWorkHours           int                 `toml:"stale_work_hours,omitzero"`
 		Gates                    *GatesConfig        `toml:"gates,omitempty"`
+		Activity                 *ActivityConfig     `toml:"activity,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if c.Gates != (GatesConfig{}) {
 		gates := c.Gates
 		w.Gates = &gates
+	}
+	if c.Activity != (ActivityConfig{}) {
+		activity := c.Activity
+		w.Activity = &activity
 	}
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM

@@ -38,6 +38,7 @@ var errFeatureContextRequired = errors.New(
 
 func newFeatureNewCmd(dir *string) *cobra.Command {
 	var module, parent, facet, component, file, context string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a feature in candidate state",
@@ -51,7 +52,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureNew(cmd, *dir, args[0], module, parent, facet, component, file, context)
+			return runFeatureNew(cmd, *dir, args[0], module, parent, facet, component, file, context, force)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
@@ -60,10 +61,11 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsystem/tool, e.g. gitback,materialize)")
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 sentences) seeded into the spec's Problem section")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
 	return cmd
 }
 
-func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string) error {
+func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -85,7 +87,7 @@ func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, compon
 		specBody = spectmpl.StubWithContext(title, context)
 	}
 	f, err := app.CreateFeatureWithSpec(ctx.repoDir, ctx.projDir, title, module, parent,
-		splitInforms(facet), splitInforms(component), specBody)
+		splitInforms(facet), splitInforms(component), specBody, force)
 	if err != nil {
 		return err
 	}
