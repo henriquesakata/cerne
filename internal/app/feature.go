@@ -54,14 +54,16 @@ var featureDocFilenames = map[string]string{
 // component curated), extended to features by D-0003 — validated before any side
 // effect so an unknown facet aborts without minting an id or writing a file.
 func CreateFeature(repoDir, projDir, title, module, parent string, facets, components []string) (store.Feature, error) {
-	return CreateFeatureWithSpec(repoDir, projDir, title, module, parent, facets, components, "")
+	return CreateFeatureWithSpec(repoDir, projDir, title, module, parent, facets, components, "", false)
 }
 
 // CreateFeatureWithSpec is CreateFeature with the one-shot spec path (F-0120):
 // a non-empty specBody is stamped with the cerne_id frontmatter and written as
 // the real spec — the feature is born with its context captured, nothing left
-// to fill or push. An empty body scaffolds the usual stub.
-func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string) (store.Feature, error) {
+// to fill or push. An empty body scaffolds the usual stub. force bypasses the
+// duplicate-registration guard (F-0147) for a consciously distinct problem —
+// the exact-title guard (F-0121) is never bypassed.
+func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Feature{}, fmt.Errorf("the feature title cannot be empty")
@@ -85,6 +87,10 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 			return "", err
 		}
 		if err := checkDuplicateTitle(repoDir, title); err != nil {
+			return "", err
+		}
+		forced, err := guardRegistration(repoDir, title, force)
+		if err != nil {
 			return "", err
 		}
 		id, err := store.NextID(repoDir, "F")
@@ -121,6 +127,11 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 		payload := map[string]string{"title": title, "module": module}
 		if parent != "" {
 			payload["parent"] = parent
+		}
+		if forced {
+			// The guard saw live similars and --force overrode it (F-0147) —
+			// leave the audit trail on the creation event.
+			payload["guard"] = "forced"
 		}
 		ev := domain.NewEvent(id, "feature.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
