@@ -124,6 +124,7 @@ type Work struct {
 	Actor     string           `json:"actor"`          // who is doing it: "<agent>" or "<user>@<hostname>"
 	Refs      []string         `json:"refs,omitempty"` // F-/D- ids this activity relates to
 	Note      string           `json:"note,omitempty"` // closing note (done) or reason (abandoned)
+	Auto      bool             `json:"auto,omitempty"` // opened by a feature transition (F-0146), not by `cerne work start`
 	CreatedAt time.Time        `json:"created_at"`
 	UpdatedAt time.Time        `json:"updated_at"`
 }
