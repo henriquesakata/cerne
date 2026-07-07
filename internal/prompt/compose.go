@@ -70,6 +70,27 @@ func ComposeRegister(repoDir, projDir, typ, text string) (string, string, error)
 	return prompt, w.ID, nil
 }
 
+// stripFrontmatter drops a leading `---\n…\n---` block: note bodies carry the
+// cerne_id frontmatter on disk, which is plumbing — never prompt content.
+// (Same local helper ask/compile/materialize keep, by package convention.)
+func stripFrontmatter(s string) string {
+	if !strings.HasPrefix(s, "---\n") {
+		return s
+	}
+	rest := s[len("---\n"):]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return s
+	}
+	rest = rest[end+len("\n---"):]
+	if i := strings.IndexByte(rest, '\n'); i >= 0 {
+		rest = rest[i+1:]
+	} else {
+		rest = ""
+	}
+	return strings.TrimLeft(rest, "\n")
+}
+
 // deriveWorkTitle bounds the intent to a work title: first line, cut at a
 // word boundary near 70 runes.
 func deriveWorkTitle(text string) string {
@@ -132,6 +153,7 @@ func composeInner(repoDir, projDir, typ, text, registeredWork string) (string, e
 	if err != nil {
 		return "", err
 	}
+	body = stripFrontmatter(body)
 
 	cfg, _, cfgErr := project.LoadConfig(projDir)
 	projectID := "?"

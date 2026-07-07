@@ -57,7 +57,10 @@ func saveTemplateNote(t *testing.T, repoDir, id, title string, state domain.Note
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(body+"\n"), 0o644); err != nil {
+	// Real note bodies carry the cerne_id frontmatter (`cerne note new`);
+	// the composer must strip it — the fixture mimics that.
+	content := "---\ncerne_id: " + id + "\n---\n\n" + body + "\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -104,6 +107,9 @@ Nenhum work registrado para este prompt — ao começar, rode 'cerne work start 
 	}
 	if strings.Contains(got, "F-0002") || strings.Contains(got, "W-0002") {
 		t.Fatal("done entities leaked into the live snapshot")
+	}
+	if strings.Contains(got, "cerne_id") {
+		t.Fatal("note frontmatter leaked into the composed prompt")
 	}
 }
 
