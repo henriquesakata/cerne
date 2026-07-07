@@ -109,6 +109,7 @@ func TestCommitAndSnapshotAutocommitOn(t *testing.T) {
 	if err := CommitAndSnapshot(repoDir, projDir, "mutation"); err != nil {
 		t.Fatalf("CommitAndSnapshot: %v", err)
 	}
+	FlushAutocommits() // the pin is deferred (F-0153); land it before asserting
 	if !projStatusClean(t, projDir) {
 		t.Fatalf("projDir worktree not clean — docs.lock left uncommitted with autocommit on")
 	}
@@ -165,6 +166,7 @@ func TestCommitAndSnapshotPinBranchCurrent(t *testing.T) {
 	if err := CommitAndSnapshot(repoDir, projDir, "mutation"); err != nil {
 		t.Fatalf("CommitAndSnapshot: %v", err)
 	}
+	FlushAutocommits() // the pin is deferred (F-0153); land it before asserting
 	if !projStatusClean(t, projDir) {
 		t.Fatalf("projDir worktree not clean — docs.lock left uncommitted on the pin branch")
 	}
