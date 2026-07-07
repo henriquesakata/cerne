@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -132,5 +133,82 @@ func TestListPromptTypes(t *testing.T) {
 	}
 	if types[0].Slug != "investigacao-de-erro" || types[0].Title != "Investigação de erro" {
 		t.Fatalf("type = %+v", types[0])
+	}
+}
+
+// promptGitFixture is promptFixture on a real git backend (origin + clone),
+// as StartWork commits and pushes.
+func promptGitFixture(t *testing.T) (repoDir, projDir string) {
+	t.Helper()
+	_, repoDir, projDir, _ = reconcileFixture(t)
+	saveTemplateNote(t, repoDir, "N-0001", "Investigação de erro", domain.NoteActive,
+		"Use a skill observability.")
+	if _, err := gitback.CommitAndPush(repoDir, "seed templates"); err != nil {
+		t.Fatalf("seed CommitAndPush: %v", err)
+	}
+	return repoDir, projDir
+}
+
+// TestComposePromptRegister pins criterion 3 (F-0152): --register creates the
+// W- (title derived from the intent) and embeds its id + closing instruction.
+func TestComposePromptRegister(t *testing.T) {
+	repoDir, projDir := promptGitFixture(t)
+	intent := "Investigar lentidão nos approves da UI do hub."
+	prompt, workID, err := ComposePromptRegister(repoDir, projDir, "investigacao-de-erro", intent)
+	if err != nil {
+		t.Fatalf("ComposePromptRegister: %v", err)
+	}
+	if workID == "" || !strings.HasPrefix(workID, "W-") {
+		t.Fatalf("workID = %q, want a W- id", workID)
+	}
+	for _, want := range []string{
+		"Trabalho já registrado para este prompt: " + workID,
+		"cerne work done " + workID,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created *store.Work
+	for i, w := range works {
+		if w.ID == workID {
+			created = &works[i]
+		}
+	}
+	if created == nil || created.State != domain.WorkActive {
+		t.Fatalf("work %s not active in backend: %+v", workID, works)
+	}
+	if !strings.Contains(created.Title, "Investigar lentidão") {
+		t.Fatalf("work title not derived from intent: %q", created.Title)
+	}
+}
+
+// TestComposePromptRegisterDupGuard: registering the same intent twice trips
+// the F-0147 guard instead of minting a duplicate W-.
+func TestComposePromptRegisterDupGuard(t *testing.T) {
+	repoDir, projDir := promptGitFixture(t)
+	intent := "Mesmo trabalho duas vezes."
+	if _, _, err := ComposePromptRegister(repoDir, projDir, "investigacao-de-erro", intent); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+	_, _, err := ComposePromptRegister(repoDir, projDir, "investigacao-de-erro", intent)
+	if err == nil {
+		t.Fatal("second register with the same intent must trip the dup-guard")
+	}
+}
+
+// TestDeriveWorkTitleTruncates: long intents become a bounded title.
+func TestDeriveWorkTitleTruncates(t *testing.T) {
+	long := strings.Repeat("palavra ", 20)
+	got := deriveWorkTitle(long)
+	if len([]rune(got)) > 72 {
+		t.Fatalf("title too long (%d runes): %q", len([]rune(got)), got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("truncated title must end with ellipsis: %q", got)
 	}
 }

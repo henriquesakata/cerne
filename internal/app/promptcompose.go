@@ -52,6 +52,41 @@ func ListPromptTypes(repoDir string) ([]PromptType, error) {
 	return types, nil
 }
 
+// ComposePromptRegister is ComposePrompt with the dispatch registered at
+// composition time (criterion 3, F-0152): the W- is created here — its title
+// derived from the intent, same dup-guard as `cerne work start` (F-0147) —
+// so the discipline stops depending on the receiving agent. The id and the
+// closing instruction ride inside the prompt.
+func ComposePromptRegister(repoDir, projDir, typ, text string) (string, string, error) {
+	w, err := StartWork(repoDir, projDir, deriveWorkTitle(text), nil, "", false)
+	if err != nil {
+		return "", "", err
+	}
+	prompt, err := composePrompt(repoDir, projDir, typ, text, w.ID)
+	if err != nil {
+		return "", "", err
+	}
+	return prompt, w.ID, nil
+}
+
+// deriveWorkTitle bounds the intent to a work title: first line, cut at a
+// word boundary near 70 runes.
+func deriveWorkTitle(text string) string {
+	title := strings.TrimSpace(text)
+	if i := strings.IndexByte(title, '\n'); i >= 0 {
+		title = strings.TrimSpace(title[:i])
+	}
+	runes := []rune(title)
+	if len(runes) <= 70 {
+		return title
+	}
+	cut := string(runes[:70])
+	if i := strings.LastIndexByte(cut, ' '); i > 0 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut) + "…"
+}
+
 // ComposePrompt builds the dispatch prompt for a prompt outbound from the
 // harness (criterion 1, F-0152): the user's intent, the template body of the
 // chosen type, and a live board snapshot only cerne has — active works, live
