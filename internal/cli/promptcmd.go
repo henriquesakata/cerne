@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/prompt"
 )
 
 func newPromptCmd() *cobra.Command {
@@ -33,7 +33,7 @@ func newPromptComposeCmd() *cobra.Command {
 				return err
 			}
 			if list {
-				types, err := app.ListPromptTypes(ctx.repoDir)
+				types, err := prompt.ListTypes(ctx.repoDir)
 				if err != nil {
 					return err
 				}
@@ -50,19 +50,19 @@ func newPromptComposeCmd() *cobra.Command {
 				return fmt.Errorf("--type and --text are required (or use --list to see the available types)")
 			}
 			if register {
-				prompt, workID, err := app.ComposePromptRegister(ctx.repoDir, ctx.projDir, typ, text)
+				composed, workID, err := prompt.ComposeRegister(ctx.repoDir, ctx.projDir, typ, text)
 				if err != nil {
 					return err
 				}
-				fmt.Fprint(cmd.OutOrStdout(), prompt)
+				fmt.Fprint(cmd.OutOrStdout(), composed)
 				fmt.Fprintf(cmd.ErrOrStderr(), "Registered %s for this dispatch.\n", workID)
 				return nil
 			}
-			prompt, err := app.ComposePrompt(ctx.repoDir, ctx.projDir, typ, text)
+			composed, err := prompt.Compose(ctx.repoDir, ctx.projDir, typ, text)
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), prompt)
+			fmt.Fprint(cmd.OutOrStdout(), composed)
 			return nil
 		},
 	}

@@ -1,4 +1,4 @@
-package app
+package prompt
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -13,9 +14,9 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// ErrUnknownPromptType is the sentinel for a --type that matches no live
+// ErrUnknownType is the sentinel for a --type that matches no live
 // prompt-template note; its message lists the available types.
-var ErrUnknownPromptType = errors.New("unknown prompt type")
+var ErrUnknownType = errors.New("unknown prompt type")
 
 // promptTemplateComponent is the component tag that turns a note into a
 // prompt template (F-0152): templates are team-versioned backend entities,
@@ -24,26 +25,26 @@ const promptTemplateComponent = "prompt-template"
 
 // PromptType is one available template: the slug used as --type and the
 // note title it came from.
-type PromptType struct {
+type Type struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
 }
 
 // ListPromptTypes returns the live prompt-template notes as types, sorted by
 // slug (criterion 4, F-0152).
-func ListPromptTypes(repoDir string) ([]PromptType, error) {
+func ListTypes(repoDir string) ([]Type, error) {
 	notes, err := store.LoadAllNotes(repoDir)
 	if err != nil {
 		return nil, err
 	}
-	var types []PromptType
+	var types []Type
 	for _, n := range notes {
 		if n.State != domain.NoteActive {
 			continue
 		}
 		for _, c := range n.Components {
 			if c == promptTemplateComponent {
-				types = append(types, PromptType{Slug: slug.Make(n.Title), Title: n.Title})
+				types = append(types, Type{Slug: slug.Make(n.Title), Title: n.Title})
 				break
 			}
 		}
@@ -57,12 +58,12 @@ func ListPromptTypes(repoDir string) ([]PromptType, error) {
 // derived from the intent, same dup-guard as `cerne work start` (F-0147) —
 // so the discipline stops depending on the receiving agent. The id and the
 // closing instruction ride inside the prompt.
-func ComposePromptRegister(repoDir, projDir, typ, text string) (string, string, error) {
-	w, err := StartWork(repoDir, projDir, deriveWorkTitle(text), nil, "", false)
+func ComposeRegister(repoDir, projDir, typ, text string) (string, string, error) {
+	w, err := app.StartWork(repoDir, projDir, deriveWorkTitle(text), nil, "", false)
 	if err != nil {
 		return "", "", err
 	}
-	prompt, err := composePrompt(repoDir, projDir, typ, text, w.ID)
+	prompt, err := composeInner(repoDir, projDir, typ, text, w.ID)
 	if err != nil {
 		return "", "", err
 	}
@@ -92,11 +93,11 @@ func deriveWorkTitle(text string) string {
 // chosen type, and a live board snapshot only cerne has — active works, live
 // features and the lint debt count. Deterministic concatenation by design
 // (spec fork): the value is the live data, not rewriting the intent.
-func ComposePrompt(repoDir, projDir, typ, text string) (string, error) {
-	return composePrompt(repoDir, projDir, typ, text, "")
+func Compose(repoDir, projDir, typ, text string) (string, error) {
+	return composeInner(repoDir, projDir, typ, text, "")
 }
 
-func composePrompt(repoDir, projDir, typ, text, registeredWork string) (string, error) {
+func composeInner(repoDir, projDir, typ, text, registeredWork string) (string, error) {
 	notes, err := store.LoadAllNotes(repoDir)
 	if err != nil {
 		return "", err
@@ -117,7 +118,7 @@ func composePrompt(repoDir, projDir, typ, text, registeredWork string) (string, 
 		}
 	}
 	if tmpl == nil {
-		types, terr := ListPromptTypes(repoDir)
+		types, terr := ListTypes(repoDir)
 		if terr != nil {
 			return "", terr
 		}
@@ -125,7 +126,7 @@ func composePrompt(repoDir, projDir, typ, text, registeredWork string) (string, 
 		for i, t := range types {
 			slugs[i] = t.Slug
 		}
-		return "", fmt.Errorf("%w: %q — available: %s", ErrUnknownPromptType, typ, strings.Join(slugs, ", "))
+		return "", fmt.Errorf("%w: %q — available: %s", ErrUnknownType, typ, strings.Join(slugs, ", "))
 	}
 	body, err := store.LoadNoteContent(repoDir, tmpl.ID)
 	if err != nil {

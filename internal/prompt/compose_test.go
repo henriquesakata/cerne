@@ -1,4 +1,4 @@
-package app
+package prompt
 
 import (
 	"errors"
@@ -73,7 +73,7 @@ func TestComposePromptGolden(t *testing.T) {
 		t.Fatalf("lint baseline: %v", err)
 	}
 
-	got, err := ComposePrompt(repoDir, projDir, "investigacao-de-erro", "Investigar lentidão nos approves da UI.")
+	got, err := Compose(repoDir, projDir, "investigacao-de-erro", "Investigar lentidão nos approves da UI.")
 	if err != nil {
 		t.Fatalf("ComposePrompt: %v", err)
 	}
@@ -111,22 +111,22 @@ Nenhum work registrado para este prompt — ao começar, rode 'cerne work start 
 // the available ones.
 func TestComposePromptUnknownType(t *testing.T) {
 	repoDir, projDir := promptFixture(t)
-	_, err := ComposePrompt(repoDir, projDir, "nao-existe", "x")
-	if !errors.Is(err, ErrUnknownPromptType) {
-		t.Fatalf("err = %v, want ErrUnknownPromptType", err)
+	_, err := Compose(repoDir, projDir, "nao-existe", "x")
+	if !errors.Is(err, ErrUnknownType) {
+		t.Fatalf("err = %v, want ErrUnknownType", err)
 	}
 	if !strings.Contains(err.Error(), "investigacao-de-erro") {
 		t.Fatalf("error must list available types, got: %v", err)
 	}
 }
 
-// TestListPromptTypes pins criterion 4: live prompt-template notes become
+// TestListTypes pins criterion 4: live prompt-template notes become
 // types (slug + title); superseded ones don't.
-func TestListPromptTypes(t *testing.T) {
+func TestListTypes(t *testing.T) {
 	repoDir, _ := promptFixture(t)
-	types, err := ListPromptTypes(repoDir)
+	types, err := ListTypes(repoDir)
 	if err != nil {
-		t.Fatalf("ListPromptTypes: %v", err)
+		t.Fatalf("ListTypes: %v", err)
 	}
 	if len(types) != 1 {
 		t.Fatalf("types = %+v, want exactly the live template", types)
@@ -140,23 +140,45 @@ func TestListPromptTypes(t *testing.T) {
 // as StartWork commits and pushes.
 func promptGitFixture(t *testing.T) (repoDir, projDir string) {
 	t.Helper()
-	_, repoDir, projDir, _ = reconcileFixture(t)
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	if err := gitback.InitBare(origin); err != nil {
+		t.Fatalf("InitBare: %v", err)
+	}
+	repoDir = filepath.Join(root, "repo")
+	if err := gitback.Clone(origin, repoDir); err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if err := store.InitLayout(repoDir, store.Project{Name: "Projeto Demo"}); err != nil {
+		t.Fatalf("InitLayout: %v", err)
+	}
 	saveTemplateNote(t, repoDir, "N-0001", "Investigação de erro", domain.NoteActive,
 		"Use a skill observability.")
-	if _, err := gitback.CommitAndPush(repoDir, "seed templates"); err != nil {
+	sha, err := gitback.CommitAndPush(repoDir, "seed templates")
+	if err != nil {
 		t.Fatalf("seed CommitAndPush: %v", err)
+	}
+	projDir = filepath.Join(root, "proj")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "demo", Backend: origin}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if err := project.SaveLock(projDir, project.Lock{Version: 1, Backend: origin, Snapshot: sha}); err != nil {
+		t.Fatalf("SaveLock: %v", err)
 	}
 	return repoDir, projDir
 }
 
-// TestComposePromptRegister pins criterion 3 (F-0152): --register creates the
+// TestComposeRegister pins criterion 3 (F-0152): --register creates the
 // W- (title derived from the intent) and embeds its id + closing instruction.
-func TestComposePromptRegister(t *testing.T) {
+func TestComposeRegister(t *testing.T) {
 	repoDir, projDir := promptGitFixture(t)
 	intent := "Investigar lentidão nos approves da UI do hub."
-	prompt, workID, err := ComposePromptRegister(repoDir, projDir, "investigacao-de-erro", intent)
+	prompt, workID, err := ComposeRegister(repoDir, projDir, "investigacao-de-erro", intent)
 	if err != nil {
-		t.Fatalf("ComposePromptRegister: %v", err)
+		t.Fatalf("ComposeRegister: %v", err)
 	}
 	if workID == "" || !strings.HasPrefix(workID, "W-") {
 		t.Fatalf("workID = %q, want a W- id", workID)
@@ -187,15 +209,15 @@ func TestComposePromptRegister(t *testing.T) {
 	}
 }
 
-// TestComposePromptRegisterDupGuard: registering the same intent twice trips
+// TestComposeRegisterDupGuard: registering the same intent twice trips
 // the F-0147 guard instead of minting a duplicate W-.
-func TestComposePromptRegisterDupGuard(t *testing.T) {
+func TestComposeRegisterDupGuard(t *testing.T) {
 	repoDir, projDir := promptGitFixture(t)
 	intent := "Mesmo trabalho duas vezes."
-	if _, _, err := ComposePromptRegister(repoDir, projDir, "investigacao-de-erro", intent); err != nil {
+	if _, _, err := ComposeRegister(repoDir, projDir, "investigacao-de-erro", intent); err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	_, _, err := ComposePromptRegister(repoDir, projDir, "investigacao-de-erro", intent)
+	_, _, err := ComposeRegister(repoDir, projDir, "investigacao-de-erro", intent)
 	if err == nil {
 		t.Fatal("second register with the same intent must trip the dup-guard")
 	}

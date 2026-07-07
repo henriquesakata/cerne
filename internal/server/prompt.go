@@ -2,10 +2,9 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
-	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/prompt"
 )
 
 // promptComposeRequest is the POST /api/prompt/compose body (F-0152).
@@ -17,15 +16,15 @@ type promptComposeRequest struct {
 
 // handlePromptTypes lists the available prompt templates (GET /api/prompt/types).
 func handlePromptTypes(w http.ResponseWriter, repoDir string) {
-	types, err := app.ListPromptTypes(repoDir)
+	types, err := prompt.ListTypes(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	if types == nil {
-		types = []app.PromptType{}
+		types = []prompt.Type{}
 	}
-	writeJSON(w, http.StatusOK, map[string][]app.PromptType{"types": types})
+	writeJSON(w, http.StatusOK, map[string][]prompt.Type{"types": types})
 }
 
 // handlePromptCompose composes a dispatch prompt (POST /api/prompt/compose):
@@ -40,20 +39,18 @@ func handlePromptCompose(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("type and text are required"))
 		return
 	}
-	var prompt, workID string
+	var composed, workID string
 	var err error
 	if req.Register {
-		prompt, workID, err = app.ComposePromptRegister(repoDir, projDir, req.Type, req.Text)
+		composed, workID, err = prompt.ComposeRegister(repoDir, projDir, req.Type, req.Text)
 	} else {
-		prompt, err = app.ComposePrompt(repoDir, projDir, req.Type, req.Text)
-	}
-	if errors.Is(err, app.ErrUnknownPromptType) {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
-		return
+		composed, err = prompt.Compose(repoDir, projDir, req.Type, req.Text)
 	}
 	if err != nil {
+		// Unknown type, dup-guard and domain failures alike surface as 422
+		// with the same message the CLI prints.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"prompt": prompt, "work_id": workID})
+	writeJSON(w, http.StatusOK, map[string]string{"prompt": composed, "work_id": workID})
 }
