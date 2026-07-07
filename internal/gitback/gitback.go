@@ -198,7 +198,10 @@ func Push(workdir string) error {
 		})
 	})
 	if errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil
+		err = nil
+	}
+	if err == nil {
+		markSynced(workdir) // F-0156: the elision predicate
 	}
 	return err
 }
@@ -241,7 +244,10 @@ func Pull(workdir string) error {
 		Auth:          auth,
 	})
 	if errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil
+		err = nil
+	}
+	if err == nil {
+		markSynced(workdir) // F-0156: the elision predicate
 	}
 	return err
 }

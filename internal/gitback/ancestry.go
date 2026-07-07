@@ -50,7 +50,10 @@ func Fetch(workdir string) error {
 		return repo.FetchContext(ctx, &git.FetchOptions{RemoteName: remoteName, Auth: auth})
 	})
 	if errors.Is(err, git.NoErrAlreadyUpToDate) || errors.Is(err, transport.ErrEmptyRemoteRepository) {
-		return nil
+		err = nil
+	}
+	if err == nil {
+		markSynced(workdir) // F-0156: the elision predicate
 	}
 	return err
 }
