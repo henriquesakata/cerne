@@ -54,6 +54,7 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 	// process; Ctrl+C cancels it and shuts the server down gracefully.
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	defer initServerTelemetry(sigCtx, dir)()
 	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolver)
 }
 

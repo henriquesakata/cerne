@@ -320,6 +320,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	// The local ui exposes every data route (the embedded UI uses all of them).
 	mountDataRoutes(mux, "/projects/{pid}", withProject, false)
 	mountTelemetry(mux)
+	mountPprof(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))

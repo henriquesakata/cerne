@@ -50,6 +50,7 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 	}
 	mountDataRoutes(mux, "", bind, false)
 	mountTelemetry(mux)
+	mountPprof(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})

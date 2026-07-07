@@ -142,6 +142,27 @@ func TestLintObservedPerProject(t *testing.T) {
 	}
 }
 
+// TestPprofGatedByEnv pins criterion 6 (F-0149): /debug/pprof/ exists only
+// when CERNE_PPROF=1 was set at mux build time.
+func TestPprofGatedByEnv(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+
+	// Ungated, /debug/pprof/ falls through to the SPA (any unknown path serves
+	// index.html) — the profiler page itself must not exist.
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "demo").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
+	if strings.Contains(rec.Body.String(), "Types of profiles available") {
+		t.Fatal("pprof page served without CERNE_PPROF")
+	}
+
+	t.Setenv("CERNE_PPROF", "1")
+	rec = httptest.NewRecorder()
+	New(repoDir, projDir, "demo").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Types of profiles available") {
+		t.Fatalf("pprof gated on: code=%d, want the profiler index page", rec.Code)
+	}
+}
+
 // TestSSEGaugeTracksStreamClients pins the SSE client gauge: one connected
 // stream raises it, disconnect lowers it.
 func TestSSEGaugeTracksStreamClients(t *testing.T) {

@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"net/http/pprof"
+	"os"
 	"strconv"
 	"time"
 
@@ -51,4 +53,18 @@ func mountTelemetry(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/debug/timings", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, telemetry.Snapshot())
 	})
+}
+
+// mountPprof exposes net/http/pprof only when CERNE_PPROF=1 (F-0149
+// criterion 6). Mounted solely on the loopback-bound servers (`cerne ui`
+// binds 127.0.0.1 by design); the remote `cerne serve` never gets it.
+func mountPprof(mux *http.ServeMux) {
+	if os.Getenv("CERNE_PPROF") != "1" {
+		return
+	}
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 }
