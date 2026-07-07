@@ -8,7 +8,6 @@ import Runbooks, { RunbookDetail } from './Runbooks'
 import Notes, { NoteDetail } from './Notes'
 import Search from './Search'
 import Ask from './Ask'
-import Prompt from './Prompt'
 import Wiki, { WikiPageView } from './Wiki'
 import Lint from './Lint'
 import History from './History'
@@ -72,7 +71,6 @@ function Routed({ hash }: { hash: string }) {
       </Suspense>
     )
   if (hash === '#/ask') return <Ask />
-  if (hash === '#/prompt') return <Prompt />
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />
   if (hash === '#/history') return <History />
