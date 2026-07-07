@@ -169,13 +169,23 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
 	}
 	got, _ := os.ReadFile(sp)
 
-	// The new Bash entry, indented as a sibling (6 spaces) of the Write entry.
+	// The new Bash entries (provenance + work-bind), indented as siblings
+	// (6 spaces) of the Write entry.
 	bashBlock := `      {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
+          }
+        ]
+      }`
+	bindBlock := `      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
           }
         ]
       }`
@@ -202,13 +212,25 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         ]
       }
     ]`
+	// The PreToolUse work-gate block (F-0151), appended after SubagentStart.
+	preBlock := `    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
+          }
+        ]
+      }
+    ]`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
-	// block is inserted before PostToolUse's closing bracket; the SessionStart
-	// and SubagentStart members are appended to the hooks object; the
-	// CERNE_ACTOR key is appended inside the existing inline env object.
-	// Nothing else moves.
-	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+"\n    ]", 1)
-	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+"\n  }\n}", 1)
+	// blocks (provenance + work-bind) are inserted before PostToolUse's closing
+	// bracket; the SessionStart, SubagentStart and PreToolUse members are
+	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
+	// existing inline env object. Nothing else moves.
+	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+"\n    ]", 1)
+	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
@@ -263,7 +285,16 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
 	want := `{
   "permissions": {"allow": ["Bash(ls:*)"]},
   "hooks": {
-    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]}],
+    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]},
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
+          }
+        ]
+      }],
     "PostToolUse": [
       {
         "matcher": "Bash",
@@ -271,6 +302,15 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
           }
         ]
       }
@@ -304,9 +344,10 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("scenario B not a minimal diff.\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
-	// The pre-existing inline PreToolUse line survives verbatim.
-	if !strings.Contains(string(got), `    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]}],`) {
-		t.Errorf("inline PreToolUse line not preserved verbatim:\n%s", got)
+	// The pre-existing inline PreToolUse entry survives verbatim (its line only
+	// gains the comma before the appended work-gate entry).
+	if !strings.Contains(string(got), `    "PreToolUse": [{"matcher":"Write","hooks":[{"type":"command","command":"echo w"}]},`) {
+		t.Errorf("inline PreToolUse entry not preserved verbatim:\n%s", got)
 	}
 }
 
@@ -343,6 +384,15 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-reference-reminder.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -361,6 +411,17 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-subagent-context.sh\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
           }
         ]
       }

@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh
 var files embed.FS
 
 const (
@@ -38,6 +38,20 @@ const (
 	subagentScript = "cerne-subagent-context.sh"
 	// subagentCommand is the settings.json command that runs subagentScript.
 	subagentCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-subagent-context.sh"`
+	// bindScript is the PostToolUse session→work binder (F-0151): a successful
+	// `cerne work start`/`feature start` seen in a Bash call binds the session
+	// to the registered id, so the work gate recognizes it.
+	bindScript = "cerne-work-bind.sh"
+	// bindCommand is the settings.json command that runs bindScript.
+	bindCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh"`
+	// gateScript is the PreToolUse work gate (F-0151): denies Edit/Write in a
+	// session with no live registration when [gates] work_gate is on (the
+	// toggle is evaluated by the Go subcommand at run time).
+	gateScript = "cerne-work-gate.sh"
+	// gateCommand is the settings.json command that runs gateScript.
+	gateCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh"`
+	// gateMatcher limits the gate to the file-editing tools.
+	gateMatcher = "Edit|Write"
 )
 
 // Status is the outcome of installing one asset.
@@ -83,6 +97,15 @@ func Install(projDir string) ([]Result, error) {
 		return nil, err
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
+
+	for _, script := range []string{bindScript, gateScript} {
+		dst := filepath.Join(projDir, ".claude", "hooks", script)
+		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, Result{Asset: script, Status: st})
+	}
 
 	settingsDst := filepath.Join(projDir, ".claude", "settings.json")
 	st, err = mergeSettingsFile(settingsDst)
@@ -209,6 +232,21 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 	}
 	needHook := !hookPresent(post)
+	needBind := !scriptWired(post, bindScript)
+
+	var pre []any
+	hasPre := false
+	if hooksMap != nil {
+		if pv, ok := hooksMap["PreToolUse"]; ok {
+			arr, ok := pv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "PreToolUse" with an unexpected type`)
+			}
+			pre = arr
+			hasPre = true
+		}
+	}
+	needGate := !scriptWired(pre, gateScript)
 
 	var sessionStart []any
 	hasSS := false
@@ -249,7 +287,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needRegister && !needSubagent && !needActor {
+	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needActor {
 		return nil, false, nil
 	}
 
@@ -261,11 +299,17 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		if needHook {
 			fresh = withHookEntry(fresh)
 		}
+		if needBind {
+			fresh = withMatcherEntry(fresh, "PostToolUse", "Bash", bindCommand)
+		}
 		if needRegister {
 			fresh = withEventEntry(fresh, "SessionStart", registerCommand)
 		}
 		if needSubagent {
 			fresh = withEventEntry(fresh, "SubagentStart", subagentCommand)
+		}
+		if needGate {
+			fresh = withMatcherEntry(fresh, "PreToolUse", gateMatcher, gateCommand)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -288,11 +332,17 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if needHook {
 		expected = withHookEntry(expected)
 	}
+	if needBind {
+		expected = withMatcherEntry(expected, "PostToolUse", "Bash", bindCommand)
+	}
 	if needRegister {
 		expected = withEventEntry(expected, "SessionStart", registerCommand)
 	}
 	if needSubagent {
 		expected = withEventEntry(expected, "SubagentStart", subagentCommand)
+	}
+	if needGate {
+		expected = withMatcherEntry(expected, "PreToolUse", gateMatcher, gateCommand)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -301,7 +351,16 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	cur := raw
 	ok := true
 	if needHook {
-		spliced, spliceOK := spliceHook(cur, hasHooks, hasPTU, detectNewline(cur), unit)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry("Bash", hookCommand), hasHooks, hasPTU, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needBind {
+		curHasHooks, curHasPTU := reDetectEvent(cur, "PostToolUse", hasHooks, hasPTU)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry("Bash", bindCommand), curHasHooks, curHasPTU, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
@@ -322,6 +381,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		// Re-detect again: the splices above may have created "hooks".
 		curHasHooks, curHasSub := reDetectEvent(cur, "SubagentStart", hasHooks, hasSub)
 		spliced, spliceOK := spliceEventEntry(cur, "SubagentStart", newEventEntry(subagentCommand), curHasHooks, curHasSub, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needGate {
+		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(gateMatcher, gateCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
@@ -350,21 +418,28 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	return append(out, '\n'), true, nil
 }
 
-// withHookEntry ensures root carries the PostToolUse/Bash wiring, creating the
-// hooks object and PostToolUse array as needed. It is the canonical (key-order-
-// agnostic) merge: used to seed a fresh document, to build the fallback render,
-// and as the oracle the surgical splice is verified against.
+// withHookEntry ensures root carries the provenance PostToolUse/Bash wiring.
+// It is the canonical (key-order-agnostic) merge: used to seed a fresh
+// document, to build the fallback render, and as the oracle the surgical
+// splice is verified against.
 func withHookEntry(root map[string]any) map[string]any {
+	return withMatcherEntry(root, "PostToolUse", "Bash", hookCommand)
+}
+
+// withMatcherEntry ensures root carries a matcher-ful hook entry under the
+// given event, creating the hooks object and the event array as needed.
+// Canonical merge — seed, fallback render and splice oracle.
+func withMatcherEntry(root map[string]any, event, matcher, command string) map[string]any {
 	hooksMap, _ := root["hooks"].(map[string]any)
 	if hooksMap == nil {
 		hooksMap = map[string]any{}
 	}
-	post, _ := hooksMap["PostToolUse"].([]any)
-	post = append(post, map[string]any{
-		"matcher": "Bash",
-		"hooks":   []any{map[string]any{"type": "command", "command": hookCommand}},
+	arr, _ := hooksMap[event].([]any)
+	arr = append(arr, map[string]any{
+		"matcher": matcher,
+		"hooks":   []any{map[string]any{"type": "command", "command": command}},
 	})
-	hooksMap["PostToolUse"] = post
+	hooksMap[event] = arr
 	root["hooks"] = hooksMap
 	return root
 }
@@ -555,10 +630,10 @@ type matcherEntry struct {
 	Hooks   []hookCmd `json:"hooks"`
 }
 
-func newMatcherEntry() matcherEntry {
+func newMatcherEntry(matcher, command string) matcherEntry {
 	return matcherEntry{
-		Matcher: "Bash",
-		Hooks:   []hookCmd{{Type: "command", Command: hookCommand}},
+		Matcher: matcher,
+		Hooks:   []hookCmd{{Type: "command", Command: command}},
 	}
 }
 
@@ -593,18 +668,19 @@ func scriptWired(entries []any, script string) bool {
 	return false
 }
 
-// spliceHook returns raw with the new entry surgically inserted, choosing the
-// insertion site from the existing structure: append to hooks.PostToolUse when it
-// exists, else add PostToolUse to the hooks object, else add hooks to the root.
-// ok=false if the target span cannot be located (caller falls back to a render).
-func spliceHook(raw []byte, hasHooks, hasPTU bool, nl, unit string) ([]byte, bool) {
-	entryText, err := marshalIndentNoHTML(newMatcherEntry(), "", unit)
+// spliceMatcherEntry returns raw with a matcher-ful event entry surgically
+// inserted, choosing the insertion site from the existing structure: append to
+// hooks.<event> when it exists, else add <event> to the hooks object, else add
+// hooks to the root. ok=false if the target span cannot be located (caller
+// falls back to a render).
+func spliceMatcherEntry(raw []byte, event string, entry matcherEntry, hasHooks, hasEvent bool, nl, unit string) ([]byte, bool) {
+	entryText, err := marshalIndentNoHTML(entry, "", unit)
 	if err != nil {
 		return nil, false
 	}
 	switch {
-	case hasPTU:
-		start, end, empty, ok := findSpan(raw, "hooks", "PostToolUse")
+	case hasEvent:
+		start, end, empty, ok := findSpan(raw, "hooks", event)
 		if !ok {
 			return nil, false
 		}
@@ -614,20 +690,17 @@ func spliceHook(raw []byte, hasHooks, hasPTU bool, nl, unit string) ([]byte, boo
 		if !ok {
 			return nil, false
 		}
-		arrText, err := marshalIndentNoHTML([]matcherEntry{newMatcherEntry()}, "", unit)
+		arrText, err := marshalIndentNoHTML([]matcherEntry{entry}, "", unit)
 		if err != nil {
 			return nil, false
 		}
-		return spliceObjectAppend(raw, start, end, empty, "PostToolUse", string(arrText), nl, unit), true
+		return spliceObjectAppend(raw, start, end, empty, event, string(arrText), nl, unit), true
 	default:
 		start, end, empty, ok := findSpan(raw)
 		if !ok {
 			return nil, false
 		}
-		hooksVal := struct {
-			PostToolUse []matcherEntry `json:"PostToolUse"`
-		}{PostToolUse: []matcherEntry{newMatcherEntry()}}
-		hooksText, err := marshalIndentNoHTML(hooksVal, "", unit)
+		hooksText, err := marshalIndentNoHTML(map[string][]matcherEntry{event: {entry}}, "", unit)
 		if err != nil {
 			return nil, false
 		}
