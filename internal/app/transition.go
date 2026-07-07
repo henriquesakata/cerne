@@ -140,12 +140,27 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 				return "", err
 			}
 		}
+		// Leaving development ends the auto-registered activity (F-0146): the
+		// same commit that records the transition closes the auto work.
+		if oldState == domain.StateInDevelopment {
+			if err := closeAutoWorks(repoDir, id, action); err != nil {
+				return "", err
+			}
+		}
 		// Starting development opens the result phase: scaffold the result stub so it
 		// is committed alongside the transition (mirrors the plan stub at approve).
 		var propagated []string
 		if action == domain.ActionStart {
 			if err := writeResultStub(repoDir, id, f.Title); err != nil {
 				return "", err
+			}
+			// Auto-registered activity (F-0146): entering development records who
+			// is on it. Only the leaf feature the agent actually picked up — the
+			// epic propagation below never opens works of its own (crit. 4).
+			if activityAutoEnabled(projDir) {
+				if err := openAutoWork(repoDir, f); err != nil {
+					return "", err
+				}
 			}
 			// A child entering development pulls its ancestor epics along: each one
 			// that is ready (approved, with a real plan) starts in the same commit,
