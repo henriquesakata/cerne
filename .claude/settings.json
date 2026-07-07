@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/register-task-reminder.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-register-reminder.sh\""
           }
         ]
       }
@@ -32,5 +32,8 @@
         ]
       }
     ]
+  },
+  "env": {
+    "CERNE_ACTOR": "agent"
   }
 }
