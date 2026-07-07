@@ -1,6 +1,7 @@
 package gitback
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -160,5 +161,41 @@ func TestCommitPathOtherStagedSkips(t *testing.T) {
 	st, _ := wt.Status()
 	if st.File("other.txt").Staging != git.Modified {
 		t.Fatalf("other.txt staging = %v, want Modified (preserved)", st.File("other.txt").Staging)
+	}
+}
+
+// TestCommitPathAvoidsWorktreeStatus is the F-0153 guard: CommitPath runs on
+// the USER's project worktree (possibly a huge monorepo), where go-git's
+// Worktree.Status() hashes the entire tree — 80s+ per call on the hub, the
+// measured cause of 113s-average snapshot phases. The rewritten CommitPath
+// lives in commitpath.go and must never call .Status() (nor plain wt.Add,
+// which calls Status internally — AddWithOptions{SkipStatus} is the
+// sanctioned path).
+func TestCommitPathAvoidsWorktreeStatus(t *testing.T) {
+	src, err := os.ReadFile("commitpath.go")
+	if err != nil {
+		t.Fatalf("commitpath.go must exist (CommitPath extracted from gitback.go): %v", err)
+	}
+	for _, banned := range []string{".Status()", "wt.Add("} {
+		if bytes.Contains(src, []byte(banned)) {
+			t.Errorf("commitpath.go contains %q — it would re-scan the user's whole worktree (F-0153)", banned)
+		}
+	}
+}
+
+// TestCommitPathStagedDeletionSkips pins one more ErrOtherStaged shape: a
+// deletion staged in the index (file removed from index, present in HEAD)
+// must also block the pin.
+func TestCommitPathStagedDeletionSkips(t *testing.T) {
+	dir := initRepoWith(t, map[string]string{"docs.lock": "v1", "other.txt": "a"})
+	writeFile(t, dir, "docs.lock", "v2")
+	repo, _ := git.PlainOpen(dir)
+	wt, _ := repo.Worktree()
+	if _, err := wt.Remove("other.txt"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := CommitPath(dir, "docs.lock", "pin")
+	if !errors.Is(err, ErrOtherStaged) {
+		t.Fatalf("err = %v, want ErrOtherStaged for a staged deletion", err)
 	}
 }
