@@ -137,7 +137,9 @@ func TestTransitionFullLifecycle(t *testing.T) {
 	for _, ev := range events {
 		types = append(types, ev.Type)
 	}
-	want := []string{"feature.created", "feature.approved", "feature.started", "feature.completed"}
+	// The start/complete pair also auto-registers the activity (F-0146):
+	// work.started rides the start commit, work.done the complete commit.
+	want := []string{"feature.created", "feature.approved", "feature.started", "work.started", "feature.completed", "work.done"}
 	if strings.Join(types, ",") != strings.Join(want, ",") {
 		t.Fatalf("event types = %v, want %v", types, want)
 	}
