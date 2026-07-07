@@ -59,7 +59,7 @@ func ListTypes(repoDir string) ([]Type, error) {
 // so the discipline stops depending on the receiving agent. The id and the
 // closing instruction ride inside the prompt.
 func ComposeRegister(repoDir, projDir, typ, text string) (string, string, error) {
-	w, err := app.StartWork(repoDir, projDir, deriveWorkTitle(text), nil, "", false)
+	w, err := app.StartWork(repoDir, projDir, deriveWorkTitle(text), nil, "", false, nil)
 	if err != nil {
 		return "", "", err
 	}
