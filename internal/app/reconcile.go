@@ -80,6 +80,10 @@ var ErrTooConcurrent = errors.New("backend too concurrent: could not sync after 
 var (
 	reconcileMaxAttempts = 6
 	reconcileBackoff     = 40 * time.Millisecond
+	// elisionWindow (F-0156): attempt 0 skips its fetch when this process
+	// synced the backend's remote this recently — 2× the server's periodic
+	// pull, so the mark never ages past two cycles. Retries always fetch.
+	elisionWindow = 30 * time.Second
 )
 
 // reconcileHookBeforePush, when non-nil, runs immediately before each push
@@ -142,11 +146,20 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 	var conflicts []Conflict
 	err := func() error {
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
-			stop := op.Phase("fetch")
-			err := gitback.Fetch(repoDir)
-			stop()
-			if err != nil {
-				return err
+			if attempt == 0 && gitback.SyncedWithin(repoDir, elisionWindow) {
+				// F-0156: this process talked to the remote moments ago (the
+				// server pulls every 15s), so attempt 0 plans against the
+				// tracking head it already has. If that turns out stale, the
+				// non-fast-forward retry below fetches and replans — the
+				// correction mechanism was always the retry, not this fetch.
+				op.Phase("fetch_skip")()
+			} else {
+				stop := op.Phase("fetch")
+				err := gitback.Fetch(repoDir)
+				stop()
+				if err != nil {
+					return err
+				}
 			}
 			theirs, err := gitback.TrackingHeadSHA(repoDir)
 			if errors.Is(err, gitback.ErrNoCommits) {
@@ -155,7 +168,7 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 				return err
 			}
 
-			stop = op.Phase("merge")
+			stop := op.Phase("merge")
 			apply, conf, err := plan3Way(repoDir, base, theirs, changes)
 			stop()
 			if err != nil {

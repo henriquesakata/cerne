@@ -36,3 +36,8 @@ func resetSyncMarks() {
 	syncAt = map[string]time.Time{}
 	syncMu.Unlock()
 }
+
+// ResetSyncMarks is test support for consumer packages whose fixtures push
+// (and therefore mark) before exercising the elision paths. Not for
+// production use — a process has no reason to forget that it synced.
+func ResetSyncMarks() { resetSyncMarks() }

@@ -3,6 +3,7 @@ package app
 import (
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
@@ -10,6 +11,9 @@ import (
 // mutation records the full phase sequence on the caller's Op.
 func TestMutateAndSnapshotOpRecordsPhases(t *testing.T) {
 	_, repoDir, projDir, _ := reconcileFixture(t)
+	// The fixture's seed push marks the sync (F-0156) and attempt 0 would
+	// elide the fetch; this golden pins the FULL phase story, so forget it.
+	gitback.ResetSyncMarks()
 	op := telemetry.StartOp("http")
 	err := MutateAndSnapshotOp(op, repoDir, projDir, func() (string, error) {
 		writeBackendFile(t, repoDir, "content/features/F-0001/spec.md", "v2\n")
