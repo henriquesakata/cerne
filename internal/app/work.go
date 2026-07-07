@@ -24,7 +24,7 @@ type WorkOutcome struct {
 // pushes the backend, refreshing the docs.lock snapshot in projDir. actor is
 // agent when non-empty, else "<os user>@<hostname>" — the default identity of
 // whoever/whatever is running this activity.
-func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool) (store.Work, error) {
+func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string) (store.Work, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Work{}, fmt.Errorf("a descrição da atividade não pode ser vazia")
@@ -33,6 +33,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	if actor == "" {
 		actor = defaultWorkActor()
 	}
+	paths = cleanWorkPaths(paths)
 	var w store.Work
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateWorkRefs(repoDir, refs)
@@ -57,6 +58,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 			State:     domain.WorkActive,
 			Actor:     actor,
 			Refs:      cleaned,
+			Paths:     paths,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
@@ -157,6 +159,19 @@ func defaultWorkActor() string {
 	default:
 		return "unknown"
 	}
+}
+
+// cleanWorkPaths trims and slash-normalizes the declared path globs (F-0151),
+// dropping empties; nil when nothing survives.
+func cleanWorkPaths(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		p = strings.TrimSpace(strings.ReplaceAll(p, `\`, "/"))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // validateWorkRefs trims, dedupes (preserving order) and checks each ref

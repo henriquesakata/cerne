@@ -3,9 +3,11 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -208,5 +210,111 @@ func TestWorkListJSON(t *testing.T) {
 	}
 	if len(payload.Works) != 1 || payload.Works[0].ID != "W-0001" {
 		t.Fatalf("works = %+v, want [W-0001]", payload.Works)
+	}
+}
+
+// TestWorkStartPathsAndOverlapWarning (F-0151 crit. 6): --paths persists the
+// declared globs and a second registration overlapping them prints a warning
+// naming the active work — without ever blocking the registration.
+func TestWorkStartPathsAndOverlapWarning(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+
+	if out, err := execCerne(t, "work", "start", "Mexer no server", "--paths", "internal/server/**", "--dir", projDir); err != nil {
+		t.Fatalf("work start 1: %v\noutput: %s", err, out)
+	}
+	w, err := store.LoadWork(repoDir, "W-0001")
+	if err != nil {
+		t.Fatalf("LoadWork: %v", err)
+	}
+	if len(w.Paths) != 1 || w.Paths[0] != "internal/server/**" {
+		t.Fatalf("paths = %v, want [internal/server/**]", w.Paths)
+	}
+
+	out, err := execCerne(t, "work", "start", "Revisar endpoints da api", "--paths", "internal/server/api/**,ui/src/**", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work start 2 (overlap must warn, not block): %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "W-0002") {
+		t.Fatalf("second registration missing confirmation:\n%s", out)
+	}
+	if !strings.Contains(out, "W-0001") {
+		t.Fatalf("output missing overlap warning naming W-0001:\n%s", out)
+	}
+
+	// Disjoint paths: no warning.
+	out, err = execCerne(t, "work", "start", "Outra coisa no cmd", "--paths", "cmd/cerne/**", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work start 3: %v\noutput: %s", err, out)
+	}
+	if strings.Contains(out, "W-0001") || strings.Contains(out, "overlap") {
+		t.Fatalf("disjoint paths should not warn:\n%s", out)
+	}
+}
+
+// TestWorkCurrentResolvesBinding (F-0151 crit. 7): `work current <session>`
+// reports the bound live work (text and --json), and an unbound session reads
+// as absent.
+func TestWorkCurrentResolvesBinding(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\noutput: %s", err, out)
+	}
+	cacheDir := filepath.Dir(repoDir)
+	if err := app.BindSession(cacheDir, "sess-abc", "W-0001"); err != nil {
+		t.Fatalf("BindSession: %v", err)
+	}
+
+	out, err := execCerne(t, "work", "current", "sess-abc", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work current: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "W-0001") {
+		t.Fatalf("output missing bound id:\n%s", out)
+	}
+
+	out, err = execCerne(t, "work", "current", "sess-abc", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work current --json: %v\noutput: %s", err, out)
+	}
+	var payload struct {
+		Session string `json:"session"`
+		Bound   bool   `json:"bound"`
+		ID      string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json.Unmarshal: %v\noutput: %s", err, out)
+	}
+	if !payload.Bound || payload.ID != "W-0001" || payload.Session != "sess-abc" {
+		t.Fatalf("payload = %+v, want bound W-0001", payload)
+	}
+
+	out, err = execCerne(t, "work", "current", "sess-none", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work current unbound: %v\noutput: %s", err, out)
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json.Unmarshal: %v\noutput: %s", err, out)
+	}
+	if payload.Bound {
+		t.Fatalf("unbound session resolved as bound: %+v", payload)
+	}
+}
+
+// TestWorkDoneClearsBindings (F-0151 crit. 5): closing a work removes every
+// session binding pointing at it.
+func TestWorkDoneClearsBindings(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\noutput: %s", err, out)
+	}
+	cacheDir := filepath.Dir(repoDir)
+	if err := app.BindSession(cacheDir, "sess-1", "W-0001"); err != nil {
+		t.Fatalf("BindSession: %v", err)
+	}
+	if out, err := execCerne(t, "work", "done", "W-0001", "--dir", projDir); err != nil {
+		t.Fatalf("work done: %v\noutput: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "sessions", "sess-1")); !os.IsNotExist(err) {
+		t.Fatalf("binding file should be removed after done: %v", err)
 	}
 }
