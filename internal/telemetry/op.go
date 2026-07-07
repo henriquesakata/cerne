@@ -97,13 +97,20 @@ func (o *Op) snapshot() Record {
 
 // End finishes the Op: the record lands in the default ring, is observed by
 // the default metrics (when wired), and is emitted as one structured log line.
+// Phase-less successful plain requests stay out of the ring — it holds
+// *operations* (transitions, lint, anything with phases or failures), so a
+// burst of board polls cannot evict the records worth inspecting.
 func (o *Op) End(status string) {
 	if o == nil {
 		return
 	}
 	rec := o.snapshot()
 	rec.Status = status
-	DefaultRing.add(rec)
+	plainHTTP := rec.Kind == "http" && len(rec.Phases) == 0 && rec.Retries == 0 &&
+		len(status) == 3 && status[0] == '2'
+	if !plainHTTP {
+		DefaultRing.add(rec)
+	}
 	observeOp(rec)
 	logger.Info("op",
 		slog.String("op_id", rec.ID),

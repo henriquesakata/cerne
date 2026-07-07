@@ -1,0 +1,113 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"gitlab.com/rockt/cerne/internal/telemetry"
+)
+
+// TestInstrumentedRouteUsesTemplatedLabel pins criterion 7 (F-0149): the log
+// line and the metric label carry the route PATTERN, never the raw path with
+// entity ids in it.
+func TestInstrumentedRouteUsesTemplatedLabel(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	var buf bytes.Buffer
+	prev := telemetry.SetLogger(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer telemetry.SetLogger(prev)
+
+	h := New(repoDir, projDir, "demo")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/features/F-9999", nil))
+
+	if strings.Contains(buf.String(), "F-9999") {
+		t.Fatalf("log line leaks the raw path:\n%s", buf.String())
+	}
+	var line map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Fatalf("no JSON log line for the request: %v\n%s", err, buf.String())
+	}
+	if line["route"] != "/features/{id}" {
+		t.Fatalf("route = %v, want /features/{id}", line["route"])
+	}
+	if line["project"] != "demo" {
+		t.Fatalf("project = %v, want demo", line["project"])
+	}
+	if got := testutil.CollectAndCount(telemetry.Default.HTTPDur); got == 0 {
+		t.Fatal("http duration histogram not observed")
+	}
+}
+
+// TestMetricsAndTimingsEndpoints pins criteria 3 and 5: /metrics serves the
+// Prometheus registry (with go_* runtime metrics) and /api/debug/timings the
+// ring buffer, on the single-project mux.
+func TestMetricsAndTimingsEndpoints(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	h := New(repoDir, projDir, "demo")
+
+	op := telemetry.StartOp("lint")
+	op.Phase("scan")()
+	op.End("ok")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "go_goroutines") {
+		t.Fatalf("/metrics: code=%d, want 200 with go_* metrics", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/debug/timings", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/api/debug/timings: code=%d, want 200", rec.Code)
+	}
+	var records []telemetry.Record
+	if err := json.Unmarshal(rec.Body.Bytes(), &records); err != nil {
+		t.Fatalf("timings body is not a record array: %v", err)
+	}
+	found := false
+	for _, r := range records {
+		if r.ID == op.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("timings does not include finished op %s", op.ID)
+	}
+}
+
+// TestSSEGaugeTracksStreamClients pins the SSE client gauge: one connected
+// stream raises it, disconnect lowers it.
+func TestSSEGaugeTracksStreamClients(t *testing.T) {
+	hub := newMultiHub(make(chan struct{}))
+	before := testutil.ToFloat64(telemetry.Default.SSEClients)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/api/stream", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		hub.handleStream(httptest.NewRecorder(), req)
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for testutil.ToFloat64(telemetry.Default.SSEClients) != before+1 {
+		select {
+		case <-deadline:
+			t.Fatal("gauge never incremented for a connected stream")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+	if got := testutil.ToFloat64(telemetry.Default.SSEClients); got != before {
+		t.Fatalf("gauge after disconnect = %v, want %v", got, before)
+	}
+}

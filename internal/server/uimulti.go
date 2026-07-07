@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 // This is the multi-project variant of `cerne ui`: one process serves N local
@@ -87,6 +88,8 @@ func (h *multiHub) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	ch := h.subscribe()
 	defer h.unsubscribe(ch)
+	telemetry.Default.SSEClients.Inc()
+	defer telemetry.Default.SSEClients.Dec()
 
 	fmt.Fprint(w, "event: projects\ndata: \n\n") // resync the list on connect
 	flusher.Flush()
@@ -316,6 +319,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	}
 	// The local ui exposes every data route (the embedded UI uses all of them).
 	mountDataRoutes(mux, "/projects/{pid}", withProject, false)
+	mountTelemetry(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))

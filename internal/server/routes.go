@@ -125,6 +125,6 @@ func mountDataRoutes(mux *http.ServeMux, prefix string, bind projectBinder, remo
 		if remoteOnly && !rt.remote {
 			continue
 		}
-		mux.HandleFunc(rt.method+" /api"+prefix+rt.pattern, bind(rt.handler))
+		mux.HandleFunc(rt.method+" /api"+prefix+rt.pattern, bind(instrumented(rt)))
 	}
 }

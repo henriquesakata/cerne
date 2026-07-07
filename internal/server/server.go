@@ -48,6 +48,7 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 		return func(w http.ResponseWriter, r *http.Request) { h(w, r, repoDir, projDir, projectID) }
 	}
 	mountDataRoutes(mux, "", bind, false)
+	mountTelemetry(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
