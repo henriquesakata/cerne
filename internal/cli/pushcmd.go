@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +20,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 func newPushCmd() *cobra.Command {
@@ -141,13 +143,24 @@ func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning: compile_on_push requires a callable [llm] (claude-cli/byo-key) — run 'cerne compile' to recompile the wiki")
 		return
 	}
+	op := telemetry.StartOp("compile")
+	op.Project = ctx.cfg.ProjectID
+	start := time.Now()
 	pages, err := compile.Pages(ctx.repoDir)
 	if err == nil {
+		stop := op.Phase("compile")
 		done, cerr := compileDirtyPages(cmd.Context(), ctx, compilablePages(pages, ""), false)
+		stop()
 		err = cerr
 		if cerr == nil && len(done) > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "Wiki recompiled: %d page(s).\n", len(done))
 		}
+	}
+	telemetry.Default.ObserveCompile(ctx.cfg.ProjectID, time.Since(start))
+	if err != nil {
+		op.End("error")
+	} else {
+		op.End("ok")
 	}
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: post-push wiki recompilation failed (push OK): %v\n", err)

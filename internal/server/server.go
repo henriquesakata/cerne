@@ -26,6 +26,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 	"gitlab.com/rockt/cerne/internal/version"
 	"gitlab.com/rockt/cerne/ui"
 )
@@ -768,7 +769,7 @@ type lintResponse struct {
 	Findings []lintFinding `json:"findings"`
 }
 
-func handleLint(w http.ResponseWriter, repoDir, projDir string) {
+func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 	var ignore []string
 	staleReadyDays := 0
 	staleWorkHours := 0
@@ -777,7 +778,13 @@ func handleLint(w http.ResponseWriter, repoDir, projDir string) {
 		staleReadyDays = cfg.StaleReadyWindowDays()
 		staleWorkHours = cfg.StaleWorkWindowHours()
 	}
+	// The full pass re-scans the backend on every call (no cache yet) — the
+	// phase + histogram are what make that cost visible per project (F-0149).
+	stop := telemetry.OpFromContext(r.Context()).Phase("lint")
+	start := time.Now()
 	findings, err := lint.RunConfig(repoDir, staleReadyDays, staleWorkHours, ignore...)
+	stop()
+	telemetry.Default.ObserveLint(projectID, time.Since(start))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -975,7 +982,7 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	out, err := app.TransitionFeature(repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason)
+	out, err := app.TransitionFeatureOp(telemetry.OpFromContext(r.Context()), repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason)
 	if err != nil {
 		// Domain, gate and validation failures surface as 422 with the
 		// same message the CLI prints.

@@ -83,6 +83,65 @@ func TestMetricsAndTimingsEndpoints(t *testing.T) {
 	}
 }
 
+// TestTransitionRecordsPhasesWithRequestOp pins the HTTP↔phases correlation
+// (criteria 1+2, F-0149): the transition's phases land on the REQUEST's op —
+// same op_id in the ring record and the request log line — including the push.
+func TestTransitionRecordsPhasesWithRequestOp(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	var buf bytes.Buffer
+	prev := telemetry.SetLogger(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer telemetry.SetLogger(prev)
+
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "demo"), http.MethodPost, "/api/features/F-0001/transition",
+		`{"action":"approve"}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	newest := telemetry.Snapshot()[0]
+	if newest.Route != "/features/{id}/transition" {
+		t.Fatalf("ring route = %q, want /features/{id}/transition", newest.Route)
+	}
+	var sawPush, sawLock bool
+	for _, p := range newest.Phases {
+		if p.Name == "push" {
+			sawPush = true
+		}
+		if p.Name == "lock_wait" {
+			sawLock = true
+		}
+	}
+	if !sawPush || !sawLock {
+		t.Fatalf("phases missing push/lock_wait: %+v", newest.Phases)
+	}
+	if !strings.Contains(buf.String(), newest.ID) {
+		t.Fatalf("request log does not carry the ring op_id %s:\n%s", newest.ID, buf.String())
+	}
+}
+
+// TestLintObservedPerProject pins criterion 3's lint histogram and the lint
+// phase: a lint request is an operation, so it reaches the ring.
+func TestLintObservedPerProject(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	before := testutil.CollectAndCount(telemetry.Default.LintDur)
+
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "demo").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/lint", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lint status = %d", rec.Code)
+	}
+	if got := testutil.CollectAndCount(telemetry.Default.LintDur); got <= before {
+		t.Fatalf("lint histogram not observed (%d -> %d)", before, got)
+	}
+	newest := telemetry.Snapshot()[0]
+	if newest.Route != "/lint" || len(newest.Phases) == 0 || newest.Phases[0].Name != "lint" {
+		t.Fatalf("ring newest = %+v, want /lint with a lint phase", newest)
+	}
+}
+
 // TestSSEGaugeTracksStreamClients pins the SSE client gauge: one connected
 // stream raises it, disconnect lowers it.
 func TestSSEGaugeTracksStreamClients(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 // TransitionOutcome reports a feature transition that was applied and synced.
@@ -43,6 +44,20 @@ var eventTypes = map[domain.Action]string{
 // state, appends the lifecycle event, commits+pushes the backend and
 // refreshes the docs.lock snapshot in projDir.
 func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, reason string) (TransitionOutcome, error) {
+	op := telemetry.StartOp("backend")
+	out, err := TransitionFeatureOp(op, repoDir, projDir, id, action, by, reason)
+	status := "ok"
+	if err != nil {
+		status = "error"
+	}
+	op.End(status)
+	return out, err
+}
+
+// TransitionFeatureOp is TransitionFeature recording its phases on the
+// caller's Op (F-0149): the server passes the request's Op so the transition's
+// lock_wait/fetch/push story correlates with the HTTP log line.
+func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string) (TransitionOutcome, error) {
 	var out TransitionOutcome
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
 		return out, err
@@ -54,7 +69,7 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 	// State reads, gate checks and writes run inside the backend lock's critical
 	// section (F-0122): the FSM check is a compare-and-set against the state
 	// serialized by the lock, and no concurrent process can sweep the writes.
-	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	err := MutateAndSnapshotOp(op, repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
 			return "", fmt.Errorf("feature %s not found in backend", id)
