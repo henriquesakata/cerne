@@ -185,6 +185,7 @@ Not every task is a feature. Investigating an error, reviewing an MR, doing an o
 - **When you finish**, close it: `cerne work done W-NNNN [--note "<outcome>"]` (succeeded) or `cerne work abandon W-NNNN --reason "<why>"` (gave up/superseded). Both are terminal — the record stays as queryable history, never deleted.
 - Active work also surfaces in the `## In progress` section of `.docs/CONTEXT.md` (omitted when nothing is active) — visible to any agent reading `.docs/` without running the CLI — and `cerne lint` flags an active work stuck past the project's `stale_work_hours` window (default 8h, `stale-work` rule) as an agent that likely died without closing it.
 - **Feature implementations register themselves (F-0146):** `cerne feature start` auto-opens a work (actor + ref, same commit) and `complete`/`supersede` auto-closes it — do NOT add a manual `work start` for a feature you are implementing; the manual flow is only for non-feature tasks. Per-project opt-out: `[activity] auto = false` in `.cernerc`.
+- **The duplicate guard is mechanical (F-0147):** `feature new` and `work start` refuse a title similar to a live feature or an active work, listing the matches — with multiple agents, the same bug gets registered twice, and this is the backstop. If a match appears, join the existing registration instead of minting another; `--force` is the conscious override for a genuinely distinct problem that reads alike (the override lands on the creation event as `guard: forced`).
 
 ## Errata (correcting a concluded, immutable entity)
 
