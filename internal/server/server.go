@@ -764,28 +764,27 @@ type lintFinding struct {
 }
 
 // lintResponse is the GET /api/lint payload; findings come already ordered
-// by lint.RuleOrder.
+// by lint.RuleOrder. Stale marks findings served from a superseded cache
+// while the background revalidation runs (F-0155) — the SSE change event
+// announces the fresh pass, so a stale response is always transient.
 type lintResponse struct {
 	Findings []lintFinding `json:"findings"`
+	Stale    bool          `json:"stale"`
 }
 
 func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
-	var ignore []string
-	staleReadyDays := 0
-	staleWorkHours := 0
+	var p lintParams
 	if cfg, _, err := project.LoadConfig(projDir); err == nil {
-		ignore = cfg.UnregisteredSourceIgnore
-		staleReadyDays = cfg.StaleReadyWindowDays()
-		staleWorkHours = cfg.StaleWorkWindowHours()
+		p = lintParams{
+			staleReadyDays: cfg.StaleReadyWindowDays(),
+			staleWorkHours: cfg.StaleWorkWindowHours(),
+			ignore:         cfg.UnregisteredSourceIgnore,
+		}
 	}
-	// Cached per backend HEAD + TTL (F-0153); the phase + histogram keep the
-	// cost of a real pass visible per project (F-0149) — a hit records its
-	// own near-zero lint_cache phase instead.
-	start := time.Now()
-	findings, hit, err := cachedLintFindings(telemetry.OpFromContext(r.Context()), repoDir, staleReadyDays, staleWorkHours, ignore)
-	if !hit && err == nil {
-		telemetry.Default.ObserveLint(projectID, time.Since(start))
-	}
+	// Stale-while-revalidate per backend HEAD (F-0153/F-0155): the request
+	// never waits for a pass when any cache exists; histograms measure only
+	// real passes (inside lintFor).
+	findings, stale, err := lintFor(telemetry.OpFromContext(r.Context()), projectID, repoDir, p)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -794,7 +793,7 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	for i, f := range findings {
 		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail}
 	}
-	writeJSON(w, http.StatusOK, lintResponse{Findings: out})
+	writeJSON(w, http.StatusOK, lintResponse{Findings: out, Stale: stale})
 }
 
 // eventsResponse is the GET /api/events payload: the lifecycle event log,

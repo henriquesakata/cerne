@@ -259,6 +259,11 @@ func watchHeadMulti(ctx context.Context, hub *multiHub, pid, repoDir string, int
 // locations. The watchers stop when ctx is cancelled.
 func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duration, initialDir string) (http.Handler, error) {
 	hub := newMultiHub(ctx.Done())
+	// A finished lint revalidation (F-0155) announces like any backend change:
+	// the page refetches and receives the fresh findings (stale: false).
+	lintBroadcast = func(pid string) {
+		hub.broadcast(liveEvent{kind: "change", pid: pid})
+	}
 	reg := &registry{
 		projects: make(map[string]*registryEntry),
 		hub:      hub,

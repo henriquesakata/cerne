@@ -628,3 +628,16 @@ export function subscribeLive(handlers: {
   es.addEventListener('projects', () => handlers.onProjects())
   return () => es.close()
 }
+
+// ---- lint stale-while-revalidate (F-0155) ----
+
+export type LintResult = { findings: LintFinding[]; stale: boolean }
+
+// fetchLintStatus devolve findings + o marcador stale: true = servido do cache
+// enquanto a revalidação roda em background (o SSE anuncia o fresh).
+export async function fetchLintStatus(): Promise<LintResult> {
+  const r = await fetch(`${base()}/lint`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  const body = (await r.json()) as { findings: LintFinding[] | null; stale?: boolean }
+  return { findings: body.findings ?? [], stale: body.stale ?? false }
+}
