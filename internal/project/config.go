@@ -49,9 +49,19 @@ type Config struct {
 	// it. 0 (absent) means the 8-hour default — read it via
 	// StaleWorkWindowHours.
 	StaleWorkHours int            `toml:"stale_work_hours,omitzero"`
-	Gates          GatesConfig    `toml:"gates"`    // F-0131: who may cross the human gates
-	Activity       ActivityConfig `toml:"activity"` // F-0146: auto-registered activity on feature transitions
-	LLM            LLMConfig      `toml:"llm"`      // optional v1.5 LLM layer config
+	Gates          GatesConfig     `toml:"gates"`     // F-0131: who may cross the human gates
+	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
+	LLM            LLMConfig       `toml:"llm"`       // optional v1.5 LLM layer config
+	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
+}
+
+// TelemetryConfig is the optional [telemetry] block of .cernerc (F-0149).
+// Everything defaults to off/local: traces are exported only when
+// OtlpEndpoint is set (OTEL_EXPORTER_OTLP_ENDPOINT overrides at runtime).
+type TelemetryConfig struct {
+	OtlpEndpoint string `toml:"otlp_endpoint,omitempty"` // OTLP/HTTP traces target (e.g. Tempo); empty = tracing off
+	ServiceName  string `toml:"service_name,omitempty"`  // resource service.name; default "cerne"
+	LogLevel     string `toml:"log_level,omitempty"`     // slog level for the server: debug|info|warn|error; default info
 }
 
 // ActivityConfig is the optional [activity] block of .cernerc (F-0146).
@@ -189,6 +199,7 @@ func SaveConfig(dir string, c Config) error {
 		Gates                    *GatesConfig        `toml:"gates,omitempty"`
 		Activity                 *ActivityConfig     `toml:"activity,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
+		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if c.Gates != (GatesConfig{}) {
@@ -202,6 +213,10 @@ func SaveConfig(dir string, c Config) error {
 	if c.LLM != (LLMConfig{}) {
 		llm := c.LLM
 		w.LLM = &llm
+	}
+	if c.Telemetry != (TelemetryConfig{}) {
+		tel := c.Telemetry
+		w.Telemetry = &tel
 	}
 	data, err := toml.Marshal(w)
 	if err != nil {
