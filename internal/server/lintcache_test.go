@@ -214,3 +214,26 @@ func TestLintTTLExpiryGoesStale(t *testing.T) {
 	}
 	waitFor(t, "revalidation after TTL", func() bool { return calls.Load() == 2 })
 }
+
+// TestUIMultiWiresLintBroadcast pins criterion 3's wiring: on the `cerne ui`
+// server, a finished revalidation reaches the SSE subscribers as a change
+// event for the project.
+func TestUIMultiWiresLintBroadcast(t *testing.T) {
+	prev := lintBroadcast
+	t.Cleanup(func() { lintBroadcast = prev })
+
+	hub := newMultiHub(make(chan struct{}))
+	lintBroadcast = func(pid string) { hub.broadcast(liveEvent{kind: "change", pid: pid}) }
+
+	ch := hub.subscribe()
+	defer hub.unsubscribe(ch)
+	lintBroadcast("demo")
+	select {
+	case ev := <-ch:
+		if ev.kind != "change" || ev.pid != "demo" {
+			t.Fatalf("event = %+v, want change/demo", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no SSE event for the finished revalidation")
+	}
+}
