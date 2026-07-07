@@ -622,13 +622,16 @@ h2 {
 
 .dash-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 1rem;
   margin-top: 1.25rem;
 }
 
-/* Composição fixa (F-0143): Épicos ocupa 2 colunas, Eventos a linha inteira. */
+/* Composição fixa (F-0143): grid de 6 colunas — cards compactos ocupam 1/3
+   (span 2), Épicos + Eventos dividem uma linha ao meio (span 3), e os cards
+   de largura total ocupam a linha inteira. */
 .dash-span-2 { grid-column: span 2; }
+.dash-span-half { grid-column: span 3; }
 .dash-span-full { grid-column: 1 / -1; }
 
 /* Heatmap de atividade (F-0145): 52 semanas × 7 dias, flow em colunas; a
@@ -665,7 +668,8 @@ h2 {
 
 @media (max-width: 60rem) {
   .dash-grid { grid-template-columns: 1fr; }
-  .dash-span-2 { grid-column: auto; }
+  .dash-span-2,
+  .dash-span-half { grid-column: auto; }
 }
 
 .dash-card {

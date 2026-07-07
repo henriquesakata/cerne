@@ -76,16 +76,16 @@ export default function Dashboard() {
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
       {/* Composição fixa (F-0143/F-0145): linha 1 = heatmap em largura total;
-          linha 2 = contadores compactos; linha 3 = Épicos (2 col) + Atividade;
-          linha 4 = Eventos em largura total. */}
+          linha 2 = contadores compactos (1/3 cada); linha 3 = Épicos + Eventos
+          ao meio (1/2 cada); linha 4 = Atividade em largura total. */}
       <div className="dash-grid">
         <HeatmapCard />
         <RosterCard />
         <LintCard />
         <SavingsCard />
         <EpicsCard />
-        <ActivityCard />
         <EventsCard />
+        <ActivityCard />
       </div>
     </main>
   )
@@ -165,7 +165,7 @@ function RosterCard() {
   const counts = new Map<FeatureState, number>()
   for (const f of features) counts.set(f.state, (counts.get(f.state) ?? 0) + 1)
   return (
-    <Card title={t.dashboard.roster} href="#/kanban" error={error}>
+    <Card title={t.dashboard.roster} href="#/kanban" error={error} className="dash-span-2">
       <ul className="dash-list">
         {STATE_ORDER.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => (
           <li key={s}>
@@ -190,7 +190,7 @@ function EpicsCard() {
   }
   const epics = features.filter((f) => byParent.has(f.id))
   return (
-    <Card title={t.dashboard.epics} href="#/kanban" error={error} className="dash-span-2">
+    <Card title={t.dashboard.epics} href="#/kanban" error={error} className="dash-span-half">
       {epics.length === 0 && <p className="muted">{t.dashboard.noEpics}</p>}
       <ul className="dash-list">
         {epics.slice(0, 6).map((e) => {
@@ -221,7 +221,7 @@ function LintCard() {
   const byRule = new Map<string, number>()
   for (const f of findings) byRule.set(f.rule, (byRule.get(f.rule) ?? 0) + 1)
   return (
-    <Card title={t.dashboard.lint} href="#/lint" error={error}>
+    <Card title={t.dashboard.lint} href="#/lint" error={error} className="dash-span-2">
       {findings.length === 0 ? (
         <p className="dash-ok">{t.dashboard.lintClean}</p>
       ) : (
@@ -242,7 +242,7 @@ function SavingsCard() {
   const { t, lang } = useT()
   const { data, error } = useCard<Stats>(fetchStats)
   return (
-    <Card title={t.dashboard.savings} href="#/stats" error={error}>
+    <Card title={t.dashboard.savings} href="#/stats" error={error} className="dash-span-2">
       {data && (
         <>
           <p className="dash-big">
@@ -264,7 +264,7 @@ function ActivityCard() {
   const { data, error } = useCard<Work[]>(fetchWork)
   const active = (data ?? []).filter((w) => w.state === 'active')
   return (
-    <Card title={t.dashboard.activity} href="#/activity" error={error}>
+    <Card title={t.dashboard.activity} href="#/activity" error={error} className="dash-span-full">
       {active.length === 0 ? (
         <p className="muted">{t.activity.emptyActive}</p>
       ) : (
@@ -287,7 +287,7 @@ function EventsCard() {
   // O endpoint já devolve newest-first (handleEvents inverte a ordem do log).
   const recent = (data ?? []).slice(0, 5)
   return (
-    <Card title={t.dashboard.events} href="#/history" error={error} className="dash-span-full">
+    <Card title={t.dashboard.events} href="#/history" error={error} className="dash-span-half">
       {recent.length === 0 && <p className="muted">{t.dashboard.noEvents}</p>}
       <ul className="dash-list">
         {recent.map((ev, i) => (
