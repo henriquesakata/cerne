@@ -75,9 +75,11 @@ export default function Dashboard() {
     <main className="page">
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
-      {/* Composição fixa (F-0143): linha 1 = contadores compactos; linha 2 =
-          Épicos (2 col) + Atividade; linha 3 = Eventos em largura total. */}
+      {/* Composição fixa (F-0143/F-0145): linha 1 = heatmap em largura total;
+          linha 2 = contadores compactos; linha 3 = Épicos (2 col) + Atividade;
+          linha 4 = Eventos em largura total. */}
       <div className="dash-grid">
+        <HeatmapCard />
         <RosterCard />
         <LintCard />
         <SavingsCard />
@@ -86,6 +88,73 @@ export default function Dashboard() {
         <EventsCard />
       </div>
     </main>
+  )
+}
+
+// HeatmapCard (F-0145): contribution graph diário dos eventos de lifecycle —
+// 52 semanas em colunas (domingo→sábado), intensidade em 4 quartis do pico.
+function HeatmapCard() {
+  const { t, lang } = useT()
+  const { data, error } = useCard<LifecycleEvent[]>(fetchEvents)
+
+  const dayKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  const counts = new Map<string, number>()
+  for (const ev of data ?? []) {
+    const k = dayKey(new Date(ev.at))
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+
+  // Janela: 52 semanas terminando no sábado da semana corrente.
+  const today = new Date()
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (6 - today.getDay()))
+  const days: Date[] = []
+  for (let i = 52 * 7 - 1; i >= 0; i--) {
+    days.push(new Date(end.getFullYear(), end.getMonth(), end.getDate() - i))
+  }
+
+  const perDay = days.map((d) => counts.get(dayKey(d)) ?? 0)
+  const max = Math.max(0, ...perDay)
+  const total = perDay.reduce((a, n) => a + n, 0)
+  const level = (n: number) => (n === 0 || max === 0 ? 0 : Math.max(1, Math.ceil((4 * n) / max)))
+
+  // Rótulo de mês na coluna cuja semana contém o dia 1.
+  const months: { col: number; label: string }[] = []
+  for (let w = 0; w < 52; w++) {
+    const first = days[w * 7]
+    if (first.getDate() <= 7) {
+      months.push({ col: w, label: first.toLocaleDateString(lang, { month: 'short' }) })
+    }
+  }
+
+  return (
+    <Card title={t.dashboard.heatmap} href="#/history" error={error} className="dash-span-full">
+      <div className="heatmap">
+        <div className="heatmap-months">
+          {months.map((m) => (
+            <span key={m.col} style={{ gridColumn: `${m.col + 1} / span 3` }}>
+              {m.label}
+            </span>
+          ))}
+        </div>
+        <div className="heatmap-grid">
+          {days.map((d, i) => {
+            const n = perDay[i]
+            return d > today ? (
+              <span key={i} className="heat heat-void" />
+            ) : (
+              <span
+                key={i}
+                className={`heat heat-${level(n)}`}
+                title={t.dashboard.heatmapCell(n, d.toLocaleDateString(lang))}
+              />
+            )
+          })}
+        </div>
+      </div>
+      <p className="dash-foot">{t.dashboard.heatmapFoot(total)}</p>
+    </Card>
   )
 }
 

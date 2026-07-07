@@ -10,10 +10,11 @@ func Root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "cerne",
 		Short:         "Living documentation for AI-assisted software projects",
-		Version:       version.Version,
+		Version:       version.Short(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
+	root.SetVersionTemplate("cerne {{.Version}}\n")
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newFeatureCmd())
 	root.AddCommand(newDecisionCmd())

@@ -55,6 +55,9 @@ const ptBR = {
     activity: 'Atividade',
     events: 'Últimos eventos',
     noEvents: 'Nenhum evento.',
+    heatmap: 'Ritmo do projeto',
+    heatmapFoot: (n: number) => `${n} evento(s) nos últimos 12 meses`,
+    heatmapCell: (n: number, d: string) => `${n} evento(s) — ${d}`,
   },
   activity: {
     title: 'Atividade',
@@ -471,6 +474,9 @@ const en: Messages = {
     activity: 'Activity',
     events: 'Recent events',
     noEvents: 'No events.',
+    heatmap: 'Project rhythm',
+    heatmapFoot: (n: number) => `${n} event(s) in the last 12 months`,
+    heatmapCell: (n: number, d: string) => `${n} event(s) — ${d}`,
   },
   activity: {
     title: 'Activity',

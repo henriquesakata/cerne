@@ -55,10 +55,11 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 	return mux
 }
 
-// handleVersion returns the binary's build version (F-0129) — the same string
-// `cerne --version` reports, so the UI can show which build is serving it.
+// handleVersion returns the binary's build version (F-0129) — the same
+// MAJOR.MINOR string `cerne --version` reports (F-0144), so the UI can show
+// which build is serving it.
 func handleVersion(w http.ResponseWriter) {
-	writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
+	writeJSON(w, http.StatusOK, map[string]string{"version": version.Short()})
 }
 
 // handleStats returns the context-savings metric (F-0127): full corpus vs
