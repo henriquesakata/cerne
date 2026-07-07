@@ -26,6 +26,7 @@ func TestWorkRoundTrip(t *testing.T) {
 	want := testWork("W-0001")
 	want.State = domain.WorkDone
 	want.Note = "resolvido: era um race condition"
+	want.Paths = []string{"internal/server/**", "ui/src/**"} // F-0151
 	if err := SaveWork(dir, want); err != nil {
 		t.Fatalf("SaveWork: %v", err)
 	}
@@ -39,6 +40,9 @@ func TestWorkRoundTrip(t *testing.T) {
 	}
 	if len(got.Refs) != 2 || got.Refs[0] != "F-0001" || got.Refs[1] != "D-0002" {
 		t.Fatalf("refs = %v, want [F-0001 D-0002]", got.Refs)
+	}
+	if len(got.Paths) != 2 || got.Paths[0] != "internal/server/**" || got.Paths[1] != "ui/src/**" {
+		t.Fatalf("paths = %v, want [internal/server/** ui/src/**]", got.Paths)
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("times: got %v / %v, want %v / %v",

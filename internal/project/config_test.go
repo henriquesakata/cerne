@@ -265,3 +265,53 @@ func TestConfigUnregisteredSourceIgnoreRoundTrip(t *testing.T) {
 		t.Fatalf("empty list should be omitted:\n%s", raw)
 	}
 }
+
+// TestConfigWorkGateRoundTrip pins the .cernerc [gates] work_gate keys
+// (F-0151): the gate is opt-in (enabled only on the explicit "on"), the extra
+// allowlist round-trips, and an absent block stays omitted.
+func TestConfigWorkGateRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{ProjectID: "demo", Backend: "x"}
+	cfg.Gates.WorkGate = "on"
+	cfg.Gates.WorkGateAllow = []string{"docs/**"}
+	if err := SaveConfig(dir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), `work_gate = "on"`) {
+		t.Fatalf(".cernerc missing work_gate key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.Gates.WorkGateEnabled() {
+		t.Fatal("work_gate = on: want enabled")
+	}
+	if len(got.Gates.WorkGateAllow) != 1 || got.Gates.WorkGateAllow[0] != "docs/**" {
+		t.Fatalf("WorkGateAllow = %v, want [docs/**]", got.Gates.WorkGateAllow)
+	}
+
+	// Fail-safe default: absent or any non-"on" value keeps the gate off.
+	for _, v := range []string{"", "off", "true", "yes"} {
+		g := GatesConfig{WorkGate: v}
+		if g.WorkGateEnabled() {
+			t.Errorf("WorkGate %q: want disabled", v)
+		}
+	}
+
+	// omitempty: a default config writes no [gates] block.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(raw), "work_gate") || strings.Contains(string(raw), "[gates]") {
+		t.Fatalf("default config should omit [gates]:\n%s", raw)
+	}
+}

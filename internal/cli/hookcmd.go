@@ -16,6 +16,8 @@ func newHookCmd() *cobra.Command {
 		Short: "Install cerne's Claude Code hooks into a project",
 	}
 	cmd.AddCommand(newHookInstallCmd())
+	cmd.AddCommand(newHookBindWorkCmd())
+	cmd.AddCommand(newHookWorkGateCmd())
 	return cmd
 }
 
