@@ -1313,3 +1313,9 @@ button.tag {
   cursor: pointer;
 }
 .note-filter-clear:hover { border-color: var(--border-strong); }
+
+/* Composer de prompts (F-0152): saída pré-formatada com quebra de linha. */
+.prompt-output {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
