@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 	"gitlab.com/rockt/cerne/internal/version"
 )
@@ -24,6 +25,11 @@ func Root() *cobra.Command {
 				// polluting the command's stdout (F-0149).
 				telemetry.SetupLogger(os.Stderr, false, slog.LevelDebug)
 			}
+		},
+		// The docs.lock pin is deferred+coalesced (F-0153); a one-shot CLI
+		// process must land it before exiting.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			app.FlushAutocommits()
 		},
 	}
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "log operation timings (phases, retries) to stderr")

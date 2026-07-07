@@ -329,7 +329,11 @@ func updateSnapshot(projDir, sha string) error {
 	if err := project.SaveLock(projDir, lock); err != nil {
 		return err
 	}
-	return autocommitLock(projDir)
+	// The pin commit is deferred and coalesced (F-0153) — it used to run go-git
+	// Status over the user's whole worktree inside the request, the measured
+	// 113s-average snapshot phase of W-0003.
+	enqueueAutocommit(projDir)
+	return nil
 }
 
 // shortDiff renders a compact diff of mine vs. theirs (common prefix/suffix
