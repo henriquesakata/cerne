@@ -71,13 +71,13 @@ func TestDupGuardRefusesActiveWork(t *testing.T) {
 	seedActiveWork(t, repoDir, "W-0001", "a@b", "F-0001", false)
 	// seedActiveWork titles it "Atividade W-0001".
 
-	if _, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", false); !errors.Is(err, ErrSimilarExists) {
+	if _, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", false, nil); !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("work start err = %v, want ErrSimilarExists", err)
 	}
 	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Atividade W-0001", "", "", nil, nil, "", false); !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("feature new err = %v, want ErrSimilarExists", err)
 	}
-	if w, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", true); err != nil || w.ID == "" {
+	if w, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", true, nil); err != nil || w.ID == "" {
 		t.Fatalf("forced work start: %v", err)
 	}
 }
