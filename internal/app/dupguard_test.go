@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -108,5 +109,60 @@ func TestDupGuardIgnoresTerminal(t *testing.T) {
 
 	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001", "", "", nil, nil, "", false); err != nil {
 		t.Fatalf("terminal must not refuse: %v", err)
+	}
+}
+
+// TestFindPathOverlap (F-0151 crit. 6): a new work declaring paths that can
+// touch the same files as an active work's paths is reported (warning-level;
+// the caller never blocks on it). Terminal works and disjoint globs stay out.
+func TestFindPathOverlap(t *testing.T) {
+	repoDir := t.TempDir()
+	now := time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC)
+	seed := func(id string, state domain.WorkState, paths ...string) {
+		t.Helper()
+		if err := store.SaveWork(repoDir, store.Work{
+			ID: id, Title: "atividade " + id, State: state, Actor: "agent",
+			Paths: paths, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("SaveWork(%s): %v", id, err)
+		}
+	}
+	seed("W-0001", domain.WorkActive, "internal/server/**")
+	seed("W-0002", domain.WorkActive, "ui/src/**")
+	seed("W-0003", domain.WorkDone, "internal/server/**") // terminal: never matches
+	seed("W-0004", domain.WorkActive)                     // no declared paths: never matches
+
+	cases := []struct {
+		name  string
+		paths []string
+		want  []string // overlapping work ids
+	}{
+		{"nested glob under active glob", []string{"internal/server/api/**"}, []string{"W-0001"}},
+		{"exact file under active glob", []string{"internal/server/server.go"}, []string{"W-0001"}},
+		{"broader glob covering active glob", []string{"internal/**"}, []string{"W-0001"}},
+		{"disjoint", []string{"cmd/cerne/**"}, nil},
+		{"prefix must respect segment boundary", []string{"internal/serverless/**"}, nil},
+		{"two overlaps", []string{"internal/server/**", "ui/src/App.tsx"}, []string{"W-0001", "W-0002"}},
+		{"empty declaration", nil, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := FindPathOverlap(repoDir, tc.paths)
+			if err != nil {
+				t.Fatalf("FindPathOverlap: %v", err)
+			}
+			var ids []string
+			for _, m := range got {
+				ids = append(ids, m.ID)
+			}
+			if len(ids) != len(tc.want) {
+				t.Fatalf("got %v, want %v", ids, tc.want)
+			}
+			for i := range ids {
+				if ids[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", ids, tc.want)
+				}
+			}
+		})
 	}
 }

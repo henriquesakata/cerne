@@ -120,6 +120,77 @@ func FindSimilar(repoDir, title string) (DupMatches, error) {
 	return m, nil
 }
 
+// OverlapMatch names an active work whose declared paths can touch the same
+// files as a new registration's paths (F-0151). Warning-level by design: path
+// overlap has legitimate false positives (shared files), so the caller prints
+// it and never blocks — the title guard above is the blocking one.
+type OverlapMatch struct {
+	ID    string
+	Title string
+	Globs []string // the existing work's globs that overlap
+}
+
+// FindPathOverlap scans active works for declared paths overlapping any of
+// paths. Works without declared paths and terminal works never match. Results
+// come back sorted by work ID (LoadAllWorks order).
+func FindPathOverlap(repoDir string, paths []string) ([]OverlapMatch, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var out []OverlapMatch
+	for _, w := range works {
+		if w.State != domain.WorkActive {
+			continue
+		}
+		var hits []string
+		for _, g := range w.Paths {
+			for _, p := range paths {
+				if globsOverlap(g, p) {
+					hits = append(hits, g)
+					break
+				}
+			}
+		}
+		if len(hits) > 0 {
+			out = append(out, OverlapMatch{ID: w.ID, Title: w.Title, Globs: hits})
+		}
+	}
+	return out, nil
+}
+
+// globsOverlap reports whether two path globs can match a common file. Same
+// v1 glob semantics as the drift rule (lint.matchGlob): an exact path, or a
+// "dir/**" suffix covering everything under dir. Two prefixes overlap only on
+// a segment boundary (the kept trailing slash prevents internal/ vs
+// internal-x/ false positives).
+func globsOverlap(a, b string) bool {
+	pa, wildA := globPrefix(a)
+	pb, wildB := globPrefix(b)
+	switch {
+	case wildA && wildB:
+		return strings.HasPrefix(pa, pb) || strings.HasPrefix(pb, pa)
+	case wildA:
+		return strings.HasPrefix(pb+"/", pa) || pb+"/" == pa
+	case wildB:
+		return strings.HasPrefix(pa+"/", pb) || pa+"/" == pb
+	default:
+		return pa == pb
+	}
+}
+
+// globPrefix splits a glob into its literal prefix and whether it carries the
+// "/**" wildcard suffix (the prefix keeps its trailing slash).
+func globPrefix(g string) (string, bool) {
+	if strings.HasSuffix(g, "/**") {
+		return strings.TrimSuffix(g, "**"), true
+	}
+	return g, false
+}
+
 // guardRegistration enforces the guard for a new registration: with force it
 // passes reporting whether there were live matches (so the caller can mark the
 // override); without it, a live match refuses with the matches listed.

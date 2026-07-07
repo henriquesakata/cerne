@@ -76,10 +76,28 @@ const (
 
 // GatesConfig is the optional [gates] block of .cernerc (F-0131): approve is
 // the start-of-flow gate (spec approval), accept the end-of-flow gate (human
-// validation of an implemented feature).
+// validation of an implemented feature). WorkGate (F-0151) is the edit gate:
+// when "on", the installed PreToolUse hook denies Edit/Write in a Claude Code
+// session with no live work/feature binding. Opt-in by design — any other
+// value (including absent) keeps it off, so existing projects never lock up
+// on upgrade. WorkGateAllow extends the built-in allowlist (.docs/**,
+// .claude/**, paths outside the project) with project-specific globs.
 type GatesConfig struct {
-	Approve string `toml:"approve,omitempty"` // "human" (default) | "auto"
-	Accept  string `toml:"accept,omitempty"`  // "human" (default) | "auto"
+	Approve       string   `toml:"approve,omitempty"`         // "human" (default) | "auto"
+	Accept        string   `toml:"accept,omitempty"`          // "human" (default) | "auto"
+	WorkGate      string   `toml:"work_gate,omitempty"`       // "on" | anything else = off (default)
+	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
+}
+
+// WorkGateEnabled resolves the edit gate: on only when explicitly configured.
+func (g GatesConfig) WorkGateEnabled() bool {
+	return g.WorkGate == "on"
+}
+
+// isZero reports whether the block carries nothing worth persisting (the
+// struct holds a slice, so it is not ==-comparable).
+func (g GatesConfig) isZero() bool {
+	return g.Approve == "" && g.Accept == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0
 }
 
 // ApproveGate resolves the start gate: auto only when explicitly configured.
@@ -191,7 +209,7 @@ func SaveConfig(dir string, c Config) error {
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
-	if c.Gates != (GatesConfig{}) {
+	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates
 	}
