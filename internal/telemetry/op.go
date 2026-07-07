@@ -15,9 +15,10 @@ import (
 
 // PhaseRecord is one timed phase of an Op, in insertion order.
 type PhaseRecord struct {
-	Name string        `json:"name"`
-	Dur  time.Duration `json:"dur_ns"`
-	Ms   float64       `json:"ms"`
+	Name  string        `json:"name"`
+	Start time.Time     `json:"-"` // for span reconstruction; redundant in JSON
+	Dur   time.Duration `json:"dur_ns"`
+	Ms    float64       `json:"ms"`
 }
 
 // Record is the finished, immutable snapshot of an Op, as stored in the ring
@@ -66,7 +67,7 @@ func (o *Op) Phase(name string) func() {
 	return func() {
 		d := time.Since(start)
 		o.mu.Lock()
-		o.phases = append(o.phases, PhaseRecord{Name: name, Dur: d, Ms: float64(d) / float64(time.Millisecond)})
+		o.phases = append(o.phases, PhaseRecord{Name: name, Start: start, Dur: d, Ms: float64(d) / float64(time.Millisecond)})
 		o.mu.Unlock()
 	}
 }
@@ -112,6 +113,7 @@ func (o *Op) End(status string) {
 		DefaultRing.add(rec)
 	}
 	observeOp(rec)
+	emitSpans(rec)
 	logger.Info("op",
 		slog.String("op_id", rec.ID),
 		slog.String("kind", rec.Kind),
