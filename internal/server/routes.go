@@ -107,12 +107,6 @@ func dataRoutes() []dataRoute {
 		{"GET", "/lint", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 			handleLint(w, r, repoDir, projDir, projectID)
 		}},
-		{"GET", "/prompt/types", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-			handlePromptTypes(w, repoDir)
-		}},
-		{"POST", "/prompt/compose", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
-			handlePromptCompose(w, r, repoDir, projDir)
-		}},
 		{"GET", "/graph", false, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleGraph(w, repoDir)
 		}},

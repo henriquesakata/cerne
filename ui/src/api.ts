@@ -628,29 +628,3 @@ export function subscribeLive(handlers: {
   es.addEventListener('projects', () => handlers.onProjects())
   return () => es.close()
 }
-
-// ---- composer de prompts (F-0152) ----
-
-export type PromptType = { slug: string; title: string }
-
-// fetchPromptTypes lista os templates vivos (notes com component prompt-template).
-export async function fetchPromptTypes(): Promise<PromptType[]> {
-  const r = await fetch(`${base()}/prompt/types`)
-  if (!r.ok) throw new Error(await errorMessage(r))
-  return ((await r.json()) as { types: PromptType[] }).types
-}
-
-// composePrompt monta o prompt de despacho; register=true também registra o W-.
-export async function composePrompt(body: {
-  type: string
-  text: string
-  register: boolean
-}): Promise<{ prompt: string; work_id: string }> {
-  const r = await fetch(`${base()}/prompt/compose`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as { prompt: string; work_id: string }
-}
