@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh
 var files embed.FS
 
 const (
@@ -32,6 +32,12 @@ const (
 	registerScript = "cerne-register-reminder.sh"
 	// registerCommand is the settings.json command that runs registerScript.
 	registerCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-register-reminder.sh"`
+	// subagentScript is the SubagentStart context injector (F-0150): SessionStart
+	// does not fire inside subagents, so this script hands every spawned subagent
+	// the condensed cerne rules plus the live work list.
+	subagentScript = "cerne-subagent-context.sh"
+	// subagentCommand is the settings.json command that runs subagentScript.
+	subagentCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-subagent-context.sh"`
 )
 
 // Status is the outcome of installing one asset.
@@ -70,6 +76,13 @@ func Install(projDir string) ([]Result, error) {
 		return nil, err
 	}
 	results = append(results, Result{Asset: registerScript, Status: st})
+
+	subagentDst := filepath.Join(projDir, ".claude", "hooks", subagentScript)
+	st, err = writeIfChanged(subagentDst, []byte(mustRead("assets/"+subagentScript)))
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, Result{Asset: subagentScript, Status: st})
 
 	settingsDst := filepath.Join(projDir, ".claude", "settings.json")
 	st, err = mergeSettingsFile(settingsDst)
@@ -211,6 +224,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needRegister := !scriptWired(sessionStart, registerScript)
 
+	var subagentStart []any
+	hasSub := false
+	if hooksMap != nil {
+		if sv, ok := hooksMap["SubagentStart"]; ok {
+			arr, ok := sv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "SubagentStart" with an unexpected type`)
+			}
+			subagentStart = arr
+			hasSub = true
+		}
+	}
+	needSubagent := !scriptWired(subagentStart, subagentScript)
+
 	envVal, hasEnv := root["env"]
 	var envMap map[string]any
 	if hasEnv {
@@ -222,7 +249,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needRegister && !needActor {
+	if !needHook && !needRegister && !needSubagent && !needActor {
 		return nil, false, nil
 	}
 
@@ -235,7 +262,10 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 			fresh = withHookEntry(fresh)
 		}
 		if needRegister {
-			fresh = withRegisterEntry(fresh)
+			fresh = withEventEntry(fresh, "SessionStart", registerCommand)
+		}
+		if needSubagent {
+			fresh = withEventEntry(fresh, "SubagentStart", subagentCommand)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -259,7 +289,10 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		expected = withHookEntry(expected)
 	}
 	if needRegister {
-		expected = withRegisterEntry(expected)
+		expected = withEventEntry(expected, "SessionStart", registerCommand)
+	}
+	if needSubagent {
+		expected = withEventEntry(expected, "SubagentStart", subagentCommand)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -277,16 +310,18 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if ok && needRegister {
 		// Re-detect structure: the hook splice above may have created "hooks".
-		var curRoot map[string]any
-		curHasHooks, curHasSS := hasHooks, hasSS
-		if json.Unmarshal(cur, &curRoot) == nil {
-			hm, _ := curRoot["hooks"].(map[string]any)
-			curHasHooks = hm != nil
-			if hm != nil {
-				_, curHasSS = hm["SessionStart"]
-			}
+		curHasHooks, curHasSS := reDetectEvent(cur, "SessionStart", hasHooks, hasSS)
+		spliced, spliceOK := spliceEventEntry(cur, "SessionStart", newEventEntry(registerCommand), curHasHooks, curHasSS, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
 		}
-		spliced, spliceOK := spliceRegister(cur, curHasHooks, curHasSS, detectNewline(cur), unit)
+	}
+	if ok && needSubagent {
+		// Re-detect again: the splices above may have created "hooks".
+		curHasHooks, curHasSub := reDetectEvent(cur, "SubagentStart", hasHooks, hasSub)
+		spliced, spliceOK := spliceEventEntry(cur, "SubagentStart", newEventEntry(subagentCommand), curHasHooks, curHasSub, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
@@ -334,45 +369,62 @@ func withHookEntry(root map[string]any) map[string]any {
 	return root
 }
 
-// withRegisterEntry ensures root carries the SessionStart wiring for the
-// registration reminder (F-0139), creating the hooks object and SessionStart
+// withEventEntry ensures root carries the wiring for a matcher-less hook event
+// (SessionStart for the registration reminder F-0139, SubagentStart for the
+// subagent context injector F-0150), creating the hooks object and the event
 // array as needed. Canonical merge — seed, fallback render and splice oracle.
-func withRegisterEntry(root map[string]any) map[string]any {
+func withEventEntry(root map[string]any, event, command string) map[string]any {
 	hooksMap, _ := root["hooks"].(map[string]any)
 	if hooksMap == nil {
 		hooksMap = map[string]any{}
 	}
-	ss, _ := hooksMap["SessionStart"].([]any)
-	ss = append(ss, map[string]any{
-		"hooks": []any{map[string]any{"type": "command", "command": registerCommand}},
+	arr, _ := hooksMap[event].([]any)
+	arr = append(arr, map[string]any{
+		"hooks": []any{map[string]any{"type": "command", "command": command}},
 	})
-	hooksMap["SessionStart"] = ss
+	hooksMap[event] = arr
 	root["hooks"] = hooksMap
 	return root
 }
 
-// sessionEntry renders the new SessionStart entry (no matcher — fires on every
-// session start) with conventional field order.
+// sessionEntry renders a new matcher-less event entry (fires on every session
+// or subagent start) with conventional field order.
 type sessionEntry struct {
 	Hooks []hookCmd `json:"hooks"`
 }
 
-func newSessionEntry() sessionEntry {
-	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: registerCommand}}}
+func newEventEntry(command string) sessionEntry {
+	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: command}}}
 }
 
-// spliceRegister returns raw with the SessionStart reminder entry surgically
-// inserted: appended to hooks.SessionStart when it exists, else SessionStart
-// added to the hooks object, else hooks added to the root. ok=false when the
-// target span cannot be located (caller falls back to a render).
-func spliceRegister(raw []byte, hasHooks, hasSS bool, nl, unit string) ([]byte, bool) {
-	entryText, err := marshalIndentNoHTML(newSessionEntry(), "", unit)
+// reDetectEvent re-parses cur (the output of a previous splice) and reports
+// whether "hooks" and hooks.<event> now exist, falling back to the caller's
+// pre-splice knowledge when cur does not parse.
+func reDetectEvent(cur []byte, event string, hadHooks, hadEvent bool) (hasHooks, hasEvent bool) {
+	hasHooks, hasEvent = hadHooks, hadEvent
+	var curRoot map[string]any
+	if json.Unmarshal(cur, &curRoot) == nil {
+		hm, _ := curRoot["hooks"].(map[string]any)
+		hasHooks = hm != nil
+		if hm != nil {
+			_, hasEvent = hm[event]
+		}
+	}
+	return hasHooks, hasEvent
+}
+
+// spliceEventEntry returns raw with a matcher-less event entry surgically
+// inserted: appended to hooks.<event> when it exists, else <event> added to
+// the hooks object, else hooks added to the root. ok=false when the target
+// span cannot be located (caller falls back to a render).
+func spliceEventEntry(raw []byte, event string, entry sessionEntry, hasHooks, hasEvent bool, nl, unit string) ([]byte, bool) {
+	entryText, err := marshalIndentNoHTML(entry, "", unit)
 	if err != nil {
 		return nil, false
 	}
 	switch {
-	case hasSS:
-		start, end, empty, ok := findSpan(raw, "hooks", "SessionStart")
+	case hasEvent:
+		start, end, empty, ok := findSpan(raw, "hooks", event)
 		if !ok {
 			return nil, false
 		}
@@ -382,20 +434,17 @@ func spliceRegister(raw []byte, hasHooks, hasSS bool, nl, unit string) ([]byte, 
 		if !ok {
 			return nil, false
 		}
-		arrText, err := marshalIndentNoHTML([]sessionEntry{newSessionEntry()}, "", unit)
+		arrText, err := marshalIndentNoHTML([]sessionEntry{entry}, "", unit)
 		if err != nil {
 			return nil, false
 		}
-		return spliceObjectAppend(raw, start, end, empty, "SessionStart", string(arrText), nl, unit), true
+		return spliceObjectAppend(raw, start, end, empty, event, string(arrText), nl, unit), true
 	default:
 		start, end, empty, ok := findSpan(raw)
 		if !ok {
 			return nil, false
 		}
-		hooksVal := struct {
-			SessionStart []sessionEntry `json:"SessionStart"`
-		}{SessionStart: []sessionEntry{newSessionEntry()}}
-		hooksText, err := marshalIndentNoHTML(hooksVal, "", unit)
+		hooksText, err := marshalIndentNoHTML(map[string][]sessionEntry{event: {entry}}, "", unit)
 		if err != nil {
 			return nil, false
 		}
