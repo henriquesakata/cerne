@@ -3,8 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -227,39 +225,8 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component 
 	return nil
 }
 
-// readOptionalBody reads an entity body from --file when given, or from stdin
-// only when it is piped (not an interactive terminal). An empty body is valid:
-// the entity is born a stub. The stdin guard keeps a 'new' command from blocking
-// on an interactive terminal when no body is supplied. Shared by the
-// optional-body entities: note, runbook and decision.
-func readOptionalBody(cmd *cobra.Command, file string) (string, error) {
-	if file != "" {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return "", fmt.Errorf("--file: %w", err)
-		}
-		return string(data), nil
-	}
-	if !stdinPiped() {
-		return "", nil
-	}
-	data, err := io.ReadAll(cmd.InOrStdin())
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// stdinPiped reports whether os.Stdin is a pipe/redirect rather than an
-// interactive terminal, so optional-body commands read it only when content was
-// actually piped in.
-func stdinPiped() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice == 0
-}
+// readOptionalBody lives in stdinbody.go (F-0157): same contract, plus the
+// readiness window that keeps an open silent stdin pipe from blocking forever.
 
 func newNoteRetireCmd(dir *string) *cobra.Command {
 	var reason string

@@ -3,8 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -200,21 +198,11 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 	return nil
 }
 
-// readReferenceContent reads the source content from --file, or from stdin when
-// no file is given.
+// readReferenceContent reads the source content from --file, or from a piped
+// stdin — through the shared guarded reader (F-0157): an open silent pipe or
+// an interactive terminal reads as empty instead of blocking.
 func readReferenceContent(cmd *cobra.Command, file string) (string, error) {
-	if file != "" {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return "", fmt.Errorf("--file: %w", err)
-		}
-		return string(data), nil
-	}
-	data, err := io.ReadAll(cmd.InOrStdin())
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	return readOptionalBody(cmd, file)
 }
 
 // splitInforms parses the comma-separated --informs flag into trimmed ids
