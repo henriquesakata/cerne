@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchLint, type LintFinding } from './api'
+import { fetchLintStatus, type LintFinding } from './api'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -19,14 +19,16 @@ const RULE_ORDER = [
 
 export default function Lint() {
   const [findings, setFindings] = useState<LintFinding[] | null>(null)
+  const [stale, setStale] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const version = useLiveVersion()
   const { t } = useT()
 
   useEffect(() => {
-    fetchLint()
-      .then((f) => {
-        setFindings(f)
+    fetchLintStatus()
+      .then((r) => {
+        setFindings(r.findings)
+        setStale(r.stale)
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -35,10 +37,16 @@ export default function Lint() {
   if (error) return <p className="status error">{t.lint.error(error)}</p>
   if (!findings) return <p className="status">{t.common.loading}</p>
 
+  // A revalidação em background está rodando (F-0155): mostra o dado servido
+  // do cache com um marcador discreto; o SSE traz o fresh em seguida.
+  const staleBadge = stale ? <span className="badge lint-stale">{t.lint.updating}</span> : null
+
   if (findings.length === 0) {
     return (
       <main className="page">
-        <h1>{t.lint.title}</h1>
+        <h1>
+          {t.lint.title} {staleBadge}
+        </h1>
         <p className="notice">{t.lint.noProblems}</p>
       </main>
     )
@@ -53,7 +61,9 @@ export default function Lint() {
 
   return (
     <main className="page">
-      <h1>{t.lint.title}</h1>
+      <h1>
+        {t.lint.title} {staleBadge}
+      </h1>
       <p className="counts">{t.lint.counts(findings.length)}</p>
       {RULE_ORDER.map((rule) => {
         const list = byRule.get(rule) ?? []

@@ -1313,3 +1313,10 @@ button.tag {
   cursor: pointer;
 }
 .note-filter-clear:hover { border-color: var(--border-strong); }
+
+/* Lint stale-while-revalidate (F-0155): marcador discreto de revalidação. */
+.lint-stale {
+  font-size: 0.65em;
+  vertical-align: middle;
+  opacity: 0.7;
+}
