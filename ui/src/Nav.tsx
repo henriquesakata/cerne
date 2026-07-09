@@ -3,6 +3,7 @@ import { useProjects } from './live'
 import { useTheme } from './theme'
 import { useT, type Lang, type Messages } from './i18n'
 import { fetchVersion } from './api'
+import NotificationBell from './NotificationBell'
 
 // Barra de navegação persistente: o shell que torna as páginas alcançáveis.
 const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
@@ -65,6 +66,7 @@ export default function Nav({ hash }: { hash: string }) {
         ))}
       </div>
       <ProjectSelector />
+      <NotificationBell />
       <LangToggle />
       <ThemeToggle />
     </nav>

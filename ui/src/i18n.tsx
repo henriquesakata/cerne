@@ -40,6 +40,14 @@ const ptBR = {
     language: 'Idioma',
     versionTitle: 'Versão do cerne',
   },
+  notif: {
+    aria: 'Notificações',
+    title: 'Notificações',
+    empty: 'Sem notificações recentes',
+    toggleOn: 'Notificações: ativadas',
+    toggleOff: 'Notificações: desativadas',
+    age: (min: number) => (min < 1 ? 'agora' : `há ${min} min`),
+  },
   dashboard: {
     title: 'Dashboard',
     subtitle: 'O resumo do projeto num olhar — cada card abre a tela detalhada.',
@@ -459,6 +467,14 @@ const en: Messages = {
     themeDark: 'Dark theme',
     language: 'Language',
     versionTitle: 'cerne version',
+  },
+  notif: {
+    aria: 'Notifications',
+    title: 'Notifications',
+    empty: 'No recent notifications',
+    toggleOn: 'Notifications: on',
+    toggleOff: 'Notifications: off',
+    age: (min: number) => (min < 1 ? 'now' : `${min} min ago`),
   },
   dashboard: {
     title: 'Dashboard',
