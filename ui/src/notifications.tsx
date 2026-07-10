@@ -48,6 +48,60 @@ export function countUnread(
   return events.filter((e) => Date.parse(e.at) > seenMs).length
 }
 
+// Classe da notificação (F-0161): evento cujo desfecho é um gate humano
+// (approve/accept, F-0131; drift ack, D-0005) pede AÇÃO do usuário; o resto é
+// ciência. Mapa determinístico — um único ponto de verdade client-side.
+export type NotifClass = 'action' | 'info'
+
+const ACTION_TYPES = new Set(['feature.created', 'feature.completed', 'drift.auto'])
+
+export function classifyEvent(type: string): NotifClass {
+  return ACTION_TYPES.has(type) ? 'action' : 'info'
+}
+
+// NativeLabels desacopla o payload do i18n: o provider passa t.notif, os
+// testes passam um fake.
+export type NativeLabels = {
+  nativeTitle: (project: string) => string
+  nativeActionTitle: (project: string) => string
+  nativeBatch: (n: number) => string
+  nativeActionBody: (k: number, n: number) => string
+}
+
+export type NativePayload = {
+  title: string
+  body: string
+  requireInteraction: boolean
+  single: LifecycleEvent | null
+}
+
+// buildNativePayload monta o banner nativo de um lote de eventos frescos:
+// título sempre nomeia o projeto (o painel serve N projetos); lote de 1 →
+// corpo entidade+ação; N → agregado; ≥1 ação → título de ação e
+// requireInteraction (o banner persiste até interação onde o browser suporta).
+export function buildNativePayload(
+  fresh: LifecycleEvent[],
+  projectName: string,
+  labels: NativeLabels,
+  typeLabel: (type: string) => string,
+): NativePayload | null {
+  if (fresh.length === 0) return null
+  const actions = fresh.filter((e) => classifyEvent(e.type) === 'action').length
+  const hasAction = actions > 0
+  const single = fresh.length === 1 ? fresh[0] : null
+  const body = single
+    ? `${single.entity_id} ${typeLabel(single.type)}`
+    : hasAction
+      ? labels.nativeActionBody(actions, fresh.length)
+      : labels.nativeBatch(fresh.length)
+  return {
+    title: hasAction ? labels.nativeActionTitle(projectName) : labels.nativeTitle(projectName),
+    body,
+    requireInteraction: hasAction,
+    single,
+  }
+}
+
 const ENABLED_KEY = 'cerne.notif.enabled'
 const lastSeenKey = (pid: string) => `cerne.notif.lastSeen.${pid}`
 
