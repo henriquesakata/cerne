@@ -27,6 +27,9 @@ type ProjectsState = {
   setActivePid: (pid: string) => void
   changed: Set<string>
   version: number
+  // Último change do SSE com o pid de origem (F-0161): aditivo — permite a
+  // camada de notificações observar projetos que não são o ativo.
+  lastChange: { pid: string; seq: number }
 }
 
 const Ctx = createContext<ProjectsState | null>(null)
@@ -36,6 +39,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [activePid, setActivePidState] = useState('')
   const [changed, setChanged] = useState<Set<string>>(() => new Set())
   const [version, setVersion] = useState(0)
+  const [lastChange, setLastChange] = useState({ pid: '', seq: 0 })
   const [ready, setReady] = useState(false)
   const { t } = useT()
 
@@ -81,6 +85,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return subscribeLive({
       onChange: (pid) => {
+        setLastChange((c) => ({ pid, seq: c.seq + 1 }))
         if (pid === activeRef.current) setVersion((v) => v + 1)
         else setChanged((s) => new Set(s).add(pid))
       },
@@ -119,7 +124,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   if (!ready) return <p className="status">{t.live.loading}</p>
 
   return (
-    <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version }}>
+    <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version, lastChange }}>
       {children}
     </Ctx.Provider>
   )

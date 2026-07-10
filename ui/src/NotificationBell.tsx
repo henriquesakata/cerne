@@ -1,20 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNotifications } from './notifications'
+import { entityHref, useNotifications } from './notifications'
 import { useT } from './i18n'
 
 // Sino de notificações no Nav (F-0160): badge de não-lidos, dropdown com as
 // últimas mudanças do projeto ativo e o toggle que silencia o sino (só o
 // sino — o live-refresh das telas não passa por aqui).
-
-// entityHref roteia cada tipo de entidade para sua página; sem rota, sem link.
-function entityHref(id: string): string | null {
-  if (id.startsWith('F-')) return `#/f/${encodeURIComponent(id)}`
-  if (id.startsWith('D-')) return `#/d/${encodeURIComponent(id)}`
-  if (id.startsWith('RB-')) return `#/rb/${encodeURIComponent(id)}`
-  if (id.startsWith('R-')) return `#/r/${encodeURIComponent(id)}`
-  if (id.startsWith('N-')) return `#/n/${encodeURIComponent(id)}`
-  return null
-}
 
 function ageMinutes(at: string): number {
   const ms = Date.now() - Date.parse(at)

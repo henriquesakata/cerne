@@ -3,11 +3,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
-import { fetchEvents, type LifecycleEvent } from './api'
+import { fetchEvents, fetchEventsFor, type LifecycleEvent } from './api'
 import { useProjects } from './live'
+import { useT } from './i18n'
 
 // Sininho de notificações (F-0160): o núcleo puro (janela, dedupe, não-lidos)
 // e o provider que o alimenta com o log de eventos, no mesmo sinal ao vivo que
@@ -102,27 +104,101 @@ export function buildNativePayload(
   }
 }
 
+// entityHref roteia cada tipo de entidade para sua página; sem rota, sem link.
+// (Vive aqui porque o banner nativo também navega — o sino importa daqui.)
+export function entityHref(id: string): string | null {
+  if (id.startsWith('F-')) return `#/f/${encodeURIComponent(id)}`
+  if (id.startsWith('D-')) return `#/d/${encodeURIComponent(id)}`
+  if (id.startsWith('RB-')) return `#/rb/${encodeURIComponent(id)}`
+  if (id.startsWith('R-')) return `#/r/${encodeURIComponent(id)}`
+  if (id.startsWith('N-')) return `#/n/${encodeURIComponent(id)}`
+  return null
+}
+
 const ENABLED_KEY = 'cerne.notif.enabled'
+const NATIVE_KEY = 'cerne.notif.native'
 const lastSeenKey = (pid: string) => `cerne.notif.lastSeen.${pid}`
 
 type NotifState = {
   items: LifecycleEvent[]
   unread: number
+  unreadAction: number
   enabled: boolean
   setEnabled: (on: boolean) => void
   markAllSeen: () => void
+  native: boolean
+  nativePermission: NotificationPermission | 'unsupported'
+  enableNative: () => Promise<void>
+  disableNative: () => void
 }
 
 const Ctx = createContext<NotifState | null>(null)
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const { activePid, version } = useProjects()
+  const { activePid, version, projects, setActivePid, lastChange } = useProjects()
+  const { t } = useT()
   const [raw, setRaw] = useState<LifecycleEvent[]>([])
   const [lastSeen, setLastSeen] = useState<string | null>(null)
   const [enabled, setEnabledState] = useState(
     () => localStorage.getItem(ENABLED_KEY) !== 'false',
   )
+  const [native, setNative] = useState(
+    () => localStorage.getItem(NATIVE_KEY) === 'true',
+  )
+  const [nativePermission, setNativePermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(() =>
+    typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+  )
   const [tick, setTick] = useState(0)
+
+  // Refs para leituras síncronas nos callbacks de fetch/banner, sem prender
+  // os effects a cada preferência.
+  const prefsRef = useRef({ enabled, native, nativePermission })
+  prefsRef.current = { enabled, native, nativePermission }
+  const projectsRef = useRef(projects)
+  projectsRef.current = projects
+  const activeRef = useRef(activePid)
+  activeRef.current = activePid
+  const tRef = useRef(t)
+  tRef.current = t
+
+  // Baseline de ids já vistos pela sessão, por projeto (C7/C12 da F-0161):
+  // "chegou agora" ≠ "lido pelo usuário" (lastSeen) — conceitos separados.
+  const seenRef = useRef(new Map<string, Set<string>>())
+  const seededRef = useRef(new Set<string>())
+
+  // notifyBatch: janela + baseline → eventos frescos; gates (toggle geral,
+  // preferência nativa, permissão, visibilidade quando exigida) → banner
+  // nativo com o nome do projeto de origem no título e tag por projeto.
+  const notifyBatch = (pid: string, evs: LifecycleEvent[], requireHidden: boolean) => {
+    const seen = seenRef.current.get(pid) ?? new Set<string>()
+    const fresh = windowEvents(evs, Date.now()).filter((e) => !seen.has(e.id))
+    evs.forEach((e) => seen.add(e.id))
+    seenRef.current.set(pid, seen)
+    if (fresh.length === 0) return
+    const prefs = prefsRef.current
+    if (!prefs.enabled || !prefs.native || prefs.nativePermission !== 'granted') return
+    if (requireHidden && !document.hidden) return
+    if (typeof Notification === 'undefined') return
+    const tt = tRef.current
+    const name = projectsRef.current.find((p) => p.pid === pid)?.name ?? pid
+    const typeLabel = (ty: string) =>
+      (tt.history.typeLabels as Record<string, string>)[ty] ?? ty
+    const payload = buildNativePayload(fresh, name, tt.notif, typeLabel)
+    if (!payload) return
+    const n = new Notification(payload.title, {
+      body: payload.body,
+      tag: `cerne-${pid}`,
+      requireInteraction: payload.requireInteraction,
+    })
+    n.onclick = () => {
+      window.focus()
+      if (pid !== activeRef.current) setActivePid(pid)
+      const href = payload.single ? entityHref(payload.single.entity_id) : null
+      if (href) window.location.hash = href
+    }
+  }
 
   // O marcador de último-visto é por projeto: trocar de projeto recarrega.
   useEffect(() => {
@@ -136,14 +212,46 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     let stale = false
     fetchEvents()
       .then((evs) => {
+        if (stale) return
         // O dropdown mostra no máximo 10; 50 crus bastam para re-janelar.
-        if (!stale) setRaw(evs.slice(0, 50))
+        setRaw(evs.slice(0, 50))
+        if (!seededRef.current.has(activePid)) {
+          // Primeiro lote da sessão para este projeto: só semeia a baseline —
+          // o backlog nunca vira banner (C7).
+          const seen = seenRef.current.get(activePid) ?? new Set<string>()
+          evs.forEach((e) => seen.add(e.id))
+          seenRef.current.set(activePid, seen)
+          seededRef.current.add(activePid)
+        } else {
+          notifyBatch(activePid, evs, true) // ativo: só com aba oculta (C2/C3)
+        }
       })
       .catch(() => {}) // sem log ≠ erro de UI: o sino só fica quieto
     return () => {
       stale = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePid, version])
+
+  // Projeto não-ativo (C12): todo change do SSE chega com o pid de origem;
+  // a janela de 15 min impede replay do backlog e a visibilidade da aba não
+  // suprime — a informação não está na tela em nenhum caso.
+  useEffect(() => {
+    if (!lastChange || !lastChange.pid || lastChange.pid === activeRef.current) return
+    const pid = lastChange.pid
+    let stale = false
+    fetchEventsFor(pid)
+      .then((evs) => {
+        if (stale) return
+        seededRef.current.add(pid)
+        notifyBatch(pid, evs, false)
+      })
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastChange])
 
   // A janela de 15 min expira sozinha: re-avalia a cada 60 s.
   useEffect(() => {
@@ -155,6 +263,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const items = useMemo(() => windowEvents(raw, Date.now()), [raw, tick])
   const unread = enabled ? countUnread(items, lastSeen) : 0
+  const unreadAction = enabled
+    ? countUnread(items.filter((e) => classifyEvent(e.type) === 'action'), lastSeen)
+    : 0
 
   const markAllSeen = () => {
     const newest = items[0]
@@ -168,8 +279,38 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setEnabledState(on)
   }
 
+  // enableNative persiste a preferência somente com permissão concedida (C1);
+  // negada/fechada fica só no espelho de permissão para a UI explicar (C6).
+  const enableNative = async () => {
+    if (typeof Notification === 'undefined') return
+    const p = await Notification.requestPermission()
+    setNativePermission(p)
+    if (p === 'granted') {
+      localStorage.setItem(NATIVE_KEY, 'true')
+      setNative(true)
+    }
+  }
+
+  const disableNative = () => {
+    localStorage.removeItem(NATIVE_KEY)
+    setNative(false)
+  }
+
   return (
-    <Ctx.Provider value={{ items, unread, enabled, setEnabled, markAllSeen }}>
+    <Ctx.Provider
+      value={{
+        items,
+        unread,
+        unreadAction,
+        enabled,
+        setEnabled,
+        markAllSeen,
+        native,
+        nativePermission,
+        enableNative,
+        disableNative,
+      }}
+    >
       {children}
     </Ctx.Provider>
   )
