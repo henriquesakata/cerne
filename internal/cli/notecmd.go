@@ -24,6 +24,7 @@ func newNoteCmd() *cobra.Command {
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newNoteNewCmd(&dir))
 	cmd.AddCommand(newNoteListCmd(&dir))
+	cmd.AddCommand(newNoteTagsCmd(&dir))
 	cmd.AddCommand(newNoteShowCmd(&dir))
 	cmd.AddCommand(newNoteRetagCmd(&dir))
 	cmd.AddCommand(newNoteKeepCmd(&dir))
@@ -122,6 +123,63 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 			fmt.Fprintln(w, "No active notes. Use 'cerne note new \"<title>\"' to register one, or 'cerne note list --all' to see history.")
 		}
 	}
+	return nil
+}
+
+func newNoteTagsCmd(dir *string) *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "tags",
+		Short: "Show the tag catalog of active notes (each facet/component with counts)",
+		Long: "Aggregates the tags across ACTIVE notes: each distinct facet and component with the count of notes " +
+			"carrying it. This is the topic menu — read it first, then pull only the relevant knowledge with " +
+			"'cerne note list --facet <f>' / '--component <c>'. Superseded notes are history and not counted. " +
+			"--json for structured output.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteTags(cmd, *dir, asJSON)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	return cmd
+}
+
+func runNoteTags(cmd *cobra.Command, dir string, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	cat, err := app.NoteTagCatalog(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	w := cmd.OutOrStdout()
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(cat)
+	}
+	if len(cat.Facets) == 0 && len(cat.Components) == 0 {
+		fmt.Fprintln(w, "No tags in use. Tag notes with 'cerne note new --facet/--component' (or 'cerne note retag').")
+		return nil
+	}
+	printAxis := func(title string, counts map[string]int) {
+		if len(counts) == 0 {
+			return
+		}
+		fmt.Fprintln(w, title+":")
+		keys := make([]string, 0, len(counts))
+		for k := range counts {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for _, k := range keys {
+			fmt.Fprintf(w, "  %s (%d)\n", k, counts[k])
+		}
+	}
+	printAxis("Facets", cat.Facets)
+	printAxis("Components", cat.Components)
+	fmt.Fprintln(w, "Pull a topic with 'cerne note list --facet <f>' or 'cerne note list --component <c>'.")
 	return nil
 }
 
