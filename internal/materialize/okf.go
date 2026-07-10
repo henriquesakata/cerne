@@ -116,6 +116,43 @@ func firstProseParagraph(body []byte, limit int) string {
 	return clipRunes(strings.Join(para, " "), limit)
 }
 
+// specDescription derives a feature-index description from its spec body: the
+// first prose paragraph of the "## Problema" section (where feature new seeds
+// the context — F-0120), falling back to the body's first prose paragraph when
+// the section is absent or empty.
+func specDescription(body []byte, limit int) string {
+	if sec := sectionBody(body, "## Problema"); len(sec) > 0 {
+		if d := firstProseParagraph(sec, limit); d != "" {
+			return d
+		}
+	}
+	return firstProseParagraph(body, limit)
+}
+
+// sectionBody returns the lines after the heading line (exact match, trimmed)
+// up to the next markdown heading; nil when the heading is absent.
+func sectionBody(body []byte, heading string) []byte {
+	lines := strings.Split(string(body), "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == heading {
+			start = i + 1
+			break
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+	end := len(lines)
+	for i := start; i < len(lines); i++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "#") {
+			end = i
+			break
+		}
+	}
+	return []byte(strings.Join(lines[start:end], "\n"))
+}
+
 // clipRunes truncates s at limit runes, appending … when it actually cut.
 func clipRunes(s string, limit int) string {
 	r := []rune(s)

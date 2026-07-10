@@ -344,6 +344,7 @@ func copyWiki(repoDir, docsDir string, manifest map[string]string) error {
 func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifest map[string]string) (string, error) {
 	dirName := entryName(f.ID, f.Title)
 	var links, written []string
+	var description string
 	for _, filename := range featureDocFilenames {
 		src := filepath.Join(repoDir, "content", "features", f.ID, filename)
 		body, err := os.ReadFile(src)
@@ -354,6 +355,9 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 			return "", err
 		}
 		if okf {
+			if filename == "spec.md" {
+				description = specDescription(body, descriptionMaxRunes)
+			}
 			docType := strings.TrimSuffix(filename, ".md")
 			body = okfFrontmatter(okfMeta{Type: docType, Title: f.Title, Timestamp: okfTime(f.UpdatedAt)}, body)
 		}
@@ -367,7 +371,7 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 		written = append(written, filename)
 	}
 	if okf {
-		if err := writeFeatureIndex(docsDir, dirName, f, written, manifest); err != nil {
+		if err := writeFeatureIndex(docsDir, dirName, f, description, written, manifest); err != nil {
 			return "", err
 		}
 	}
@@ -378,7 +382,7 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 // frontmatter carrying the lifecycle fields (state, parent, module→tags) plus
 // sibling links to whichever lifecycle docs were materialized. The index is
 // generated, so its cerne_id comes from the feature id.
-func writeFeatureIndex(docsDir, dirName string, f store.Feature, written []string, manifest map[string]string) error {
+func writeFeatureIndex(docsDir, dirName string, f store.Feature, description string, written []string, manifest map[string]string) error {
 	var tags []string
 	if f.Module != "" {
 		tags = []string{f.Module}
@@ -387,13 +391,14 @@ func writeFeatureIndex(docsDir, dirName string, f store.Feature, written []strin
 	tags = append(tags, f.Facets...)
 	tags = append(tags, f.Components...)
 	meta := okfMeta{
-		Type:      "feature",
-		Title:     f.Title,
-		Timestamp: okfTime(f.UpdatedAt),
-		Tags:      tags,
-		State:     string(f.State),
-		Parent:    f.Parent,
-		CerneID:   f.ID,
+		Type:        "feature",
+		Title:       f.Title,
+		Description: description,
+		Timestamp:   okfTime(f.UpdatedAt),
+		Tags:        tags,
+		State:       string(f.State),
+		Parent:      f.Parent,
+		CerneID:     f.ID,
 	}
 	var body strings.Builder
 	body.WriteString("# " + f.Title + "\n")

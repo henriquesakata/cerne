@@ -267,3 +267,45 @@ func TestMaterializeOKFDescriptionSingleFile(t *testing.T) {
 		t.Errorf("stub body must not gain a description:\n%s", ref)
 	}
 }
+
+// TestMaterializeOKFDescriptionFeatureIndex pins C2 of F-0166: the feature's
+// index.md derives its description from the first prose paragraph of the
+// spec's "## Problema" section, falling back to the body's first prose
+// paragraph when the section is absent; a stub spec yields no description.
+// Lifecycle docs themselves never gain a description (out of scope).
+func TestMaterializeOKFDescriptionFeatureIndex(t *testing.T) {
+	backend := seedBackend(t)
+	addFeature(t, backend, "F-0001", "Revamp", "", domain.StateInDevelopment, map[string]string{
+		"spec.md": "---\ncerne_id: F-0001\n---\n\n# Revamp\n\n**Status:** Rascunho.\n\n## Problema\n\nFalta X\nno sistema Y.\n\n## Objetivo\n\nOutro texto.\n",
+	})
+	addFeature(t, backend, "F-0002", "Planos", "", domain.StateApproved, map[string]string{
+		"spec.md": "---\ncerne_id: F-0002\n---\n\nTexto direto do corpo.\n",
+	})
+	addFeature(t, backend, "F-0003", "Stub", "", domain.StateCandidate, map[string]string{
+		"spec.md": "---\ncerne_id: F-0003\n---\n\n# Stub\n\n<!-- guia -->\n",
+	})
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(backend, docsDir, "", true); err != nil {
+		t.Fatalf("Materialize okf: %v", err)
+	}
+
+	idx := readDoc(t, docsDir, "current/features/F-0001-revamp/index.md")
+	if !strings.Contains(idx, "description: Falta X no sistema Y.\n") {
+		t.Errorf("index description must come from the Problema section:\n%s", idx)
+	}
+	spec := readDoc(t, docsDir, "current/features/F-0001-revamp/spec.md")
+	if strings.Contains(spec, "description:") {
+		t.Errorf("lifecycle docs must not gain a description:\n%s", spec)
+	}
+
+	fallback := readDoc(t, docsDir, "current/features/F-0002-planos/index.md")
+	if !strings.Contains(fallback, "description: Texto direto do corpo.\n") {
+		t.Errorf("index description must fall back to the body's first prose paragraph:\n%s", fallback)
+	}
+
+	stub := readDoc(t, docsDir, "current/features/F-0003-stub/index.md")
+	if strings.Contains(stub, "description:") {
+		t.Errorf("stub spec must not gain an index description:\n%s", stub)
+	}
+}
