@@ -27,6 +27,14 @@ func TestFeatureTransitions(t *testing.T) {
 		{"supersede in-dev", StateInDevelopment, ActionSupersede, StateSuperseded, false},
 		{"superseded is terminal", StateSuperseded, ActionApprove, "", true},
 		{"rejected is terminal", StateRejected, ActionApprove, "", true},
+		// F-0169: revert walks an approval back — and only an approval.
+		{"revert approved", StateApproved, ActionRevert, StateCandidate, false},
+		{"cannot revert candidate", StateCandidate, ActionRevert, "", true},
+		{"cannot revert in-dev", StateInDevelopment, ActionRevert, "", true},
+		{"cannot revert implemented", StateImplemented, ActionRevert, "", true},
+		{"cannot revert done", StateDone, ActionRevert, "", true},
+		{"cannot revert rejected", StateRejected, ActionRevert, "", true},
+		{"cannot revert superseded", StateSuperseded, ActionRevert, "", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
