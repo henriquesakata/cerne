@@ -382,3 +382,51 @@ func TestMaterializeOKFLogMD(t *testing.T) {
 		t.Errorf("cap must keep the newest and drop the oldest entries:\n%.400s", cl)
 	}
 }
+
+// TestMaterializeOKFRootIndex pins C4 of F-0166: under okf=true the bundle
+// root gains an index.md whose frontmatter carries only okf_version, with one
+// section per materialized kind, each concept as `* [title](path) — description`
+// (the dash omitted when the concept has no description) and empty kinds
+// omitted entirely.
+func TestMaterializeOKFRootIndex(t *testing.T) {
+	backend := seedBackend(t)
+	addFeature(t, backend, "F-0001", "Revamp", "", domain.StateInDevelopment, map[string]string{
+		"spec.md": "---\ncerne_id: F-0001\n---\n\n## Problema\n\nFalta X\nno sistema Y.\n",
+	})
+	addDecision(t, backend, "D-0001", "Usar Postgres", domain.DecisionActive,
+		"---\ncerne_id: D-0001\n---\n\nAdotamos Postgres.\n")
+	addReference(t, backend, "R-0001", "Stub ref", domain.ReferenceCurrent,
+		"---\ncerne_id: R-0001\n---\n")
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	manifest, err := Materialize(backend, docsDir, "", true)
+	if err != nil {
+		t.Fatalf("Materialize okf: %v", err)
+	}
+	if _, ok := manifest["index.md"]; !ok {
+		t.Fatalf("manifest missing index.md")
+	}
+
+	idx := readDoc(t, docsDir, "index.md")
+	if !strings.HasPrefix(idx, "---\nokf_version: \"0.1\"\n---\n") {
+		t.Errorf("root index frontmatter must carry only okf_version:\n%s", idx)
+	}
+	for _, want := range []string{
+		"## Features",
+		"* [Revamp](current/features/F-0001-revamp/index.md) — Falta X no sistema Y.",
+		"## Decisions",
+		"* [Usar Postgres](current/decisions/D-0001-usar-postgres.md) — Adotamos Postgres.",
+		"## References",
+		"* [Stub ref](current/references/R-0001-stub-ref.md)\n",
+	} {
+		if !strings.Contains(idx, want) {
+			t.Errorf("root index missing %q:\n%s", want, idx)
+		}
+	}
+	if strings.Contains(idx, "Stub ref](current/references/R-0001-stub-ref.md) —") {
+		t.Errorf("concept without description must omit the dash:\n%s", idx)
+	}
+	if strings.Contains(idx, "## Runbooks") || strings.Contains(idx, "## Notes") {
+		t.Errorf("empty kinds must be omitted:\n%s", idx)
+	}
+}
