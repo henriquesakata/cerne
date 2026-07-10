@@ -300,8 +300,8 @@ const ptBR = {
     title: 'Convenções',
     counts: (n: number) => `${n} convenção(ões)`,
     intro:
-      'Orientações prescritivas — como construir aqui (formulários, menu, layout…). São notas com o component reservado "convencao", agrupadas por tópico; o agente as consulta via "cerne note tags" antes de construir.',
-    none: 'Nenhuma convenção registrada. Crie com \'cerne note new "<título>" --component convencao,<topico>\'.',
+      'Orientações prescritivas — como construir aqui (formulários, menu, layout…). São notas com o component reservado "convention", agrupadas por tópico; o agente as consulta via "cerne note tags" antes de construir.',
+    none: 'Nenhuma convenção registrada. Crie com \'cerne note new "<título>" --component convention,<topico>\'.',
     generalGroup: 'geral',
   },
   wiki: {
@@ -748,8 +748,8 @@ const en: Messages = {
     title: 'Conventions',
     counts: (n: number) => `${n} convention(s)`,
     intro:
-      'Prescriptive guidance — how to build here (forms, menu, layout…). These are notes carrying the reserved component "convencao", grouped by topic; agents consult them via "cerne note tags" before building.',
-    none: 'No convention recorded. Create one with \'cerne note new "<title>" --component convencao,<topic>\'.',
+      'Prescriptive guidance — how to build here (forms, menu, layout…). These are notes carrying the reserved component "convention", grouped by topic; agents consult them via "cerne note tags" before building.',
+    none: 'No convention recorded. Create one with \'cerne note new "<title>" --component convention,<topic>\'.',
     generalGroup: 'general',
   },
   wiki: {

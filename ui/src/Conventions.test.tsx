@@ -25,14 +25,14 @@ beforeEach(() => {
 })
 
 describe('Conventions', () => {
-  // C4: só notas ativas com component 'convencao' aparecem, agrupadas por tópico.
+  // C4: só notas ativas com component 'convention' aparecem, agrupadas por tópico.
   it('lista só as convenções, agrupadas pelo component de tópico', async () => {
     api.fetchState.mockResolvedValue({
       notes: [
-        note('N-0001', 'Formulários: validação e campos', ['convencao', 'forms']),
-        note('N-0002', 'Menu: montagem padrão', ['convencao', 'menu']),
+        note('N-0001', 'Formulários: validação e campos', ['convention', 'forms']),
+        note('N-0002', 'Menu: montagem padrão', ['convention', 'menu']),
         note('N-0003', 'Gotcha do go-git', ['gitea']), // descritiva: fora
-        note('N-0004', 'Convenção antiga', ['convencao', 'forms'], 'superseded'), // história: fora
+        note('N-0004', 'Convenção antiga', ['convention', 'forms'], 'superseded'), // história: fora
       ],
     })
     render(<Conventions />)
@@ -40,7 +40,7 @@ describe('Conventions', () => {
     expect(screen.getByText('Menu: montagem padrão')).toBeInTheDocument()
     expect(screen.queryByText('Gotcha do go-git')).not.toBeInTheDocument()
     expect(screen.queryByText('Convenção antiga')).not.toBeInTheDocument()
-    // Agrupamento por tópico (os components além de 'convencao').
+    // Agrupamento por tópico (os components além de 'convention').
     expect(screen.getByRole('heading', { name: /forms/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /menu/ })).toBeInTheDocument()
   })
@@ -48,7 +48,7 @@ describe('Conventions', () => {
   // C4: convenção sem component de tópico cai no grupo "geral".
   it('convenção sem tópico cai no grupo geral', async () => {
     api.fetchState.mockResolvedValue({
-      notes: [note('N-0001', 'Padrão amplo', ['convencao'])],
+      notes: [note('N-0001', 'Padrão amplo', ['convention'])],
     })
     render(<Conventions />)
     await waitFor(() => expect(screen.getByText('Padrão amplo')).toBeInTheDocument())

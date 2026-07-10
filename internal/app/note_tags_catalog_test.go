@@ -21,7 +21,7 @@ func TestNoteTagCatalog(t *testing.T) {
 
 	mustNote("A", []string{"infra"}, []string{"gitea"})
 	mustNote("B", []string{"infra", "code"}, []string{"gitea", "kpack"})
-	mustNote("C", nil, []string{"convencao"})
+	mustNote("C", nil, []string{"convention"})
 	old := mustNote("D", []string{"process"}, []string{"legacy"})
 	if _, err := TransitionNote(repoDir, projDir, old, "", "obsolete"); err != nil {
 		t.Fatalf("TransitionNote: %v", err)
@@ -42,7 +42,7 @@ func TestNoteTagCatalog(t *testing.T) {
 		}
 	}
 
-	wantComponents := map[string]int{"gitea": 2, "kpack": 1, "convencao": 1}
+	wantComponents := map[string]int{"gitea": 2, "kpack": 1, "convention": 1}
 	if len(cat.Components) != len(wantComponents) {
 		t.Fatalf("components = %v, want %v", cat.Components, wantComponents)
 	}

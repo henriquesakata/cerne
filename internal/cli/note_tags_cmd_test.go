@@ -27,13 +27,13 @@ func TestNoteTags(t *testing.T) {
 	}
 	mustNew("A", "infra", "gitea")
 	mustNew("B", "infra,code", "gitea,kpack")
-	mustNew("C", "", "convencao")
+	mustNew("C", "", "convention")
 
 	out, err := execCerne(t, "note", "tags", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("note tags: %v\noutput: %s", err, out)
 	}
-	for _, want := range []string{"infra (2)", "code (1)", "gitea (2)", "kpack (1)", "convencao (1)"} {
+	for _, want := range []string{"infra (2)", "code (1)", "gitea (2)", "kpack (1)", "convention (1)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("note tags output missing %q:\n%s", want, out)
 		}
@@ -44,7 +44,7 @@ func TestNoteTags(t *testing.T) {
 func TestNoteTagsJSON(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 
-	if out, err := execCerne(t, "note", "new", "A", "--facet", "infra", "--component", "convencao", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "note", "new", "A", "--facet", "infra", "--component", "convention", "--dir", projDir); err != nil {
 		t.Fatalf("note new: %v\noutput: %s", err, out)
 	}
 
@@ -59,8 +59,8 @@ func TestNoteTagsJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	if got.Facets["infra"] != 1 || got.Components["convencao"] != 1 {
-		t.Fatalf("catalog = %+v, want infra:1 convencao:1", got)
+	if got.Facets["infra"] != 1 || got.Components["convention"] != 1 {
+		t.Fatalf("catalog = %+v, want infra:1 convention:1", got)
 	}
 }
 

@@ -387,12 +387,12 @@ func TestNoteSubstituirRetire(t *testing.T) {
 }
 
 // TestNoteListConventionMarker: a note carrying the reserved component
-// 'convencao' is a prescriptive convention (F-0165) and is visually marked in
+// 'convention' is a prescriptive convention (F-0165) and is visually marked in
 // the listing; a descriptive note is not.
 func TestNoteListConventionMarker(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 
-	if out, err := execCerne(t, "note", "new", "Formulários: validação e campos", "--component", "convencao,forms", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "note", "new", "Formulários: validação e campos", "--component", "convention,forms", "--dir", projDir); err != nil {
 		t.Fatalf("note new (convention): %v\noutput: %s", err, out)
 	}
 	if out, err := execCerne(t, "note", "new", "Gotcha do go-git", "--component", "gitea", "--dir", projDir); err != nil {
@@ -420,21 +420,21 @@ func TestNoteListConventionMarker(t *testing.T) {
 	}
 }
 
-// TestNoteListComponentFilterConvencao: regression — '--component convencao'
+// TestNoteListComponentFilterConvention: regression — '--component convention'
 // returns only the convention subset (the retrieval flow F-0165 relies on).
-func TestNoteListComponentFilterConvencao(t *testing.T) {
+func TestNoteListComponentFilterConvention(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 
-	if out, err := execCerne(t, "note", "new", "Convenção de menu", "--component", "convencao,menu", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "note", "new", "Convenção de menu", "--component", "convention,menu", "--dir", projDir); err != nil {
 		t.Fatalf("note new: %v\noutput: %s", err, out)
 	}
 	if out, err := execCerne(t, "note", "new", "Nota descritiva", "--component", "gitea", "--dir", projDir); err != nil {
 		t.Fatalf("note new: %v\noutput: %s", err, out)
 	}
 
-	out, err := execCerne(t, "note", "list", "--component", "convencao", "--dir", projDir)
+	out, err := execCerne(t, "note", "list", "--component", "convention", "--dir", projDir)
 	if err != nil {
-		t.Fatalf("note list --component convencao: %v\noutput: %s", err, out)
+		t.Fatalf("note list --component convention: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "N-0001") || strings.Contains(out, "N-0002") {
 		t.Fatalf("filter must return only the convention note:\n%s", out)

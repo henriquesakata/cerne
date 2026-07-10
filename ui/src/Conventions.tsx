@@ -5,11 +5,11 @@ import { useT } from './i18n'
 
 // Component reservado que marca uma nota como convenção prescritiva (F-0165).
 // Espelha domain.ConventionComponent no backend.
-const CONVENTION = 'convencao'
+const CONVENTION = 'convention'
 
 // Convenções (F-0165): as notas prescritivas — "como construir aqui" — em
 // oposição às notas descritivas ("o que foi descoberto"). A view filtra as
-// notas ativas com o component reservado 'convencao' e agrupa pelo(s)
+// notas ativas com o component reservado 'convention' e agrupa pelo(s)
 // component(s) de tópico restantes (forms, menu, layout…), o mesmo menu que o
 // agente lê via `cerne note tags`. Sem endpoint próprio: o /state já embarca
 // todas as notas com seus components.
@@ -35,7 +35,7 @@ export default function Conventions() {
     (n) => n.state === 'active' && (n.components ?? []).includes(CONVENTION),
   )
 
-  // Agrupa por tópico: cada component além de 'convencao' é um tópico; uma
+  // Agrupa por tópico: cada component além de 'convention' é um tópico; uma
   // convenção com vários tópicos aparece em cada um; sem tópico → "geral".
   const byTopic = new Map<string, Note[]>()
   for (const n of conventions) {

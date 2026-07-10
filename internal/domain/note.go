@@ -45,7 +45,7 @@ var ValidFacets = []string{"infra", "code", "data", "process", "auth"}
 // prescriptive convention (how to build) rather than descriptive knowledge
 // (what was discovered) — F-0165. It rides the open component axis, so the
 // closed facet set (D-0002) stays untouched.
-const ConventionComponent = "convencao"
+const ConventionComponent = "convention"
 
 // ErrUnknownFacet is returned by NormalizeFacets for a value not in ValidFacets.
 var ErrUnknownFacet = errors.New("facet desconhecida")
