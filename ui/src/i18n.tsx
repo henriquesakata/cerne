@@ -62,6 +62,15 @@ const ptBR = {
   errata: {
     title: 'Errata',
   },
+  backlinks: {
+    title: 'Backlinks',
+    types: {
+      links: 'cita',
+      informs: 'informa',
+      part_of: 'filha',
+      superseded_by: 'substituída',
+    } satisfies Record<GraphEdgeType, string>,
+  },
   dashboard: {
     title: 'Dashboard',
     subtitle: 'O resumo do projeto num olhar — cada card abre a tela detalhada.',
@@ -335,6 +344,8 @@ const ptBR = {
       decision: 'decisão',
       reference: 'referência',
       historical: 'histórico',
+      note: 'nota',
+      runbook: 'runbook',
     } satisfies Record<GraphKind, string>,
     edgeLabels: {
       superseded_by: 'substituída por',
@@ -512,6 +523,15 @@ const en: Messages = {
   },
   errata: {
     title: 'Errata',
+  },
+  backlinks: {
+    title: 'Backlinks',
+    types: {
+      links: 'cites',
+      informs: 'informs',
+      part_of: 'child',
+      superseded_by: 'superseded',
+    } satisfies Record<GraphEdgeType, string>,
   },
   dashboard: {
     title: 'Dashboard',
@@ -784,7 +804,9 @@ const en: Messages = {
       decision: 'decision',
       reference: 'reference',
       historical: 'historical',
-    },
+      note: 'note',
+      runbook: 'runbook',
+    } satisfies Record<GraphKind, string>,
     edgeLabels: {
       superseded_by: 'superseded by',
       part_of: 'part of',

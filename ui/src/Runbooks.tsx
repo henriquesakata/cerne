@@ -7,6 +7,7 @@ import {
 } from 'react'
 import Markdown from './Markdown'
 import ErrataSection from './ErrataSection'
+import Backlinks from './Backlinks'
 import Tag, { tagCounts } from './Tag'
 import {
   fetchRunbook,
@@ -230,6 +231,7 @@ export function RunbookDetail({ id }: { id: string }) {
         {rb.reason && <p className="feature-note">{t.common.reasonLabel} {rb.reason}</p>}
       </header>
       <ErrataSection content={data.errata} />
+      <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>
