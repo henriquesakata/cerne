@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useProjects } from './live'
 import { useTheme } from './theme'
 import { useT, type Lang, type Messages } from './i18n'
@@ -46,7 +46,6 @@ function activeHref(hash: string): string {
 }
 
 export default function Nav({ hash }: { hash: string }) {
-  const { t } = useT()
   const active = activeHref(hash)
   return (
     <nav className="nav">
@@ -54,22 +53,150 @@ export default function Nav({ hash }: { hash: string }) {
         cerne
         <NavVersion />
       </span>
-      <div className="nav-links">
-        {LINKS.map((l) => (
-          <a
-            key={l.href}
-            href={l.href}
-            className={l.href === active ? 'nav-link active' : 'nav-link'}
-          >
-            {t.nav[l.key]}
-          </a>
-        ))}
-      </div>
+      <NavLinks active={active} hash={hash} />
       <ProjectSelector />
       <NotificationBell />
       <LangToggle />
       <ThemeToggle />
     </nav>
+  )
+}
+
+// NavLinks é uma "priority+ navigation": mantém os links em uma única linha e
+// empurra os que não couberem para um dropdown "Mais". Quantos cabem é medido em
+// tempo real (ResizeObserver), então funciona em qualquer largura de monitor.
+function NavLinks({ active, hash }: { active: string; hash: string }) {
+  const { t, lang } = useT()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLDivElement>(null)
+  const [visibleCount, setVisibleCount] = useState(LINKS.length)
+  const [open, setOpen] = useState(false)
+
+  // Mede a linha oculta (todos os links + botão "Mais") e decide quantos cabem
+  // na largura disponível do container, reservando espaço para o botão "Mais".
+  const recompute = useCallback(() => {
+    const container = containerRef.current
+    const measure = measureRef.current
+    if (!container || !measure) return
+    const avail = container.clientWidth
+    const items = Array.from(
+      measure.querySelectorAll<HTMLElement>('[data-nav-item]'),
+    )
+    const moreEl = measure.querySelector<HTMLElement>('[data-nav-more]')
+    const gap = parseFloat(getComputedStyle(container).columnGap) || 0
+    const widths = items.map((el) => el.getBoundingClientRect().width)
+    const moreW = moreEl ? moreEl.getBoundingClientRect().width : 0
+    const totalAll =
+      widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, widths.length - 1)
+    if (totalAll <= avail) {
+      setVisibleCount(LINKS.length) // tudo cabe: sem dropdown
+      return
+    }
+    const budget = avail - moreW - gap // precisa do "Mais": reserva a largura dele
+    let acc = 0
+    let count = 0
+    for (const w of widths) {
+      const add = w + (count > 0 ? gap : 0)
+      if (acc + add <= budget) {
+        acc += add
+        count++
+      } else break
+    }
+    setVisibleCount(Math.max(1, count)) // sempre pelo menos 1 link visível
+  }, [])
+
+  // Recalcula ao montar, ao mudar idioma (larguras dos rótulos mudam) e sempre
+  // que o container é redimensionado.
+  useLayoutEffect(() => {
+    recompute()
+    const container = containerRef.current
+    if (!container) return
+    const ro = new ResizeObserver(recompute)
+    ro.observe(container)
+    return () => ro.disconnect()
+  }, [recompute, lang])
+
+  // Navegou → fecha o dropdown.
+  useEffect(() => setOpen(false), [hash])
+
+  // Fecha ao clicar fora ou apertar Esc.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const visible = LINKS.slice(0, visibleCount)
+  const overflow = LINKS.slice(visibleCount)
+  const activeInOverflow = overflow.some((l) => l.href === active)
+
+  return (
+    <div className="nav-links" ref={containerRef}>
+      {visible.map((l) => (
+        <a
+          key={l.href}
+          href={l.href}
+          className={l.href === active ? 'nav-link active' : 'nav-link'}
+        >
+          {t.nav[l.key]}
+        </a>
+      ))}
+      {overflow.length > 0 && (
+        <div className="nav-more">
+          <button
+            type="button"
+            className={
+              activeInOverflow
+                ? 'nav-link nav-more-btn active'
+                : 'nav-link nav-more-btn'
+            }
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {t.nav.more} ▾
+          </button>
+          {open && (
+            <div className="nav-more-menu" role="menu">
+              {overflow.map((l) => (
+                <a
+                  key={l.href}
+                  href={l.href}
+                  role="menuitem"
+                  className={
+                    l.href === active ? 'nav-more-item active' : 'nav-more-item'
+                  }
+                  onClick={() => setOpen(false)}
+                >
+                  {t.nav[l.key]}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Linha de medição oculta: replica todos os itens para calcular larguras. */}
+      <div className="nav-measure" ref={measureRef} aria-hidden="true">
+        {LINKS.map((l) => (
+          <span key={l.href} data-nav-item className="nav-link">
+            {t.nav[l.key]}
+          </span>
+        ))}
+        <span data-nav-more className="nav-link nav-more-btn">
+          {t.nav.more} ▾
+        </span>
+      </div>
+    </div>
   )
 }
 
