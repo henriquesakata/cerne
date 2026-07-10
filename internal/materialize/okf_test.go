@@ -1,12 +1,14 @@
 package materialize
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -207,13 +209,19 @@ func TestMaterializeOKFIdempotentAndValid(t *testing.T) {
 		t.Errorf("okf mode changed CONTEXT.md (Docs column regressed)")
 	}
 
-	// Bundle validity: every materialized concept .md (CONTEXT.md aside) opens
-	// with the required OKF `type`.
+	// Bundle validity: every materialized concept .md opens with the required
+	// OKF `type`. CONTEXT.md (cerne-native) and the root reserved filenames
+	// (index.md, log.md — §5/§6/§7 of the OKF spec, not concepts) are exempt.
 	err = filepath.WalkDir(first, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() || !strings.HasSuffix(p, ".md") || d.Name() == "CONTEXT.md" {
+		rel, rerr := filepath.Rel(first, p)
+		if rerr != nil {
+			return rerr
+		}
+		slash := filepath.ToSlash(rel)
+		if d.IsDir() || !strings.HasSuffix(p, ".md") || d.Name() == "CONTEXT.md" || slash == "index.md" || slash == "log.md" {
 			return nil
 		}
 		data, rerr := os.ReadFile(p)
@@ -307,5 +315,70 @@ func TestMaterializeOKFDescriptionFeatureIndex(t *testing.T) {
 	stub := readDoc(t, docsDir, "current/features/F-0003-stub/index.md")
 	if strings.Contains(stub, "description:") {
 		t.Errorf("stub spec must not gain an index description:\n%s", stub)
+	}
+}
+
+// TestMaterializeOKFLogMD pins C3 of F-0166: under okf=true the bundle root
+// gains a log.md projected from the event log — entries grouped by UTC date,
+// newest first, each as `* **<type>**: <entity> — <payload k=v> (<actor>)`,
+// the entity id linked when (and only when) it is materialized in this pull,
+// and the whole log capped at the 200 most recent entries.
+func TestMaterializeOKFLogMD(t *testing.T) {
+	backend := seedBackend(t)
+	addDecision(t, backend, "D-0001", "Usar Postgres", domain.DecisionActive,
+		"---\ncerne_id: D-0001\n---\n\n# Usar Postgres\n\nDecisão.\n")
+	for _, ev := range []domain.Event{
+		{ID: "ev-a", At: seedTime, EntityID: "D-0001", Type: "create",
+			Payload: map[string]string{"title": "Usar Postgres"}, Actor: "henrique"},
+		{ID: "ev-b", At: time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC), EntityID: "F-0099", Type: "transition",
+			Payload: map[string]string{"from": "approved", "to": "in_development"}, Actor: "agent"},
+	} {
+		if err := store.AppendEvent(backend, ev); err != nil {
+			t.Fatalf("AppendEvent %s: %v", ev.ID, err)
+		}
+	}
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	manifest, err := Materialize(backend, docsDir, "", true)
+	if err != nil {
+		t.Fatalf("Materialize okf: %v", err)
+	}
+	if _, ok := manifest["log.md"]; !ok {
+		t.Fatalf("manifest missing log.md")
+	}
+
+	log := readDoc(t, docsDir, "log.md")
+	for _, want := range []string{
+		"* **transition**: F-0099 — from=approved, to=in_development (agent)",
+		"* **create**: [D-0001](current/decisions/D-0001-usar-postgres.md) — title=Usar Postgres (henrique)",
+	} {
+		if !strings.Contains(log, want) {
+			t.Errorf("log.md missing %q:\n%s", want, log)
+		}
+	}
+	newer, older := strings.Index(log, "## 2026-01-03"), strings.Index(log, "## 2026-01-02")
+	if newer < 0 || older < 0 || newer > older {
+		t.Errorf("dates must group newest-first:\n%s", log)
+	}
+
+	// Cap: 205 events keep only the 200 most recent.
+	capped := seedBackend(t)
+	for i := 0; i < 205; i++ {
+		ev := domain.Event{ID: fmt.Sprintf("ev-%03d", i), At: seedTime.Add(time.Duration(i) * time.Hour),
+			EntityID: "X-0001", Type: "tick", Payload: map[string]string{"n": fmt.Sprintf("%03d", i)}}
+		if err := store.AppendEvent(capped, ev); err != nil {
+			t.Fatalf("AppendEvent %d: %v", i, err)
+		}
+	}
+	cappedDocs := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(capped, cappedDocs, "", true); err != nil {
+		t.Fatalf("Materialize capped: %v", err)
+	}
+	cl := readDoc(t, cappedDocs, "log.md")
+	if got := strings.Count(cl, "* **"); got != 200 {
+		t.Errorf("log entries = %d, want 200 (cap)", got)
+	}
+	if !strings.Contains(cl, "n=204") || strings.Contains(cl, "n=004") {
+		t.Errorf("cap must keep the newest and drop the oldest entries:\n%.400s", cl)
 	}
 }

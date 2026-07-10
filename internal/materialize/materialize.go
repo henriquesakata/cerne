@@ -286,6 +286,17 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 		return nil, err
 	}
 
+	if okf {
+		idPath := entityPaths(features, decisions, runbooks, notes, references, manifest)
+		events, err := store.ReadEvents(repoDir)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeLog(docsDir, events, idPath, manifest); err != nil {
+			return nil, err
+		}
+	}
+
 	tmpl, err := template.New("context").Parse(contextTemplate)
 	if err != nil {
 		return nil, err
@@ -438,6 +449,35 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 	}
 	manifest[rel] = sum
 	return fmt.Sprintf("[%s](%s)", label, rel), nil
+}
+
+// entityPaths maps each entity id to its materialized rel path — the feature's
+// generated index.md or the single-file concept doc — including only entities
+// this pull actually wrote (manifest membership), so log.md/index.md links
+// never dangle by construction.
+func entityPaths(features []store.Feature, decisions []store.Decision, runbooks []store.Runbook, notes []store.Note, references []store.Reference, manifest map[string]string) map[string]string {
+	idPath := map[string]string{}
+	include := func(id, rel string) {
+		if _, ok := manifest[rel]; ok {
+			idPath[id] = rel
+		}
+	}
+	for _, f := range features {
+		include(f.ID, "current/features/"+entryName(f.ID, f.Title)+"/index.md")
+	}
+	for _, d := range decisions {
+		include(d.ID, "current/decisions/"+entryName(d.ID, d.Title)+".md")
+	}
+	for _, rb := range runbooks {
+		include(rb.ID, "current/runbooks/"+entryName(rb.ID, rb.Title)+".md")
+	}
+	for _, n := range notes {
+		include(n.ID, "current/notes/"+entryName(n.ID, n.Title)+".md")
+	}
+	for _, r := range references {
+		include(r.ID, "current/references/"+entryName(r.ID, r.Title)+".md")
+	}
+	return idPath
 }
 
 // epicSections builds the CONTEXT.md "Epics" breakdown from the features shown
