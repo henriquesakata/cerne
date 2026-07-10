@@ -595,7 +595,13 @@ export async function createReference(
 
 // ---- grafo de entidades (case 0021) ----
 
-export type GraphKind = 'feature' | 'decision' | 'reference' | 'historical'
+export type GraphKind =
+  | 'feature'
+  | 'decision'
+  | 'reference'
+  | 'historical'
+  | 'note'
+  | 'runbook'
 export type GraphEdgeType = 'superseded_by' | 'informs' | 'links' | 'part_of'
 
 // Espelha app.Node / app.Edge (internal/app/graph.go). reason só vem nas

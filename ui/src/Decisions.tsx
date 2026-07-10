@@ -7,6 +7,7 @@ import {
 } from 'react'
 import Markdown from './Markdown'
 import ErrataSection from './ErrataSection'
+import Backlinks from './Backlinks'
 import Tag, { tagCounts } from './Tag'
 import {
   fetchDecision,
@@ -242,6 +243,7 @@ export function DecisionDetail({ id }: { id: string }) {
         )}
       </header>
       <ErrataSection content={data.errata} />
+      <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>

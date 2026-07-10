@@ -37,6 +37,8 @@ const KIND_COLOR: Record<GraphKind, string> = {
   decision: 'var(--purple)',
   reference: 'var(--teal)',
   historical: 'var(--gray)',
+  note: 'var(--green)',
+  runbook: 'var(--amber)',
 }
 const EDGE_STROKE: Record<GraphEdgeType, string> = {
   superseded_by: 'var(--orange)',
@@ -61,7 +63,11 @@ function nodeHref(kind: GraphKind, id: string): string {
         ? 'd'
         : kind === 'reference'
           ? 'r'
-          : ''
+          : kind === 'runbook'
+            ? 'rb'
+            : kind === 'note'
+              ? 'n'
+              : ''
   return seg ? `#/${seg}/${encodeURIComponent(id)}` : ''
 }
 

@@ -54,6 +54,41 @@ func ContentLinks(content string, resolve func(target string) (id string, ok boo
 	return resolved, broken
 }
 
+// wikiRx captures the target of id-form wiki-links: [[F-0123]] or the alias
+// form [[F-0123|shown text]] (target before the |). Restricting the pattern to
+// <alpha>-<digits> ids is by design (F-0167): [[some title]] or a TOML
+// [[table]] in prose is not a wiki-link for cerne, so it can never false-
+// positive — title resolution was cut from v1.
+var wikiRx = regexp.MustCompile(`\[\[([A-Za-z]+-\d+)(?:\|[^\]\n]*)?\]\]`)
+
+// WikiLinks parses the id-form wiki-links of content and classifies each
+// distinct target with resolve, mirroring the ContentLinks contract: targets
+// resolve reports present go to resolved (as the id resolve returns), the rest
+// to broken (the raw target). Each distinct raw target is considered once, in
+// first-appearance order; code fences and inline spans are excluded.
+func WikiLinks(content string, resolve func(target string) (id string, ok bool)) (resolved, broken []string) {
+	content = stripCode(content)
+	seen := map[string]bool{}
+	for _, m := range wikiRx.FindAllStringSubmatch(content, -1) {
+		target := m[1]
+		if seen[target] {
+			continue
+		}
+		seen[target] = true
+		if id, ok := resolve(target); ok {
+			resolved = append(resolved, id)
+		} else {
+			broken = append(broken, target)
+		}
+	}
+	return resolved, broken
+}
+
+// CanonicalID normalizes a wiki-link target to the canonical entity-id form
+// (uppercase). Lint and the entity graph both resolve through this single
+// helper so the two layers can never diverge on case handling (F-0167).
+func CanonicalID(target string) string { return strings.ToUpper(target) }
+
 // ExternalURLs returns the distinct http(s) URLs in content — whether written as
 // a markdown link [x](url) or bare in prose — in first-appearance order. URLs
 // inside fenced or inline code are excluded (stripCode) and trailing sentence

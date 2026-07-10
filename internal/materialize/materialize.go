@@ -186,6 +186,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 	}
 
 	manifest := map[string]string{}
+	descs := map[string]string{} // entity id -> derived OKF description (okf only)
 	data := contextData{ProjectName: proj.Name}
 	for _, w := range works {
 		if w.State != domain.WorkActive {
@@ -210,7 +211,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 			}
 			row := featureRow{ID: f.ID, State: string(f.State), Parent: f.Parent, Module: f.Module, Title: f.Title}
 			if featureIsCurrent(f) {
-				docs, err := copyFeatureDocs(repoDir, docsDir, f, okf, manifest)
+				docs, err := copyFeatureDocs(repoDir, docsDir, f, okf, manifest, descs)
 				if err != nil {
 					return nil, err
 				}
@@ -227,7 +228,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 			continue
 		}
 		meta := okfMeta{Type: "decision", Title: d.Title, Timestamp: okfTime(d.UpdatedAt)}
-		line, err := copyEntry(repoDir, docsDir, "decisions", d.ID, d.Title, manifest, okf, meta)
+		line, err := copyEntry(repoDir, docsDir, "decisions", d.ID, d.Title, manifest, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +246,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 			continue
 		}
 		meta := okfMeta{Type: "runbook", Title: rb.Title, Timestamp: okfTime(rb.UpdatedAt)}
-		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest, okf, meta)
+		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +258,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 			continue
 		}
 		meta := okfMeta{Type: "note", Title: n.Title, Timestamp: okfTime(n.UpdatedAt), Informs: n.Informs}
-		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, okf, meta)
+		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -275,7 +276,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 			continue
 		}
 		meta := okfMeta{Type: "reference", Title: r.Title, Timestamp: okfTime(r.UpdatedAt), Resource: r.URL, External: r.External, Informs: r.Informs}
-		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, okf, meta)
+		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -284,6 +285,21 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 
 	if err := copyWiki(repoDir, docsDir, manifest); err != nil {
 		return nil, err
+	}
+
+	if okf {
+		idPath := entityPaths(features, decisions, runbooks, notes, references, manifest)
+		sections := okfIndexSections(features, decisions, references, notes, runbooks, idPath, descs)
+		if err := writeRootIndex(docsDir, proj.Name, sections, manifest); err != nil {
+			return nil, err
+		}
+		events, err := store.ReadEvents(repoDir)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeLog(docsDir, events, idPath, manifest); err != nil {
+			return nil, err
+		}
 	}
 
 	tmpl, err := template.New("context").Parse(contextTemplate)
@@ -341,9 +357,10 @@ func copyWiki(repoDir, docsDir string, manifest map[string]string) error {
 // "[spec](path), [plan](path)" for the docs that exist. Under okf, each doc is
 // wrapped in OKF frontmatter (type: spec|plan|result) and a generated index.md
 // (type: feature) is emitted carrying the feature's lifecycle fields.
-func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifest map[string]string) (string, error) {
+func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifest, descs map[string]string) (string, error) {
 	dirName := entryName(f.ID, f.Title)
 	var links, written []string
+	var description string
 	for _, filename := range featureDocFilenames {
 		src := filepath.Join(repoDir, "content", "features", f.ID, filename)
 		body, err := os.ReadFile(src)
@@ -354,6 +371,11 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 			return "", err
 		}
 		if okf {
+			if filename == "spec.md" {
+				if description = specDescription(body, descriptionMaxRunes); description != "" {
+					descs[f.ID] = description
+				}
+			}
 			docType := strings.TrimSuffix(filename, ".md")
 			body = okfFrontmatter(okfMeta{Type: docType, Title: f.Title, Timestamp: okfTime(f.UpdatedAt)}, body)
 		}
@@ -367,8 +389,24 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 		written = append(written, filename)
 	}
 	if okf {
-		if err := writeFeatureIndex(docsDir, dirName, f, written, manifest); err != nil {
+		// An authored doc named index.md wins over the generated OKF index:
+		// overwriting authored content is never acceptable, and OKF tolerates
+		// a feature dir whose index is hand-written (F-0166 C8).
+		authored, err := os.ReadFile(filepath.Join(repoDir, "content", "features", f.ID, "index.md"))
+		switch {
+		case err == nil:
+			rel := "current/features/" + dirName + "/index.md"
+			sum, werr := writeFile(docsDir, rel, authored)
+			if werr != nil {
+				return "", werr
+			}
+			manifest[rel] = sum
+		case !errors.Is(err, os.ErrNotExist):
 			return "", err
+		default:
+			if err := writeFeatureIndex(docsDir, dirName, f, description, written, manifest); err != nil {
+				return "", err
+			}
 		}
 	}
 	return strings.Join(links, ", "), nil
@@ -378,7 +416,7 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 // frontmatter carrying the lifecycle fields (state, parent, module→tags) plus
 // sibling links to whichever lifecycle docs were materialized. The index is
 // generated, so its cerne_id comes from the feature id.
-func writeFeatureIndex(docsDir, dirName string, f store.Feature, written []string, manifest map[string]string) error {
+func writeFeatureIndex(docsDir, dirName string, f store.Feature, description string, written []string, manifest map[string]string) error {
 	var tags []string
 	if f.Module != "" {
 		tags = []string{f.Module}
@@ -387,13 +425,14 @@ func writeFeatureIndex(docsDir, dirName string, f store.Feature, written []strin
 	tags = append(tags, f.Facets...)
 	tags = append(tags, f.Components...)
 	meta := okfMeta{
-		Type:      "feature",
-		Title:     f.Title,
-		Timestamp: okfTime(f.UpdatedAt),
-		Tags:      tags,
-		State:     string(f.State),
-		Parent:    f.Parent,
-		CerneID:   f.ID,
+		Type:        "feature",
+		Title:       f.Title,
+		Description: description,
+		Timestamp:   okfTime(f.UpdatedAt),
+		Tags:        tags,
+		State:       string(f.State),
+		Parent:      f.Parent,
+		CerneID:     f.ID,
 	}
 	var body strings.Builder
 	body.WriteString("# " + f.Title + "\n")
@@ -413,7 +452,7 @@ func writeFeatureIndex(docsDir, dirName string, f store.Feature, written []strin
 // copyEntry copies content/<kind>/<ID>.md into current/<kind>/<ID>-<slug>.md
 // and returns the CONTEXT.md bullet text: a markdown link when the content
 // document exists, the plain "<ID> — <title>" otherwise.
-func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]string, okf bool, meta okfMeta) (string, error) {
+func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]string, okf bool, meta okfMeta, descs map[string]string) (string, error) {
 	label := fmt.Sprintf("%s — %s", id, title)
 	body, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -423,6 +462,9 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 		return "", err
 	}
 	if okf {
+		if meta.Description = firstProseParagraph(body, descriptionMaxRunes); meta.Description != "" {
+			descs[id] = meta.Description
+		}
 		body = okfFrontmatter(meta, body)
 	}
 	rel := "current/" + kind + "/" + entryName(id, title) + ".md"
@@ -432,6 +474,35 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 	}
 	manifest[rel] = sum
 	return fmt.Sprintf("[%s](%s)", label, rel), nil
+}
+
+// entityPaths maps each entity id to its materialized rel path — the feature's
+// generated index.md or the single-file concept doc — including only entities
+// this pull actually wrote (manifest membership), so log.md/index.md links
+// never dangle by construction.
+func entityPaths(features []store.Feature, decisions []store.Decision, runbooks []store.Runbook, notes []store.Note, references []store.Reference, manifest map[string]string) map[string]string {
+	idPath := map[string]string{}
+	include := func(id, rel string) {
+		if _, ok := manifest[rel]; ok {
+			idPath[id] = rel
+		}
+	}
+	for _, f := range features {
+		include(f.ID, "current/features/"+entryName(f.ID, f.Title)+"/index.md")
+	}
+	for _, d := range decisions {
+		include(d.ID, "current/decisions/"+entryName(d.ID, d.Title)+".md")
+	}
+	for _, rb := range runbooks {
+		include(rb.ID, "current/runbooks/"+entryName(rb.ID, rb.Title)+".md")
+	}
+	for _, n := range notes {
+		include(n.ID, "current/notes/"+entryName(n.ID, n.Title)+".md")
+	}
+	for _, r := range references {
+		include(r.ID, "current/references/"+entryName(r.ID, r.Title)+".md")
+	}
+	return idPath
 }
 
 // epicSections builds the CONTEXT.md "Epics" breakdown from the features shown

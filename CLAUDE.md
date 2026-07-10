@@ -74,6 +74,6 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 
 This file does not track next steps — a hand-maintained roadmap is exactly the staleness cerne exists to kill (the founding spec's problem #3). Ask the guardian: `cerne status` for feature states, `cerne lint` for documentation debts, and the open cases under `docs/process/cases/`.
 
-Known tooling gap, not yet filed as a case: `cerne lint` parses only inline `[x](y)` links, not wiki-links (`[[note]]`, Obsidian style).
+Wiki-links (F-0167): `cerne lint` and the entity graph resolve **id-form** wiki-links (`[[F-0123]]`, `[[N-0007]]`, alias `[[id|text]]`) — an unknown id is a `broken-link` finding; a resolvable one becomes a `links` edge and feeds the UI's Backlinks panel. Title-form `[[some title]]` is intentionally **not** a link (cut by design: zero false positives on TOML/prose — see the F-0167 spec).
 
 When starting a new case, register it on the board first (`cerne feature new` — case 0035), then use the brainstorming → writing-plans → (subagent-driven-development) → result.md flow, pushing spec/plan/result to the tracked feature and advancing it via `cerne feature approve`/`start`/`complete`; commit the updated `docs.lock`. Register through the native flow, **not** `cerne import` (the case-dir numbering has diverged — see *Authoring*).

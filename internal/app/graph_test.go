@@ -164,3 +164,60 @@ func TestBuildGraphContentLinkEdges(t *testing.T) {
 		t.Fatalf("link edges = %+v, want %+v", links, want)
 	}
 }
+
+// TestBuildGraphWikiLinkEdges (F-0167): notes and runbooks join the graph as
+// nodes, their content docs are scanned, and a resolvable id-form wiki-link
+// becomes a links edge — case-insensitive, deduplicated with the inline-link
+// edge to the same target; an unknown id and non-id [[...]] yield none.
+func TestBuildGraphWikiLinkEdges(t *testing.T) {
+	repo := t.TempDir()
+	now := time.Now()
+	save := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+	save(store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "A", State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveNote(repo, store.Note{ID: "N-0001", Title: "Nota", State: domain.NoteActive, CreatedAt: now, UpdatedAt: now}))
+	save(store.SaveRunbook(repo, store.Runbook{ID: "RB-0001", Title: "Deploy", State: domain.RunbookActive, CreatedAt: now, UpdatedAt: now}))
+
+	// Note cites the feature by wiki-link (mixed case) AND inline link: one edge.
+	// The runbook wiki-link, the unknown id and the non-id form add none of their own.
+	writeDoc(t, repo, "content/notes/N-0001.md",
+		"---\ncerne_id: N-0001\n---\n\nVer [[f-0001]] e [spec](../features/F-0001/spec.md); também [[RB-0001]], [[X-9999]] e [[um título]].\n")
+	writeDoc(t, repo, "content/features/F-0001/spec.md", "---\ncerne_id: F-0001\n---\n\nSpec.\n")
+	writeDoc(t, repo, "content/runbooks/RB-0001.md",
+		"---\ncerne_id: RB-0001\n---\n\nRollback descrito em [[N-0001]].\n")
+
+	g, err := BuildGraph(repo)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	byID := map[string]Node{}
+	for _, n := range g.Nodes {
+		byID[n.ID] = n
+	}
+	if n := byID["N-0001"]; n.Kind != KindNote || n.State != "active" {
+		t.Fatalf("N-0001 node = %+v, want kind note", n)
+	}
+	if n := byID["RB-0001"]; n.Kind != KindRunbook {
+		t.Fatalf("RB-0001 node = %+v, want kind runbook", n)
+	}
+
+	var links []Edge
+	for _, e := range g.Edges {
+		if e.Type == EdgeLinks {
+			links = append(links, e)
+		}
+	}
+	want := []Edge{
+		{From: "N-0001", To: "F-0001", Type: EdgeLinks},
+		{From: "N-0001", To: "RB-0001", Type: EdgeLinks},
+		{From: "RB-0001", To: "N-0001", Type: EdgeLinks},
+	}
+	if !reflect.DeepEqual(links, want) {
+		t.Fatalf("link edges = %+v, want %+v", links, want)
+	}
+}

@@ -815,6 +815,45 @@ h2 {
   font-weight: 700;
 }
 
+/* ---- backlinks (F-0167): arestas de entrada da entidade ---- */
+
+.backlinks-section {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--teal);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.backlinks-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.backlinks-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.backlinks-list a {
+  text-decoration: none;
+}
+
+.backlinks-list a:hover .backlinks-entity {
+  text-decoration: underline;
+}
+
+.backlinks-type {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .notif-toggle {
   background: none;
   border: none;

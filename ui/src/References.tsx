@@ -7,6 +7,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
+import Backlinks from './Backlinks'
 import Tag, { tagCounts } from './Tag'
 import {
   createReference,
@@ -345,6 +346,7 @@ export function ReferenceDetail({ id }: { id: string }) {
           </p>
         )}
       </header>
+      <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>
