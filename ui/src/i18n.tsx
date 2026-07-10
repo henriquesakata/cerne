@@ -26,6 +26,7 @@ const ptBR = {
     references: 'Referências',
     runbooks: 'Runbooks',
     notes: 'Notas',
+    conventions: 'Convenções',
     wiki: 'Wiki',
     graph: 'Grafo',
     ask: 'Perguntar',
@@ -295,6 +296,15 @@ const ptBR = {
     stateLabels: { active: 'Ativa', superseded: 'Substituída' },
     supersededBy: (id: string) => `Substituída por ${id}`,
   },
+  conventions: {
+    loadError: (e: string) => `Erro ao carregar convenções: ${e}`,
+    title: 'Convenções',
+    counts: (n: number) => `${n} convenção(ões)`,
+    intro:
+      'Orientações prescritivas — como construir aqui (formulários, menu, layout…). São notas com o component reservado "convention", agrupadas por tópico; o agente as consulta via "cerne note tags" antes de construir.',
+    none: 'Nenhuma convenção registrada. Crie com \'cerne note new "<título>" --component convention,<topico>\'.',
+    generalGroup: 'geral',
+  },
   wiki: {
     loadError: (e: string) => `Erro ao carregar a wiki: ${e}`,
     loadPageError: (e: string) => `Erro ao carregar a página: ${e}`,
@@ -467,6 +477,7 @@ const en: Messages = {
     references: 'References',
     runbooks: 'Runbooks',
     notes: 'Notes',
+    conventions: 'Conventions',
     wiki: 'Wiki',
     graph: 'Graph',
     ask: 'Ask',
@@ -733,6 +744,15 @@ const en: Messages = {
     groupLabels: { active: 'Active', superseded: 'Superseded' },
     stateLabels: { active: 'Active', superseded: 'Superseded' },
     supersededBy: (id: string) => `Superseded by ${id}`,
+  },
+  conventions: {
+    loadError: (e: string) => `Failed to load conventions: ${e}`,
+    title: 'Conventions',
+    counts: (n: number) => `${n} convention(s)`,
+    intro:
+      'Prescriptive guidance — how to build here (forms, menu, layout…). These are notes carrying the reserved component "convention", grouped by topic; agents consult them via "cerne note tags" before building.',
+    none: 'No convention recorded. Create one with \'cerne note new "<title>" --component convention,<topic>\'.',
+    generalGroup: 'general',
   },
   wiki: {
     loadError: (e: string) => `Failed to load the wiki: ${e}`,
