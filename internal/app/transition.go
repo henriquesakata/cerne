@@ -37,6 +37,7 @@ var eventTypes = map[domain.Action]string{
 	domain.ActionComplete:  "feature.completed",
 	domain.ActionAccept:    "feature.accepted",
 	domain.ActionSupersede: "feature.superseded",
+	domain.ActionRevert:    "feature.reverted",
 }
 
 // TransitionFeature applies action to feature id in the backend clone at
@@ -279,6 +280,14 @@ func ValidateTransitionFlags(action domain.Action, by, reason string) error {
 		}
 		if reason == "" {
 			return fmt.Errorf("--reason is required for reject")
+		}
+	case domain.ActionRevert:
+		// Undoing an approval carries its why into the event log (F-0169).
+		if by != "" {
+			return fmt.Errorf("--by is not allowed for revert")
+		}
+		if reason == "" {
+			return fmt.Errorf("--reason is required for revert")
 		}
 	case domain.ActionAccept:
 		// The acceptance note is optional: the accept is an act, not a document.
