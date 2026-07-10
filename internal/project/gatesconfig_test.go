@@ -22,6 +22,9 @@ func TestGatesConfigDefaults(t *testing.T) {
 	if got := c.Gates.AcceptGate(); got != GateHuman {
 		t.Errorf("AcceptGate() = %q, want %q", got, GateHuman)
 	}
+	if got := c.Gates.RevertGate(); got != GateHuman {
+		t.Errorf("RevertGate() = %q, want %q", got, GateHuman)
+	}
 	if got := c.StaleReadyWindowDays(); got != 14 {
 		t.Errorf("StaleReadyWindowDays() = %d, want 14", got)
 	}
@@ -31,15 +34,17 @@ func TestGatesConfigDefaults(t *testing.T) {
 // independently; unknown values fall back to human (fail-safe).
 func TestGatesConfigBypass(t *testing.T) {
 	cases := []struct {
-		name        string
-		toml        string
-		approve     string
-		accept      string
+		name    string
+		toml    string
+		approve string
+		accept  string
+		revert  string
 	}{
-		{"both auto", "[gates]\napprove = \"auto\"\naccept = \"auto\"\n", GateAuto, GateAuto},
-		{"approve only", "[gates]\napprove = \"auto\"\n", GateAuto, GateHuman},
-		{"accept only", "[gates]\naccept = \"auto\"\n", GateHuman, GateAuto},
-		{"unknown value is human", "[gates]\napprove = \"banana\"\n", GateHuman, GateHuman},
+		{"both auto", "[gates]\napprove = \"auto\"\naccept = \"auto\"\n", GateAuto, GateAuto, GateHuman},
+		{"approve only", "[gates]\napprove = \"auto\"\n", GateAuto, GateHuman, GateHuman},
+		{"accept only", "[gates]\naccept = \"auto\"\n", GateHuman, GateAuto, GateHuman},
+		{"revert only", "[gates]\nrevert = \"auto\"\n", GateHuman, GateHuman, GateAuto},
+		{"unknown value is human", "[gates]\napprove = \"banana\"\nrevert = \"banana\"\n", GateHuman, GateHuman, GateHuman},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,6 +59,9 @@ func TestGatesConfigBypass(t *testing.T) {
 			}
 			if got := c.Gates.AcceptGate(); got != tc.accept {
 				t.Errorf("AcceptGate() = %q, want %q", got, tc.accept)
+			}
+			if got := c.Gates.RevertGate(); got != tc.revert {
+				t.Errorf("RevertGate() = %q, want %q", got, tc.revert)
 			}
 		})
 	}

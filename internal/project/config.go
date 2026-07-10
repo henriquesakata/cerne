@@ -95,6 +95,7 @@ const (
 type GatesConfig struct {
 	Approve       string   `toml:"approve,omitempty"`         // "human" (default) | "auto"
 	Accept        string   `toml:"accept,omitempty"`          // "human" (default) | "auto"
+	Revert        string   `toml:"revert,omitempty"`          // "human" (default) | "auto" — F-0169: undo of an approval
 	WorkGate      string   `toml:"work_gate,omitempty"`       // "on" | anything else = off (default)
 	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
 }
@@ -107,7 +108,7 @@ func (g GatesConfig) WorkGateEnabled() bool {
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0
 }
 
 // ApproveGate resolves the start gate: auto only when explicitly configured.
@@ -121,6 +122,15 @@ func (g GatesConfig) ApproveGate() string {
 // AcceptGate resolves the end gate: auto only when explicitly configured.
 func (g GatesConfig) AcceptGate() string {
 	if g.Accept == GateAuto {
+		return GateAuto
+	}
+	return GateHuman
+}
+
+// RevertGate resolves the approval-undo gate (F-0169): undoing a human act is
+// a human act, so auto only when explicitly configured.
+func (g GatesConfig) RevertGate() string {
+	if g.Revert == GateAuto {
 		return GateAuto
 	}
 	return GateHuman
