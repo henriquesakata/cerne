@@ -185,6 +185,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	// The text rules (ref-to-superseded, broken-link) are authored-content rules
 	// and run only over authored docs — the generated wiki regenerates from
 	// source and is validated separately by wikiSourceFindings (F-0090).
+	ids := knownEntityIDs(features, decisions, references, runbooks, notes, historicals)
 	var findings []Finding
 	for _, d := range docs {
 		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(d.rel)))
@@ -194,6 +195,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		text := string(data)
 		findings = append(findings, refFindings(d, text, needles)...)
 		findings = append(findings, linkFindings(repoDir, d, text)...)
+		findings = append(findings, wikiLinkFindings(d, text, ids)...)
 		// unregistered-source is provenance of a decision — scoped to decisions and
 		// feature spec/plan/result only (F-0107), never runbooks/references/notes/errata.
 		if inUnregisteredSourceScope(d.rel) {
@@ -897,6 +899,49 @@ func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
 	findings := make([]Finding, 0, len(broken))
 	for _, target := range broken {
 		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken link: " + target})
+	}
+	return findings
+}
+
+// knownEntityIDs collects every entity id, canonicalized, as the id-form
+// wiki-link resolution set (F-0167): any kind resolves by id, historicals
+// included (id mention of history is legitimate — F-0092 restricts only
+// title/name matching, which id-form wiki-links never do).
+func knownEntityIDs(features []store.Feature, decisions []store.Decision, references []store.Reference, runbooks []store.Runbook, notes []store.Note, historicals []store.Historical) map[string]bool {
+	ids := map[string]bool{}
+	for _, f := range features {
+		ids[mdlink.CanonicalID(f.ID)] = true
+	}
+	for _, d := range decisions {
+		ids[mdlink.CanonicalID(d.ID)] = true
+	}
+	for _, r := range references {
+		ids[mdlink.CanonicalID(r.ID)] = true
+	}
+	for _, rb := range runbooks {
+		ids[mdlink.CanonicalID(rb.ID)] = true
+	}
+	for _, n := range notes {
+		ids[mdlink.CanonicalID(n.ID)] = true
+	}
+	for _, h := range historicals {
+		ids[mdlink.CanonicalID(h.ID)] = true
+	}
+	return ids
+}
+
+// wikiLinkFindings reports id-form wiki-links whose id is not a known entity
+// (F-0167). Resolution is by id only, case-insensitive; non-id [[...]] text is
+// never extracted by mdlink, so this rule cannot false-positive on TOML
+// tables or bracketed prose.
+func wikiLinkFindings(d scannedDoc, text string, ids map[string]bool) []Finding {
+	_, broken := mdlink.WikiLinks(text, func(target string) (string, bool) {
+		id := mdlink.CanonicalID(target)
+		return id, ids[id]
+	})
+	findings := make([]Finding, 0, len(broken))
+	for _, target := range broken {
+		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken wiki-link: [[" + target + "]]"})
 	}
 	return findings
 }

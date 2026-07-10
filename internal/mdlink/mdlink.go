@@ -84,6 +84,11 @@ func WikiLinks(content string, resolve func(target string) (id string, ok bool))
 	return resolved, broken
 }
 
+// CanonicalID normalizes a wiki-link target to the canonical entity-id form
+// (uppercase). Lint and the entity graph both resolve through this single
+// helper so the two layers can never diverge on case handling (F-0167).
+func CanonicalID(target string) string { return strings.ToUpper(target) }
+
 // ExternalURLs returns the distinct http(s) URLs in content — whether written as
 // a markdown link [x](url) or bare in prose — in first-appearance order. URLs
 // inside fenced or inline code are excluded (stripCode) and trailing sentence
