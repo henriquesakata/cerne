@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"bytes"
 	"errors"
 	"os"
@@ -60,6 +61,51 @@ func TestAddErrataEventActor(t *testing.T) {
 		if ev.Type == "errata.added" && ev.EntityID == "F-0001" {
 			if ev.Actor != "drift-auto" {
 				t.Fatalf("errata.added actor = %q, want %q", ev.Actor, "drift-auto")
+			}
+			return
+		}
+	}
+	t.Fatalf("errata.added event not found")
+}
+
+// TestErrataExcerpt pins F-0163 crit. 5: the excerpt is the first line,
+// truncated at 120 runes with an ellipsis when cut.
+func TestErrataExcerpt(t *testing.T) {
+	long := strings.Repeat("á", 130)
+	tests := []struct {
+		name, in, want string
+	}{
+		{"short single line stays whole", "Correção curta.", "Correção curta."},
+		{"multiline keeps only the first line", "Primeira linha.\nSegunda linha.", "Primeira linha."},
+		{"long line truncated at 120 runes", long, strings.Repeat("á", 120) + "…"},
+		{"leading whitespace trimmed", "  espaço à esquerda", "espaço à esquerda"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := errataExcerpt(tc.in); got != tc.want {
+				t.Fatalf("errataExcerpt(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAddErrataEventCarriesExcerpt(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "X", State: domain.StateImplemented}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	commitBackend(t, repoDir)
+	if _, err := AddErrata(repoDir, projDir, "F-0001", "Referência movida para o sucessor.\nDetalhe longo.", "ator"); err != nil {
+		t.Fatalf("AddErrata: %v", err)
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Type == "errata.added" && ev.EntityID == "F-0001" {
+			if got := ev.Payload["excerpt"]; got != "Referência movida para o sucessor." {
+				t.Fatalf("excerpt = %q, want first line", got)
 			}
 			return
 		}

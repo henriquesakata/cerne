@@ -36,7 +36,8 @@ func AddErrata(repoDir, projDir, id, text, author string) (string, error) {
 		}
 		// The author IS the event actor: a human errata records the human actor,
 		// an automatic one (drift-auto, F-0115) is distinguishable in the log.
-		ev := domain.NewEvent(id, "errata.added", map[string]string{}, author)
+		// The excerpt lets notification surfaces say WHAT changed (F-0163).
+		ev := domain.NewEvent(id, "errata.added", map[string]string{"excerpt": errataExcerpt(text)}, author)
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
@@ -46,6 +47,21 @@ func AddErrata(repoDir, projDir, id, text, author string) (string, error) {
 		return "", err
 	}
 	return id, nil
+}
+
+// errataExcerptMax caps the event excerpt at one dropdown-friendly line.
+const errataExcerptMax = 120
+
+// errataExcerpt reduces an errata text to its first line, truncated at 120
+// runes with an ellipsis — the notification-sized summary of the correction.
+func errataExcerpt(text string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	line = strings.TrimSpace(line)
+	runes := []rune(line)
+	if len(runes) <= errataExcerptMax {
+		return line
+	}
+	return string(runes[:errataExcerptMax]) + "…"
 }
 
 // ensureErrataEntityExists validates the target entity exists, dispatching by id
