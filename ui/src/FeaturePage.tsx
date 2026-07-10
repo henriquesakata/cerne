@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
+import ErrataSection from './ErrataSection'
 import Tag from './Tag'
 import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types'
 import {
@@ -290,6 +291,7 @@ export default function FeaturePage({ id }: { id: string }) {
         )}
         {notice && <p className="notice">{notice}</p>}
       </header>
+      <ErrataSection content={detail.errata} />
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           {diagram.mode === 'mermaid' ? (

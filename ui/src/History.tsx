@@ -44,6 +44,7 @@ export default function History() {
             {ev.payload?.by && <span className="badge">→ {ev.payload.by}</span>}
             {ev.payload?.module && <span className="badge">{ev.payload.module}</span>}
             {ev.payload?.reason && <span className="history-reason">{ev.payload.reason}</span>}
+            {ev.payload?.excerpt && <span className="history-reason">{ev.payload.excerpt}</span>}
             <span className="history-actor">{ev.actor}</span>
           </li>
         ))}

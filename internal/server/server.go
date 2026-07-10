@@ -165,6 +165,7 @@ type featureDetailResponse struct {
 	Artifacts   []artifact        `json:"artifacts"`
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
 	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
+	Errata      string            `json:"errata"`      // additive corrections (F-0163); "" when none
 }
 
 type featureDocs struct {
@@ -266,7 +267,12 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	if children == nil {
 		children = []store.Feature{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children})
+	errata, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -311,6 +317,7 @@ type decisionDetailResponse struct {
 	Decision   store.Decision    `json:"decision"`
 	Doc        string            `json:"doc"`
 	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this decision
+	Errata     string            `json:"errata"`      // additive corrections (F-0163); "" when none
 }
 
 func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
@@ -333,7 +340,12 @@ func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, InformedBy: informedBy})
+	errata, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, InformedBy: informedBy, Errata: errata})
 }
 
 // referenceDetailResponse is the GET /api/references/{id} payload.
@@ -364,6 +376,7 @@ func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
 type runbookDetailResponse struct {
 	Runbook store.Runbook `json:"runbook"`
 	Doc     string        `json:"doc"`
+	Errata  string        `json:"errata"` // additive corrections (F-0163); "" when none
 }
 
 func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
@@ -381,13 +394,19 @@ func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc})
+	errata, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc, Errata: errata})
 }
 
 // noteDetailResponse is the GET /api/notes/{id} payload.
 type noteDetailResponse struct {
-	Note store.Note `json:"note"`
-	Doc  string     `json:"doc"`
+	Note   store.Note `json:"note"`
+	Doc    string     `json:"doc"`
+	Errata string     `json:"errata"` // additive corrections (F-0163); "" when none
 }
 
 func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
@@ -405,7 +424,12 @@ func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc})
+	errata, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc, Errata: errata})
 }
 
 // readContentDoc reads content/<kind>/<id>.md (decisions, references, runbooks,

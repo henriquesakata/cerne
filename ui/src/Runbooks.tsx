@@ -6,6 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
+import ErrataSection from './ErrataSection'
 import Tag, { tagCounts } from './Tag'
 import {
   fetchRunbook,
@@ -228,6 +229,7 @@ export function RunbookDetail({ id }: { id: string }) {
         {rb.superseded_by && <p className="feature-note">{t.runbooks.supersededBy(rb.superseded_by)}</p>}
         {rb.reason && <p className="feature-note">{t.common.reasonLabel} {rb.reason}</p>}
       </header>
+      <ErrataSection content={data.errata} />
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>
