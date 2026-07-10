@@ -19,6 +19,8 @@ const (
 	KindDecision   = "decision"
 	KindReference  = "reference"
 	KindHistorical = "historical"
+	KindNote       = "note"
+	KindRunbook    = "runbook"
 
 	// EdgeSupersededBy points from a terminal entity to the one that replaced
 	// it; its Reason is the mandatory supersession motive (the explanatory
@@ -81,6 +83,14 @@ func BuildGraph(repoDir string) (Graph, error) {
 	if err != nil {
 		return Graph{}, err
 	}
+	notes, err := store.LoadAllNotes(repoDir)
+	if err != nil {
+		return Graph{}, err
+	}
+	runbooks, err := store.LoadAllRunbooks(repoDir)
+	if err != nil {
+		return Graph{}, err
+	}
 
 	nodes := []Node{}
 	nodeSet := map[string]bool{}
@@ -99,6 +109,14 @@ func BuildGraph(repoDir string) (Graph, error) {
 	}
 	for _, h := range historicals {
 		add(h.ID, KindHistorical, h.Name, string(h.State))
+	}
+	// F-0167: notes and runbooks are nodes too — the most common wiki-link
+	// target is a note, and backlinks need the node to point at.
+	for _, n := range notes {
+		add(n.ID, KindNote, n.Title, string(n.State))
+	}
+	for _, rb := range runbooks {
+		add(rb.ID, KindRunbook, rb.Title, string(rb.State))
 	}
 
 	edges := []Edge{}
@@ -143,7 +161,7 @@ func BuildGraph(repoDir string) (Graph, error) {
 	// links — markdown citations between content docs that resolve to a known
 	// entity. Reuses the lint content-link primitive with a path→entity-ID
 	// resolver; unresolved targets are the broken-link rule's concern, not edges.
-	docs, err := contentDocs(repoDir, features, decisions, references)
+	docs, err := contentDocs(repoDir, features, decisions, references, notes, runbooks)
 	if err != nil {
 		return Graph{}, err
 	}
@@ -161,6 +179,16 @@ func BuildGraph(repoDir string) (Graph, error) {
 			return "", false
 		})
 		for _, to := range resolved {
+			addEdge(cd.id, to, EdgeLinks, "")
+		}
+		// F-0167: id-form wiki-links are citations too — same edge type, same
+		// dedupe; resolution goes through the shared canonical-id helper so
+		// lint and graph can never diverge.
+		wikiResolved, _ := mdlink.WikiLinks(string(data), func(target string) (string, bool) {
+			id := mdlink.CanonicalID(target)
+			return id, nodeSet[id]
+		})
+		for _, to := range wikiResolved {
 			addEdge(cd.id, to, EdgeLinks, "")
 		}
 	}
@@ -182,9 +210,10 @@ func BuildGraph(repoDir string) (Graph, error) {
 type contentDoc struct{ id, rel string }
 
 // contentDocs lists the content documents of every entity that has them: each
-// *.md under content/features/<ID>/, plus content/decisions/<ID>.md and
-// content/references/<ID>.md when present.
-func contentDocs(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference) ([]contentDoc, error) {
+// *.md under content/features/<ID>/, plus content/decisions/<ID>.md,
+// content/references/<ID>.md, content/notes/<ID>.md and
+// content/runbooks/<ID>.md when present.
+func contentDocs(repoDir string, features []store.Feature, decisions []store.Decision, references []store.Reference, notes []store.Note, runbooks []store.Runbook) ([]contentDoc, error) {
 	var docs []contentDoc
 	for _, f := range features {
 		entries, err := os.ReadDir(filepath.Join(repoDir, "content", "features", f.ID))
@@ -219,6 +248,16 @@ func contentDocs(repoDir string, features []store.Feature, decisions []store.Dec
 	}
 	for _, r := range references {
 		if err := addFile(r.ID, "content/references/"+r.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
+	for _, n := range notes {
+		if err := addFile(n.ID, "content/notes/"+n.ID+".md"); err != nil {
+			return nil, err
+		}
+	}
+	for _, rb := range runbooks {
+		if err := addFile(rb.ID, "content/runbooks/"+rb.ID+".md"); err != nil {
 			return nil, err
 		}
 	}
