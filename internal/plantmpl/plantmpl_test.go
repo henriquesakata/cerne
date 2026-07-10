@@ -81,3 +81,15 @@ func TestStubReadsAsStub(t *testing.T) {
 		t.Fatalf("a scaffolded plan stub must read as a stub (gate must stay closed):\n%s", doc)
 	}
 }
+
+// TestBodyPullsConventionNotes: the template instructs the author to look up
+// convention notes for the scope (cerne note tags → note list --component) and
+// to cite the applicable N-NNNN ids in the plan (F-0165, criterion 6) — so the
+// lookup happens before coding and the plan carries the governing conventions.
+func TestBodyPullsConventionNotes(t *testing.T) {
+	for _, want := range []string{"cerne note tags", "note list --component", "N-NNNN"} {
+		if !strings.Contains(plantmpl.Body, want) {
+			t.Errorf("Body missing convention-lookup guidance %q", want)
+		}
+	}
+}
