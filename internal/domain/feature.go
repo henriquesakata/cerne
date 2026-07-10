@@ -30,6 +30,9 @@ const (
 	ActionAccept    Action = "accept"
 	ActionReject    Action = "reject"
 	ActionSupersede Action = "supersede"
+	// ActionRevert walks one step back in the approval flow (F-0169). v1 covers
+	// only approved → candidate; future reverse steps reuse this action.
+	ActionRevert Action = "revert"
 )
 
 // ErrInvalidTransition is the sentinel for a disallowed action on a known state.
@@ -47,6 +50,7 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 	StateApproved: {
 		ActionStart:     StateInDevelopment,
 		ActionSupersede: StateSuperseded,
+		ActionRevert:    StateCandidate,
 	},
 	StateInDevelopment: {
 		ActionComplete:  StateImplemented,

@@ -33,6 +33,10 @@ var transitionSpecs = []transitionSpec{
 		"  # gate: the result must be filled in (not the stub) and pushed\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
 	{"substituir", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
+	{"revert", "Send an approved feature back to candidate (requires --reason)", domain.ActionRevert,
+		"  # undo of an approval: state moves back, the event keeps the why,\n" +
+			"  # spec and plan stay intact\n" +
+			"  cerne feature revert <id> --reason \"approved by mistake\"\n" + lifecycleSeq},
 }
 
 func newTransitionCmds(dir *string) []*cobra.Command {
@@ -49,7 +53,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 			},
 		}
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
-		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject and substituir)")
+		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
 		cmds = append(cmds, cmd)
 	}
 	return cmds
@@ -67,9 +71,15 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	}
 	// Approve is the start-of-flow human gate (F-0131 crit. 9): checked here,
 	// in the CLI, rather than inside app.TransitionFeature — the server/UI path
-	// is a human interaction by definition and carries no such check.
+	// is a human interaction by definition and carries no such check. Revert
+	// undoes that human act, so it stands behind the same kind of gate (F-0169).
 	if action == domain.ActionApprove {
 		if err := app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()); err != nil {
+			return err
+		}
+	}
+	if action == domain.ActionRevert {
+		if err := app.CheckHumanGate(ctx.cfg.Gates.RevertGate()); err != nil {
 			return err
 		}
 	}

@@ -231,6 +231,8 @@ func TestTransitionFlagRules(t *testing.T) {
 		{"complete with by", []string{"feature", "complete", id, "--by", id2}, "--by/--reason"},
 		{"reject without reason", []string{"feature", "reject", id}, "--reason"},
 		{"reject with by", []string{"feature", "reject", id, "--reason", "x", "--by", id2}, "--by"},
+		{"revert without reason", []string{"feature", "revert", id}, "--reason"},
+		{"revert with by", []string{"feature", "revert", id, "--reason", "x", "--by", id2}, "--by"},
 		{"substituir without by", []string{"feature", "substituir", id, "--reason", "x"}, "--by"},
 		{"substituir without reason", []string{"feature", "substituir", id, "--by", id2}, "--reason"},
 	}
@@ -311,6 +313,116 @@ func TestTransitionSubstituir(t *testing.T) {
 	last := events[len(events)-1]
 	if last.Type != "feature.superseded" || last.Payload["by"] != id2 || last.Payload["reason"] != "duplicada da Feature B" {
 		t.Fatalf("last event = %+v, want feature.superseded with by/reason payload", last)
+	}
+}
+
+// TestTransitionRevert (F-0169 crit. 3, 7): revert walks an approval back to
+// candidate, logs feature.reverted with the reason, and deletes nothing — the
+// spec and the plan stub scaffolded by the approve survive intact.
+func TestTransitionRevert(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	spec := realDoc(id, "Problema real descrito aqui.")
+	writeDoc(t, repoDir, id, "spec.md", spec)
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	// revert only walks back an approval: in_development and beyond refuse.
+	out, err := execCerne(t, "feature", "revert", id, "--reason", "aprovada por engano", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("revert: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "approved") || !strings.Contains(out, "candidate") {
+		t.Fatalf("revert output missing old→new state:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.State != domain.StateCandidate {
+		t.Fatalf("state = %s, want candidate", f.State)
+	}
+	// The reason lives in the event, not on the entity (Reason is reserved for
+	// terminal states — a revived candidate carries no stale annotation).
+	if f.Reason != "" {
+		t.Fatalf("f.Reason = %q, want empty (reason belongs to the event)", f.Reason)
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := events[len(events)-1]
+	if last.Type != "feature.reverted" || last.Payload["reason"] != "aprovada por engano" {
+		t.Fatalf("last event = %+v, want feature.reverted with reason payload", last)
+	}
+	// Nothing was deleted: the spec is intact and the plan stub scaffolded by
+	// the approve is still there for a future re-approval.
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
+	if err != nil || string(data) != spec {
+		t.Fatalf("spec.md after revert = (%v) %q, want the original spec intact", err, data)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "features", id, "plan.md")); err != nil {
+		t.Fatalf("plan.md should survive the revert: %v", err)
+	}
+
+	// A reverted candidate refuses a second revert (nothing to walk back).
+	if _, err := execCerne(t, "feature", "revert", id, "--reason", "de novo", "--dir", projDir); err == nil {
+		t.Fatalf("revert from candidate succeeded, want invalid transition")
+	}
+}
+
+// TestTransitionRevertGateRefusesAgent (F-0169 crit. 5): undoing a human act
+// is a human act — the default gate refuses an agent actor.
+func TestTransitionRevertGateRefusesAgent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	t.Setenv("CERNE_ACTOR", "agent")
+	_, err := execCerne(t, "feature", "revert", id, "--reason", "aprovada por engano", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("revert as agent under human gate succeeded, want refusal")
+	}
+	if !strings.Contains(err.Error(), "humano") {
+		t.Fatalf("error %q does not mention the human gate", err)
+	}
+	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateApproved {
+		t.Fatalf("state after refused revert = %s, want approved (untouched)", f.State)
+	}
+}
+
+// TestTransitionRevertGateAutoAllowsAgent (F-0169 crit. 5): [gates]
+// revert = "auto" is the explicit per-project bypass.
+func TestTransitionRevertGateAutoAllowsAgent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.Gates.Revert = project.GateAuto
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	t.Setenv("CERNE_ACTOR", "agent")
+	if _, err := execCerne(t, "feature", "revert", id, "--reason", "aprovada por engano", "--dir", projDir); err != nil {
+		t.Fatalf("revert as agent with gates.revert=auto: %v", err)
+	}
+	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateCandidate {
+		t.Fatalf("state = %s, want candidate", f.State)
 	}
 }
 
