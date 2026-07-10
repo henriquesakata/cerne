@@ -14,16 +14,17 @@ import (
 // external/informs are cerne-specific extras that an OKF-only consumer simply
 // ignores. Empty string / nil / false fields are omitted from the block.
 type okfMeta struct {
-	Type      string   // required: feature|spec|plan|result|decision|reference|note|runbook
-	Title     string   // OKF reserved
-	Timestamp string   // OKF reserved (RFC3339); use okfTime to format
-	Resource  string   // OKF reserved (e.g. a reference URL)
-	Tags      []string // OKF reserved
-	State     string   // extra
-	Parent    string   // extra (epic)
-	External  bool     // extra
-	Informs   []string // extra (F-/D- ids)
-	CerneID   string   // preserved cerne id; when "" it is read from the body's frontmatter
+	Type        string   // required: feature|spec|plan|result|decision|reference|note|runbook
+	Title       string   // OKF reserved
+	Description string   // OKF reserved (one-line summary; F-0166)
+	Timestamp   string   // OKF reserved (RFC3339); use okfTime to format
+	Resource    string   // OKF reserved (e.g. a reference URL)
+	Tags        []string // OKF reserved
+	State       string   // extra
+	Parent      string   // extra (epic)
+	External    bool     // extra
+	Informs     []string // extra (F-/D- ids)
+	CerneID     string   // preserved cerne id; when "" it is read from the body's frontmatter
 }
 
 // okfTime formats an entity timestamp as the RFC3339 instant OKF's `timestamp`
@@ -51,6 +52,7 @@ func okfFrontmatter(meta okfMeta, body []byte) []byte {
 	b.WriteString("---\n")
 	writeKV(&b, "type", meta.Type)
 	writeKV(&b, "title", meta.Title)
+	writeKV(&b, "description", meta.Description)
 	writeKV(&b, "timestamp", meta.Timestamp)
 	writeKV(&b, "resource", meta.Resource)
 	writeList(&b, "tags", meta.Tags)
@@ -67,6 +69,60 @@ func okfFrontmatter(meta okfMeta, body []byte) []byte {
 		b.Write(rest)
 	}
 	return []byte(b.String())
+}
+
+// descriptionMaxRunes caps the derived OKF `description` (F-0166). Fixed by
+// design: a configurable cap would be speculative surface, and the value only
+// bounds preview snippets, not content.
+const descriptionMaxRunes = 200
+
+// firstProseParagraph derives the OKF `description`: the first prose paragraph
+// of body — skipping the frontmatter block, blank lines, markdown headings,
+// HTML-comment guidance and **metadata** lines — collapsed to one line and
+// truncated at limit runes (trailing … when cut). A stub body (doccheck) or
+// one without prose yields "" so the field is omitted, never emitted empty.
+func firstProseParagraph(body []byte, limit int) string {
+	if !doccheck.HasRealContent(body) {
+		return ""
+	}
+	var para []string
+	inComment := false
+	for _, line := range strings.Split(string(stripFrontmatter(body)), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if inComment {
+			if strings.Contains(trimmed, "-->") {
+				inComment = false
+			}
+			continue
+		}
+		skip := trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "**")
+		if strings.HasPrefix(trimmed, "<!--") {
+			skip = true
+			if !strings.Contains(trimmed, "-->") {
+				inComment = true
+			}
+		}
+		if skip {
+			if len(para) > 0 {
+				break // structure after prose ends the paragraph
+			}
+			continue
+		}
+		para = append(para, trimmed)
+	}
+	if len(para) == 0 {
+		return ""
+	}
+	return clipRunes(strings.Join(para, " "), limit)
+}
+
+// clipRunes truncates s at limit runes, appending … when it actually cut.
+func clipRunes(s string, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	return string(r[:limit]) + "…"
 }
 
 // stripFrontmatter returns body with a leading "---"-delimited frontmatter block

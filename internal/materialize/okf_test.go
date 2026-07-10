@@ -229,3 +229,41 @@ func TestMaterializeOKFIdempotentAndValid(t *testing.T) {
 		t.Fatalf("WalkDir: %v", err)
 	}
 }
+
+// TestMaterializeOKFDescriptionSingleFile pins C1 of F-0166: under okf=true a
+// single-file concept with prose gains a one-line `description` — the first
+// prose paragraph (headings, HTML comments and **metadata** lines skipped),
+// collapsed and truncated at 200 runes — emitted right after `title`; a stub
+// body yields no description at all.
+func TestMaterializeOKFDescriptionSingleFile(t *testing.T) {
+	backend := seedBackend(t)
+	addDecision(t, backend, "D-0001", "Usar Postgres", domain.DecisionActive,
+		"---\ncerne_id: D-0001\n---\n\n# Usar Postgres\n\n<!-- guia de template -->\n**Status:** ativo.\n\nAdotamos Postgres\ncomo banco padrão.\n\nSegundo parágrafo não entra.\n")
+	long := strings.Repeat("á", 250)
+	addNote(t, backend, "N-0001", "Nota longa", domain.NoteActive,
+		"---\ncerne_id: N-0001\n---\n\n"+long+"\n")
+	addReference(t, backend, "R-0001", "Stub ref", domain.ReferenceCurrent,
+		"---\ncerne_id: R-0001\n---\n")
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(backend, docsDir, "", true); err != nil {
+		t.Fatalf("Materialize okf: %v", err)
+	}
+
+	dec := readDoc(t, docsDir, "current/decisions/D-0001-usar-postgres.md")
+	want := "title: Usar Postgres\ndescription: \"Adotamos Postgres como banco padrão.\"\n"
+	if !strings.Contains(dec, want) {
+		t.Errorf("decision must carry the collapsed first prose paragraph right after title:\nwant fragment %q in:\n%s", want, dec)
+	}
+
+	note := readDoc(t, docsDir, "current/notes/N-0001-nota-longa.md")
+	wantNote := "description: \"" + strings.Repeat("á", 200) + "…\"\n"
+	if !strings.Contains(note, wantNote) {
+		t.Errorf("note description must truncate at 200 runes with …:\n%s", note)
+	}
+
+	ref := readDoc(t, docsDir, "current/references/R-0001-stub-ref.md")
+	if strings.Contains(ref, "description:") {
+		t.Errorf("stub body must not gain a description:\n%s", ref)
+	}
+}

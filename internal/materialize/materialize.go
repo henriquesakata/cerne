@@ -423,6 +423,7 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 		return "", err
 	}
 	if okf {
+		meta.Description = firstProseParagraph(body, descriptionMaxRunes)
 		body = okfFrontmatter(meta, body)
 	}
 	rel := "current/" + kind + "/" + entryName(id, title) + ".md"
