@@ -18,7 +18,8 @@ import (
 const stdinReadyWindow = 500 * time.Millisecond
 
 // stdinBody is the file the optional-body readers consume — a package var so
-// tests can point it at a real pipe end (SetReadDeadline needs an *os.File).
+// tests can point it at a real pipe end (Stat's chardevice check needs an
+// *os.File).
 var stdinBody = os.Stdin
 
 // readOptionalBody reads an entity body from --file when given, or from a
@@ -26,9 +27,11 @@ var stdinBody = os.Stdin
 // order: an interactive terminal never blocks (chardevice check); an injected
 // cobra In (tests, programmatic use) is read directly; the real piped stdin
 // must produce its first byte within stdinReadyWindow or it reads as empty
-// (F-0157). A platform whose pipes reject read deadlines falls back to the
-// plain blocking read — never a regression in what can be read. Shared by the
-// optional-body entities: feature, decision, note, runbook and errata.
+// (F-0157). The window is enforced by a probe goroutine, not read deadlines:
+// Windows anonymous pipes reject SetReadDeadline, and the former fail-open
+// fallback re-opened the very blocking read the window exists to prevent
+// (F-0168). Shared by the optional-body entities: feature, decision, note,
+// runbook and errata.
 func readOptionalBody(cmd *cobra.Command, file string) (string, error) {
 	if file != "" {
 		data, err := os.ReadFile(file)
@@ -49,30 +52,45 @@ func readOptionalBody(cmd *cobra.Command, file string) (string, error) {
 	if err != nil || info.Mode()&os.ModeCharDevice != 0 {
 		return "", nil // interactive terminal (or unknowable): no body
 	}
-	if err := f.SetReadDeadline(time.Now().Add(stdinReadyWindow)); err != nil {
-		// Fail-open: no deadline support on this descriptor/platform keeps
-		// today's behavior rather than inventing a lesser read path.
-		data, rerr := io.ReadAll(f)
-		if rerr != nil {
-			return "", rerr
-		}
-		return string(data), nil
+	// Two-stage probe: the goroutine reads the first byte (blocking), then the
+	// remainder. Data crosses only through the buffered channels, so there is
+	// no shared state to race on. The window applies to the FIRST byte alone —
+	// once it lands, the rest is read to EOF with no deadline, so a slow
+	// producer never truncates.
+	type stage struct {
+		data []byte
+		err  error
 	}
-	first := make([]byte, 1)
-	n, rerr := f.Read(first)
-	_ = f.SetReadDeadline(time.Time{})
-	if rerr != nil {
-		if errors.Is(rerr, os.ErrDeadlineExceeded) && n == 0 {
-			return "", nil // open pipe, nothing coming: no body (the incident)
+	firstCh := make(chan stage, 1)
+	restCh := make(chan stage, 1)
+	go func() {
+		var first [1]byte
+		n, err := f.Read(first[:])
+		firstCh <- stage{data: append([]byte(nil), first[:n]...), err: err}
+		if err != nil {
+			return
 		}
-		if errors.Is(rerr, io.EOF) {
-			return string(first[:n]), nil // closed empty pipe: valid empty body
+		rest, rerr := io.ReadAll(f)
+		restCh <- stage{data: rest, err: rerr}
+	}()
+	select {
+	case fb := <-firstCh:
+		if fb.err != nil {
+			if errors.Is(fb.err, io.EOF) {
+				return string(fb.data), nil // closed (empty) pipe: valid body as-is
+			}
+			return "", fb.err
 		}
-		return "", rerr
+		rest := <-restCh
+		if rest.err != nil {
+			return "", rest.err
+		}
+		return string(fb.data) + string(rest.data), nil
+	case <-time.After(stdinReadyWindow):
+		// Open pipe, nothing coming: no body (the F-0157 incident). The probe
+		// goroutine stays parked in Read until the process exits — a conscious
+		// leak, harmless in a short-lived CLI and cheaper than per-platform
+		// peek syscalls.
+		return "", nil
 	}
-	rest, rerr := io.ReadAll(f)
-	if rerr != nil {
-		return "", rerr
-	}
-	return string(first[:n]) + string(rest), nil
 }
