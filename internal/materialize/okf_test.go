@@ -96,11 +96,21 @@ func TestMaterializeOKFOffVerbatim(t *testing.T) {
 	addDecision(t, backend, "D-0001", "Usar Postgres", domain.DecisionActive, body)
 
 	docsDir := filepath.Join(t.TempDir(), ".docs")
-	if _, err := Materialize(backend, docsDir, "", false); err != nil {
+	manifest, err := Materialize(backend, docsDir, "", false)
+	if err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
 	if got := readDoc(t, docsDir, "current/decisions/D-0001-usar-postgres.md"); got != body {
 		t.Errorf("okf=false changed the body:\n--- got ---\n%s\n--- want ---\n%s", got, body)
+	}
+	// F-0166: the root OKF files are okf-only — never emitted when off.
+	for _, reserved := range []string{"index.md", "log.md"} {
+		if _, ok := manifest[reserved]; ok {
+			t.Errorf("okf=false must not emit root %s", reserved)
+		}
+		if _, err := os.Stat(filepath.Join(docsDir, reserved)); !os.IsNotExist(err) {
+			t.Errorf("okf=false wrote root %s (stat err = %v)", reserved, err)
+		}
 	}
 }
 
@@ -197,6 +207,12 @@ func TestMaterializeOKFIdempotentAndValid(t *testing.T) {
 	}
 	if !reflect.DeepEqual(m1, m2) {
 		t.Fatalf("okf manifest is not deterministic:\n1: %v\n2: %v", m1, m2)
+	}
+	// F-0166: the root OKF files ship in the (deterministic) manifest.
+	for _, reserved := range []string{"index.md", "log.md"} {
+		if _, ok := m1[reserved]; !ok {
+			t.Errorf("okf manifest missing root %s", reserved)
+		}
 	}
 
 	// CONTEXT.md is identical with and without okf: the Docs column never regresses.
@@ -428,5 +444,28 @@ func TestMaterializeOKFRootIndex(t *testing.T) {
 	}
 	if strings.Contains(idx, "## Runbooks") || strings.Contains(idx, "## Notes") {
 		t.Errorf("empty kinds must be omitted:\n%s", idx)
+	}
+}
+
+// TestMaterializeOKFAuthoredReservedNameWins pins C8 of F-0166: an authored
+// feature doc named index.md wins over the generated OKF index — its content
+// is materialized byte-for-byte and generation is skipped (OKF tolerates a
+// missing index; overwriting authored content is never acceptable).
+func TestMaterializeOKFAuthoredReservedNameWins(t *testing.T) {
+	backend := seedBackend(t)
+	const authored = "---\ncerne_id: F-0001\n---\n\n# Índice autorado\n"
+	addFeature(t, backend, "F-0001", "Revamp", "", domain.StateInDevelopment, map[string]string{
+		"spec.md":  "---\ncerne_id: F-0001\n---\n\nProsa da spec.\n",
+		"index.md": authored,
+	})
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(backend, docsDir, "", true); err != nil {
+		t.Fatalf("Materialize okf: %v", err)
+	}
+
+	idx := readDoc(t, docsDir, "current/features/F-0001-revamp/index.md")
+	if idx != authored {
+		t.Errorf("authored index.md must be preserved byte-for-byte over the generated one:\n--- got ---\n%s\n--- want ---\n%s", idx, authored)
 	}
 }

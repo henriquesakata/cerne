@@ -389,8 +389,24 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 		written = append(written, filename)
 	}
 	if okf {
-		if err := writeFeatureIndex(docsDir, dirName, f, description, written, manifest); err != nil {
+		// An authored doc named index.md wins over the generated OKF index:
+		// overwriting authored content is never acceptable, and OKF tolerates
+		// a feature dir whose index is hand-written (F-0166 C8).
+		authored, err := os.ReadFile(filepath.Join(repoDir, "content", "features", f.ID, "index.md"))
+		switch {
+		case err == nil:
+			rel := "current/features/" + dirName + "/index.md"
+			sum, werr := writeFile(docsDir, rel, authored)
+			if werr != nil {
+				return "", werr
+			}
+			manifest[rel] = sum
+		case !errors.Is(err, os.ErrNotExist):
 			return "", err
+		default:
+			if err := writeFeatureIndex(docsDir, dirName, f, description, written, manifest); err != nil {
+				return "", err
+			}
 		}
 	}
 	return strings.Join(links, ", "), nil
