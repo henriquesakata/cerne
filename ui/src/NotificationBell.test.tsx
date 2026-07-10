@@ -84,9 +84,9 @@ describe('NotificationBell', () => {
     const first = mount()
     fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
     await waitFor(() =>
-      expect(screen.getByRole('switch')).toBeInTheDocument(),
+      expect(screen.getByRole('switch', { name: /^Notificações:/ })).toBeInTheDocument(),
     )
-    fireEvent.click(screen.getByRole('switch'))
+    fireEvent.click(screen.getByRole('switch', { name: /^Notificações:/ }))
     expect(localStorage.getItem('cerne.notif.enabled')).toBe('false')
     first.unmount()
     // Não-lidos novos (marcador limpo) + toggle off → nenhum badge.
@@ -103,5 +103,74 @@ describe('NotificationBell', () => {
     fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
     const link = await screen.findByRole('link', { name: /F-0042/ })
     expect(link).toHaveAttribute('href', '#/f/F-0042')
+  })
+
+  // F-0161 C10: não-lido de ação → badge de alerta + chip "ação" no item.
+  it('evento de ação destaca badge e item com chip', async () => {
+    fetchEventsMock.mockResolvedValue([
+      { ...ev('1', 60_000, 'F-0100'), type: 'feature.created' },
+    ])
+    mount()
+    await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+    expect(document.querySelector('.notif-badge-action')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    expect(screen.getByText('ação')).toBeInTheDocument()
+  })
+
+  it('não-lido só de ciência mantém badge padrão, sem chip', async () => {
+    fetchEventsMock.mockResolvedValue([ev('1', 60_000)])
+    mount()
+    await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+    expect(document.querySelector('.notif-badge-action')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    expect(screen.queryByText('ação')).not.toBeInTheDocument()
+  })
+
+  // F-0161 C6: permissão negada → switch nativo desabilitado com dica.
+  it('permissão negada desabilita o switch nativo com dica', async () => {
+    vi.stubGlobal(
+      'Notification',
+      class {
+        static permission = 'denied'
+        static requestPermission = vi.fn()
+      },
+    )
+    fetchEventsMock.mockResolvedValue([])
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    const sw = await screen.findByRole('switch', { name: /sistema/i })
+    expect(sw).toBeDisabled()
+    expect(sw).toHaveAttribute('title', expect.stringContaining('negada'))
+    vi.unstubAllGlobals()
+  })
+
+  // F-0161: sem API Notification → switch nativo desabilitado (unsupported).
+  it('sem suporte do navegador o switch nativo fica desabilitado', async () => {
+    fetchEventsMock.mockResolvedValue([])
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    const sw = await screen.findByRole('switch', { name: /sistema/i })
+    expect(sw).toBeDisabled()
+  })
+
+  // F-0161 C1 (via UI): ativar o switch nativo pede permissão e persiste.
+  it('ativar o switch nativo persiste após permissão concedida', async () => {
+    const req = vi.fn().mockResolvedValue('granted')
+    vi.stubGlobal(
+      'Notification',
+      class {
+        static permission = 'default'
+        static requestPermission = req
+      },
+    )
+    fetchEventsMock.mockResolvedValue([])
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    fireEvent.click(await screen.findByRole('switch', { name: /sistema/i }))
+    await waitFor(() =>
+      expect(localStorage.getItem('cerne.notif.native')).toBe('true'),
+    )
+    expect(req).toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })

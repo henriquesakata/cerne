@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { entityHref, useNotifications } from './notifications'
+import { classifyEvent, entityHref, useNotifications } from './notifications'
 import { useT } from './i18n'
 
 // Sino de notificações no Nav (F-0160): badge de não-lidos, dropdown com as
@@ -37,7 +37,18 @@ export default function NotificationBell() {
   }, [open])
 
   if (!notif) return null
-  const { items, unread, enabled, setEnabled, markAllSeen } = notif
+  const {
+    items,
+    unread,
+    unreadAction,
+    enabled,
+    setEnabled,
+    markAllSeen,
+    native,
+    nativePermission,
+    enableNative,
+    disableNative,
+  } = notif
 
   // Abrir o dropdown é ler: zera o badge no ato (C3 da spec).
   const toggleOpen = () => {
@@ -57,7 +68,13 @@ export default function NotificationBell() {
       >
         🔔
         {enabled && unread > 0 && (
-          <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>
+          <span
+            className={
+              unreadAction > 0 ? 'notif-badge notif-badge-action' : 'notif-badge'
+            }
+          >
+            {unread > 9 ? '9+' : unread}
+          </span>
         )}
       </button>
       {open && (
@@ -82,6 +99,9 @@ export default function NotificationBell() {
                       <span className="card-id">{ev.entity_id}</span>
                     )}
                     <span className="notif-type">{label}</span>
+                    {classifyEvent(ev.type) === 'action' && (
+                      <span className="notif-chip-action">{t.notif.actionChip}</span>
+                    )}
                     {ev.payload?.by && <span className="badge">→ {ev.payload.by}</span>}
                     <span className="notif-meta">
                       {ev.actor} · {t.notif.age(ageMinutes(ev.at))}
@@ -101,6 +121,27 @@ export default function NotificationBell() {
             >
               {enabled ? t.notif.toggleOn : t.notif.toggleOff}
             </button>
+            {enabled && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={native}
+                className="notif-toggle"
+                disabled={
+                  nativePermission === 'denied' || nativePermission === 'unsupported'
+                }
+                title={
+                  nativePermission === 'denied'
+                    ? t.notif.nativeDenied
+                    : nativePermission === 'unsupported'
+                      ? t.notif.nativeUnsupported
+                      : undefined
+                }
+                onClick={() => (native ? disableNative() : void enableNative())}
+              >
+                {native ? t.notif.nativeToggleOn : t.notif.nativeToggleOff}
+              </button>
+            )}
           </div>
         </div>
       )}
