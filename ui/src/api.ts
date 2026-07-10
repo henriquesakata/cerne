@@ -410,6 +410,14 @@ export async function fetchEvents(): Promise<LifecycleEvent[]> {
   return ((await r.json()) as { events: LifecycleEvent[] }).events
 }
 
+// fetchEventsFor lê o log de um projeto explícito (F-0161): a camada de
+// notificações observa também projetos que não são o ativo.
+export async function fetchEventsFor(pid: string): Promise<LifecycleEvent[]> {
+  const r = await fetch(`/api/projects/${encodeURIComponent(pid)}/events`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { events: LifecycleEvent[] }).events
+}
+
 // ---- autoria e gestão de features (case 0012) ----
 
 export type CreateOutcome =

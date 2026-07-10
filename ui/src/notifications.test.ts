@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { LifecycleEvent } from './api'
 import {
+  buildNativePayload,
+  classifyEvent,
   countUnread,
   NOTIF_MAX,
   NOTIF_WINDOW_MS,
   windowEvents,
+  type NativeLabels,
 } from './notifications'
 
 // Base de tempo fixa: os testes não dependem do relógio real.
@@ -61,6 +64,68 @@ describe('windowEvents', () => {
     const bad = { ...ev('x', MIN), at: 'não-é-data' }
     const out = windowEvents([bad, ev('1', MIN)], NOW)
     expect(out.map((e) => e.id)).toEqual(['1'])
+  })
+})
+
+describe('classifyEvent', () => {
+  // C9: evento cujo desfecho é um gate humano → ação; demais → ciência.
+  it('gates humanos são ação', () => {
+    expect(classifyEvent('feature.created')).toBe('action')
+    expect(classifyEvent('feature.completed')).toBe('action')
+    expect(classifyEvent('drift.auto')).toBe('action')
+  })
+
+  it('demais tipos são ciência', () => {
+    for (const t of ['feature.started', 'feature.approved', 'work.done', 'note.created', 'desconhecido']) {
+      expect(classifyEvent(t)).toBe('info')
+    }
+  })
+})
+
+describe('buildNativePayload', () => {
+  const labels: NativeLabels = {
+    nativeTitle: (p) => `${p} — cerne`,
+    nativeActionTitle: (p) => `${p} — ação necessária`,
+    nativeBatch: (n) => `${n} alterações novas`,
+    nativeActionBody: (k, n) => `${n} alterações (${k} pedem sua ação)`,
+  }
+  const typeLabel = (t: string) => (t === 'feature.approved' ? 'aprovada' : t)
+  const info = (id: string): LifecycleEvent => ({ ...ev(id, 60_000), type: 'feature.approved' })
+  const action = (id: string): LifecycleEvent => ({ ...ev(id, 60_000), type: 'feature.created' })
+
+  it('lote vazio → null', () => {
+    expect(buildNativePayload([], 'cerne', labels, typeLabel)).toBeNull()
+  })
+
+  // C2: título sempre nomeia o projeto; evento único → corpo entidade + ação.
+  it('evento único de ciência → título do projeto, corpo entidade+ação, sem requireInteraction', () => {
+    const p = buildNativePayload([info('1')], 'Rockt Hub', labels, typeLabel)!
+    expect(p.title).toBe('Rockt Hub — cerne')
+    expect(p.body).toBe('F-0001 aprovada')
+    expect(p.requireInteraction).toBe(false)
+    expect(p.single?.id).toBe('1')
+  })
+
+  it('lote só-ciência → agregado, sem requireInteraction', () => {
+    const p = buildNativePayload([info('1'), info('2'), info('3')], 'cerne', labels, typeLabel)!
+    expect(p.body).toBe('3 alterações novas')
+    expect(p.requireInteraction).toBe(false)
+    expect(p.single).toBeNull()
+  })
+
+  // C11: ≥1 ação → título de ação, corpo com contagem de ações, requireInteraction.
+  it('lote misto com ação → título de ação e requireInteraction', () => {
+    const p = buildNativePayload([action('1'), info('2'), info('3')], 'cerne', labels, typeLabel)!
+    expect(p.title).toBe('cerne — ação necessária')
+    expect(p.body).toBe('3 alterações (1 pedem sua ação)')
+    expect(p.requireInteraction).toBe(true)
+  })
+
+  it('evento único de ação → corpo da entidade e requireInteraction', () => {
+    const p = buildNativePayload([action('9')], 'cerne', labels, typeLabel)!
+    expect(p.title).toBe('cerne — ação necessária')
+    expect(p.body).toBe('F-0009 feature.created')
+    expect(p.requireInteraction).toBe(true)
   })
 })
 

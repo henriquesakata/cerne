@@ -708,8 +708,29 @@ h2 {
 }
 
 .notif-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
   padding: 0.4rem 0.75rem;
   border-top: 1px solid var(--border-soft);
+}
+
+/* destaque de classe "ação" (F-0161): gate humano pendente */
+.notif-badge-action { background: var(--danger); }
+
+.notif-chip-action {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.notif-toggle:disabled {
+  cursor: not-allowed;
+  color: var(--faint);
 }
 
 .notif-toggle {
