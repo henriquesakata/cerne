@@ -6,6 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
+import ErrataSection from './ErrataSection'
 import Tag, { tagCounts } from './Tag'
 import {
   fetchDecision,
@@ -240,6 +241,7 @@ export function DecisionDetail({ id }: { id: string }) {
           </p>
         )}
       </header>
+      <ErrataSection content={data.errata} />
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>

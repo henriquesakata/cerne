@@ -6,6 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import Markdown from './Markdown'
+import ErrataSection from './ErrataSection'
 import Tag, { tagCounts } from './Tag'
 import {
   fetchNote,
@@ -228,6 +229,7 @@ export function NoteDetail({ id }: { id: string }) {
         {n.superseded_by && <p className="feature-note">{t.notes.supersededBy(n.superseded_by)}</p>}
         {n.reason && <p className="feature-note">{t.common.reasonLabel} {n.reason}</p>}
       </header>
+      <ErrataSection content={data.errata} />
       <article className="doc">
         {data.doc ? (
           <Markdown>{data.doc}</Markdown>

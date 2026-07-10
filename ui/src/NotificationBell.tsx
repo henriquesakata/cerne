@@ -103,6 +103,9 @@ export default function NotificationBell() {
                       <span className="notif-chip-action">{t.notif.actionChip}</span>
                     )}
                     {ev.payload?.by && <span className="badge">→ {ev.payload.by}</span>}
+                    {ev.payload?.excerpt && (
+                      <span className="notif-excerpt">{ev.payload.excerpt}</span>
+                    )}
                     <span className="notif-meta">
                       {ev.actor} · {t.notif.age(ageMinutes(ev.at))}
                     </span>

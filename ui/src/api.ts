@@ -132,6 +132,7 @@ export type FeatureDetail = {
   artifacts: Artifact[]
   informed_by: Reference[] // external sources that motivated this feature
   children: Feature[] // features that decompose this one (epic view)
+  errata: string // correções aditivas (F-0163); "" quando não há
 }
 
 export type TransitionResult = {
@@ -333,10 +334,15 @@ export async function postTransition(
 
 // ---- páginas de leitura (case 0011) ----
 
-export type DecisionDetail = { decision: Decision; doc: string; informed_by: Reference[] }
+export type DecisionDetail = {
+  decision: Decision
+  doc: string
+  informed_by: Reference[]
+  errata: string // correções aditivas (F-0163); "" quando não há
+}
 export type ReferenceDetail = { reference: Reference; doc: string }
-export type RunbookDetail = { runbook: Runbook; doc: string }
-export type NoteDetail = { note: Note; doc: string }
+export type RunbookDetail = { runbook: Runbook; doc: string; errata: string }
+export type NoteDetail = { note: Note; doc: string; errata: string }
 
 export async function fetchDecision(id: string): Promise<DecisionDetail> {
   const r = await fetch(`${base()}/decisions/${encodeURIComponent(id)}`)

@@ -57,6 +57,9 @@ const ptBR = {
     nativeActionBody: (k: number, n: number) => `${n} alterações (${k} pedem sua ação)`,
     actionChip: 'ação',
   },
+  errata: {
+    title: 'Errata',
+  },
   dashboard: {
     title: 'Dashboard',
     subtitle: 'O resumo do projeto num olhar — cada card abre a tela detalhada.',
@@ -493,6 +496,9 @@ const en: Messages = {
     nativeBatch: (n: number) => `${n} new changes`,
     nativeActionBody: (k: number, n: number) => `${n} changes (${k} need your action)`,
     actionChip: 'action',
+  },
+  errata: {
+    title: 'Errata',
   },
   dashboard: {
     title: 'Dashboard',

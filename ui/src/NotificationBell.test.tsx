@@ -153,6 +153,22 @@ describe('NotificationBell', () => {
     expect(sw).toBeDisabled()
   })
 
+  // F-0163 C6: errata.added com excerpt no payload → excerpt visível no item.
+  it('errata.added mostra o excerpt no item do dropdown', async () => {
+    fetchEventsMock.mockResolvedValue([
+      {
+        ...ev('1', 60_000, 'F-0420'),
+        type: 'errata.added',
+        payload: { excerpt: 'Referência movida para o sucessor.' },
+      },
+    ])
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    await waitFor(() =>
+      expect(screen.getByText('Referência movida para o sucessor.')).toBeInTheDocument(),
+    )
+  })
+
   // F-0161 C1 (via UI): ativar o switch nativo pede permissão e persiste.
   it('ativar o switch nativo persiste após permissão concedida', async () => {
     const req = vi.fn().mockResolvedValue('granted')
