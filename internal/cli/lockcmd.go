@@ -124,10 +124,24 @@ func writeLockFile(path string, l project.Lock) error {
 }
 
 const (
-	lockMergeAttr   = "docs.lock merge=cerne-lock"
-	lockMergeDriver = "cerne lock merge %O %A %B"
-	lockMergeName   = "cerne docs.lock snapshot resolver"
+	lockMergeAttr = "docs.lock merge=cerne-lock"
+	lockMergeName = "cerne docs.lock snapshot resolver"
 )
+
+// lockMergeDriverCommand returns the merge driver command to register in git
+// config. The binary path is absolute: git invokes the driver from whatever
+// environment the merge runs in, and GUI clients/IDEs don't share the user's
+// shell PATH — a PATH-relative `cerne` fails there ("command not found") and
+// every docs.lock merge degrades to a manual conflict (F-0164). Quoted so
+// paths with spaces survive the shell; the config is local and re-registered
+// on every init/pull, so a moved binary self-heals on the next cerne run.
+func lockMergeDriverCommand() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return "cerne lock merge %O %A %B"
+	}
+	return `"` + exe + `" lock merge %O %A %B`
+}
 
 // ensureLockMergeDriver wires docs.lock to the cerne-lock merge driver in
 // projDir: the .gitattributes line (committed, travels with the repo) plus the
@@ -168,7 +182,7 @@ func ensureLockMergeDriver(projDir string) error {
 	}
 	sec := cfg.Raw.Section("merge").Subsection("cerne-lock")
 	sec.SetOption("name", lockMergeName)
-	sec.SetOption("driver", lockMergeDriver)
+	sec.SetOption("driver", lockMergeDriverCommand())
 	return repo.SetConfig(cfg)
 }
 
@@ -183,7 +197,7 @@ func registerMergeDriverViaGit(projDir string) error {
 	}
 	for _, kv := range [][2]string{
 		{"merge.cerne-lock.name", lockMergeName},
-		{"merge.cerne-lock.driver", lockMergeDriver},
+		{"merge.cerne-lock.driver", lockMergeDriverCommand()},
 	} {
 		out, err := exec.Command("git", "-C", projDir, "config", kv[0], kv[1]).CombinedOutput()
 		if err != nil {

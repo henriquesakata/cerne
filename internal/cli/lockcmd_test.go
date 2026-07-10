@@ -52,8 +52,29 @@ func assertMergeDriverRegistered(t *testing.T, projDir string) {
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
-	if got := cfg.Raw.Section("merge").Subsection("cerne-lock").Option("driver"); got != "cerne lock merge %O %A %B" {
-		t.Fatalf("merge.cerne-lock.driver = %q, want the driver command", got)
+	if got := cfg.Raw.Section("merge").Subsection("cerne-lock").Option("driver"); got != lockMergeDriverCommand() {
+		t.Fatalf("merge.cerne-lock.driver = %q, want %q", got, lockMergeDriverCommand())
+	}
+}
+
+// git invokes merge drivers from whatever environment the pull runs in — GUI
+// clients and IDEs don't share the user's shell PATH, so a PATH-relative
+// `cerne` fails there and every docs.lock merge degrades to a manual conflict
+// (F-0164). The registered command must carry the absolute binary path, quoted
+// so paths with spaces survive the shell.
+func TestLockMergeDriverCommandUsesAbsoluteBinaryPath(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	want := `"` + exe + `" lock merge %O %A %B`
+	got := lockMergeDriverCommand()
+	if got != want {
+		t.Fatalf("lockMergeDriverCommand() = %q, want %q", got, want)
+	}
+	parts := strings.SplitN(got, `"`, 3)
+	if len(parts) != 3 || !filepath.IsAbs(parts[1]) {
+		t.Fatalf("driver binary path in %q is not absolute and quoted", got)
 	}
 }
 
@@ -98,7 +119,7 @@ func TestPullSelfHealsMergeDriverInWorktree(t *testing.T) {
 		t.Fatalf("pull in worktree: %v\n%s", err, out)
 	}
 	got := strings.TrimSpace(runGit(t, wt, "config", "--get", "merge.cerne-lock.driver"))
-	if got != "cerne lock merge %O %A %B" {
+	if got != lockMergeDriverCommand() {
 		t.Fatalf("driver from worktree = %q, want it registered in the shared config", got)
 	}
 }
@@ -137,7 +158,7 @@ func TestPullRegistersMergeDriverInWorktreeWithWorktreeConfig(t *testing.T) {
 		t.Fatalf("pull in worktree: %v\n%s", err, out)
 	}
 	got := strings.TrimSpace(runGit(t, wt, "config", "--get", "merge.cerne-lock.driver"))
-	if got != "cerne lock merge %O %A %B" {
+	if got != lockMergeDriverCommand() {
 		t.Fatalf("driver from worktree = %q, want it registered via the git-binary fallback", got)
 	}
 }
@@ -165,7 +186,7 @@ func TestPullRegistersMergeDriverWithWorktreeConfigExtension(t *testing.T) {
 		t.Fatalf("pull: %v\n%s", err, out)
 	}
 	got := strings.TrimSpace(runGit(t, projDir, "config", "--get", "merge.cerne-lock.driver"))
-	if got != "cerne lock merge %O %A %B" {
+	if got != lockMergeDriverCommand() {
 		t.Fatalf("driver = %q, want it registered via the git-binary fallback", got)
 	}
 	attrs, err := os.ReadFile(filepath.Join(projDir, ".gitattributes"))
