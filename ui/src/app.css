@@ -618,6 +618,111 @@ h2 {
   color: var(--faint);
 }
 
+/* ---- sininho de notificações (F-0160) ---- */
+
+.notif-wrap { position: relative; display: inline-flex; }
+
+.notif-bell {
+  position: relative;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.notif-bell:hover { background: var(--surface-3); }
+
+.notif-badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  width: 22rem;
+  max-width: 90vw;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  z-index: 30;
+}
+
+.notif-head {
+  padding: 0.5rem 0.75rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.notif-empty {
+  margin: 0;
+  padding: 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.notif-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.notif-item:hover { background: var(--surface-3); }
+
+.notif-type { color: var(--fg); }
+
+.notif-meta {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.notif-foot {
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.notif-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.notif-toggle:hover { color: var(--fg); }
+
 /* ---- dashboard (#/, F-0132): resumo em cards ---- */
 
 .dash-grid {

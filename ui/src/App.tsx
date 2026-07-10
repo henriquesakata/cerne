@@ -17,6 +17,7 @@ import StatsPage from './Stats'
 import Activity from './Activity'
 import Dashboard from './Dashboard'
 import { LiveProvider } from './live'
+import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
 import './app.css'
 
@@ -39,8 +40,10 @@ export default function App() {
   const hash = useHash()
   return (
     <LiveProvider>
-      <Nav hash={hash} />
-      <Routed hash={hash} />
+      <NotificationsProvider>
+        <Nav hash={hash} />
+        <Routed hash={hash} />
+      </NotificationsProvider>
     </LiveProvider>
   )
 }
