@@ -385,3 +385,58 @@ func TestNoteSubstituirRetire(t *testing.T) {
 		t.Fatalf("note = %+v, want superseded with no successor and the reason", n)
 	}
 }
+
+// TestNoteListConventionMarker: a note carrying the reserved component
+// 'convencao' is a prescriptive convention (F-0165) and is visually marked in
+// the listing; a descriptive note is not.
+func TestNoteListConventionMarker(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+
+	if out, err := execCerne(t, "note", "new", "Formulários: validação e campos", "--component", "convencao,forms", "--dir", projDir); err != nil {
+		t.Fatalf("note new (convention): %v\noutput: %s", err, out)
+	}
+	if out, err := execCerne(t, "note", "new", "Gotcha do go-git", "--component", "gitea", "--dir", projDir); err != nil {
+		t.Fatalf("note new (descriptive): %v\noutput: %s", err, out)
+	}
+
+	out, err := execCerne(t, "note", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list: %v\noutput: %s", err, out)
+	}
+	var convLine, descLine string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "N-0001") {
+			convLine = line
+		}
+		if strings.Contains(line, "N-0002") {
+			descLine = line
+		}
+	}
+	if !strings.Contains(convLine, "convention") {
+		t.Errorf("convention note line missing the 'convention' marker:\n%s", convLine)
+	}
+	if strings.Contains(descLine, "convention") {
+		t.Errorf("descriptive note line must NOT carry the 'convention' marker:\n%s", descLine)
+	}
+}
+
+// TestNoteListComponentFilterConvencao: regression — '--component convencao'
+// returns only the convention subset (the retrieval flow F-0165 relies on).
+func TestNoteListComponentFilterConvencao(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+
+	if out, err := execCerne(t, "note", "new", "Convenção de menu", "--component", "convencao,menu", "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v\noutput: %s", err, out)
+	}
+	if out, err := execCerne(t, "note", "new", "Nota descritiva", "--component", "gitea", "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v\noutput: %s", err, out)
+	}
+
+	out, err := execCerne(t, "note", "list", "--component", "convencao", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list --component convencao: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "N-0001") || strings.Contains(out, "N-0002") {
+		t.Fatalf("filter must return only the convention note:\n%s", out)
+	}
+}

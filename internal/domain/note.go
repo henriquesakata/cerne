@@ -41,6 +41,12 @@ func TransitionNote(from NoteState, action Action) (NoteState, error) {
 // decision (D-0002), not extensible at runtime — a value outside it is rejected.
 var ValidFacets = []string{"infra", "code", "data", "process", "auth"}
 
+// ConventionComponent is the reserved component slug that marks a note as a
+// prescriptive convention (how to build) rather than descriptive knowledge
+// (what was discovered) — F-0165. It rides the open component axis, so the
+// closed facet set (D-0002) stays untouched.
+const ConventionComponent = "convencao"
+
 // ErrUnknownFacet is returned by NormalizeFacets for a value not in ValidFacets.
 var ErrUnknownFacet = errors.New("facet desconhecida")
 

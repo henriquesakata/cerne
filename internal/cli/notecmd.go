@@ -96,6 +96,11 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 	for _, n := range shown {
 		line := fmt.Sprintf("%s  [%s]  %s", n.ID, n.State, n.Title)
 		var tags []string
+		// The reserved component 'convencao' marks a prescriptive convention
+		// (F-0165): surface it first so an agent tells guidance from discovery.
+		if slices.Contains(n.Components, domain.ConventionComponent) {
+			tags = append(tags, "convention")
+		}
 		if n.Durable {
 			tags = append(tags, "durable")
 		}
