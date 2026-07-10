@@ -6,6 +6,7 @@ import Decisions, { DecisionDetail } from './Decisions'
 import References, { ReferenceDetail } from './References'
 import Runbooks, { RunbookDetail } from './Runbooks'
 import Notes, { NoteDetail } from './Notes'
+import Conventions from './Conventions'
 import Search from './Search'
 import Ask from './Ask'
 import Wiki, { WikiPageView } from './Wiki'
@@ -66,6 +67,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/references') return <References />
   if (hash === '#/runbooks') return <Runbooks />
   if (hash === '#/notes') return <Notes />
+  if (hash === '#/conventions') return <Conventions />
   if (hash === '#/wiki') return <Wiki />
   if (hash === '#/graph')
     return (

@@ -47,7 +47,10 @@ Status: Rascunho (AAAA-MM-DD) — plano para revisão. -->
 
 ## Estratégia
 <!-- Em 2-3 frases: a abordagem e como o trabalho é fatiado (MR único ou N fases) e por quê. Não repita
-a spec; aponte para ela. O leitor entende o "como", em alto nível, antes de descer aos detalhes. -->
+a spec; aponte para ela. O leitor entende o "como", em alto nível, antes de descer aos detalhes.
+ANTES de planejar: busque convenções registradas para este escopo — rode 'cerne note tags' (o menu de
+tópicos) e puxe as notas relevantes com 'cerne note list --component <topico>'. Cite aqui os ids (N-NNNN)
+das convenções aplicáveis — elas regem as tarefas abaixo. -->
 
 ## Sequência de tarefas
 <!-- Tarefas pequenas e ORDENADAS; cada uma deixa o repositório verde (build/testes passando). Por tarefa:
@@ -67,7 +70,8 @@ descreva como reverter (git revert / desfazer migração / etc.) e sinalize pass
 
 ## Restrições para o agente
 <!-- Guardrails de execução: o que NÃO tocar; decisões já fechadas na spec a respeitar; onde PAUSAR para
-revisão humana antes de prosseguir. Instruções literais — o agente segue ao pé da letra. -->
+revisão humana antes de prosseguir. Instruções literais — o agente segue ao pé da letra. Inclua as
+convenções (notas N-NNNN citadas na Estratégia) que o agente deve obedecer ao executar. -->
 
 ## Definição de pronto
 <!-- Checklist binário (cada item ATENDIDO/PENDENTE com evidência arquivo.go:linha — não "parece pronto"):
