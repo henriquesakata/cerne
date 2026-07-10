@@ -228,6 +228,38 @@ func RetagNote(repoDir, projDir, id string, facets, components []string, setFace
 	return n, nil
 }
 
+// TagCatalog is the tag menu across active notes: each distinct facet and
+// component with the count of active notes carrying it. It is the surface an
+// agent reads to self-select which conventions/knowledge to pull
+// (cerne note tags).
+type TagCatalog struct {
+	Facets     map[string]int `json:"facets"`
+	Components map[string]int `json:"components"`
+}
+
+// NoteTagCatalog aggregates the tag catalog over ACTIVE notes in the backend
+// clone at repoDir. A superseded note's tags are history and are not counted.
+// Maps are always non-nil so the JSON encoding is {} rather than null.
+func NoteTagCatalog(repoDir string) (TagCatalog, error) {
+	cat := TagCatalog{Facets: map[string]int{}, Components: map[string]int{}}
+	notes, err := store.LoadAllNotes(repoDir)
+	if err != nil {
+		return TagCatalog{}, err
+	}
+	for _, n := range notes {
+		if n.State != domain.NoteActive {
+			continue
+		}
+		for _, f := range n.Facets {
+			cat.Facets[f]++
+		}
+		for _, c := range n.Components {
+			cat.Components[c]++
+		}
+	}
+	return cat, nil
+}
+
 // NoteDocPath returns the backend path of a note's content document.
 func NoteDocPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "notes", id+".md")
