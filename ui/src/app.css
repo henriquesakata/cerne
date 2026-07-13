@@ -1567,3 +1567,86 @@ button.tag {
   vertical-align: middle;
   opacity: 0.7;
 }
+
+/* Esclarecimentos (F-0175): marcadores [ESCLARECER] renderizados como chips.
+   Aberto = âmbar (pede resposta humana); resolvido = verde estático com o
+   rastro pergunta → resposta. O popover de resposta ancora no chip. */
+.clarify-chip {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.85em;
+  line-height: 1.4;
+  vertical-align: baseline;
+}
+.clarify-open {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
+  font: inherit;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+button.clarify-open { cursor: pointer; }
+button.clarify-open:hover { filter: brightness(0.96); }
+.clarify-resolved {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+.clarify-anchor { position: relative; display: inline-block; }
+.clarify-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 16rem;
+  max-width: 24rem;
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+  font-weight: normal;
+  text-align: left;
+}
+.clarify-pop-question { font-weight: 600; color: var(--fg); }
+.clarify-option {
+  font: inherit;
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--fg);
+}
+.clarify-option:hover { border-color: var(--accent); }
+.clarify-free {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  resize: vertical;
+}
+.clarify-pop-actions { display: flex; gap: 0.4rem; }
+.clarify-count {
+  display: inline-block;
+  margin-left: 0.35rem;
+  min-width: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+}

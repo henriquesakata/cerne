@@ -471,6 +471,14 @@ const ptBR = {
     mermaidError: (e: string) => `Não foi possível renderizar o Mermaid: ${e}`,
     close: 'Fechar',
   },
+  clarify: {
+    noQuestion: 'esclarecer (sem pergunta)',
+    chipTitle: 'Clique para responder',
+    answerPlaceholder: 'Escreva a resposta…',
+    otherAnswer: 'Outra resposta…',
+    confirm: 'Responder',
+    openCount: (n: number) => `${n} esclarecimento(s) aberto(s)`,
+  },
   live: {
     loading: 'Carregando…',
     useProjectsError: 'useProjects deve ser usado dentro de LiveProvider',
@@ -929,6 +937,14 @@ const en: Messages = {
     editAsExcalidraw: 'Edit as Excalidraw',
     mermaidError: (e: string) => `Could not render the Mermaid diagram: ${e}`,
     close: 'Close',
+  },
+  clarify: {
+    noQuestion: 'clarify (no question)',
+    chipTitle: 'Click to answer',
+    answerPlaceholder: 'Write the answer…',
+    otherAnswer: 'Other answer…',
+    confirm: 'Answer',
+    openCount: (n: number) => `${n} open clarification(s)`,
   },
   live: {
     loading: 'Loading…',

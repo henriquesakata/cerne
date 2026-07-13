@@ -6,6 +6,12 @@
       "runtimeExecutable": "cerne",
       "runtimeArgs": ["ui", "--no-browser", "--port", "7719"],
       "port": 7719
+    },
+    {
+      "name": "ui-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "ui"],
+      "port": 5173
     }
   ]
 }
