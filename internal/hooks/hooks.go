@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-lifecycle-reminder.sh
 var files embed.FS
 
 const (
@@ -52,6 +52,12 @@ const (
 	gateCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh"`
 	// gateMatcher limits the gate to the file-editing tools.
 	gateMatcher = "Edit|Write"
+	// lifecycleScript is the PostToolUse lifecycle reminder (F-0170): after a
+	// successful `cerne feature new`/`feature start` it injects the guidance
+	// for that exact moment (write the spec in this turn / consult the notes).
+	lifecycleScript = "cerne-lifecycle-reminder.sh"
+	// lifecycleCommand is the settings.json command that runs lifecycleScript.
+	lifecycleCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh"`
 )
 
 // Status is the outcome of installing one asset.
@@ -98,7 +104,7 @@ func Install(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript} {
+	for _, script := range []string{bindScript, gateScript, lifecycleScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -233,6 +239,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needHook := !hookPresent(post)
 	needBind := !scriptWired(post, bindScript)
+	needLifecycle := !scriptWired(post, lifecycleScript)
 
 	var pre []any
 	hasPre := false
@@ -287,7 +294,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needActor {
+	if !needHook && !needBind && !needLifecycle && !needGate && !needRegister && !needSubagent && !needActor {
 		return nil, false, nil
 	}
 
@@ -301,6 +308,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needBind {
 			fresh = withMatcherEntry(fresh, "PostToolUse", "Bash", bindCommand)
+		}
+		if needLifecycle {
+			fresh = withMatcherEntry(fresh, "PostToolUse", "Bash", lifecycleCommand)
 		}
 		if needRegister {
 			fresh = withEventEntry(fresh, "SessionStart", registerCommand)
@@ -335,6 +345,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if needBind {
 		expected = withMatcherEntry(expected, "PostToolUse", "Bash", bindCommand)
 	}
+	if needLifecycle {
+		expected = withMatcherEntry(expected, "PostToolUse", "Bash", lifecycleCommand)
+	}
 	if needRegister {
 		expected = withEventEntry(expected, "SessionStart", registerCommand)
 	}
@@ -361,6 +374,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needBind {
 		curHasHooks, curHasPTU := reDetectEvent(cur, "PostToolUse", hasHooks, hasPTU)
 		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry("Bash", bindCommand), curHasHooks, curHasPTU, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needLifecycle {
+		curHasHooks, curHasPTU := reDetectEvent(cur, "PostToolUse", hasHooks, hasPTU)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry("Bash", lifecycleCommand), curHasHooks, curHasPTU, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {

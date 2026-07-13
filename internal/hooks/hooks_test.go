@@ -189,6 +189,16 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
           }
         ]
       }`
+	// The lifecycle reminder block (F-0170), appended after work-bind.
+	lifecycleBlock := `      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh\""
+          }
+        ]
+      }`
 	// The SessionStart reminder block (F-0139), inserted as a new member of the
 	// hooks object after PostToolUse.
 	ssBlock := `    "SessionStart": [
@@ -229,7 +239,7 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
 	// bracket; the SessionStart, SubagentStart and PreToolUse members are
 	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
 	// existing inline env object. Nothing else moves.
-	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+"\n    ]", 1)
+	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+",\n"+lifecycleBlock+"\n    ]", 1)
 	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
@@ -313,6 +323,15 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh\""
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -391,6 +410,15 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh\""
           }
         ]
       }
@@ -594,5 +622,33 @@ func TestInstall_ActorEnvIdempotent(t *testing.T) {
 	second, _ := os.ReadFile(sp)
 	if string(first) != string(second) {
 		t.Errorf("second install rewrote the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
+// TestInstall_WiresLifecycleReminder (F-0170 crit. 5): the lifecycle reminder
+// script is installed and wired as a PostToolUse/Bash entry, idempotently.
+func TestInstall_WiresLifecycleReminder(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude", "hooks", lifecycleScript)); err != nil {
+		t.Fatalf("lifecycle script not installed: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), lifecycleScript) {
+		t.Fatalf("settings.json missing lifecycle wiring:\n%s", b)
+	}
+	results, err := Install(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Status != StatusUnchanged {
+			t.Errorf("%s: status=%s, want up to date", r.Asset, r.Status)
+		}
 	}
 }
