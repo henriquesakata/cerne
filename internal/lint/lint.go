@@ -53,10 +53,11 @@ const (
 	RuleUntaggedLive       = "untagged-live"
 	RuleUnregisteredSource = "unregistered-source"
 	RuleDriftSuspect       = "drift-suspect"
+	RuleOpenClarification  = "open-clarification"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -76,6 +77,7 @@ var ruleRank = map[string]int{
 	RuleUntaggedLive:       14,
 	RuleUnregisteredSource: 15,
 	RuleDriftSuspect:       16,
+	RuleOpenClarification:  17,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -196,6 +198,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		findings = append(findings, refFindings(d, text, needles)...)
 		findings = append(findings, linkFindings(repoDir, d, text)...)
 		findings = append(findings, wikiLinkFindings(d, text, ids)...)
+		findings = append(findings, clarificationFindings(d, text)...)
 		// unregistered-source is provenance of a decision — scoped to decisions and
 		// feature spec/plan/result only (F-0107), never runbooks/references/notes/errata.
 		if inUnregisteredSourceScope(d.rel) {
