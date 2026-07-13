@@ -64,6 +64,9 @@ func TestInstall_WiresWorkBindAndGate(t *testing.T) {
 		t.Fatalf("Install (2nd): %v", err)
 	}
 	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
 		if r.Status != StatusUnchanged {
 			t.Errorf("second install: %s = %s, want unchanged", r.Asset, r.Status)
 		}

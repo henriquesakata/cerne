@@ -72,12 +72,19 @@ const (
 	StatusCreated   Status = "created"
 	StatusUpdated   Status = "updated"
 	StatusUnchanged Status = "unchanged"
+	// StatusSkipped marks an asset deliberately not installed (F-0173): the
+	// slot is taken or unavailable — never clobbered. Note carries the manual
+	// integration step.
+	StatusSkipped Status = "skipped"
 )
 
-// Result pairs an installed asset with what Install did to it.
+// Result pairs an installed asset with what Install did to it. Note, when
+// set, is a human-facing hint printed after the status (e.g. the snippet to
+// integrate a skipped git hook manually).
 type Result struct {
 	Asset  string
 	Status Status
+	Note   string
 }
 
 // Install writes the hook script under <projDir>/.claude/hooks/ and merges its
@@ -125,7 +132,64 @@ func Install(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: "settings.json", Status: st})
 
+	results = append(results, installCommitTrailerGitHook(projDir))
+
 	return results, nil
+}
+
+// trailerHookName is the git hook slot the commit trailer uses (F-0173).
+const trailerHookName = "prepare-commit-msg"
+
+// trailerSnippet is the one-liner a project with its own hook manager (husky,
+// custom core.hooksPath, an existing hook) adds to integrate the trailer.
+const trailerSnippet = `cerne hook commit-trailer "$1"`
+
+// trailerHookContent is the wrapper written into a FREE .git/hooks slot.
+const trailerHookContent = `#!/usr/bin/env sh
+# prepare-commit-msg hook installed by 'cerne hook install' (F-0173). Stamps
+# the 'Cerne: <id>' trailer when the project opts in ([gates] commit_trailer)
+# and this machine holds exactly one live registration binding. Fail-open:
+# with the cerne binary absent (or anything unexpected) the commit proceeds
+# unstamped. Tool-managed — do not edit; fix it upstream in
+# internal/hooks/assets/ and re-run 'cerne hook install'.
+
+command -v cerne >/dev/null 2>&1 || exit 0
+cerne hook commit-trailer "$1" 2>/dev/null || true
+exit 0
+`
+
+// installCommitTrailerGitHook writes the prepare-commit-msg wrapper ONLY into
+// a free slot of a plain git repo (F-0173): a missing .git, a custom
+// core.hooksPath, or a foreign hook already in the slot is never touched —
+// the result is skipped with the manual integration snippet as the note. The
+// worst outcome of any failure here is an unstamped commit, so every error
+// path degrades to skipped rather than failing the install.
+func installCommitTrailerGitHook(projDir string) Result {
+	skipped := func(note string) Result {
+		return Result{Asset: trailerHookName, Status: StatusSkipped, Note: note}
+	}
+	gitDir := filepath.Join(projDir, ".git")
+	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+		return skipped("not a git repository — integrate manually: " + trailerSnippet)
+	}
+	if raw, err := os.ReadFile(filepath.Join(gitDir, "config")); err == nil && strings.Contains(string(raw), "hooksPath") {
+		return skipped("custom core.hooksPath — add to your hook manager: " + trailerSnippet)
+	}
+	dst := filepath.Join(gitDir, "hooks", trailerHookName)
+	existing, err := os.ReadFile(dst)
+	switch {
+	case err == nil && string(existing) == trailerHookContent:
+		return Result{Asset: trailerHookName, Status: StatusUnchanged}
+	case err == nil:
+		return skipped("existing hook preserved — add to it: " + trailerSnippet)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return skipped("cannot create .git/hooks: " + err.Error())
+	}
+	if err := os.WriteFile(dst, []byte(trailerHookContent), 0o755); err != nil {
+		return skipped("cannot write hook: " + err.Error())
+	}
+	return Result{Asset: trailerHookName, Status: StatusCreated}
 }
 
 func mustRead(name string) string {
