@@ -130,6 +130,29 @@ func TestLoadConfigNoProject(t *testing.T) {
 	}
 }
 
+// TestConfigSyncSkillsRoundTrip pins the .cernerc `sync_skills` key (F-0178):
+// it persists and reloads when true.
+func TestConfigSyncSkillsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x", SyncSkills: true}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), "sync_skills = true") {
+		t.Fatalf(".cernerc missing sync_skills key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.SyncSkills {
+		t.Fatalf("loaded SyncSkills = false, want true")
+	}
+}
+
 // TestConfigOKFRoundTrip pins the .cernerc `okf` key: it persists and reloads
 // when true, and is omitted (omitempty) when false.
 func TestConfigOKFRoundTrip(t *testing.T) {

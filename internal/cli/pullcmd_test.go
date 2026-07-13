@@ -494,3 +494,88 @@ func TestPullPinBranchOnPinAdvancesLock(t *testing.T) {
 		t.Fatalf("lock.Snapshot = %q, want origin HEAD %q on the pin branch", lock.Snapshot, originHead)
 	}
 }
+
+// markedNoteProject sets up a project with one golden-path note and returns the
+// generated-skill path a sync would produce for it.
+func markedNoteProject(t *testing.T) (projDir, learnedSkill string) {
+	t.Helper()
+	projDir, _, _ = setupProject(t)
+	if out, err := execCerne(t, "note", "new", "Deploy gotcha", "--component", "golden-path", "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v\noutput: %s", err, out)
+	}
+	return projDir, filepath.Join(projDir, ".claude", "skills", "learned-n-0001-deploy-gotcha", "SKILL.md")
+}
+
+// F-0178 criterion 1: an explicit --sync-skills reconciles learned-* as part
+// of the pull and reports it in the output.
+func TestPullSyncSkillsFlag(t *testing.T) {
+	projDir, learnedSkill := markedNoteProject(t)
+
+	out, err := execCerne(t, "pull", "--sync-skills", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull --sync-skills: %v\noutput: %s", err, out)
+	}
+	if _, err := os.Stat(learnedSkill); err != nil {
+		t.Fatalf("generated skill missing after pull: %v", err)
+	}
+	if !strings.Contains(out, "learned-n-0001-deploy-gotcha: created") {
+		t.Fatalf("pull output missing sync line:\n%s", out)
+	}
+}
+
+// F-0178 criterion 2: sync_skills = true in .cernerc makes the reconcile the
+// pull's default, no flag needed.
+func TestPullSyncSkillsConfig(t *testing.T) {
+	projDir, learnedSkill := markedNoteProject(t)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.SyncSkills = true
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	if _, err := os.Stat(learnedSkill); err != nil {
+		t.Fatalf("generated skill missing after config-driven pull: %v", err)
+	}
+}
+
+// F-0178 criterion 4: without the flag and without config, pull never touches
+// the learned-* namespace.
+func TestPullSyncSkillsDefaultOff(t *testing.T) {
+	projDir, learnedSkill := markedNoteProject(t)
+
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Dir(learnedSkill)); !os.IsNotExist(err) {
+		t.Fatalf("learned skill generated without opt-in (err=%v)", err)
+	}
+}
+
+// F-0178 criterion 3: a failing skill sync is a warning, not a pull failure —
+// the materialization is the primary outcome.
+func TestPullSyncSkillsFailOpen(t *testing.T) {
+	projDir, _ := markedNoteProject(t)
+	// Injection: .claude/skills as a FILE (replacing the dir init created) makes
+	// the reconcile's MkdirAll fail.
+	skillsDir := filepath.Join(projDir, ".claude", "skills")
+	if err := os.RemoveAll(skillsDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillsDir, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execCerne(t, "pull", "--sync-skills", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull must stay green on sync failure, got: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Materialized:") {
+		t.Fatalf("pull output missing materialization summary:\n%s", out)
+	}
+}

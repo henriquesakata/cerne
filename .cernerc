@@ -3,6 +3,9 @@ backend = "git@gitlab.com:rockt/cerne-docs.git"
 default_scope = ""
 autocommit_lock = true
 pin_branch = "main"
+# F-0178: pull também reconcilia golden paths (notes/runbooks marcados) em
+# .claude/skills/learned-* — quem puxa docs já recebe as skills aprendidas.
+sync_skills = true
 # F-0117: todo push recompila (incremental) as páginas sujas da wiki via [llm].
 compile_on_push = true
 
