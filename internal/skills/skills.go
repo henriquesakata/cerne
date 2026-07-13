@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed cerne-authoring/SKILL.md
+//go:embed cerne-authoring/SKILL.md cerne-self-learning/SKILL.md
 var files embed.FS
 
 // Skill is one embedded skill: Name is its directory, RelPath its location
@@ -25,6 +25,7 @@ type Skill struct {
 func All() []Skill {
 	return []Skill{
 		{Name: "cerne-authoring", RelPath: "cerne-authoring/SKILL.md", Content: mustRead("cerne-authoring/SKILL.md")},
+		{Name: "cerne-self-learning", RelPath: "cerne-self-learning/SKILL.md", Content: mustRead("cerne-self-learning/SKILL.md")},
 	}
 }
 

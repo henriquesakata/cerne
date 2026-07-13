@@ -211,6 +211,17 @@ func LoadNoteContent(backendDir, id string) (string, error) {
 	return string(data), nil
 }
 
+// LoadRunbookContent reads a runbook's markdown body (content/runbooks/<id>.md),
+// mirroring LoadNoteContent: straight from the backend store, not the .docs/
+// projection.
+func LoadRunbookContent(backendDir, id string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(backendDir, "content", "runbooks", id+".md"))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // SaveReference writes the reference to entities/references/<ID>.json.
 func SaveReference(backendDir string, r Reference) error {
 	return saveEntity(backendDir, referencesSubdir, r.ID, r)

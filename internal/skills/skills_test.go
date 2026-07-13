@@ -27,6 +27,34 @@ func TestAllNonEmptyWithFrontmatter(t *testing.T) {
 	}
 }
 
+func TestAllIncludesSelfLearning(t *testing.T) {
+	for _, s := range All() {
+		if s.Name == "cerne-self-learning" {
+			if s.RelPath != "cerne-self-learning/SKILL.md" {
+				t.Fatalf("relpath = %s, want cerne-self-learning/SKILL.md", s.RelPath)
+			}
+			for _, want := range []string{"golden path", "cerne runbook new", "cerne note new", "cerne search"} {
+				if !strings.Contains(s.Content, want) {
+					t.Errorf("cerne-self-learning content missing %q", want)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("All() missing cerne-self-learning")
+}
+
+func TestInstallWritesSelfLearning(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	dst := filepath.Join(dir, ".claude", "skills", "cerne-self-learning", "SKILL.md")
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatalf("installed skill missing: %v", err)
+	}
+}
+
 func TestInstallCreatesUpdatesUnchanged(t *testing.T) {
 	dir := t.TempDir()
 
