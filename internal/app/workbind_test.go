@@ -128,3 +128,39 @@ func TestBindSessionRejectsUnsafeID(t *testing.T) {
 		}
 	}
 }
+
+// TestLiveBindings (F-0173 crit. 1/2 base): the project's live bindings are
+// enumerated deduplicated; dead ones self-heal off disk; a missing sessions
+// dir is an empty result, not an error.
+func TestLiveBindings(t *testing.T) {
+	cacheDir, repoDir := t.TempDir(), t.TempDir()
+	bindTestWork(t, repoDir, "W-0001", domain.WorkActive)
+	bindTestWork(t, repoDir, "W-0002", domain.WorkDone)
+	if err := BindSession(cacheDir, "sess-a", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindSession(cacheDir, "sess-b", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindSession(cacheDir, "sess-dead", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := LiveBindings(cacheDir, repoDir)
+	if err != nil {
+		t.Fatalf("LiveBindings: %v", err)
+	}
+	if len(got) != 1 || got[0] != "W-0001" {
+		t.Fatalf("LiveBindings = %v, want [W-0001]", got)
+	}
+	// Dead binding self-healed off disk.
+	if _, err := os.Stat(filepath.Join(cacheDir, "sessions", "sess-dead")); !os.IsNotExist(err) {
+		t.Fatalf("dead binding file not removed: %v", err)
+	}
+
+	// Missing sessions dir: empty, no error.
+	got, err = LiveBindings(t.TempDir(), repoDir)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty cache: got %v, %v", got, err)
+	}
+}
