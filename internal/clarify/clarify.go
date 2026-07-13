@@ -33,23 +33,39 @@ type Clarification struct {
 // a closing bracket, which also keeps prefix words ([ESCLARECEDOR]) out.
 var markerRe = regexp.MustCompile(`\[«?(ESCLARECER|ESCLARECIDO)»?(?::[ \t]*([^\]\n]*))?\]`)
 
-// commentRe matches HTML comments, where the doc templates cite the marker as
-// authoring guidance ("Marque qualquer incerteza com [ESCLARECER: …]"). An
-// unclosed comment runs to the end of the content, like in HTML.
-var commentRe = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
+// Citation contexts: a marker inside any of these is the doc *talking about*
+// the convention, not an authored clarification. HTML comments carry the
+// templates' authoring guidance (an unclosed one runs to EOF, like in HTML);
+// fenced blocks and inline code are how prose cites the syntax — the same
+// contexts the UI's markdown render leaves untouched.
+var (
+	commentRe    = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
+	fencedRe     = regexp.MustCompile("(?m)^```[^\n]*\n[\\s\\S]*?^```")
+	inlineCodeRe = regexp.MustCompile("`[^`\n]+`")
+)
+
+// citationRanges returns the [start, end) intervals of every citation context
+// in content, in no particular order.
+func citationRanges(content string) [][]int {
+	var ranges [][]int
+	for _, re := range []*regexp.Regexp{commentRe, fencedRe, inlineCodeRe} {
+		ranges = append(ranges, re.FindAllStringIndex(content, -1)...)
+	}
+	return ranges
+}
 
 // Parse returns every marker in content, in document order, with exact
 // offsets so callers can rewrite one occurrence without touching duplicates.
-// Markers inside HTML comments are template guidance, not authored
-// clarifications, and are skipped.
+// Markers inside citation contexts (HTML comments, fenced or inline code)
+// are skipped.
 func Parse(content string) []Clarification {
 	matches := markerRe.FindAllStringSubmatchIndex(content, -1)
 	if matches == nil {
 		return nil
 	}
-	comments := commentRe.FindAllStringIndex(content, -1)
-	inComment := func(off int) bool {
-		for _, c := range comments {
+	citations := citationRanges(content)
+	inCitation := func(off int) bool {
+		for _, c := range citations {
 			if off >= c[0] && off < c[1] {
 				return true
 			}
@@ -58,7 +74,7 @@ func Parse(content string) []Clarification {
 	}
 	out := make([]Clarification, 0, len(matches))
 	for _, m := range matches {
-		if inComment(m[0]) {
+		if inCitation(m[0]) {
 			continue
 		}
 		c := Clarification{Offset: m[0], Raw: content[m[0]:m[1]]}

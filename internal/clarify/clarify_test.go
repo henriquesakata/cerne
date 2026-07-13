@@ -131,6 +131,23 @@ func TestParse(t *testing.T) {
 			content: "texto <!-- aberto [ESCLARECER: sumiu?]",
 			want:    nil,
 		},
+		{
+			name:    "marker in inline code is a citation, not authored",
+			content: "docs citam `[ESCLARECER: exemplo]` na prosa",
+			want:    nil,
+		},
+		{
+			name:    "marker in fenced code block is a citation",
+			content: "```\n[ESCLARECER: dentro do fence]\n```\nprosa",
+			want:    nil,
+		},
+		{
+			name:    "marker after inline code keeps offset",
+			content: "`code` [ESCLARECER: real?]",
+			want: []Clarification{
+				{Question: "real?", Raw: "[ESCLARECER: real?]", Offset: 7},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
