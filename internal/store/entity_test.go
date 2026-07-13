@@ -216,3 +216,27 @@ func TestSavedFileFormat(t *testing.T) {
 		t.Fatalf("feature with no parent must omit the parent key, got:\n%s", s)
 	}
 }
+
+func TestLoadRunbookContent(t *testing.T) {
+	dir := t.TempDir()
+	body := "# Deploy\n\n1. build\n2. ship\n"
+	docDir := filepath.Join(dir, "content", "runbooks")
+	if err := os.MkdirAll(docDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docDir, "RB-0001.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := LoadRunbookContent(dir, "RB-0001")
+	if err != nil {
+		t.Fatalf("LoadRunbookContent: %v", err)
+	}
+	if got != body {
+		t.Fatalf("content = %q, want %q", got, body)
+	}
+
+	if _, err := LoadRunbookContent(dir, "RB-0999"); !os.IsNotExist(err) {
+		t.Fatalf("missing runbook err = %v, want fs not-exist", err)
+	}
+}
