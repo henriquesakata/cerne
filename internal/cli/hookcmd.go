@@ -28,15 +28,17 @@ func newHookCmd() *cobra.Command {
 
 func newHookInstallCmd() *cobra.Command {
 	var dir string
+	var providers []string
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install/update cerne's Claude Code hooks (script under .claude/hooks/ + settings.json wiring)",
+		Short: "Install/update cerne's agent hooks (Claude Code natively; Cursor/Codex/Gemini adapters — F-0174)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runHookInstall(cmd, dir)
+			return runHookInstall(cmd, dir, providers)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	cmd.Flags().StringSliceVar(&providers, "provider", nil, "providers to install (claude|cursor|codex|gemini); default: claude plus any auto-detected by config dir")
 	return cmd
 }
 
@@ -48,7 +50,7 @@ var hookStatusLabel = map[hooks.Status]string{
 	hooks.StatusSkipped:   "skipped",
 }
 
-func runHookInstall(cmd *cobra.Command, dir string) error {
+func runHookInstall(cmd *cobra.Command, dir string, providerNames []string) error {
 	if dir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -56,7 +58,16 @@ func runHookInstall(cmd *cobra.Command, dir string) error {
 		}
 		dir = wd
 	}
-	results, err := hooks.Install(dir)
+	var ps []hooks.Provider
+	if len(providerNames) == 0 {
+		// Default: Claude Code plus every provider whose config dir exists.
+		ps = append([]hooks.Provider{hooks.ProviderClaude}, hooks.DetectProviders(dir)...)
+	} else {
+		for _, name := range providerNames {
+			ps = append(ps, hooks.Provider(name))
+		}
+	}
+	results, err := hooks.Install(dir, ps...)
 	if err != nil {
 		return err
 	}
