@@ -1,25 +1,14 @@
 #!/usr/bin/env sh
-# F-0103 — provenance capture: after an agent records or advances a decision
-# gate, remind it to register the external sources that SHAPED that decision
-# (only the useful ones) as cerne references — so provenance is captured without
-# waiting to be asked, and dead-ends are never saved.
-#
-# PostToolUse hook (matcher Bash). Inspects ONLY tool_input.command (never the
-# tool_response output — else a command that merely PRINTS a gate phrase, e.g.
-# reading this skill, would misfire) and reacts ONLY on a decision-recording gate
-# (cerne feature approve/complete, cerne decision new/substituir) — the moment a
-# source's usefulness is finally known. Emits a non-blocking additionalContext
-# reminder. It deliberately does NOT hook WebFetch: reminding on every fetched
-# page would push agents to save discarded dead-ends, the opposite of the goal
-# (register kept sources, not everything touched).
-input=$(cat)
-# Capture the command value up to its first quote ([^"]*, NOT greedy .*), so the
-# match stops inside tool_input and never runs into tool_response.
-cmd=$(printf '%s' "$input" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\).*/\1/p' | head -1)
-case "$cmd" in
-  *"cerne feature approve"*|*"cerne feature complete"*|*"cerne decision new"*|*"cerne decision substituir"*)
-    msg="Proveniência (F-0103): você registrou/avançou uma decisão. Se uma fonte externa (artigo, RFC, doc de fornecedor, spec) MOLDOU esta decisão ou design, registre-a agora — sem esperar ser solicitado — com: cerne reference new <título> --url <url> --informs <id>. Registre apenas as fontes que foram úteis (as que moldaram o resultado); becos sem saída e leituras descartadas NÃO viram referência."
-    printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"%s"},"suppressOutput":true}\n' "$msg"
-    ;;
-esac
+# F-0103 — provenance capture, reworked by F-0172: all parsing and decisions
+# live in `cerne hook provenance` (Go, testable), which reminds the agent to
+# register the external sources that SHAPED a doc at the hot moments — a
+# successful `cerne push` whose authored docs cite an unbacked external URL
+# (same detector as the unregistered-source lint rule), and the decision gates
+# (`feature complete`, `decision new/substituir`). This wrapper only degrades
+# silently (exit 0) when the cerne binary is absent, so a broken install never
+# breaks a tool call. Tool-managed — do not edit; fix it upstream in
+# internal/hooks/assets/ and re-run `cerne hook install`.
+
+command -v cerne >/dev/null 2>&1 || exit 0
+cerne hook provenance 2>/dev/null || true
 exit 0
