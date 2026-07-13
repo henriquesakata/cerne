@@ -99,6 +99,7 @@ type GatesConfig struct {
 	WorkGate      string   `toml:"work_gate,omitempty"`       // "on" | anything else = off (default)
 	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
 	WorkGateHint  string   `toml:"work_gate_hint,omitempty"`  // project-specific suffix appended to the gate's deny reason (F-0170)
+	CommitTrailer string   `toml:"commit_trailer,omitempty"`  // "on" | anything else = off — prepare-commit-msg Cerne: trailer (F-0173)
 }
 
 // WorkGateEnabled resolves the edit gate: on only when explicitly configured.
@@ -106,10 +107,17 @@ func (g GatesConfig) WorkGateEnabled() bool {
 	return g.WorkGate == "on"
 }
 
+// CommitTrailerEnabled resolves the commit trailer stamp (F-0173): on only
+// when explicitly configured — existing projects never gain git hooks on
+// upgrade.
+func (g GatesConfig) CommitTrailerEnabled() bool {
+	return g.CommitTrailer == "on"
+}
+
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == ""
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == ""
 }
 
 // ApproveGate resolves the start gate: auto only when explicitly configured.

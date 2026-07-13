@@ -354,3 +354,27 @@ func TestConfigWorkGateHintRoundTrip(t *testing.T) {
 		t.Fatalf("default WorkGateHint = %q, want empty", got.Gates.WorkGateHint)
 	}
 }
+
+// TestConfigCommitTrailerToggle (F-0173 crit. 4): the [gates] commit_trailer
+// key round-trips and is opt-in — enabled only on the explicit "on".
+func TestConfigCommitTrailerToggle(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{ProjectID: "demo", Backend: "x"}
+	cfg.Gates.CommitTrailer = "on"
+	if err := SaveConfig(dir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.Gates.CommitTrailerEnabled() {
+		t.Fatal("commit_trailer = on: want enabled")
+	}
+	for _, v := range []string{"", "off", "true"} {
+		g := GatesConfig{CommitTrailer: v}
+		if g.CommitTrailerEnabled() {
+			t.Errorf("CommitTrailer %q: want disabled", v)
+		}
+	}
+}
