@@ -315,3 +315,42 @@ func TestConfigWorkGateRoundTrip(t *testing.T) {
 		t.Fatalf("default config should omit [gates]:\n%s", raw)
 	}
 }
+
+// TestConfigWorkGateHintRoundTrip pins the .cernerc [gates] work_gate_hint key
+// (F-0170): a project-specific suffix for the gate's deny reason round-trips,
+// an absent key reads as empty, and a hint alone is enough to persist the
+// [gates] block.
+func TestConfigWorkGateHintRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{ProjectID: "demo", Backend: "x"}
+	cfg.Gates.WorkGateHint = "consult the convention catalog first"
+	if err := SaveConfig(dir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), `work_gate_hint = "consult the convention catalog first"`) {
+		t.Fatalf(".cernerc missing work_gate_hint key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Gates.WorkGateHint != "consult the convention catalog first" {
+		t.Fatalf("WorkGateHint = %q", got.Gates.WorkGateHint)
+	}
+
+	// Absent key -> empty; default config writes no [gates] block at all.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	got, _, err = LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if got.Gates.WorkGateHint != "" {
+		t.Fatalf("default WorkGateHint = %q, want empty", got.Gates.WorkGateHint)
+	}
+}
