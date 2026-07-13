@@ -199,3 +199,46 @@ func TestHookBindWorkBindsFromFeatureStart(t *testing.T) {
 		t.Fatalf("bound id = %q, want F-0002", got)
 	}
 }
+
+// TestHookWorkGateDenyHint (F-0170 crit. 4): with [gates] work_gate_hint set,
+// the deny reason carries the project's suffix; without it, the reason stays
+// free of any hint separator.
+func TestHookWorkGateDenyHint(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	enableWorkGate(t, projDir)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.Gates.WorkGateHint = "see the project convention catalog"
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	stdin := hookJSON(t, "sess-hint", projDir, "Edit",
+		map[string]any{"file_path": filepath.Join(projDir, "internal", "a.go")}, nil)
+	out, err := execCerneStdin(t, stdin, "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("hook work-gate: %v\noutput: %s", err, out)
+	}
+	var d gateDeny
+	if err := json.Unmarshal([]byte(out), &d); err != nil {
+		t.Fatalf("deny output is not JSON: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(d.HookSpecificOutput.PermissionDecisionReason, "see the project convention catalog") {
+		t.Fatalf("reason missing hint:\n%s", out)
+	}
+
+	// Without the hint the reason must not carry the separator suffix.
+	cfg.Gates.WorkGateHint = ""
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	out, err = execCerneStdin(t, stdin, "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("hook work-gate (no hint): %v\noutput: %s", err, out)
+	}
+	if strings.Contains(out, "convention catalog") {
+		t.Fatalf("reason should have no hint:\n%s", out)
+	}
+}

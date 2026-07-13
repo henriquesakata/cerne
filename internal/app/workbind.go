@@ -90,6 +90,44 @@ func bindingLive(repoDir, id string) bool {
 	}
 }
 
+// LiveBindings enumerates the ids with a live registration binding on this
+// machine for the project (F-0173): every session file is resolved with the
+// same liveness check as CurrentBinding — dead bindings self-heal off disk —
+// and the surviving ids are deduplicated. The commit trailer stamps only when
+// exactly one id comes back: ambiguity never becomes a guess.
+func LiveBindings(cacheDir, repoDir string) ([]string, error) {
+	dir := filepath.Join(cacheDir, sessionsSubdir)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var ids []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		id := strings.TrimSpace(string(raw))
+		if !bindingLive(repoDir, id) {
+			_ = os.Remove(path) // self-heal: stale binding
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 // ClearBindings removes every session binding pointing at id (used when the
 // work is done/abandoned). Other sessions' bindings are untouched; a missing
 // sessions dir is a no-op.

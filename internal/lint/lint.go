@@ -996,6 +996,26 @@ func ignoredSourceURL(u string, ignore []string) bool {
 // skipped. The fix is to register the source (cerne reference new … --informs) or
 // remove the bare URL — so a discarded dead-end never becomes a forced reference.
 func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Reference, ignore []string) []Finding {
+	var findings []Finding
+	for _, u := range OrphanSourceURLs(d.entity, text, refs, ignore) {
+		findings = append(findings, Finding{
+			Rule:   RuleUnregisteredSource,
+			Entity: d.entity,
+			File:   d.rel,
+			Detail: "external URL " + u + " cited without a registered reference — register it with 'cerne reference new … --informs " + d.entity + "' or remove the URL",
+		})
+	}
+	return findings
+}
+
+// OrphanSourceURLs reports the external http(s) URLs cited in an authored
+// feature/decision doc that no current reference backs — the shared core of
+// RuleUnregisteredSource, exported (F-0172) so the push-time provenance
+// reminder and the lint backstop can never diverge. Backing is the union
+// (D1, F-0103): a *current* reference whose URL matches (normalized) OR one
+// whose Informs backlinks the doc's entity; internal/local hosts and the
+// project's ignore substrings (F-0107) are skipped.
+func OrphanSourceURLs(entity, text string, refs []store.Reference, ignore []string) []string {
 	urls := mdlink.ExternalURLs(text)
 	if len(urls) == 0 {
 		return nil
@@ -1006,7 +1026,7 @@ func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Referenc
 			continue
 		}
 		for _, id := range r.Informs {
-			if id == d.entity {
+			if id == entity {
 				return nil // the doc's entity is already sourced (Informs backlink)
 			}
 		}
@@ -1014,19 +1034,14 @@ func unregisteredSourceFindings(d scannedDoc, text string, refs []store.Referenc
 			backed[normalizeURL(r.URL)] = true
 		}
 	}
-	var findings []Finding
+	var orphans []string
 	for _, u := range urls {
 		if ignoredSourceURL(u, ignore) || backed[normalizeURL(u)] {
 			continue
 		}
-		findings = append(findings, Finding{
-			Rule:   RuleUnregisteredSource,
-			Entity: d.entity,
-			File:   d.rel,
-			Detail: "external URL " + u + " cited without a registered reference — register it with 'cerne reference new … --informs " + d.entity + "' or remove the URL",
-		})
+		orphans = append(orphans, u)
 	}
-	return findings
+	return orphans
 }
 
 // orphanFindings reports content files whose entity JSON does not exist:

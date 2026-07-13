@@ -18,6 +18,10 @@ func newHookCmd() *cobra.Command {
 	cmd.AddCommand(newHookInstallCmd())
 	cmd.AddCommand(newHookBindWorkCmd())
 	cmd.AddCommand(newHookWorkGateCmd())
+	cmd.AddCommand(newHookLifecycleReminderCmd())
+	cmd.AddCommand(newHookStopCheckCmd())
+	cmd.AddCommand(newHookProvenanceCmd())
+	cmd.AddCommand(newHookCommitTrailerCmd())
 	return cmd
 }
 
@@ -40,6 +44,7 @@ var hookStatusLabel = map[hooks.Status]string{
 	hooks.StatusCreated:   "created",
 	hooks.StatusUpdated:   "updated",
 	hooks.StatusUnchanged: "up to date",
+	hooks.StatusSkipped:   "skipped",
 }
 
 func runHookInstall(cmd *cobra.Command, dir string) error {
@@ -64,6 +69,10 @@ func printHookResults(out io.Writer, results []hooks.Result) {
 		label := hookStatusLabel[r.Status]
 		if label == "" {
 			label = string(r.Status)
+		}
+		if r.Note != "" {
+			fmt.Fprintf(out, "%s: %s — %s\n", r.Asset, label, r.Note)
+			continue
 		}
 		fmt.Fprintf(out, "%s: %s\n", r.Asset, label)
 	}

@@ -151,6 +151,11 @@ func runHookWorkGate(cmd *cobra.Command) {
 	if allow {
 		return
 	}
+	// F-0170: the deny message is also a teaching moment — append the
+	// project's own pointer (e.g. its convention catalog) when configured.
+	if hint := cfg.Gates.WorkGateHint; hint != "" {
+		reason += " — " + hint
+	}
 	var d gateDeny
 	d.HookSpecificOutput.HookEventName = "PreToolUse"
 	d.HookSpecificOutput.PermissionDecision = "deny"

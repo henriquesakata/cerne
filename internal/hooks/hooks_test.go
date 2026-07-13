@@ -30,6 +30,9 @@ func TestInstall_CreatesWhenAbsent(t *testing.T) {
 		t.Fatalf("settings.json is not valid JSON:\n%s", b)
 	}
 	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
 		if r.Status != StatusCreated {
 			t.Errorf("%s: status=%s, want created", r.Asset, r.Status)
 		}
@@ -95,6 +98,9 @@ func TestInstall_Idempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
 		if r.Status != StatusUnchanged {
 			t.Errorf("second install %s: status=%s, want unchanged", r.Asset, r.Status)
 		}
@@ -189,6 +195,16 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
           }
         ]
       }`
+	// The lifecycle reminder block (F-0170), appended after work-bind.
+	lifecycleBlock := `      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh\""
+          }
+        ]
+      }`
 	// The SessionStart reminder block (F-0139), inserted as a new member of the
 	// hooks object after PostToolUse.
 	ssBlock := `    "SessionStart": [
@@ -224,13 +240,24 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         ]
       }
     ]`
+	// The Stop closeout block (F-0171), appended after PreToolUse.
+	stopBlock := `    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
+          }
+        ]
+      }
+    ]`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
 	// blocks (provenance + work-bind) are inserted before PostToolUse's closing
 	// bracket; the SessionStart, SubagentStart and PreToolUse members are
 	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
 	// existing inline env object. Nothing else moves.
-	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+"\n    ]", 1)
-	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+"\n  }\n}", 1)
+	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+",\n"+lifecycleBlock+"\n    ]", 1)
+	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
@@ -313,6 +340,15 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh\""
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -331,6 +367,16 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-subagent-context.sh\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
           }
         ]
       }
@@ -393,6 +439,15 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh\""
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -422,6 +477,16 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
           }
         ]
       }
@@ -494,6 +559,9 @@ func TestInstall_IdempotentAfterRichMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
 		if r.Asset == "settings.json" && r.Status != StatusUnchanged {
 			t.Errorf("second install settings.json: status=%s, want unchanged", r.Status)
 		}
@@ -587,6 +655,9 @@ func TestInstall_ActorEnvIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
 		if r.Asset == "settings.json" && r.Status != StatusUnchanged {
 			t.Errorf("second install settings.json: status=%s, want unchanged", r.Status)
 		}
@@ -595,4 +666,173 @@ func TestInstall_ActorEnvIdempotent(t *testing.T) {
 	if string(first) != string(second) {
 		t.Errorf("second install rewrote the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
 	}
+}
+
+// TestInstall_WiresLifecycleReminder (F-0170 crit. 5): the lifecycle reminder
+// script is installed and wired as a PostToolUse/Bash entry, idempotently.
+func TestInstall_WiresLifecycleReminder(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude", "hooks", lifecycleScript)); err != nil {
+		t.Fatalf("lifecycle script not installed: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), lifecycleScript) {
+		t.Fatalf("settings.json missing lifecycle wiring:\n%s", b)
+	}
+	results, err := Install(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
+		if r.Status != StatusUnchanged {
+			t.Errorf("%s: status=%s, want up to date", r.Asset, r.Status)
+		}
+	}
+}
+
+// TestInstall_WiresStopCloseout (F-0171 crit. 6): the Stop closeout script is
+// installed and wired as a Stop event entry, idempotently.
+func TestInstall_WiresStopCloseout(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude", "hooks", stopScript)); err != nil {
+		t.Fatalf("stop script not installed: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), stopScript) || !strings.Contains(string(b), `"Stop"`) {
+		t.Fatalf("settings.json missing Stop wiring:\n%s", b)
+	}
+	results, err := Install(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Asset == trailerHookName {
+			continue // skipped outside a real git repo (F-0173) — has its own test
+		}
+		if r.Status != StatusUnchanged {
+			t.Errorf("%s: status=%s, want up to date", r.Asset, r.Status)
+		}
+	}
+}
+
+// TestInstall_CommitTrailerGitHook (F-0173 crit. 5): the prepare-commit-msg
+// wrapper is written only into a free slot of a git repo without a custom
+// core.hooksPath; a foreign hook or a custom hooksPath is never clobbered
+// (skipped, with the integration snippet as the note); a second install is
+// idempotent.
+func TestInstall_CommitTrailerGitHook(t *testing.T) {
+	find := func(rs []Result, asset string) (Result, bool) {
+		for _, r := range rs {
+			if r.Asset == asset {
+				return r, true
+			}
+		}
+		return Result{}, false
+	}
+
+	t.Run("free slot", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, ".git", "hooks", "prepare-commit-msg")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("git hook not written: %v", err)
+		}
+		if !strings.Contains(string(b), `cerne hook commit-trailer "$1"`) {
+			t.Fatalf("git hook missing delegation:\n%s", b)
+		}
+		info, _ := os.Stat(p)
+		if info.Mode()&0o111 == 0 {
+			t.Fatalf("git hook not executable: %v", info.Mode())
+		}
+		r, ok := find(results, "prepare-commit-msg")
+		if !ok || r.Status != StatusCreated {
+			t.Fatalf("result = %+v, want created", r)
+		}
+		// Idempotent.
+		results, err = Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, _ := find(results, "prepare-commit-msg"); r.Status != StatusUnchanged {
+			t.Fatalf("second install = %+v, want unchanged", r)
+		}
+	})
+
+	t.Run("foreign hook preserved", func(t *testing.T) {
+		dir := t.TempDir()
+		hooks := filepath.Join(dir, ".git", "hooks")
+		if err := os.MkdirAll(hooks, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		foreign := "#!/bin/sh\necho husky\n"
+		p := filepath.Join(hooks, "prepare-commit-msg")
+		if err := os.WriteFile(p, []byte(foreign), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(p); string(b) != foreign {
+			t.Fatalf("foreign hook clobbered:\n%s", b)
+		}
+		r, _ := find(results, "prepare-commit-msg")
+		if r.Status != StatusSkipped || !strings.Contains(r.Note, `cerne hook commit-trailer "$1"`) {
+			t.Fatalf("result = %+v, want skipped with snippet note", r)
+		}
+	})
+
+	t.Run("custom hooksPath skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitConfig := "[core]\n\thooksPath = .husky\n"
+		if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte(gitConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git", "hooks", "prepare-commit-msg")); !os.IsNotExist(err) {
+			t.Fatal("hook written despite custom hooksPath")
+		}
+		if r, _ := find(results, "prepare-commit-msg"); r.Status != StatusSkipped {
+			t.Fatalf("result = %+v, want skipped", r)
+		}
+	})
+
+	t.Run("not a git repo", func(t *testing.T) {
+		dir := t.TempDir()
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, ok := find(results, "prepare-commit-msg"); !ok || r.Status != StatusSkipped {
+			t.Fatalf("result = %+v, want skipped", r)
+		}
+	})
 }

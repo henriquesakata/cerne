@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-lifecycle-reminder.sh assets/cerne-stop-closeout.sh
 var files embed.FS
 
 const (
@@ -52,6 +52,17 @@ const (
 	gateCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh"`
 	// gateMatcher limits the gate to the file-editing tools.
 	gateMatcher = "Edit|Write"
+	// lifecycleScript is the PostToolUse lifecycle reminder (F-0170): after a
+	// successful `cerne feature new`/`feature start` it injects the guidance
+	// for that exact moment (write the spec in this turn / consult the notes).
+	lifecycleScript = "cerne-lifecycle-reminder.sh"
+	// lifecycleCommand is the settings.json command that runs lifecycleScript.
+	lifecycleCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh"`
+	// stopScript is the Stop closeout reminder (F-0171): a session ending its
+	// turn with a live W-/F- binding is reminded to close or sync it.
+	stopScript = "cerne-stop-closeout.sh"
+	// stopCommand is the settings.json command that runs stopScript.
+	stopCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh"`
 )
 
 // Status is the outcome of installing one asset.
@@ -61,12 +72,19 @@ const (
 	StatusCreated   Status = "created"
 	StatusUpdated   Status = "updated"
 	StatusUnchanged Status = "unchanged"
+	// StatusSkipped marks an asset deliberately not installed (F-0173): the
+	// slot is taken or unavailable — never clobbered. Note carries the manual
+	// integration step.
+	StatusSkipped Status = "skipped"
 )
 
-// Result pairs an installed asset with what Install did to it.
+// Result pairs an installed asset with what Install did to it. Note, when
+// set, is a human-facing hint printed after the status (e.g. the snippet to
+// integrate a skipped git hook manually).
 type Result struct {
 	Asset  string
 	Status Status
+	Note   string
 }
 
 // Install writes the hook script under <projDir>/.claude/hooks/ and merges its
@@ -98,7 +116,7 @@ func Install(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript} {
+	for _, script := range []string{bindScript, gateScript, lifecycleScript, stopScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -114,7 +132,64 @@ func Install(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: "settings.json", Status: st})
 
+	results = append(results, installCommitTrailerGitHook(projDir))
+
 	return results, nil
+}
+
+// trailerHookName is the git hook slot the commit trailer uses (F-0173).
+const trailerHookName = "prepare-commit-msg"
+
+// trailerSnippet is the one-liner a project with its own hook manager (husky,
+// custom core.hooksPath, an existing hook) adds to integrate the trailer.
+const trailerSnippet = `cerne hook commit-trailer "$1"`
+
+// trailerHookContent is the wrapper written into a FREE .git/hooks slot.
+const trailerHookContent = `#!/usr/bin/env sh
+# prepare-commit-msg hook installed by 'cerne hook install' (F-0173). Stamps
+# the 'Cerne: <id>' trailer when the project opts in ([gates] commit_trailer)
+# and this machine holds exactly one live registration binding. Fail-open:
+# with the cerne binary absent (or anything unexpected) the commit proceeds
+# unstamped. Tool-managed — do not edit; fix it upstream in
+# internal/hooks/assets/ and re-run 'cerne hook install'.
+
+command -v cerne >/dev/null 2>&1 || exit 0
+cerne hook commit-trailer "$1" 2>/dev/null || true
+exit 0
+`
+
+// installCommitTrailerGitHook writes the prepare-commit-msg wrapper ONLY into
+// a free slot of a plain git repo (F-0173): a missing .git, a custom
+// core.hooksPath, or a foreign hook already in the slot is never touched —
+// the result is skipped with the manual integration snippet as the note. The
+// worst outcome of any failure here is an unstamped commit, so every error
+// path degrades to skipped rather than failing the install.
+func installCommitTrailerGitHook(projDir string) Result {
+	skipped := func(note string) Result {
+		return Result{Asset: trailerHookName, Status: StatusSkipped, Note: note}
+	}
+	gitDir := filepath.Join(projDir, ".git")
+	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+		return skipped("not a git repository — integrate manually: " + trailerSnippet)
+	}
+	if raw, err := os.ReadFile(filepath.Join(gitDir, "config")); err == nil && strings.Contains(string(raw), "hooksPath") {
+		return skipped("custom core.hooksPath — add to your hook manager: " + trailerSnippet)
+	}
+	dst := filepath.Join(gitDir, "hooks", trailerHookName)
+	existing, err := os.ReadFile(dst)
+	switch {
+	case err == nil && string(existing) == trailerHookContent:
+		return Result{Asset: trailerHookName, Status: StatusUnchanged}
+	case err == nil:
+		return skipped("existing hook preserved — add to it: " + trailerSnippet)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return skipped("cannot create .git/hooks: " + err.Error())
+	}
+	if err := os.WriteFile(dst, []byte(trailerHookContent), 0o755); err != nil {
+		return skipped("cannot write hook: " + err.Error())
+	}
+	return Result{Asset: trailerHookName, Status: StatusCreated}
 }
 
 func mustRead(name string) string {
@@ -233,6 +308,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needHook := !hookPresent(post)
 	needBind := !scriptWired(post, bindScript)
+	needLifecycle := !scriptWired(post, lifecycleScript)
 
 	var pre []any
 	hasPre := false
@@ -276,6 +352,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needSubagent := !scriptWired(subagentStart, subagentScript)
 
+	var stopArr []any
+	hasStop := false
+	if hooksMap != nil {
+		if sv, ok := hooksMap["Stop"]; ok {
+			arr, ok := sv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "Stop" with an unexpected type`)
+			}
+			stopArr = arr
+			hasStop = true
+		}
+	}
+	needStop := !scriptWired(stopArr, stopScript)
+
 	envVal, hasEnv := root["env"]
 	var envMap map[string]any
 	if hasEnv {
@@ -287,7 +377,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needActor {
+	if !needHook && !needBind && !needLifecycle && !needGate && !needRegister && !needSubagent && !needStop && !needActor {
 		return nil, false, nil
 	}
 
@@ -302,6 +392,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		if needBind {
 			fresh = withMatcherEntry(fresh, "PostToolUse", "Bash", bindCommand)
 		}
+		if needLifecycle {
+			fresh = withMatcherEntry(fresh, "PostToolUse", "Bash", lifecycleCommand)
+		}
 		if needRegister {
 			fresh = withEventEntry(fresh, "SessionStart", registerCommand)
 		}
@@ -310,6 +403,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needGate {
 			fresh = withMatcherEntry(fresh, "PreToolUse", gateMatcher, gateCommand)
+		}
+		if needStop {
+			fresh = withEventEntry(fresh, "Stop", stopCommand)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -335,6 +431,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if needBind {
 		expected = withMatcherEntry(expected, "PostToolUse", "Bash", bindCommand)
 	}
+	if needLifecycle {
+		expected = withMatcherEntry(expected, "PostToolUse", "Bash", lifecycleCommand)
+	}
 	if needRegister {
 		expected = withEventEntry(expected, "SessionStart", registerCommand)
 	}
@@ -343,6 +442,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if needGate {
 		expected = withMatcherEntry(expected, "PreToolUse", gateMatcher, gateCommand)
+	}
+	if needStop {
+		expected = withEventEntry(expected, "Stop", stopCommand)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -361,6 +463,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needBind {
 		curHasHooks, curHasPTU := reDetectEvent(cur, "PostToolUse", hasHooks, hasPTU)
 		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry("Bash", bindCommand), curHasHooks, curHasPTU, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needLifecycle {
+		curHasHooks, curHasPTU := reDetectEvent(cur, "PostToolUse", hasHooks, hasPTU)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry("Bash", lifecycleCommand), curHasHooks, curHasPTU, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
@@ -390,6 +501,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needGate {
 		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
 		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(gateMatcher, gateCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needStop {
+		curHasHooks, curHasStop := reDetectEvent(cur, "Stop", hasHooks, hasStop)
+		spliced, spliceOK := spliceEventEntry(cur, "Stop", newEventEntry(stopCommand), curHasHooks, curHasStop, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
