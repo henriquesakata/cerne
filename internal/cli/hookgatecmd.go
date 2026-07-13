@@ -39,16 +39,18 @@ func decodeHookInput(r io.Reader) (hookInput, error) {
 }
 
 func newHookBindWorkCmd() *cobra.Command {
+	var format string
 	cmd := &cobra.Command{
 		Use:    "bind-work",
 		Short:  "PostToolUse plumbing: bind the session to the work/feature it just registered (F-0151)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runHookBindWork(cmd)
+			runHookBindWork(cmd, format)
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "claude", "input contract: claude|codex|cursor|gemini (F-0174)")
 	return cmd
 }
 
@@ -63,9 +65,23 @@ var (
 // `cerne work start` / `cerne feature start`, the minted (or started) id is
 // bound to the session so the work gate recognizes it. Silent no-op on
 // anything else.
-func runHookBindWork(cmd *cobra.Command) {
+func runHookBindWork(cmd *cobra.Command, format string) {
 	in, err := decodeHookInput(cmd.InOrStdin())
-	if err != nil || in.SessionID == "" {
+	if err != nil {
+		return
+	}
+	// Gemini hands session/cwd through env (R-0036), like the gate.
+	if format == "gemini" {
+		if in.SessionID == "" {
+			in.SessionID = os.Getenv("GEMINI_SESSION_ID")
+		}
+		if in.CWD == "" {
+			if in.CWD = os.Getenv("GEMINI_CWD"); in.CWD == "" {
+				in.CWD = os.Getenv("GEMINI_PROJECT_DIR")
+			}
+		}
+	}
+	if in.SessionID == "" {
 		return
 	}
 	var ti struct {
