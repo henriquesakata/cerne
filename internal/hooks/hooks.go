@@ -87,12 +87,81 @@ type Result struct {
 	Note   string
 }
 
-// Install writes the hook script under <projDir>/.claude/hooks/ and merges its
-// PostToolUse/Bash wiring into <projDir>/.claude/settings.json — idempotently and
-// without disturbing existing hooks or other settings. It reports, per asset,
-// whether it was created, updated, or already current. A corrupt settings.json
-// is a fail-closed error: nothing is rewritten.
-func Install(projDir string) ([]Result, error) {
+// Provider identifies an agent harness cerne can install guardrails into
+// (F-0174). Claude Code is the native default; the others receive the
+// equivalents their extension surfaces support, with explicit degradation
+// notes for what they cannot host.
+type Provider string
+
+const (
+	ProviderClaude Provider = "claude"
+	ProviderCursor Provider = "cursor"
+	ProviderCodex  Provider = "codex"
+	ProviderGemini Provider = "gemini"
+)
+
+// providerDir maps a provider to the project directory whose presence
+// auto-detects it at install time.
+var providerDir = map[Provider]string{
+	ProviderCursor: ".cursor",
+	ProviderCodex:  ".codex",
+	ProviderGemini: ".gemini",
+}
+
+// DetectProviders reports the non-Claude providers whose config directory
+// exists under projDir, in stable order.
+func DetectProviders(projDir string) []Provider {
+	var found []Provider
+	for _, p := range []Provider{ProviderCursor, ProviderCodex, ProviderGemini} {
+		if fi, err := os.Stat(filepath.Join(projDir, providerDir[p])); err == nil && fi.IsDir() {
+			found = append(found, p)
+		}
+	}
+	return found
+}
+
+// ErrUnknownProvider is returned for a provider name outside the known set.
+var ErrUnknownProvider = errors.New("unknown provider")
+
+// Install writes each requested provider's hook assets and wiring —
+// idempotently and without disturbing existing files. No providers means
+// Claude Code alone (the historical behavior). It reports, per asset, whether
+// it was created, updated, already current, or deliberately skipped (with the
+// manual step as the note). A corrupt config file is a fail-closed error for
+// Claude Code; other providers degrade to skipped, never clobbering.
+func Install(projDir string, providers ...Provider) ([]Result, error) {
+	if len(providers) == 0 {
+		providers = []Provider{ProviderClaude}
+	}
+	var results []Result
+	for _, p := range providers {
+		var (
+			rs  []Result
+			err error
+		)
+		switch p {
+		case ProviderClaude:
+			rs, err = installClaude(projDir)
+		case ProviderCursor:
+			rs = installCursor(projDir)
+		case ProviderCodex:
+			rs = installCodex(projDir)
+		case ProviderGemini:
+			rs = installGemini(projDir)
+		default:
+			return nil, fmt.Errorf("%w: %q", ErrUnknownProvider, p)
+		}
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, rs...)
+	}
+	return results, nil
+}
+
+// installClaude is the native Claude Code installation: hook scripts under
+// .claude/hooks/, settings.json wiring, and the prepare-commit-msg slot.
+func installClaude(projDir string) ([]Result, error) {
 	var results []Result
 
 	scriptDst := filepath.Join(projDir, ".claude", "hooks", hookScript)
