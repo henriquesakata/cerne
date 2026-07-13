@@ -27,9 +27,10 @@ func newSyncCmd() *cobra.Command {
 // and stops sync before the push (nothing lost), so there is never a state where
 // push says "pull" and pull says "push".
 func runSync(cmd *cobra.Command, dir string) error {
-	// scope "" → default_scope from .cernerc; okf default from config (sync has
-	// no --okf flag, so it is never "Changed"); force false → never discard.
-	if err := runPull(cmd, dir, "", false, false); err != nil {
+	// scope "" → default_scope from .cernerc; okf and sync_skills defaults from
+	// config (sync has none of those flags, so they are never "Changed");
+	// force false → never discard.
+	if err := runPull(cmd, dir, "", false, false, false); err != nil {
 		return err
 	}
 	return runPush(cmd, dir, false)

@@ -23,6 +23,7 @@ type Config struct {
 	Backend        string `toml:"backend"`                   // git URL or local path
 	DefaultScope   string `toml:"default_scope"`             // optional module filter
 	OKF            bool   `toml:"okf,omitempty"`             // emit OKF-compatible frontmatter in .docs/ (cerne pull); flag --okf overrides
+	SyncSkills     bool   `toml:"sync_skills,omitempty"`     // F-0178: cerne pull also reconciles golden-path entities into .claude/skills/learned-*; flag --sync-skills overrides
 	AutocommitLock bool   `toml:"autocommit_lock,omitempty"` // F-0060: cerne commits the project-side docs.lock after a backend mutation (opt-in, default off)
 	PinBranch      string `toml:"pin_branch,omitempty"`      // F-0102: docs.lock is written/committed only on this branch; empty = every branch (pre-0102 behavior)
 	CompileOnPush  bool   `toml:"compile_on_push,omitempty"` // F-0117: a successful push recompiles the dirty wiki pages (callable [llm] mode only; opt-in, default off)
@@ -225,6 +226,7 @@ func SaveConfig(dir string, c Config) error {
 		Backend                  string              `toml:"backend"`
 		DefaultScope             string              `toml:"default_scope"`
 		OKF                      bool                `toml:"okf,omitempty"`
+		SyncSkills               bool                `toml:"sync_skills,omitempty"`
 		AutocommitLock           bool                `toml:"autocommit_lock,omitempty"`
 		PinBranch                string              `toml:"pin_branch,omitempty"`
 		CompileOnPush            bool                `toml:"compile_on_push,omitempty"`
@@ -238,7 +240,7 @@ func SaveConfig(dir string, c Config) error {
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates

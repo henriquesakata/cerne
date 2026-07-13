@@ -16,17 +16,18 @@ import (
 	"gitlab.com/rockt/cerne/internal/index"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/skills"
 )
 
 func newPullCmd() *cobra.Command {
 	var dir, scope string
-	var okf, force bool
+	var okf, force, syncSkills bool
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Materialize the current project state into .docs/",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPull(cmd, dir, scope, okf, force)
+			return runPull(cmd, dir, scope, okf, force, syncSkills)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -34,10 +35,11 @@ func newPullCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scope, "scope", "", "materialize only features of this module")
 	cmd.Flags().BoolVar(&okf, "okf", false, "emit Open Knowledge Format-compatible frontmatter in .docs/")
 	cmd.Flags().BoolVar(&force, "force", false, "discard unpushed local edits in .docs/ (overrides the guard)")
+	cmd.Flags().BoolVar(&syncSkills, "sync-skills", false, "also reconcile golden-path notes/runbooks into .claude/skills/learned-*")
 	return cmd
 }
 
-func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
+func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFlag bool) error {
 	ctx, err := resolvePaths(dir)
 	if err != nil {
 		return err
@@ -49,6 +51,11 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 	okf := ctx.cfg.OKF
 	if cmd.Flags().Changed("okf") {
 		okf = okfFlag
+	}
+	// Same override contract for the skill-sync step (F-0178).
+	syncSkills := ctx.cfg.SyncSkills
+	if cmd.Flags().Changed("sync-skills") {
+		syncSkills = syncSkillsFlag
 	}
 	docsDir := filepath.Join(ctx.projDir, ".docs")
 
@@ -166,9 +173,31 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force bool) error {
 			"No feature in module %q materialized: implemented features don't materialize content (they become history). "+
 				"Use 'cerne show <id>' to read one, or 'cerne errata <id>' to annotate/correct it.\n", scope)
 	}
+	// Skill-sync step (F-0178): the generated skills are a derived convenience —
+	// a failure here warns and never fails a pull that materialized fine.
+	if syncSkills {
+		if err := pullSyncSkills(cmd, ctx); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: skill sync failed (docs pulled fine): %v\n", err)
+		}
+	}
 	if len(conflicts) > 0 {
 		return reportPullConflicts(cmd, conflicts)
 	}
+	return nil
+}
+
+// pullSyncSkills runs the same reconcile as 'cerne skill sync' against the
+// clone the pull just refreshed, printing any change it made.
+func pullSyncSkills(cmd *cobra.Command, ctx projCtx) error {
+	items, err := loadGoldenPaths(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	results, err := skills.SyncLearned(ctx.projDir, items)
+	if err != nil {
+		return err
+	}
+	printSkillResults(cmd.OutOrStdout(), results)
 	return nil
 }
 
