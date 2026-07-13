@@ -234,13 +234,24 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         ]
       }
     ]`
+	// The Stop closeout block (F-0171), appended after PreToolUse.
+	stopBlock := `    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
+          }
+        ]
+      }
+    ]`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
 	// blocks (provenance + work-bind) are inserted before PostToolUse's closing
 	// bracket; the SessionStart, SubagentStart and PreToolUse members are
 	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
 	// existing inline env object. Nothing else moves.
 	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+",\n"+lifecycleBlock+"\n    ]", 1)
-	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+"\n  }\n}", 1)
+	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
@@ -353,6 +364,16 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
+          }
+        ]
+      }
     ]
   },
   "env": {
@@ -450,6 +471,16 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
           }
         ]
       }
@@ -641,6 +672,34 @@ func TestInstall_WiresLifecycleReminder(t *testing.T) {
 	}
 	if !strings.Contains(string(b), lifecycleScript) {
 		t.Fatalf("settings.json missing lifecycle wiring:\n%s", b)
+	}
+	results, err := Install(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Status != StatusUnchanged {
+			t.Errorf("%s: status=%s, want up to date", r.Asset, r.Status)
+		}
+	}
+}
+
+// TestInstall_WiresStopCloseout (F-0171 crit. 6): the Stop closeout script is
+// installed and wired as a Stop event entry, idempotently.
+func TestInstall_WiresStopCloseout(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude", "hooks", stopScript)); err != nil {
+		t.Fatalf("stop script not installed: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), stopScript) || !strings.Contains(string(b), `"Stop"`) {
+		t.Fatalf("settings.json missing Stop wiring:\n%s", b)
 	}
 	results, err := Install(dir)
 	if err != nil {

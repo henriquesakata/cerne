@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-lifecycle-reminder.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-lifecycle-reminder.sh assets/cerne-stop-closeout.sh
 var files embed.FS
 
 const (
@@ -58,6 +58,11 @@ const (
 	lifecycleScript = "cerne-lifecycle-reminder.sh"
 	// lifecycleCommand is the settings.json command that runs lifecycleScript.
 	lifecycleCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-lifecycle-reminder.sh"`
+	// stopScript is the Stop closeout reminder (F-0171): a session ending its
+	// turn with a live W-/F- binding is reminded to close or sync it.
+	stopScript = "cerne-stop-closeout.sh"
+	// stopCommand is the settings.json command that runs stopScript.
+	stopCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh"`
 )
 
 // Status is the outcome of installing one asset.
@@ -104,7 +109,7 @@ func Install(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript, lifecycleScript} {
+	for _, script := range []string{bindScript, gateScript, lifecycleScript, stopScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -283,6 +288,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needSubagent := !scriptWired(subagentStart, subagentScript)
 
+	var stopArr []any
+	hasStop := false
+	if hooksMap != nil {
+		if sv, ok := hooksMap["Stop"]; ok {
+			arr, ok := sv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "Stop" with an unexpected type`)
+			}
+			stopArr = arr
+			hasStop = true
+		}
+	}
+	needStop := !scriptWired(stopArr, stopScript)
+
 	envVal, hasEnv := root["env"]
 	var envMap map[string]any
 	if hasEnv {
@@ -294,7 +313,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needLifecycle && !needGate && !needRegister && !needSubagent && !needActor {
+	if !needHook && !needBind && !needLifecycle && !needGate && !needRegister && !needSubagent && !needStop && !needActor {
 		return nil, false, nil
 	}
 
@@ -320,6 +339,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needGate {
 			fresh = withMatcherEntry(fresh, "PreToolUse", gateMatcher, gateCommand)
+		}
+		if needStop {
+			fresh = withEventEntry(fresh, "Stop", stopCommand)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -356,6 +378,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if needGate {
 		expected = withMatcherEntry(expected, "PreToolUse", gateMatcher, gateCommand)
+	}
+	if needStop {
+		expected = withEventEntry(expected, "Stop", stopCommand)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -412,6 +437,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needGate {
 		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
 		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(gateMatcher, gateCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needStop {
+		curHasHooks, curHasStop := reDetectEvent(cur, "Stop", hasHooks, hasStop)
+		spliced, spliceOK := spliceEventEntry(cur, "Stop", newEventEntry(stopCommand), curHasHooks, curHasStop, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
