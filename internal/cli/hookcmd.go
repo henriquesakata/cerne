@@ -21,6 +21,7 @@ func newHookCmd() *cobra.Command {
 	cmd.AddCommand(newHookLifecycleReminderCmd())
 	cmd.AddCommand(newHookStopCheckCmd())
 	cmd.AddCommand(newHookProvenanceCmd())
+	cmd.AddCommand(newHookCommitTrailerCmd())
 	return cmd
 }
 
