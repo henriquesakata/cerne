@@ -43,23 +43,25 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(transitionSpecs))
 	for _, ts := range transitionSpecs {
 		var by, reason string
+		var force bool
 		cmd := &cobra.Command{
 			Use:     ts.use + " <id>",
 			Short:   ts.short,
 			Example: ts.example,
 			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runTransition(cmd, *dir, ts.action, args[0], by, reason)
+				return runTransition(cmd, *dir, ts.action, args[0], by, reason, force)
 			},
 		}
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
+		cmd.Flags().BoolVar(&force, "force", false, "approve even with open [ESCLARECER] clarifications in the spec (approve only)")
 		cmds = append(cmds, cmd)
 	}
 	return cmds
 }
 
-func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason string) error {
+func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason string, force bool) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
 	if err := app.ValidateTransitionFlags(action, by, reason); err != nil {
@@ -76,6 +78,15 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if action == domain.ActionApprove {
 		if err := app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()); err != nil {
 			return err
+		}
+		// Open [ESCLARECER] markers mean the spec still has questions for the
+		// human — the template's "none remaining before approve" rule as a gate,
+		// not prose (F-0175 crit. 7). Same CLI-side placement as the human gate:
+		// the UI path renders the markers as chips the human answers directly.
+		if !force {
+			if err := app.CheckOpenClarifications(ctx.repoDir, id); err != nil {
+				return err
+			}
 		}
 	}
 	if action == domain.ActionRevert {

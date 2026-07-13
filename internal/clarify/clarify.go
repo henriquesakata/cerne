@@ -33,15 +33,34 @@ type Clarification struct {
 // a closing bracket, which also keeps prefix words ([ESCLARECEDOR]) out.
 var markerRe = regexp.MustCompile(`\[«?(ESCLARECER|ESCLARECIDO)»?(?::[ \t]*([^\]\n]*))?\]`)
 
+// commentRe matches HTML comments, where the doc templates cite the marker as
+// authoring guidance ("Marque qualquer incerteza com [ESCLARECER: …]"). An
+// unclosed comment runs to the end of the content, like in HTML.
+var commentRe = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
+
 // Parse returns every marker in content, in document order, with exact
 // offsets so callers can rewrite one occurrence without touching duplicates.
+// Markers inside HTML comments are template guidance, not authored
+// clarifications, and are skipped.
 func Parse(content string) []Clarification {
 	matches := markerRe.FindAllStringSubmatchIndex(content, -1)
 	if matches == nil {
 		return nil
 	}
+	comments := commentRe.FindAllStringIndex(content, -1)
+	inComment := func(off int) bool {
+		for _, c := range comments {
+			if off >= c[0] && off < c[1] {
+				return true
+			}
+		}
+		return false
+	}
 	out := make([]Clarification, 0, len(matches))
 	for _, m := range matches {
+		if inComment(m[0]) {
+			continue
+		}
 		c := Clarification{Offset: m[0], Raw: content[m[0]:m[1]]}
 		word := content[m[2]:m[3]]
 		body := ""

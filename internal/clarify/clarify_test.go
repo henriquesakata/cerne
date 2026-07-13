@@ -114,6 +114,23 @@ func TestParse(t *testing.T) {
 				{Options: []string{"a", "b"}, Raw: "[ESCLARECER: | a | b]", Offset: 0},
 			},
 		},
+		{
+			name:    "marker inside html comment is template guidance, not authored",
+			content: "<!-- Marque incerteza com [ESCLARECER: pergunta específica] e siga. -->\nprosa",
+			want:    nil,
+		},
+		{
+			name:    "marker after a comment keeps its exact offset",
+			content: "<!-- guia [ESCLARECER] -->\n[ESCLARECER: real?]",
+			want: []Clarification{
+				{Question: "real?", Raw: "[ESCLARECER: real?]", Offset: 27},
+			},
+		},
+		{
+			name:    "unclosed comment swallows to eof",
+			content: "texto <!-- aberto [ESCLARECER: sumiu?]",
+			want:    nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
