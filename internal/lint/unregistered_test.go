@@ -164,3 +164,36 @@ func TestUnregisteredSourceFindings_ignored(t *testing.T) {
 		t.Fatalf("C4: real external URL should be flagged, got %+v", got)
 	}
 }
+
+// TestOrphanSourceURLs (F-0172 crit. 4): the exported detector shares the lint
+// rule's exact semantics — URL-backed and Informs-backed docs are clean,
+// internal hosts and configured ignores are skipped, everything else is an
+// orphan.
+func TestOrphanSourceURLs(t *testing.T) {
+	refs := []store.Reference{
+		{ID: "R-0001", State: domain.ReferenceCurrent, URL: "https://example.com/kept/"},
+		{ID: "R-0002", State: domain.ReferenceCurrent, URL: "https://other.io/x", Informs: []string{"F-0009"}},
+		{ID: "R-0003", State: domain.ReferenceObsolete, URL: "https://obsolete.io/y"},
+	}
+	text := "veja https://example.com/kept e https://naoreg.example.org/artigo, " +
+		"http://gitea.local/x, https://gitlab.com/rockt/hub/-/blob/main/a.md " +
+		"e https://obsolete.io/y"
+
+	got := OrphanSourceURLs("F-0001", text, refs, []string{"gitlab.com/rockt/hub"})
+	if len(got) != 2 {
+		t.Fatalf("orphans = %v, want [naoreg…, obsolete…]", got)
+	}
+	if got[0] != "https://naoreg.example.org/artigo" || got[1] != "https://obsolete.io/y" {
+		t.Fatalf("orphans = %v", got)
+	}
+
+	// Informs backlink covers the whole doc: no orphans for F-0009.
+	if got := OrphanSourceURLs("F-0009", text, refs, nil); got != nil {
+		t.Fatalf("informs-backed doc should have no orphans, got %v", got)
+	}
+
+	// No URLs at all -> nil.
+	if got := OrphanSourceURLs("F-0001", "sem urls aqui", refs, nil); got != nil {
+		t.Fatalf("want nil, got %v", got)
+	}
+}
