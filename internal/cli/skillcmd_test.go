@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func TestSkillInstall(t *testing.T) {
@@ -27,5 +30,107 @@ func TestSkillInstall(t *testing.T) {
 	}
 	if !strings.Contains(out, "cerne-authoring: up to date") {
 		t.Fatalf("rerun output missing 'up to date':\n%s", out)
+	}
+}
+
+// syncNoteBody writes a real body for a note straight into the cached backend
+// clone (the sync reads the clone as-is; no push cycle needed in the test).
+func syncNoteBody(t *testing.T, repoDir, id, body string) {
+	t.Helper()
+	dst := filepath.Join(repoDir, "content", "notes", id+".md")
+	if err := os.WriteFile(dst, []byte("---\ncerne_id: "+id+"\n---\n\n"+body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSkillSyncMaterializesGoldenPaths(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+
+	if out, err := execCerne(t, "note", "new", "Deploy gotcha", "--component", "deploy,golden-path", "--dir", projDir); err != nil {
+		t.Fatalf("note new marked: %v\noutput: %s", err, out)
+	}
+	syncNoteBody(t, repoDir, "N-0001", "# Deploy gotcha\n\nRoute that worked.\n")
+	if out, err := execCerne(t, "note", "new", "Unmarked note", "--dir", projDir); err != nil {
+		t.Fatalf("note new unmarked: %v\noutput: %s", err, out)
+	}
+
+	out, err := execCerne(t, "skill", "sync", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("skill sync: %v\noutput: %s", err, out)
+	}
+	noteSkill := filepath.Join(projDir, ".claude", "skills", "learned-n-0001-deploy-gotcha", "SKILL.md")
+	if _, err := os.Stat(noteSkill); err != nil {
+		t.Errorf("generated skill missing: %v", err)
+	}
+	if !strings.Contains(out, "learned-n-0001-deploy-gotcha: created") {
+		t.Fatalf("sync output missing created line:\n%s", out)
+	}
+	got, err := os.ReadFile(noteSkill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "cerne_id:") {
+		t.Fatalf("generated skill leaked entity frontmatter:\n%s", got)
+	}
+	// Only the 1 generated skill beyond the canonical ones init installed.
+	entries, _ := os.ReadDir(filepath.Join(projDir, ".claude", "skills"))
+	var learned []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "learned-") {
+			learned = append(learned, e.Name())
+		}
+	}
+	if len(learned) != 1 {
+		t.Fatalf("learned skills = %v, want exactly 1", learned)
+	}
+
+	// Unmark the note → next sync removes its generated skill.
+	if out, err := execCerne(t, "note", "retag", "N-0001", "--component", "deploy", "--dir", projDir); err != nil {
+		t.Fatalf("note retag: %v\noutput: %s", err, out)
+	}
+	out, err = execCerne(t, "skill", "sync", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("second sync: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "learned-n-0001-deploy-gotcha: removed") {
+		t.Fatalf("second sync output missing removed line:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Dir(noteSkill)); !os.IsNotExist(err) {
+		t.Fatalf("unmarked note's skill still present")
+	}
+}
+
+// loadGoldenPaths must include active golden-path runbooks too; pinned at the
+// store-reading layer because the CLI flow can't tag a runbook yet (no
+// 'runbook retag'), and direct writes into the cached clone don't survive the
+// next cerne operation.
+func TestLoadGoldenPathsIncludesRunbooks(t *testing.T) {
+	repoDir := t.TempDir()
+	rb := store.Runbook{ID: "RB-0001", Title: "Migration dance", State: domain.RunbookActive, Components: []string{"golden-path"}}
+	if err := store.SaveRunbook(repoDir, rb); err != nil {
+		t.Fatal(err)
+	}
+	other := store.Runbook{ID: "RB-0002", Title: "Unmarked", State: domain.RunbookActive}
+	if err := store.SaveRunbook(repoDir, other); err != nil {
+		t.Fatal(err)
+	}
+	docDir := filepath.Join(repoDir, "content", "runbooks")
+	if err := os.MkdirAll(docDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\ncerne_id: RB-0001\n---\n\n# Migration dance\n\n1. in order.\n"
+	if err := os.WriteFile(filepath.Join(docDir, "RB-0001.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := loadGoldenPaths(repoDir)
+	if err != nil {
+		t.Fatalf("loadGoldenPaths: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "RB-0001" {
+		t.Fatalf("items = %+v, want only RB-0001", items)
+	}
+	if strings.Contains(items[0].Body, "cerne_id:") {
+		t.Fatalf("body kept entity frontmatter: %q", items[0].Body)
 	}
 }
