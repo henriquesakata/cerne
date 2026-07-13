@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -38,16 +39,18 @@ func decodeHookInput(r io.Reader) (hookInput, error) {
 }
 
 func newHookBindWorkCmd() *cobra.Command {
+	var format string
 	cmd := &cobra.Command{
 		Use:    "bind-work",
 		Short:  "PostToolUse plumbing: bind the session to the work/feature it just registered (F-0151)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runHookBindWork(cmd)
+			runHookBindWork(cmd, format)
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "claude", "input contract: claude|codex|cursor|gemini (F-0174)")
 	return cmd
 }
 
@@ -62,9 +65,23 @@ var (
 // `cerne work start` / `cerne feature start`, the minted (or started) id is
 // bound to the session so the work gate recognizes it. Silent no-op on
 // anything else.
-func runHookBindWork(cmd *cobra.Command) {
+func runHookBindWork(cmd *cobra.Command, format string) {
 	in, err := decodeHookInput(cmd.InOrStdin())
-	if err != nil || in.SessionID == "" {
+	if err != nil {
+		return
+	}
+	// Gemini hands session/cwd through env (R-0036), like the gate.
+	if format == "gemini" {
+		if in.SessionID == "" {
+			in.SessionID = os.Getenv("GEMINI_SESSION_ID")
+		}
+		if in.CWD == "" {
+			if in.CWD = os.Getenv("GEMINI_CWD"); in.CWD == "" {
+				in.CWD = os.Getenv("GEMINI_PROJECT_DIR")
+			}
+		}
+	}
+	if in.SessionID == "" {
 		return
 	}
 	var ti struct {
@@ -101,20 +118,23 @@ func runHookBindWork(cmd *cobra.Command) {
 }
 
 func newHookWorkGateCmd() *cobra.Command {
+	var format string
 	cmd := &cobra.Command{
 		Use:    "work-gate",
 		Short:  "PreToolUse plumbing: deny Edit/Write in a session with no live registration (F-0151)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runHookWorkGate(cmd)
+			runHookWorkGate(cmd, format)
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "claude", "deny envelope: claude|codex|cursor|gemini (F-0174)")
 	return cmd
 }
 
-// gateDeny is the PreToolUse decision envelope Claude Code expects.
+// gateDeny is the PreToolUse decision envelope Claude Code expects — and,
+// documented identical, Codex (R-0035).
 type gateDeny struct {
 	HookSpecificOutput struct {
 		HookEventName            string `json:"hookEventName"`
@@ -123,13 +143,37 @@ type gateDeny struct {
 	} `json:"hookSpecificOutput"`
 }
 
+// cursorGateDeny is Cursor's native preToolUse permission envelope (R-0037).
+type cursorGateDeny struct {
+	Permission   string `json:"permission"`
+	AgentMessage string `json:"agent_message"`
+}
+
+// geminiGateDeny is Gemini's BeforeTool decision envelope (R-0036).
+type geminiGateDeny struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
+}
+
 // runHookWorkGate evaluates one Edit/Write call. Every early return is an
 // allow (no output); only a project file in an unbound session prints the
-// deny decision.
-func runHookWorkGate(cmd *cobra.Command) {
+// deny decision, in the envelope of the requested provider format.
+func runHookWorkGate(cmd *cobra.Command, format string) {
 	in, err := decodeHookInput(cmd.InOrStdin())
 	if err != nil {
 		return
+	}
+	// Gemini's hook runtime hands session/cwd through env, not the payload
+	// (R-0036: GEMINI_SESSION_ID, GEMINI_CWD/GEMINI_PROJECT_DIR).
+	if format == "gemini" {
+		if in.SessionID == "" {
+			in.SessionID = os.Getenv("GEMINI_SESSION_ID")
+		}
+		if in.CWD == "" {
+			if in.CWD = os.Getenv("GEMINI_CWD"); in.CWD == "" {
+				in.CWD = os.Getenv("GEMINI_PROJECT_DIR")
+			}
+		}
 	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)
 	if err != nil || !cfg.Gates.WorkGateEnabled() {
@@ -156,12 +200,21 @@ func runHookWorkGate(cmd *cobra.Command) {
 	if hint := cfg.Gates.WorkGateHint; hint != "" {
 		reason += " — " + hint
 	}
-	var d gateDeny
-	d.HookSpecificOutput.HookEventName = "PreToolUse"
-	d.HookSpecificOutput.PermissionDecision = "deny"
-	d.HookSpecificOutput.PermissionDecisionReason = reason
 	enc := json.NewEncoder(cmd.OutOrStdout())
-	if err := enc.Encode(d); err != nil {
+	var payload any
+	switch format {
+	case "cursor":
+		payload = cursorGateDeny{Permission: "deny", AgentMessage: reason}
+	case "gemini":
+		payload = geminiGateDeny{Decision: "deny", Reason: reason}
+	default: // claude and codex share the envelope (R-0035)
+		var d gateDeny
+		d.HookSpecificOutput.HookEventName = "PreToolUse"
+		d.HookSpecificOutput.PermissionDecision = "deny"
+		d.HookSpecificOutput.PermissionDecisionReason = reason
+		payload = d
+	}
+	if err := enc.Encode(payload); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), err)
 	}
 }
