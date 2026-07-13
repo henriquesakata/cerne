@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
+import { countOpen, resolveMarker } from './clarify'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
 import Tag from './Tag'
@@ -330,15 +331,23 @@ export default function FeaturePage({ id }: { id: string }) {
         <div className="feature-body">
           <section className="docs">
             <nav className="tabs">
-              {(['spec', 'plan', 'result'] as DocTab[]).map((d) => (
-                <button
-                  key={d}
-                  className={d === tab ? 'tab active' : 'tab'}
-                  onClick={() => setTab(d)}
-                >
-                  {t.feature.tabs[d]}
-                </button>
-              ))}
+              {(['spec', 'plan', 'result'] as DocTab[]).map((d) => {
+                const open = countOpen(detail.docs[d])
+                return (
+                  <button
+                    key={d}
+                    className={d === tab ? 'tab active' : 'tab'}
+                    onClick={() => setTab(d)}
+                  >
+                    {t.feature.tabs[d]}
+                    {open > 0 && (
+                      <span className="clarify-count" title={t.clarify.openCount(open)}>
+                        {open}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </nav>
             <DocEditor
               featureId={f.id}
@@ -376,6 +385,8 @@ export default function FeaturePage({ id }: { id: string }) {
 // DocEditor mostra um doc de ciclo de vida (spec/plan/result) e permite
 // editá-lo inline: "Editar" troca para um textarea; "Salvar" grava via
 // saveFeatureDoc (o servidor commita+empurra) e recarrega a feature.
+// Marcadores [ESCLARECER] do doc viram chips respondíveis (F-0175): a
+// resposta reescreve só aquele marcador e salva pelo mesmo caminho.
 function DocEditor({
   featureId,
   doc,
@@ -441,6 +452,28 @@ function DocEditor({
     )
   }
 
+  // Resposta de um chip [ESCLARECER]: reescreve só o marcador ancorado no
+  // offset e salva o doc inteiro pelo caminho existente. resolveMarker
+  // devolve null quando o conteúdo mudou sob os pés — recarrega em vez de
+  // salvar por cima.
+  const answerClarification = (raw: string, offset: number, answer: string) => {
+    const next = resolveMarker(content, raw, offset, answer)
+    if (next === null) {
+      onSaved()
+      return
+    }
+    setSaving(true)
+    setError(null)
+    void saveFeatureDoc(featureId, doc, next).then((res) => {
+      setSaving(false)
+      if (res.ok) {
+        onSaved()
+      } else {
+        setError(res.error)
+      }
+    })
+  }
+
   return (
     <div className="doc-view">
       <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
@@ -451,9 +484,10 @@ function DocEditor({
           {t.feature.updatedAgo(formatUpdatedAt(updatedAt, lang))}
         </p>
       )}
+      {error && <p className="form-error">{error}</p>}
       {hasRealContent ? (
         <article className="doc">
-          <Markdown>{content}</Markdown>
+          <Markdown onAnswer={saving ? undefined : answerClarification}>{content}</Markdown>
         </article>
       ) : (
         // Stub: só scaffold (títulos + comentários-guia do template) ou vazio.
