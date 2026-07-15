@@ -25,6 +25,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
 	cmd.AddCommand(newFeatureRenameCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
+	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
 	cmd.AddCommand(newErrataCmd(&dir))
 	return cmd

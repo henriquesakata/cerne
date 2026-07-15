@@ -195,6 +195,12 @@ func (r showResult) renderText(w io.Writer) {
 		if e.Parent != "" {
 			fmt.Fprintf(w, "epic: %s\n", e.Parent)
 		}
+		if e.DeliveryCommitURL != "" {
+			fmt.Fprintf(w, "delivery commit: %s\n", e.DeliveryCommitURL)
+		}
+		if e.DeliveryMRURL != "" {
+			fmt.Fprintf(w, "delivery mr: %s\n", e.DeliveryMRURL)
+		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 	case store.Decision:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)

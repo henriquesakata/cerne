@@ -42,7 +42,7 @@ var transitionSpecs = []transitionSpec{
 func newTransitionCmds(dir *string) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(transitionSpecs))
 	for _, ts := range transitionSpecs {
-		var by, reason string
+		var by, reason, commit, mr string
 		var force bool
 		cmd := &cobra.Command{
 			Use:     ts.use + " <id>",
@@ -50,26 +50,41 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 			Example: ts.example,
 			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runTransition(cmd, *dir, ts.action, args[0], by, reason, force)
+				return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force)
 			},
 		}
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
+		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
+		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL (complete only)")
 		cmd.Flags().BoolVar(&force, "force", false, "approve even with open [ESCLARECER] clarifications in the spec (approve only)")
 		cmds = append(cmds, cmd)
 	}
 	return cmds
 }
 
-func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason string, force bool) error {
+func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason, commit, mr string, force bool) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
 	if err := app.ValidateTransitionFlags(action, by, reason); err != nil {
 		return err
 	}
+	if (commit != "" || mr != "") && action != domain.ActionComplete {
+		return fmt.Errorf("--commit/--mr are only allowed for complete, not %s", action)
+	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
+	}
+	// Delivery links (F-0179): resolved and validated before the transition so
+	// a bad link never leaves a half-applied complete.
+	var delivery *app.Delivery
+	if commit != "" || mr != "" {
+		d, err := app.ResolveDelivery(ctx.cfg, commit, mr)
+		if err != nil {
+			return err
+		}
+		delivery = &d
 	}
 	// Approve is the start-of-flow human gate (F-0131 crit. 9): checked here,
 	// in the CLI, rather than inside app.TransitionFeature — the server/UI path
@@ -94,7 +109,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			return err
 		}
 	}
-	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, action, by, reason, nil)
+	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, action, by, reason, delivery)
 	if err != nil {
 		return err
 	}
