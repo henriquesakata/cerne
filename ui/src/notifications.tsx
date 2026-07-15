@@ -179,7 +179,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (fresh.length === 0) return
     const prefs = prefsRef.current
     if (!prefs.enabled || !prefs.native || prefs.nativePermission !== 'granted') return
-    if (requireHidden && !document.hidden) return
+    // "Usuário não está olhando" ≠ document.hidden: no Chrome/macOS, hidden só
+    // vira true com a janela 100% coberta ou minimizada (occlusion) — outro app
+    // na frente com a janela parcialmente visível mantém hidden=false. O foco
+    // da janela cobre esse caso: suprime só com aba visível E janela focada.
+    if (requireHidden && !document.hidden && document.hasFocus()) return
     if (typeof Notification === 'undefined') return
     const tt = tRef.current
     const name = projectsRef.current.find((p) => p.pid === pid)?.name ?? pid
