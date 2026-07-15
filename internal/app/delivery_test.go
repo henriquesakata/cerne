@@ -4,7 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func deliveryCfg(template string) project.Config {
@@ -67,6 +69,60 @@ func TestResolveDeliveryInvalidInputFails(t *testing.T) {
 				t.Fatalf("want ErrDeliveryInvalid, got %v", err)
 			}
 		})
+	}
+}
+
+// TestSetFeatureDeliveryOnImplemented (F-0179 crit. 7): the post-hoc update
+// lands the links on a feature already implemented (the real SHA only exists
+// after the squash-merge), appends feature.delivered and leaves state alone.
+func TestSetFeatureDeliveryOnImplemented(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented)
+
+	d := Delivery{
+		CommitURL: "https://gitlab.example/repo/-/commit/def5678",
+		MRURL:     "https://gitlab.example/repo/-/merge_requests/9",
+	}
+	if err := SetFeatureDelivery(repoDir, projDir, "F-0001", d); err != nil {
+		t.Fatalf("SetFeatureDelivery: %v", err)
+	}
+	got, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if got.State != domain.StateImplemented {
+		t.Fatalf("state changed to %s, want implemented untouched", got.State)
+	}
+	if got.DeliveryCommitURL != d.CommitURL || got.DeliveryMRURL != d.MRURL {
+		t.Fatalf("delivery = %q / %q, want %q / %q", got.DeliveryCommitURL, got.DeliveryMRURL, d.CommitURL, d.MRURL)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := evs[len(evs)-1]
+	if last.Type != "feature.delivered" || last.EntityID != "F-0001" ||
+		last.Payload["commit_url"] != d.CommitURL || last.Payload["mr_url"] != d.MRURL {
+		t.Fatalf("last event = %+v, want feature.delivered with urls", last)
+	}
+}
+
+// TestSetFeatureDeliveryOnTerminalFails (crit. 8): closed history
+// (rejected/superseded) gets no delivery; empty input is refused too.
+func TestSetFeatureDeliveryOnTerminalFails(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateRejected)
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateSuperseded)
+
+	d := Delivery{MRURL: "https://gitlab.example/repo/-/merge_requests/9"}
+	for _, id := range []string{"F-0001", "F-0002"} {
+		if err := SetFeatureDelivery(repoDir, projDir, id, d); !errors.Is(err, ErrDeliveryState) {
+			t.Fatalf("%s: want ErrDeliveryState, got %v", id, err)
+		}
+	}
+	seedFeatureInState(t, repoDir, "F-0003", domain.StateImplemented)
+	if err := SetFeatureDelivery(repoDir, projDir, "F-0003", Delivery{}); !errors.Is(err, ErrDeliveryInvalid) {
+		t.Fatalf("empty delivery: want ErrDeliveryInvalid, got %v", err)
 	}
 }
 
