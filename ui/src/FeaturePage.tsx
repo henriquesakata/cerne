@@ -187,6 +187,30 @@ async function convertMermaidToScene(
   }
 }
 
+// DeliveryLinks (F-0179): clickable commit/MR links of the delivery, shown in
+// the feature header; hidden when the feature carries none. Exported for the
+// component test.
+export function DeliveryLinks({ feature }: { feature: Feature }) {
+  const { t } = useT()
+  if (!feature.delivery_commit_url && !feature.delivery_mr_url) return null
+  return (
+    <p className="feature-note feature-delivery">
+      {t.feature.deliveryLabel}{' '}
+      {feature.delivery_commit_url && (
+        <a href={feature.delivery_commit_url} target="_blank" rel="noreferrer">
+          commit
+        </a>
+      )}
+      {feature.delivery_commit_url && feature.delivery_mr_url && ' · '}
+      {feature.delivery_mr_url && (
+        <a href={feature.delivery_mr_url} target="_blank" rel="noreferrer">
+          MR
+        </a>
+      )}
+    </p>
+  )
+}
+
 export default function FeaturePage({ id }: { id: string }) {
   const [detail, setDetail] = useState<FeatureDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -278,6 +302,7 @@ export default function FeaturePage({ id }: { id: string }) {
         {f.superseded_by && (
           <p className="feature-note">{t.feature.supersededBy(f.superseded_by)}</p>
         )}
+        <DeliveryLinks feature={f} />
         {f.reason && <p className="feature-note">{t.common.reasonLabel} {f.reason}</p>}
         {detail.informed_by.length > 0 && (
           <p className="feature-note">
