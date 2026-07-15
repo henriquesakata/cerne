@@ -74,25 +74,39 @@ func runLockMerge(dir, oursPath, theirsPath string) error {
 }
 
 // descendantSnapshot returns whichever of the two snapshots is the more
-// advanced (descendant) backend commit, fetching the cache clone first so both
-// are present locally. Neither being an ancestor of the other is a real
-// divergence and yields an error.
+// advanced (descendant) backend commit. Resolution is local-first (F-0180):
+// the cache clone usually already holds both pins, so the common merge needs
+// no network — the fetch (and its SSH dependency, absent in GUI-spawned
+// environments) only runs when a snapshot is missing locally. Neither being
+// an ancestor of the other is a real divergence and yields an error.
 func descendantSnapshot(dir, ours, theirs string) (string, error) {
 	ctx, err := resolvePaths(dir)
 	if err != nil {
 		return "", fmt.Errorf("docs.lock merge: %w", err)
 	}
-	if err := gitback.Fetch(ctx.repoDir); err != nil {
-		return "", fmt.Errorf("docs.lock merge: fetch backend: %w", err)
+	winner, err := resolveDescendant(ctx.repoDir, ours, theirs)
+	if err == nil || !gitback.IsUnknownCommit(err) {
+		return winner, err
 	}
-	oursIsAncestor, err := gitback.IsAncestor(ctx.repoDir, ours, theirs)
+	// A snapshot is missing locally (e.g. a pin pushed from another machine):
+	// fetch once and retry.
+	if ferr := gitback.Fetch(ctx.repoDir); ferr != nil {
+		return "", fmt.Errorf("docs.lock merge: fetch backend: %w", ferr)
+	}
+	return resolveDescendant(ctx.repoDir, ours, theirs)
+}
+
+// resolveDescendant compares the two snapshots against the local cache clone
+// only — the caller decides whether an unknown commit warrants a fetch.
+func resolveDescendant(repoDir, ours, theirs string) (string, error) {
+	oursIsAncestor, err := gitback.IsAncestor(repoDir, ours, theirs)
 	if err != nil {
 		return "", fmt.Errorf("docs.lock merge: %w", err)
 	}
 	if oursIsAncestor {
 		return theirs, nil
 	}
-	theirsIsAncestor, err := gitback.IsAncestor(ctx.repoDir, theirs, ours)
+	theirsIsAncestor, err := gitback.IsAncestor(repoDir, theirs, ours)
 	if err != nil {
 		return "", fmt.Errorf("docs.lock merge: %w", err)
 	}
