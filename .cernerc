@@ -3,6 +3,9 @@ backend = "git@gitlab.com:rockt/cerne-docs.git"
 default_scope = ""
 autocommit_lock = true
 pin_branch = "main"
+# F-0180: publica o pin na main logo após o commit adiado (só quando apenas
+# commits de pin estão à frente de origin) — pulls na main voltam a ser ff.
+push_pin = true
 # F-0178: pull também reconcilia golden paths (notes/runbooks marcados) em
 # .claude/skills/learned-* — quem puxa docs já recebe as skills aprendidas.
 sync_skills = true

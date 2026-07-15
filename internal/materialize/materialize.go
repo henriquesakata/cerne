@@ -127,6 +127,19 @@ type featureRow struct {
 	ID, State, Parent, Module, Title, Docs string
 }
 
+// deliveryLinks renders a feature's delivery URLs (F-0179) as clickable
+// markdown, " · "-joined; empty when the feature carries none.
+func deliveryLinks(f store.Feature) string {
+	var parts []string
+	if f.DeliveryCommitURL != "" {
+		parts = append(parts, fmt.Sprintf("[commit](%s)", f.DeliveryCommitURL))
+	}
+	if f.DeliveryMRURL != "" {
+		parts = append(parts, fmt.Sprintf("[MR](%s)", f.DeliveryMRURL))
+	}
+	return strings.Join(parts, " · ")
+}
+
 // epicSection is one epic in the CONTEXT.md "Epics" breakdown: the parent
 // feature with its live children and implemented/total progress.
 type epicSection struct {
@@ -216,6 +229,14 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 					return nil, err
 				}
 				row.Docs = docs
+			}
+			// Delivery links (F-0179) share the Docs cell: an extra column would
+			// widen every row for a mostly-empty field.
+			if links := deliveryLinks(f); links != "" {
+				if row.Docs != "" {
+					row.Docs += " · "
+				}
+				row.Docs += links
 			}
 			data.Features = append(data.Features, row)
 			shown = append(shown, f)

@@ -31,8 +31,13 @@ type Feature struct {
 	Reason       string              `json:"reason,omitempty"`
 	Facets       []string            `json:"facets,omitempty"`     // closed-set axis (D-0002/D-0003): infra/code/data/process/auth
 	Components   []string            `json:"components,omitempty"` // curated subsystem/tool axis (D-0002/D-0003): gitback, materialize, …
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
+	// Delivery links (F-0179): the resolved URLs of the commit/MR that delivered
+	// this feature — output traceability, distinct from Reference's input
+	// provenance. Always stored as full URLs (a bare SHA is resolved at capture).
+	DeliveryCommitURL string    `json:"delivery_commit_url,omitempty"`
+	DeliveryMRURL     string    `json:"delivery_mr_url,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // Decision is the persisted form of a decision entity.

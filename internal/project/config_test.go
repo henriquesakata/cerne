@@ -57,6 +57,40 @@ func TestConfigCompileOnPushRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigDeliveryRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{ProjectID: "cerne", Backend: "/tmp/backend",
+		Delivery: DeliveryConfig{CommitURL: "https://gitlab.example/repo/-/commit/{sha}"}}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Delivery.CommitURL != want.Delivery.CommitURL {
+		t.Fatalf("Delivery.CommitURL: got %q, want %q", got.Delivery.CommitURL, want.Delivery.CommitURL)
+	}
+	// Absent block ⇒ zero value, and the saved TOML carries no empty [delivery] table.
+	if err := SaveConfig(dir, Config{ProjectID: "x", Backend: "/b"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	got, _, err = LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if got.Delivery != (DeliveryConfig{}) {
+		t.Fatalf("Delivery must default to zero, got %+v", got.Delivery)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".cernerc"))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(data), "[delivery]") {
+		t.Fatalf("zero Delivery must not emit a [delivery] table:\n%s", data)
+	}
+}
+
 func TestConfigModulePathsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Config{
@@ -256,6 +290,41 @@ func TestConfigAutocommitLockRoundTrip(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "autocommit_lock") {
 		t.Fatalf("autocommit_lock=false should be omitted:\n%s", raw)
+	}
+}
+
+// TestConfigPushPinRoundTrip pins the .cernerc `push_pin` key (F-0180):
+// persists and reloads when true, omitted (omitempty) when false.
+func TestConfigPushPinRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x", PushPin: true}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), "push_pin = true") {
+		t.Fatalf(".cernerc missing push_pin key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.PushPin {
+		t.Fatalf("loaded PushPin = false, want true")
+	}
+
+	// omitempty: a false PushPin is not written to .cernerc.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig off: %v", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(raw), "push_pin") {
+		t.Fatalf("push_pin=false should be omitted:\n%s", raw)
 	}
 }
 

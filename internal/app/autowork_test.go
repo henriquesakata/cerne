@@ -40,7 +40,7 @@ func TestAutoWorkOpensOnStart(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
 
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	ws := loadWorks(t, repoDir)
@@ -79,7 +79,7 @@ func TestAutoWorkSkipsWhenActorAlreadyOnIt(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
 	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", false)
 
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	if ws := loadWorks(t, repoDir); len(ws) != 1 {
@@ -94,7 +94,7 @@ func TestAutoWorkClosedOnComplete(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
 	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", true)
 
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	ws := loadWorks(t, repoDir)
@@ -121,7 +121,7 @@ func TestAutoWorkAbandonedOnSupersede(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0002", domain.StateCandidate, "spec.md")
 	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", true)
 
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionSupersede, "F-0002", "substituída"); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionSupersede, "F-0002", "substituída", nil); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
 	ws := loadWorks(t, repoDir)
@@ -137,7 +137,7 @@ func TestAutoWorkLeavesManualOpen(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
 	seedActiveWork(t, repoDir, "W-0001", "outro@host", "F-0001", false)
 
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	ws := loadWorks(t, repoDir)
@@ -156,7 +156,7 @@ func TestAutoWorkOptOut(t *testing.T) {
 	}
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
 
-	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "")
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}

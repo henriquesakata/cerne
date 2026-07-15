@@ -1006,7 +1006,7 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	out, err := app.TransitionFeatureOp(telemetry.OpFromContext(r.Context()), repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason)
+	out, err := app.TransitionFeatureOp(telemetry.OpFromContext(r.Context()), repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason, nil)
 	if err != nil {
 		// Domain, gate and validation failures surface as 422 with the
 		// same message the CLI prints.

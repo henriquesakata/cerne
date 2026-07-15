@@ -25,7 +25,7 @@ func seedApproved(t *testing.T, repoDir, projDir, title, parent string) store.Fe
 	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "spec", realDoc(f.ID)); err != nil {
 		t.Fatalf("save spec %s: %v", f.ID, err)
 	}
-	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
 		t.Fatalf("approve %s: %v", f.ID, err)
 	}
 	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "plan", realDoc(f.ID)); err != nil {
@@ -47,7 +47,7 @@ func reload(t *testing.T, repoDir, id string) store.Feature {
 
 func mustStart(t *testing.T, repoDir, projDir, id string) TransitionOutcome {
 	t.Helper()
-	out, err := TransitionFeature(repoDir, projDir, id, domain.ActionStart, "", "")
+	out, err := TransitionFeature(repoDir, projDir, id, domain.ActionStart, "", "", nil)
 	if err != nil {
 		t.Fatalf("start %s: %v", id, err)
 	}
@@ -110,7 +110,7 @@ func TestPropagateSkipsParentWithoutPlan(t *testing.T) {
 	if err := SaveFeatureDoc(repoDir, projDir, epic.ID, "spec", realDoc(epic.ID)); err != nil {
 		t.Fatalf("save spec: %v", err)
 	}
-	if _, err := TransitionFeature(repoDir, projDir, epic.ID, domain.ActionApprove, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, epic.ID, domain.ActionApprove, "", "", nil); err != nil {
 		t.Fatalf("approve epic: %v", err)
 	}
 	child := seedApproved(t, repoDir, projDir, "Fase 1", epic.ID)
@@ -169,7 +169,7 @@ func TestPropagateStopsAtNonApprovedParent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateFeature other: %v", err)
 		}
-		if _, err := TransitionFeature(repoDir, projDir, epic.ID, domain.ActionSupersede, other.ID, "troca"); err != nil {
+		if _, err := TransitionFeature(repoDir, projDir, epic.ID, domain.ActionSupersede, other.ID, "troca", nil); err != nil {
 			t.Fatalf("supersede epic: %v", err)
 		}
 		out := mustStart(t, repoDir, projDir, child.ID)
@@ -194,7 +194,7 @@ func TestNonStartActionDoesNotPropagate(t *testing.T) {
 		t.Fatalf("save child spec: %v", err)
 	}
 
-	out, err := TransitionFeature(repoDir, projDir, child.ID, domain.ActionApprove, "", "")
+	out, err := TransitionFeature(repoDir, projDir, child.ID, domain.ActionApprove, "", "", nil)
 	if err != nil {
 		t.Fatalf("approve child: %v", err)
 	}

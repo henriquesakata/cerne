@@ -26,6 +26,7 @@ type Config struct {
 	SyncSkills     bool   `toml:"sync_skills,omitempty"`     // F-0178: cerne pull also reconciles golden-path entities into .claude/skills/learned-*; flag --sync-skills overrides
 	AutocommitLock bool   `toml:"autocommit_lock,omitempty"` // F-0060: cerne commits the project-side docs.lock after a backend mutation (opt-in, default off)
 	PinBranch      string `toml:"pin_branch,omitempty"`      // F-0102: docs.lock is written/committed only on this branch; empty = every branch (pre-0102 behavior)
+	PushPin        bool   `toml:"push_pin,omitempty"`        // F-0180: publish the docs.lock pin to origin right after the deferred commit, when only pin commits are ahead (opt-in, default off)
 	CompileOnPush  bool   `toml:"compile_on_push,omitempty"` // F-0117: a successful push recompiles the dirty wiki pages (callable [llm] mode only; opt-in, default off)
 	// UnregisteredSourceIgnore lists URL substrings the unregistered-source lint
 	// rule skips (F-0107) — e.g. the project's own code repo host, which is not an
@@ -54,6 +55,16 @@ type Config struct {
 	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
 	LLM            LLMConfig       `toml:"llm"`       // optional v1.5 LLM layer config
 	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
+	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
+}
+
+// DeliveryConfig is the optional [delivery] block of .cernerc (F-0179).
+// CommitURL is an explicit template with a {sha} placeholder (e.g.
+// "https://gitlab.com/rockt/cerne/-/commit/{sha}") used to resolve a bare
+// commit SHA into a clickable URL — no forge heuristics: absent means a bare
+// SHA is refused and only full URLs are accepted.
+type DeliveryConfig struct {
+	CommitURL string `toml:"commit_url,omitempty"`
 }
 
 // TelemetryConfig is the optional [telemetry] block of .cernerc (F-0149).
@@ -229,6 +240,7 @@ func SaveConfig(dir string, c Config) error {
 		SyncSkills               bool                `toml:"sync_skills,omitempty"`
 		AutocommitLock           bool                `toml:"autocommit_lock,omitempty"`
 		PinBranch                string              `toml:"pin_branch,omitempty"`
+		PushPin                  bool                `toml:"push_pin,omitempty"`
 		CompileOnPush            bool                `toml:"compile_on_push,omitempty"`
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
@@ -239,8 +251,9 @@ func SaveConfig(dir string, c Config) error {
 		Activity                 *ActivityConfig     `toml:"activity,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
+		Delivery                 *DeliveryConfig     `toml:"delivery,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates
@@ -256,6 +269,10 @@ func SaveConfig(dir string, c Config) error {
 	if c.Telemetry != (TelemetryConfig{}) {
 		tel := c.Telemetry
 		w.Telemetry = &tel
+	}
+	if c.Delivery != (DeliveryConfig{}) {
+		del := c.Delivery
+		w.Delivery = &del
 	}
 	data, err := toml.Marshal(w)
 	if err != nil {

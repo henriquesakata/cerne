@@ -9,10 +9,55 @@ import (
 	"time"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var shaHex = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// PushBranch must publish the named branch (not main) to origin.
+func TestPushBranchPushesNamedBranch(t *testing.T) {
+	origin, clone1, _ := fixture(t)
+	repo, err := git.PlainOpen(clone1)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	branch := plumbing.NewBranchReferenceName("pins")
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: branch, Create: true}); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	writeFile(t, clone1, "p.txt", "pin")
+	sha, err := CommitAll(clone1, "pin commit")
+	if err != nil {
+		t.Fatalf("CommitAll: %v", err)
+	}
+	if err := PushBranch(clone1, "pins"); err != nil {
+		t.Fatalf("PushBranch: %v", err)
+	}
+	orepo, err := git.PlainOpen(origin)
+	if err != nil {
+		t.Fatalf("PlainOpen origin: %v", err)
+	}
+	ref, err := orepo.Reference(branch, true)
+	if err != nil {
+		t.Fatalf("origin refs/heads/pins: %v", err)
+	}
+	if ref.Hash().String() != sha {
+		t.Fatalf("origin pins = %s, want %s", ref.Hash(), sha)
+	}
+}
+
+// An already-up-to-date branch push is a no-op, not an error.
+func TestPushBranchAlreadyUpToDate(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	if err := PushBranch(clone1, "main"); err != nil {
+		t.Fatalf("PushBranch up-to-date: %v", err)
+	}
+}
 
 // fixture creates a bare origin plus one clone with a single pushed file.
 // Returns origin path, clone path, and the SHA of the initial commit.
