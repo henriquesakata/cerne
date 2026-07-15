@@ -181,6 +181,7 @@ const ptBR = {
     editTitle: 'Editar título',
     tabs: { spec: 'Spec', plan: 'Plano', result: 'Resultado' },
     epicLabel: 'Épico:',
+    deliveryLabel: 'Entrega:',
     supersededBy: (id: string) => `Substituída por ${id}`,
     convertingToExcalidraw: 'Convertendo para Excalidraw…',
     convertError: (e: string) =>
@@ -649,6 +650,7 @@ const en: Messages = {
     editTitle: 'Edit title',
     tabs: { spec: 'Spec', plan: 'Plan', result: 'Result' },
     epicLabel: 'Epic:',
+    deliveryLabel: 'Delivery:',
     supersededBy: (id: string) => `Superseded by ${id}`,
     convertingToExcalidraw: 'Converting to Excalidraw…',
     convertError: (e: string) =>

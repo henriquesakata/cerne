@@ -84,7 +84,7 @@ func TestTransitionDoesNotSweepStrayState(t *testing.T) {
 	}
 	writeBackendFile(t, repoDir, "content/notes/N-9999.md", "half-written by a stranger\n")
 
-	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", ""); err != nil {
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
 		t.Fatalf("TransitionFeature approve: %v", err)
 	}
 	if _, ok := originHas(t, origin, "content/notes/N-9999.md"); ok {

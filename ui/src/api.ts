@@ -28,6 +28,8 @@ export type Feature = {
   reason?: string
   facets?: string[] // closed axis (D-0002): infra|code|data|process|auth
   components?: string[] // open, slugified subsystem/tool axis (D-0002)
+  delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
+  delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
   created_at: string
   updated_at: string
 }

@@ -43,10 +43,12 @@ var eventTypes = map[domain.Action]string{
 // TransitionFeature applies action to feature id in the backend clone at
 // repoDir: validates by/reason rules and document gates, persists the new
 // state, appends the lifecycle event, commits+pushes the backend and
-// refreshes the docs.lock snapshot in projDir.
-func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, reason string) (TransitionOutcome, error) {
+// refreshes the docs.lock snapshot in projDir. d (F-0179, complete only)
+// carries the delivery links to persist alongside the transition; nil for
+// every other action and for a complete with no delivery.
+func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
 	op := telemetry.StartOp("backend")
-	out, err := TransitionFeatureOp(op, repoDir, projDir, id, action, by, reason)
+	out, err := TransitionFeatureOp(op, repoDir, projDir, id, action, by, reason, d)
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -58,10 +60,13 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 // TransitionFeatureOp is TransitionFeature recording its phases on the
 // caller's Op (F-0149): the server passes the request's Op so the transition's
 // lock_wait/fetch/push story correlates with the HTTP log line.
-func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string) (TransitionOutcome, error) {
+func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
 	var out TransitionOutcome
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
 		return out, err
+	}
+	if d != nil && action != domain.ActionComplete {
+		return out, fmt.Errorf("delivery links are only captured on complete, not %s", action)
 	}
 	eventType, ok := eventTypes[action]
 	if !ok {
@@ -111,18 +116,34 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 		case domain.ActionReject:
 			f.Reason = reason
 		}
+		// Delivery links (F-0179): captured in the same write as the complete,
+		// so entity, event and state land in one backend commit.
+		if d != nil {
+			if d.CommitURL != "" {
+				f.DeliveryCommitURL = d.CommitURL
+			}
+			if d.MRURL != "" {
+				f.DeliveryMRURL = d.MRURL
+			}
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
 
 		var payload map[string]string
-		if by != "" || reason != "" {
+		if by != "" || reason != "" || (d != nil && *d != (Delivery{})) {
 			payload = map[string]string{}
 			if by != "" {
 				payload["by"] = by
 			}
 			if reason != "" {
 				payload["reason"] = reason
+			}
+			if d != nil && d.CommitURL != "" {
+				payload["commit_url"] = d.CommitURL
+			}
+			if d != nil && d.MRURL != "" {
+				payload["mr_url"] = d.MRURL
 			}
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {

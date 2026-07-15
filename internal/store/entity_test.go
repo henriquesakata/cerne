@@ -29,6 +29,8 @@ func TestFeatureRoundTrip(t *testing.T) {
 	want.SupersededBy = "F-0002"
 	want.Reason = "absorbed into bills"
 	want.Parent = "F-0003"
+	want.DeliveryCommitURL = "https://gitlab.example/repo/-/commit/abc1234"
+	want.DeliveryMRURL = "https://gitlab.example/repo/-/merge_requests/7"
 	if err := SaveFeature(dir, want); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
@@ -38,7 +40,8 @@ func TestFeatureRoundTrip(t *testing.T) {
 	}
 	if got.ID != want.ID || got.Title != want.Title || got.Module != want.Module ||
 		got.State != want.State || got.SupersededBy != want.SupersededBy || got.Reason != want.Reason ||
-		got.Parent != want.Parent {
+		got.Parent != want.Parent ||
+		got.DeliveryCommitURL != want.DeliveryCommitURL || got.DeliveryMRURL != want.DeliveryMRURL {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {

@@ -54,6 +54,16 @@ type Config struct {
 	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
 	LLM            LLMConfig       `toml:"llm"`       // optional v1.5 LLM layer config
 	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
+	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
+}
+
+// DeliveryConfig is the optional [delivery] block of .cernerc (F-0179).
+// CommitURL is an explicit template with a {sha} placeholder (e.g.
+// "https://gitlab.com/rockt/cerne/-/commit/{sha}") used to resolve a bare
+// commit SHA into a clickable URL — no forge heuristics: absent means a bare
+// SHA is refused and only full URLs are accepted.
+type DeliveryConfig struct {
+	CommitURL string `toml:"commit_url,omitempty"`
 }
 
 // TelemetryConfig is the optional [telemetry] block of .cernerc (F-0149).
@@ -239,6 +249,7 @@ func SaveConfig(dir string, c Config) error {
 		Activity                 *ActivityConfig     `toml:"activity,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
+		Delivery                 *DeliveryConfig     `toml:"delivery,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
@@ -256,6 +267,10 @@ func SaveConfig(dir string, c Config) error {
 	if c.Telemetry != (TelemetryConfig{}) {
 		tel := c.Telemetry
 		w.Telemetry = &tel
+	}
+	if c.Delivery != (DeliveryConfig{}) {
+		del := c.Delivery
+		w.Delivery = &del
 	}
 	data, err := toml.Marshal(w)
 	if err != nil {

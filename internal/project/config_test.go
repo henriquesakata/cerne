@@ -57,6 +57,40 @@ func TestConfigCompileOnPushRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigDeliveryRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{ProjectID: "cerne", Backend: "/tmp/backend",
+		Delivery: DeliveryConfig{CommitURL: "https://gitlab.example/repo/-/commit/{sha}"}}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Delivery.CommitURL != want.Delivery.CommitURL {
+		t.Fatalf("Delivery.CommitURL: got %q, want %q", got.Delivery.CommitURL, want.Delivery.CommitURL)
+	}
+	// Absent block ⇒ zero value, and the saved TOML carries no empty [delivery] table.
+	if err := SaveConfig(dir, Config{ProjectID: "x", Backend: "/b"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	got, _, err = LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if got.Delivery != (DeliveryConfig{}) {
+		t.Fatalf("Delivery must default to zero, got %+v", got.Delivery)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".cernerc"))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(data), "[delivery]") {
+		t.Fatalf("zero Delivery must not emit a [delivery] table:\n%s", data)
+	}
+}
+
 func TestConfigModulePathsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Config{
