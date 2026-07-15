@@ -79,6 +79,11 @@ class FakeNotification {
 
 let hidden = true
 Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+let focused = true
+Object.defineProperty(document, 'hasFocus', {
+  configurable: true,
+  value: () => focused,
+})
 
 function ev(id: string, entity: string, type: string, ageMs = 60_000): LifecycleEvent {
   return {
@@ -122,6 +127,7 @@ beforeEach(() => {
   FakeNotification.requestPermission.mockReset().mockResolvedValue('granted')
   vi.stubGlobal('Notification', FakeNotification)
   hidden = true
+  focused = true
 })
 
 const enableNativePref = () => localStorage.setItem('cerne.notif.native', 'true')
@@ -170,6 +176,21 @@ describe('notificações nativas (F-0161)', () => {
     act(() => live.set({ version: 1 }))
     await waitFor(() => expect(api.events).toHaveBeenCalledTimes(2))
     expect(FakeNotification.instances).toHaveLength(0)
+  })
+
+  // C3 (intenção da spec: "outro app na frente"): aba visível mas janela SEM
+  // foco → dispara. document.hidden só vira true com a janela 100% coberta ou
+  // minimizada (occlusion do Chrome/macOS); janela desfocada = usuário noutro
+  // app, exatamente o cenário que a F-0161 quer cobrir.
+  it('dispara para o projeto ativo com aba visível mas janela sem foco', async () => {
+    enableNativePref()
+    hidden = false
+    focused = false
+    await mount()
+    api.events.mockResolvedValue([ev('b', 'F-0002', 'feature.approved', 10_000)])
+    act(() => live.set({ version: 1 }))
+    await waitFor(() => expect(FakeNotification.instances).toHaveLength(1))
+    expect(FakeNotification.instances[0].options.body).toContain('F-0002')
   })
 
   // C5: toggle geral desligado domina a preferência nativa.
