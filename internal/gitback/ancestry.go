@@ -32,6 +32,13 @@ func IsAncestor(workdir, a, b string) (bool, error) {
 	return ca.IsAncestor(cb)
 }
 
+// IsUnknownCommit reports whether err (from IsAncestor) means one of the
+// commits is not present in the local clone — the caller may Fetch once and
+// retry before treating the pins as truly divergent (F-0180).
+func IsUnknownCommit(err error) bool {
+	return errors.Is(err, plumbing.ErrObjectNotFound)
+}
+
 // AheadTouchesOnly reports whether every commit in origin/<branch>..HEAD
 // touches only the given path — the guard that keeps pin publication (F-0180)
 // from ever pushing the user's own unpublished work. False (never an error)

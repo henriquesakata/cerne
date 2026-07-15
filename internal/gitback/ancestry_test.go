@@ -1,7 +1,9 @@
 package gitback
 
 import (
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +73,23 @@ func TestAheadTouchesOnly(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("non-pin commit ahead: want false")
+	}
+}
+
+// IsAncestor on a SHA absent from the local clone must be classifiable as
+// unknown-commit, so the lock merge driver (F-0180) can fetch and retry.
+func TestIsUnknownCommit(t *testing.T) {
+	_, clone1, a := fixture(t)
+	unknown := strings.Repeat("d", 40)
+	_, err := IsAncestor(clone1, unknown, a)
+	if err == nil {
+		t.Fatal("IsAncestor with unknown SHA: want error")
+	}
+	if !IsUnknownCommit(err) {
+		t.Fatalf("IsUnknownCommit(%v) = false, want true", err)
+	}
+	if IsUnknownCommit(errors.New("some other failure")) {
+		t.Fatal("IsUnknownCommit(unrelated error) = true, want false")
 	}
 }
 
