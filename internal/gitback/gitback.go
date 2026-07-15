@@ -206,6 +206,41 @@ func Push(workdir string) error {
 	return err
 }
 
+// PushBranch pushes refs/heads/<branch> to origin — the pin-publication
+// primitive (F-0180): the user project's docs.lock pin lives on the project's
+// pin_branch, not on the backend's fixed main. NoErrAlreadyUpToDate is not an
+// error; a non-fast-forward rejection is returned as-is so callers can
+// classify it with IsNonFastForward.
+func PushBranch(workdir, branch string) error {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return err
+	}
+	url, err := originURL(repo)
+	if err != nil {
+		return err
+	}
+	auth, err := sshAuthFor(url)
+	if err != nil {
+		return err
+	}
+	spec := config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))
+	err = runWithNetTimeout("push", func(ctx context.Context) error {
+		return repo.PushContext(ctx, &git.PushOptions{
+			RemoteName: remoteName,
+			RefSpecs:   []config.RefSpec{spec},
+			Auth:       auth,
+		})
+	})
+	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+		err = nil
+	}
+	if err == nil {
+		markSynced(workdir)
+	}
+	return err
+}
+
 // CommitAndPush stages all changes, commits, and pushes main to origin in one
 // step. Returns the commit SHA hex; ErrNothingToCommit when the worktree is
 // clean. Retained for callers that do not need the reconcile loop.

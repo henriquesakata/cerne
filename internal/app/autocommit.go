@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
@@ -57,7 +59,11 @@ func enqueueAutocommit(projDir string) {
 			}
 			op := telemetry.StartOp("autocommit")
 			op.Project = filepath.Base(projDir)
-			if err := autocommitLock(projDir); err != nil {
+			err := autocommitLock(projDir)
+			if outcome := pushPin(projDir); outcome != "" {
+				op.Phase("pin-push=" + outcome)()
+			}
+			if err != nil {
 				op.End("error")
 			} else {
 				op.End("ok")
@@ -80,4 +86,40 @@ func enqueueAutocommit(projDir string) {
 // semantics; the long-running servers never call it.
 func FlushAutocommits() {
 	autocommitWG.Wait()
+}
+
+// pushPin publishes the docs.lock pin to the project's origin (F-0180),
+// closing the divergence window that made every pull on the pin branch a
+// merge: with the pin already on origin, other machines fast-forward. Opt-in
+// via push_pin, and gated hard on origin/<pin_branch>..HEAD carrying nothing
+// but pin commits — the user's own unpublished work is never pushed by cerne.
+// Best-effort like autocommitLock: failures become a telemetry outcome, never
+// an error, and an unpublished pin self-heals on the next round. Returns ""
+// when push_pin is off (so pre-F-0180 telemetry records stay identical),
+// otherwise "ok", "skipped" or "error".
+func pushPin(projDir string) string {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil || !cfg.PushPin || cfg.PinBranch == "" {
+		return ""
+	}
+	branch, err := gitback.CurrentBranch(projDir)
+	if err != nil || branch != cfg.PinBranch {
+		return "skipped"
+	}
+	// Refresh the tracking ref so the pin-only guard judges against the
+	// remote's current truth, not a stale one.
+	if err := gitback.Fetch(projDir); err != nil {
+		return "error"
+	}
+	onlyPins, err := gitback.AheadTouchesOnly(projDir, cfg.PinBranch, "docs.lock")
+	if err != nil {
+		return "error"
+	}
+	if !onlyPins {
+		return "skipped"
+	}
+	if err := gitback.PushBranch(projDir, cfg.PinBranch); err != nil {
+		return "error"
+	}
+	return "ok"
 }

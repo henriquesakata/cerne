@@ -293,6 +293,41 @@ func TestConfigAutocommitLockRoundTrip(t *testing.T) {
 	}
 }
 
+// TestConfigPushPinRoundTrip pins the .cernerc `push_pin` key (F-0180):
+// persists and reloads when true, omitted (omitempty) when false.
+func TestConfigPushPinRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x", PushPin: true}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if !strings.Contains(string(raw), "push_pin = true") {
+		t.Fatalf(".cernerc missing push_pin key:\n%s", raw)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !got.PushPin {
+		t.Fatalf("loaded PushPin = false, want true")
+	}
+
+	// omitempty: a false PushPin is not written to .cernerc.
+	if err := SaveConfig(dir, Config{ProjectID: "demo", Backend: "x"}); err != nil {
+		t.Fatalf("SaveConfig off: %v", err)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, configFilename))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(raw), "push_pin") {
+		t.Fatalf("push_pin=false should be omitted:\n%s", raw)
+	}
+}
+
 // TestConfigUnregisteredSourceIgnoreRoundTrip pins the .cernerc
 // `unregistered_source_ignore` key (F-0107): the list persists and reloads, and
 // is omitted (omitempty) when empty.

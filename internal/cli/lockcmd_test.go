@@ -317,6 +317,89 @@ func TestLockMergeChoosesDescendant(t *testing.T) {
 	}
 }
 
+// Criterion 6 (F-0180): when both snapshots already exist in the cache clone,
+// the driver resolves with no network at all — an unreachable backend origin
+// must not degrade the merge to a manual conflict.
+func TestLockMergeResolvesOffline(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	a, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA A: %v", err)
+	}
+	if out, err := execCerne(t, "feature", "new", "Offline", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	b, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA B: %v", err)
+	}
+	if err := os.RemoveAll(origin); err != nil { // backend origin gone: any fetch now fails
+		t.Fatalf("remove origin: %v", err)
+	}
+
+	base := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: a})
+	ours := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: a})
+	theirs := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: b})
+	if out, err := execCerne(t, "lock", "merge", "--dir", projDir, base, ours, theirs); err != nil {
+		t.Fatalf("lock merge offline: %v\n%s", err, out)
+	}
+	if got := readLockAt(t, ours).Snapshot; got != b {
+		t.Fatalf("offline resolved snapshot = %s, want descendant %s", got, b)
+	}
+}
+
+// Criterion 7 (F-0180): a snapshot missing from the cache clone triggers one
+// fetch and then resolves — the path a pin pushed by another machine takes.
+func TestLockMergeFetchesUnknownSHA(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	a, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA A: %v", err)
+	}
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(clone2, "remote.txt"), []byte("remote advance"), 0o644); err != nil {
+		t.Fatalf("write remote.txt: %v", err)
+	}
+	b, err := gitback.CommitAndPush(clone2, "remote advance")
+	if err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+
+	base := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: a})
+	ours := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: a})
+	theirs := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: b})
+	if out, err := execCerne(t, "lock", "merge", "--dir", projDir, base, ours, theirs); err != nil {
+		t.Fatalf("lock merge with unknown SHA: %v\n%s", err, out)
+	}
+	if got := readLockAt(t, ours).Snapshot; got != b {
+		t.Fatalf("resolved snapshot = %s, want fetched descendant %s", got, b)
+	}
+}
+
+// Criterion 7 (F-0180): a snapshot that stays unknown even after the fetch is
+// an honest manual conflict, never a silent guess.
+func TestLockMergeUnknownAfterFetch(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	a, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA A: %v", err)
+	}
+	bogus := strings.Repeat("d", 40)
+	base := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: a})
+	ours := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: a})
+	theirs := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: bogus})
+	out, err := execCerne(t, "lock", "merge", "--dir", projDir, base, ours, theirs)
+	if err == nil {
+		t.Fatalf("lock merge succeeded on unknown snapshot, want error\n%s", out)
+	}
+	if got := readLockAt(t, ours).Snapshot; got != a {
+		t.Fatalf("ours snapshot = %s, want untouched %s", got, a)
+	}
+}
+
 func TestLockMergeBackendMismatch(t *testing.T) {
 	projDir, origin, _ := setupProject(t)
 	base := writeTempLock(t, project.Lock{Version: 1, Backend: origin, Snapshot: "a"})
