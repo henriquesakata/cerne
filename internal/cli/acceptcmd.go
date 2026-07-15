@@ -63,7 +63,7 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 		return runFeatureAcceptAllImplemented(cmd, ctx, reason)
 	}
 
-	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, domain.ActionAccept, "", reason)
+	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, domain.ActionAccept, "", reason, nil)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func runFeatureAcceptAllImplemented(cmd *cobra.Command, ctx projCtx, reason stri
 		if f.State != domain.StateImplemented {
 			continue
 		}
-		out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, f.ID, domain.ActionAccept, "", reason)
+		out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, f.ID, domain.ActionAccept, "", reason, nil)
 		if err != nil {
 			return fmt.Errorf("aceitando %s: %w", f.ID, err)
 		}

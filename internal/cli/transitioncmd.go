@@ -94,7 +94,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			return err
 		}
 	}
-	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, action, by, reason)
+	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, action, by, reason, nil)
 	if err != nil {
 		return err
 	}

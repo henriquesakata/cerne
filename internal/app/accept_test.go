@@ -44,7 +44,7 @@ func TestAcceptFeature(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented)
 
-	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "validado em homologação")
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "validado em homologação", nil)
 	if err != nil {
 		t.Fatalf("TransitionFeature accept: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestAcceptRefusesWrongState(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment)
 
-	_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "")
+	_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "", nil)
 	if !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("err = %v, want ErrInvalidTransition", err)
 	}
@@ -116,7 +116,7 @@ func TestCompleteAutoPromotesToDone(t *testing.T) {
 	}
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
 
-	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "")
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
 	if err != nil {
 		t.Fatalf("TransitionFeature complete: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCompleteHumanGateStopsAtImplemented(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
 
-	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "")
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
 	if err != nil {
 		t.Fatalf("TransitionFeature complete: %v", err)
 	}
