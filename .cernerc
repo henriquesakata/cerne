@@ -12,6 +12,11 @@ sync_skills = true
 # F-0117: todo push recompila (incremental) as páginas sujas da wiki via [llm].
 compile_on_push = true
 
+# F-0179: SHA puro em `feature complete --commit` / `feature deliver` resolve
+# para URL clicável via este template ({sha} obrigatório).
+[delivery]
+commit_url = "https://gitlab.com/rockt/cerne/-/commit/{sha}"
+
 # Drift código→doc (F-0113/F-0116): este projeto não tem módulos, então o
 # eixo é component (tags das features). Cobertura cresce com `cerne feature
 # retag` no backlog; component sem feature correspondente é inócuo.
