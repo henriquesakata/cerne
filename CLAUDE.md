@@ -70,6 +70,14 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 - **Minimal surface**: no speculative API; keep exported identifiers to what is used.
 - **Dogfooding**: this repo is itself a cerne project — its docs are managed by cerne (source of truth: the `cerne-docs` backend; see *Documentation source of truth* above). Cases are authored as `spec.md` → `plan.md` → `result.md`, then registered through the **native** flow (`cerne feature new` → `cerne push` → `approve`/`start`/`complete`) — **not** `cerne import` (see *Authoring* above for why).
 
+## AI session conventions (insights follow-up)
+
+Distilled from usage-insights friction (2026-07). Concrete contracts for recurring session shapes:
+
+- **Observer / memory sessions**: every turn emit **exactly one** correctly-tagged output (`observation` vs `summary`, as asked) — visible, never empty, no meta-commentary about the tag format. Skip a checkpoint when nothing new happened since the last summary (no near-duplicate progress dumps).
+- **Wiki / doc synthesis**: use the `/wiki-synth` skill — gather every cited cerne source, **verify each one's current state** via `cerne brief --json` / `cerne status --active` (never trust stale prose), then write **pt-BR** markdown to the session scratchpad. Split large `cerne ask` queries per-source to dodge the 30s timeout.
+- **Feature delivery gate**: before `cerne feature complete` or opening an MR, `go vet ./... && go test ./... -count=1` must be green; if `ui/**` changed, rebuild + commit `ui/dist` (F-0136). A `git commit` PreToolUse hook (`.claude/hooks/go-precommit-build.sh`) runs `go build ./...` as an early tripwire — `git commit --no-verify` bypasses it.
+
 ## Roadmap and open work
 
 This file does not track next steps — a hand-maintained roadmap is exactly the staleness cerne exists to kill (the founding spec's problem #3). Ask the guardian: `cerne status` for feature states, `cerne lint` for documentation debts, and the open cases under `docs/process/cases/`.

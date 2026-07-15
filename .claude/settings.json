@@ -1,4 +1,24 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__plugin_context-mode_context-mode__ctx_search",
+      "Bash(cerne show *)",
+      "Bash(cerne status)",
+      "Bash(cerne status *)",
+      "Bash(cerne brief)",
+      "Bash(cerne brief *)",
+      "Bash(cerne ask *)",
+      "Bash(cerne note list)",
+      "Bash(cerne note list *)",
+      "Bash(cerne work list)",
+      "Bash(cerne work list *)",
+      "Bash(glab mr list *)",
+      "Bash(glab mr view *)",
+      "Bash(glab ci list *)",
+      "Bash(glab ci view *)",
+      "Bash(glab ci status *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -17,6 +37,15 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/no-new-case-dir.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/go-precommit-build.sh\""
           }
         ]
       }
