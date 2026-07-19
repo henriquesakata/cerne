@@ -4,17 +4,21 @@
 // lint rules, lifecycle gates and CLI surfaces can share one definition of
 // what counts as an open clarification.
 //
-// Recognized forms, always single-line:
+// Recognized forms, always single-line (the marker word comes from a closed
+// per-language catalog — pt ESCLARECER/ESCLARECIDO, en CLARIFY/CLARIFIED —
+// so a doc authored in English gates exactly like one in Portuguese; F-0182):
 //
 //	[ESCLARECER]                              open, no question
 //	[ESCLARECER: question]                    open
 //	[ESCLARECER: question | option | option]  open, with proposed options
 //	[«ESCLARECER»: question]                  open (legacy guillemet form)
 //	[ESCLARECIDO: question → answer]          resolved (written by the UI)
+//	[CLARIFY: question] / [CLARIFIED: q → a]  the same, en vocabulary
 package clarify
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -28,10 +32,45 @@ type Clarification struct {
 	Raw      string   // the marker exactly as it appears in the text
 }
 
-// markerRe matches both marker words with an optional legacy guillemet pair
-// and an optional single-line body. The body must not cross lines nor contain
-// a closing bracket, which also keeps prefix words ([ESCLARECEDOR]) out.
-var markerRe = regexp.MustCompile(`\[«?(ESCLARECER|ESCLARECIDO)»?(?::[ \t]*([^\]\n]*))?\]`)
+// vocab is one language's marker word pair. The catalog is a closed set in
+// code, like the facet list: an open-ended regex would swallow prose between
+// brackets. Adding a language = one row here, its mirror in ui/src/clarify.ts
+// and a fixture in testdata/corpus.json (the parity corpus fails whichever
+// side lags behind).
+type vocab struct{ Open, Resolved string }
+
+var vocabs = []vocab{
+	{Open: "ESCLARECER", Resolved: "ESCLARECIDO"},
+	{Open: "CLARIFY", Resolved: "CLARIFIED"},
+}
+
+// markerWords returns the regex alternation of every catalog word, longest
+// first so a word that prefixes another (CLARIFY / CLARIFIED) never shadows
+// the longer form.
+func markerWords() string {
+	var words []string
+	for _, v := range vocabs {
+		words = append(words, v.Open, v.Resolved)
+	}
+	sort.Slice(words, func(i, j int) bool { return len(words[i]) > len(words[j]) })
+	return strings.Join(words, "|")
+}
+
+// resolvedWords maps each Resolved word of the catalog, so parsing can tell
+// the state from the matched word alone — no language detection on read.
+var resolvedWords = func() map[string]bool {
+	m := make(map[string]bool, len(vocabs))
+	for _, v := range vocabs {
+		m[v.Resolved] = true
+	}
+	return m
+}()
+
+// markerRe matches any catalog marker word with an optional legacy guillemet
+// pair and an optional single-line body. The body must not cross lines nor
+// contain a closing bracket, which also keeps prefix words ([ESCLARECEDOR],
+// [CLARIFIER]) out.
+var markerRe = regexp.MustCompile(`\[«?(` + markerWords() + `)»?(?::[ \t]*([^\]\n]*))?\]`)
 
 // Citation contexts: a marker inside any of these is the doc *talking about*
 // the convention, not an authored clarification. HTML comments carry the
@@ -83,7 +122,7 @@ func Parse(content string) []Clarification {
 		if m[4] >= 0 {
 			body = strings.TrimSpace(content[m[4]:m[5]])
 		}
-		if word == "ESCLARECIDO" {
+		if resolvedWords[word] {
 			c.Resolved = true
 			if q, a, ok := strings.Cut(body, "→"); ok {
 				c.Question = strings.TrimSpace(q)

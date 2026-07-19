@@ -1,0 +1,82 @@
+{
+  "_comment": "Shared marker corpus, read by internal/clarify (Go) and ui/src/Clarify.test.tsx (TS). The two parsers are deliberately duplicated (F-0175); this corpus is the lock that keeps them in step (F-0182). Every case lists ALL markers Parse/markerSpans must return, with exact raw+offset+resolved. offsets are BYTE offsets in Go and UTF-16 code-unit offsets in TS — keep marker bodies ASCII below so both agree.",
+  "cases": [
+    {
+      "name": "pt open with question",
+      "content": "x [ESCLARECER: qual formato usar?] y",
+      "spans": [{ "raw": "[ESCLARECER: qual formato usar?]", "offset": 2, "resolved": false }]
+    },
+    {
+      "name": "en open with question",
+      "content": "x [CLARIFY: which format?] y",
+      "spans": [{ "raw": "[CLARIFY: which format?]", "offset": 2, "resolved": false }]
+    },
+    {
+      "name": "en open with options",
+      "content": "[CLARIFY: where to persist? | in-place | sidecar]",
+      "spans": [{ "raw": "[CLARIFY: where to persist? | in-place | sidecar]", "offset": 0, "resolved": false }]
+    },
+    {
+      "name": "en bare",
+      "content": "something unclear [CLARIFY] here",
+      "spans": [{ "raw": "[CLARIFY]", "offset": 18, "resolved": false }]
+    },
+    {
+      "name": "pt resolved",
+      "content": "[ESCLARECIDO: onde? → no doc]",
+      "spans": [{ "raw": "[ESCLARECIDO: onde? → no doc]", "offset": 0, "resolved": true }]
+    },
+    {
+      "name": "en resolved",
+      "content": "[CLARIFIED: where? → in the doc]",
+      "spans": [{ "raw": "[CLARIFIED: where? → in the doc]", "offset": 0, "resolved": true }]
+    },
+    {
+      "name": "mixed vocabularies in one doc",
+      "content": "a [ESCLARECER: um?] b [CLARIFY: two?] c [CLARIFIED: three? → ok] d",
+      "spans": [
+        { "raw": "[ESCLARECER: um?]", "offset": 2, "resolved": false },
+        { "raw": "[CLARIFY: two?]", "offset": 22, "resolved": false },
+        { "raw": "[CLARIFIED: three? → ok]", "offset": 40, "resolved": true }
+      ]
+    },
+    {
+      "name": "words outside the catalog are not markers",
+      "content": "[ESCLARECEDOR] and [CLARIFIER] and [CLARIFICATION: x] are prose.",
+      "spans": []
+    },
+    {
+      "name": "en marker in inline code is a citation",
+      "content": "docs cite `[CLARIFY: example]` in prose",
+      "spans": []
+    },
+    {
+      "name": "en marker in fenced block is a citation",
+      "content": "```\n[CLARIFY: inside fence]\n```\nprose",
+      "spans": []
+    },
+    {
+      "name": "en marker in html comment is guidance",
+      "content": "<!-- mark uncertainty with [CLARIFY: specific question] -->\nprose",
+      "spans": []
+    },
+    {
+      "name": "en marker after citation keeps offset",
+      "content": "`code` [CLARIFY: real?]",
+      "spans": [{ "raw": "[CLARIFY: real?]", "offset": 7, "resolved": false }]
+    },
+    {
+      "name": "en marker does not span lines",
+      "content": "[CLARIFY: broken\nhere]",
+      "spans": []
+    },
+    {
+      "name": "duplicated markers get distinct offsets",
+      "content": "[CLARIFY: same?] mid [CLARIFY: same?]",
+      "spans": [
+        { "raw": "[CLARIFY: same?]", "offset": 0, "resolved": false },
+        { "raw": "[CLARIFY: same?]", "offset": 21, "resolved": false }
+      ]
+    }
+  ]
+}
