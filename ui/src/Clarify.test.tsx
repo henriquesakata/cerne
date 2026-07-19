@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -37,6 +39,58 @@ describe('clarify helpers', () => {
       '```\n[ESCLARECER: no fence]\n```\n' +
       '[ESCLARECER: um?] x [ESCLARECIDO: dois? → ok] y [ESCLARECER: três?]'
     expect(countOpen(md)).toBe(2)
+  })
+
+  // F-0182: o vocabulário en faz parte do catálogo — mesmas formas, mesmas
+  // regras. A resolução escreve no vocabulário do marcador respondido.
+  it('reconhece o vocabulário en e resolve no vocabulário do marcador', () => {
+    expect(parseClarification('[CLARIFY: which format?]')).toEqual({
+      question: 'which format?',
+      options: [],
+      resolved: false,
+      answer: '',
+    })
+    expect(parseClarification('[CLARIFIED: where? → in the doc]')).toEqual({
+      question: 'where?',
+      options: [],
+      resolved: true,
+      answer: 'in the doc',
+    })
+    expect(parseClarification('[CLARIFIER]')).toBeNull()
+
+    // resolveMarker espelha o vocabulário do marcador aberto (critério 3).
+    const en = 'x [CLARIFY: which backend?] y'
+    expect(resolveMarker(en, '[CLARIFY: which backend?]', 2, 'S3')).toBe(
+      'x [CLARIFIED: which backend? → S3] y',
+    )
+    const pt = 'x [ESCLARECER: qual backend?] y'
+    expect(resolveMarker(pt, '[ESCLARECER: qual backend?]', 2, 'S3')).toBe(
+      'x [ESCLARECIDO: qual backend? → S3] y',
+    )
+  })
+
+  // O lado TS da trava de paridade Go↔TS (critério 4 da F-0182): o MESMO
+  // corpus é lido por internal/clarify/clarify_test.go. Um vocabulário
+  // adicionado num lado só quebra a rodada do outro.
+  it('paridade: markerSpans devolve os mesmos spans que o Parse do Go no corpus compartilhado', () => {
+    const corpus = JSON.parse(
+      readFileSync(resolve(__dirname, '../../internal/clarify/testdata/corpus.json'), 'utf-8'),
+    ) as {
+      cases: {
+        name: string
+        content: string
+        spans: { raw: string; offset: number; resolved: boolean }[]
+      }[]
+    }
+    expect(corpus.cases.length).toBeGreaterThan(0)
+    for (const c of corpus.cases) {
+      const got = markerSpans(c.content).map((s) => ({
+        raw: s.raw,
+        offset: s.offset,
+        resolved: s.resolved,
+      }))
+      expect(got, c.name).toEqual(c.spans)
+    }
   })
 
   it('markerSpans devolve os spans em ordem, com offset ancorado e citações puladas', () => {
