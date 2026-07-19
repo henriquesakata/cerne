@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { CLARIFY_RE, parseClarification } from './clarify'
+import { markerSpans, parseClarification, type MarkerSpan } from './clarify'
 import { useT } from './i18n'
 
 // stripFrontmatter remove um bloco "---\n…\n---" no início do doc (o cerne
@@ -20,48 +20,125 @@ type MdNode = {
   type: string
   value?: string
   children?: MdNode[]
-  position?: { start: { offset?: number } }
+  position?: { start: { offset?: number }; end?: { offset?: number } }
   url?: string
 }
 
-// remarkClarify transforma cada marcador [ESCLARECER]/[ESCLARECIDO] achado em
-// nós de TEXTO do mdast em um nó de link `#clarify:<offset>` cujo rótulo é o
-// marcador cru — o override de `a` abaixo o renderiza como chip. Operar no
-// mdast (e não no string) pula de graça código inline/cercado e comentários
-// HTML, que não são nós de texto. `base` recoloca o offset no conteúdo
-// original (frontmatter removido antes do parse).
-function remarkClarify(options: { base: number }) {
-  const walk = (node: MdNode) => {
-    if (!node.children) return
-    const next: MdNode[] = []
-    for (const child of node.children) {
-      if (child.type !== 'text' || !child.value || child.position?.start.offset === undefined) {
-        walk(child)
-        next.push(child)
-        continue
-      }
-      const start = child.position.start.offset
-      let last = 0
-      const parts: MdNode[] = []
-      for (const m of child.value.matchAll(CLARIFY_RE)) {
-        if (m.index > last) parts.push({ type: 'text', value: child.value.slice(last, m.index) })
-        parts.push({
-          type: 'link',
-          url: `#clarify:${options.base + start + m.index}`,
-          children: [{ type: 'text', value: m[0] }],
-        })
-        last = m.index + m[0].length
-      }
-      if (parts.length === 0) {
-        next.push(child)
-        continue
-      }
-      if (last < child.value.length) parts.push({ type: 'text', value: child.value.slice(last) })
-      next.push(...parts)
-    }
-    node.children = next
+// Seg é um filho do container com o intervalo que ele ocupa na FONTE. Fatiar um
+// span exige esses offsets: é por eles que se descobre qual pedaço de texto
+// sobra fora do marcador.
+type Seg = { node: MdNode; start?: number; end?: number }
+
+const startOf = (n: MdNode) => n.position?.start.offset
+const endOf = (n: MdNode) => n.position?.end?.offset
+
+// ownedBy decide se ESTE container é quem transforma o span: ele o contém e
+// nenhum filho container o contém inteiro (esse filho, mais fundo, seria o
+// dono). Garante que cada marcador vire exatamente UM chip, no nível mais
+// profundo que ainda o enxerga completo.
+function ownedBy(node: MdNode, span: MarkerSpan): boolean {
+  const ns = startOf(node)
+  const ne = endOf(node)
+  if (ns === undefined || ne === undefined) return false
+  const end = span.offset + span.raw.length
+  if (span.offset < ns || end > ne) return false
+  for (const c of node.children ?? []) {
+    if (!c.children || c.children.length === 0) continue
+    const cs = startOf(c)
+    const ce = endOf(c)
+    if (cs === undefined || ce === undefined) continue
+    if (span.offset >= cs && end <= ce) return false
   }
-  return (tree: MdNode) => walk(tree)
+  return true
+}
+
+// spliceSpans troca, na lista de filhos do container, o trecho coberto por cada
+// span pelo nó de link do chip. Um filho de texto na borda é FATIADO (o pedaço
+// fora do marcador sobrevive); um filho não-texto na borda é absorvido pelo
+// chip — caso patológico (o "]" que fecha o marcador caindo dentro de código
+// inline ou de um link), decidido na spec da F-0181 em favor de manter chip e
+// contador sempre de acordo.
+function spliceSpans(children: MdNode[], spans: MarkerSpan[], base: number): MdNode[] {
+  const segs: Seg[] = children.map((c) => ({ node: c, start: startOf(c), end: endOf(c) }))
+  const out: MdNode[] = []
+  let i = 0
+  for (const span of spans) {
+    const end = span.offset + span.raw.length
+    // Filhos que terminam antes do marcador saem intactos.
+    while (i < segs.length) {
+      const s = segs[i]
+      if (s.end !== undefined && s.end > span.offset) break
+      out.push(s.node)
+      i++
+    }
+    if (i >= segs.length) break
+    // Pedaço de texto ANTES do marcador, dentro do filho onde ele começa.
+    const first = segs[i]
+    if (
+      first.node.type === 'text' &&
+      first.node.value !== undefined &&
+      first.start !== undefined &&
+      span.offset > first.start
+    ) {
+      out.push({ type: 'text', value: first.node.value.slice(0, span.offset - first.start) })
+    }
+    out.push({
+      type: 'link',
+      url: `#clarify:${base + span.offset}`,
+      children: [{ type: 'text', value: span.raw }],
+    })
+    // Consome o que o marcador cobre e trata o filho da borda final.
+    while (i < segs.length) {
+      const s = segs[i]
+      if (s.end === undefined || s.start === undefined) {
+        i++
+        continue
+      }
+      if (s.end <= end) {
+        i++
+        continue
+      }
+      if (s.start >= end) break
+      if (s.node.type === 'text' && s.node.value !== undefined) {
+        // Sobra do texto: vira o novo segmento corrente, para que um segundo
+        // marcador no MESMO nó de texto ainda seja encontrado.
+        segs[i] = {
+          node: { type: 'text', value: s.node.value.slice(end - s.start) },
+          start: end,
+          end: s.end,
+        }
+      } else {
+        i++
+      }
+      break
+    }
+  }
+  while (i < segs.length) {
+    out.push(segs[i].node)
+    i++
+  }
+  return out
+}
+
+// remarkClarify transforma cada marcador [ESCLARECER]/[ESCLARECIDO] em um nó de
+// link `#clarify:<offset>` cujo rótulo é o marcador cru — o override de `a`
+// abaixo o renderiza como chip. Os spans vêm de markerSpans, que lê a FONTE: é
+// a mesma função que alimenta o contador do badge, então o que se conta e o que
+// se renderiza não podem divergir (F-0181). Casar na fonte é o que faz funcionar
+// o marcador cujo corpo tem markdown inline — ele atravessa vários nós do mdast
+// e nenhum nó de texto o contém inteiro. `base` recoloca o offset no conteúdo
+// original (frontmatter removido antes do parse).
+function remarkClarify(options: { base: number; source: string }) {
+  const spans = markerSpans(options.source)
+  const walk = (node: MdNode) => {
+    if (!node.children || node.children.length === 0) return
+    for (const child of node.children) walk(child)
+    const mine = spans.filter((s) => ownedBy(node, s))
+    if (mine.length > 0) node.children = spliceSpans(node.children, mine, options.base)
+  }
+  return (tree: MdNode) => {
+    if (spans.length > 0) walk(tree)
+  }
 }
 
 // ClarifyChip renderiza um marcador: aberto vira chip âmbar (clicável quando
@@ -154,7 +231,7 @@ export default function Markdown({
   const base = children.length - stripped.length
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, [remarkClarify, { base }]]}
+      remarkPlugins={[remarkGfm, [remarkClarify, { base, source: stripped }]]}
       components={{
         a: ({ href, children: label, ...rest }) => {
           if (href?.startsWith('#clarify:')) {

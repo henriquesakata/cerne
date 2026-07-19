@@ -105,6 +105,65 @@ describe('Markdown com chips de esclarecimento', () => {
     expect(onAnswer).toHaveBeenLastCalledWith(raw, doc.indexOf(raw), 'nenhum dos dois')
   })
 
+  // F-0181: o marcador cujo corpo tem markdown inline é quebrado pelo remark em
+  // vários nós do mdast. Antes, o remarkClarify casava o regex DENTRO de um nó de
+  // texto e nenhum nó continha o marcador inteiro — o chip sumia enquanto o
+  // countOpen (que lê a string crua) seguia contando. Beco sem saída na UI.
+  const comCodigo = 'Prosa [ESCLARECER: qual provedor? cite o `backup.yaml` aqui] fim.'
+
+  it('marcador com código inline vira chip (critério 1)', () => {
+    render(<Markdown>{comCodigo}</Markdown>)
+    expect(screen.getByText(/qual provedor\?/)).toHaveClass('clarify-open')
+  })
+
+  it('idem dentro de célula de tabela GFM — a repro da F-0463 (critério 2)', () => {
+    const md = [
+      '| Fork | Decisão |',
+      '|---|---|',
+      '| Provedor do destino | [ESCLARECER: B2 ou S3? Define credencial do `backup.yaml`] |',
+    ].join('\n')
+    render(<Markdown>{md}</Markdown>)
+    expect(screen.getByText(/B2 ou S3\?/)).toHaveClass('clarify-open')
+  })
+
+  it('marcador com negrito vira chip (critério 3)', () => {
+    render(<Markdown>{'X [ESCLARECER: qual **destino**?] fim.'}</Markdown>)
+    expect(screen.getByText(/qual \*\*destino\*\*\?/)).toHaveClass('clarify-open')
+  })
+
+  // Caso de borda decidido na spec: o corpo do marcador não pode conter "]",
+  // então um link markdown TERMINA o marcador no "]" do rótulo — a borda cai
+  // dentro do nó de link, que é absorvido pelo chip. Pino do comportamento.
+  it('link no corpo: marcador termina no ] do rótulo e o nó é absorvido', () => {
+    render(<Markdown>{'X [ESCLARECER: ver [doc](http://x) antes] fim.'}</Markdown>)
+    expect(screen.getByText(/ver \[doc/)).toHaveClass('clarify-open')
+  })
+
+  it('forma resolvida atravessando nós vira rastro estático (critério 5)', () => {
+    render(<Markdown>{'X [ESCLARECIDO: cite o `backup.yaml` → B2] fim.'}</Markdown>)
+    expect(screen.getByText(/backup\.yaml/)).toHaveClass('clarify-resolved')
+  })
+
+  it('responder um marcador que atravessa nós ancora raw e offset (critério 4)', () => {
+    const doc = '---\ncerne_id: F-0001\n---\n\n' + comCodigo
+    const raw = '[ESCLARECER: qual provedor? cite o `backup.yaml` aqui]'
+    let saved = ''
+    const onAnswer = (r: string, offset: number, answer: string) => {
+      saved = resolveMarker(doc, r, offset, answer) ?? 'MISMATCH'
+    }
+    render(<Markdown onAnswer={onAnswer}>{doc}</Markdown>)
+    fireEvent.click(screen.getByRole('button', { name: /qual provedor\?/ }))
+    fireEvent.change(screen.getByPlaceholderText(/Escreva a resposta/), {
+      target: { value: 'B2' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    // O offset tem de bater com o raw no doc ORIGINAL (com frontmatter), senão
+    // o resolveMarker devolve null e a resposta se perde.
+    expect(saved).toContain('[ESCLARECIDO: qual provedor? cite o `backup.yaml` aqui → B2]')
+    expect(saved).not.toBe('MISMATCH')
+    expect(doc.indexOf(raw)).toBeGreaterThan(0)
+  })
+
   it('round-trip: a resposta do chip produz o doc resolvido', () => {
     const doc = '---\ncerne_id: F-0001\n---\n\nX [ESCLARECER: onde?] fim.'
     let saved = ''
