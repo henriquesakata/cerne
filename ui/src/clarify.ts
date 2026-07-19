@@ -1,8 +1,11 @@
 // clarify espelha internal/clarify no lado do browser: reconhece os
-// marcadores [ESCLARECER] deixados por agentes nos docs e o rastro resolvido
-// [ESCLARECIDO: pergunta → resposta]. O parse é duplicado de propósito
-// (decisão da spec F-0175): um endpoint de spans acoplaria o render da UI ao
-// servidor. Mantenha o regex em sincronia com internal/clarify/clarify.go.
+// marcadores de esclarecimento deixados por agentes nos docs (catálogo por
+// idioma — pt [ESCLARECER]/[ESCLARECIDO], en [CLARIFY]/[CLARIFIED]; F-0182) e
+// o rastro resolvido [ESCLARECIDO: pergunta → resposta]. O parse é duplicado
+// de propósito (decisão da spec F-0175): um endpoint de spans acoplaria o
+// render da UI ao servidor. A sincronia com internal/clarify/clarify.go é
+// travada pelo corpus compartilhado (internal/clarify/testdata/corpus.json),
+// lido pelos testes dos dois lados.
 
 export type ClarifyInfo = {
   question: string
@@ -11,10 +14,29 @@ export type ClarifyInfo = {
   answer: string
 }
 
-// Mesma forma do Go: palavra com guilhemets legados opcionais e corpo
-// opcional de linha única (sem ] nem quebra), o que também exclui prefixos
-// como [ESCLARECEDOR].
-export const CLARIFY_RE = /\[«?(ESCLARECER|ESCLARECIDO)»?(?::[ \t]*([^\]\n]*))?\]/g
+// Catálogo de vocabulários por idioma (F-0182), espelho da tabela em
+// internal/clarify/clarify.go. Conjunto fechado: regex aberto engoliria prosa
+// entre colchetes. Idioma novo = uma linha aqui, a irmã no Go e uma fixture
+// no corpus compartilhado (o teste de paridade quebra o lado que atrasar).
+const VOCABS = [
+  { open: 'ESCLARECER', resolved: 'ESCLARECIDO' },
+  { open: 'CLARIFY', resolved: 'CLARIFIED' },
+]
+
+// Palavras em ordem de tamanho (maior primeiro) para que uma palavra que é
+// prefixo de outra (CLARIFY / CLARIFIED) nunca sombreie a forma longa.
+const MARKER_WORDS = VOCABS.flatMap((v) => [v.open, v.resolved]).sort(
+  (a, b) => b.length - a.length,
+)
+const RESOLVED_WORDS = new Set(VOCABS.map((v) => v.resolved))
+
+// Mesma forma do Go: palavra do catálogo com guilhemets legados opcionais e
+// corpo opcional de linha única (sem ] nem quebra), o que também exclui
+// prefixos como [ESCLARECEDOR] e [CLARIFIER].
+export const CLARIFY_RE = new RegExp(
+  `\\[«?(${MARKER_WORDS.join('|')})»?(?::[ \\t]*([^\\]\\n]*))?\\]`,
+  'g',
+)
 
 // Contextos de citação: marcador dentro deles é o doc FALANDO da convenção,
 // não um esclarecimento autorado. Comentários HTML carregam o guia dos
@@ -29,7 +51,7 @@ export function parseClarification(raw: string): ClarifyInfo | null {
   const m = new RegExp(CLARIFY_RE.source).exec(raw)
   if (!m || m[0] !== raw) return null
   const body = (m[2] ?? '').trim()
-  if (m[1] === 'ESCLARECIDO') {
+  if (RESOLVED_WORDS.has(m[1])) {
     const arrow = body.indexOf('→')
     if (arrow >= 0) {
       return {
@@ -65,21 +87,35 @@ function citationRanges(content: string): Array<[number, number]> {
   return ranges
 }
 
+// MarkerSpan é uma ocorrência de marcador no conteúdo: o texto cru e o offset
+// que o ancora (o que o resolveMarker exige para reescrever só ela).
+export type MarkerSpan = { raw: string; offset: number; resolved: boolean }
+
+// markerSpans devolve todos os marcadores fora de contexto de citação, em
+// ordem de documento. É a FONTE ÚNICA dos spans no browser: o contador do
+// badge e o render do Markdown consomem esta mesma função, para que o que se
+// conta e o que se renderiza não possam divergir (F-0181 — antes o render
+// casava o regex nó a nó do mdast e perdia marcador que atravessa nós inline).
+// Espelha internal/clarify.Parse: cita quem COMEÇA dentro da citação.
+export function markerSpans(content: string): MarkerSpan[] {
+  const citations = citationRanges(content)
+  const out: MarkerSpan[] = []
+  for (const m of content.matchAll(CLARIFY_RE)) {
+    if (citations.some(([a, b]) => m.index >= a && m.index < b)) continue
+    out.push({ raw: m[0], offset: m.index, resolved: RESOLVED_WORDS.has(m[1]) })
+  }
+  return out
+}
+
 // countOpen conta os marcadores abertos fora de contextos de citação —
 // alimenta o badge das abas de doc (critério 9 da F-0175).
 export function countOpen(content: string): number {
-  const citations = citationRanges(content)
-  let n = 0
-  for (const m of content.matchAll(CLARIFY_RE)) {
-    if (m[1] !== 'ESCLARECER') continue
-    if (citations.some(([a, b]) => m.index >= a && m.index < b)) continue
-    n++
-  }
-  return n
+  return markerSpans(content).filter((s) => !s.resolved).length
 }
 
-// resolveMarker substitui UMA ocorrência do marcador pela forma resolvida
-// [ESCLARECIDO: pergunta → resposta], ancorada no offset exato para não tocar
+// resolveMarker substitui UMA ocorrência do marcador pela forma resolvida —
+// no MESMO vocabulário do marcador aberto ([CLARIFY] vira [CLARIFIED], nunca
+// [ESCLARECIDO]; F-0182) — ancorada no offset exato para não tocar
 // duplicatas. Devolve null se o offset não bate com raw (conteúdo mudou sob
 // os pés — recarregue em vez de salvar errado).
 export function resolveMarker(
@@ -91,8 +127,11 @@ export function resolveMarker(
   if (content.slice(offset, offset + raw.length) !== raw) return null
   const info = parseClarification(raw)
   if (!info || info.resolved) return null
+  const word = new RegExp(CLARIFY_RE.source).exec(raw)?.[1]
+  const vocab = VOCABS.find((v) => v.open === word)
+  if (!vocab) return null
   const resolved = info.question
-    ? `[ESCLARECIDO: ${info.question} → ${answer}]`
-    : `[ESCLARECIDO: ${answer}]`
+    ? `[${vocab.resolved}: ${info.question} → ${answer}]`
+    : `[${vocab.resolved}: ${answer}]`
   return content.slice(0, offset) + resolved + content.slice(offset + raw.length)
 }

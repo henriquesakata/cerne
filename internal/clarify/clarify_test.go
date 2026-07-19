@@ -1,6 +1,9 @@
 package clarify
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -148,6 +151,66 @@ func TestParse(t *testing.T) {
 				{Question: "real?", Raw: "[ESCLARECER: real?]", Offset: 7},
 			},
 		},
+		// F-0182: the en vocabulary is part of the catalog — same shapes,
+		// same rules. Without it the approve gate is fail-open by language:
+		// an English spec full of open questions sails through.
+		{
+			name:    "en open with question",
+			content: "x [CLARIFY: which format?] y",
+			want: []Clarification{
+				{Question: "which format?", Raw: "[CLARIFY: which format?]", Offset: 2},
+			},
+		},
+		{
+			name:    "en open with options",
+			content: "[CLARIFY: where? | doc | sidecar]",
+			want: []Clarification{
+				{
+					Question: "where?",
+					Options:  []string{"doc", "sidecar"},
+					Raw:      "[CLARIFY: where? | doc | sidecar]",
+					Offset:   0,
+				},
+			},
+		},
+		{
+			name:    "en bare",
+			content: "unclear [CLARIFY] here",
+			want: []Clarification{
+				{Raw: "[CLARIFY]", Offset: 8},
+			},
+		},
+		{
+			name:    "en resolved with arrow",
+			content: "[CLARIFIED: where? → in the doc]",
+			want: []Clarification{
+				{
+					Question: "where?",
+					Resolved: true,
+					Answer:   "in the doc",
+					Raw:      "[CLARIFIED: where? → in the doc]",
+					Offset:   0,
+				},
+			},
+		},
+		{
+			name:    "en prefix word is not a marker",
+			content: "[CLARIFIER] is not a marker; [CLARIFICATION: x] neither.",
+			want:    nil,
+		},
+		{
+			name:    "en marker in citation contexts is not authored",
+			content: "cite `[CLARIFY: inline]` and\n```\n[CLARIFY: fenced]\n```\n<!-- [CLARIFY: guide] -->",
+			want:    nil,
+		},
+		{
+			name:    "mixed vocabularies coexist in one doc",
+			content: "a [ESCLARECER: um?] b [CLARIFY: two?] c",
+			want: []Clarification{
+				{Question: "um?", Raw: "[ESCLARECER: um?]", Offset: 2},
+				{Question: "two?", Raw: "[CLARIFY: two?]", Offset: 22},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -176,6 +239,48 @@ func TestParse(t *testing.T) {
 				}
 				if tt.content[got[i].Offset:got[i].Offset+len(got[i].Raw)] != got[i].Raw {
 					t.Errorf("[%d] Offset/Raw mismatch: content slice = %q", i, tt.content[got[i].Offset:got[i].Offset+len(got[i].Raw)])
+				}
+			}
+		})
+	}
+}
+
+// TestParseCorpus is the Go side of the Go↔TS parity lock (F-0182): the same
+// testdata/corpus.json is read by ui/src/Clarify.test.tsx, and both parsers
+// must return identical span sets. A vocabulary added on one side only fails
+// the other side's run of this corpus.
+func TestParseCorpus(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "corpus.json"))
+	if err != nil {
+		t.Fatalf("reading corpus: %v", err)
+	}
+	var corpus struct {
+		Cases []struct {
+			Name    string `json:"name"`
+			Content string `json:"content"`
+			Spans   []struct {
+				Raw      string `json:"raw"`
+				Offset   int    `json:"offset"`
+				Resolved bool   `json:"resolved"`
+			} `json:"spans"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("corpus json: %v", err)
+	}
+	if len(corpus.Cases) == 0 {
+		t.Fatal("corpus has no cases")
+	}
+	for _, c := range corpus.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			got := Parse(c.Content)
+			if len(got) != len(c.Spans) {
+				t.Fatalf("Parse() returned %d spans, want %d: %+v", len(got), len(c.Spans), got)
+			}
+			for i, want := range c.Spans {
+				if got[i].Raw != want.Raw || got[i].Offset != want.Offset || got[i].Resolved != want.Resolved {
+					t.Errorf("[%d] = {%q %d %v}, want {%q %d %v}",
+						i, got[i].Raw, got[i].Offset, got[i].Resolved, want.Raw, want.Offset, want.Resolved)
 				}
 			}
 		})

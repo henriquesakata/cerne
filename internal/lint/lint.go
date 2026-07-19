@@ -1201,7 +1201,7 @@ func staleReadyFindings(features []store.Feature, windowDays int, now time.Time)
 		findings = append(findings, Finding{
 			Rule:   RuleStaleReady,
 			Entity: f.ID,
-			Detail: fmt.Sprintf("implementada (Ready) há %d dias sem aceite — rode 'cerne feature accept %s' para validar", int(age.Hours()/24), f.ID),
+			Detail: fmt.Sprintf("implemented (Ready) for %d days without acceptance — run 'cerne feature accept %s' to validate", int(age.Hours()/24), f.ID),
 		})
 	}
 	return findings
@@ -1235,7 +1235,7 @@ func staleWorkFindings(works []store.Work, hours int, now time.Time) []Finding {
 		findings = append(findings, Finding{
 			Rule:   RuleStaleWork,
 			Entity: w.ID,
-			Detail: fmt.Sprintf("ativa há %.0fh sem done/abandon — rode 'cerne work done %s' ou 'cerne work abandon %s'", age.Hours(), w.ID, w.ID),
+			Detail: fmt.Sprintf("active for %.0fh without done/abandon — run 'cerne work done %s' or 'cerne work abandon %s'", age.Hours(), w.ID, w.ID),
 		})
 	}
 	return findings

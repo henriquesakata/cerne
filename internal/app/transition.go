@@ -313,7 +313,7 @@ func ValidateTransitionFlags(action domain.Action, by, reason string) error {
 	case domain.ActionAccept:
 		// The acceptance note is optional: the accept is an act, not a document.
 		if by != "" {
-			return fmt.Errorf("--by não é permitido para accept")
+			return fmt.Errorf("--by is not allowed for accept")
 		}
 	default:
 		if by != "" || reason != "" {
