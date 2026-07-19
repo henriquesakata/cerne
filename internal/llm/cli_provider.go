@@ -22,14 +22,31 @@ var ErrClaudeCLI = errors.New("claude-cli invocation failed")
 // real Claude Code CLI.
 type runner func(ctx context.Context, name string, args []string, stdin string) (string, error)
 
-// maxStderrBytes bounds how much of a failed command's stderr is echoed in the
-// error so a verbose CLI does not flood the message.
-const maxStderrBytes = 512
+// maxOutputBytes bounds how much of a failed command's output (either stream)
+// is echoed in the error so a verbose CLI does not flood the message.
+const maxOutputBytes = 512
+
+// describeExit builds the description of a non-zero exit: it prefers stderr
+// (the convention), falls back to stdout — labeled, so the reader knows which
+// pipe it came from — when stderr is empty, and says so explicitly when
+// neither stream carried anything. The Claude Code CLI reports auth failures
+// on stdout with an empty stderr (F-0183); before the fallback, the error
+// ended in a dangling colon and hid the one line naming the cause.
+func describeExit(name, state string, stdout, stderr []byte) string {
+	if len(bytes.TrimSpace(stderr)) > 0 {
+		return fmt.Sprintf("%q exited with %s: %s", name, state, truncate(stderr, maxOutputBytes))
+	}
+	if len(bytes.TrimSpace(stdout)) > 0 {
+		return fmt.Sprintf("%q exited with %s (stdout): %s", name, state, truncate(stdout, maxOutputBytes))
+	}
+	return fmt.Sprintf("%q exited with %s (no output)", name, state)
+}
 
 // execRun is the default runner: it runs name+args via exec.CommandContext,
-// feeding stdin to the process and returning stdout on success. A non-zero exit
-// yields an error including the (truncated) stderr; an exec error (e.g.
-// executable not found) is reported with an actionable message naming the binary.
+// feeding stdin to the process and returning stdout on success. A non-zero
+// exit yields an error carrying the process's own explanation via
+// describeExit; an exec error (e.g. executable not found) is reported with an
+// actionable message naming the binary.
 func execRun(ctx context.Context, name string, args []string, stdin string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(stdin)
@@ -42,7 +59,7 @@ func execRun(ctx context.Context, name string, args []string, stdin string) (str
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return "", fmt.Errorf("%q exited with %s: %s", name, exitErr.ProcessState.String(), truncate(stderr.Bytes(), maxStderrBytes))
+		return "", errors.New(describeExit(name, exitErr.ProcessState.String(), stdout.Bytes(), stderr.Bytes()))
 	}
 	// Non-exit error: the binary could not be started (not in PATH, etc.).
 	return "", fmt.Errorf("could not run %q (install Claude Code and ensure it is on PATH): %w", name, err)
