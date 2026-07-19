@@ -532,7 +532,7 @@ func TestStaleReadyFindings(t *testing.T) {
 	got := staleReadyFindings(features, 14, now)
 	want := []Finding{
 		{Rule: RuleStaleReady, Entity: "F-0001",
-			Detail: "implementada (Ready) há 20 dias sem aceite — rode 'cerne feature accept F-0001' para validar"},
+			Detail: "implemented (Ready) for 20 days without acceptance — run 'cerne feature accept F-0001' to validate"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)

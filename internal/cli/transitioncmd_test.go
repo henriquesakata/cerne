@@ -389,7 +389,7 @@ func TestTransitionRevertGateRefusesAgent(t *testing.T) {
 	if err == nil {
 		t.Fatalf("revert as agent under human gate succeeded, want refusal")
 	}
-	if !strings.Contains(err.Error(), "humano") {
+	if !strings.Contains(err.Error(), "human") {
 		t.Fatalf("error %q does not mention the human gate", err)
 	}
 	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateApproved {

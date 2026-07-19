@@ -27,7 +27,7 @@ type WorkOutcome struct {
 func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string) (store.Work, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return store.Work{}, fmt.Errorf("a descrição da atividade não pode ser vazia")
+		return store.Work{}, fmt.Errorf("the activity description cannot be empty")
 	}
 	actor := strings.TrimSpace(agent)
 	if actor == "" {
@@ -89,13 +89,13 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 // refreshing the docs.lock snapshot in projDir.
 func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) (WorkOutcome, error) {
 	if abandon && strings.TrimSpace(reason) == "" {
-		return WorkOutcome{}, fmt.Errorf("--reason é obrigatório ao abandonar")
+		return WorkOutcome{}, fmt.Errorf("--reason is required to abandon")
 	}
 	var out WorkOutcome
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		w, err := store.LoadWork(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("atividade %s não encontrada no backend", id)
+			return "", fmt.Errorf("activity %s not found in the backend", id)
 		}
 		if err != nil {
 			return "", err
@@ -190,18 +190,18 @@ func validateWorkRefs(repoDir string, refs []string) ([]string, error) {
 		switch {
 		case strings.HasPrefix(id, "F-"):
 			if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--ref: feature %s não encontrada no backend", id)
+				return nil, fmt.Errorf("--ref: feature %s not found in the backend", id)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "D-"):
 			if _, err := store.LoadDecision(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--ref: decisão %s não encontrada no backend", id)
+				return nil, fmt.Errorf("--ref: decision %s not found in the backend", id)
 			} else if err != nil {
 				return nil, err
 			}
 		default:
-			return nil, fmt.Errorf("--ref: %q deve ser uma feature (F-) ou decisão (D-)", id)
+			return nil, fmt.Errorf("--ref: %q must be a feature (F-) or decision (D-)", id)
 		}
 		out = append(out, id)
 	}

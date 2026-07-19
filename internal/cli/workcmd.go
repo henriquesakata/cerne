@@ -70,7 +70,7 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths string, forc
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s criada (active) — %s (ator: %s)\n", w.ID, w.Title, w.Actor)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active) — %s (actor: %s)\n", w.ID, w.Title, w.Actor)
 	for _, m := range overlaps {
 		fmt.Fprintf(cmd.OutOrStdout(), "warning: paths overlap active %s (%s) on %s — coordinate before touching shared files\n",
 			m.ID, m.Title, joinRefs(m.Globs))
@@ -215,7 +215,7 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 
 	now := time.Now().UTC()
 	for _, wk := range shown {
-		line := fmt.Sprintf("%s  [%s]  %s  ator: %s  idade: %s", wk.ID, wk.State, wk.Title, wk.Actor, formatAge(now.Sub(wk.UpdatedAt)))
+		line := fmt.Sprintf("%s  [%s]  %s  actor: %s  age: %s", wk.ID, wk.State, wk.Title, wk.Actor, formatAge(now.Sub(wk.UpdatedAt)))
 		if len(wk.Refs) > 0 {
 			line += "  refs: " + joinRefs(wk.Refs)
 		}
@@ -223,9 +223,9 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	}
 	if len(shown) == 0 {
 		if all {
-			fmt.Fprintln(w, "Nenhuma atividade registrada. Use 'cerne work start \"<descrição>\"' para registrar.")
+			fmt.Fprintln(w, "No activity registered. Use 'cerne work start \"<description>\"' to register one.")
 		} else {
-			fmt.Fprintln(w, "Nenhuma atividade ativa. Use 'cerne work start \"<descrição>\"' para registrar, ou 'cerne work list --all' para ver história.")
+			fmt.Fprintln(w, "No active activity. Use 'cerne work start \"<description>\"' to register one, or 'cerne work list --all' for history.")
 		}
 	}
 	return nil
