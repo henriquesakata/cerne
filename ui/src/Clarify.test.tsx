@@ -164,6 +164,47 @@ describe('Markdown com chips de esclarecimento', () => {
     expect(doc.indexOf(raw)).toBeGreaterThan(0)
   })
 
+  // Critério 6 da F-0181, o que fecha a CLASSE do bug em vez de um caso: para
+  // qualquer conteúdo, o que o contador enxerga e o que a página renderiza têm
+  // de ser o mesmo conjunto. Enquanto forem derivações independentes, divergem.
+  it('invariante: todo span contado vira chip, e nenhum chip a mais (critério 6)', () => {
+    const corpus = [
+      'Prosa simples sem marcador nenhum.',
+      'X [ESCLARECER: simples?] fim.',
+      'Prosa [ESCLARECER: um?] e [ESCLARECIDO: dois? → ok] e [ESCLARECER: três?].',
+      'Com código [ESCLARECER: cite o `a.yaml` agora?] fim.',
+      'Com negrito [ESCLARECER: qual **destino**?] fim.',
+      '| A | B |\n|---|---|\n| c | [ESCLARECER: B2 ou S3? veja `x.yaml`] |',
+      'cita `[ESCLARECER: em código]` — não conta.',
+      '<!-- guia [ESCLARECER: exemplo] -->\ntexto.',
+      '```\n[ESCLARECER: no fence]\n```\ntexto.',
+      '[ESCLARECER: igual?] meio [ESCLARECER: igual?]',
+      '---\ncerne_id: F-0001\n---\n\nCom frontmatter [ESCLARECER: cite o `y.yaml`?] fim.',
+    ]
+    for (const md of corpus) {
+      const { container } = render(<Markdown>{md}</Markdown>)
+      const chips = container.querySelectorAll('.clarify-open, .clarify-resolved')
+      const abertos = container.querySelectorAll('.clarify-open')
+      expect(chips.length, `total de chips em: ${md}`).toBe(markerSpans(md).length)
+      expect(abertos.length, `chips abertos em: ${md}`).toBe(countOpen(md))
+      cleanup()
+    }
+  })
+
+  // Critério 8: a repro literal da F-0463 do Hub — a aba marcava 1 pendência e
+  // a página não oferecia nada para responder.
+  it('repro F-0463: badge conta 1 e existe 1 chip clicável (critério 8)', () => {
+    const md = [
+      '| Fork | Decisão | Razão |',
+      '|---|---|---|',
+      '| Provedor do destino | [ESCLARECER: B2, S3 ou outro? Define custo e credencial do `backup-externalsecret.yaml`] | escolha de custo |',
+    ].join('\n')
+    expect(countOpen(md)).toBe(1)
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    expect(container.querySelectorAll('.clarify-open')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /B2, S3 ou outro\?/ })).toBeInTheDocument()
+  })
+
   it('round-trip: a resposta do chip produz o doc resolvido', () => {
     const doc = '---\ncerne_id: F-0001\n---\n\nX [ESCLARECER: onde?] fim.'
     let saved = ''
