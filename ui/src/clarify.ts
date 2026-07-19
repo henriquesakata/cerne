@@ -65,17 +65,30 @@ function citationRanges(content: string): Array<[number, number]> {
   return ranges
 }
 
+// MarkerSpan é uma ocorrência de marcador no conteúdo: o texto cru e o offset
+// que o ancora (o que o resolveMarker exige para reescrever só ela).
+export type MarkerSpan = { raw: string; offset: number; resolved: boolean }
+
+// markerSpans devolve todos os marcadores fora de contexto de citação, em
+// ordem de documento. É a FONTE ÚNICA dos spans no browser: o contador do
+// badge e o render do Markdown consomem esta mesma função, para que o que se
+// conta e o que se renderiza não possam divergir (F-0181 — antes o render
+// casava o regex nó a nó do mdast e perdia marcador que atravessa nós inline).
+// Espelha internal/clarify.Parse: cita quem COMEÇA dentro da citação.
+export function markerSpans(content: string): MarkerSpan[] {
+  const citations = citationRanges(content)
+  const out: MarkerSpan[] = []
+  for (const m of content.matchAll(CLARIFY_RE)) {
+    if (citations.some(([a, b]) => m.index >= a && m.index < b)) continue
+    out.push({ raw: m[0], offset: m.index, resolved: m[1] === 'ESCLARECIDO' })
+  }
+  return out
+}
+
 // countOpen conta os marcadores abertos fora de contextos de citação —
 // alimenta o badge das abas de doc (critério 9 da F-0175).
 export function countOpen(content: string): number {
-  const citations = citationRanges(content)
-  let n = 0
-  for (const m of content.matchAll(CLARIFY_RE)) {
-    if (m[1] !== 'ESCLARECER') continue
-    if (citations.some(([a, b]) => m.index >= a && m.index < b)) continue
-    n++
-  }
-  return n
+  return markerSpans(content).filter((s) => !s.resolved).length
 }
 
 // resolveMarker substitui UMA ocorrência do marcador pela forma resolvida

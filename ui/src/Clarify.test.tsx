@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Markdown from './Markdown'
-import { countOpen, parseClarification, resolveMarker } from './clarify'
+import { countOpen, markerSpans, parseClarification, resolveMarker } from './clarify'
 
 afterEach(cleanup)
 
@@ -37,6 +37,25 @@ describe('clarify helpers', () => {
       '```\n[ESCLARECER: no fence]\n```\n' +
       '[ESCLARECER: um?] x [ESCLARECIDO: dois? → ok] y [ESCLARECER: três?]'
     expect(countOpen(md)).toBe(2)
+  })
+
+  it('markerSpans devolve os spans em ordem, com offset ancorado e citações puladas', () => {
+    const md =
+      '<!-- guia [ESCLARECER: exemplo] -->\n' +
+      'cita `[ESCLARECER: inline]` e\n' +
+      '```\n[ESCLARECER: no fence]\n```\n' +
+      '[ESCLARECER: um?] x [ESCLARECIDO: dois? → ok] y [ESCLARECER: três?]'
+    const spans = markerSpans(md)
+    expect(spans.map((s) => s.raw)).toEqual([
+      '[ESCLARECER: um?]',
+      '[ESCLARECIDO: dois? → ok]',
+      '[ESCLARECER: três?]',
+    ])
+    expect(spans.map((s) => s.resolved)).toEqual([false, true, false])
+    // O offset tem de ancorar exatamente o raw — é o contrato do resolveMarker.
+    for (const s of spans) {
+      expect(md.slice(s.offset, s.offset + s.raw.length)).toBe(s.raw)
+    }
   })
 
   it('resolveMarker substitui só a ocorrência ancorada no offset', () => {
