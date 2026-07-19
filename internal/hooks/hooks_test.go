@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -762,9 +763,13 @@ func TestInstall_CommitTrailerGitHook(t *testing.T) {
 		if !strings.Contains(string(b), `cerne hook commit-trailer "$1"`) {
 			t.Fatalf("git hook missing delegation:\n%s", b)
 		}
-		info, _ := os.Stat(p)
-		if info.Mode()&0o111 == 0 {
-			t.Fatalf("git hook not executable: %v", info.Mode())
+		// Windows has no unix exec bits (git runs hooks via sh regardless);
+		// everything else about the hook is still asserted there (F-0185).
+		if runtime.GOOS != "windows" {
+			info, _ := os.Stat(p)
+			if info.Mode()&0o111 == 0 {
+				t.Fatalf("git hook not executable: %v", info.Mode())
+			}
 		}
 		r, ok := find(results, "prepare-commit-msg")
 		if !ok || r.Status != StatusCreated {
