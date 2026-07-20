@@ -1,0 +1,200 @@
+import { describe, expect, it } from 'vitest'
+import { buildMindmapTree, type MindNode } from './mindmap-tree'
+import type { Feature, FeatureState, StateResponse } from './api'
+
+// Fixtures mínimas: só os campos que a árvore consome importam.
+function mkFeature(
+  id: string,
+  over: Partial<Pick<Feature, 'module' | 'parent' | 'state' | 'title'>> = {},
+): Feature {
+  return {
+    id,
+    title: over.title ?? `title ${id}`,
+    module: over.module ?? '',
+    parent: over.parent,
+    state: (over.state ?? 'implemented') as FeatureState,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+}
+
+function mkState(features: Feature[], modules: string[] = []): StateResponse {
+  return {
+    project: { name: 'proj', modules },
+    features,
+    decisions: [],
+    references: [],
+    runbooks: [],
+    notes: [],
+  }
+}
+
+const DEFAULTS = { hideTerminal: true, deliveredOnly: false, collapsed: new Set<string>() }
+
+function byId(node: MindNode, id: string): MindNode | null {
+  if (node.id === id) return node
+  for (const c of node.children) {
+    const hit = byId(c, id)
+    if (hit) return hit
+  }
+  return null
+}
+
+describe('buildMindmapTree', () => {
+  // Critério 1: raiz = projeto, 1º nível = módulos + balde sem-módulo (por último).
+  it('groups features under module nodes, no-module bucket last', () => {
+    const { root, featureCount } = buildMindmapTree(
+      mkState(
+        [
+          mkFeature('F-0001', { module: 'beta' }),
+          mkFeature('F-0002', { module: 'alpha' }),
+          mkFeature('F-0003', { module: '' }),
+        ],
+        ['alpha', 'beta'],
+      ),
+      DEFAULTS,
+    )
+    expect(root.kind).toBe('root')
+    expect(root.label).toBe('proj')
+    expect(root.children.map((c) => c.id)).toEqual(['module:alpha', 'module:beta', 'module:'])
+    expect(byId(root, 'module:alpha')!.children.map((c) => c.id)).toEqual(['F-0002'])
+    expect(byId(root, 'module:')!.children.map((c) => c.id)).toEqual(['F-0003'])
+    expect(featureCount).toBe(3)
+  })
+
+  // Critério 1: módulo sem nenhuma feature não vira nó.
+  it('omits modules with no features', () => {
+    const { root } = buildMindmapTree(
+      mkState([mkFeature('F-0001', { module: 'alpha' })], ['alpha', 'empty']),
+      DEFAULTS,
+    )
+    expect(root.children.map((c) => c.id)).toEqual(['module:alpha'])
+  })
+
+  // Critério 2: parent vence module — o filho aninha sob o épico (ramo do épico),
+  // nunca sob o próprio módulo; profundidade arbitrária.
+  it('nests by parent, parent wins over child module, arbitrary depth', () => {
+    const { root } = buildMindmapTree(
+      mkState([
+        mkFeature('F-0001', { module: 'alpha' }), // épico
+        mkFeature('F-0002', { module: 'beta', parent: 'F-0001' }),
+        mkFeature('F-0003', { parent: 'F-0002' }), // neto
+      ]),
+      DEFAULTS,
+    )
+    expect(byId(root, 'module:alpha')).not.toBeNull()
+    expect(byId(root, 'module:beta')).toBeNull() // beta ficou vazio → omitido
+    const epic = byId(root, 'F-0001')!
+    expect(epic.children.map((c) => c.id)).toEqual(['F-0002'])
+    expect(byId(epic, 'F-0003')).not.toBeNull()
+    // nó único: F-0002 só aparece uma vez na árvore inteira
+    const seen: string[] = []
+    const walk = (n: MindNode) => {
+      seen.push(n.id)
+      n.children.forEach(walk)
+    }
+    walk(root)
+    expect(seen.filter((id) => id === 'F-0002')).toHaveLength(1)
+  })
+
+  // Robustez: parent apontando para id inexistente cai no módulo do filho.
+  it('falls back to own module when parent is unknown', () => {
+    const { root } = buildMindmapTree(
+      mkState([mkFeature('F-0001', { module: 'alpha', parent: 'F-9999' })]),
+      DEFAULTS,
+    )
+    expect(byId(root, 'module:alpha')!.children.map((c) => c.id)).toEqual(['F-0001'])
+  })
+
+  // Critério 5: filtros de estado + contagem.
+  it('hides terminal states by default and counts only passing features', () => {
+    const { root, featureCount } = buildMindmapTree(
+      mkState([
+        mkFeature('F-0001', { state: 'implemented' }),
+        mkFeature('F-0002', { state: 'superseded' }),
+        mkFeature('F-0003', { state: 'rejected' }),
+      ]),
+      DEFAULTS,
+    )
+    expect(byId(root, 'F-0002')).toBeNull()
+    expect(byId(root, 'F-0003')).toBeNull()
+    expect(featureCount).toBe(1)
+  })
+
+  it('deliveredOnly keeps only implemented and done', () => {
+    const { root, featureCount } = buildMindmapTree(
+      mkState([
+        mkFeature('F-0001', { state: 'implemented' }),
+        mkFeature('F-0002', { state: 'done' }),
+        mkFeature('F-0003', { state: 'in_development' }),
+        mkFeature('F-0004', { state: 'candidate' }),
+      ]),
+      { ...DEFAULTS, deliveredOnly: true },
+    )
+    expect(byId(root, 'F-0001')).not.toBeNull()
+    expect(byId(root, 'F-0002')).not.toBeNull()
+    expect(byId(root, 'F-0003')).toBeNull()
+    expect(byId(root, 'F-0004')).toBeNull()
+    expect(featureCount).toBe(2)
+  })
+
+  // Critério 5 (estrutura): ancestral filtrado de um visível permanece como
+  // estrutura (passesFilter=false), e não entra na contagem.
+  it('keeps a filtered epic as structure when a descendant passes', () => {
+    const { root, featureCount } = buildMindmapTree(
+      mkState([
+        mkFeature('F-0001', { module: 'alpha', state: 'in_development' }), // épico fora do filtro
+        mkFeature('F-0002', { parent: 'F-0001', state: 'implemented' }),
+      ]),
+      { ...DEFAULTS, deliveredOnly: true },
+    )
+    const epic = byId(root, 'F-0001')!
+    expect(epic).not.toBeNull()
+    expect(epic.passesFilter).toBe(false)
+    expect(byId(root, 'F-0002')!.passesFilter).toBe(true)
+    expect(featureCount).toBe(1)
+  })
+
+  // Critério 4 (parte pura): colapso poda a subárvore e conta descendentes ocultos.
+  it('prunes collapsed subtrees and reports hidden descendants', () => {
+    const { root } = buildMindmapTree(
+      mkState([
+        mkFeature('F-0001', { module: 'alpha' }),
+        mkFeature('F-0002', { parent: 'F-0001' }),
+        mkFeature('F-0003', { parent: 'F-0002' }),
+      ]),
+      { ...DEFAULTS, collapsed: new Set(['F-0001']) },
+    )
+    const epic = byId(root, 'F-0001')!
+    expect(epic.children).toHaveLength(0)
+    expect(epic.hiddenDescendants).toBe(2)
+    expect(byId(root, 'module:alpha')!.hiddenDescendants).toBe(0)
+  })
+
+  it('collapses module nodes too', () => {
+    const { root } = buildMindmapTree(
+      mkState([mkFeature('F-0001', { module: 'alpha' }), mkFeature('F-0002', { module: 'alpha' })]),
+      { ...DEFAULTS, collapsed: new Set(['module:alpha']) },
+    )
+    const mod = byId(root, 'module:alpha')!
+    expect(mod.children).toHaveLength(0)
+    expect(mod.hiddenDescendants).toBe(2)
+  })
+
+  // Critério 6: determinismo — mesma entrada (em qualquer ordem), mesma árvore.
+  it('is deterministic and sorts children by id regardless of input order', () => {
+    const shuffled = mkState([
+      mkFeature('F-0003', { module: 'alpha' }),
+      mkFeature('F-0001', { module: 'alpha' }),
+      mkFeature('F-0002', { module: 'alpha' }),
+    ])
+    const a = buildMindmapTree(shuffled, DEFAULTS)
+    const b = buildMindmapTree(shuffled, DEFAULTS)
+    expect(a).toEqual(b)
+    expect(byId(a.root, 'module:alpha')!.children.map((c) => c.id)).toEqual([
+      'F-0001',
+      'F-0002',
+      'F-0003',
+    ])
+  })
+})
