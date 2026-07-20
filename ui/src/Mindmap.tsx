@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  Position,
   type Node,
   type Edge,
   type ReactFlowInstance,
@@ -158,6 +159,9 @@ export default function Mindmap() {
         return {
           id: n.id,
           position: pos.get(n.id) ?? { x: 0, y: 0 },
+          // Árvore corre para a direita — handles nas laterais, não topo/base.
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
           data: { label: mkLabel(n) },
           style: {
             width: NODE_W,
@@ -254,23 +258,25 @@ export default function Mindmap() {
           ))}
         </span>
       </div>
-      <div className="mindmap-canvas">
-        <ReactFlow
-          nodes={baseNodes}
-          edges={edges}
-          onInit={(inst) => {
-            rf.current = inst
-          }}
-          fitView
-          fitViewOptions={{ padding: 0.08 }}
-          minZoom={0.02}
-          colorMode={theme}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={24} />
-          <Controls />
-          <MiniMap nodeColor={() => 'var(--teal)'} zoomable pannable />
-        </ReactFlow>
+      <div className="mindmap-wrap">
+        <div className="mindmap-canvas">
+          <ReactFlow
+            nodes={baseNodes}
+            edges={edges}
+            onInit={(inst) => {
+              rf.current = inst
+            }}
+            fitView
+            fitViewOptions={{ padding: 0.08 }}
+            minZoom={0.02}
+            colorMode={theme}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background gap={24} />
+            <Controls />
+            <MiniMap nodeColor={() => 'var(--teal)'} zoomable pannable />
+          </ReactFlow>
+        </div>
       </div>
       <p className="status mindmap-hint">{t.mindmap.hint}</p>
     </main>

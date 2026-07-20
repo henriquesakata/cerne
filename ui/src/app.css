@@ -1453,7 +1453,10 @@ h2 {
 .mindmap-toolbar .filter { display: inline-flex; align-items: center; gap: 0.35rem; }
 .mindmap-legend { display: inline-flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; margin-left: auto; font-size: 0.82rem; color: var(--muted); }
 .mindmap-legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
-.mindmap-canvas { flex: 1; min-width: 0; margin-top: 0.75rem; border: 1px solid var(--border-warm); border-radius: 8px; background: var(--surface); overflow: hidden; }
+/* Mesma estrutura do Grafo: wrap flex ROW dá altura ao canvas por stretch —
+   altura via flex-grow de coluna não vira base definite p/ height:100% do RF. */
+.mindmap-wrap { display: flex; flex: 1; min-height: 0; margin-top: 0.75rem; }
+.mindmap-canvas { flex: 1; min-width: 0; border: 1px solid var(--border-warm); border-radius: 8px; background: var(--surface); overflow: hidden; }
 .mindmap-canvas .react-flow { --xy-background-color: var(--surface); }
 .mindmap-hint { margin: 0.5rem 0 0; }
 .mnode { position: relative; display: flex; align-items: center; width: 100%; height: 100%; padding: 0 1.5rem 0 0.55rem; box-sizing: border-box; line-height: 1.15; overflow: hidden; }
