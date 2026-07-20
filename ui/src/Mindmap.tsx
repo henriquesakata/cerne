@@ -24,6 +24,9 @@ import { useEffectiveTheme } from './theme'
 const elk = new ELK()
 const NODE_W = 196
 const NODE_H = 56
+// Acima deste tamanho de roster, a aba abre com os módulos recolhidos — a
+// árvore toda expandida (hub: centenas de folhas) é uma parede ilegível.
+const COLLAPSE_ALL_ABOVE = 60
 
 // Cores por estado — os mesmos tokens dos chips do kanban (app.css).
 const STATE_COLOR: Record<FeatureState, string> = {
@@ -63,7 +66,9 @@ export default function Mindmap() {
   const [error, setError] = useState<string | null>(null)
   const [deliveredOnly, setDeliveredOnly] = useState(false)
   const [showTerminal, setShowTerminal] = useState(false)
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  // null = ainda não inicializado — o default (tudo aberto vs módulos
+  // recolhidos) depende do tamanho do roster, conhecido só após o fetch.
+  const [collapsed, setCollapsed] = useState<Set<string> | null>(null)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [laying, setLaying] = useState(false)
@@ -79,9 +84,18 @@ export default function Mindmap() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [version])
 
+  useEffect(() => {
+    if (!data) return
+    setCollapsed((cur) => {
+      if (cur !== null) return cur
+      if (data.features.length <= COLLAPSE_ALL_ABOVE) return new Set()
+      return new Set(data.features.map((f) => `module:${f.module}`))
+    })
+  }, [data])
+
   const tree = useMemo(
     () =>
-      data
+      data && collapsed
         ? buildMindmapTree(data, { hideTerminal: !showTerminal, deliveredOnly, collapsed })
         : null,
     [data, showTerminal, deliveredOnly, collapsed],
@@ -249,7 +263,7 @@ export default function Mindmap() {
           }}
           fitView
           fitViewOptions={{ padding: 0.08 }}
-          minZoom={0.05}
+          minZoom={0.02}
           colorMode={theme}
           proOptions={{ hideAttribution: true }}
         >

@@ -68,12 +68,16 @@ const state: StateResponse = {
   notes: [],
 }
 
+let mockState: StateResponse = state
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
-  fetchState: vi.fn(async () => state),
+  fetchState: vi.fn(async () => mockState),
 }))
 
-beforeEach(cleanup)
+beforeEach(() => {
+  mockState = state
+  cleanup()
+})
 
 describe('Mindmap', () => {
   // Critérios 1 e 7: raiz = projeto, módulos + balde sem-módulo, strings do i18n
@@ -105,6 +109,26 @@ describe('Mindmap', () => {
     expect(screen.queryByText('Issues do projeto')).not.toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('expandir F-0001 (+1)'))
     expect(await screen.findByText('Issues do projeto')).toBeInTheDocument()
+  })
+
+  // Risco do plano (hub: centenas de folhas viram parede ilegível): num roster
+  // grande a aba abre com os módulos recolhidos (+N) — expande-se por ramo.
+  it('abre com módulos recolhidos quando o roster é grande', async () => {
+    mockState = {
+      ...state,
+      features: Array.from({ length: 70 }, (_, i) => ({
+        id: `F-${String(i + 1).padStart(4, '0')}`,
+        title: `Feature ${i + 1}`,
+        module: 'studio',
+        state: 'implemented' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      })),
+    }
+    render(<Mindmap />)
+    expect(await screen.findByLabelText('expandir module:studio (+70)')).toBeInTheDocument()
+    expect(screen.queryByText('Feature 1')).not.toBeInTheDocument()
+    expect(screen.getByText(/70 features visíveis/)).toBeInTheDocument()
   })
 
   // Critério 5: toggle "só entregues" esconde estados não terminados e a
