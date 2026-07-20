@@ -22,8 +22,9 @@ import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
 import './app.css'
 
-// Grafo carrega React Flow (pesado) sob demanda, como o Excalidraw.
+// Grafo e Mindmap carregam React Flow (pesado) sob demanda, como o Excalidraw.
 const Graph = lazy(() => import('./Graph'))
+const Mindmap = lazy(() => import('./Mindmap'))
 
 // Roteamento mínimo por hash: lista de seções + rotas de detalhe
 // (#/f/<id>, #/d/<id>, #/r/<id>). Rota desconhecida cai no kanban.
@@ -73,6 +74,12 @@ function Routed({ hash }: { hash: string }) {
     return (
       <Suspense fallback={<p className="status">{t.graph.loadingChunk}</p>}>
         <Graph />
+      </Suspense>
+    )
+  if (hash === '#/mindmap')
+    return (
+      <Suspense fallback={<p className="status">{t.mindmap.loadingChunk}</p>}>
+        <Mindmap />
       </Suspense>
     )
   if (hash === '#/ask') return <Ask />

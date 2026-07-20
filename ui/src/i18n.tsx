@@ -29,6 +29,7 @@ const ptBR = {
     conventions: 'Convenções',
     wiki: 'Wiki',
     graph: 'Grafo',
+    mindmap: 'Mapa mental',
     ask: 'Perguntar',
     search: 'Busca',
     lint: 'Lint',
@@ -375,6 +376,19 @@ const ptBR = {
       'Clique num nó para desenhar e listar suas conexões — ou ligue um tipo de aresta acima para ver toda a malha.',
     nodeTypes: 'Tipos de nó',
   },
+  mindmap: {
+    loadingChunk: 'Carregando mapa mental…',
+    loadError: (e: string) => `Erro ao montar o mapa mental: ${e}`,
+    title: 'Mapa mental',
+    stats: (n: number) => `${n} features visíveis`,
+    layouting: ' · calculando layout…',
+    deliveredOnly: 'Só entregues',
+    showTerminal: 'Mostrar terminais',
+    noModule: '(sem módulo)',
+    collapse: (id: string) => `recolher ${id}`,
+    expand: (id: string, hidden: number) => `expandir ${id} (+${hidden})`,
+    hint: 'Projeto → módulos → épicos → features (parent). Clique numa feature para abrir a página; − recolhe um ramo, +N expande.',
+  },
   ask: {
     modeLabels: {
       delegation: 'Delegação (o agente responde)',
@@ -500,6 +514,7 @@ const en: Messages = {
     conventions: 'Conventions',
     wiki: 'Wiki',
     graph: 'Graph',
+    mindmap: 'Mindmap',
     ask: 'Ask',
     search: 'Search',
     lint: 'Lint',
@@ -843,6 +858,19 @@ const en: Messages = {
     clickHint:
       'Click a node to draw and list its connections — or turn on an edge type above to see the whole mesh.',
     nodeTypes: 'Node types',
+  },
+  mindmap: {
+    loadingChunk: 'Loading mindmap…',
+    loadError: (e: string) => `Failed to build the mindmap: ${e}`,
+    title: 'Mindmap',
+    stats: (n: number) => `${n} features visible`,
+    layouting: ' · computing layout…',
+    deliveredOnly: 'Delivered only',
+    showTerminal: 'Show terminal states',
+    noModule: '(no module)',
+    collapse: (id: string) => `collapse ${id}`,
+    expand: (id: string, hidden: number) => `expand ${id} (+${hidden})`,
+    hint: 'Project → modules → epics → features (parent). Click a feature to open its page; − collapses a branch, +N expands it.',
   },
   ask: {
     modeLabels: {
