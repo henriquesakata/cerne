@@ -9,16 +9,28 @@ import type { StateResponse } from './api'
 // renderiza o label JSX de cada nó, o suficiente para asserções de DOM reais
 // (href, colapso, filtros); o de ELK devolve posições determinísticas.
 vi.mock('@xyflow/react', () => ({
-  ReactFlow: ({ nodes }: { nodes: Array<{ id: string; data: { label: ReactNode } }> }) => (
+  ReactFlow: ({
+    nodes,
+  }: {
+    nodes: Array<{
+      id: string
+      position: { x: number; y: number }
+      data: { label: ReactNode; side?: string }
+    }>
+  }) => (
     <div data-testid="rf-canvas">
       {nodes.map((n) => (
-        <div key={n.id}>{n.data.label}</div>
+        <div key={n.id} data-node-id={n.id} data-x={n.position.x} data-side={n.data.side}>
+          {n.data.label}
+        </div>
       ))}
     </div>
   ),
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
+  Handle: () => null,
+  Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }))
 
 vi.mock('elkjs/lib/elk.bundled.js', () => ({
@@ -129,6 +141,24 @@ describe('Mindmap', () => {
     expect(await screen.findByLabelText('expandir module:studio (+70)')).toBeInTheDocument()
     expect(screen.queryByText('Feature 1')).not.toBeInTheDocument()
     expect(screen.getByText(/70 features visíveis/)).toBeInTheDocument()
+  })
+
+  // F-0187 crit. 1/2: layout bilateral — ramo mais pesado à direita da raiz,
+  // o outro espelhado à esquerda (x menor que o da raiz), lados marcados para
+  // os handles.
+  it('posiciona ramos dos dois lados da raiz', async () => {
+    render(<Mindmap />)
+    await screen.findByText('Projetos no Studio')
+    const byId = (id: string) =>
+      document.querySelector(`[data-node-id="${CSS.escape(id)}"]`) as HTMLElement
+    const rootX = Number(byId('root').dataset.x)
+    // studio (épico+filho, peso 3) → direita; balde sem módulo (peso 2) → esquerda
+    expect(Number(byId('module:studio').dataset.x)).toBeGreaterThan(rootX)
+    expect(Number(byId('module:').dataset.x)).toBeLessThan(rootX)
+    expect(byId('module:studio').dataset.side).toBe('right')
+    expect(byId('module:').dataset.side).toBe('left')
+    expect(byId('F-0003').dataset.side).toBe('left') // subárvore herda o lado
+    expect(byId('root').dataset.side).toBe('root')
   })
 
   // Critério 5: toggle "só entregues" esconde estados não terminados e a

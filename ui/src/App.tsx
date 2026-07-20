@@ -17,7 +17,7 @@ import NewFeature from './NewFeature'
 import StatsPage from './Stats'
 import Activity from './Activity'
 import Dashboard from './Dashboard'
-import { LiveProvider } from './live'
+import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
 import './app.css'
@@ -52,6 +52,9 @@ export default function App() {
 
 function Routed({ hash }: { hash: string }) {
   const { t } = useT()
+  const { projects, activePid } = useProjects()
+  // [ui] mindmap = false: a rota também morre — cai no dashboard (F-0187).
+  const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
   const feature = /^#\/f\/(.+)$/.exec(hash)
   if (feature) return <FeaturePage key={feature[1]} id={decodeURIComponent(feature[1])} />
   const decision = /^#\/d\/(.+)$/.exec(hash)
@@ -76,7 +79,7 @@ function Routed({ hash }: { hash: string }) {
         <Graph />
       </Suspense>
     )
-  if (hash === '#/mindmap')
+  if (hash === '#/mindmap' && mindmapOn)
     return (
       <Suspense fallback={<p className="status">{t.mindmap.loadingChunk}</p>}>
         <Mindmap />

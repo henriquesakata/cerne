@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useProjects } from './live'
 import { useTheme } from './theme'
 import { useT, type Lang, type Messages } from './i18n'
@@ -71,9 +71,17 @@ export default function Nav({ hash }: { hash: string }) {
 // tempo real (ResizeObserver), então funciona em qualquer largura de monitor.
 function NavLinks({ active, hash }: { active: string; hash: string }) {
   const { t, lang } = useT()
+  const { projects, activePid } = useProjects()
+  // [ui] mindmap = false no projeto ativo esconde o item (F-0187); flag
+  // ausente (servidor antigo) fica ligado.
+  const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
+  const links = useMemo(
+    () => LINKS.filter((l) => l.key !== 'mindmap' || mindmapOn),
+    [mindmapOn],
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
-  const [visibleCount, setVisibleCount] = useState(LINKS.length)
+  const [visibleCount, setVisibleCount] = useState(links.length)
   const [open, setOpen] = useState(false)
 
   // Mede a linha oculta (todos os links + botão "Mais") e decide quantos cabem
@@ -93,7 +101,7 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
     const totalAll =
       widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, widths.length - 1)
     if (totalAll <= avail) {
-      setVisibleCount(LINKS.length) // tudo cabe: sem dropdown
+      setVisibleCount(items.length) // tudo cabe: sem dropdown
       return
     }
     const budget = avail - moreW - gap // precisa do "Mais": reserva a largura dele
@@ -118,7 +126,7 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
     const ro = new ResizeObserver(recompute)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [recompute, lang])
+  }, [recompute, lang, links])
 
   // Navegou → fecha o dropdown.
   useEffect(() => setOpen(false), [hash])
@@ -140,8 +148,8 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
     }
   }, [open])
 
-  const visible = LINKS.slice(0, visibleCount)
-  const overflow = LINKS.slice(visibleCount)
+  const visible = links.slice(0, visibleCount)
+  const overflow = links.slice(visibleCount)
   const activeInOverflow = overflow.some((l) => l.href === active)
 
   return (
@@ -191,7 +199,7 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
       )}
       {/* Linha de medição oculta: replica todos os itens para calcular larguras. */}
       <div className="nav-measure" ref={measureRef} aria-hidden="true">
-        {LINKS.map((l) => (
+        {links.map((l) => (
           <span key={l.href} data-nav-item className="nav-link">
             {t.nav[l.key]}
           </span>

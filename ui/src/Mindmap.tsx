@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ReactFlow,
   Background,
   Controls,
+  Handle,
   MiniMap,
   Position,
   type Node,
@@ -12,15 +13,17 @@ import {
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { fetchState, type FeatureState, type StateResponse } from './api'
-import { buildMindmapTree, type MindNode } from './mindmap-tree'
+import { buildMindmapTree, mirrorX, splitSides, type MindNode } from './mindmap-tree'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
 
-// Mapa mental da árvore de features (F-0186): projeto → módulos → épicos →
-// features, projetado client-side de /api/state por buildMindmapTree (puro,
-// determinístico). Layout de árvore via ELK mrtree; render React Flow — o
-// mesmo par já usado pela aba Grafo, nenhuma dependência nova.
+// Mapa mental da árvore de features (F-0186/F-0187): projeto → módulos →
+// épicos → features, projetado client-side de /api/state por buildMindmapTree
+// (puro, determinístico). Layout bilateral clássico: raiz ao centro, 1º nível
+// balanceado entre esquerda e direita (splitSides), cada ramo crescendo só no
+// sentido do seu lado — dois passes de ELK mrtree, com o lado esquerdo
+// espelhado (mirrorX). Render React Flow — nenhuma dependência nova.
 
 const elk = new ELK()
 const NODE_W = 196
@@ -59,6 +62,23 @@ function flatten(root: MindNode): Flat[] {
   walk(root, null)
   return out
 }
+
+// Nó custom com source/target nas DUAS laterais (invisíveis): a raiz emite
+// para os dois lados e cada aresta escolhe o par de handles do seu lado —
+// um único sourcePosition/targetPosition por nó não cobre o bilateral.
+const HANDLE_OFF = { opacity: 0 } as const
+function MindNodeBox({ data }: { data: { label: ReactNode; side?: string } }) {
+  return (
+    <>
+      <Handle id="tl" type="target" position={Position.Left} style={HANDLE_OFF} />
+      <Handle id="tr" type="target" position={Position.Right} style={HANDLE_OFF} />
+      <Handle id="sl" type="source" position={Position.Left} style={HANDLE_OFF} />
+      <Handle id="sr" type="source" position={Position.Right} style={HANDLE_OFF} />
+      {data.label}
+    </>
+  )
+}
+const NODE_TYPES = { mind: MindNodeBox }
 
 export default function Mindmap() {
   const { t } = useT()
@@ -110,12 +130,21 @@ export default function Mindmap() {
       return next
     })
 
-  // Layout: ELK mrtree sobre a árvore podada — poda pequena = layout barato,
-  // mesmo num backend grande (hub: centenas de features).
+  // Layout bilateral (F-0187): splitSides divide o 1º nível; cada lado passa
+  // pelo ELK mrtree RIGHT em separado e o esquerdo é espelhado sobre a âncora
+  // da raiz. Poda pequena = layout barato, mesmo num backend grande.
   useEffect(() => {
     if (!tree) return
     let cancelled = false
     const flat = flatten(tree.root)
+    const { right, left } = splitSides(tree.root)
+    const sideOf = new Map<string, 'root' | 'right' | 'left'>([[tree.root.id, 'root']])
+    const mark = (n: MindNode, side: 'right' | 'left') => {
+      sideOf.set(n.id, side)
+      n.children.forEach((c) => mark(c, side))
+    }
+    right.forEach((n) => mark(n, 'right'))
+    left.forEach((n) => mark(n, 'left'))
 
     const mkLabel = (n: MindNode) => {
       const collapsible = n.children.length > 0 || n.hiddenDescendants > 0
@@ -158,11 +187,9 @@ export default function Mindmap() {
           n.kind === 'feature' && n.state ? STATE_COLOR[n.state] : 'var(--teal)'
         return {
           id: n.id,
+          type: 'mind',
           position: pos.get(n.id) ?? { x: 0, y: 0 },
-          // Árvore corre para a direita — handles nas laterais, não topo/base.
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-          data: { label: mkLabel(n) },
+          data: { label: mkLabel(n), side: sideOf.get(n.id) },
           style: {
             width: NODE_W,
             height: NODE_H,
@@ -180,36 +207,59 @@ export default function Mindmap() {
         } satisfies Node
       })
 
-    setLaying(true)
-    void elk
-      .layout({
-        id: 'elk-root',
-        layoutOptions: {
-          'elk.algorithm': 'mrtree',
-          'elk.direction': 'RIGHT',
-          'elk.spacing.nodeNode': '28',
-        },
-        children: flat.map(({ node: n }) => ({ id: n.id, width: NODE_W, height: NODE_H })),
-        edges: flat
-          .filter((f) => f.parent != null)
-          .map((f, i) => ({ id: `e${i}`, sources: [f.parent!], targets: [f.node.id] })),
-      })
-      .then((laid) => {
-        if (cancelled) return
-        const pos = new Map(
-          (laid.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]),
+    // layoutSide roda o ELK mrtree RIGHT numa cópia da raiz contendo só os
+    // ramos daquele lado; devolve o mapa id → posição daquele passe.
+    const layoutSide = (branches: MindNode[]) => {
+      const flatS = flatten({ ...tree.root, children: branches })
+      return elk
+        .layout({
+          id: 'elk-root',
+          layoutOptions: {
+            'elk.algorithm': 'mrtree',
+            'elk.direction': 'RIGHT',
+            'elk.spacing.nodeNode': '28',
+          },
+          children: flatS.map(({ node: n }) => ({ id: n.id, width: NODE_W, height: NODE_H })),
+          edges: flatS
+            .filter((f) => f.parent != null)
+            .map((f, i) => ({ id: `e${i}`, sources: [f.parent!], targets: [f.node.id] })),
+        })
+        .then(
+          (laid) =>
+            new Map((laid.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }])),
         )
+    }
+
+    setLaying(true)
+    void Promise.all([layoutSide(right), layoutSide(left)])
+      .then(([posR, posL]) => {
+        if (cancelled) return
+        const anchor = posR.get(tree.root.id) ?? { x: 0, y: 0 }
+        const anchorL = posL.get(tree.root.id) ?? { x: 0, y: 0 }
+        const pos = new Map(posR)
+        // Lado esquerdo: translada para a âncora comum e espelha em X.
+        posL.forEach((p, id) => {
+          if (id === tree.root.id) return
+          const tx = p.x - anchorL.x + anchor.x
+          const ty = p.y - anchorL.y + anchor.y
+          pos.set(id, { x: mirrorX(tx, anchor.x, NODE_W), y: ty })
+        })
         setBaseNodes(mkNodes(pos))
         setEdges(
           flat
             .filter((f) => f.parent != null)
-            .map((f, i) => ({
-              id: `e${i}`,
-              source: f.parent!,
-              target: f.node.id,
-              type: 'smoothstep',
-              style: { stroke: 'var(--border-card)', strokeWidth: 1.5, opacity: 0.9 },
-            })),
+            .map((f, i) => {
+              const leftSide = sideOf.get(f.node.id) === 'left'
+              return {
+                id: `e${i}`,
+                source: f.parent!,
+                target: f.node.id,
+                sourceHandle: leftSide ? 'sl' : 'sr',
+                targetHandle: leftSide ? 'tr' : 'tl',
+                type: 'smoothstep',
+                style: { stroke: 'var(--border-card)', strokeWidth: 1.5, opacity: 0.9 },
+              } satisfies Edge
+            }),
         )
         setLaying(false)
         requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08 }))
@@ -263,6 +313,7 @@ export default function Mindmap() {
           <ReactFlow
             nodes={baseNodes}
             edges={edges}
+            nodeTypes={NODE_TYPES}
             onInit={(inst) => {
               rf.current = inst
             }}
