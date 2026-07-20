@@ -53,6 +53,7 @@ type Config struct {
 	StaleWorkHours int            `toml:"stale_work_hours,omitzero"`
 	Gates          GatesConfig     `toml:"gates"`     // F-0131: who may cross the human gates
 	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
+	UI             UIConfig        `toml:"ui"`        // F-0187: per-project UI preferences (mindmap tab toggle)
 	LLM            LLMConfig       `toml:"llm"`       // optional v1.5 LLM layer config
 	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
 	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
@@ -86,6 +87,18 @@ type ActivityConfig struct {
 // AutoEnabled resolves the auto-registration switch: on unless explicitly off.
 func (a ActivityConfig) AutoEnabled() bool {
 	return a.Auto == nil || *a.Auto
+}
+
+// UIConfig is the optional [ui] block of .cernerc (F-0187). Mindmap is a
+// pointer so "absent" (nil → enabled, the default) is distinguishable from an
+// explicit `mindmap = false` opt-out, which also hides the tab from the menu.
+type UIConfig struct {
+	Mindmap *bool `toml:"mindmap"`
+}
+
+// MindmapEnabled resolves the mindmap tab switch: on unless explicitly off.
+func (u UIConfig) MindmapEnabled() bool {
+	return u.Mindmap == nil || *u.Mindmap
 }
 
 // Gate values for the [gates] block (F-0131). Default is human on both ends;
