@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMindmapTree, type MindNode } from './mindmap-tree'
+import { buildMindmapTree, mirrorX, splitSides, type MindNode } from './mindmap-tree'
 import type { Feature, FeatureState, StateResponse } from './api'
 
 // Fixtures mínimas: só os campos que a árvore consome importam.
@@ -179,6 +179,67 @@ describe('buildMindmapTree', () => {
     const mod = byId(root, 'module:alpha')!
     expect(mod.children).toHaveLength(0)
     expect(mod.hiddenDescendants).toBe(2)
+  })
+
+  // F-0187 crit. 1/3: divisão bilateral greedy por peso da subárvore visível.
+  describe('splitSides', () => {
+    const leaf = (id: string): MindNode => ({
+      id,
+      label: id,
+      kind: 'feature',
+      state: 'implemented',
+      passesFilter: true,
+      hiddenDescendants: 0,
+      children: [],
+    })
+    const branch = (id: string, size: number): MindNode => ({
+      id: `module:${id}`,
+      label: id,
+      kind: 'module',
+      hiddenDescendants: 0,
+      children: Array.from({ length: size - 1 }, (_, i) => leaf(`${id}-${i}`)),
+    })
+    const mkRoot = (children: MindNode[]): MindNode => ({
+      id: 'root',
+      label: 'proj',
+      kind: 'root',
+      hiddenDescendants: 0,
+      children,
+    })
+
+    it('balances greedily by visible subtree weight', () => {
+      // pesos (nós renderizados): a=5, b=3, c=2, d=2
+      const root = mkRoot([branch('a', 5), branch('b', 3), branch('c', 2), branch('d', 2)])
+      const { right, left } = splitSides(root)
+      expect(right.map((n) => n.label)).toEqual(['a', 'd'])
+      expect(left.map((n) => n.label)).toEqual(['b', 'c'])
+    })
+
+    it('preserves original display order within each side', () => {
+      const root = mkRoot([branch('a', 2), branch('b', 5), branch('c', 2)])
+      const { right, left } = splitSides(root)
+      // b (5) → direita; a (2) → esquerda; c (2): esq(2) < dir(5) → esquerda.
+      expect(right.map((n) => n.label)).toEqual(['b'])
+      expect(left.map((n) => n.label)).toEqual(['a', 'c'])
+    })
+
+    it('is deterministic with id tiebreak and single branch goes right', () => {
+      const root = mkRoot([branch('x', 3)])
+      const a = splitSides(root)
+      expect(a.right.map((n) => n.label)).toEqual(['x'])
+      expect(a.left).toEqual([])
+      const twice = mkRoot([branch('b', 2), branch('a', 2)])
+      expect(splitSides(twice)).toEqual(splitSides(twice))
+      // empate de peso → menor id primeiro na alocação (a → direita)
+      expect(splitSides(twice).right.map((n) => n.label)).toEqual(['a'])
+    })
+  })
+
+  // F-0187 crit. 3: espelhamento do lado esquerdo é aritmética pura.
+  it('mirrors x relative to the root anchor', () => {
+    expect(mirrorX(300, 100, 196)).toBe(2 * 100 - 300 - 196)
+    expect(mirrorX(100, 100, 196)).toBe(100 - 196) // a própria raiz espelha sobre si
+    expect(mirrorX(mirrorX(300, 100, 196), 100, 196)).toBe(300) // involução
   })
 
   // Critério 6: determinismo — mesma entrada (em qualquer ordem), mesma árvore.

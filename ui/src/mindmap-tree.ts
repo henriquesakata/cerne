@@ -28,6 +28,42 @@ export type MindmapResult = { root: MindNode; featureCount: number }
 const TERMINAL: ReadonlySet<string> = new Set(['superseded', 'rejected'])
 const DELIVERED: ReadonlySet<string> = new Set(['implemented', 'done'])
 
+// splitSides divide os filhos de 1º nível em dois lados balanceados (F-0187):
+// greedy por peso da subárvore VISÍVEL (nós renderizados), maior primeiro no
+// lado mais leve (empate de peso → menor id; empate de lado → direita). A ordem
+// de exibição original é preservada dentro de cada lado. Determinístico.
+export function splitSides(root: MindNode): { right: MindNode[]; left: MindNode[] } {
+  const weight = (n: MindNode): number =>
+    1 + n.children.reduce((sum, c) => sum + weight(c), 0)
+  const order = new Map(root.children.map((n, i) => [n.id, i]))
+  const entries = [...root.children]
+    .map((n) => ({ n, w: weight(n) }))
+    .sort((a, b) => b.w - a.w || a.n.id.localeCompare(b.n.id))
+  const right: MindNode[] = []
+  const left: MindNode[] = []
+  let wr = 0
+  let wl = 0
+  for (const { n, w } of entries) {
+    if (wl < wr) {
+      left.push(n)
+      wl += w
+    } else {
+      right.push(n)
+      wr += w
+    }
+  }
+  const byOrder = (a: MindNode, b: MindNode) => order.get(a.id)! - order.get(b.id)!
+  right.sort(byOrder)
+  left.sort(byOrder)
+  return { right, left }
+}
+
+// mirrorX espelha uma coordenada ELK do ramo esquerdo sobre a âncora da raiz
+// (F-0187): involução pura — mirrorX(mirrorX(x)) === x.
+export function mirrorX(x: number, rootX: number, nodeW: number): number {
+  return 2 * rootX - x - nodeW
+}
+
 export function buildMindmapTree(state: StateResponse, opts: MindmapOptions): MindmapResult {
   const byId = new Map(state.features.map((f) => [f.id, f]))
   const passes = (f: Feature): boolean => {
