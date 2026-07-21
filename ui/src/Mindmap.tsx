@@ -12,8 +12,14 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
-import { fetchState, type FeatureState, type StateResponse } from './api'
-import { buildMindmapTree, mirrorX, splitSides, type MindNode } from './mindmap-tree'
+import { fetchState, type Feature, type FeatureState, type StateResponse } from './api'
+import {
+  buildCapabilityTree,
+  buildMindmapTree,
+  mirrorX,
+  splitSides,
+  type MindNode,
+} from './mindmap-tree'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
@@ -90,10 +96,16 @@ export default function Mindmap() {
   // null = ainda não inicializado — o default (tudo aberto vs módulos
   // recolhidos) depende do tamanho do roster, conhecido só após o fetch.
   const [collapsed, setCollapsed] = useState<Set<string> | null>(null)
+  // Eixo (F-0188): null = automático — por capacidade quando a taxonomia
+  // existe, por estrutura (módulos/épicos) caso contrário.
+  const [axis, setAxis] = useState<'capability' | 'structure' | null>(null)
+  // Nó de capacidade selecionado — abre o painel com as features linkadas.
+  const [selected, setSelected] = useState<string | null>(null)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [laying, setLaying] = useState(false)
   const rf = useRef<ReactFlowInstance | null>(null)
+  const nodeIndex = useRef<Map<string, MindNode>>(new Map())
 
   const version = useLiveVersion()
   useEffect(() => {
@@ -114,13 +126,19 @@ export default function Mindmap() {
     })
   }, [data])
 
-  const tree = useMemo(
-    () =>
-      data && collapsed
-        ? buildMindmapTree(data, { hideTerminal: !showTerminal, deliveredOnly, collapsed })
-        : null,
-    [data, showTerminal, deliveredOnly, collapsed],
+  const hasCapabilities = useMemo(
+    () => (data?.capabilities ?? []).some((c) => c.state === 'active'),
+    [data],
   )
+  const effAxis: 'capability' | 'structure' =
+    axis ?? (hasCapabilities ? 'capability' : 'structure')
+
+  const tree = useMemo(() => {
+    if (!data || !collapsed) return null
+    if (effAxis === 'capability')
+      return buildCapabilityTree(data, { collapsed })
+    return buildMindmapTree(data, { hideTerminal: !showTerminal, deliveredOnly, collapsed })
+  }, [data, showTerminal, deliveredOnly, collapsed, effAxis])
 
   const toggle = (id: string) =>
     setCollapsed((s) => {
@@ -156,6 +174,13 @@ export default function Mindmap() {
               <b>{n.id}</b>
               <span>{n.label}</span>
             </a>
+          ) : n.kind === 'capability' ? (
+            <span className="mnode-title">
+              {n.label}
+              {(n.features?.length ?? 0) > 0 && (
+                <span className="mnode-count"> · {n.features!.length}</span>
+              )}
+            </span>
           ) : (
             <span className="mnode-title">
               {n.kind === 'root' ? n.label : n.label || t.mindmap.noModule}
@@ -181,6 +206,7 @@ export default function Mindmap() {
       )
     }
 
+    nodeIndex.current = new Map(flat.map((f) => [f.node.id, f.node]))
     const mkNodes = (pos: Map<string, { x: number; y: number }>): Node[] =>
       flat.map(({ node: n }) => {
         const color =
@@ -275,6 +301,13 @@ export default function Mindmap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree, t])
 
+  const featureByID = useMemo(() => {
+    const m = new Map<string, Feature>()
+    for (const f of data?.features ?? []) m.set(f.id, f)
+    return m
+  }, [data])
+  const selectedNode = selected ? (nodeIndex.current.get(selected) ?? null) : null
+
   if (error) return <p className="status error">{t.mindmap.loadError(error)}</p>
 
   return (
@@ -282,23 +315,53 @@ export default function Mindmap() {
       <h1>
         {t.mindmap.title}{' '}
         <span className="graph-count">
-          {tree ? t.mindmap.stats(tree.featureCount) : t.common.loading}
+          {tree
+            ? effAxis === 'capability'
+              ? t.mindmap.capStats(tree.featureCount)
+              : t.mindmap.stats(tree.featureCount)
+            : t.common.loading}
           {laying ? t.mindmap.layouting : ''}
         </span>
       </h1>
       <div className="mindmap-toolbar">
-        <button
-          className={deliveredOnly ? 'filter active' : 'filter'}
-          onClick={() => setDeliveredOnly((v) => !v)}
-        >
-          {t.mindmap.deliveredOnly}
-        </button>
-        <button
-          className={showTerminal ? 'filter active' : 'filter'}
-          onClick={() => setShowTerminal((v) => !v)}
-        >
-          {t.mindmap.showTerminal}
-        </button>
+        {hasCapabilities && (
+          <>
+            <button
+              className={effAxis === 'capability' ? 'filter active' : 'filter'}
+              onClick={() => {
+                setAxis('capability')
+                setSelected(null)
+              }}
+            >
+              {t.mindmap.axisCapability}
+            </button>
+            <button
+              className={effAxis === 'structure' ? 'filter active' : 'filter'}
+              onClick={() => {
+                setAxis('structure')
+                setSelected(null)
+              }}
+            >
+              {t.mindmap.axisStructure}
+            </button>
+          </>
+        )}
+        {effAxis === 'structure' && (
+          <>
+            <button
+              className={deliveredOnly ? 'filter active' : 'filter'}
+              onClick={() => setDeliveredOnly((v) => !v)}
+            >
+              {t.mindmap.deliveredOnly}
+            </button>
+            <button
+              className={showTerminal ? 'filter active' : 'filter'}
+              onClick={() => setShowTerminal((v) => !v)}
+            >
+              {t.mindmap.showTerminal}
+            </button>
+          </>
+        )}
         <span className="mindmap-legend">
           {STATE_ORDER.map((s) => (
             <span key={s} className="mindmap-legend-item">
@@ -317,6 +380,11 @@ export default function Mindmap() {
             onInit={(inst) => {
               rf.current = inst
             }}
+            onNodeClick={(_, n) => {
+              const mn = nodeIndex.current.get(n.id)
+              if (mn?.kind === 'capability') setSelected(n.id)
+            }}
+            onPaneClick={() => setSelected(null)}
             fitView
             fitViewOptions={{ padding: 0.08 }}
             minZoom={0.02}
@@ -328,6 +396,33 @@ export default function Mindmap() {
             <MiniMap nodeColor={() => 'var(--teal)'} zoomable pannable />
           </ReactFlow>
         </div>
+        {effAxis === 'capability' && selectedNode && (
+          <aside className="graph-panel">
+            <div className="graph-node-info">
+              <h2>{selectedNode.label}</h2>
+              <h3>
+                {t.mindmap.panelTitle} ({selectedNode.features?.length ?? 0})
+              </h3>
+              {(selectedNode.features?.length ?? 0) === 0 ? (
+                <p className="status">{t.mindmap.panelEmpty}</p>
+              ) : (
+                <ul className="graph-conns">
+                  {selectedNode.features!.map((fid) => {
+                    const f = featureByID.get(fid)
+                    return (
+                      <li key={fid}>
+                        <a className="graph-conn" href={`#/f/${encodeURIComponent(fid)}`}>
+                          <b>{fid}</b>&nbsp;{f ? f.title : ''}
+                        </a>
+                        {f && <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
       <p className="status mindmap-hint">{t.mindmap.hint}</p>
     </main>

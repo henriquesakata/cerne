@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildMindmapTree, mirrorX, splitSides, type MindNode } from './mindmap-tree'
-import type { Feature, FeatureState, StateResponse } from './api'
+import {
+  buildCapabilityTree,
+  buildMindmapTree,
+  mirrorX,
+  splitSides,
+  type MindNode,
+} from './mindmap-tree'
+import type { Capability, Feature, FeatureState, StateResponse } from './api'
 
 // Fixtures mínimas: só os campos que a árvore consome importam.
 function mkFeature(
@@ -179,6 +185,75 @@ describe('buildMindmapTree', () => {
     const mod = byId(root, 'module:alpha')!
     expect(mod.children).toHaveLength(0)
     expect(mod.hiddenDescendants).toBe(2)
+  })
+
+  // F-0188 crit. 8/9: árvore por capacidade — projeção pura da taxonomia com
+  // as features penduradas por nó.
+  describe('buildCapabilityTree', () => {
+    const mkCap = (id: string, over: Partial<Capability> = {}): Capability => ({
+      id,
+      title: over.title ?? `cap ${id}`,
+      parent: over.parent,
+      state: over.state ?? 'active',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    const capState = (caps: Capability[], features: Feature[]): StateResponse => ({
+      ...mkState(features),
+      capabilities: caps,
+    })
+
+    it('builds the taxonomy tree with linked features per node', () => {
+      const { root, featureCount } = buildCapabilityTree(
+        capState(
+          [
+            mkCap('C-0001', { title: 'Studio' }),
+            mkCap('C-0002', { title: 'Issues', parent: 'C-0001' }),
+          ],
+          [
+            mkFeature('F-0001', { module: 'x' }),
+            { ...mkFeature('F-0002'), capabilities: ['C-0002'] },
+            { ...mkFeature('F-0003'), capabilities: ['C-0002', 'C-0001'] },
+          ],
+        ),
+        { collapsed: new Set() },
+      )
+      expect(root.kind).toBe('root')
+      const studio = byId(root, 'C-0001')!
+      expect(studio.kind).toBe('capability')
+      expect(studio.children.map((c) => c.id)).toEqual(['C-0002'])
+      expect(studio.features).toEqual(['F-0003'])
+      expect(byId(root, 'C-0002')!.features).toEqual(['F-0002', 'F-0003'])
+      // featureCount = features distintas vinculadas a ≥1 capacidade
+      expect(featureCount).toBe(2)
+    })
+
+    it('hides retired capabilities and orphans their children to the root', () => {
+      const { root } = buildCapabilityTree(
+        capState(
+          [
+            mkCap('C-0001', { state: 'superseded' }),
+            mkCap('C-0002', { parent: 'C-0001' }),
+          ],
+          [],
+        ),
+        { collapsed: new Set() },
+      )
+      expect(byId(root, 'C-0001')).toBeNull()
+      expect(root.children.map((c) => c.id)).toEqual(['C-0002'])
+    })
+
+    it('prunes collapsed capability subtrees and is deterministic', () => {
+      const state = capState(
+        [mkCap('C-0001'), mkCap('C-0002', { parent: 'C-0001' })],
+        [{ ...mkFeature('F-0001'), capabilities: ['C-0002'] }],
+      )
+      const a = buildCapabilityTree(state, { collapsed: new Set(['C-0001']) })
+      const node = byId(a.root, 'C-0001')!
+      expect(node.children).toHaveLength(0)
+      expect(node.hiddenDescendants).toBe(1)
+      expect(buildCapabilityTree(state, { collapsed: new Set(['C-0001']) })).toEqual(a)
+    })
   })
 
   // F-0187 crit. 1/3: divisão bilateral greedy por peso da subárvore visível.

@@ -11,16 +11,24 @@ import type { StateResponse } from './api'
 vi.mock('@xyflow/react', () => ({
   ReactFlow: ({
     nodes,
+    onNodeClick,
   }: {
     nodes: Array<{
       id: string
       position: { x: number; y: number }
       data: { label: ReactNode; side?: string }
     }>
+    onNodeClick?: (e: unknown, n: unknown) => void
   }) => (
     <div data-testid="rf-canvas">
       {nodes.map((n) => (
-        <div key={n.id} data-node-id={n.id} data-x={n.position.x} data-side={n.data.side}>
+        <div
+          key={n.id}
+          data-node-id={n.id}
+          data-x={n.position.x}
+          data-side={n.data.side}
+          onClick={(e) => onNodeClick?.(e, n)}
+        >
           {n.data.label}
         </div>
       ))}
@@ -89,6 +97,71 @@ vi.mock('./api', async (importOriginal) => ({
 beforeEach(() => {
   mockState = state
   cleanup()
+})
+
+describe('Mindmap por capacidade (F-0188)', () => {
+  const capState: StateResponse = {
+    ...state,
+    features: [
+      { ...state.features[0], capabilities: ['C-0002'] },
+      state.features[1],
+      state.features[2],
+    ],
+    capabilities: [
+      {
+        id: 'C-0001',
+        title: 'Studio',
+        state: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'C-0002',
+        title: 'Issues',
+        parent: 'C-0001',
+        state: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ],
+  }
+
+  // Crit. 8: com taxonomia, o seletor aparece e o default é "por capacidade".
+  it('abre no eixo por capacidade quando a taxonomia existe', async () => {
+    mockState = capState
+    render(<Mindmap />)
+    expect(await screen.findByText('Studio')).toBeInTheDocument()
+    expect(screen.getByText('Issues')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Por estrutura' })).toBeInTheDocument()
+    // features não são nós neste eixo
+    expect(screen.queryByText('Projetos no Studio')).not.toBeInTheDocument()
+  })
+
+  // Crit. 8: clique num nó de capacidade abre o painel com as features linkadas.
+  it('abre o painel de features ao clicar numa capacidade', async () => {
+    mockState = capState
+    render(<Mindmap />)
+    fireEvent.click(await screen.findByText('Issues'))
+    const link = await screen.findByText('Projetos no Studio')
+    expect(link.closest('a')).toHaveAttribute('href', '#/f/F-0001')
+  })
+
+  // Crit. 8: alternar para "Por estrutura" volta ao mapa de módulos/épicos.
+  it('alterna para o eixo por estrutura', async () => {
+    mockState = capState
+    render(<Mindmap />)
+    await screen.findByText('Studio')
+    fireEvent.click(screen.getByRole('button', { name: 'Por estrutura' }))
+    expect(await screen.findByText('studio')).toBeInTheDocument() // módulo
+    expect(screen.getByText('Projetos no Studio')).toBeInTheDocument()
+  })
+
+  it('sem capacidades não mostra o seletor', async () => {
+    render(<Mindmap />)
+    await screen.findByText('hub')
+    expect(screen.queryByRole('button', { name: 'Por estrutura' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Por capacidade' })).not.toBeInTheDocument()
+  })
 })
 
 describe('Mindmap', () => {

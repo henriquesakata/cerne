@@ -30,6 +30,7 @@ export type Feature = {
   components?: string[] // open, slugified subsystem/tool axis (D-0002)
   delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
   delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
+  capabilities?: string[] // F-0188: C- ids da taxonomia funcional
   created_at: string
   updated_at: string
 }
@@ -84,6 +85,18 @@ export type Note = {
   updated_at: string
 }
 
+// Capability é um nó da taxonomia funcional do produto (F-0188): árvore
+// própria (parent), com features penduradas via Feature.capabilities.
+export type Capability = {
+  id: string
+  title: string
+  parent?: string
+  state: string // active | superseded
+  reason?: string
+  created_at: string
+  updated_at: string
+}
+
 export type Project = {
   name: string
   modules: string[]
@@ -96,6 +109,7 @@ export type StateResponse = {
   references: Reference[]
   runbooks: Runbook[]
   notes: Note[]
+  capabilities?: Capability[] // F-0188 (ausente em servidor antigo)
 }
 
 export type FeatureDocs = {

@@ -388,6 +388,11 @@ const ptBR = {
     collapse: (id: string) => `recolher ${id}`,
     expand: (id: string, hidden: number) => `expandir ${id} (+${hidden})`,
     hint: 'Projeto → módulos → épicos → features (parent). Clique numa feature para abrir a página; − recolhe um ramo, +N expande.',
+    axisCapability: 'Por capacidade',
+    axisStructure: 'Por estrutura',
+    capStats: (n: number) => `${n} features vinculadas`,
+    panelTitle: 'Features',
+    panelEmpty: 'Nenhuma feature vinculada a este nó.',
   },
   ask: {
     modeLabels: {
@@ -871,6 +876,11 @@ const en: Messages = {
     collapse: (id: string) => `collapse ${id}`,
     expand: (id: string, hidden: number) => `expand ${id} (+${hidden})`,
     hint: 'Project → modules → epics → features (parent). Click a feature to open its page; − collapses a branch, +N expands it.',
+    axisCapability: 'By capability',
+    axisStructure: 'By structure',
+    capStats: (n: number) => `${n} linked features`,
+    panelTitle: 'Features',
+    panelEmpty: 'No features linked to this node.',
   },
   ask: {
     modeLabels: {

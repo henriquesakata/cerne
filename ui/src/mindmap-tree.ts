@@ -1,19 +1,22 @@
-import type { Feature, FeatureState, StateResponse } from './api'
+import type { Capability, Feature, FeatureState, StateResponse } from './api'
 
 // Projeção pura do /api/state na árvore do mindmap (F-0186):
 // raiz (projeto) → módulos (balde "" por último) → épicos/features por parent.
 // Determinística — mesma entrada, mesma árvore; nada de rede ou LLM aqui.
 
 export type MindNode = {
-  id: string // 'root' | 'module:<nome>' | id da feature
-  label: string // nome do projeto | nome do módulo ('' = sem módulo) | título da feature
-  kind: 'root' | 'module' | 'feature'
+  id: string // 'root' | 'module:<nome>' | id da feature | id da capacidade
+  label: string // nome do projeto | nome do módulo ('' = sem módulo) | título
+  kind: 'root' | 'module' | 'feature' | 'capability'
   state?: FeatureState
   // false quando o nó só está na árvore como estrutura (ancestral de um
   // visível que não passa no filtro de estado) — o render esmaece.
   passesFilter?: boolean
-  // nº de features descendentes podadas quando este nó está colapsado.
+  // nº de nós descendentes podados quando este nó está colapsado (features no
+  // eixo estrutura; capacidades no eixo por capacidade).
   hiddenDescendants: number
+  // F-0188 (eixo por capacidade): ids das features penduradas NESTE nó.
+  features?: string[]
   children: MindNode[]
 }
 
@@ -27,6 +30,70 @@ export type MindmapResult = { root: MindNode; featureCount: number }
 
 const TERMINAL: ReadonlySet<string> = new Set(['superseded', 'rejected'])
 const DELIVERED: ReadonlySet<string> = new Set(['implemented', 'done'])
+
+// buildCapabilityTree projeta a taxonomia funcional (F-0188): raiz (projeto) →
+// capacidades ativas por parent, com as features linkadas listadas por nó.
+// Pura e determinística — capacidade aposentada some (filho órfão sobe para a
+// raiz); featureCount = features distintas vinculadas a ≥1 capacidade.
+export function buildCapabilityTree(
+  state: StateResponse,
+  opts: { collapsed: Set<string> },
+): MindmapResult {
+  const active = (state.capabilities ?? []).filter((c) => c.state === 'active')
+  const activeIds = new Set(active.map((c) => c.id))
+  const featuresByCap = new Map<string, string[]>()
+  const linked = new Set<string>()
+  for (const f of state.features) {
+    for (const cid of f.capabilities ?? []) {
+      if (!activeIds.has(cid)) continue
+      const list = featuresByCap.get(cid) ?? []
+      list.push(f.id)
+      featuresByCap.set(cid, list)
+      linked.add(f.id)
+    }
+  }
+  const childrenOf = new Map<string, Capability[]>()
+  const roots: Capability[] = []
+  for (const c of active) {
+    if (c.parent && activeIds.has(c.parent)) {
+      const list = childrenOf.get(c.parent) ?? []
+      list.push(c)
+      childrenOf.set(c.parent, list)
+    } else {
+      roots.push(c)
+    }
+  }
+  const byIdAsc = (a: Capability, b: Capability) => a.id.localeCompare(b.id)
+  const countCaps = (n: MindNode): number =>
+    (n.kind === 'capability' ? 1 : 0) +
+    n.hiddenDescendants +
+    n.children.reduce((sum, c) => sum + countCaps(c), 0)
+  const prune = (n: MindNode): MindNode => {
+    if (!opts.collapsed.has(n.id) || n.children.length === 0) return n
+    return {
+      ...n,
+      hiddenDescendants: n.children.reduce((sum, c) => sum + countCaps(c), 0),
+      children: [],
+    }
+  }
+  const build = (c: Capability): MindNode =>
+    prune({
+      id: c.id,
+      label: c.title,
+      kind: 'capability',
+      hiddenDescendants: 0,
+      features: (featuresByCap.get(c.id) ?? []).sort((a, b) => a.localeCompare(b)),
+      children: (childrenOf.get(c.id) ?? []).sort(byIdAsc).map(build),
+    })
+  const root = prune({
+    id: 'root',
+    label: state.project.name,
+    kind: 'root',
+    hiddenDescendants: 0,
+    children: roots.sort(byIdAsc).map(build),
+  })
+  return { root, featureCount: linked.size }
+}
 
 // splitSides divide os filhos de 1º nível em dois lados balanceados (F-0187):
 // greedy por peso da subárvore VISÍVEL (nós renderizados), maior primeiro no
