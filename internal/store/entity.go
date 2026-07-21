@@ -34,10 +34,13 @@ type Feature struct {
 	// Delivery links (F-0179): the resolved URLs of the commit/MR that delivered
 	// this feature — output traceability, distinct from Reference's input
 	// provenance. Always stored as full URLs (a bare SHA is resolved at capture).
-	DeliveryCommitURL string    `json:"delivery_commit_url,omitempty"`
-	DeliveryMRURL     string    `json:"delivery_mr_url,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	DeliveryCommitURL string `json:"delivery_commit_url,omitempty"`
+	DeliveryMRURL     string `json:"delivery_mr_url,omitempty"`
+	// Capabilities lists the product-capability nodes (C-…) this feature
+	// contributes to (F-0188) — the functional axis, N:N, validated on link.
+	Capabilities []string  `json:"capabilities,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // Decision is the persisted form of a decision entity.
@@ -140,9 +143,10 @@ const (
 	decisionsSubdir   = "entities/decisions"
 	referencesSubdir  = "entities/references"
 	runbooksSubdir    = "entities/runbooks"
-	notesSubdir       = "entities/notes"
-	historicalsSubdir = "entities/historicals"
-	worksSubdir       = "entities/works"
+	notesSubdir        = "entities/notes"
+	historicalsSubdir  = "entities/historicals"
+	worksSubdir        = "entities/works"
+	capabilitiesSubdir = "entities/capabilities"
 )
 
 // SaveFeature writes the feature to entities/features/<ID>.json.

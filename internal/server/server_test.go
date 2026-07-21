@@ -136,12 +136,17 @@ func TestStateEndpoint(t *testing.T) {
 	if err := store.SaveReference(repoDir, store.Reference{ID: "R-0001", Title: "Referência Y", State: domain.ReferenceCurrent, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("SaveReference: %v", err)
 	}
+	// F-0188: the capability taxonomy travels in the same payload.
+	if err := store.SaveCapability(repoDir, store.Capability{ID: "C-0001", Title: "Studio", State: domain.CapabilityActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveCapability: %v", err)
+	}
 
 	var got struct {
-		Project    store.Project     `json:"project"`
-		Features   []store.Feature   `json:"features"`
-		Decisions  []store.Decision  `json:"decisions"`
-		References []store.Reference `json:"references"`
+		Project      store.Project      `json:"project"`
+		Features     []store.Feature    `json:"features"`
+		Decisions    []store.Decision   `json:"decisions"`
+		References   []store.Reference  `json:"references"`
+		Capabilities []store.Capability `json:"capabilities"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
 	if rec.Code != http.StatusOK {
@@ -158,6 +163,9 @@ func TestStateEndpoint(t *testing.T) {
 	}
 	if len(got.References) != 1 || got.References[0].ID != "R-0001" {
 		t.Fatalf("references = %+v, want R-0001", got.References)
+	}
+	if len(got.Capabilities) != 1 || got.Capabilities[0].ID != "C-0001" {
+		t.Fatalf("capabilities = %+v, want C-0001", got.Capabilities)
 	}
 }
 

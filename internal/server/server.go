@@ -89,12 +89,13 @@ func handleGraph(w http.ResponseWriter, repoDir string) {
 // stateResponse is the GET /api/state payload: the full backend state;
 // filtering by feature state is the UI's job.
 type stateResponse struct {
-	Project    store.Project     `json:"project"`
-	Features   []store.Feature   `json:"features"`
-	Decisions  []store.Decision  `json:"decisions"`
-	References []store.Reference `json:"references"`
-	Runbooks   []store.Runbook   `json:"runbooks"`
-	Notes      []store.Note      `json:"notes"`
+	Project      store.Project      `json:"project"`
+	Features     []store.Feature    `json:"features"`
+	Decisions    []store.Decision   `json:"decisions"`
+	References   []store.Reference  `json:"references"`
+	Runbooks     []store.Runbook    `json:"runbooks"`
+	Notes        []store.Note       `json:"notes"`
+	Capabilities []store.Capability `json:"capabilities"` // F-0188: the functional taxonomy
 }
 
 func handleState(w http.ResponseWriter, repoDir string) {
@@ -128,16 +129,22 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	capabilities, err := store.LoadAllCapabilities(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
 	if proj.Modules == nil {
 		proj.Modules = []string{} // contract: modules is always a list
 	}
 	writeJSON(w, http.StatusOK, stateResponse{
-		Project:    proj,
-		Features:   features,
-		Decisions:  decisions,
-		References: references,
-		Runbooks:   runbooks,
-		Notes:      notes,
+		Project:      proj,
+		Features:     features,
+		Decisions:    decisions,
+		References:   references,
+		Runbooks:     runbooks,
+		Notes:        notes,
+		Capabilities: capabilities,
 	})
 }
 

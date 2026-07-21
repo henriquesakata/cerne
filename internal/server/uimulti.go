@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
@@ -136,9 +137,25 @@ type registryEntry struct {
 }
 
 // projectInfo is the public shape of a registered project (GET /api/projects).
+// Mindmap carries the project's [ui] mindmap preference (F-0187): false hides
+// the tab in the UI; an unreadable/absent .cernerc yields the default (true).
 type projectInfo struct {
-	PID  string `json:"pid"`
-	Name string `json:"name"`
+	PID     string `json:"pid"`
+	Name    string `json:"name"`
+	Mindmap bool   `json:"mindmap"`
+}
+
+// mindmapEnabled reads projDir's .cernerc [ui] mindmap preference. Fail-open:
+// an unreadable or absent config keeps the tab enabled (the default).
+func mindmapEnabled(projDir string) bool {
+	if projDir == "" {
+		return true
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		return true
+	}
+	return cfg.UI.MindmapEnabled()
 }
 
 // registry holds the registered projects and starts/stops the per-project
@@ -212,13 +229,23 @@ func (r *registry) get(pid string) (*registryEntry, bool) {
 
 // list returns the registered projects in registration order and the default
 // pid (the first registered), empty when none.
+// projDir returns pid's project directory, or "" when not registered.
+func (r *registry) projDir(pid string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.projects[pid]; ok {
+		return e.projDir
+	}
+	return ""
+}
+
 func (r *registry) list() (infos []projectInfo, def string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	infos = make([]projectInfo, 0, len(r.order))
 	for _, pid := range r.order {
 		if e, ok := r.projects[pid]; ok {
-			infos = append(infos, projectInfo{PID: e.pid, Name: e.name})
+			infos = append(infos, projectInfo{PID: e.pid, Name: e.name, Mindmap: mindmapEnabled(e.projDir)})
 		}
 	}
 	if len(r.order) > 0 {
@@ -296,7 +323,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 			writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 			return
 		}
-		writeJSON(w, http.StatusOK, projectInfo{PID: pid, Name: name})
+		writeJSON(w, http.StatusOK, projectInfo{PID: pid, Name: name, Mindmap: mindmapEnabled(reg.projDir(pid))})
 	})
 	mux.HandleFunc("DELETE /api/projects/{pid}", func(w http.ResponseWriter, r *http.Request) {
 		if !reg.remove(r.PathValue("pid")) {
