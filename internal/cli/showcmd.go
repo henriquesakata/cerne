@@ -100,6 +100,8 @@ func kindForID(id string) (string, bool) {
 		return "runbook", true
 	case "H":
 		return "historical", true
+	case "C":
+		return "capability", true
 	}
 	return "", false
 }
@@ -148,6 +150,12 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 			return showResult{}, fmt.Errorf("historical %s: %w", id, err)
 		}
 		return showResult{kind, h, nil}, nil
+	case "capability":
+		c, err := store.LoadCapability(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("capability %s: %w", id, err)
+		}
+		return showResult{kind, c, nil}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }
@@ -234,6 +242,14 @@ func (r showResult) renderText(w io.Writer) {
 			fmt.Fprintf(w, "aliases: %s\n", strings.Join(e.Aliases, ", "))
 		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
+	case store.Capability:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		if e.Parent != "" {
+			fmt.Fprintf(w, "parent: %s\n", e.Parent)
+		}
+		if e.Reason != "" {
+			fmt.Fprintf(w, "reason: %s\n", e.Reason)
+		}
 	}
 	for _, d := range r.content {
 		if d.name != "" {
