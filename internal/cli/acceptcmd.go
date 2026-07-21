@@ -42,13 +42,13 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 		id = args[0]
 	}
 	if allImplemented && id != "" {
-		return fmt.Errorf("--all-implemented e um <id> são mutuamente exclusivos")
+		return fmt.Errorf("--all-implemented and an <id> are mutually exclusive")
 	}
 	if !allImplemented && id == "" {
 		return fmt.Errorf("informe um <id> ou use --all-implemented")
 	}
 	if allImplemented && reason == "" {
-		return fmt.Errorf("--reason é obrigatório com --all-implemented")
+		return fmt.Errorf("--reason is required with --all-implemented")
 	}
 
 	ctx, err := resolveProject(dir)

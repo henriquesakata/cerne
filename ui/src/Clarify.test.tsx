@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Markdown from './Markdown'
-import { countOpen, parseClarification, resolveMarker } from './clarify'
+import { countOpen, markerSpans, parseClarification, resolveMarker } from './clarify'
 
 afterEach(cleanup)
 
@@ -37,6 +39,77 @@ describe('clarify helpers', () => {
       '```\n[ESCLARECER: no fence]\n```\n' +
       '[ESCLARECER: um?] x [ESCLARECIDO: dois? → ok] y [ESCLARECER: três?]'
     expect(countOpen(md)).toBe(2)
+  })
+
+  // F-0182: o vocabulário en faz parte do catálogo — mesmas formas, mesmas
+  // regras. A resolução escreve no vocabulário do marcador respondido.
+  it('reconhece o vocabulário en e resolve no vocabulário do marcador', () => {
+    expect(parseClarification('[CLARIFY: which format?]')).toEqual({
+      question: 'which format?',
+      options: [],
+      resolved: false,
+      answer: '',
+    })
+    expect(parseClarification('[CLARIFIED: where? → in the doc]')).toEqual({
+      question: 'where?',
+      options: [],
+      resolved: true,
+      answer: 'in the doc',
+    })
+    expect(parseClarification('[CLARIFIER]')).toBeNull()
+
+    // resolveMarker espelha o vocabulário do marcador aberto (critério 3).
+    const en = 'x [CLARIFY: which backend?] y'
+    expect(resolveMarker(en, '[CLARIFY: which backend?]', 2, 'S3')).toBe(
+      'x [CLARIFIED: which backend? → S3] y',
+    )
+    const pt = 'x [ESCLARECER: qual backend?] y'
+    expect(resolveMarker(pt, '[ESCLARECER: qual backend?]', 2, 'S3')).toBe(
+      'x [ESCLARECIDO: qual backend? → S3] y',
+    )
+  })
+
+  // O lado TS da trava de paridade Go↔TS (critério 4 da F-0182): o MESMO
+  // corpus é lido por internal/clarify/clarify_test.go. Um vocabulário
+  // adicionado num lado só quebra a rodada do outro.
+  it('paridade: markerSpans devolve os mesmos spans que o Parse do Go no corpus compartilhado', () => {
+    const corpus = JSON.parse(
+      readFileSync(resolve(__dirname, '../../internal/clarify/testdata/corpus.json'), 'utf-8'),
+    ) as {
+      cases: {
+        name: string
+        content: string
+        spans: { raw: string; offset: number; resolved: boolean }[]
+      }[]
+    }
+    expect(corpus.cases.length).toBeGreaterThan(0)
+    for (const c of corpus.cases) {
+      const got = markerSpans(c.content).map((s) => ({
+        raw: s.raw,
+        offset: s.offset,
+        resolved: s.resolved,
+      }))
+      expect(got, c.name).toEqual(c.spans)
+    }
+  })
+
+  it('markerSpans devolve os spans em ordem, com offset ancorado e citações puladas', () => {
+    const md =
+      '<!-- guia [ESCLARECER: exemplo] -->\n' +
+      'cita `[ESCLARECER: inline]` e\n' +
+      '```\n[ESCLARECER: no fence]\n```\n' +
+      '[ESCLARECER: um?] x [ESCLARECIDO: dois? → ok] y [ESCLARECER: três?]'
+    const spans = markerSpans(md)
+    expect(spans.map((s) => s.raw)).toEqual([
+      '[ESCLARECER: um?]',
+      '[ESCLARECIDO: dois? → ok]',
+      '[ESCLARECER: três?]',
+    ])
+    expect(spans.map((s) => s.resolved)).toEqual([false, true, false])
+    // O offset tem de ancorar exatamente o raw — é o contrato do resolveMarker.
+    for (const s of spans) {
+      expect(md.slice(s.offset, s.offset + s.raw.length)).toBe(s.raw)
+    }
   })
 
   it('resolveMarker substitui só a ocorrência ancorada no offset', () => {
@@ -84,6 +157,106 @@ describe('Markdown com chips de esclarecimento', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
     expect(onAnswer).toHaveBeenLastCalledWith(raw, doc.indexOf(raw), 'nenhum dos dois')
+  })
+
+  // F-0181: o marcador cujo corpo tem markdown inline é quebrado pelo remark em
+  // vários nós do mdast. Antes, o remarkClarify casava o regex DENTRO de um nó de
+  // texto e nenhum nó continha o marcador inteiro — o chip sumia enquanto o
+  // countOpen (que lê a string crua) seguia contando. Beco sem saída na UI.
+  const comCodigo = 'Prosa [ESCLARECER: qual provedor? cite o `backup.yaml` aqui] fim.'
+
+  it('marcador com código inline vira chip (critério 1)', () => {
+    render(<Markdown>{comCodigo}</Markdown>)
+    expect(screen.getByText(/qual provedor\?/)).toHaveClass('clarify-open')
+  })
+
+  it('idem dentro de célula de tabela GFM — a repro da F-0463 (critério 2)', () => {
+    const md = [
+      '| Fork | Decisão |',
+      '|---|---|',
+      '| Provedor do destino | [ESCLARECER: B2 ou S3? Define credencial do `backup.yaml`] |',
+    ].join('\n')
+    render(<Markdown>{md}</Markdown>)
+    expect(screen.getByText(/B2 ou S3\?/)).toHaveClass('clarify-open')
+  })
+
+  it('marcador com negrito vira chip (critério 3)', () => {
+    render(<Markdown>{'X [ESCLARECER: qual **destino**?] fim.'}</Markdown>)
+    expect(screen.getByText(/qual \*\*destino\*\*\?/)).toHaveClass('clarify-open')
+  })
+
+  // Caso de borda decidido na spec: o corpo do marcador não pode conter "]",
+  // então um link markdown TERMINA o marcador no "]" do rótulo — a borda cai
+  // dentro do nó de link, que é absorvido pelo chip. Pino do comportamento.
+  it('link no corpo: marcador termina no ] do rótulo e o nó é absorvido', () => {
+    render(<Markdown>{'X [ESCLARECER: ver [doc](http://x) antes] fim.'}</Markdown>)
+    expect(screen.getByText(/ver \[doc/)).toHaveClass('clarify-open')
+  })
+
+  it('forma resolvida atravessando nós vira rastro estático (critério 5)', () => {
+    render(<Markdown>{'X [ESCLARECIDO: cite o `backup.yaml` → B2] fim.'}</Markdown>)
+    expect(screen.getByText(/backup\.yaml/)).toHaveClass('clarify-resolved')
+  })
+
+  it('responder um marcador que atravessa nós ancora raw e offset (critério 4)', () => {
+    const doc = '---\ncerne_id: F-0001\n---\n\n' + comCodigo
+    const raw = '[ESCLARECER: qual provedor? cite o `backup.yaml` aqui]'
+    let saved = ''
+    const onAnswer = (r: string, offset: number, answer: string) => {
+      saved = resolveMarker(doc, r, offset, answer) ?? 'MISMATCH'
+    }
+    render(<Markdown onAnswer={onAnswer}>{doc}</Markdown>)
+    fireEvent.click(screen.getByRole('button', { name: /qual provedor\?/ }))
+    fireEvent.change(screen.getByPlaceholderText(/Escreva a resposta/), {
+      target: { value: 'B2' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    // O offset tem de bater com o raw no doc ORIGINAL (com frontmatter), senão
+    // o resolveMarker devolve null e a resposta se perde.
+    expect(saved).toContain('[ESCLARECIDO: qual provedor? cite o `backup.yaml` aqui → B2]')
+    expect(saved).not.toBe('MISMATCH')
+    expect(doc.indexOf(raw)).toBeGreaterThan(0)
+  })
+
+  // Critério 6 da F-0181, o que fecha a CLASSE do bug em vez de um caso: para
+  // qualquer conteúdo, o que o contador enxerga e o que a página renderiza têm
+  // de ser o mesmo conjunto. Enquanto forem derivações independentes, divergem.
+  it('invariante: todo span contado vira chip, e nenhum chip a mais (critério 6)', () => {
+    const corpus = [
+      'Prosa simples sem marcador nenhum.',
+      'X [ESCLARECER: simples?] fim.',
+      'Prosa [ESCLARECER: um?] e [ESCLARECIDO: dois? → ok] e [ESCLARECER: três?].',
+      'Com código [ESCLARECER: cite o `a.yaml` agora?] fim.',
+      'Com negrito [ESCLARECER: qual **destino**?] fim.',
+      '| A | B |\n|---|---|\n| c | [ESCLARECER: B2 ou S3? veja `x.yaml`] |',
+      'cita `[ESCLARECER: em código]` — não conta.',
+      '<!-- guia [ESCLARECER: exemplo] -->\ntexto.',
+      '```\n[ESCLARECER: no fence]\n```\ntexto.',
+      '[ESCLARECER: igual?] meio [ESCLARECER: igual?]',
+      '---\ncerne_id: F-0001\n---\n\nCom frontmatter [ESCLARECER: cite o `y.yaml`?] fim.',
+    ]
+    for (const md of corpus) {
+      const { container } = render(<Markdown>{md}</Markdown>)
+      const chips = container.querySelectorAll('.clarify-open, .clarify-resolved')
+      const abertos = container.querySelectorAll('.clarify-open')
+      expect(chips.length, `total de chips em: ${md}`).toBe(markerSpans(md).length)
+      expect(abertos.length, `chips abertos em: ${md}`).toBe(countOpen(md))
+      cleanup()
+    }
+  })
+
+  // Critério 8: a repro literal da F-0463 do Hub — a aba marcava 1 pendência e
+  // a página não oferecia nada para responder.
+  it('repro F-0463: badge conta 1 e existe 1 chip clicável (critério 8)', () => {
+    const md = [
+      '| Fork | Decisão | Razão |',
+      '|---|---|---|',
+      '| Provedor do destino | [ESCLARECER: B2, S3 ou outro? Define custo e credencial do `backup-externalsecret.yaml`] | escolha de custo |',
+    ].join('\n')
+    expect(countOpen(md)).toBe(1)
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    expect(container.querySelectorAll('.clarify-open')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /B2, S3 ou outro\?/ })).toBeInTheDocument()
   })
 
   it('round-trip: a resposta do chip produz o doc resolvido', () => {

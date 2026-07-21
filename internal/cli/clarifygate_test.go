@@ -69,6 +69,36 @@ func TestApproveRefusesOpenClarifications(t *testing.T) {
 	}
 }
 
+// TestApproveRefusesOpenClarificationsEnglish pins F-0182 criterion 7 — the
+// end of the fail-open-by-language gate: an English spec with an open
+// [CLARIFY] marker blocks approve exactly like a pt-BR one. Before the en
+// vocabulary entered the catalog, this spec sailed through silently.
+func TestApproveRefusesOpenClarificationsEnglish(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+
+	newFeatureWithSpec(t, projDir, "English spec",
+		"# English spec\n\n## Problema\n\nReal context in English.\n\n"+
+			"[CLARIFY: which storage backend?]\n")
+
+	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("approve with open [CLARIFY] succeeded, want refusal:\n%s", out)
+	}
+	if !errors.Is(err, app.ErrOpenClarifications) {
+		t.Fatalf("err = %v, want ErrOpenClarifications", err)
+	}
+	if !strings.Contains(err.Error(), "which storage backend?") {
+		t.Errorf("error message missing the English question: %v", err)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.State != domain.StateCandidate {
+		t.Fatalf("state = %s, want candidate (refusal must not transition)", f.State)
+	}
+}
+
 // TestApprovePassesResolvedClarifications pins criterion 5's data side: the
 // resolved [ESCLARECIDO] trail does not block approve.
 func TestApprovePassesResolvedClarifications(t *testing.T) {

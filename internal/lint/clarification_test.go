@@ -47,6 +47,18 @@ func TestClarificationFindings(t *testing.T) {
 			text: "[ESCLARECER: um?] meio [ESCLARECIDO: velho? → ok] fim [ESCLARECER: dois?]",
 			want: []string{"um?", "dois?"},
 		},
+		// F-0182: the en vocabulary gates identically — before it entered
+		// the catalog, an English doc's open questions were invisible here.
+		{
+			name: "en open question",
+			text: "x [CLARIFY: which storage backend?] y",
+			want: []string{"which storage backend?"},
+		},
+		{
+			name: "en resolved marker is silent",
+			text: "[CLARIFIED: which backend? → S3]",
+			want: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -22,6 +22,11 @@ func TestWorkStartHappyDefaultActor(t *testing.T) {
 	if !strings.Contains(out, "W-0001") {
 		t.Fatalf("output missing W-0001 confirmation:\n%s", out)
 	}
+	// F-0184: runtime chrome is English (the command shipped mixed — help en,
+	// output pt).
+	if !strings.Contains(out, "created (active)") || !strings.Contains(out, "actor:") {
+		t.Fatalf("work start chrome not in English:\n%s", out)
+	}
 
 	w, err := store.LoadWork(repoDir, "W-0001")
 	if err != nil {
@@ -168,6 +173,31 @@ func TestWorkListDefaultActiveOnly(t *testing.T) {
 	}
 	if strings.Contains(out, "W-0002") {
 		t.Fatalf("list (default) should hide terminated W-0002:\n%s", out)
+	}
+	// F-0184: the list line chrome is English.
+	if !strings.Contains(out, "actor:") || !strings.Contains(out, "age:") {
+		t.Fatalf("work list chrome not in English:\n%s", out)
+	}
+}
+
+// TestWorkListEmptyMessagesEnglish (F-0184): the empty-list guidance is
+// English, like the rest of the CLI chrome since F-0124.
+func TestWorkListEmptyMessagesEnglish(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+
+	out, err := execCerne(t, "work", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work list: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "No active activity") {
+		t.Fatalf("empty active list not in English:\n%s", out)
+	}
+	out, err = execCerne(t, "work", "list", "--all", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work list --all: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "No activity registered") {
+		t.Fatalf("empty full list not in English:\n%s", out)
 	}
 }
 
