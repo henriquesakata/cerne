@@ -131,6 +131,19 @@ export function mirrorX(x: number, rootX: number, nodeW: number): number {
   return 2 * rootX - x - nodeW
 }
 
+// branchIds coleta todo nó que tem filhos (raiz fora), em ordem determinística
+// (F-0190) — o conjunto "tudo recolhido" que inicializa a aba e alimenta o
+// botão Recolher tudo. Calcule sobre a árvore SEM poda (collapsed vazio).
+export function branchIds(root: MindNode): string[] {
+  const out: string[] = []
+  const walk = (n: MindNode) => {
+    if (n.id !== root.id && n.children.length > 0) out.push(n.id)
+    n.children.forEach(walk)
+  }
+  walk(root)
+  return out.sort((a, b) => a.localeCompare(b))
+}
+
 export function buildMindmapTree(state: StateResponse, opts: MindmapOptions): MindmapResult {
   const byId = new Map(state.features.map((f) => [f.id, f]))
   const passes = (f: Feature): boolean => {

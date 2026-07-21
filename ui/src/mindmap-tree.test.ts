@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  branchIds,
   buildCapabilityTree,
   buildMindmapTree,
   mirrorX,
@@ -254,6 +255,23 @@ describe('buildMindmapTree', () => {
       expect(node.hiddenDescendants).toBe(1)
       expect(buildCapabilityTree(state, { collapsed: new Set(['C-0001']) })).toEqual(a)
     })
+  })
+
+  // F-0190 crit. 1: conjunto do "tudo recolhido" — todo nó com filhos, raiz fora.
+  it('branchIds collects every node with children, excluding the root', () => {
+    const { root } = buildMindmapTree(
+      mkState([
+        mkFeature('F-0001', { module: 'alpha' }), // épico
+        mkFeature('F-0002', { parent: 'F-0001' }),
+        mkFeature('F-0003', { parent: 'F-0002' }), // neto → F-0002 também é ramo
+        mkFeature('F-0004', { module: 'beta' }), // folha
+      ]),
+      DEFAULTS,
+    )
+    const ids = branchIds(root)
+    expect(ids).toEqual(['F-0001', 'F-0002', 'module:alpha', 'module:beta'])
+    expect(ids).not.toContain('root')
+    expect(branchIds(root)).toEqual(ids) // determinístico
   })
 
   // F-0187 crit. 1/3: divisão bilateral greedy por peso da subárvore visível.
