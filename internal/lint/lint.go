@@ -54,10 +54,11 @@ const (
 	RuleUnregisteredSource = "unregistered-source"
 	RuleDriftSuspect       = "drift-suspect"
 	RuleOpenClarification  = "open-clarification"
+	RuleCapabilityOrphan   = "capability-orphan"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -78,6 +79,7 @@ var ruleRank = map[string]int{
 	RuleUnregisteredSource: 15,
 	RuleDriftSuspect:       16,
 	RuleOpenClarification:  17,
+	RuleCapabilityOrphan:   18,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -246,8 +248,44 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 
 	findings = append(findings, untaggedLiveFindings(features, decisions, references, notes, runbooks)...)
 
+	capabilities, err := store.LoadAllCapabilities(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, capabilityOrphanFindings(features, capabilities)...)
+
 	Sort(findings)
 	return findings, nil
+}
+
+// capabilityOrphanFindings (F-0188): once the project curates a capability
+// taxonomy (≥1 active node), a live feature not linked to any capability is
+// invisible on the "by capability" mindmap — advisory to keep curation going.
+// A project with no capabilities never opted in, so the rule stays silent.
+func capabilityOrphanFindings(features []store.Feature, capabilities []store.Capability) []Finding {
+	hasActive := false
+	for _, c := range capabilities {
+		if c.State == domain.CapabilityActive {
+			hasActive = true
+			break
+		}
+	}
+	if !hasActive {
+		return nil
+	}
+	var out []Finding
+	for _, f := range features {
+		live := f.State == domain.StateCandidate || f.State == domain.StateApproved || f.State == domain.StateInDevelopment
+		if !live || len(f.Capabilities) > 0 {
+			continue
+		}
+		out = append(out, Finding{
+			Rule:   RuleCapabilityOrphan,
+			Entity: f.ID,
+			Detail: fmt.Sprintf("feature viva sem capacidade (%s) — vincule com 'cerne feature capability %s C-…'", f.Title, f.ID),
+		})
+	}
+	return out
 }
 
 // Sort orders findings canonically in place: by Rule (RuleOrder), then File,
