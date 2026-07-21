@@ -4,13 +4,13 @@
     {
       "name": "cerne-ui",
       "runtimeExecutable": "cerne",
-      "runtimeArgs": ["ui", "--no-browser", "--port", "7719"],
-      "port": 7719
+      "runtimeArgs": ["ui", "--no-browser", "--port", "7717"],
+      "port": 7717
     },
     {
       "name": "ui-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "ui"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["ui/node_modules/vite/bin/vite.js", "ui"],
       "port": 5173
     }
   ]

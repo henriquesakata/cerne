@@ -84,6 +84,26 @@ func TestStubWithContext(t *testing.T) {
 	}
 }
 
+// TestStubWithContextEnglishUsesEnMarker pins F-0182 criterion 10: a scaffold
+// seeded with English context carries the en vocabulary in the marker
+// guidance, so the agent filling it authors [CLARIFY: …] naturally. The pt
+// path stays byte-identical to before.
+func TestStubWithContextEnglishUsesEnMarker(t *testing.T) {
+	ctx := "The provisioning path does not know about the host and needs a way to validate the credentials that already exist."
+	s := spectmpl.StubWithContext("Self-hosted target", ctx)
+	if !strings.Contains(s, "[CLARIFY:") {
+		t.Fatalf("English-context scaffold should cite the en marker word:\n%s", s)
+	}
+	if strings.Contains(s, "[ESCLARECER") {
+		t.Fatalf("English-context scaffold should not keep the pt marker word:\n%s", s)
+	}
+	// pt context keeps the pt vocabulary untouched.
+	pt := spectmpl.StubWithContext("Alvo self-hosted", "O provisionamento não conhece o host e precisa de um caminho para validar as credenciais que já existem.")
+	if !strings.Contains(pt, "[ESCLARECER:") || strings.Contains(pt, "[CLARIFY") {
+		t.Fatalf("pt-context scaffold should keep the pt marker word:\n%s", pt)
+	}
+}
+
 // TestStubWithContextEmptyDegradesToStub pins the no-context path.
 func TestStubWithContextEmptyDegradesToStub(t *testing.T) {
 	if spectmpl.StubWithContext("X", "   ") != spectmpl.Stub("X") {

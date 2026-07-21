@@ -78,7 +78,7 @@ cerne scaffolds a new feature's `spec.md` from a canonical template (the same on
 
 **Ordering is deliberate, not cosmetic.** Problema and the acceptance criteria sit at the top and Verificação near the end, so the most decision-bearing, testable content lands where long-context models attend best (primacy/recency) rather than buried in the middle. Keep it dense — a bloated spec hurts more than it helps.
 
-**Mark ambiguity, don't guess.** Wherever something is unresolved, leave `[ESCLARECER: pergunta específica]` instead of a plausible-but-maybe-wrong guess, and resolve every marker before `cerne feature approve`.
+**Mark ambiguity, don't guess.** Wherever something is unresolved, leave `[ESCLARECER: pergunta específica]` instead of a plausible-but-maybe-wrong guess, and resolve every marker before `cerne feature approve`. **Write the marker in the doc's own language** — the vocabulary is a per-language catalog (pt `[ESCLARECER:]`/`[ESCLARECIDO:]`, en `[CLARIFY:]`/`[CLARIFIED:]`) and cerne recognizes all of it everywhere (UI chips, tab badge, lint, approve gate), so an English doc uses `[CLARIFY: specific question]` and gates exactly like a pt-BR one. Options work the same in any vocabulary (`[CLARIFY: where? | doc | sidecar]`), and answering via the UI writes the resolved form in the marker's own vocabulary.
 
 The evidence behind this structure (lost-in-the-middle / primacy-recency, EARS, ADR, spec-driven development) is registered in the backend as external references — `cerne ask` cites them.
 

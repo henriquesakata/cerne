@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -98,6 +100,97 @@ func TestCLIProviderCompleteError(t *testing.T) {
 	for _, want := range []string{"claude -p", "byo-key"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// TestDescribeExit pins F-0183: the exit description must carry the CLI's own
+// explanation whichever stream it came out of. The Claude Code CLI reports
+// auth failures on STDOUT with an empty stderr — before this, the error read
+// `exited with exit status 1:` with nothing after the colon, hiding the one
+// line that named the cause (a 401) behind the generic login hint.
+func TestDescribeExit(t *testing.T) {
+	tests := []struct {
+		name    string
+		stdout  string
+		stderr  string
+		want    []string
+		wantNot []string
+	}{
+		{
+			name:   "stderr wins when present",
+			stdout: "partial answer",
+			stderr: "not logged in",
+			want:   []string{"not logged in"},
+			// stdout must not pollute the normal case.
+			wantNot: []string{"partial answer", "(stdout)"},
+		},
+		{
+			name:   "stdout labeled when stderr is empty",
+			stdout: "Failed to authenticate. API Error: 401 OAuth access token has expired.",
+			want:   []string{"(stdout)", "401 OAuth access token has expired"},
+		},
+		{
+			name:   "whitespace-only stderr counts as empty",
+			stdout: "the real reason",
+			stderr: "\n",
+			want:   []string{"(stdout)", "the real reason"},
+		},
+		{
+			name: "no output at all is said explicitly",
+			want: []string{"(no output)"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := describeExit("claude", "exit status 1", []byte(tt.stdout), []byte(tt.stderr))
+			for _, w := range tt.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("describeExit() = %q, want substring %q", got, w)
+				}
+			}
+			for _, w := range tt.wantNot {
+				if strings.Contains(got, w) {
+					t.Errorf("describeExit() = %q, must not contain %q", got, w)
+				}
+			}
+			if strings.HasSuffix(strings.TrimSpace(got), ":") {
+				t.Errorf("describeExit() = %q ends in a dangling colon", got)
+			}
+		})
+	}
+}
+
+// TestDescribeExitTruncatesAnyStream: the size bound applies to the stdout
+// fallback too — a chatty CLI cannot flood the error.
+func TestDescribeExitTruncatesAnyStream(t *testing.T) {
+	big := strings.Repeat("x", 10*1024)
+	got := describeExit("claude", "exit status 1", []byte(big), nil)
+	if len(got) > maxOutputBytes+200 { // message scaffold on top of the bounded stream
+		t.Fatalf("describeExit() length = %d, want bounded near %d", len(got), maxOutputBytes)
+	}
+}
+
+// TestExecRunCapturesStdoutOnFailure is the wiring proof (F-0183 criterion 8):
+// a REAL process that writes only to stdout and exits 1 must surface that
+// text in execRun's error. The fake-runner tests never execute execRun — this
+// seam is exactly where the original bug lived unseen.
+func TestExecRunCapturesStdoutOnFailure(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") == "1" {
+		fmt.Println("SENTINEL: the actual reason came out on stdout")
+		os.Exit(1)
+	}
+	// execRun offers no env injection (by design), so the guard travels via
+	// inherited environment: set here, seen by the re-executed child.
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	_, err := execRun(context.Background(), os.Args[0],
+		[]string{"-test.run=TestExecRunCapturesStdoutOnFailure$"}, "")
+	if err == nil {
+		t.Fatal("execRun on an exit-1 process returned nil error")
+	}
+	for _, want := range []string{"SENTINEL: the actual reason came out on stdout", "(stdout)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("execRun error = %q, want substring %q", err, want)
 		}
 	}
 }

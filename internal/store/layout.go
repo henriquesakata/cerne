@@ -53,6 +53,7 @@ var idSubdirs = map[string]string{
 	"N":  notesSubdir,
 	"H":  historicalsSubdir,
 	"W":  worksSubdir,
+	"C":  capabilitiesSubdir,
 }
 
 // Project is the persisted form of project.json.

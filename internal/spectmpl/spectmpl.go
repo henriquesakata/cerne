@@ -10,7 +10,11 @@
 // its sources are registered in the cerne backend as references (R-0001…).
 package spectmpl
 
-import "strings"
+import (
+	"strings"
+
+	"gitlab.com/rockt/cerne/internal/lang"
+)
 
 // Sections are the canonical spec sections, in template order.
 var Sections = []string{
@@ -72,15 +76,30 @@ func Stub(title string) string {
 	return "# " + strings.TrimSpace(title) + "\n\n" + Body
 }
 
+// enMarkers swaps the marker words the guidance cites for the en vocabulary.
+// Only the marker words change — the guidance prose stays pt-BR (translating
+// the templates is its own feature; the words are what the approve gate and
+// the filling agent key on).
+var enMarkers = strings.NewReplacer("[ESCLARECER", "[CLARIFY", "[ESCLARECIDO", "[CLARIFIED")
+
 // StubWithContext returns Stub(title) with the Problema section seeded with
 // context — the creation-time summary that must survive the session that
 // minted the feature (F-0120). The rest of the template stays for the author
 // to fill. An empty context degrades to the plain Stub.
+//
+// The context is also the language signal (F-0182): an English context gets
+// the guidance citing [CLARIFY: …], so the agent filling the spec authors
+// markers in the doc's own language. Detection is scaffold-only — the parser
+// accepts the whole catalog regardless (internal/clarify).
 func StubWithContext(title, context string) string {
 	context = strings.TrimSpace(context)
 	if context == "" {
 		return Stub(title)
 	}
 	next := "\n## " + Sections[1] + "\n"
-	return strings.Replace(Stub(title), next, "\n"+context+"\n"+next, 1)
+	s := strings.Replace(Stub(title), next, "\n"+context+"\n"+next, 1)
+	if lang.Detect(context) == "en" {
+		s = enMarkers.Replace(s)
+	}
+	return s
 }

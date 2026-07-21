@@ -23,6 +23,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newFeatureListCmd(&dir))
 	cmd.AddCommand(newFeatureRetagCmd(&dir))
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
+	cmd.AddCommand(newFeatureCapabilityCmd(&dir))
 	cmd.AddCommand(newFeatureRenameCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))

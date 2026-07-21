@@ -11,11 +11,14 @@ import (
 // installer. Regenerate with: go test ./internal/hooks/ -run Golden -update
 // (or copy ParityMatrix() output into docs/provider-parity.md).
 func TestParityMatrixGolden(t *testing.T) {
-	want, err := os.ReadFile("../../docs/provider-parity.md")
+	raw, err := os.ReadFile("../../docs/provider-parity.md")
 	if err != nil {
 		t.Fatalf("golden missing (generate it from ParityMatrix()): %v", err)
 	}
-	if got := ParityMatrix(); got != string(want) {
+	// autocrlf materializes the file with CRLF on Windows checkouts (F-0185);
+	// only EOL is normalized — any content byte still fails the compare.
+	want := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	if got := ParityMatrix(); got != want {
 		t.Fatalf("docs/provider-parity.md drifted from the code table — regenerate it from ParityMatrix().\n--- got ---\n%s", got)
 	}
 }
