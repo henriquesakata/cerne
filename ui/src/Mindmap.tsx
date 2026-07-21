@@ -14,13 +14,14 @@ import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { fetchState, type Feature, type FeatureState, type StateResponse } from './api'
 import {
+  branchIds,
   buildCapabilityTree,
   buildMindmapTree,
   mirrorX,
   splitSides,
   type MindNode,
 } from './mindmap-tree'
-import { useLiveVersion } from './live'
+import { useLiveVersion, useProjects } from './live'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
 
@@ -34,9 +35,6 @@ import { useEffectiveTheme } from './theme'
 const elk = new ELK()
 const NODE_W = 196
 const NODE_H = 56
-// Acima deste tamanho de roster, a aba abre com os módulos recolhidos — a
-// árvore toda expandida (hub: centenas de folhas) é uma parede ilegível.
-const COLLAPSE_ALL_ABOVE = 60
 
 // Cores por estado — os mesmos tokens dos chips do kanban (app.css).
 const STATE_COLOR: Record<FeatureState, string> = {
@@ -89,6 +87,7 @@ const NODE_TYPES = { mind: MindNodeBox }
 export default function Mindmap() {
   const { t } = useT()
   const theme = useEffectiveTheme()
+  const { activePid } = useProjects()
   const [data, setData] = useState<StateResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deliveredOnly, setDeliveredOnly] = useState(false)
@@ -117,21 +116,51 @@ export default function Mindmap() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [version])
 
-  useEffect(() => {
-    if (!data) return
-    setCollapsed((cur) => {
-      if (cur !== null) return cur
-      if (data.features.length <= COLLAPSE_ALL_ABOVE) return new Set()
-      return new Set(data.features.map((f) => `module:${f.module}`))
-    })
-  }, [data])
-
   const hasCapabilities = useMemo(
     () => (data?.capabilities ?? []).some((c) => c.state === 'active'),
     [data],
   )
   const effAxis: 'capability' | 'structure' =
     axis ?? (hasCapabilities ? 'capability' : 'structure')
+
+  // F-0190: estado de colapso por projeto+eixo. A aba abre com TODO ramo
+  // recolhido (branchIds da árvore sem poda); o estado salvo no localStorage
+  // vence o default e cada mudança grava de volta.
+  const storageKey = `cerne.mindmap.collapsed.${activePid || 'default'}.${effAxis}`
+  const allCollapsed = useMemo(() => {
+    if (!data) return null
+    const full =
+      effAxis === 'capability'
+        ? buildCapabilityTree(data, { collapsed: new Set() })
+        : buildMindmapTree(data, {
+            hideTerminal: !showTerminal,
+            deliveredOnly,
+            collapsed: new Set(),
+          })
+    return new Set(branchIds(full.root))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, effAxis])
+
+  useEffect(() => {
+    if (!allCollapsed) return
+    let saved: string[] | null = null
+    try {
+      const raw = localStorage.getItem(storageKey)
+      if (raw) saved = JSON.parse(raw) as string[]
+    } catch {
+      saved = null
+    }
+    setCollapsed(saved ? new Set(saved) : new Set(allCollapsed))
+  }, [storageKey, allCollapsed])
+
+  const persist = (next: Set<string>) => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify([...next]))
+    } catch {
+      // storage cheio/indisponível: segue sem persistir
+    }
+    setCollapsed(next)
+  }
 
   const tree = useMemo(() => {
     if (!data || !collapsed) return null
@@ -140,13 +169,12 @@ export default function Mindmap() {
     return buildMindmapTree(data, { hideTerminal: !showTerminal, deliveredOnly, collapsed })
   }, [data, showTerminal, deliveredOnly, collapsed, effAxis])
 
-  const toggle = (id: string) =>
-    setCollapsed((s) => {
-      const next = new Set(s)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const toggle = (id: string) => {
+    const next = new Set(collapsed)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    persist(next)
+  }
 
   // Layout bilateral (F-0187): splitSides divide o 1º nível; cada lado passa
   // pelo ELK mrtree RIGHT em separado e o esquerdo é espelhado sobre a âncora
@@ -364,6 +392,12 @@ export default function Mindmap() {
             </button>
           </>
         )}
+        <button className="filter" onClick={() => persist(new Set(allCollapsed ?? []))}>
+          {t.mindmap.collapseAll}
+        </button>
+        <button className="filter" onClick={() => persist(new Set())}>
+          {t.mindmap.expandAll}
+        </button>
         <span className="mindmap-legend">
           {STATE_ORDER.map((s) => (
             <span key={s} className="mindmap-legend-item">
