@@ -2,10 +2,25 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 )
+
+// widenElisionWindow pins "the mark is fresh" by construction: on a loaded
+// machine more than the production 30s can pass between the fixture's seed
+// push (which stamps the mark) and reconcile's SyncedWithin check, flipping
+// an elision test into a real fetch. Any window that outlives the test run
+// keeps these tests about skip-vs-fetch behavior, not scheduling; the
+// window's expiry semantics stay pinned in gitback's syncmark tests under a
+// fake clock.
+func widenElisionWindow(t *testing.T) {
+	t.Helper()
+	prev := elisionWindow
+	elisionWindow = 24 * time.Hour
+	t.Cleanup(func() { elisionWindow = prev })
+}
 
 func mutateSpec(t *testing.T, repoDir, projDir, content string) *telemetry.Op {
 	t.Helper()
@@ -35,6 +50,7 @@ func phaseSet(t *testing.T) map[string]int {
 // sync mark (the fixture's seed push), attempt 0 skips the fetch and records
 // fetch_skip instead; the mutation lands on origin normally.
 func TestElisionSkipsFetchOnFreshSync(t *testing.T) {
+	widenElisionWindow(t)
 	origin, repoDir, projDir, _ := reconcileFixture(t)
 	// The fixture's CommitAndPush marked the sync; the mark is fresh.
 	mutateSpec(t, repoDir, projDir, "v2\n")
@@ -51,6 +67,7 @@ func TestElisionSkipsFetchOnFreshSync(t *testing.T) {
 // stale tracking head costs one non-fast-forward retry — which fetches — and
 // the final origin state is the correct merge of both sides.
 func TestElisionConvergesWhenRemoteAdvanced(t *testing.T) {
+	widenElisionWindow(t)
 	origin, repoDir, projDir, _ := reconcileFixture(t)
 	// Remote advances behind our back (another clone; our mark stays fresh).
 	advanceRemote(t, origin, "content/other.md", "deles\n")
