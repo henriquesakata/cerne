@@ -282,8 +282,10 @@ export default function Mindmap() {
                 target: f.node.id,
                 sourceHandle: leftSide ? 'sl' : 'sr',
                 targetHandle: leftSide ? 'tr' : 'tl',
-                type: 'smoothstep',
-                style: { stroke: 'var(--border-card)', strokeWidth: 1.5, opacity: 0.9 },
+                // Curva orgânica (bezier), como mindmaps reais — degraus
+                // ortogonais viram trilha de circuito numa árvore densa (F-0189).
+                type: 'default',
+                style: { stroke: 'var(--faint)', strokeWidth: 1.5, opacity: 0.8 },
               } satisfies Edge
             }),
         )
