@@ -164,6 +164,19 @@ func TestShowCapability(t *testing.T) {
 	}
 }
 
+// TestCapabilityBootstrapNeedsLLM pins F-0188 criterion 4 (error half): with
+// no callable [llm] mode configured, bootstrap fails with a clear pointer.
+func TestCapabilityBootstrapNeedsLLM(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	out, err := execCerne(t, "capability", "bootstrap", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("bootstrap without [llm] should fail\noutput: %s", out)
+	}
+	if !strings.Contains(err.Error(), "[llm]") {
+		t.Fatalf("error should point at the [llm] config, got: %v", err)
+	}
+}
+
 // mustExec runs a cerne command against projDir and fails the test on error.
 func mustExec(t *testing.T, projDir string, args ...string) {
 	t.Helper()

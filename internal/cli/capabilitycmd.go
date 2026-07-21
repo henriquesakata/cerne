@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -23,6 +24,48 @@ func newCapabilityCmd() *cobra.Command {
 	cmd.AddCommand(newCapabilityNewCmd(&dir))
 	cmd.AddCommand(newCapabilityListCmd(&dir))
 	cmd.AddCommand(newCapabilityRetireCmd(&dir))
+	cmd.AddCommand(newCapabilityBootstrapCmd(&dir))
+	return cmd
+}
+
+func newCapabilityBootstrapCmd(dir *string) *cobra.Command {
+	var apply bool
+	cmd := &cobra.Command{
+		Use:   "bootstrap",
+		Short: "Propose the capability tree from the feature specs via the [llm] provider (--apply imports the reviewed proposal)",
+		Long: "Reads every live/delivered feature (title + spec excerpt) and asks the configured [llm] provider to " +
+			"propose the product-capability tree, written as a REVIEWABLE artifact under .docs/.capability-proposal/ " +
+			"(json + md) — the backend is not touched. Review/edit the proposal, then run with --apply to import it " +
+			"in one commit (idempotent by normalized title; actor 'capability-bootstrap'). Requires a callable [llm] " +
+			"mode in .cernerc (claude-cli or byo-key) for the proposal step; --apply needs no provider.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			w := cmd.OutOrStdout()
+			if apply {
+				res, err := app.ApplyCapabilityProposal(ctx.repoDir, ctx.projDir)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(w, "Applied: %d capability(ies) created, %d feature link(s).\n", res.Created, res.Linked)
+				return nil
+			}
+			provider, err := llm.NewProvider(ctx.cfg.LLM)
+			if err != nil {
+				return fmt.Errorf("capability bootstrap needs a callable [llm] mode in .cernerc (claude-cli or byo-key): %w", err)
+			}
+			prop, err := app.GenerateCapabilityProposal(cmd.Context(), ctx.repoDir, ctx.projDir, provider)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(w, "Proposal written to .docs/.capability-proposal/ (%d root node(s)).\nReview/edit proposal.json, then run 'cerne capability bootstrap --apply'.\n", len(prop.Tree))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "import the reviewed proposal into the backend")
 	return cmd
 }
 
