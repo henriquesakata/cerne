@@ -94,8 +94,29 @@ vi.mock('./api', async (importOriginal) => ({
   fetchState: vi.fn(async () => mockState),
 }))
 
+vi.mock('./live', () => ({
+  useLiveVersion: () => 0,
+  useProjects: () => ({
+    projects: [{ pid: 'p1', name: 'P1' }],
+    activePid: 'p1',
+    setActivePid: () => {},
+    changed: new Set<string>(),
+    version: 0,
+    lastChange: { pid: '', seq: 0 },
+  }),
+}))
+
+// F-0190: a aba abre recolhida por default; os testes que inspecionam conteúdo
+// profundo semeiam o estado salvo "tudo expandido" (o salvo vence o default —
+// o que de quebra exercita a persistência).
+function seedExpanded() {
+  localStorage.setItem('cerne.mindmap.collapsed.p1.structure', '[]')
+  localStorage.setItem('cerne.mindmap.collapsed.p1.capability', '[]')
+}
+
 beforeEach(() => {
   mockState = state
+  localStorage.clear()
   cleanup()
 })
 
@@ -129,6 +150,7 @@ describe('Mindmap por capacidade (F-0188)', () => {
   // Crit. 8: com taxonomia, o seletor aparece e o default é "por capacidade".
   it('abre no eixo por capacidade quando a taxonomia existe', async () => {
     mockState = capState
+    seedExpanded()
     render(<Mindmap />)
     expect(await screen.findByText('Studio')).toBeInTheDocument()
     expect(screen.getByText('Issues')).toBeInTheDocument()
@@ -140,6 +162,7 @@ describe('Mindmap por capacidade (F-0188)', () => {
   // Crit. 8: clique num nó de capacidade abre o painel com as features linkadas.
   it('abre o painel de features ao clicar numa capacidade', async () => {
     mockState = capState
+    seedExpanded()
     render(<Mindmap />)
     fireEvent.click(await screen.findByText('Issues'))
     const link = await screen.findByText('Projetos no Studio')
@@ -149,6 +172,7 @@ describe('Mindmap por capacidade (F-0188)', () => {
   // Crit. 8: alternar para "Por estrutura" volta ao mapa de módulos/épicos.
   it('alterna para o eixo por estrutura', async () => {
     mockState = capState
+    seedExpanded()
     render(<Mindmap />)
     await screen.findByText('Studio')
     fireEvent.click(screen.getByRole('button', { name: 'Por estrutura' }))
@@ -168,6 +192,7 @@ describe('Mindmap', () => {
   // Critérios 1 e 7: raiz = projeto, módulos + balde sem-módulo, strings do i18n
   // (default do contexto = pt-BR), contagem de features visíveis.
   it('renderiza raiz, módulos, features e contagem', async () => {
+    seedExpanded()
     render(<Mindmap />)
     expect(screen.getByRole('heading', { name: /Mapa mental/ })).toBeInTheDocument()
     expect(await screen.findByText('hub')).toBeInTheDocument()
@@ -180,6 +205,7 @@ describe('Mindmap', () => {
 
   // Critério 3: nó de feature é um link para a página da feature.
   it('liga cada feature à sua página', async () => {
+    seedExpanded()
     render(<Mindmap />)
     const label = await screen.findByText('Projetos no Studio')
     expect(label.closest('a')).toHaveAttribute('href', '#/f/F-0001')
@@ -187,6 +213,7 @@ describe('Mindmap', () => {
 
   // Critério 4: colapso poda a subárvore e mostra a contagem oculta.
   it('recolhe e expande uma subárvore', async () => {
+    seedExpanded()
     render(<Mindmap />)
     await screen.findByText('Issues do projeto')
     fireEvent.click(screen.getByLabelText('recolher F-0001'))
@@ -196,30 +223,57 @@ describe('Mindmap', () => {
     expect(await screen.findByText('Issues do projeto')).toBeInTheDocument()
   })
 
-  // Risco do plano (hub: centenas de folhas viram parede ilegível): num roster
-  // grande a aba abre com os módulos recolhidos (+N) — expande-se por ramo.
-  it('abre com módulos recolhidos quando o roster é grande', async () => {
-    mockState = {
-      ...state,
-      features: Array.from({ length: 70 }, (_, i) => ({
-        id: `F-${String(i + 1).padStart(4, '0')}`,
-        title: `Feature ${i + 1}`,
-        module: 'studio',
-        state: 'implemented' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-      })),
-    }
+  // F-0190 crit. 1: sem estado salvo, a aba abre com TODO ramo recolhido —
+  // só o 1º nível com badges +N, independentemente do tamanho do roster.
+  it('abre recolhido por default (sem estado salvo)', async () => {
     render(<Mindmap />)
-    expect(await screen.findByLabelText('expandir module:studio (+70)')).toBeInTheDocument()
-    expect(screen.queryByText('Feature 1')).not.toBeInTheDocument()
-    expect(screen.getByText(/70 features visíveis/)).toBeInTheDocument()
+    expect(await screen.findByText('hub')).toBeInTheDocument()
+    expect(screen.getByText('studio')).toBeInTheDocument()
+    expect(screen.getByLabelText('expandir module:studio (+2)')).toBeInTheDocument()
+    expect(screen.queryByText('Projetos no Studio')).not.toBeInTheDocument()
+    expect(screen.queryByText('Feature avulsa')).not.toBeInTheDocument()
+  })
+
+  // F-0190 crit. 2: expandir revela só o próximo nível — filhos chegam recolhidos.
+  it('expande nível a nível', async () => {
+    render(<Mindmap />)
+    await screen.findByText('studio')
+    fireEvent.click(screen.getByLabelText('expandir module:studio (+2)'))
+    expect(await screen.findByText('Projetos no Studio')).toBeInTheDocument()
+    // o épico F-0001 aparece, mas ainda recolhido (+1) — o neto não.
+    expect(screen.getByLabelText('expandir F-0001 (+1)')).toBeInTheDocument()
+    expect(screen.queryByText('Issues do projeto')).not.toBeInTheDocument()
+  })
+
+  // F-0190 crit. 3: botões globais recolhem/expandem tudo.
+  it('recolhe tudo e expande tudo pela toolbar', async () => {
+    render(<Mindmap />)
+    await screen.findByText('studio')
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir tudo' }))
+    expect(await screen.findByText('Issues do projeto')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Recolher tudo' }))
+    await screen.findByLabelText('expandir module:studio (+2)')
+    expect(screen.queryByText('Projetos no Studio')).not.toBeInTheDocument()
+  })
+
+  // F-0190 crit. 4: estado salvo vence o default e toggles gravam de volta.
+  it('persiste o estado de colapso por projeto e eixo', async () => {
+    localStorage.setItem('cerne.mindmap.collapsed.p1.structure', JSON.stringify(['module:studio']))
+    render(<Mindmap />)
+    // salvo: só studio recolhido → o balde sem módulo está aberto.
+    expect(await screen.findByText('Feature avulsa')).toBeInTheDocument()
+    expect(screen.queryByText('Projetos no Studio')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('expandir module:studio (+2)'))
+    await screen.findByText('Projetos no Studio')
+    const saved = JSON.parse(localStorage.getItem('cerne.mindmap.collapsed.p1.structure')!)
+    expect(saved).not.toContain('module:studio')
   })
 
   // F-0187 crit. 1/2: layout bilateral — ramo mais pesado à direita da raiz,
   // o outro espelhado à esquerda (x menor que o da raiz), lados marcados para
   // os handles.
   it('posiciona ramos dos dois lados da raiz', async () => {
+    seedExpanded()
     render(<Mindmap />)
     await screen.findByText('Projetos no Studio')
     const byId = (id: string) =>
@@ -237,6 +291,7 @@ describe('Mindmap', () => {
   // Critério 5: toggle "só entregues" esconde estados não terminados e a
   // contagem acompanha.
   it('filtra para só entregues', async () => {
+    seedExpanded()
     render(<Mindmap />)
     await screen.findByText('Feature avulsa')
     fireEvent.click(screen.getByRole('button', { name: 'Só entregues' }))
