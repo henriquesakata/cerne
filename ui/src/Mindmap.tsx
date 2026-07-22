@@ -35,6 +35,10 @@ import { useEffectiveTheme } from './theme'
 const elk = new ELK()
 const NODE_W = 196
 const NODE_H = 56
+// Esticamento horizontal pós-layout (F-0191): o gap entre níveis do mrtree
+// (~28px) é curto demais para curvas bezier legíveis — as linhas colidem na
+// saída dos nós. 1.5 leva o gap a ~140px sem tocar o espaçamento vertical.
+const H_STRETCH = 1.5
 
 // Cores por estado — os mesmos tokens dos chips do kanban (app.css).
 const STATE_COLOR: Record<FeatureState, string> = {
@@ -291,13 +295,19 @@ export default function Mindmap() {
         const anchor = posR.get(tree.root.id) ?? { x: 0, y: 0 }
         const anchorL = posL.get(tree.root.id) ?? { x: 0, y: 0 }
         const pos = new Map(posR)
-        // Lado esquerdo: translada para a âncora comum e espelha em X.
+        // Lado esquerdo: translada para a âncora comum e espelha em X (ao
+        // redor do centro da raiz — gaps simétricos, F-0191).
         posL.forEach((p, id) => {
           if (id === tree.root.id) return
           const tx = p.x - anchorL.x + anchor.x
           const ty = p.y - anchorL.y + anchor.y
-          pos.set(id, { x: mirrorX(tx, anchor.x, NODE_W), y: ty })
+          pos.set(id, { x: mirrorX(tx, anchor.x), y: ty })
         })
+        // Linhas respiráveis: estica a distância horizontal de todo nó em
+        // relação à raiz (linear — comuta com o espelho e preserva ordem).
+        pos.forEach((p, id) =>
+          pos.set(id, { x: anchor.x + (p.x - anchor.x) * H_STRETCH, y: p.y }),
+        )
         setBaseNodes(mkNodes(pos))
         setEdges(
           flat

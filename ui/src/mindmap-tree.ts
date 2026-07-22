@@ -125,10 +125,14 @@ export function splitSides(root: MindNode): { right: MindNode[]; left: MindNode[
   return { right, left }
 }
 
-// mirrorX espelha uma coordenada ELK do ramo esquerdo sobre a âncora da raiz
-// (F-0187): involução pura — mirrorX(mirrorX(x)) === x.
-export function mirrorX(x: number, rootX: number, nodeW: number): number {
-  return 2 * rootX - x - nodeW
+// mirrorX espelha uma coordenada ELK do ramo esquerdo sobre o CENTRO da raiz
+// (F-0187, corrigido no F-0191): para nós de largura uniforme, refletir o
+// intervalo [x, x+W] ao redor do centro da raiz reduz a x' = 2·rootX − x —
+// involução pura, raiz fixa sobre si, e gaps SIMÉTRICOS nos dois lados (a
+// fórmula antiga, 2·rootX − x − W, espelhava ao redor do canto esquerdo e
+// inflava o gap esquerdo em +W enquanto o direito ficava no mínimo do ELK).
+export function mirrorX(x: number, rootX: number): number {
+  return 2 * rootX - x
 }
 
 // branchIds coleta todo nó que tem filhos (raiz fora), em ordem determinística

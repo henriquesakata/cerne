@@ -328,11 +328,24 @@ describe('buildMindmapTree', () => {
     })
   })
 
-  // F-0187 crit. 3: espelhamento do lado esquerdo é aritmética pura.
-  it('mirrors x relative to the root anchor', () => {
-    expect(mirrorX(300, 100, 196)).toBe(2 * 100 - 300 - 196)
-    expect(mirrorX(100, 100, 196)).toBe(100 - 196) // a própria raiz espelha sobre si
-    expect(mirrorX(mirrorX(300, 100, 196), 100, 196)).toBe(300) // involução
+  // F-0187 crit. 3 (fórmula corrigida no F-0191): espelho ao redor do centro
+  // da raiz — involução, raiz fixa, gaps simétricos.
+  it('mirrors x relative to the root center', () => {
+    expect(mirrorX(300, 100)).toBe(2 * 100 - 300)
+    expect(mirrorX(100, 100)).toBe(100) // a raiz fica no lugar
+    expect(mirrorX(mirrorX(300, 100), 100)).toBe(300) // involução
+  })
+
+  // F-0191 crit. 1: com nós de largura uniforme, o gap visual dos dois lados
+  // da raiz é idêntico.
+  it('produces symmetric gaps around the root', () => {
+    const W = 196
+    const rootX = 100
+    const rightChild = rootX + W + 28 // canto esquerdo do filho à direita
+    const leftChild = mirrorX(rightChild, rootX)
+    const rightGap = rightChild - (rootX + W)
+    const leftGap = rootX - (leftChild + W)
+    expect(leftGap).toBe(rightGap)
   })
 
   // Critério 6: determinismo — mesma entrada (em qualquer ordem), mesma árvore.
