@@ -108,6 +108,26 @@ func TestSafePullDirtyWorktreeNeverDivergesRefFromFiles(t *testing.T) {
 	}
 }
 
+// TestSafePullEmptyRemoteIsNoOp: a clone of a still-empty backend (Clone
+// tolerates ErrEmptyRemoteRepository — e.g. an init that crashed before its
+// first push) has no tracking ref. SafePull must treat that as "nothing to
+// pull" and return nil, so the caller proceeds and seeds the backend, instead
+// of dead-ending on ErrNoCommits.
+func TestSafePullEmptyRemoteIsNoOp(t *testing.T) {
+	base := t.TempDir()
+	origin := filepath.Join(base, "origin.git")
+	if err := InitBare(origin); err != nil {
+		t.Fatalf("InitBare: %v", err)
+	}
+	repoDir := filepath.Join(base, "repo")
+	if err := Clone(origin, repoDir); err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if err := SafePull(repoDir); err != nil {
+		t.Fatalf("SafePull on an empty-remote clone = %v, want nil", err)
+	}
+}
+
 // TestSafePullKeepsLocalAheadCommits guards the reset against the offline case:
 // a committed-but-unpushed local advance (push failed) must never be discarded
 // by a reset to the remote-tracking head.

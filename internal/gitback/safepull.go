@@ -26,6 +26,9 @@ func SafePull(workdir string) error {
 			return err
 		}
 		tracking, err := TrackingHeadSHA(workdir)
+		if errors.Is(err, ErrNoCommits) {
+			return nil // still-empty remote: nothing to pull, the caller seeds it
+		}
 		if err != nil {
 			return err
 		}
