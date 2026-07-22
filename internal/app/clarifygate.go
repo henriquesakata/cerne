@@ -41,5 +41,5 @@ func CheckOpenClarifications(repoDir, id string) error {
 		}
 		fmt.Fprintf(&b, "\n  - %s", q)
 	}
-	return fmt.Errorf("%w — %d pending question(s):%s\nanswer them in the spec (the UI renders each marker as a clickable chip) and push, or re-run with --force", ErrOpenClarifications, len(open), b.String())
+	return fmt.Errorf("%w — %d pending question(s):%s\nanswer them with 'cerne clarify list %s' + 'cerne clarify answer %s <n> --answer \"...\"', in the UI (each marker is a clickable chip), or re-run with --force", ErrOpenClarifications, len(open), b.String(), id, id)
 }
