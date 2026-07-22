@@ -1,12 +1,32 @@
 package gitback
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
+
+// ErrHTTPAuthRequired is the sentinel for an http(s) backend that rejected the
+// operation for lack of (valid) credentials — the fix is an env token.
+var ErrHTTPAuthRequired = errors.New("http backend requires auth; set CERNE_GIT_TOKEN (and optionally CERNE_GIT_USER)")
+
+// wrapAuthHint enriches an authentication failure against an http(s) remote
+// with the CERNE_GIT_TOKEN hint (ErrHTTPAuthRequired), so the surfaced error
+// is self-describing. Any other error — or any ssh/local url — passes through
+// unchanged.
+func wrapAuthHint(err error, u string) error {
+	if err == nil || !isHTTPURL(u) {
+		return err
+	}
+	if errors.Is(err, transport.ErrAuthenticationRequired) || errors.Is(err, transport.ErrAuthorizationFailed) {
+		return fmt.Errorf("%w: %w", ErrHTTPAuthRequired, err)
+	}
+	return err
+}
 
 // authFor returns the AuthMethod for url, dispatching by scheme: SSH remotes
 // keep the full agent/key-file/known_hosts path (sshAuthFor), http(s) remotes

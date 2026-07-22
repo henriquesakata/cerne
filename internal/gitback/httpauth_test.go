@@ -1,12 +1,52 @@
 package gitback
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
+
+func TestWrapAuthHint(t *testing.T) {
+	authErr := fmt.Errorf("push: %w", transport.ErrAuthenticationRequired)
+	otherErr := errors.New("connection refused")
+
+	cases := []struct {
+		name     string
+		err      error
+		url      string
+		wantHint bool
+	}{
+		{"auth-required on https", authErr, "https://h/x.git", true},
+		{"authorization-failed on https", fmt.Errorf("push: %w", transport.ErrAuthorizationFailed), "https://h/x.git", true},
+		{"auth-required on ssh", authErr, "git@h:x.git", false},
+		{"non-auth error on https", otherErr, "https://h/x.git", false},
+		{"nil error", nil, "https://h/x.git", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := wrapAuthHint(c.err, c.url)
+			if c.wantHint {
+				if !errors.Is(got, ErrHTTPAuthRequired) {
+					t.Fatalf("wrapAuthHint = %v, want ErrHTTPAuthRequired in chain", got)
+				}
+				if !errors.Is(got, transport.ErrAuthenticationRequired) && !errors.Is(got, transport.ErrAuthorizationFailed) {
+					t.Fatalf("wrapAuthHint = %v, want original cause kept in chain", got)
+				}
+				return
+			}
+			if !errors.Is(got, c.err) || (c.err != nil && errors.Is(got, ErrHTTPAuthRequired)) {
+				t.Fatalf("wrapAuthHint(%v, %q) = %v, want error unchanged", c.err, c.url, got)
+			}
+			if c.err == nil && got != nil {
+				t.Fatalf("wrapAuthHint(nil) = %v, want nil", got)
+			}
+		})
+	}
+}
 
 func TestIsHTTPURL(t *testing.T) {
 	cases := []struct {

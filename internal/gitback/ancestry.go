@@ -115,5 +115,5 @@ func Fetch(workdir string) error {
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
 	}
-	return err
+	return wrapAuthHint(err, url)
 }

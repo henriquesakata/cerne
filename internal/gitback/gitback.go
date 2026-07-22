@@ -70,7 +70,7 @@ func Clone(url, workdir string) error {
 		Auth:          auth,
 	})
 	if !errors.Is(err, transport.ErrEmptyRemoteRepository) {
-		return err
+		return wrapAuthHint(err, url)
 	}
 	// Empty remote: PlainClone cleaned up workdir; init fresh and wire origin.
 	repo, err := git.PlainInitWithOptions(workdir, &git.PlainInitOptions{
@@ -203,7 +203,7 @@ func Push(workdir string) error {
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
 	}
-	return err
+	return wrapAuthHint(err, url)
 }
 
 // PushBranch pushes refs/heads/<branch> to origin — the pin-publication
@@ -238,7 +238,7 @@ func PushBranch(workdir, branch string) error {
 	if err == nil {
 		markSynced(workdir)
 	}
-	return err
+	return wrapAuthHint(err, url)
 }
 
 // CommitAndPush stages all changes, commits, and pushes main to origin in one
@@ -284,7 +284,7 @@ func Pull(workdir string) error {
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
 	}
-	return err
+	return wrapAuthHint(err, url)
 }
 
 // RemoteHeadSHA returns the commit hex origin's main branch points at,
@@ -312,7 +312,7 @@ func RemoteHeadSHA(workdir string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
 	}
 	if err != nil {
-		return "", err
+		return "", wrapAuthHint(err, urls[0])
 	}
 	for _, ref := range refs {
 		if ref.Name() == mainBranch {
