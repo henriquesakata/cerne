@@ -36,9 +36,12 @@ func mutateSpec(t *testing.T, repoDir, projDir, content string) *telemetry.Op {
 	return op
 }
 
-func phaseSet(t *testing.T) map[string]int {
+// phaseSet reads the phases of THIS op's ring record (by id — the newest
+// record can belong to a neighbouring test's autocommit worker on a loaded
+// machine; see ringRecord).
+func phaseSet(t *testing.T, op *telemetry.Op) map[string]int {
 	t.Helper()
-	rec := telemetry.Snapshot()[0]
+	rec := ringRecord(t, op.ID)
 	out := map[string]int{}
 	for _, p := range rec.Phases {
 		out[p.Name]++
@@ -53,8 +56,8 @@ func TestElisionSkipsFetchOnFreshSync(t *testing.T) {
 	widenElisionWindow(t)
 	origin, repoDir, projDir, _ := reconcileFixture(t)
 	// The fixture's CommitAndPush marked the sync; the mark is fresh.
-	mutateSpec(t, repoDir, projDir, "v2\n")
-	ph := phaseSet(t)
+	op := mutateSpec(t, repoDir, projDir, "v2\n")
+	ph := phaseSet(t, op)
 	if ph["fetch_skip"] != 1 || ph["fetch"] != 0 {
 		t.Fatalf("phases = %v, want one fetch_skip and no fetch", ph)
 	}
@@ -72,12 +75,12 @@ func TestElisionConvergesWhenRemoteAdvanced(t *testing.T) {
 	// Remote advances behind our back (another clone; our mark stays fresh).
 	advanceRemote(t, origin, "content/other.md", "deles\n")
 
-	mutateSpec(t, repoDir, projDir, "v3\n")
-	rec := telemetry.Snapshot()[0]
+	op := mutateSpec(t, repoDir, projDir, "v3\n")
+	rec := ringRecord(t, op.ID)
 	if rec.Retries != 1 {
 		t.Fatalf("retries = %d, want exactly 1 (the elision's cost)", rec.Retries)
 	}
-	ph := phaseSet(t)
+	ph := phaseSet(t, op)
 	if ph["fetch_skip"] != 1 || ph["fetch"] != 1 {
 		t.Fatalf("phases = %v, want fetch_skip (attempt 0) + fetch (retry)", ph)
 	}
@@ -94,8 +97,8 @@ func TestElisionConvergesWhenRemoteAdvanced(t *testing.T) {
 func TestNoElisionWithoutMark(t *testing.T) {
 	_, repoDir, projDir, _ := reconcileFixture(t)
 	gitback.ResetSyncMarks()
-	mutateSpec(t, repoDir, projDir, "v4\n")
-	ph := phaseSet(t)
+	op := mutateSpec(t, repoDir, projDir, "v4\n")
+	ph := phaseSet(t, op)
 	if ph["fetch"] != 1 || ph["fetch_skip"] != 0 {
 		t.Fatalf("phases = %v, want a real fetch and no fetch_skip", ph)
 	}
