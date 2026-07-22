@@ -60,7 +60,7 @@ func originURL(repo *git.Repository) (string, error) {
 // An empty remote still yields a usable working copy wired to origin, with
 // HEAD pointing at the unborn main branch.
 func Clone(url, workdir string) error {
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ func Push(workdir string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func PushBranch(workdir, branch string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func Pull(workdir string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,7 @@ func RemoteHeadSHA(workdir string) (string, error) {
 	if len(urls) == 0 {
 		return "", fmt.Errorf("remote %q has no URL", remoteName)
 	}
-	auth, err := sshAuthFor(urls[0])
+	auth, err := authFor(urls[0])
 	if err != nil {
 		return "", err
 	}

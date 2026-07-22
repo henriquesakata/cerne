@@ -8,6 +8,16 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
+// authFor returns the AuthMethod for url, dispatching by scheme: SSH remotes
+// keep the full agent/key-file/known_hosts path (sshAuthFor), http(s) remotes
+// get token BasicAuth (httpAuthFor), local paths get nil.
+func authFor(u string) (transport.AuthMethod, error) {
+	if isSSHURL(u) {
+		return sshAuthFor(u)
+	}
+	return httpAuthFor(u), nil
+}
+
 // isHTTPURL reports whether url is an http(s) remote.
 func isHTTPURL(u string) bool {
 	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")

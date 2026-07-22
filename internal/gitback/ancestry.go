@@ -102,7 +102,7 @@ func Fetch(workdir string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}

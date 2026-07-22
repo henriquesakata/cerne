@@ -3,7 +3,9 @@ package gitback
 import (
 	"testing"
 
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
 func TestIsHTTPURL(t *testing.T) {
@@ -24,6 +26,42 @@ func TestIsHTTPURL(t *testing.T) {
 		if got := isHTTPURL(c.url); got != c.want {
 			t.Errorf("isHTTPURL(%q) = %v, want %v", c.url, got, c.want)
 		}
+	}
+}
+
+func TestAuthForDispatch(t *testing.T) {
+	// SSH path: key-file fallback proves the ssh branch is reached.
+	dir := t.TempDir()
+	writeKeyFile(t, dir, "id_ed25519")
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(string) (transport.AuthMethod, error) {
+		return nil, errNoAgentForTest
+	}
+	t.Setenv("CERNE_GIT_TOKEN", "tok123")
+
+	auth, err := authFor("git@gitlab.com:rockt/x.git")
+	if err != nil {
+		t.Fatalf("authFor(ssh): %v", err)
+	}
+	if _, ok := auth.(*ssh.PublicKeys); !ok {
+		t.Fatalf("authFor(ssh) = %T, want *ssh.PublicKeys", auth)
+	}
+
+	auth, err = authFor("https://h/x.git")
+	if err != nil {
+		t.Fatalf("authFor(https): %v", err)
+	}
+	if _, ok := auth.(*githttp.BasicAuth); !ok {
+		t.Fatalf("authFor(https) = %T, want *githttp.BasicAuth", auth)
+	}
+
+	auth, err = authFor("/tmp/x")
+	if err != nil {
+		t.Fatalf("authFor(local): %v", err)
+	}
+	if auth != nil {
+		t.Fatalf("authFor(local) = %v, want nil", auth)
 	}
 }
 
