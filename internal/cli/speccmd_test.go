@@ -38,6 +38,17 @@ func TestBuildSpecDraftPrompt(t *testing.T) {
 			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
 		}
 	}
+	// F-0194: the prompt asks for the suggested capability level, derived from
+	// spectmpl.Levels (no duplicated literal), and forbids vendor model names.
+	for _, want := range []string{
+		"**Nível:**",
+		"<" + strings.Join(spectmpl.Levels, "|") + ">",
+		"não cite nomes de modelos",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing capability-level guidance %q:\n%s", want, prompt)
+		}
+	}
 }
 
 // TestSpecDraftByoKeyWritesAndCommits drives `cerne spec draft` in byo-key mode:
