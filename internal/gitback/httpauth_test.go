@@ -1,14 +1,55 @@
 package gitback
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
+
+// TestCloneHTTPTokenWiring proves the end-to-end wiring: Clone against an
+// http backend sends the env token as BasicAuth, and an auth rejection
+// surfaces the CERNE_GIT_TOKEN hint.
+func TestCloneHTTPTokenWiring(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	t.Setenv("CERNE_GIT_TOKEN", "tok123")
+	t.Setenv("CERNE_GIT_USER", "")
+	err := Clone(srv.URL+"/x.git", t.TempDir())
+	if err == nil {
+		t.Fatal("Clone err = nil, want auth failure")
+	}
+	if !errors.Is(err, ErrHTTPAuthRequired) {
+		t.Fatalf("Clone err = %v, want ErrHTTPAuthRequired in chain", err)
+	}
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("cerne:tok123"))
+	if gotAuth != want {
+		t.Fatalf("Authorization header = %q, want %q", gotAuth, want)
+	}
+
+	// Without a token the request goes out anonymous; the rejection still
+	// carries the hint so the fix is self-describing.
+	gotAuth = "unset"
+	t.Setenv("CERNE_GIT_TOKEN", "")
+	err = Clone(srv.URL+"/x.git", t.TempDir())
+	if !errors.Is(err, ErrHTTPAuthRequired) {
+		t.Fatalf("anonymous Clone err = %v, want ErrHTTPAuthRequired in chain", err)
+	}
+	if gotAuth != "" {
+		t.Fatalf("anonymous Authorization header = %q, want empty", gotAuth)
+	}
+}
 
 func TestWrapAuthHint(t *testing.T) {
 	authErr := fmt.Errorf("push: %w", transport.ErrAuthenticationRequired)
