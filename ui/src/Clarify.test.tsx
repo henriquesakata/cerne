@@ -119,6 +119,28 @@ describe('clarify helpers', () => {
     // Offset que não bate com o raw → null (conteúdo mudou sob os pés).
     expect(resolveMarker(md, '[ESCLARECER: igual?]', 3, 'x')).toBeNull()
   })
+
+  // O lado TS da trava de paridade da RESOLUÇÃO (F-0193): os mesmos casos são
+  // reproduzidos por internal/clarify/clarify_test.go (TestResolveCorpus) via
+  // clarify.Resolve — os dois rewriters não podem divergir.
+  it('paridade: resolveMarker reproduz os casos de resolução do corpus compartilhado', () => {
+    const corpus = JSON.parse(
+      readFileSync(resolve(__dirname, '../../internal/clarify/testdata/corpus.json'), 'utf-8'),
+    ) as {
+      resolve: {
+        name: string
+        content: string
+        raw: string
+        offset: number
+        answer: string
+        want: string | null
+      }[]
+    }
+    expect(corpus.resolve.length).toBeGreaterThan(0)
+    for (const c of corpus.resolve) {
+      expect(resolveMarker(c.content, c.raw, c.offset, c.answer), c.name).toBe(c.want)
+    }
+  })
 })
 
 describe('Markdown com chips de esclarecimento', () => {

@@ -78,5 +78,64 @@
         { "raw": "[CLARIFY: same?]", "offset": 21, "resolved": false }
       ]
     }
+  ],
+  "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",
+  "resolve": [
+    {
+      "name": "pt question gains arrowed answer",
+      "content": "x [ESCLARECER: qual backend?] y",
+      "raw": "[ESCLARECER: qual backend?]",
+      "offset": 2,
+      "answer": "S3",
+      "want": "x [ESCLARECIDO: qual backend? → S3] y"
+    },
+    {
+      "name": "en stays en",
+      "content": "x [CLARIFY: which format?] y",
+      "raw": "[CLARIFY: which format?]",
+      "offset": 2,
+      "answer": "json",
+      "want": "x [CLARIFIED: which format? → json] y"
+    },
+    {
+      "name": "bare marker keeps answer only",
+      "content": "[CLARIFY] here",
+      "raw": "[CLARIFY]",
+      "offset": 0,
+      "answer": "use json",
+      "want": "[CLARIFIED: use json] here"
+    },
+    {
+      "name": "options collapse to the chosen answer",
+      "content": "[CLARIFY: where? | in-place | sidecar]",
+      "raw": "[CLARIFY: where? | in-place | sidecar]",
+      "offset": 0,
+      "answer": "in-place",
+      "want": "[CLARIFIED: where? → in-place]"
+    },
+    {
+      "name": "only the anchored duplicate is rewritten",
+      "content": "[CLARIFY: same?] mid [CLARIFY: same?]",
+      "raw": "[CLARIFY: same?]",
+      "offset": 21,
+      "answer": "yes",
+      "want": "[CLARIFY: same?] mid [CLARIFIED: same? → yes]"
+    },
+    {
+      "name": "anchor mismatch refuses",
+      "content": "[CLARIFY: same?] mid [CLARIFY: same?]",
+      "raw": "[CLARIFY: same?]",
+      "offset": 3,
+      "answer": "no",
+      "want": null
+    },
+    {
+      "name": "resolved marker refuses",
+      "content": "[CLARIFIED: where? → in the doc]",
+      "raw": "[CLARIFIED: where? → in the doc]",
+      "offset": 0,
+      "answer": "again",
+      "want": null
+    }
   ]
 }
