@@ -64,7 +64,7 @@ func TestPushAndPullMarkSync(t *testing.T) {
 	withFakeClock(t)
 	_, repoDir := syncFixture(t)
 	resetSyncMarks() // drop the fixture's CommitAndPush mark
-	if err := Pull(repoDir); err != nil {
+	if err := SafePull(repoDir); err != nil {
 		t.Fatalf("Pull: %v", err)
 	}
 	if !SyncedWithin(repoDir, time.Minute) {

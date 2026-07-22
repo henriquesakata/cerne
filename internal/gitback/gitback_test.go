@@ -122,7 +122,7 @@ func TestSecondCloneSeesPushedFile(t *testing.T) {
 	}
 }
 
-func TestPullBringsExternalChange(t *testing.T) {
+func TestSafePullBringsExternalChange(t *testing.T) {
 	origin, clone1, _ := fixture(t)
 	clone2 := filepath.Join(t.TempDir(), "clone2")
 	if err := Clone(origin, clone2); err != nil {
@@ -134,7 +134,7 @@ func TestPullBringsExternalChange(t *testing.T) {
 		t.Fatalf("CommitAndPush clone2: %v", err)
 	}
 
-	if err := Pull(clone1); err != nil {
+	if err := SafePull(clone1); err != nil {
 		t.Fatalf("Pull: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(clone1, "external.txt"))
@@ -153,9 +153,9 @@ func TestPullBringsExternalChange(t *testing.T) {
 	}
 }
 
-func TestPullUpToDate(t *testing.T) {
+func TestSafePullUpToDate(t *testing.T) {
 	_, clone1, _ := fixture(t)
-	if err := Pull(clone1); err != nil {
+	if err := SafePull(clone1); err != nil {
 		t.Fatalf("Pull up-to-date: %v, want nil", err)
 	}
 }
@@ -182,7 +182,7 @@ func TestDeletionPropagates(t *testing.T) {
 		t.Fatalf("CommitAndPush deletion: %v", err)
 	}
 
-	if err := Pull(clone2); err != nil {
+	if err := SafePull(clone2); err != nil {
 		t.Fatalf("Pull clone2: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(clone2, "hello.txt")); !errors.Is(err, os.ErrNotExist) {
