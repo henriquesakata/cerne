@@ -97,6 +97,110 @@ func waitEvent(t *testing.T, events <-chan string) string {
 	}
 }
 
+// TestPullTickDirtyWorktreeNeverDivergesRefFromFiles pins the F-0192/N-0027
+// poison: go-git's Worktree.Pull moves refs/heads/main to the fetched head
+// BEFORE its MergeReset, and MergeReset aborts with ErrUnstagedChanges when the
+// shared clone has uncommitted writes (e.g. a CLI compile's LLM synthesis in
+// flight). The branch ref then points at the new head while index and files
+// stay on the old tree — a poisoned clone whose next sweep commit reverts the
+// remote advance. The invariant: a pull tick either moves ref AND files
+// together, or moves nothing; uncommitted writes survive untouched.
+func TestPullTickDirtyWorktreeNeverDivergesRefFromFiles(t *testing.T) {
+	repoDir, _, origin := newGitBackendNoClean(t)
+
+	wiki := filepath.Join(repoDir, "wiki.md")
+	notes := filepath.Join(repoDir, "notes.md")
+	if err := os.WriteFile(wiki, []byte("wiki v1\n"), 0o644); err != nil {
+		t.Fatalf("write wiki: %v", err)
+	}
+	if err := os.WriteFile(notes, []byte("notes v1\n"), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "add docs"); err != nil {
+		t.Fatalf("CommitAndPush docs: %v", err)
+	}
+
+	// A teammate advances wiki.md on the remote.
+	mate := filepath.Join(filepath.Dir(origin), "mate")
+	if err := gitback.Clone(origin, mate); err != nil {
+		t.Fatalf("Clone mate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(mate, "wiki.md"), []byte("wiki v2\n"), 0o644); err != nil {
+		t.Fatalf("write mate wiki: %v", err)
+	}
+	remoteSHA, err := gitback.CommitAndPush(mate, "remote wiki update")
+	if err != nil {
+		t.Fatalf("CommitAndPush mate: %v", err)
+	}
+
+	// Poison window: an uncommitted write to a tracked file in the shared clone.
+	if err := os.WriteFile(notes, []byte("notes: synthesis in flight\n"), 0o644); err != nil {
+		t.Fatalf("poison notes: %v", err)
+	}
+
+	baseline, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA baseline: %v", err)
+	}
+	_ = pullTick(repoDir) // pullLoop swallows errors; the invariant must hold regardless
+
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA after dirty tick: %v", err)
+	}
+	if head != baseline {
+		t.Fatalf("dirty tick moved HEAD %s -> %s while the worktree was uncommitted: ref diverged from files", baseline[:8], head[:8])
+	}
+	if got, _ := os.ReadFile(wiki); string(got) != "wiki v1\n" {
+		t.Fatalf("dirty tick changed wiki.md = %q, want untouched v1", got)
+	}
+	if got, _ := os.ReadFile(notes); string(got) != "notes: synthesis in flight\n" {
+		t.Fatalf("dirty tick clobbered the uncommitted write: notes.md = %q", got)
+	}
+
+	// Poison gone: the next tick must fast-forward ref AND files together.
+	if err := os.WriteFile(notes, []byte("notes v1\n"), 0o644); err != nil {
+		t.Fatalf("restore notes: %v", err)
+	}
+	if err := pullTick(repoDir); err != nil {
+		t.Fatalf("pullTick (clean): %v", err)
+	}
+	head, err = gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA after clean tick: %v", err)
+	}
+	if head != remoteSHA {
+		t.Fatalf("clean tick HEAD = %s, want remote %s", head[:8], remoteSHA[:8])
+	}
+	if got, _ := os.ReadFile(wiki); string(got) != "wiki v2\n" {
+		t.Fatalf("clean tick HEAD advanced but wiki.md = %q, want v2", got)
+	}
+}
+
+// TestPullTickKeepsLocalAheadCommits guards the tick's reset against the
+// offline case: a committed-but-unpushed local advance (push failed) must never
+// be discarded by a reset to the remote-tracking head.
+func TestPullTickKeepsLocalAheadCommits(t *testing.T) {
+	repoDir, _, _ := newGitBackendNoClean(t)
+
+	seedFeature(t, repoDir, "F-0002", "Feature B", domain.StateCandidate)
+	localSHA, err := gitback.CommitAll(repoDir, "local commit, push pending")
+	if err != nil {
+		t.Fatalf("CommitAll: %v", err)
+	}
+
+	if err := pullTick(repoDir); err != nil {
+		t.Fatalf("pullTick: %v", err)
+	}
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	if head != localSHA {
+		t.Fatalf("tick discarded the unpushed local commit: HEAD = %s, want %s", head[:8], localSHA[:8])
+	}
+}
+
 // TestPullLoopAdvancesHeadFromRemote proves pullLoop brings a teammate's push to
 // the dashboard: with watchHeadMulti and pullLoop on the same clone, a subscriber
 // receives the remote HEAD as a "change" event. pullLoop is the only surviving
