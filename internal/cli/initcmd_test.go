@@ -201,3 +201,62 @@ func TestInitInstallsSkills(t *testing.T) {
 		t.Fatalf("output missing skill install status:\n%s", out)
 	}
 }
+
+// TestInitRejoinDirtyCacheCloneDoesNotPoison pins the N-0027 poison at init's
+// cache-refresh: joining a project from a second workspace while the shared
+// cache clone holds an uncommitted write (a CLI synthesis in flight in another
+// workspace) must neither fail nor use raw Pull — which moves refs/heads/main
+// and then aborts, leaving ref and files diverged. The refresh is skipped and
+// init proceeds on the cached state.
+func TestInitRejoinDirtyCacheCloneDoesNotPoison(t *testing.T) {
+	_, origin, repoDir := setupProject(t)
+
+	notes := filepath.Join(repoDir, "notes.md")
+	if err := os.WriteFile(notes, []byte("notes v1\n"), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "add notes"); err != nil {
+		t.Fatalf("CommitAndPush notes: %v", err)
+	}
+
+	// A teammate advances the remote.
+	mate := filepath.Join(t.TempDir(), "mate")
+	if err := gitback.Clone(origin, mate); err != nil {
+		t.Fatalf("Clone mate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(mate, "wiki.md"), []byte("wiki v2\n"), 0o644); err != nil {
+		t.Fatalf("write mate wiki: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(mate, "remote update"); err != nil {
+		t.Fatalf("CommitAndPush mate: %v", err)
+	}
+
+	// Poison window: an uncommitted write in the shared clone.
+	if err := os.WriteFile(notes, []byte("notes: synthesis in flight\n"), 0o644); err != nil {
+		t.Fatalf("poison notes: %v", err)
+	}
+	baseline, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA baseline: %v", err)
+	}
+
+	projDir2 := t.TempDir()
+	out, err := execInit(t, "--name", "demo", "--backend", origin, "--dir", projDir2)
+	if err != nil {
+		t.Fatalf("init over a dirty cache clone must succeed on the cached state, got: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Joined existing backend") {
+		t.Fatalf("output missing join confirmation:\n%s", out)
+	}
+
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA after init: %v", err)
+	}
+	if head != baseline {
+		t.Fatalf("init moved HEAD %s -> %s while the worktree was uncommitted: ref diverged from files", baseline[:8], head[:8])
+	}
+	if got, _ := os.ReadFile(notes); string(got) != "notes: synthesis in flight\n" {
+		t.Fatalf("init clobbered the uncommitted write: notes.md = %q", got)
+	}
+}
