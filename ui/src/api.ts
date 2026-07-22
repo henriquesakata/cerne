@@ -385,6 +385,31 @@ export async function fetchNote(id: string): Promise<NoteDetail> {
   return (await r.json()) as NoteDetail
 }
 
+export type AnswerOutcome = { ok: true } | { ok: false; error: string }
+
+// answerClarification resolve UM marcador aberto pelo endpoint genérico
+// (F-0193) — o mesmo core do `cerne clarify answer`. O offset dos spans no
+// browser é em code units UTF-16; o endpoint ancora em BYTES do arquivo, então
+// a conversão acontece aqui, sobre o prefixo do conteúdo servido (que é o
+// arquivo cru do backend).
+export async function answerClarification(
+  id: string,
+  docPath: string,
+  content: string,
+  raw: string,
+  offset: number,
+  answer: string,
+): Promise<AnswerOutcome> {
+  const byteOffset = new TextEncoder().encode(content.slice(0, offset)).length
+  const r = await fetch(`${base()}/clarify/${encodeURIComponent(id)}/answer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ doc: docPath, offset: byteOffset, raw, answer }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
+
 // SearchHit espelha o DTO snake_case de internal/server (projeção de index.Result).
 export type SearchHit = {
   entity_id: string

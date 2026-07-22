@@ -931,6 +931,45 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	}
 }
 
+// clarifyAnswerRequest is the POST /api/clarify/{id}/answer body: the exact
+// anchor of ONE open marker (backend-relative doc path, byte offset, raw
+// marker text — what the UI chip already carries) plus the answer.
+type clarifyAnswerRequest struct {
+	Doc    string `json:"doc"`
+	Offset int    `json:"offset"`
+	Raw    string `json:"raw"`
+	Answer string `json:"answer"`
+}
+
+// handleClarifyAnswer resolves one open [ESCLARECER]/[CLARIFY] marker through
+// the same core as `cerne clarify answer` (F-0193). 409 when the anchor no
+// longer matches (doc advanced under the reader — reload), 404 for an unknown
+// entity, 422 for a terminal one (history is answered via errata, not here).
+func handleClarifyAnswer(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req clarifyAnswerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if strings.TrimSpace(req.Answer) == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("answer must not be empty"))
+		return
+	}
+	ans, err := app.AnswerClarificationAt(repoDir, projDir, id, req.Doc, req.Offset, req.Raw, req.Answer)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("entity not found"))
+	case errors.Is(err, app.ErrEntityNotLive):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("entity is not live — append an errata instead"))
+	case errors.Is(err, app.ErrClarificationGone):
+		writeJSON(w, http.StatusConflict, errorBody("clarification not found at the given anchor — reload the document"))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		writeJSON(w, http.StatusOK, ans)
+	}
+}
+
 // setParentRequest is the PUT /api/features/{id}/parent body; an empty parent
 // detaches the feature from its epic.
 type setParentRequest struct {

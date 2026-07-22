@@ -5,6 +5,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
+import AnswerableDoc from './AnswerableDoc'
 import Markdown from './Markdown'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
@@ -194,6 +195,7 @@ export default function Notes() {
 export function NoteDetail({ id }: { id: string }) {
   const [data, setData] = useState<NoteDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refresh, setRefresh] = useState(0)
   const version = useLiveVersion()
   const { t } = useT()
 
@@ -204,7 +206,7 @@ export function NoteDetail({ id }: { id: string }) {
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version])
+  }, [id, version, refresh])
 
   if (error) return <p className="status error">{t.notes.loadOneError(error)}</p>
   if (!data) return <p className="status">{t.common.loading}</p>
@@ -234,7 +236,16 @@ export function NoteDetail({ id }: { id: string }) {
       <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
-          <Markdown>{data.doc}</Markdown>
+          n.state === 'active' ? (
+            <AnswerableDoc
+              id={n.id}
+              docPath={`content/notes/${n.id}.md`}
+              content={data.doc}
+              onSaved={() => setRefresh((v) => v + 1)}
+            />
+          ) : (
+            <Markdown>{data.doc}</Markdown>
+          )
         ) : (
           <p className="muted">{t.common.noDoc}</p>
         )}

@@ -6,6 +6,7 @@ import {
   type FormEvent,
   type SetStateAction,
 } from 'react'
+import AnswerableDoc from './AnswerableDoc'
 import Markdown from './Markdown'
 import Backlinks from './Backlinks'
 import Tag, { tagCounts } from './Tag'
@@ -290,6 +291,7 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
 export function ReferenceDetail({ id }: { id: string }) {
   const [data, setData] = useState<ReferenceDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refresh, setRefresh] = useState(0)
   const version = useLiveVersion()
   const { t } = useT()
 
@@ -300,7 +302,7 @@ export function ReferenceDetail({ id }: { id: string }) {
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version])
+  }, [id, version, refresh])
 
   if (error) return <p className="status error">{t.references.loadOneError(error)}</p>
   if (!data) return <p className="status">{t.common.loading}</p>
@@ -349,7 +351,16 @@ export function ReferenceDetail({ id }: { id: string }) {
       <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
-          <Markdown>{data.doc}</Markdown>
+          ref.state === 'current' ? (
+            <AnswerableDoc
+              id={ref.id}
+              docPath={`content/references/${ref.id}.md`}
+              content={data.doc}
+              onSaved={() => setRefresh((n) => n + 1)}
+            />
+          ) : (
+            <Markdown>{data.doc}</Markdown>
+          )
         ) : (
           <p className="muted">{t.common.noDoc}</p>
         )}

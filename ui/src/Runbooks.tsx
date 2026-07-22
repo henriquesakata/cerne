@@ -5,6 +5,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
+import AnswerableDoc from './AnswerableDoc'
 import Markdown from './Markdown'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
@@ -194,6 +195,7 @@ export default function Runbooks() {
 export function RunbookDetail({ id }: { id: string }) {
   const [data, setData] = useState<RunbookDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refresh, setRefresh] = useState(0)
   const version = useLiveVersion()
   const { t } = useT()
 
@@ -204,7 +206,7 @@ export function RunbookDetail({ id }: { id: string }) {
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version])
+  }, [id, version, refresh])
 
   if (error) return <p className="status error">{t.runbooks.loadOneError(error)}</p>
   if (!data) return <p className="status">{t.common.loading}</p>
@@ -234,7 +236,16 @@ export function RunbookDetail({ id }: { id: string }) {
       <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
-          <Markdown>{data.doc}</Markdown>
+          rb.state === 'active' ? (
+            <AnswerableDoc
+              id={rb.id}
+              docPath={`content/runbooks/${rb.id}.md`}
+              content={data.doc}
+              onSaved={() => setRefresh((n) => n + 1)}
+            />
+          ) : (
+            <Markdown>{data.doc}</Markdown>
+          )
         ) : (
           <p className="muted">{t.common.noDoc}</p>
         )}

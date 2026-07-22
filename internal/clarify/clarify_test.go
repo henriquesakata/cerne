@@ -287,6 +287,135 @@ func TestParseCorpus(t *testing.T) {
 	}
 }
 
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		answer  string
+		want    string
+		ok      bool
+	}{
+		{
+			name:    "pt question",
+			content: "[ESCLARECER: qual backend?]",
+			answer:  "S3",
+			want:    "[ESCLARECIDO: qual backend? → S3]",
+			ok:      true,
+		},
+		{
+			name:    "pt bare keeps answer only",
+			content: "[ESCLARECER]",
+			answer:  "usar pipe",
+			want:    "[ESCLARECIDO: usar pipe]",
+			ok:      true,
+		},
+		{
+			name:    "pt options collapse to the chosen answer",
+			content: "[ESCLARECER: onde? | in-place | sidecar]",
+			answer:  "in-place",
+			want:    "[ESCLARECIDO: onde? → in-place]",
+			ok:      true,
+		},
+		{
+			name:    "en stays en",
+			content: "[CLARIFY: which format?]",
+			answer:  "json",
+			want:    "[CLARIFIED: which format? → json]",
+			ok:      true,
+		},
+		{
+			name:    "legacy guillemets resolve without them",
+			content: "[«ESCLARECER»: pergunta antiga]",
+			answer:  "resposta",
+			want:    "[ESCLARECIDO: pergunta antiga → resposta]",
+			ok:      true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cs := Parse(tt.content)
+			if len(cs) != 1 {
+				t.Fatalf("Parse() returned %d markers, want 1", len(cs))
+			}
+			got, ok := Resolve(cs[0], tt.answer)
+			if ok != tt.ok {
+				t.Fatalf("Resolve() ok = %v, want %v", ok, tt.ok)
+			}
+			if got != tt.want {
+				t.Errorf("Resolve() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveRefusesResolvedMarker(t *testing.T) {
+	cs := Parse("[ESCLARECIDO: onde? → no doc]")
+	if len(cs) != 1 {
+		t.Fatalf("Parse() returned %d markers, want 1", len(cs))
+	}
+	if got, ok := Resolve(cs[0], "de novo"); ok {
+		t.Errorf("Resolve() on a resolved marker = %q, ok=true; want ok=false", got)
+	}
+}
+
+// TestResolveCorpus is the Go side of the resolution parity lock: the corpus'
+// resolve cases are also replayed by ui/src/Clarify.test.tsx over
+// resolveMarker, so the two rewriters cannot drift (same contract as
+// TestParseCorpus; F-0182).
+func TestResolveCorpus(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "corpus.json"))
+	if err != nil {
+		t.Fatalf("reading corpus: %v", err)
+	}
+	var corpus struct {
+		Resolve []struct {
+			Name    string  `json:"name"`
+			Content string  `json:"content"`
+			Raw     string  `json:"raw"`
+			Offset  int     `json:"offset"`
+			Answer  string  `json:"answer"`
+			Want    *string `json:"want"`
+		} `json:"resolve"`
+	}
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("corpus json: %v", err)
+	}
+	if len(corpus.Resolve) == 0 {
+		t.Fatal("corpus has no resolve cases")
+	}
+	for _, c := range corpus.Resolve {
+		t.Run(c.Name, func(t *testing.T) {
+			var target *Clarification
+			for _, m := range Parse(c.Content) {
+				if m.Offset == c.Offset && m.Raw == c.Raw {
+					target = &m
+					break
+				}
+			}
+			if target == nil {
+				if c.Want != nil {
+					t.Fatalf("no marker anchored at %d with raw %q", c.Offset, c.Raw)
+				}
+				return
+			}
+			marker, ok := Resolve(*target, c.Answer)
+			if !ok {
+				if c.Want != nil {
+					t.Fatalf("Resolve() ok=false, want %q", *c.Want)
+				}
+				return
+			}
+			got := c.Content[:target.Offset] + marker + c.Content[target.Offset+len(target.Raw):]
+			if c.Want == nil {
+				t.Fatalf("Resolve() = %q, want refusal", got)
+			}
+			if got != *c.Want {
+				t.Errorf("resolved content = %q, want %q", got, *c.Want)
+			}
+		})
+	}
+}
+
 func TestOpen(t *testing.T) {
 	content := "[ESCLARECER: aberta?] e [ESCLARECIDO: fechada? → sim]"
 	open := Open(content)

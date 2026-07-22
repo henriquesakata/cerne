@@ -144,6 +144,33 @@ func Parse(content string) []Clarification {
 	return out
 }
 
+// Resolve returns the resolved marker form for the open clarification c, in
+// the same vocabulary as the original word ([CLARIFY] resolves to [CLARIFIED],
+// never [ESCLARECIDO]) — the mirror of ui/src/clarify.ts resolveMarker, kept
+// in step by the corpus' resolve cases. It reports false when c is already
+// resolved or its raw form is not a catalog marker; legacy guillemets resolve
+// to the plain form.
+func Resolve(c Clarification, answer string) (string, bool) {
+	if c.Resolved {
+		return "", false
+	}
+	m := markerRe.FindStringSubmatchIndex(c.Raw)
+	if m == nil || m[0] != 0 || m[1] != len(c.Raw) {
+		return "", false
+	}
+	word := c.Raw[m[2]:m[3]]
+	for _, v := range vocabs {
+		if v.Open != word {
+			continue
+		}
+		if c.Question != "" {
+			return "[" + v.Resolved + ": " + c.Question + " → " + answer + "]", true
+		}
+		return "[" + v.Resolved + ": " + answer + "]", true
+	}
+	return "", false
+}
+
 // Open returns only the unresolved markers in content.
 func Open(content string) []Clarification {
 	var out []Clarification
