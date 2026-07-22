@@ -97,6 +97,10 @@ func waitEvent(t *testing.T, events <-chan string) string {
 	}
 }
 
+// The pull tick's own invariants (dirty-worktree skip, ff-only reset — the
+// N-0027 poison) are pinned in internal/gitback's SafePull tests; here only the
+// loop wiring is covered.
+
 // TestPullLoopAdvancesHeadFromRemote proves pullLoop brings a teammate's push to
 // the dashboard: with watchHeadMulti and pullLoop on the same clone, a subscriber
 // receives the remote HEAD as a "change" event. pullLoop is the only surviving

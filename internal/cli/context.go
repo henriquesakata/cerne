@@ -70,13 +70,17 @@ func recreateCache(cacheDir, repoDir, backend string) error {
 }
 
 // resolveProject locates the cerne project from startDir (cwd when empty)
-// and refreshes the cached backend clone from origin.
+// and refreshes the cached backend clone from origin. SafePull, not Pull — the
+// clone is shared with concurrent cerne processes (a ui pull loop, a synthesis
+// in flight), and a raw Pull on a dirty worktree poisons it (N-0027: ref
+// moved, files left behind); SafePull skips the refresh instead and the
+// command runs on the cached state.
 func resolveProject(startDir string) (projCtx, error) {
 	ctx, err := resolvePaths(startDir)
 	if err != nil {
 		return projCtx{}, err
 	}
-	if err := gitback.Pull(ctx.repoDir); err != nil {
+	if err := gitback.SafePull(ctx.repoDir); err != nil {
 		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and re-run the command to force a fresh clone): %w", ctx.repoDir, err)
 	}
 	return ctx, nil

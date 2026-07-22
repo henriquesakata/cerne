@@ -255,38 +255,6 @@ func CommitAndPush(workdir, msg string) (string, error) {
 	return sha, nil
 }
 
-// Pull fast-forwards workdir from origin/main. Already up-to-date is not an error.
-func Pull(workdir string) error {
-	repo, err := openRepo(workdir)
-	if err != nil {
-		return err
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return err
-	}
-	url, err := originURL(repo)
-	if err != nil {
-		return err
-	}
-	auth, err := authFor(url)
-	if err != nil {
-		return err
-	}
-	err = wt.Pull(&git.PullOptions{
-		RemoteName:    remoteName,
-		ReferenceName: mainBranch,
-		Auth:          auth,
-	})
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
-		err = nil
-	}
-	if err == nil {
-		markSynced(workdir) // F-0156: the elision predicate
-	}
-	return wrapAuthHint(err, url)
-}
-
 // RemoteHeadSHA returns the commit hex origin's main branch points at,
 // without fetching or touching the local worktree; ErrNoCommits when the
 // remote has no main branch yet.

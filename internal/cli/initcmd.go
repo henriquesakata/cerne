@@ -68,7 +68,10 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	repoDir := filepath.Join(cacheDir, "repo")
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil {
 		// Cache already holds a clone of this project's backend: refresh it.
-		if err := gitback.Pull(repoDir); err != nil {
+		// SafePull, not Pull — the clone is shared with concurrent cerne
+		// processes (a ui pull loop, a synthesis in flight), and a raw Pull on
+		// a dirty worktree poisons it (N-0027: ref moved, files left behind).
+		if err := gitback.SafePull(repoDir); err != nil {
 			return fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory to force a fresh clone): %w", repoDir, err)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
