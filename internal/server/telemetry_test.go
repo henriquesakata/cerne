@@ -101,9 +101,17 @@ func TestTransitionRecordsPhasesWithRequestOp(t *testing.T) {
 		t.Fatalf("status = %d, body: %s", rec.Code, rec.Body.String())
 	}
 
-	newest := telemetry.Snapshot()[0]
-	if newest.Route != "/features/{id}/transition" {
-		t.Fatalf("ring route = %q, want /features/{id}/transition", newest.Route)
+	// Identify OUR record by route — the newest ring entry can belong to an
+	// async autocommit worker from a neighbouring test on a loaded machine.
+	var newest telemetry.Record
+	for _, r := range telemetry.Snapshot() {
+		if r.Route == "/features/{id}/transition" {
+			newest = r
+			break
+		}
+	}
+	if newest.ID == "" {
+		t.Fatalf("no ring record with route /features/{id}/transition; ring: %+v", telemetry.Snapshot())
 	}
 	var sawPush, sawLock bool
 	for _, p := range newest.Phases {

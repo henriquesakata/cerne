@@ -7,6 +7,21 @@ import (
 	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
+// ringRecord finds the ring record for a specific op id. The ring is global
+// to the process and the autocommit worker of a NEIGHBOURING test can land
+// its own record after ours (seen on the loaded CI runner), so "newest"
+// (Snapshot()[0]) is a race — identity is not.
+func ringRecord(t *testing.T, opID string) telemetry.Record {
+	t.Helper()
+	for _, r := range telemetry.Snapshot() {
+		if r.ID == opID {
+			return r
+		}
+	}
+	t.Fatalf("op %s not found in the telemetry ring", opID)
+	return telemetry.Record{}
+}
+
 // TestMutateAndSnapshotOpRecordsPhases pins criterion 2 (F-0149): a backend
 // mutation records the full phase sequence on the caller's Op.
 func TestMutateAndSnapshotOpRecordsPhases(t *testing.T) {
@@ -23,14 +38,7 @@ func TestMutateAndSnapshotOpRecordsPhases(t *testing.T) {
 		t.Fatalf("MutateAndSnapshotOp: %v", err)
 	}
 	op.End("ok")
-	recs := telemetry.Snapshot()
-	if len(recs) == 0 {
-		t.Fatal("no record in ring")
-	}
-	rec := recs[0]
-	if rec.ID != op.ID {
-		t.Fatalf("newest ring record is %s, want %s", rec.ID, op.ID)
-	}
+	rec := ringRecord(t, op.ID)
 	want := []string{"lock_wait", "reset", "mutate", "fetch", "merge", "commit", "push", "snapshot"}
 	if len(rec.Phases) != len(want) {
 		t.Fatalf("phases = %v, want %v", names(rec.Phases), want)
@@ -64,7 +72,7 @@ func TestReconcileRetryCountsOnOp(t *testing.T) {
 		t.Fatalf("MutateAndSnapshotOp: %v", err)
 	}
 	op.End("ok")
-	rec := telemetry.Snapshot()[0]
+	rec := ringRecord(t, op.ID)
 	if rec.Retries != 1 {
 		t.Fatalf("retries = %d, want 1", rec.Retries)
 	}
@@ -80,9 +88,15 @@ func TestReconcileRetryCountsOnOp(t *testing.T) {
 }
 
 // TestMutateAndSnapshotStillWorksWithoutOp pins the nil-op path: the classic
-// signature keeps working and mints its own record.
+// signature keeps working and mints its own record. The op id is internal
+// here, so identify OUR record as the one that appeared during the call and
+// carries a mutate phase (autocommit-worker records never do).
 func TestMutateAndSnapshotStillWorksWithoutOp(t *testing.T) {
 	_, repoDir, projDir, _ := reconcileFixture(t)
+	before := map[string]bool{}
+	for _, r := range telemetry.Snapshot() {
+		before[r.ID] = true
+	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		writeBackendFile(t, repoDir, "content/features/F-0001/spec.md", "v4\n")
 		return "update spec", nil
@@ -90,12 +104,27 @@ func TestMutateAndSnapshotStillWorksWithoutOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MutateAndSnapshot: %v", err)
 	}
-	rec := telemetry.Snapshot()[0]
+	var rec telemetry.Record
+	found := false
+	for _, r := range telemetry.Snapshot() {
+		if before[r.ID] {
+			continue
+		}
+		for _, p := range r.Phases {
+			if p.Name == "mutate" {
+				rec, found = r, true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no new ring record with a mutate phase — classic path recorded nothing")
+	}
 	if rec.Kind != "backend" {
 		t.Fatalf("kind = %s, want backend", rec.Kind)
-	}
-	if len(rec.Phases) == 0 {
-		t.Fatal("classic path recorded no phases")
 	}
 }
 
