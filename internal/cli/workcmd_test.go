@@ -14,6 +14,9 @@ import (
 
 func TestWorkStartHappyDefaultActor(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
+	// CI containers have no USER/USERNAME env — pin it so the expected actor
+	// is deterministic instead of re-deriving the fallback here.
+	t.Setenv("USER", "tester")
 
 	out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir)
 	if err != nil {
@@ -36,11 +39,7 @@ func TestWorkStartHappyDefaultActor(t *testing.T) {
 		t.Fatalf("work = %+v, want active 'Investigar erro X'", w)
 	}
 	host, _ := os.Hostname()
-	user := os.Getenv("USER")
-	if user == "" {
-		user = os.Getenv("USERNAME")
-	}
-	wantActor := user + "@" + host
+	wantActor := "tester@" + host
 	if w.Actor != wantActor {
 		t.Fatalf("actor = %q, want %q", w.Actor, wantActor)
 	}
