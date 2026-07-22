@@ -60,7 +60,7 @@ func originURL(repo *git.Repository) (string, error) {
 // An empty remote still yields a usable working copy wired to origin, with
 // HEAD pointing at the unborn main branch.
 func Clone(url, workdir string) error {
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func Clone(url, workdir string) error {
 		Auth:          auth,
 	})
 	if !errors.Is(err, transport.ErrEmptyRemoteRepository) {
-		return err
+		return wrapAuthHint(err, url)
 	}
 	// Empty remote: PlainClone cleaned up workdir; init fresh and wire origin.
 	repo, err := git.PlainInitWithOptions(workdir, &git.PlainInitOptions{
@@ -186,7 +186,7 @@ func Push(workdir string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func Push(workdir string) error {
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
 	}
-	return err
+	return wrapAuthHint(err, url)
 }
 
 // PushBranch pushes refs/heads/<branch> to origin — the pin-publication
@@ -220,7 +220,7 @@ func PushBranch(workdir, branch string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func PushBranch(workdir, branch string) error {
 	if err == nil {
 		markSynced(workdir)
 	}
-	return err
+	return wrapAuthHint(err, url)
 }
 
 // CommitAndPush stages all changes, commits, and pushes main to origin in one
@@ -269,7 +269,7 @@ func Pull(workdir string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := sshAuthFor(url)
+	auth, err := authFor(url)
 	if err != nil {
 		return err
 	}
@@ -284,7 +284,7 @@ func Pull(workdir string) error {
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
 	}
-	return err
+	return wrapAuthHint(err, url)
 }
 
 // RemoteHeadSHA returns the commit hex origin's main branch points at,
@@ -303,7 +303,7 @@ func RemoteHeadSHA(workdir string) (string, error) {
 	if len(urls) == 0 {
 		return "", fmt.Errorf("remote %q has no URL", remoteName)
 	}
-	auth, err := sshAuthFor(urls[0])
+	auth, err := authFor(urls[0])
 	if err != nil {
 		return "", err
 	}
@@ -312,7 +312,7 @@ func RemoteHeadSHA(workdir string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrNoCommits, workdir)
 	}
 	if err != nil {
-		return "", err
+		return "", wrapAuthHint(err, urls[0])
 	}
 	for _, ref := range refs {
 		if ref.Name() == mainBranch {
