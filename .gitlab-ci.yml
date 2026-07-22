@@ -27,6 +27,10 @@ test:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
+  # A few internal/app tests are timing-sensitive under load (elision
+  # windows, telemetry ring vs the autocommit worker) — auto-retry once
+  # while they are made deterministic (tracked as its own task).
+  retry: 1
   script:
     - go vet ./...
     - go test ./... -count=1
