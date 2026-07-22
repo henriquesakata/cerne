@@ -1,6 +1,14 @@
 image: golang:1.26
 stages: [test, release]
 
+# Every job pins to the self-hosted linux runner shared with the hub
+# (orbstack, tag linux-docker) — the gitlab.com shared runners run on the
+# free-tier quota, which is exhausted (every recent main pipeline failed
+# with ci_quota_exceeded, never a code error).
+default:
+  tags:
+    - linux-docker
+
 test:
   stage: test
   script:
