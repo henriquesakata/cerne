@@ -1,6 +1,17 @@
 image: golang:1.26
 stages: [test, release]
 
+# One pipeline per change: with an open MR, only the MR pipeline runs (the
+# branch push pipeline is suppressed); a push with no MR (main) and tags run
+# the classic branch/tag pipeline.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
 # Every job pins to the self-hosted linux runner shared with the hub
 # (orbstack, tag linux-docker) — the gitlab.com shared runners run on the
 # free-tier quota, which is exhausted (every recent main pipeline failed
@@ -11,6 +22,11 @@ default:
 
 test:
   stage: test
+  # Explicit rules so the suite also runs on MR pipelines (a rule-less job
+  # is skipped there) — and still on branch/main pushes.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
   script:
     - go vet ./...
     - go test ./... -count=1
