@@ -59,6 +59,9 @@ func dataRoutes() []dataRoute {
 		{"PUT", "/features/{id}/docs/{doc}", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 		}},
+		{"POST", "/clarify/{id}/answer", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleClarifyAnswer(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
 		{"PUT", "/features/{id}/parent", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleSetParent(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
