@@ -50,6 +50,24 @@ func TestBodyHasGuidanceMarkers(t *testing.T) {
 	}
 }
 
+// TestBodyHasCapabilityLevelGuidance pins F-0194: the METADADOS block teaches
+// the suggested-capability-level line with the generic vocabulary, and the
+// vocabulary itself is exported so the draft prompt derives from it (no drift).
+func TestBodyHasCapabilityLevelGuidance(t *testing.T) {
+	wantLevels := []string{"leve", "padrão", "avançado"}
+	if !reflect.DeepEqual(spectmpl.Levels, wantLevels) {
+		t.Fatalf("Levels = %v, want %v", spectmpl.Levels, wantLevels)
+	}
+	if !strings.Contains(spectmpl.Body, "Nível:") {
+		t.Fatalf("Body missing the Nível: guidance line")
+	}
+	for _, l := range spectmpl.Levels {
+		if !strings.Contains(spectmpl.Body, l) {
+			t.Fatalf("Body missing level %q in the guidance", l)
+		}
+	}
+}
+
 // TestStub composes the scaffold cerne writes for a new feature: title heading
 // then the template body.
 func TestStub(t *testing.T) {

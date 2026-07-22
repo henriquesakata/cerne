@@ -31,6 +31,15 @@ var Sections = []string{
 // silent wrong assumption.
 const AmbiguityMarker = "[ESCLARECER:"
 
+// Levels is the generic suggested-capability vocabulary for the **Nível:**
+// metadata line (F-0194): the model class the implementation likely needs,
+// never a vendor model name (users run different LLMs; names rot). leve =
+// mechanical change, existing pattern, one package; padrão = multi-file with
+// tests over established patterns; avançado = new subsystem, open design
+// decisions, cross-cutting change. Shared by the template Body and the spec
+// draft prompt so the two never drift.
+var Levels = []string{"leve", "padrão", "avançado"}
+
 // Body is the spec template skeleton: the canonical section headings in order,
 // each with inline authoring guidance as HTML comments. It carries no
 // frontmatter and no title heading — callers prepend those. doccheck treats
@@ -41,10 +50,13 @@ const Body = `<!-- COMO USAR: preencha cada seção e remova estas linhas-guia. 
 incerteza com [ESCLARECER: pergunta específica] e não prossiga adivinhando. Antes de
 cerne feature approve: nenhum [ESCLARECER] restante; critérios testáveis; nada ambíguo. -->
 
-<!-- METADADOS (preencha como linhas **Status:** / **Tipo:** / **Origem:**):
+<!-- METADADOS (preencha como linhas **Status:** / **Tipo:** / **Origem:** / **Nível:**):
 Status: Rascunho (AAAA-MM-DD) — spec para revisão.
 Tipo: Novo recurso | Corretivo | Refactor — o caráter da mudança em uma linha.
-Origem: o que disparou (relato de agente, dor recorrente, decisão do usuário + data). -->
+Origem: o que disparou (relato de agente, dor recorrente, decisão do usuário + data).
+Nível: leve | padrão | avançado — capacidade de modelo sugerida para implementar + 1 frase
+de porquê (leve = mecânica, padrão existente, 1 pacote; padrão = multi-arquivo com testes;
+avançado = design novo / cross-cutting). Genérico — nunca nome de modelo/vendor. -->
 
 ## Problema
 <!-- O que falta ou quebra HOJE, ancorado em código real (arquivo.go:linha). Por que agora;
