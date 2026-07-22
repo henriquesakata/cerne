@@ -5,6 +5,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
+import AnswerableDoc from './AnswerableDoc'
 import Markdown from './Markdown'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
@@ -194,6 +195,7 @@ export default function Decisions() {
 export function DecisionDetail({ id }: { id: string }) {
   const [data, setData] = useState<DecisionDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refresh, setRefresh] = useState(0)
   const version = useLiveVersion()
   const { t } = useT()
 
@@ -204,7 +206,7 @@ export function DecisionDetail({ id }: { id: string }) {
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version])
+  }, [id, version, refresh])
 
   if (error) return <p className="status error">{t.decisions.loadOneError(error)}</p>
   if (!data) return <p className="status">{t.common.loading}</p>
@@ -246,7 +248,16 @@ export function DecisionDetail({ id }: { id: string }) {
       <Backlinks id={id} />
       <article className="doc">
         {data.doc ? (
-          <Markdown>{data.doc}</Markdown>
+          d.state === 'active' ? (
+            <AnswerableDoc
+              id={d.id}
+              docPath={`content/decisions/${d.id}.md`}
+              content={data.doc}
+              onSaved={() => setRefresh((n) => n + 1)}
+            />
+          ) : (
+            <Markdown>{data.doc}</Markdown>
+          )
         ) : (
           <p className="muted">{t.common.noDoc}</p>
         )}
