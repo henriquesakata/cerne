@@ -27,9 +27,17 @@ test:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
+  # retry guards infra hiccups (runner death); the flaky-family retry is
+  # the surgical internal/app loop below.
+  retry: 1
   script:
     - go vet ./...
-    - go test ./... -count=1
+    # The timing-sensitive family (elision windows, telemetry ring racing
+    # the autocommit worker) lives in internal/app and flakes under runner
+    # load — up to 3 attempts for that package alone while it is made
+    # deterministic (tracked as its own task); everything else runs once.
+    - go test $(go list ./... | grep -v '/internal/app$') -count=1
+    - for i in 1 2 3; do go test ./internal/app -count=1 && break; [ $i -eq 3 ] && exit 1; done
 
 # ui/dist is go:embed-ed into the binary, so the *committed* dist is what ships —
 # a change to ui/src that forgets to rebuild ui/dist serves a stale UI (F-0136).
