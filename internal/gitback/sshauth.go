@@ -3,15 +3,18 @@ package gitback
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
@@ -28,6 +31,41 @@ var agentDial = realAgentDial
 
 func realAgentDial(user string) (transport.AuthMethod, error) {
 	return ssh.NewSSHAgentAuth(user)
+}
+
+// agentHasIdentities reports whether the SSH agent is reachable AND holds at
+// least one identity. It is a package var so tests can stub it; production uses
+// defaultAgentHasIdentities.
+//
+// The check exists because ssh.NewSSHAgentAuth succeeds whenever the agent
+// socket merely dials — even with zero keys loaded — so an empty agent would
+// otherwise shadow the key-file fallback and make go-git fail the handshake with
+// "[none publickey]". This is the macOS default: the launchd ssh-agent is always
+// reachable (SSH_AUTH_SOCK always set) but stays keyless until the first
+// `ssh-add`, where plain ssh/git still work by reading the key file directly.
+var agentHasIdentities = defaultAgentHasIdentities
+
+func defaultAgentHasIdentities() bool {
+	// On Windows the agent is Pageant / the OpenSSH named pipe, not a unix
+	// socket we can List() this way; agentDial errors cleanly if it is absent,
+	// so preserve the historical "try the agent" behavior there.
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	sock := os.Getenv("SSH_AUTH_SOCK")
+	if sock == "" {
+		return true // cannot probe: let agentDial decide (unchanged behavior)
+	}
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		return false // agent unreachable → fall back to key files
+	}
+	defer conn.Close()
+	keys, err := agent.NewClient(conn).List()
+	if err != nil {
+		return false
+	}
+	return len(keys) > 0
 }
 
 // isSSHURL reports whether url is an SSH remote (ssh:// or scp-like git@host:).
@@ -168,7 +206,8 @@ func sshDir() (string, error) {
 
 // sshAuthFor returns the AuthMethod for url: nil for non-SSH urls (local paths,
 // http(s)); for ssh (git@host:..., ssh://...) it tries, in order:
-//  1. SSH agent (Pageant / Windows OpenSSH agent / SSH_AUTH_SOCK) — if available
+//  1. SSH agent (Pageant / Windows OpenSSH agent / SSH_AUTH_SOCK) — only if it
+//     holds at least one identity (see agentHasIdentities)
 //  2. key files under the user's .ssh dir: id_ed25519, id_rsa, id_ecdsa (first
 //     that exists), empty passphrase
 //
@@ -184,12 +223,18 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	user := sshUser(u)
 	host := sshHost(u)
 
-	// 1. SSH agent — best effort; on any error fall through to key files.
-	if auth, err := agentDial(user); err == nil {
-		if err := pinKnownHosts(auth, host); err != nil {
-			return nil, err
+	// 1. SSH agent — but only when it actually holds an identity. A reachable
+	//    yet keyless agent (the macOS launchd default until `ssh-add`) must not
+	//    shadow the key-file fallback: go-git would offer no key and the server
+	//    would reject the handshake with "[none publickey]". On any dial error we
+	//    also fall through to key files.
+	if agentHasIdentities() {
+		if auth, err := agentDial(user); err == nil {
+			if err := pinKnownHosts(auth, host); err != nil {
+				return nil, err
+			}
+			return auth, nil
 		}
-		return auth, nil
 	}
 
 	// 2. Key files under the .ssh dir.

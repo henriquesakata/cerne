@@ -92,6 +92,58 @@ func TestSSHAuthKeyFileFallback(t *testing.T) {
 	}
 }
 
+// TestSSHAuthEmptyAgentFallsBackToKeyFile pins the macOS pathology: the launchd
+// ssh-agent is reachable (agentDial succeeds) but holds no identities until the
+// user runs `ssh-add`. go-git then offers no key and the server rejects the
+// handshake with "[none publickey]". sshAuthFor must NOT use such an agent — it
+// must fall back to the on-disk key file that plain ssh/git use.
+func TestSSHAuthEmptyAgentFallsBackToKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	writeKeyFile(t, dir, "id_ed25519")
+	t.Setenv("CERNE_SSH_DIR", dir)
+
+	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities })
+	agentHasIdentities = func() bool { return false } // reachable but keyless
+
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(string) (transport.AuthMethod, error) {
+		t.Fatal("agentDial must not be called when the agent holds no identities")
+		return nil, nil
+	}
+
+	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err != nil {
+		t.Fatalf("sshAuthFor: %v", err)
+	}
+	if _, ok := auth.(*ssh.PublicKeys); !ok {
+		t.Fatalf("auth = %T, want *ssh.PublicKeys (key-file fallback)", auth)
+	}
+}
+
+// TestSSHAuthAgentWithIdentitiesUsed is the complement: when the agent holds at
+// least one identity, sshAuthFor uses it (does not fall back to key files). The
+// probed dir is empty, so a wrongly-skipped agent would surface as a "no usable
+// key" error instead of the agent auth.
+func TestSSHAuthAgentWithIdentitiesUsed(t *testing.T) {
+	t.Setenv("CERNE_SSH_DIR", t.TempDir()) // no key files
+
+	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities })
+	agentHasIdentities = func() bool { return true }
+
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(user string) (transport.AuthMethod, error) {
+		return &ssh.PublicKeysCallback{User: user}, nil
+	}
+
+	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err != nil {
+		t.Fatalf("sshAuthFor: %v", err)
+	}
+	if _, ok := auth.(*ssh.PublicKeysCallback); !ok {
+		t.Fatalf("auth = %T, want *ssh.PublicKeysCallback (agent used)", auth)
+	}
+}
+
 func TestSSHAuthNoKey(t *testing.T) {
 	dir := t.TempDir() // empty: no key files
 	t.Setenv("CERNE_SSH_DIR", dir)
