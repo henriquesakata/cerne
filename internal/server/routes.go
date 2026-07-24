@@ -86,6 +86,9 @@ func dataRoutes() []dataRoute {
 		{"GET", "/notes/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleNoteDetail(w, repoDir, r.PathValue("id"))
 		}},
+		{"GET", "/conventions-export", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
+			handleConventionsExport(w, repoDir)
+		}},
 		{"POST", "/references", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleCreateReference(w, r, repoDir, projDir)
 		}},
