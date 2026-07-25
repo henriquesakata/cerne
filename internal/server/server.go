@@ -96,6 +96,26 @@ type stateResponse struct {
 	Runbooks     []store.Runbook    `json:"runbooks"`
 	Notes        []store.Note       `json:"notes"`
 	Capabilities []store.Capability `json:"capabilities"` // F-0188: the functional taxonomy
+	// OpenClarifications counts the open [ESCLARECER]/[CLARIFY] markers per live
+	// entity (F-0195), so the board can flag a card waiting on the human without
+	// opening it. Derived from the docs on every request — never persisted. Only
+	// entities with at least one open marker; always present, never null.
+	OpenClarifications map[string]int `json:"open_clarifications"`
+}
+
+// countOpenClarifications tallies the open markers per live entity. Best-effort
+// by design: the count is a secondary signal, so a scan failure degrades to an
+// empty map instead of taking the whole board down with it.
+func countOpenClarifications(repoDir string) map[string]int {
+	open := map[string]int{}
+	items, err := app.ListClarifications(repoDir, "")
+	if err != nil {
+		return open
+	}
+	for _, c := range items {
+		open[c.Entity]++
+	}
+	return open
 }
 
 func handleState(w http.ResponseWriter, repoDir string) {
@@ -138,13 +158,14 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		proj.Modules = []string{} // contract: modules is always a list
 	}
 	writeJSON(w, http.StatusOK, stateResponse{
-		Project:      proj,
-		Features:     features,
-		Decisions:    decisions,
-		References:   references,
-		Runbooks:     runbooks,
-		Notes:        notes,
-		Capabilities: capabilities,
+		Project:            proj,
+		Features:           features,
+		Decisions:          decisions,
+		References:         references,
+		Runbooks:           runbooks,
+		Notes:              notes,
+		Capabilities:       capabilities,
+		OpenClarifications: countOpenClarifications(repoDir),
 	})
 }
 
