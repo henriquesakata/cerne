@@ -19,12 +19,13 @@ func newClarifyCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newClarifyListCmd())
 	cmd.AddCommand(newClarifyAnswerCmd())
+	cmd.AddCommand(newClarifyCorrectCmd())
 	return cmd
 }
 
 func newClarifyListCmd() *cobra.Command {
 	var dir string
-	var asJSON bool
+	var asJSON, resolved bool
 	cmd := &cobra.Command{
 		Use:   "list [<id>]",
 		Short: "List open clarifications across live entities (or one entity)",
@@ -38,7 +39,13 @@ func newClarifyListCmd() *cobra.Command {
 			if len(args) == 1 {
 				id = args[0]
 			}
-			items, err := app.ListClarifications(ctx.repoDir, id)
+			list := app.ListClarifications
+			if resolved {
+				// --resolved swaps the queue: the answered markers are the ones
+				// a correction can target (F-0197).
+				list = app.ListResolvedClarifications
+			}
+			items, err := list(ctx.repoDir, id)
 			if err != nil {
 				return err
 			}
@@ -52,7 +59,11 @@ func newClarifyListCmd() *cobra.Command {
 				return enc.Encode(items)
 			}
 			if len(items) == 0 {
-				fmt.Fprintln(out, "no open clarifications")
+				if resolved {
+					fmt.Fprintln(out, "no answered clarifications")
+				} else {
+					fmt.Fprintln(out, "no open clarifications")
+				}
 				return nil
 			}
 			lastDoc := ""
@@ -70,11 +81,16 @@ func newClarifyListCmd() *cobra.Command {
 					fmt.Fprintf(out, "      options: %s\n", strings.Join(c.Options, " | "))
 				}
 			}
-			fmt.Fprintf(out, "\nanswer one with: cerne clarify answer <id> <n> --answer \"...\" (or --pick <k>)\n")
+			if resolved {
+				fmt.Fprintf(out, "\ncorrect one with: cerne clarify correct <id> <n> --answer \"...\"\n")
+			} else {
+				fmt.Fprintf(out, "\nanswer one with: cerne clarify answer <id> <n> --answer \"...\" (or --pick <k>)\n")
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	cmd.Flags().BoolVar(&resolved, "resolved", false, "list the ANSWERED clarifications instead (the correction queue)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	return cmd
@@ -147,6 +163,53 @@ func newClarifyAnswerCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&answer, "answer", "", "free-text answer to the question")
 	cmd.Flags().IntVar(&pick, "pick", 0, "choose the k-th proposed option as the answer")
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	return cmd
+}
+
+// newClarifyCorrectCmd exposes the correction path (F-0197): the answer was
+// registered, but it was wrong or incomplete. The previous answer is kept in
+// the marker's trail — correcting adds, it does not erase.
+func newClarifyCorrectCmd() *cobra.Command {
+	var dir, answer string
+	cmd := &cobra.Command{
+		Use:   "correct <id> <n>",
+		Short: "Correct or complete the n-th ANSWERED clarification of an entity",
+		Long: "Appends a new answer to the trail of the n-th answered marker of the entity\n" +
+			"([ESCLARECIDO: question → previous → new]) and pushes through the standard\n" +
+			"pipeline. The index comes from 'cerne clarify list --resolved'. The previous\n" +
+			"answer is kept: the document carries what was corrected next to the correction.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			n, err := strconv.Atoi(args[1])
+			if err != nil || n < 1 {
+				return fmt.Errorf("invalid clarification index %q: expected a 1-based number from 'cerne clarify list --resolved %s'", args[1], id)
+			}
+			if strings.TrimSpace(answer) == "" {
+				return errors.New("provide the corrected answer with --answer \"...\"")
+			}
+			ctx, err := resolveProject(dir)
+			if err != nil {
+				return err
+			}
+			ans, err := app.CorrectClarification(ctx.repoDir, ctx.projDir, id, n, answer)
+			if err != nil {
+				if errors.Is(err, app.ErrClarificationGone) {
+					return fmt.Errorf("%w — the document may have advanced; re-run 'cerne clarify list --resolved %s'", err, id)
+				}
+				return err
+			}
+			q := ans.Question
+			if q == "" {
+				q = "(no question)"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s — %s\ncorrected: %s → %s\n", ans.Entity, ans.Doc, q, ans.Answer)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&answer, "answer", "", "the corrected answer")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	return cmd

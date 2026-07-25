@@ -991,6 +991,34 @@ func handleClarifyAnswer(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	}
 }
 
+// handleClarifyCorrect is the correction twin of handleClarifyAnswer (F-0197):
+// same anchored body, same error mapping — it only targets an already answered
+// marker and appends to its trail instead of resolving an open one.
+func handleClarifyCorrect(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	var req clarifyAnswerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if strings.TrimSpace(req.Answer) == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("answer must not be empty"))
+		return
+	}
+	ans, err := app.CorrectClarificationAt(repoDir, projDir, id, req.Doc, req.Offset, req.Raw, req.Answer)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("entity not found"))
+	case errors.Is(err, app.ErrEntityNotLive):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("entity is not live — append an errata instead"))
+	case errors.Is(err, app.ErrClarificationGone):
+		writeJSON(w, http.StatusConflict, errorBody("clarification not found at the given anchor — reload the document"))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		writeJSON(w, http.StatusOK, ans)
+	}
+}
+
 // setParentRequest is the PUT /api/features/{id}/parent body; an empty parent
 // detaches the feature from its epic.
 type setParentRequest struct {

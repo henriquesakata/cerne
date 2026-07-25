@@ -398,3 +398,20 @@ func AnswerClarification(repoDir, projDir, id string, n int, answer string) (Ans
 	}
 	return Answered{}, fmt.Errorf("%w: %s has no open clarification #%d", ErrClarificationGone, id, n)
 }
+
+// CorrectClarification is the index-addressed wrapper for corrections (F-0197),
+// mirroring AnswerClarification over the resolved queue: it resolves id's n-th
+// answered clarification (1-based, ListResolvedClarifications order) to its
+// anchor and delegates to CorrectClarificationAt.
+func CorrectClarification(repoDir, projDir, id string, n int, answer string) (Answered, error) {
+	items, err := ListResolvedClarifications(repoDir, id)
+	if err != nil {
+		return Answered{}, err
+	}
+	for _, c := range items {
+		if c.Index == n {
+			return CorrectClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer)
+		}
+	}
+	return Answered{}, fmt.Errorf("%w: %s has no answered clarification #%d", ErrClarificationGone, id, n)
+}

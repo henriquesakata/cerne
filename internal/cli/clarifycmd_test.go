@@ -154,3 +154,54 @@ func TestClarifyAnswerThenApprove(t *testing.T) {
 		t.Fatalf("approve after answering: %v\n%s", err, out)
 	}
 }
+
+// F-0197: a fila de correção e o verbo que a consome.
+func TestClarifyListResolved(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Com perguntas", clarifySpecBody())
+	if out, err := execCerne(t, "clarify", "answer", "F-0001", "1", "--pick", "1", "--dir", projDir); err != nil {
+		t.Fatalf("seeding an answer: %v\n%s", err, out)
+	}
+
+	out, err := execCerne(t, "clarify", "list", "--resolved", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("clarify list --resolved: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "sincrona ou assincrona?") {
+		t.Errorf("resolved listing missing the answered question:\n%s", out)
+	}
+	// A pergunta ainda ABERTA não pertence à fila de correção.
+	if strings.Contains(out, "which format?") {
+		t.Errorf("resolved listing leaked an open clarification:\n%s", out)
+	}
+}
+
+func TestClarifyCorrectAppendsTrail(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Com perguntas", clarifySpecBody())
+	if out, err := execCerne(t, "clarify", "answer", "F-0001", "1", "--pick", "1", "--dir", projDir); err != nil {
+		t.Fatalf("seeding an answer: %v\n%s", err, out)
+	}
+
+	out, err := execCerne(t, "clarify", "correct", "F-0001", "1", "--answer", "assincrona", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("clarify correct: %v\n%s", err, out)
+	}
+	spec := readBackendSpec(t, repoDir)
+	if !strings.Contains(spec, "[ESCLARECIDO: sincrona ou assincrona? → sincrona → assincrona]") {
+		t.Errorf("trail not written to the backend doc:\n%s", spec)
+	}
+}
+
+func TestClarifyCorrectIndexOutOfRange(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Com perguntas", clarifySpecBody())
+
+	out, err := execCerne(t, "clarify", "correct", "F-0001", "99", "--answer", "x", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("clarify correct with an out-of-range index succeeded:\n%s", out)
+	}
+	if !errors.Is(err, app.ErrClarificationGone) {
+		t.Fatalf("err = %v, want ErrClarificationGone", err)
+	}
+}
