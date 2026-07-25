@@ -27,9 +27,12 @@ type Clarification struct {
 	Question string   // empty on the bare form
 	Options  []string // proposed answers, empty when the marker has no pipes
 	Resolved bool     // true for [ESCLARECIDO: …]
-	Answer   string   // set only when Resolved
-	Offset   int      // byte offset of Raw within the parsed content
-	Raw      string   // the marker exactly as it appears in the text
+	Answer   string   // the CURRENT answer; set only when Resolved
+	Answers  []string // the answer trail in chronological order (F-0197); the
+	// last one is Answer. A marker written before corrections
+	// existed is a trail of one, so nothing needs migrating.
+	Offset int    // byte offset of Raw within the parsed content
+	Raw    string // the marker exactly as it appears in the text
 }
 
 // vocab is one language's marker word pair. The catalog is a closed set in
@@ -124,12 +127,19 @@ func Parse(content string) []Clarification {
 		}
 		if resolvedWords[word] {
 			c.Resolved = true
+			// The question is what precedes the FIRST arrow; everything after
+			// it is the answer trail (F-0197), each correction appended with
+			// the same arrow. A marker with a single answer parses as a trail
+			// of one, which is why no legacy document needs migrating.
+			rest := body
 			if q, a, ok := strings.Cut(body, "→"); ok {
 				c.Question = strings.TrimSpace(q)
-				c.Answer = strings.TrimSpace(a)
-			} else {
-				c.Answer = body
+				rest = a
 			}
+			for _, s := range strings.Split(rest, "→") {
+				c.Answers = append(c.Answers, strings.TrimSpace(s))
+			}
+			c.Answer = c.Answers[len(c.Answers)-1]
 		} else {
 			parts := strings.Split(body, "|")
 			c.Question = strings.TrimSpace(parts[0])
@@ -169,6 +179,37 @@ func Resolve(c Clarification, answer string) (string, bool) {
 		return "[" + v.Resolved + ": " + answer + "]", true
 	}
 	return "", false
+}
+
+// Correct returns the marker form for the resolved clarification c with answer
+// appended to its trail — the inverse of Resolve, and the reason a correction
+// does not erase what it corrected (F-0197): the document carries the old
+// answer next to the new one, current last. The vocabulary of the original is
+// preserved ([CLARIFIED] stays [CLARIFIED]), like in Resolve. It reports false
+// when c is still open — correcting an open marker is answering it — or when
+// its raw form is not a catalog marker.
+func Correct(c Clarification, answer string) (string, bool) {
+	if !c.Resolved {
+		return "", false
+	}
+	m := markerRe.FindStringSubmatchIndex(c.Raw)
+	if m == nil || m[0] != 0 || m[1] != len(c.Raw) {
+		return "", false
+	}
+	word := c.Raw[m[2]:m[3]]
+	if !resolvedWords[word] {
+		return "", false
+	}
+	trail := strings.Join(append(append([]string{}, c.Answers...), answer), " → ")
+	if c.Question != "" {
+		return "[" + word + ": " + c.Question + " → " + trail + "]", true
+	}
+	// No question: the trail still needs its leading arrow, otherwise
+	// [CLARIFIED: a1 → a2] would reparse as question "a1" with answer "a2".
+	// The empty slot before the first arrow is what says "there was no
+	// question" — and [CLARIFIED: a] (no arrow at all) keeps parsing as the
+	// one-answer legacy form.
+	return "[" + word + ": → " + trail + "]", true
 }
 
 // Open returns only the unresolved markers in content.

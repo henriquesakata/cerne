@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -424,5 +425,115 @@ func TestOpen(t *testing.T) {
 	}
 	if open[0].Question != "aberta?" {
 		t.Errorf("Question = %q, want %q", open[0].Question, "aberta?")
+	}
+}
+
+// F-0197: uma resposta corrigida não substitui a anterior — anexa-se a ela.
+// Parse expõe a trilha inteira (Answers) e a corrente (Answer, a última).
+func TestParseAnswerTrail(t *testing.T) {
+	cases := []struct {
+		name        string
+		content     string
+		wantQuestio string
+		wantAnswers []string
+	}{
+		{"trilha de duas", "[ESCLARECIDO: onde? → no doc → no backend]", "onde?", []string{"no doc", "no backend"}},
+		{"legado é trilha de um", "[ESCLARECIDO: onde? → no doc]", "onde?", []string{"no doc"}},
+		{"sem pergunta, seta inicial marca a ausência", "[CLARIFIED: → use json → use yaml]", "", []string{"use json", "use yaml"}},
+		{"sem pergunta, forma legada de uma resposta", "[CLARIFIED: use json]", "", []string{"use json"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := Parse(tc.content)
+			if len(cs) != 1 {
+				t.Fatalf("Parse() returned %d markers, want 1", len(cs))
+			}
+			c := cs[0]
+			if c.Question != tc.wantQuestio {
+				t.Errorf("Question = %q, want %q", c.Question, tc.wantQuestio)
+			}
+			if !slices.Equal(c.Answers, tc.wantAnswers) {
+				t.Errorf("Answers = %#v, want %#v", c.Answers, tc.wantAnswers)
+			}
+			// Answer segue sendo a corrente: consumidor existente não muda.
+			if want := tc.wantAnswers[len(tc.wantAnswers)-1]; c.Answer != want {
+				t.Errorf("Answer = %q, want the current one %q", c.Answer, want)
+			}
+		})
+	}
+}
+
+// TestCorrect cobre o inverso de Resolve: anexar à trilha, no vocabulário do
+// marcador original, recusando o que não é um resolvido ancorado.
+func TestCorrect(t *testing.T) {
+	pt := Parse("[ESCLARECIDO: qual backend? → S3]")[0]
+	got, ok := Correct(pt, "GCS")
+	if !ok || got != "[ESCLARECIDO: qual backend? → S3 → GCS]" {
+		t.Errorf("Correct(pt) = %q, ok=%v", got, ok)
+	}
+	en := Parse("[CLARIFIED: which format? → json]")[0]
+	got, ok = Correct(en, "yaml")
+	if !ok || got != "[CLARIFIED: which format? → json → yaml]" {
+		t.Errorf("Correct(en) = %q, ok=%v; correcting must not switch vocabulary", got, ok)
+	}
+	open := Parse("[ESCLARECER: qual backend?]")[0]
+	if got, ok := Correct(open, "S3"); ok {
+		t.Errorf("Correct() on an open marker = %q, ok=true; answering is Resolve's job", got)
+	}
+}
+
+// TestCorrectCorpus é o lado Go da trava de paridade da CORREÇÃO: os mesmos
+// casos são reproduzidos por ui/src/Clarify.test.tsx sobre correctMarker.
+func TestCorrectCorpus(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "corpus.json"))
+	if err != nil {
+		t.Fatalf("reading corpus: %v", err)
+	}
+	var corpus struct {
+		Correct []struct {
+			Name    string  `json:"name"`
+			Content string  `json:"content"`
+			Raw     string  `json:"raw"`
+			Offset  int     `json:"offset"`
+			Answer  string  `json:"answer"`
+			Want    *string `json:"want"`
+		} `json:"correct"`
+	}
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("corpus json: %v", err)
+	}
+	if len(corpus.Correct) == 0 {
+		t.Fatal("corpus has no correct cases")
+	}
+	for _, c := range corpus.Correct {
+		t.Run(c.Name, func(t *testing.T) {
+			var target *Clarification
+			for _, m := range Parse(c.Content) {
+				if m.Offset == c.Offset && m.Raw == c.Raw {
+					target = &m
+					break
+				}
+			}
+			if target == nil {
+				if c.Want != nil {
+					t.Fatalf("no marker anchored at %d with raw %q", c.Offset, c.Raw)
+				}
+				return
+			}
+			marker, ok := Correct(*target, c.Answer)
+			if !ok {
+				if c.Want != nil {
+					t.Fatalf("Correct() ok=false, want %q", *c.Want)
+				}
+				return
+			}
+			got := c.Content[:target.Offset] + marker + c.Content[target.Offset+len(target.Raw):]
+			if c.Want == nil {
+				t.Fatalf("Correct() = %q, want refusal", got)
+			}
+			if got != *c.Want {
+				t.Errorf("corrected content = %q, want %q", got, *c.Want)
+			}
+		})
 	}
 }

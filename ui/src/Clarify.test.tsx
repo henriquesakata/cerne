@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Markdown from './Markdown'
-import { countOpen, markerSpans, parseClarification, resolveMarker } from './clarify'
+import { correctMarker, countOpen, markerSpans, parseClarification, resolveMarker } from './clarify'
 
 afterEach(cleanup)
 
@@ -14,12 +14,14 @@ describe('clarify helpers', () => {
       question: 'qual formato?',
       options: [],
       resolved: false,
+      answers: [],
       answer: '',
     })
     expect(parseClarification('[ESCLARECER: onde? | doc | sidecar]')).toEqual({
       question: 'onde?',
       options: ['doc', 'sidecar'],
       resolved: false,
+      answers: [],
       answer: '',
     })
     expect(parseClarification('[«ESCLARECER»: legado?]')?.question).toBe('legado?')
@@ -27,6 +29,7 @@ describe('clarify helpers', () => {
       question: 'onde?',
       options: [],
       resolved: true,
+      answers: ['doc'],
       answer: 'doc',
     })
     expect(parseClarification('[ESCLARECEDOR]')).toBeNull()
@@ -48,12 +51,14 @@ describe('clarify helpers', () => {
       question: 'which format?',
       options: [],
       resolved: false,
+      answers: [],
       answer: '',
     })
     expect(parseClarification('[CLARIFIED: where? → in the doc]')).toEqual({
       question: 'where?',
       options: [],
       resolved: true,
+      answers: ['in the doc'],
       answer: 'in the doc',
     })
     expect(parseClarification('[CLARIFIER]')).toBeNull()
@@ -141,6 +146,61 @@ describe('clarify helpers', () => {
       expect(resolveMarker(c.content, c.raw, c.offset, c.answer), c.name).toBe(c.want)
     }
   })
+
+  // F-0197: a resposta corrigida se soma à anterior. parseClarification passa
+  // a devolver a trilha (answers) e a corrente (answer, a última).
+  it('lê a trilha de respostas do marcador resolvido', () => {
+    expect(parseClarification('[ESCLARECIDO: onde? \u2192 no doc \u2192 no backend]')).toEqual({
+      question: 'onde?',
+      options: [],
+      resolved: true,
+      answers: ['no doc', 'no backend'],
+      answer: 'no backend',
+    })
+    // Marcador de hoje (uma resposta) é trilha de um: nada a migrar.
+    expect(parseClarification('[ESCLARECIDO: onde? \u2192 no doc]')).toEqual({
+      question: 'onde?',
+      options: [],
+      resolved: true,
+      answers: ['no doc'],
+      answer: 'no doc',
+    })
+    // Sem pergunta, a seta inicial é o que marca a ausência.
+    expect(parseClarification('[CLARIFIED: \u2192 use json \u2192 use yaml]')).toEqual({
+      question: '',
+      options: [],
+      resolved: true,
+      answers: ['use json', 'use yaml'],
+      answer: 'use yaml',
+    })
+  })
+
+  it('correctMarker recusa marcador aberto e âncora deslocada', () => {
+    const md = '[ESCLARECIDO: q? \u2192 a] meio [ESCLARECER: aberta?]'
+    expect(correctMarker(md, '[ESCLARECER: aberta?]', 26, 'x')).toBeNull()
+    expect(correctMarker(md, '[ESCLARECIDO: q? \u2192 a]', 3, 'b')).toBeNull()
+  })
+
+  // O lado TS da trava de paridade da CORREÇÃO (F-0197): os mesmos casos são
+  // reproduzidos por internal/clarify/clarify_test.go (TestCorrectCorpus).
+  it('paridade: correctMarker reproduz os casos de correção do corpus compartilhado', () => {
+    const corpus = JSON.parse(
+      readFileSync(resolve(__dirname, '../../internal/clarify/testdata/corpus.json'), 'utf-8'),
+    ) as {
+      correct: {
+        name: string
+        content: string
+        raw: string
+        offset: number
+        answer: string
+        want: string | null
+      }[]
+    }
+    expect(corpus.correct.length).toBeGreaterThan(0)
+    for (const c of corpus.correct) {
+      expect(correctMarker(c.content, c.raw, c.offset, c.answer), c.name).toBe(c.want)
+    }
+  })
 })
 
 describe('Markdown com chips de esclarecimento', () => {
@@ -154,6 +214,34 @@ describe('Markdown com chips de esclarecimento', () => {
     expect(screen.getByText(/onde\? → doc/)).toHaveClass('clarify-resolved')
     // Sem onAnswer o chip aberto não é botão.
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  // F-0197: o chip resolvido deixa de ser beco sem saída quando há onCorrect.
+  it('chip resolvido vira botão e corrige com a trilha pré-preenchida', () => {
+    const onCorrect = vi.fn()
+    const doc = '---\ncerne_id: F-0001\n---\n\nX [ESCLARECIDO: onde? \u2192 doc] fim.'
+    const raw = '[ESCLARECIDO: onde? \u2192 doc]'
+    render(<Markdown onCorrect={onCorrect}>{doc}</Markdown>)
+
+    fireEvent.click(screen.getByRole('button', { name: /onde\? → doc/ }))
+    // O popover mostra a resposta corrente — corrigir substitui algo escrito.
+    expect(screen.getByText(/Resposta atual: doc/)).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText(/resposta corrigida/), {
+      target: { value: 'backend' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    expect(onCorrect).toHaveBeenCalledWith(raw, doc.indexOf(raw), 'backend')
+  })
+
+  it('sem onCorrect o chip resolvido segue estático', () => {
+    render(<Markdown onAnswer={vi.fn()}>{'X [ESCLARECIDO: onde? \u2192 doc] fim.'}</Markdown>)
+    expect(screen.getByText(/onde\? → doc/)).toHaveClass('clarify-resolved')
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('chip resolvido mostra a trilha inteira, não só a corrente', () => {
+    render(<Markdown>{'X [ESCLARECIDO: onde? \u2192 doc \u2192 backend] fim.'}</Markdown>)
+    expect(screen.getByText(/onde\? → doc → backend/)).toHaveClass('clarify-resolved')
   })
 
   it('não transforma marcador dentro de código', () => {

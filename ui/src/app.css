@@ -1743,3 +1743,15 @@ button.clarify-open:hover { filter: brightness(0.96); }
   font-size: 0.75rem;
   color: var(--faint);
 }
+
+/* F-0197: no popover de correção, a resposta corrente aparece acima do campo —
+   corrigir é substituir algo que já está escrito, não responder do zero. */
+.clarify-pop-current {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+/* O chip resolvido acionável ainda é um chip: o botão não deve trazer a caixa
+   padrão de <button>. */
+button.clarify-chip { cursor: pointer; font: inherit; }

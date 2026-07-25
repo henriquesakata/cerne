@@ -149,31 +149,77 @@ function ClarifyChip({
   raw,
   offset,
   onAnswer,
+  onCorrect,
 }: {
   raw: string
   offset: number
   onAnswer?: AnswerHandler
+  onCorrect?: AnswerHandler
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const info = parseClarification(raw)
   if (!info) return <>{raw}</>
+  const submit = (answer: string) => {
+    // Aberto vai pelo onAnswer; resolvido, pelo onCorrect — dois caminhos
+    // distintos de propósito (responder resolve, corrigir anexa à trilha).
+    const handler = info.resolved ? onCorrect : onAnswer
+    handler?.(raw, offset, answer)
+    setOpen(false)
+    setText('')
+  }
   if (info.resolved) {
+    const trail = info.question ? `${info.question} → ${info.answers.join(' → ')}` : info.answers.join(' → ')
+    // Sem onCorrect (páginas somente-leitura) o chip segue estático.
+    if (!onCorrect) {
+      return (
+        <span className="clarify-chip clarify-resolved" title={raw}>
+          ✓ {trail}
+        </span>
+      )
+    }
     return (
-      <span className="clarify-chip clarify-resolved" title={raw}>
-        ✓ {info.question ? `${info.question} → ${info.answer}` : info.answer}
+      <span className="clarify-anchor">
+        <button
+          type="button"
+          className="clarify-chip clarify-resolved"
+          title={t.clarify.correctTitle}
+          onClick={() => {
+            setText(info.answer)
+            setOpen(!open)
+          }}
+        >
+          ✓ {trail}
+        </button>
+        {open && (
+          <span className="clarify-pop" role="dialog">
+            <span className="clarify-pop-question">{info.question || t.clarify.noQuestion}</span>
+            <span className="clarify-pop-current">{t.clarify.currentAnswer(info.answer)}</span>
+            <textarea
+              className="clarify-free"
+              rows={3}
+              placeholder={t.clarify.correctPlaceholder}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <span className="clarify-pop-actions">
+              <button
+                type="button"
+                disabled={text.trim() === '' || text.trim() === info.answer}
+                onClick={() => submit(text.trim())}
+              >
+                {t.clarify.confirm}
+              </button>
+            </span>
+          </span>
+        )}
       </span>
     )
   }
   const label = info.question || t.clarify.noQuestion
   if (!onAnswer) {
     return <span className="clarify-chip clarify-open">? {label}</span>
-  }
-  const submit = (answer: string) => {
-    onAnswer(raw, offset, answer)
-    setOpen(false)
-    setText('')
   }
   return (
     <span className="clarify-anchor">
@@ -223,9 +269,11 @@ function ClarifyChip({
 export default function Markdown({
   children,
   onAnswer,
+  onCorrect,
 }: {
   children: string
   onAnswer?: AnswerHandler
+  onCorrect?: AnswerHandler
 }) {
   const stripped = stripFrontmatter(children)
   const base = children.length - stripped.length
@@ -236,7 +284,14 @@ export default function Markdown({
         a: ({ href, children: label, ...rest }) => {
           if (href?.startsWith('#clarify:')) {
             const raw = Array.isArray(label) ? label.join('') : String(label ?? '')
-            return <ClarifyChip raw={raw} offset={Number(href.slice('#clarify:'.length))} onAnswer={onAnswer} />
+            return (
+              <ClarifyChip
+                raw={raw}
+                offset={Number(href.slice('#clarify:'.length))}
+                onAnswer={onAnswer}
+                onCorrect={onCorrect}
+              />
+            )
           }
           return (
             <a href={href} {...rest}>

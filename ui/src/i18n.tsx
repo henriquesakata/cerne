@@ -515,6 +515,9 @@ const ptBR = {
     otherAnswer: 'Outra resposta…',
     confirm: 'Responder',
     openCount: (n: number) => `${n} esclarecimento(s) aberto(s)`,
+    correctTitle: 'Clique para corrigir ou complementar a resposta',
+    correctPlaceholder: 'Escreva a resposta corrigida…',
+    currentAnswer: (a: string) => `Resposta atual: ${a}`,
   },
   live: {
     loading: 'Carregando…',
@@ -1018,6 +1021,9 @@ const en: Messages = {
     otherAnswer: 'Other answer…',
     confirm: 'Answer',
     openCount: (n: number) => `${n} open clarification(s)`,
+    correctTitle: 'Click to correct or complete the answer',
+    correctPlaceholder: 'Write the corrected answer…',
+    currentAnswer: (a: string) => `Current answer: ${a}`,
   },
   live: {
     loading: 'Loading…',

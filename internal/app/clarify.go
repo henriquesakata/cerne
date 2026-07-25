@@ -248,6 +248,18 @@ func clarifyDocs(repoDir, id string) ([]entityDoc, error) {
 // entities (or one entity when id is given), in reading order, with the
 // per-entity 1-based index the answer command addresses.
 func ListClarifications(repoDir, id string) ([]OpenClarification, error) {
+	return listClarifications(repoDir, id, false)
+}
+
+// ListResolvedClarifications is the correction queue (F-0197): the same walk,
+// but over the markers already answered — the ones a correction can target.
+// Same shape and same 1-based per-entity index as the open listing, so the CLI
+// addresses both the same way.
+func ListResolvedClarifications(repoDir, id string) ([]OpenClarification, error) {
+	return listClarifications(repoDir, id, true)
+}
+
+func listClarifications(repoDir, id string, resolved bool) ([]OpenClarification, error) {
 	docs, err := clarifyDocs(repoDir, id)
 	if err != nil {
 		return nil, err
@@ -262,7 +274,10 @@ func ListClarifications(repoDir, id string) ([]OpenClarification, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, c := range clarify.Open(string(data)) {
+		for _, c := range clarify.Parse(string(data)) {
+			if c.Resolved != resolved {
+				continue
+			}
 			indexes[d.entity]++
 			out = append(out, OpenClarification{
 				Entity:   d.entity,
@@ -286,6 +301,22 @@ func ListClarifications(repoDir, id string) ([]OpenClarification, error) {
 // anchor no longer matches an open marker; ErrEntityNotLive for terminal
 // entities.
 func AnswerClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string) (Answered, error) {
+	return mutateClarificationAt(repoDir, projDir, id, doc, offset, raw, answer, false)
+}
+
+// CorrectClarificationAt rewrites the RESOLVED marker anchored at (doc, offset,
+// raw), appending answer to its trail instead of replacing it (F-0197): the
+// document keeps the old answer next to the new one. Same eligibility checks
+// and same persistence pipeline as AnswerClarificationAt — ErrClarificationGone
+// when the anchor no longer matches a resolved marker (an open one is answered,
+// not corrected), ErrEntityNotLive for terminal entities.
+func CorrectClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string) (Answered, error) {
+	return mutateClarificationAt(repoDir, projDir, id, doc, offset, raw, answer, true)
+}
+
+// mutateClarificationAt is the shared body of answering and correcting: the two
+// differ only in which marker state they target and which rewriter they call.
+func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string, correcting bool) (Answered, error) {
 	docs, err := clarifyDocs(repoDir, id)
 	if err != nil {
 		return Answered{}, err
@@ -312,8 +343,8 @@ func AnswerClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 	}
 	content := string(data)
 	var target *clarify.Clarification
-	for _, c := range clarify.Open(content) {
-		if c.Offset == offset && c.Raw == raw {
+	for _, c := range clarify.Parse(content) {
+		if c.Resolved == correcting && c.Offset == offset && c.Raw == raw {
 			target = &c
 			break
 		}
@@ -321,7 +352,11 @@ func AnswerClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 	if target == nil {
 		return Answered{}, fmt.Errorf("%w: %s@%d in %s", ErrClarificationGone, raw, offset, doc)
 	}
-	marker, ok := clarify.Resolve(*target, answer)
+	rewrite := clarify.Resolve
+	if correcting {
+		rewrite = clarify.Correct
+	}
+	marker, ok := rewrite(*target, answer)
 	if !ok {
 		return Answered{}, fmt.Errorf("%w: %s@%d in %s", ErrClarificationGone, raw, offset, doc)
 	}
@@ -362,4 +397,21 @@ func AnswerClarification(repoDir, projDir, id string, n int, answer string) (Ans
 		}
 	}
 	return Answered{}, fmt.Errorf("%w: %s has no open clarification #%d", ErrClarificationGone, id, n)
+}
+
+// CorrectClarification is the index-addressed wrapper for corrections (F-0197),
+// mirroring AnswerClarification over the resolved queue: it resolves id's n-th
+// answered clarification (1-based, ListResolvedClarifications order) to its
+// anchor and delegates to CorrectClarificationAt.
+func CorrectClarification(repoDir, projDir, id string, n int, answer string) (Answered, error) {
+	items, err := ListResolvedClarifications(repoDir, id)
+	if err != nil {
+		return Answered{}, err
+	}
+	for _, c := range items {
+		if c.Index == n {
+			return CorrectClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer)
+		}
+	}
+	return Answered{}, fmt.Errorf("%w: %s has no answered clarification #%d", ErrClarificationGone, id, n)
 }

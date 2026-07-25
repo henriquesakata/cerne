@@ -395,6 +395,26 @@ export type AnswerOutcome = { ok: true } | { ok: false; error: string }
 // browser é em code units UTF-16; o endpoint ancora em BYTES do arquivo, então
 // a conversão acontece aqui, sobre o prefixo do conteúdo servido (que é o
 // arquivo cru do backend).
+// correctClarification anexa a resposta corrigida à trilha do marcador JÁ
+// RESOLVIDO ancorado em (doc, offset, raw) — F-0197, a rota irmã da resposta.
+export async function correctClarification(
+  id: string,
+  docPath: string,
+  content: string,
+  raw: string,
+  offset: number,
+  answer: string,
+): Promise<AnswerOutcome> {
+  const byteOffset = new TextEncoder().encode(content.slice(0, offset)).length
+  const r = await fetch(`${base()}/clarify/${encodeURIComponent(id)}/correct`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ doc: docPath, offset: byteOffset, raw, answer }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
+
 export async function answerClarification(
   id: string,
   docPath: string,
