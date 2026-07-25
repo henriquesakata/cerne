@@ -998,3 +998,74 @@ func TestFeatureDocPutUnknownFeature(t *testing.T) {
 		t.Fatalf("error = %q, want 'feature not found'", got["error"])
 	}
 }
+
+// F-0195: the board needs to see a pending clarification without opening the
+// feature, so /state carries a per-entity count of open markers.
+func TestStateIncludesOpenClarificationCounts(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001",
+		"[ESCLARECER: síncrona ou assíncrona?]\n\n[ESCLARECIDO: qual banco? → sqlite]\n\n[ESCLARECER: qual timeout?]"))
+	// Implemented is settled history, not an answerable queue: it must not count.
+	seedFeature(t, repoDir, "F-0002", "Feature B", domain.StateImplemented)
+	writeDoc(t, repoDir, "F-0002", "spec.md", realDoc("F-0002", "[ESCLARECER: pergunta antiga?]"))
+
+	var got struct {
+		OpenClarifications map[string]int `json:"open_clarifications"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.OpenClarifications["F-0001"] != 2 {
+		t.Fatalf("open_clarifications[F-0001] = %d, want 2 (resolved marker must not count); got %+v",
+			got.OpenClarifications["F-0001"], got.OpenClarifications)
+	}
+	if _, ok := got.OpenClarifications["F-0002"]; ok {
+		t.Fatalf("implemented feature must not appear: %+v", got.OpenClarifications)
+	}
+}
+
+func TestStateOpenClarificationsEmptyNotNull(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+
+	// Asserted on the raw JSON: the decoded struct cannot tell null from {}.
+	var raw map[string]json.RawMessage
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &raw)
+	body, ok := raw["open_clarifications"]
+	if !ok {
+		t.Fatal("open_clarifications missing from /state")
+	}
+	if string(body) != "{}" {
+		t.Fatalf("open_clarifications = %s, want {}", body)
+	}
+}
+
+func TestStateSurvivesClarifyScanFailure(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+	// A file where the feature's content directory belongs: reading it as a
+	// directory fails on every platform (unlike a chmod-based fixture).
+	if err := os.MkdirAll(filepath.Join(repoDir, "content", "features"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "content", "features", "F-0001"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var got struct {
+		Features           []store.Feature `json:"features"`
+		OpenClarifications map[string]int  `json:"open_clarifications"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Features) != 1 {
+		t.Fatalf("features = %+v, want the board served anyway", got.Features)
+	}
+	if len(got.OpenClarifications) != 0 {
+		t.Fatalf("open_clarifications = %+v, want empty on scan failure", got.OpenClarifications)
+	}
+}

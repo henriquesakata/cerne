@@ -110,6 +110,10 @@ export default function Kanban() {
   }
   const isEpic = (id: string) => childrenByParent.has(id)
   const isBehind = (id: string) => behind.has(id)
+  // F-0195: contagem de [ESCLARECER] abertos, servida junto do state. Servidor
+  // antigo não manda o campo — ausência é "sem pendência", nunca erro.
+  const openClarifications = state.open_clarifications ?? {}
+  const pendingClarify = (id: string) => openClarifications[id] ?? 0
 
   const closed = state.features.filter((f) => isClosed(f.state)).length
 
@@ -202,6 +206,7 @@ export default function Kanban() {
           childrenByParent={childrenByParent}
           isEpic={isEpic}
           isBehind={isBehind}
+          pendingClarify={pendingClarify}
           showClosed={showClosed}
           matches={matches}
         />
@@ -210,6 +215,7 @@ export default function Kanban() {
           features={state.features}
           isEpic={isEpic}
           isBehind={isBehind}
+          pendingClarify={pendingClarify}
           showClosed={showClosed}
           matches={matches}
         />
@@ -222,12 +228,14 @@ function Columns({
   features,
   isEpic,
   isBehind,
+  pendingClarify,
   showClosed,
   matches,
 }: {
   features: Feature[]
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
+  pendingClarify: (id: string) => number
   showClosed: boolean
   matches: (f: Feature) => boolean
 }) {
@@ -255,6 +263,7 @@ function Columns({
                 feature={f}
                 isEpic={isEpic(f.id)}
                 isBehind={isBehind(f.id)}
+                pending={pendingClarify(f.id)}
               />
             ))}
           </section>
@@ -271,6 +280,7 @@ function EpicBoard({
   childrenByParent,
   isEpic,
   isBehind,
+  pendingClarify,
   showClosed,
   matches,
 }: {
@@ -278,6 +288,7 @@ function EpicBoard({
   childrenByParent: Map<string, Feature[]>
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
+  pendingClarify: (id: string) => number
   showClosed: boolean
   matches: (f: Feature) => boolean
 }) {
@@ -328,6 +339,7 @@ function EpicBoard({
                   feature={f}
                   isEpic={isEpic(f.id)}
                   isBehind={isBehind(f.id)}
+                  pending={pendingClarify(f.id)}
                 />
               ))}
             </div>
@@ -341,7 +353,12 @@ function EpicBoard({
           </h2>
           <div className="epic-lane-cards">
             {standalone.map((f) => (
-              <Card key={f.id} feature={f} isEpic={false} />
+              <Card
+                key={f.id}
+                feature={f}
+                isEpic={false}
+                pending={pendingClarify(f.id)}
+              />
             ))}
           </div>
         </section>
@@ -354,10 +371,12 @@ function Card({
   feature,
   isEpic,
   isBehind = false,
+  pending = 0,
 }: {
   feature: Feature
   isEpic: boolean
   isBehind?: boolean
+  pending?: number
 }) {
   const { t } = useT()
   // Read-only chips: the whole card is an <a>, so a Tag button can't live here
@@ -375,6 +394,14 @@ function Card({
             title={t.kanban.childInDevTitle}
           >
             {t.kanban.childInDev}
+          </span>
+        )}
+        {pending > 0 && (
+          <span
+            className="badge badge-clarify"
+            title={t.kanban.pendingClarifyTitle(pending)}
+          >
+            {t.kanban.pendingClarify(pending)}
           </span>
         )}
         {feature.module && <span className="badge">{feature.module}</span>}

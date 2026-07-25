@@ -8,6 +8,7 @@ import Runbooks, { RunbookDetail } from './Runbooks'
 import Notes, { NoteDetail } from './Notes'
 import Conventions from './Conventions'
 import Search from './Search'
+import Palette from './Palette'
 import Ask from './Ask'
 import Wiki, { WikiPageView } from './Wiki'
 import Lint from './Lint'
@@ -44,6 +45,9 @@ export default function App() {
     <LiveProvider>
       <NotificationsProvider>
         <Nav hash={hash} />
+        {/* Global por design (F-0196): a palette vale em qualquer rota, e não
+            pode depender de qual tela está montada. */}
+        <Palette />
         <Routed hash={hash} />
       </NotificationsProvider>
     </LiveProvider>
@@ -86,6 +90,10 @@ function Routed({ hash }: { hash: string }) {
       </Suspense>
     )
   if (hash === '#/ask') return <Ask />
+  // Avaliada antes da rota exata: #/search/<termo> vem da palette, com o termo
+  // já aplicado (F-0196); #/search puro segue inerte até o submit.
+  const searchQuery = /^#\/search\/(.+)$/.exec(hash)
+  if (searchQuery) return <Search key={searchQuery[1]} initialQuery={decodeURIComponent(searchQuery[1])} />
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />
   if (hash === '#/history') return <History />

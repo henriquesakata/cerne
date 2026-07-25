@@ -222,6 +222,9 @@ h2 {
 
 .badge-epic { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-border); }
 .badge-behind { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+/* F-0195: pergunta dirigida ao humano — cor própria, distinta do débito de
+   épico (badge-behind), que é aviso de processo e não pedido de resposta. */
+.badge-clarify { background: var(--purple-bg); color: var(--purple); border-color: var(--purple-border); }
 .card-parent {
   display: block;
   margin-top: 0.2rem;
@@ -1672,4 +1675,71 @@ button.clarify-open:hover { filter: brightness(0.96); }
   font-size: 0.7rem;
   font-weight: 700;
   text-align: center;
+}
+
+/* F-0196 — palette (spotlight): overlay global de salto por id/título. Feito à
+   mão como o resto da UI; z-index acima do Nav para não ficar sob a barra. */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(31, 36, 33, 0.35);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+.palette-panel {
+  width: min(38rem, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgba(31, 36, 33, 0.18);
+  overflow: hidden;
+}
+.palette-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--fg);
+  font-size: 1rem;
+  outline: none;
+}
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+.palette-row[aria-selected='true'] { background: var(--surface-tint); }
+.palette-row-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.palette-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-fallback { color: var(--link); }
+.palette-hint {
+  margin: 0;
+  padding: 0.4rem 1rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.75rem;
+  color: var(--faint);
 }

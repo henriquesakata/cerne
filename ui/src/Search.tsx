@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { search, type SearchHit } from './api'
 import { useT } from './i18n'
 
@@ -8,16 +8,18 @@ function hitHref(h: SearchHit): string {
   return `#/${prefix}/${encodeURIComponent(h.entity_id)}`
 }
 
-export default function Search() {
-  const [query, setQuery] = useState('')
+// initialQuery chega da rota #/search/<termo> (F-0196): a palette entrega o
+// usuário aqui com o termo já aplicado, sem exigir um segundo submit. Sem a
+// prop, a página segue inerte até o submit — o comportamento de sempre.
+export default function Search({ initialQuery }: { initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery ?? '')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const { t } = useT()
 
-  const run = (e: FormEvent) => {
-    e.preventDefault()
-    const q = query.trim()
+  const runQuery = useCallback((raw: string) => {
+    const q = raw.trim()
     if (q === '') return
     setBusy(true)
     setError(null)
@@ -30,6 +32,17 @@ export default function Search() {
         setError(err instanceof Error ? err.message : String(err))
         setBusy(false)
       })
+  }, [])
+
+  useEffect(() => {
+    if (initialQuery === undefined) return
+    setQuery(initialQuery)
+    runQuery(initialQuery)
+  }, [initialQuery, runQuery])
+
+  const run = (e: FormEvent) => {
+    e.preventDefault()
+    runQuery(query)
   }
 
   return (
