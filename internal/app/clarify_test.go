@@ -239,3 +239,100 @@ func TestAnswerClarificationByIndex(t *testing.T) {
 		t.Fatalf("out-of-range err = %v, want ErrClarificationGone", err)
 	}
 }
+
+// F-0197: o resolvido também é endereçável — é a fila de correção.
+func TestListResolvedClarifications(t *testing.T) {
+	repoDir, _ := newSnapshotBackend(t, false)
+	seedClarifyFixture(t, repoDir)
+
+	items, err := ListResolvedClarifications(repoDir, "")
+	if err != nil {
+		t.Fatalf("ListResolvedClarifications: %v", err)
+	}
+	got := map[string]string{}
+	for _, c := range items {
+		got[c.Entity] = c.Question
+	}
+	// F-0001 tem um resolvido no spec; D-0001 tem o seu. F-0002 é história.
+	if got["F-0001"] != "onde?" {
+		t.Errorf("F-0001 resolved question = %q, want %q", got["F-0001"], "onde?")
+	}
+	if got["D-0001"] != "resolvida?" {
+		t.Errorf("D-0001 resolved question = %q, want %q", got["D-0001"], "resolvida?")
+	}
+	if _, ok := got["F-0002"]; ok {
+		t.Errorf("terminal entity listed for correction: %+v", items)
+	}
+	for _, c := range items {
+		if c.Index < 1 {
+			t.Errorf("index não é 1-based: %+v", c)
+		}
+	}
+}
+
+func TestCorrectClarificationAtAppendsToTrail(t *testing.T) {
+	repoDir, projDir := newSnapshotBackend(t, false)
+	seedClarifyFixture(t, repoDir)
+
+	doc := "content/features/F-0001/spec.md"
+	before, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(doc)))
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	raw := "[ESCLARECIDO: onde? → no doc]"
+	off := strings.Index(string(before), raw)
+	ans, err := CorrectClarificationAt(repoDir, projDir, "F-0001", doc, off, raw, "no backend")
+	if err != nil {
+		t.Fatalf("CorrectClarificationAt: %v", err)
+	}
+	// A pergunta sobrevive à correção; corrige-se a resposta, nunca a pergunta.
+	if ans.Question != "onde?" || ans.Answer != "no backend" {
+		t.Errorf("Answered = %+v", ans)
+	}
+	after, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(doc)))
+	if err != nil {
+		t.Fatalf("read spec after: %v", err)
+	}
+	want := strings.Replace(string(before), raw, "[ESCLARECIDO: onde? → no doc → no backend]", 1)
+	if string(after) != want {
+		t.Errorf("doc after correction = %q, want %q", after, want)
+	}
+}
+
+func TestCorrectClarificationAtStaleAnchor(t *testing.T) {
+	repoDir, projDir := newSnapshotBackend(t, false)
+	seedClarifyFixture(t, repoDir)
+
+	doc := "content/features/F-0001/spec.md"
+	before, _ := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(doc)))
+	_, err := CorrectClarificationAt(repoDir, projDir, "F-0001", doc, 3, "[ESCLARECIDO: sumiu? → x]", "y")
+	if !errors.Is(err, ErrClarificationGone) {
+		t.Fatalf("err = %v, want ErrClarificationGone", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(doc)))
+	if string(before) != string(after) {
+		t.Error("doc changed on a refused correction")
+	}
+
+	// Marcador ABERTO não é corrigível: responder é o outro caminho.
+	openRaw := "[ESCLARECER: sincrona ou assincrona? | sincrona | assincrona]"
+	openOff := strings.Index(string(before), openRaw)
+	_, err = CorrectClarificationAt(repoDir, projDir, "F-0001", doc, openOff, openRaw, "sincrona")
+	if !errors.Is(err, ErrClarificationGone) {
+		t.Fatalf("open marker err = %v, want ErrClarificationGone", err)
+	}
+}
+
+func TestCorrectClarificationAtRefusesTerminalEntity(t *testing.T) {
+	repoDir, projDir := newSnapshotBackend(t, false)
+	seedClarifyFixture(t, repoDir)
+
+	// F-0002 é implemented: história não se reescreve pelo fluxo corrente.
+	doc := "content/features/F-0002/spec.md"
+	body, _ := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(doc)))
+	off := strings.Index(string(body), "[ESCLARECER: histórica não lista?]")
+	_, err := CorrectClarificationAt(repoDir, projDir, "F-0002", doc, off, "[ESCLARECER: histórica não lista?]", "x")
+	if !errors.Is(err, ErrEntityNotLive) {
+		t.Fatalf("err = %v, want ErrEntityNotLive", err)
+	}
+}
