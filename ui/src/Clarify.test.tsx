@@ -216,6 +216,34 @@ describe('Markdown com chips de esclarecimento', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  // F-0197: o chip resolvido deixa de ser beco sem saída quando há onCorrect.
+  it('chip resolvido vira botão e corrige com a trilha pré-preenchida', () => {
+    const onCorrect = vi.fn()
+    const doc = '---\ncerne_id: F-0001\n---\n\nX [ESCLARECIDO: onde? \u2192 doc] fim.'
+    const raw = '[ESCLARECIDO: onde? \u2192 doc]'
+    render(<Markdown onCorrect={onCorrect}>{doc}</Markdown>)
+
+    fireEvent.click(screen.getByRole('button', { name: /onde\? → doc/ }))
+    // O popover mostra a resposta corrente — corrigir substitui algo escrito.
+    expect(screen.getByText(/Resposta atual: doc/)).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText(/resposta corrigida/), {
+      target: { value: 'backend' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    expect(onCorrect).toHaveBeenCalledWith(raw, doc.indexOf(raw), 'backend')
+  })
+
+  it('sem onCorrect o chip resolvido segue estático', () => {
+    render(<Markdown onAnswer={vi.fn()}>{'X [ESCLARECIDO: onde? \u2192 doc] fim.'}</Markdown>)
+    expect(screen.getByText(/onde\? → doc/)).toHaveClass('clarify-resolved')
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('chip resolvido mostra a trilha inteira, não só a corrente', () => {
+    render(<Markdown>{'X [ESCLARECIDO: onde? \u2192 doc \u2192 backend] fim.'}</Markdown>)
+    expect(screen.getByText(/onde\? → doc → backend/)).toHaveClass('clarify-resolved')
+  })
+
   it('não transforma marcador dentro de código', () => {
     render(<Markdown>{'`[ESCLARECER: em código]`'}</Markdown>)
     expect(screen.queryByText(/em código/)).not.toHaveClass('clarify-open')

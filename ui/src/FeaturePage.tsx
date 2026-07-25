@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
-import { countOpen, resolveMarker } from './clarify'
+import { correctMarker, countOpen, resolveMarker } from './clarify'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
 import Tag from './Tag'
@@ -499,6 +499,26 @@ function DocEditor({
     })
   }
 
+  // Correção de um chip resolvido (F-0197): mesma mecânica ancorada, mas
+  // anexando à trilha em vez de resolver.
+  const correctClarification = (raw: string, offset: number, answer: string) => {
+    const next = correctMarker(content, raw, offset, answer)
+    if (next === null) {
+      onSaved()
+      return
+    }
+    setSaving(true)
+    setError(null)
+    void saveFeatureDoc(featureId, doc, next).then((res) => {
+      setSaving(false)
+      if (res.ok) {
+        onSaved()
+      } else {
+        setError(res.error)
+      }
+    })
+  }
+
   return (
     <div className="doc-view">
       <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
@@ -512,7 +532,12 @@ function DocEditor({
       {error && <p className="form-error">{error}</p>}
       {hasRealContent ? (
         <article className="doc">
-          <Markdown onAnswer={saving ? undefined : answerClarification}>{content}</Markdown>
+          <Markdown
+            onAnswer={saving ? undefined : answerClarification}
+            onCorrect={saving ? undefined : correctClarification}
+          >
+            {content}
+          </Markdown>
         </article>
       ) : (
         // Stub: só scaffold (títulos + comentários-guia do template) ou vazio.
