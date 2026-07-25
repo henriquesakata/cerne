@@ -4,40 +4,88 @@
     {
       "name": "pt open with question",
       "content": "x [ESCLARECER: qual formato usar?] y",
-      "spans": [{ "raw": "[ESCLARECER: qual formato usar?]", "offset": 2, "resolved": false }]
+      "spans": [
+        {
+          "raw": "[ESCLARECER: qual formato usar?]",
+          "offset": 2,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "en open with question",
       "content": "x [CLARIFY: which format?] y",
-      "spans": [{ "raw": "[CLARIFY: which format?]", "offset": 2, "resolved": false }]
+      "spans": [
+        {
+          "raw": "[CLARIFY: which format?]",
+          "offset": 2,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "en open with options",
       "content": "[CLARIFY: where to persist? | in-place | sidecar]",
-      "spans": [{ "raw": "[CLARIFY: where to persist? | in-place | sidecar]", "offset": 0, "resolved": false }]
+      "spans": [
+        {
+          "raw": "[CLARIFY: where to persist? | in-place | sidecar]",
+          "offset": 0,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "en bare",
       "content": "something unclear [CLARIFY] here",
-      "spans": [{ "raw": "[CLARIFY]", "offset": 18, "resolved": false }]
+      "spans": [
+        {
+          "raw": "[CLARIFY]",
+          "offset": 18,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "pt resolved",
       "content": "[ESCLARECIDO: onde? → no doc]",
-      "spans": [{ "raw": "[ESCLARECIDO: onde? → no doc]", "offset": 0, "resolved": true }]
+      "spans": [
+        {
+          "raw": "[ESCLARECIDO: onde? → no doc]",
+          "offset": 0,
+          "resolved": true
+        }
+      ]
     },
     {
       "name": "en resolved",
       "content": "[CLARIFIED: where? → in the doc]",
-      "spans": [{ "raw": "[CLARIFIED: where? → in the doc]", "offset": 0, "resolved": true }]
+      "spans": [
+        {
+          "raw": "[CLARIFIED: where? → in the doc]",
+          "offset": 0,
+          "resolved": true
+        }
+      ]
     },
     {
       "name": "mixed vocabularies in one doc",
       "content": "a [ESCLARECER: um?] b [CLARIFY: two?] c [CLARIFIED: three? → ok] d",
       "spans": [
-        { "raw": "[ESCLARECER: um?]", "offset": 2, "resolved": false },
-        { "raw": "[CLARIFY: two?]", "offset": 22, "resolved": false },
-        { "raw": "[CLARIFIED: three? → ok]", "offset": 40, "resolved": true }
+        {
+          "raw": "[ESCLARECER: um?]",
+          "offset": 2,
+          "resolved": false
+        },
+        {
+          "raw": "[CLARIFY: two?]",
+          "offset": 22,
+          "resolved": false
+        },
+        {
+          "raw": "[CLARIFIED: three? → ok]",
+          "offset": 40,
+          "resolved": true
+        }
       ]
     },
     {
@@ -63,7 +111,13 @@
     {
       "name": "en marker after citation keeps offset",
       "content": "`code` [CLARIFY: real?]",
-      "spans": [{ "raw": "[CLARIFY: real?]", "offset": 7, "resolved": false }]
+      "spans": [
+        {
+          "raw": "[CLARIFY: real?]",
+          "offset": 7,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "en marker does not span lines",
@@ -74,8 +128,38 @@
       "name": "duplicated markers get distinct offsets",
       "content": "[CLARIFY: same?] mid [CLARIFY: same?]",
       "spans": [
-        { "raw": "[CLARIFY: same?]", "offset": 0, "resolved": false },
-        { "raw": "[CLARIFY: same?]", "offset": 21, "resolved": false }
+        {
+          "raw": "[CLARIFY: same?]",
+          "offset": 0,
+          "resolved": false
+        },
+        {
+          "raw": "[CLARIFY: same?]",
+          "offset": 21,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "pt resolved with correction trail",
+      "content": "x [ESCLARECIDO: onde? → no doc → no backend] y",
+      "spans": [
+        {
+          "raw": "[ESCLARECIDO: onde? → no doc → no backend]",
+          "offset": 2,
+          "resolved": true
+        }
+      ]
+    },
+    {
+      "name": "en resolved with correction trail",
+      "content": "[CLARIFIED: where? → in the doc → in the backend]",
+      "spans": [
+        {
+          "raw": "[CLARIFIED: where? → in the doc → in the backend]",
+          "offset": 0,
+          "resolved": true
+        }
       ]
     }
   ],
@@ -135,6 +219,65 @@
       "raw": "[CLARIFIED: where? → in the doc]",
       "offset": 0,
       "answer": "again",
+      "want": null
+    }
+  ],
+  "_correct_comment": "Correction parity (F-0197): each case rewrites ONE anchored RESOLVED marker, appending the new answer to its trail instead of replacing it. Go replays via clarify.Correct + manual splice (TestCorrectCorpus); TS replays via correctMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch, or a still-open marker — correcting an open marker is answering it). Anchor offsets stay BEFORE any arrow: the arrow is 3 bytes in Go and 1 code unit in TS, so a later offset would not agree on both sides.",
+  "correct": [
+    {
+      "name": "pt resolved gains a second answer",
+      "content": "x [ESCLARECIDO: qual backend? → S3] y",
+      "raw": "[ESCLARECIDO: qual backend? → S3]",
+      "offset": 2,
+      "answer": "GCS",
+      "want": "x [ESCLARECIDO: qual backend? → S3 → GCS] y"
+    },
+    {
+      "name": "correcting again appends to the existing trail",
+      "content": "[ESCLARECIDO: qual backend? → S3 → GCS]",
+      "raw": "[ESCLARECIDO: qual backend? → S3 → GCS]",
+      "offset": 0,
+      "answer": "R2",
+      "want": "[ESCLARECIDO: qual backend? → S3 → GCS → R2]"
+    },
+    {
+      "name": "en stays en",
+      "content": "x [CLARIFIED: which format? → json] y",
+      "raw": "[CLARIFIED: which format? → json]",
+      "offset": 2,
+      "answer": "yaml",
+      "want": "x [CLARIFIED: which format? → json → yaml] y"
+    },
+    {
+      "name": "questionless marker keeps the trail only",
+      "content": "[CLARIFIED: use json] here",
+      "raw": "[CLARIFIED: use json]",
+      "offset": 0,
+      "answer": "use yaml",
+      "want": "[CLARIFIED: → use json → use yaml] here"
+    },
+    {
+      "name": "only the anchored duplicate is rewritten",
+      "content": "[ESCLARECIDO: same? → yes] mid [ESCLARECIDO: same? → yes]",
+      "raw": "[ESCLARECIDO: same? → yes]",
+      "offset": 0,
+      "answer": "no",
+      "want": "[ESCLARECIDO: same? → yes → no] mid [ESCLARECIDO: same? → yes]"
+    },
+    {
+      "name": "anchor mismatch refuses",
+      "content": "x [ESCLARECIDO: q? → a] y",
+      "raw": "[ESCLARECIDO: q? → a]",
+      "offset": 5,
+      "answer": "b",
+      "want": null
+    },
+    {
+      "name": "open marker refuses",
+      "content": "x [ESCLARECER: q?] y",
+      "raw": "[ESCLARECER: q?]",
+      "offset": 2,
+      "answer": "a",
       "want": null
     }
   ]
