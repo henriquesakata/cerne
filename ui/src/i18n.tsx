@@ -175,6 +175,9 @@ const ptBR = {
     childInDev: 'filho em dev',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
+    pendingClarify: (n: number) => `❓ ${n}`,
+    pendingClarifyTitle: (n: number) =>
+      `${n} esclarecimento(s) aguardando sua resposta`,
   },
   feature: {
     loadError: (e: string) => `Erro ao carregar a feature: ${e}`,
@@ -665,6 +668,8 @@ const en: Messages = {
     childInDev: 'child in dev',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
+    pendingClarify: (n: number) => `❓ ${n}`,
+    pendingClarifyTitle: (n: number) => `${n} clarification(s) awaiting your answer`,
   },
   feature: {
     loadError: (e: string) => `Failed to load the feature: ${e}`,

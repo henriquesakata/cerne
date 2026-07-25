@@ -222,6 +222,9 @@ h2 {
 
 .badge-epic { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-border); }
 .badge-behind { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+/* F-0195: pergunta dirigida ao humano — cor própria, distinta do débito de
+   épico (badge-behind), que é aviso de processo e não pedido de resposta. */
+.badge-clarify { background: var(--purple-bg); color: var(--purple); border-color: var(--purple-border); }
 .card-parent {
   display: block;
   margin-top: 0.2rem;

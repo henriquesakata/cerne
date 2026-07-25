@@ -110,6 +110,9 @@ export type StateResponse = {
   runbooks: Runbook[]
   notes: Note[]
   capabilities?: Capability[] // F-0188 (ausente em servidor antigo)
+  // F-0195: marcadores [ESCLARECER] abertos por entidade viva, derivados dos
+  // docs a cada request. Só entidades com pendência; ausente em servidor antigo.
+  open_clarifications?: Record<string, number>
 }
 
 export type FeatureDocs = {
