@@ -179,6 +179,18 @@ const ptBR = {
     pendingClarifyTitle: (n: number) =>
       `${n} esclarecimento(s) aguardando sua resposta`,
   },
+  palette: {
+    placeholder: 'Buscar por código ou título…',
+    hint: '↑↓ navega · Enter abre · Esc fecha',
+    fullText: (q: string) => `Buscar “${q}” no conteúdo →`,
+    kindLabels: {
+      feature: 'feature',
+      decision: 'decisão',
+      reference: 'referência',
+      runbook: 'runbook',
+      note: 'nota',
+    },
+  },
   feature: {
     loadError: (e: string) => `Erro ao carregar a feature: ${e}`,
     backToKanban: '← Kanban',
@@ -670,6 +682,18 @@ const en: Messages = {
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
     pendingClarifyTitle: (n: number) => `${n} clarification(s) awaiting your answer`,
+  },
+  palette: {
+    placeholder: 'Search by id or title…',
+    hint: '↑↓ move · Enter opens · Esc closes',
+    fullText: (q: string) => `Search “${q}” in the content →`,
+    kindLabels: {
+      feature: 'feature',
+      decision: 'decision',
+      reference: 'reference',
+      runbook: 'runbook',
+      note: 'note',
+    },
   },
   feature: {
     loadError: (e: string) => `Failed to load the feature: ${e}`,

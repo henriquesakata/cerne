@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { entriesFrom, rank, type Entry } from './Palette'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
+import Palette, { entriesFrom, rank, type Entry } from './Palette'
 import type { StateResponse } from './api'
 
 const ts = { created_at: '2026-07-25T00:00:00Z', updated_at: '2026-07-25T00:00:00Z' }
@@ -68,5 +70,133 @@ describe('rank (F-0196 C4, C5, C11)', () => {
 
   it('devolve vazio quando nada casa', () => {
     expect(rank(all, 'zzzznadaaqui')).toHaveLength(0)
+  })
+})
+
+vi.mock('./api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./api')>()),
+  fetchState: vi.fn(async () => state),
+}))
+
+// open dispara o atalho primário e espera a palette montar com os dados.
+async function open() {
+  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+  return waitFor(() => screen.getByRole('combobox'))
+}
+
+const rowIDs = () =>
+  Array.from(document.querySelectorAll('.palette-row')).map((r) =>
+    r.querySelector('.palette-row-id')?.textContent,
+  )
+
+const selected = () =>
+  document
+    .querySelector('.palette-row[aria-selected="true"]')
+    ?.querySelector('.palette-row-id')?.textContent
+
+describe('Palette — overlay (F-0196)', () => {
+  beforeEach(() => {
+    window.location.hash = ''
+  })
+  afterEach(cleanup)
+
+  // C1: atalho primário, input focado.
+  it('abre com Cmd+K e com Ctrl+K, com o campo focado', async () => {
+    render(<Palette />)
+    const input = await open()
+    expect(document.activeElement).toBe(input)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull())
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument())
+  })
+
+  // C1 (parte 2): reabrir seleciona o termo anterior — digitar substitui.
+  it('seleciona o texto anterior ao reabrir', async () => {
+    render(<Palette />)
+    const input = (await open()) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'badge' } })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull())
+
+    const again = (await open()) as HTMLInputElement
+    expect(again.value).toBe('badge')
+    expect([again.selectionStart, again.selectionEnd]).toEqual([0, 5])
+  })
+
+  // C2: 's' fora de campo editável abre.
+  it('abre com s quando o foco não está num campo', async () => {
+    render(<Palette />)
+    fireEvent.keyDown(document.body, { key: 's' })
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument())
+  })
+
+  // C3: 's' dentro de campo editável é texto, não atalho.
+  it('não abre com s dentro de input, textarea ou contenteditable', async () => {
+    render(<Palette />)
+    const field = document.createElement('input')
+    const area = document.createElement('textarea')
+    const rich = document.createElement('div')
+    // setAttribute (e não a propriedade): o jsdom não implementa
+    // contentEditable, e o atributo é o que existe no markup real.
+    rich.setAttribute('contenteditable', 'true')
+    document.body.append(field, area, rich)
+
+    for (const el of [field, area, rich]) {
+      const ev = new KeyboardEvent('keydown', { key: 's', bubbles: true, cancelable: true })
+      el.dispatchEvent(ev)
+      expect(ev.defaultPrevented).toBe(false)
+    }
+    expect(screen.queryByRole('combobox')).toBeNull()
+    field.remove()
+    area.remove()
+    rich.remove()
+  })
+
+  // C6: setas com wrap e Enter navegando.
+  it('move a seleção com as setas (com wrap) e navega com Enter', async () => {
+    render(<Palette />)
+    const input = await open()
+    fireEvent.change(input, { target: { value: 'f-0' } })
+    await waitFor(() => expect(rowIDs()).toEqual(['F-0042', 'F-0195']))
+
+    expect(selected()).toBe('F-0042')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(selected()).toBe('F-0195')
+    fireEvent.keyDown(input, { key: 'ArrowDown' }) // wrap: última → primeira
+    expect(selected()).toBe('F-0042')
+    fireEvent.keyDown(input, { key: 'ArrowUp' }) // wrap: primeira → última
+    expect(selected()).toBe('F-0195')
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(window.location.hash).toBe('#/f/F-0195')
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull())
+  })
+
+  // C7: Esc e clique fora fecham sem navegar.
+  it('fecha com Escape e com clique fora, sem navegar', async () => {
+    render(<Palette />)
+    await open()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull())
+    expect(window.location.hash).toBe('')
+
+    await open()
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull())
+    expect(window.location.hash).toBe('')
+  })
+
+  // C8: sem match local, a saída é o FTS5 com o termo já aplicado.
+  it('oferece a busca no conteúdo quando nada casa localmente', async () => {
+    render(<Palette />)
+    const input = await open()
+    fireEvent.change(input, { target: { value: 'zzzznadaaqui' } })
+
+    await waitFor(() => expect(document.querySelector('.palette-fallback')).toBeInTheDocument())
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(window.location.hash).toBe('#/search/zzzznadaaqui')
   })
 })
