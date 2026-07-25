@@ -11,6 +11,10 @@ export type ClarifyInfo = {
   question: string
   options: string[]
   resolved: boolean
+  // answers é a trilha de respostas em ordem cronológica (F-0197); answer é a
+  // corrente (a última). Marcador escrito antes das correções é trilha de um
+  // elemento, então nenhum documento precisa ser migrado.
+  answers: string[]
   answer: string
 }
 
@@ -52,16 +56,20 @@ export function parseClarification(raw: string): ClarifyInfo | null {
   if (!m || m[0] !== raw) return null
   const body = (m[2] ?? '').trim()
   if (RESOLVED_WORDS.has(m[1])) {
+    // A pergunta é o que precede a PRIMEIRA seta; o resto é a trilha, cada
+    // correção anexada com a mesma seta (F-0197). Sem seta alguma, o corpo
+    // inteiro é a única resposta — a forma legada.
     const arrow = body.indexOf('→')
-    if (arrow >= 0) {
-      return {
-        question: body.slice(0, arrow).trim(),
-        options: [],
-        resolved: true,
-        answer: body.slice(arrow + 1).trim(),
-      }
+    const question = arrow >= 0 ? body.slice(0, arrow).trim() : ''
+    const rest = arrow >= 0 ? body.slice(arrow + 1) : body
+    const answers = rest.split('→').map((s) => s.trim())
+    return {
+      question,
+      options: [],
+      resolved: true,
+      answers,
+      answer: answers[answers.length - 1],
     }
-    return { question: '', options: [], resolved: true, answer: body }
   }
   const parts = body.split('|')
   return {
@@ -71,6 +79,7 @@ export function parseClarification(raw: string): ClarifyInfo | null {
       .map((p) => p.trim())
       .filter((p) => p !== ''),
     resolved: false,
+    answers: [],
     answer: '',
   }
 }
@@ -134,4 +143,30 @@ export function resolveMarker(
     ? `[${vocab.resolved}: ${info.question} → ${answer}]`
     : `[${vocab.resolved}: ${answer}]`
   return content.slice(0, offset) + resolved + content.slice(offset + raw.length)
+}
+
+// correctMarker substitui UMA ocorrência de marcador RESOLVIDO pela forma com
+// a nova resposta anexada à trilha — o espelho de clarify.Correct no Go
+// (F-0197). Corrigir não apaga o que foi corrigido: o doc carrega a resposta
+// antiga junto da nova, corrente por último. Devolve null quando o offset não
+// bate com raw (conteúdo mudou sob os pés) ou quando o marcador ainda está
+// aberto — responder é trabalho do resolveMarker.
+export function correctMarker(
+  content: string,
+  raw: string,
+  offset: number,
+  answer: string,
+): string | null {
+  if (content.slice(offset, offset + raw.length) !== raw) return null
+  const info = parseClarification(raw)
+  if (!info || !info.resolved) return null
+  const word = new RegExp(CLARIFY_RE.source).exec(raw)?.[1]
+  if (!word || !RESOLVED_WORDS.has(word)) return null
+  const trail = [...info.answers, answer].join(' → ')
+  // Sem pergunta, a trilha ainda precisa da seta inicial: sem ela, a primeira
+  // resposta seria reparseada como pergunta.
+  const corrected = info.question
+    ? `[${word}: ${info.question} → ${trail}]`
+    : `[${word}: → ${trail}]`
+  return content.slice(0, offset) + corrected + content.slice(offset + raw.length)
 }
