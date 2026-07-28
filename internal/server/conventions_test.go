@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -107,5 +108,63 @@ func TestConventionsExportStableETag(t *testing.T) {
 	third := get()
 	if third.Header().Get("ETag") == first.Header().Get("ETag") {
 		t.Fatalf("ETag did not change with catalog content")
+	}
+}
+
+// TestConventionsExportFreshnessHeaders: the export states which commit it was
+// rendered from and when that commit was made — the signal that makes a frozen
+// clone visible downstream instead of silently plausible (hub F-0517).
+func TestConventionsExportFreshnessHeaders(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveNote(repoDir, store.Note{ID: "N-0001", Title: "Nota", State: domain.NoteActive,
+		Components: []string{"convention", "platform"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	writeContentDoc(t, repoDir, "notes", "N-0001", realDoc("N-0001", "Corpo."))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	sha, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	if got := rec.Header().Get("X-Cerne-Catalog-Sha"); got != sha {
+		t.Fatalf("X-Cerne-Catalog-Sha = %q, want %q", got, sha)
+	}
+	got := rec.Header().Get("X-Cerne-Catalog-Time")
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Fatalf("X-Cerne-Catalog-Time = %q, want RFC3339: %v", got, err)
+	}
+}
+
+// TestConventionsExportWithoutGit: a repo dir that is not a clone still
+// exports — freshness metadata is additive, never a new failure mode.
+func TestConventionsExportWithoutGit(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	now := time.Now().UTC()
+	if err := store.SaveNote(repoDir, store.Note{ID: "N-0001", Title: "Nota", State: domain.NoteActive,
+		Components: []string{"convention", "platform"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveNote: %v", err)
+	}
+	writeContentDoc(t, repoDir, "notes", "N-0001", realDoc("N-0001", "Corpo."))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("X-Cerne-Catalog-Sha"); got != "" {
+		t.Fatalf("X-Cerne-Catalog-Sha = %q, want empty without a git clone", got)
+	}
+	if !strings.Contains(rec.Body.String(), "## N-0001 — Nota") {
+		t.Fatalf("body missing the note section:\n%s", rec.Body.String())
 	}
 }

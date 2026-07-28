@@ -437,6 +437,27 @@ func HeadSHA(workdir string) (string, error) {
 	return ref.Hash().String(), nil
 }
 
+// HeadCommit returns HEAD's commit hex and committer time, so a caller can
+// state how old the data it is serving is; ErrNoCommits when unborn.
+func HeadCommit(workdir string) (string, time.Time, error) {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	ref, err := repo.Head()
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return "", time.Time{}, fmt.Errorf("%w: %s", ErrNoCommits, workdir)
+	}
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	c, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return ref.Hash().String(), c.Committer.When, nil
+}
+
 // LastCommitTimes returns, for each slash-separated path (relative to the repo
 // root), the committer time of the most recent commit that modified it — its
 // blob differs from the same path in the commit's first parent — resolved in a

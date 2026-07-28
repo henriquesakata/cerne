@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -48,6 +50,15 @@ func handleConventionsExport(w http.ResponseWriter, repoDir string) {
 	sum := sha256.Sum256([]byte(out))
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("ETag", `"`+hex.EncodeToString(sum[:8])+`"`)
+	// Freshness of the SOURCE, not of this response: the ETag only changes when
+	// the rendered catalog changes, so a clone frozen at an old commit looks
+	// identical to a live one. These say which commit the answer came from and
+	// when it was made, which is what makes staleness visible downstream
+	// (hub F-0517 criterion 3). Best-effort: a repo without git still exports.
+	if sha, when, err := gitback.HeadCommit(repoDir); err == nil {
+		w.Header().Set("X-Cerne-Catalog-Sha", sha)
+		w.Header().Set("X-Cerne-Catalog-Time", when.UTC().Format(time.RFC3339))
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(out))
 }
