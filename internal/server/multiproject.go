@@ -81,10 +81,17 @@ func (s *MultiServer) mux() http.Handler {
 				writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 				return
 			}
-			if !projectRegistered(pid) {
+			// A clone lost with the cache (emptyDir + pod reschedule) is
+			// re-created from CERNE_SERVE_PROJECTS instead of 404-ing until
+			// someone re-runs the PUT by hand.
+			if !projectRegistered(pid) && !ensureConfiguredProject(pid) {
 				writeJSON(w, http.StatusNotFound, errorBody("project not registered: "+pid))
 				return
 			}
+			// The clone is created once, at register time; without this the
+			// served docs stay pinned to that day's SHA forever (hub F-0517).
+			// Throttled to one fetch per TTL per clone.
+			refreshProject(repoDir)
 			h(w, r, repoDir, projDir, pid)
 		}
 	}
