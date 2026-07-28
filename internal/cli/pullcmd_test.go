@@ -495,6 +495,51 @@ func TestPullPinBranchOnPinAdvancesLock(t *testing.T) {
 	}
 }
 
+func TestPullCIWriterLeavesLockUntouchedOnMain(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Parcelamento", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Dividir compras em parcelas."))
+	if _, err := gitback.CommitAndPush(repoDir, "spec F-0001"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	gitProjectOnBranch(t, projDir, "main")
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.PinBranch = "main"
+	cfg.PinWriter = "ci"
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	before, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock before: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	after, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock after: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("docs.lock rewritten by pull in CI writer mode:\nbefore: %s\nafter: %s", before, after)
+	}
+	originHead, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA origin: %v", err)
+	}
+	snap, err := project.LoadSessionSnapshot(projDir)
+	if err != nil {
+		t.Fatalf("LoadSessionSnapshot: %v", err)
+	}
+	if snap != originHead {
+		t.Fatalf("session snapshot = %q, want origin HEAD %q", snap, originHead)
+	}
+}
+
 // markedNoteProject sets up a project with one golden-path note and returns the
 // generated-skill path a sync would produce for it.
 func markedNoteProject(t *testing.T) (projDir, learnedSkill string) {

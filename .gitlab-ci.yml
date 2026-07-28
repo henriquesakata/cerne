@@ -1,5 +1,5 @@
 image: golang:1.26
-stages: [test, release]
+stages: [test, pin, release]
 
 # One pipeline per change: with an open MR, only the MR pipeline runs (the
 # branch push pipeline is suppressed); a push with no MR (main) and tags run
@@ -55,6 +55,52 @@ ui:dist-drift:
     - cd ui && npm ci && npm run build && cd ..
     - git add -A ui/dist
     - git diff --cached --exit-code -- ui/dist
+
+# docs.lock is a main-branch CI artifact (F-0198). Reject client-written pins
+# before merge, including pins produced by stale cerne binaries.
+docs-lock:immutable:
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - docs.lock
+  script:
+    - echo "docs.lock is maintained only by the main-branch CI writer; remove it from this merge request"
+    - exit 1
+
+# The only writer of the committed documentation snapshot pin. The resource
+# group serializes pipelines, and the checkout refresh makes an older pipeline
+# pin the latest main instead of racing from its original detached SHA.
+docs-lock:pin:
+  stage: pin
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  resource_group: docs-lock-pin
+  script:
+    - |
+      set -eu
+      git fetch origin "$CI_DEFAULT_BRANCH"
+      git checkout -B "$CI_DEFAULT_BRANCH" "origin/$CI_DEFAULT_BRANCH"
+      go run ./cmd/cerne lock pin
+
+      changed="$(git diff --name-only)"
+      if [ -n "$changed" ] && [ "$changed" != "docs.lock" ]; then
+        echo "refusing to pin: unexpected changed paths:"
+        echo "$changed"
+        exit 1
+      fi
+      if git diff --quiet -- docs.lock; then
+        echo "docs.lock already points at the current backend snapshot"
+        exit 0
+      fi
+
+      git config user.name "cerne-ci"
+      git config user.email "cerne-ci@rockt.com"
+      git add docs.lock
+      git commit -m "chore(docs): pin docs.lock [skip ci]"
+      git push -o ci.skip \
+        "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "HEAD:${CI_DEFAULT_BRANCH}"
 
 # On a tag (vX.Y.Z): cross-compile the matrix with the tag stamped as version,
 # then upload each binary + SHA256SUMS to the generic package registry.

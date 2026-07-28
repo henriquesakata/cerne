@@ -57,6 +57,101 @@ func assertMergeDriverRegistered(t *testing.T, projDir string) {
 	}
 }
 
+func TestLockPinAdvancesToBackendHead(t *testing.T) {
+	projDir, origin, repoDir := setupGitProject(t)
+	before, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock before: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "advance.txt"), []byte("advance"), 0o644); err != nil {
+		t.Fatalf("write backend advance: %v", err)
+	}
+	head, err := gitback.CommitAndPush(repoDir, "advance backend")
+	if err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.PinWriter = "ci"
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	if out, err := execCerne(t, "lock", "pin", "--dir", projDir); err != nil {
+		t.Fatalf("lock pin: %v\n%s", err, out)
+	}
+	after, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock after: %v", err)
+	}
+	if after.Snapshot != head {
+		t.Fatalf("Snapshot = %q, want backend HEAD %q", after.Snapshot, head)
+	}
+	if after.Version != before.Version || after.Backend != origin {
+		t.Fatalf("lock metadata changed: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestLockPinAlreadyCurrentDoesNotRewrite(t *testing.T) {
+	projDir, _, _ := setupGitProject(t)
+	lockPath := filepath.Join(projDir, "docs.lock")
+	oldTime := time.Unix(123, 0)
+	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	before, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lock before: %v", err)
+	}
+
+	if out, err := execCerne(t, "lock", "pin", "--dir", projDir); err != nil {
+		t.Fatalf("lock pin: %v\n%s", err, out)
+	}
+	after, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lock after: %v", err)
+	}
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat lock after: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("current docs.lock bytes changed:\nbefore: %s\nafter: %s", before, after)
+	}
+	if !info.ModTime().Equal(oldTime) {
+		t.Fatalf("current docs.lock rewritten: mtime = %v, want %v", info.ModTime(), oldTime)
+	}
+}
+
+func TestLockPinFailsWhenBackendRefreshFails(t *testing.T) {
+	projDir, origin, _ := setupGitProject(t)
+	lockPath := filepath.Join(projDir, "docs.lock")
+	before, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lock before: %v", err)
+	}
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatalf("remove origin: %v", err)
+	}
+
+	out, pinErr := execCerne(t, "lock", "pin", "--dir", projDir)
+	if pinErr == nil {
+		t.Fatalf("lock pin succeeded with unavailable backend:\n%s", out)
+	}
+	if !strings.Contains(pinErr.Error(), "refreshing cached backend clone") {
+		t.Fatalf("lock pin error = %v, want backend refresh context", pinErr)
+	}
+	after, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lock after: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("docs.lock changed after refresh failure:\nbefore: %s\nafter: %s", before, after)
+	}
+}
+
 // git invokes merge drivers from whatever environment the pull runs in — GUI
 // clients and IDEs don't share the user's shell PATH, so a PATH-relative
 // `cerne` fails there and every docs.lock merge degrades to a manual conflict

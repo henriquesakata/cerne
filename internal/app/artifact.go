@@ -151,16 +151,23 @@ func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func(
 }
 
 // PinAllowed reports whether the committed docs.lock pin may be written in
-// projDir: always when the project sets no pin_branch (pre-0102 behavior),
-// otherwise only on that branch — feature branches never touch docs.lock, so
-// MRs stop conflicting on it (F-0102). Shared by the mutation tail
+// projDir: never from normal client operations when pin_writer is "ci";
+// otherwise always when the project sets no pin_branch (pre-0102 behavior), or
+// only on that branch — feature branches never touch docs.lock, so MRs stop
+// conflicting on it (F-0102/F-0198). Shared by the mutation tail
 // (updateSnapshot) and `cerne pull`. Best-effort like autocommitLock: an
 // unreadable config or a non-git projDir behaves as unrestricted, so a
 // misconfiguration never silently stops the pin. A detached HEAD resolves to
 // "" and therefore never matches.
 func PinAllowed(projDir string) bool {
 	cfg, _, err := project.LoadConfig(projDir)
-	if err != nil || cfg.PinBranch == "" {
+	if err != nil {
+		return true
+	}
+	if cfg.PinWriter == "ci" {
+		return false
+	}
+	if cfg.PinBranch == "" {
 		return true
 	}
 	branch, err := gitback.CurrentBranch(projDir)
