@@ -186,6 +186,45 @@ func TestCommitAndSnapshotPinBranchCurrent(t *testing.T) {
 	}
 }
 
+func TestCommitAndSnapshotCIWriterLeavesLockUntouched(t *testing.T) {
+	repoDir, projDir := newSnapshotBackendWithConfig(t,
+		project.Config{
+			ProjectID:      "demo",
+			AutocommitLock: true,
+			PushPin:        true,
+			PinWriter:      "ci",
+		})
+	before, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock before: %v", err)
+	}
+	if err := CommitAndSnapshot(repoDir, projDir, "mutation"); err != nil {
+		t.Fatalf("CommitAndSnapshot: %v", err)
+	}
+	FlushAutocommits()
+	after, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatalf("read docs.lock after: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("docs.lock rewritten by a client in CI writer mode:\nbefore: %s\nafter: %s", before, after)
+	}
+	if msg := projHeadMessage(t, projDir); msg != "init proj" {
+		t.Fatalf("HEAD advanced to %q — no local pin commit expected in CI writer mode", msg)
+	}
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+	got, err := project.LoadSessionSnapshot(projDir)
+	if err != nil {
+		t.Fatalf("LoadSessionSnapshot: %v", err)
+	}
+	if got != head {
+		t.Fatalf("session snapshot = %q, want backend HEAD %q", got, head)
+	}
+}
+
 // Criterion 4 (F-0102): every mutation records the session snapshot sidecar,
 // pin_branch or not.
 func TestCommitAndSnapshotWritesSessionSnapshot(t *testing.T) {

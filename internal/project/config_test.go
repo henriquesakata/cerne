@@ -57,6 +57,32 @@ func TestConfigCompileOnPushRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigPinWriterRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{ProjectID: "cerne", Backend: "/tmp/backend", PinWriter: "ci"}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.PinWriter != "ci" {
+		t.Fatalf("PinWriter = %q, want ci", got.PinWriter)
+	}
+
+	if err := SaveConfig(dir, Config{ProjectID: "x", Backend: "/b"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	got, _, err = LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if got.PinWriter != "" {
+		t.Fatalf("PinWriter must default to empty, got %q", got.PinWriter)
+	}
+}
+
 func TestConfigDeliveryRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Config{ProjectID: "cerne", Backend: "/tmp/backend",

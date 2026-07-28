@@ -19,10 +19,51 @@ import (
 func newLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lock",
-		Short: "Plumbing for the docs.lock git merge driver",
+		Short: "Manage the docs.lock snapshot pin",
 	}
+	cmd.AddCommand(newLockPinCmd())
 	cmd.AddCommand(newLockMergeCmd())
 	return cmd
+}
+
+func newLockPinCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   "pin",
+		Short: "Pin docs.lock to the current documentation backend HEAD",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLockPin(cmd, dir)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	return cmd
+}
+
+func runLockPin(cmd *cobra.Command, dir string) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	head, err := gitback.HeadSHA(ctx.repoDir)
+	if err != nil {
+		return fmt.Errorf("reading documentation backend HEAD: %w", err)
+	}
+	lock, err := project.LoadLock(ctx.projDir)
+	if err != nil {
+		return err
+	}
+	if lock.Snapshot == head {
+		fmt.Fprintf(cmd.OutOrStdout(), "docs.lock already pinned at %s.\n", shortSHA(head))
+		return nil
+	}
+	lock.Snapshot = head
+	if err := project.SaveLock(ctx.projDir, lock); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Pinned docs.lock at %s.\n", shortSHA(head))
+	return nil
 }
 
 func newLockMergeCmd() *cobra.Command {

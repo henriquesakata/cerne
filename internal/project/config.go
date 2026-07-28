@@ -27,6 +27,7 @@ type Config struct {
 	AutocommitLock bool   `toml:"autocommit_lock,omitempty"` // F-0060: cerne commits the project-side docs.lock after a backend mutation (opt-in, default off)
 	PinBranch      string `toml:"pin_branch,omitempty"`      // F-0102: docs.lock is written/committed only on this branch; empty = every branch (pre-0102 behavior)
 	PushPin        bool   `toml:"push_pin,omitempty"`        // F-0180: publish the docs.lock pin to origin right after the deferred commit, when only pin commits are ahead (opt-in, default off)
+	PinWriter      string `toml:"pin_writer,omitempty"`      // F-0198: "ci" reserves committed docs.lock writes for the explicit CI writer
 	CompileOnPush  bool   `toml:"compile_on_push,omitempty"` // F-0117: a successful push recompiles the dirty wiki pages (callable [llm] mode only; opt-in, default off)
 	// UnregisteredSourceIgnore lists URL substrings the unregistered-source lint
 	// rule skips (F-0107) — e.g. the project's own code repo host, which is not an
@@ -50,7 +51,7 @@ type Config struct {
 	// F-0130) may go without a done/abandon before the stale-work lint flags
 	// it. 0 (absent) means the 8-hour default — read it via
 	// StaleWorkWindowHours.
-	StaleWorkHours int            `toml:"stale_work_hours,omitzero"`
+	StaleWorkHours int             `toml:"stale_work_hours,omitzero"`
 	Gates          GatesConfig     `toml:"gates"`     // F-0131: who may cross the human gates
 	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
 	UI             UIConfig        `toml:"ui"`        // F-0187: per-project UI preferences (mindmap tab toggle)
@@ -254,6 +255,7 @@ func SaveConfig(dir string, c Config) error {
 		AutocommitLock           bool                `toml:"autocommit_lock,omitempty"`
 		PinBranch                string              `toml:"pin_branch,omitempty"`
 		PushPin                  bool                `toml:"push_pin,omitempty"`
+		PinWriter                string              `toml:"pin_writer,omitempty"`
 		CompileOnPush            bool                `toml:"compile_on_push,omitempty"`
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
@@ -266,7 +268,7 @@ func SaveConfig(dir string, c Config) error {
 		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
 		Delivery                 *DeliveryConfig     `toml:"delivery,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates
