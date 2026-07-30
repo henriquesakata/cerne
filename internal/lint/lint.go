@@ -1239,7 +1239,7 @@ func staleReadyFindings(features []store.Feature, windowDays int, now time.Time)
 		findings = append(findings, Finding{
 			Rule:   RuleStaleReady,
 			Entity: f.ID,
-			Detail: fmt.Sprintf("implemented (Ready) for %d days without acceptance — run 'cerne feature accept %s' to validate", int(age.Hours()/24), f.ID),
+			Detail: fmt.Sprintf("implemented (Ready) for %d days without acceptance — review with 'cerne show %s --doc result', then run 'cerne feature accept %s' to validate", int(age.Hours()/24), f.ID, f.ID),
 		})
 	}
 	return findings
