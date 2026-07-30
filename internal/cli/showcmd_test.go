@@ -73,6 +73,105 @@ func TestShowJSON(t *testing.T) {
 	}
 }
 
+// seedFeatureDocs writes real spec/plan/result bodies straight into the backend
+// clone, standing in for the LLM authoring layer.
+func seedFeatureDocs(t *testing.T, repoDir, id string, docs map[string]string) {
+	t.Helper()
+	files := map[string]string{}
+	for name, body := range docs {
+		files[filepath.ToSlash(filepath.Join("content", "features", id, name+".md"))] = body
+	}
+	writeTree(t, repoDir, files)
+}
+
+func TestShowFeatureDoc(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+	seedFeatureDocs(t, repoDir, "F-0001", map[string]string{
+		"spec":   "# Spec\n\nO que o login precisa fazer.\n",
+		"result": "# Result\n\nDébito: falta rate limit no callback.\n",
+	})
+
+	out, err := execCerne(t, "show", "F-0001", "--doc", "result", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show --doc result: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "falta rate limit") {
+		t.Fatalf("show --doc result missing body:\n%s", out)
+	}
+	if strings.Contains(out, "O que o login precisa fazer") {
+		t.Fatalf("show --doc result leaked the spec:\n%s", out)
+	}
+	if strings.Contains(out, "[candidate]") || strings.Contains(out, "## result") {
+		t.Fatalf("show --doc result should print the raw doc, got:\n%s", out)
+	}
+}
+
+func TestShowFeatureDocJSON(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+	seedFeatureDocs(t, repoDir, "F-0001", map[string]string{
+		"spec":   "# Spec\n\nO que o login precisa fazer.\n",
+		"result": "# Result\n\nDébito: falta rate limit no callback.\n",
+	})
+
+	out, err := execCerne(t, "show", "F-0001", "--doc", "result", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show --doc result --json: %v\noutput: %s", err, out)
+	}
+	var got struct {
+		Kind    string `json:"kind"`
+		Content []struct {
+			Name string `json:"name"`
+			Body string `json:"body"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput: %s", err, out)
+	}
+	if len(got.Content) != 1 || got.Content[0].Name != "result" || !strings.Contains(got.Content[0].Body, "rate limit") {
+		t.Fatalf("json content = %+v, want only the result doc", got.Content)
+	}
+}
+
+func TestShowFeatureDocMissing(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+	if out, err := execCerne(t, "show", "F-0001", "--doc", "result", "--dir", projDir); err == nil {
+		t.Fatalf("show --doc result succeeded on a feature with no result:\n%s", out)
+	}
+}
+
+func TestShowDocRejectsNonFeature(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	body := filepath.Join(t.TempDir(), "note.md")
+	if err := os.WriteFile(body, []byte("nota de teste\n"), 0o644); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if _, err := execCerne(t, "note", "new", "SSH gotcha", "--file", body, "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v", err)
+	}
+	if out, err := execCerne(t, "show", "N-0001", "--doc", "spec", "--dir", projDir); err == nil {
+		t.Fatalf("show --doc on a note succeeded:\n%s", out)
+	}
+}
+
+func TestShowDocRejectsUnknownName(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+	if out, err := execCerne(t, "show", "F-0001", "--doc", "resumo", "--dir", projDir); err == nil {
+		t.Fatalf("show --doc resumo succeeded:\n%s", out)
+	}
+}
+
 func TestShowUnknownPrefix(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	if _, err := execCerne(t, "show", "Z-0001", "--dir", projDir); err == nil {

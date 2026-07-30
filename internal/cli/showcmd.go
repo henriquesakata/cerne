@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,6 +19,14 @@ import (
 // ErrUnknownIDPrefix is returned by `cerne show` when a cerne_id's prefix maps
 // to no known entity kind (F/D/R/N/RB/H).
 var ErrUnknownIDPrefix = errors.New("unknown cerne_id prefix")
+
+// ErrNoSuchDoc is returned by `cerne show --doc` when the requested document
+// name is not one of a feature's slots, the entity is not a feature, or the
+// slot holds no real content yet.
+var ErrNoSuchDoc = errors.New("no such document")
+
+// featureDocNames are the document slots a feature carries, in reading order.
+var featureDocNames = []string{"spec", "plan", "result"}
 
 // showResult is one resolved cerne_id: its kind, the loaded entity value, and
 // any markdown content sections read straight from the backend store. Feature
@@ -34,26 +43,28 @@ type showDoc struct {
 }
 
 func newShowCmd() *cobra.Command {
-	var dir string
+	var dir, doc string
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
 		Short: "Show any entity (feature, decision, reference, note, runbook, historical) by id",
 		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
-			"already-implemented features that are not materialized in '.docs/'. Use --json for machine output.",
+			"already-implemented features that are not materialized in '.docs/'. Use --doc to print a single " +
+			"feature document raw (spec|plan|result), and --json for machine output.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShow(cmd, dir, args[0], asJSON)
+			return runShow(cmd, dir, args[0], doc, asJSON)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().StringVar(&doc, "doc", "", "print only this feature document, raw: "+strings.Join(featureDocNames, "|"))
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output (entity + content)")
 	return cmd
 }
 
-func runShow(cmd *cobra.Command, dir, id string, asJSON bool) error {
+func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -70,6 +81,15 @@ func runShow(cmd *cobra.Command, dir, id string, asJSON bool) error {
 		res.content = append(res.content, showDoc{name: "errata", body: body})
 	}
 	w := cmd.OutOrStdout()
+	if doc != "" {
+		if err := res.selectDoc(doc); err != nil {
+			return fmt.Errorf("%s --doc %s: %w", id, doc, err)
+		}
+		if !asJSON {
+			fmt.Fprintf(w, "%s\n", res.content[0].body)
+			return nil
+		}
+	}
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -77,6 +97,25 @@ func runShow(cmd *cobra.Command, dir, id string, asJSON bool) error {
 	}
 	res.renderText(w)
 	return nil
+}
+
+// selectDoc narrows the result to the single named feature document, failing
+// when the name is not a feature slot, the entity is not a feature, or the slot
+// has no real content.
+func (r *showResult) selectDoc(name string) error {
+	if r.kind != "feature" {
+		return fmt.Errorf("%w: only features have spec/plan/result documents (this is a %s)", ErrNoSuchDoc, r.kind)
+	}
+	if !slices.Contains(featureDocNames, name) {
+		return fmt.Errorf("%w: valid: %s", ErrNoSuchDoc, strings.Join(featureDocNames, ", "))
+	}
+	for _, d := range r.content {
+		if d.name == name {
+			r.content = []showDoc{d}
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: not written yet", ErrNoSuchDoc)
 }
 
 // kindForID maps a cerne_id to its entity kind by the prefix before the first
@@ -164,7 +203,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 // stub scaffolds or absent.
 func featureContent(repoDir, id string) []showDoc {
 	var docs []showDoc
-	for _, name := range []string{"spec", "plan", "result"} {
+	for _, name := range featureDocNames {
 		body := readRealDoc(filepath.Join(repoDir, "content", "features", id, name+".md"))
 		if body != "" {
 			docs = append(docs, showDoc{name, body})
