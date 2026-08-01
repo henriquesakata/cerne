@@ -75,12 +75,27 @@ func recreateCache(cacheDir, repoDir, backend string) error {
 // in flight), and a raw Pull on a dirty worktree poisons it (N-0027: ref
 // moved, files left behind); SafePull skips the refresh instead and the
 // command runs on the cached state.
+// SafePull, not SafePullNow: this is the read refresh, and it is on the path of
+// every command, so it takes the F-0200 elision — a burst of reads in one agent
+// session collapses to a single handshake.
 func resolveProject(startDir string) (projCtx, error) {
+	return resolveRefreshed(startDir, gitback.SafePull)
+}
+
+// resolveProjectNow is resolveProject for commands that must not run on a
+// possibly-stale clone: they publish a durable artifact from the backend head
+// (lock pin), so silently succeeding against an unreachable backend would pin a
+// snapshot nobody verified.
+func resolveProjectNow(startDir string) (projCtx, error) {
+	return resolveRefreshed(startDir, gitback.SafePullNow)
+}
+
+func resolveRefreshed(startDir string, refresh func(string) error) (projCtx, error) {
 	ctx, err := resolvePaths(startDir)
 	if err != nil {
 		return projCtx{}, err
 	}
-	if err := gitback.SafePull(ctx.repoDir); err != nil {
+	if err := refresh(ctx.repoDir); err != nil {
 		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and re-run the command to force a fresh clone): %w", ctx.repoDir, err)
 	}
 	return ctx, nil

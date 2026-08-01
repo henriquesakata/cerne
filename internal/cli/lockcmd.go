@@ -42,7 +42,9 @@ func newLockPinCmd() *cobra.Command {
 }
 
 func runLockPin(cmd *cobra.Command, dir string) error {
-	ctx, err := resolveProject(dir)
+	// Now, not the eliding refresh: the pin is a durable committed artifact of
+	// the backend head, so it must be written against a backend we just reached.
+	ctx, err := resolveProjectNow(dir)
 	if err != nil {
 		return err
 	}
