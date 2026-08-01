@@ -76,6 +76,11 @@ func fixture(t *testing.T) (origin, clone1, sha string) {
 	if err != nil {
 		t.Fatalf("CommitAndPush: %v", err)
 	}
+	// The seed push marks the sync, which would let SafePull's fast path elide
+	// (F-0200). Hand back a clone with no sync memory so these tests keep
+	// exercising the full path they were written for; the window's own
+	// semantics are pinned in safepull_test.go.
+	resetSyncMarks()
 	return origin, clone1, sha
 }
 
