@@ -71,7 +71,10 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		// SafePull, not Pull — the clone is shared with concurrent cerne
 		// processes (a ui pull loop, a synthesis in flight), and a raw Pull on
 		// a dirty worktree poisons it (N-0027: ref moved, files left behind).
-		if err := gitback.SafePull(repoDir); err != nil {
+		// Now, not the eliding variant: init is a one-shot setting the project
+		// up, so a skipped fetch (F-0200) saves nothing and risks initializing
+		// against a stale snapshot.
+		if err := gitback.SafePullNow(repoDir); err != nil {
 			return fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory to force a fresh clone): %w", repoDir, err)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {

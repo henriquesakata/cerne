@@ -19,9 +19,12 @@ const keepaliveInterval = 25 * time.Second
 // teammate's push reaches the dashboard. It never talks to the hub: a pull that
 // brings commits advances HEAD, which watchHeadMulti then notices — one
 // notification path for local and remote changes alike. Each tick is a
-// gitback.SafePull — locked, skipped on a dirty worktree, ff-only — so a tick
-// can never poison the shared clone (N-0027). Pull errors (offline, auth) are
-// ignored so the dashboard keeps serving the cached clone.
+// gitback.SafePullNow — locked, skipped on a dirty worktree, ff-only — so a
+// tick can never poison the shared clone (N-0027). Now, not SafePull: freshness
+// is this loop's entire job, and inheriting the CLI's 60s elision window
+// (F-0200) would stretch the interval to a minute and refreeze the UI that
+// F-0517 unfroze. Pull errors (offline, auth) are ignored so the dashboard
+// keeps serving the cached clone.
 func pullLoop(ctx context.Context, repoDir string, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -30,7 +33,7 @@ func pullLoop(ctx context.Context, repoDir string, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = gitback.SafePull(repoDir)
+			_ = gitback.SafePullNow(repoDir)
 		}
 	}
 }
