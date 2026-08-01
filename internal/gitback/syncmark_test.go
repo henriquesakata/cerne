@@ -98,6 +98,61 @@ func TestFailedFetchDoesNotMark(t *testing.T) {
 	}
 }
 
+// TestSyncMarkSurvivesProcessRestart pins criterion 4 (F-0200): every CLI
+// command is a fresh process with an empty map, so an in-process-only mark can
+// never elide. The mark therefore has an on-disk lastro: forgetting the map
+// (what a new process sees) must still find the previous process's sync, and
+// the window must still expire against the injected clock.
+func TestSyncMarkSurvivesProcessRestart(t *testing.T) {
+	now := withFakeClock(t)
+	_, repoDir := syncFixture(t)
+	resetSyncMarks()
+
+	markSynced(repoDir)
+	forgetSyncMemory() // a fresh process: empty map, stamp still on disk
+	if !SyncedWithin(repoDir, time.Minute) {
+		t.Fatal("a fresh process must inherit the previous process's sync mark")
+	}
+
+	*now = now.Add(61 * time.Second)
+	if SyncedWithin(repoDir, time.Minute) {
+		t.Fatal("the on-disk mark must expire past the window like the in-process one")
+	}
+}
+
+// TestSyncStampIsInvisibleToWorktreeChanges pins criterion 5 (F-0200): the
+// stamp lives inside .git/, never in the worktree. A stamp in the tree would
+// make WorktreeChanges non-empty and so poison SafePull's own dirty guard —
+// the mark would permanently convince SafePull that a synthesis is in flight.
+func TestSyncStampIsInvisibleToWorktreeChanges(t *testing.T) {
+	withFakeClock(t)
+	_, repoDir := syncFixture(t)
+
+	markSynced(repoDir)
+	changes, err := WorktreeChanges(repoDir)
+	if err != nil {
+		t.Fatalf("WorktreeChanges: %v", err)
+	}
+	if len(changes) > 0 {
+		t.Fatalf("the sync stamp dirtied the worktree: %v", changes)
+	}
+}
+
+// TestResetSyncMarksClearsTheStamp: resetSyncMarks means "nothing ever synced",
+// so it must drop the on-disk lastro too — otherwise every test that resets to
+// simulate a cold start would silently inherit the fixture's push mark.
+func TestResetSyncMarksClearsTheStamp(t *testing.T) {
+	withFakeClock(t)
+	_, repoDir := syncFixture(t)
+
+	markSynced(repoDir)
+	resetSyncMarks()
+	forgetSyncMemory() // prove the answer comes from disk, not the map
+	if SyncedWithin(repoDir, time.Minute) {
+		t.Fatal("resetSyncMarks must remove the on-disk stamp, not just the map")
+	}
+}
+
 // TestSyncMarksArePerRepo: one repo's mark says nothing about another.
 func TestSyncMarksArePerRepo(t *testing.T) {
 	withFakeClock(t)
