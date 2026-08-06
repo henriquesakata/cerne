@@ -15,9 +15,9 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// TestStatsEndpoint: GET /api/stats returns the context-savings metric with
+// TestSavingsEndpoint: GET /api/savings returns the context-savings metric with
 // the exact fixture numbers — corpus (all states) vs current projection.
-func TestStatsEndpoint(t *testing.T) {
+func TestSavingsEndpoint(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	now := time.Now().UTC()
 	for _, f := range []store.Feature{
@@ -51,7 +51,7 @@ func TestStatsEndpoint(t *testing.T) {
 
 	h := New(repoDir, projDir, "proj")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/stats", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/savings", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())

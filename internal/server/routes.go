@@ -35,8 +35,11 @@ func dataRoutes() []dataRoute {
 		{"GET", "/state", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleState(w, repoDir)
 		}},
+		{"GET", "/savings", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
+			handleSavings(w, repoDir)
+		}},
 		{"GET", "/stats", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-			handleStats(w, repoDir)
+			handleFlowStats(w, repoDir)
 		}},
 		{"GET", "/work", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleWork(w, repoDir)

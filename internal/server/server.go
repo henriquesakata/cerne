@@ -24,6 +24,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/stats"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 	"gitlab.com/rockt/cerne/internal/version"
@@ -64,15 +65,32 @@ func handleVersion(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": version.Short()})
 }
 
-// handleStats returns the context-savings metric (F-0127): full corpus vs
+// handleSavings returns the context-savings metric (F-0127): full corpus vs
 // current projection, per kind and total, computed by materialize.ComputeStats.
-func handleStats(w http.ResponseWriter, repoDir string) {
+func handleSavings(w http.ResponseWriter, repoDir string) {
 	s, err := materialize.ComputeStats(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, s)
+}
+
+// handleFlowStats returns flow metrics (F-0205): lead/cycle time per
+// completed feature plus median/p90 and monthly throughput, computed purely
+// from the event log.
+func handleFlowStats(w http.ResponseWriter, repoDir string) {
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	m, err := stats.Compute(events, time.Time{})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
 }
 
 // handleGraph returns the deterministic entity relationship graph
