@@ -104,6 +104,12 @@ func dataRoutes() []dataRoute {
 		{"POST", "/ask", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 			handleAsk(w, r, repoDir, projDir, projectID)
 		}},
+		{"POST", "/chat", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleChat(w, r, repoDir, projDir)
+		}},
+		{"POST", "/chat/register", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleChatRegister(w, r, repoDir, projDir)
+		}},
 		{"GET", "/config/llm", true, func(w http.ResponseWriter, _ *http.Request, _, projDir, _ string) {
 			handleLLMConfigGet(w, projDir)
 		}},
