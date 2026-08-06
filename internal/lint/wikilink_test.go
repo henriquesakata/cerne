@@ -58,3 +58,36 @@ func TestWikiLinkFindings(t *testing.T) {
 		t.Fatalf("finding = %+v, want %+v", wiki[0], want)
 	}
 }
+
+// TestWikiLinkFindingsEpicTask pins criterion 5 of F-0203: [[E-NNNN]] and
+// [[T-NNNN]] resolve like any id-form wiki-link (E-/T- are features), and an
+// unknown E-/T- id is a broken-link finding.
+func TestWikiLinkFindingsEpicTask(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	for _, id := range []string{"F-0001", "E-0001", "T-0001"} {
+		f := store.Feature{ID: id, Title: "Entidade " + id, State: domain.StateCandidate,
+			CreatedAt: now, UpdatedAt: now}
+		if err := store.SaveFeature(dir, f); err != nil {
+			t.Fatalf("SaveFeature(%s): %v", id, err)
+		}
+	}
+	writeDoc(t, dir, "content/features/F-0001/spec.md",
+		"---\ncerne_id: F-0001\n---\n\n# Spec\n\n"+
+			"Cita [[E-0001]] e [[T-0001]] (conhecidos) e os quebrados [[E-9999]] e [[T-9999]].\n")
+
+	got, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var details []string
+	for _, fd := range got {
+		if fd.Rule == RuleBrokenLink && strings.Contains(fd.Detail, "wiki-link") {
+			details = append(details, fd.Detail)
+		}
+	}
+	want := []string{"broken wiki-link: [[E-9999]]", "broken wiki-link: [[T-9999]]"}
+	if len(details) != 2 || details[0] != want[0] || details[1] != want[1] {
+		t.Fatalf("wiki findings = %v, want %v", details, want)
+	}
+}
