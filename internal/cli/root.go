@@ -36,6 +36,8 @@ func Root() *cobra.Command {
 	root.SetVersionTemplate("cerne {{.Version}}\n")
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newFeatureCmd())
+	root.AddCommand(newEpicCmd())
+	root.AddCommand(newTaskCmd())
 	root.AddCommand(newDecisionCmd())
 	root.AddCommand(newRunbookCmd())
 	root.AddCommand(newNoteCmd())
