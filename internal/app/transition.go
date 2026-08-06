@@ -103,7 +103,7 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 		if err != nil {
 			return "", err
 		}
-		if err := domain.CheckGate(action, docs); err != nil {
+		if err := domain.CheckGate(id, action, docs); err != nil {
 			return "", fmt.Errorf("%w — write content/features/%s/%s in the backend and run 'cerne push'", err, id, gateDocFilename(err))
 		}
 
@@ -261,7 +261,7 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 		if err != nil {
 			return started, err
 		}
-		if err := domain.CheckGate(domain.ActionStart, docs); err != nil {
+		if err := domain.CheckGate(parent.ID, domain.ActionStart, docs); err != nil {
 			break // epic not ready (no real plan): don't force it, leave it to lint
 		}
 		newState, err := domain.Transition(parent.State, domain.ActionStart)
