@@ -58,6 +58,18 @@ type Config struct {
 	LLM            LLMConfig       `toml:"llm"`       // optional v1.5 LLM layer config
 	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
 	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
+	Webhook        WebhookConfig   `toml:"webhook"`   // F-0206: HTTP POST on every entity state transition
+}
+
+// WebhookConfig is the optional [webhook] block of .cernerc (F-0206). Absent
+// (URL empty) means silence: no request is ever sent. Format selects the
+// payload shape; Timeout (seconds) bounds the POST so a dead endpoint never
+// stalls a transition — both default when zero, resolved by the notify
+// package, not here (this struct stays a plain TOML mirror).
+type WebhookConfig struct {
+	URL     string `toml:"url,omitempty"`
+	Format  string `toml:"format,omitempty"`  // "json" (default) | "slack"
+	Timeout int    `toml:"timeout,omitzero"` // seconds; default 3
 }
 
 // DeliveryConfig is the optional [delivery] block of .cernerc (F-0179).
@@ -267,6 +279,7 @@ func SaveConfig(dir string, c Config) error {
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
 		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
 		Delivery                 *DeliveryConfig     `toml:"delivery,omitempty"`
+		Webhook                  *WebhookConfig      `toml:"webhook,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
@@ -288,6 +301,10 @@ func SaveConfig(dir string, c Config) error {
 	if c.Delivery != (DeliveryConfig{}) {
 		del := c.Delivery
 		w.Delivery = &del
+	}
+	if c.Webhook != (WebhookConfig{}) {
+		hook := c.Webhook
+		w.Webhook = &hook
 	}
 	data, err := toml.Marshal(w)
 	if err != nil {

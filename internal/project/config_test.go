@@ -31,6 +31,39 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigWebhookRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{
+		ProjectID: "cerne",
+		Backend:   "/tmp/backend",
+		Webhook:   WebhookConfig{URL: "https://hooks.example/x", Format: "slack", Timeout: 5},
+	}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("LoadConfig = %+v, want %+v", got, want)
+	}
+}
+
+func TestConfigNoWebhookOmitsBlock(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveConfig(dir, Config{ProjectID: "cerne", Backend: "/tmp/backend"}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".cernerc"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "[webhook]") {
+		t.Fatalf(".cernerc has [webhook] block with no config set:\n%s", data)
+	}
+}
+
 func TestConfigCompileOnPushRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Config{ProjectID: "cerne", Backend: "/tmp/backend", CompileOnPush: true}
