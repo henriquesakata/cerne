@@ -101,9 +101,10 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	for i, d := range docs {
 		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
 	}
-	head, conflicts, err := app.ReconcileCommitPush(
+	head, conflicts, err := app.ReconcileCommitPushMutate(
 		ctx.repoDir, ctx.projDir, base,
-		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes)
+		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,
+		func() error { return app.OpenAutoWorkForPush(ctx.repoDir, ctx.projDir, changes) })
 	if err != nil {
 		return err
 	}

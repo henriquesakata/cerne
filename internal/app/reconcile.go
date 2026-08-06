@@ -107,6 +107,16 @@ var reconcileHookAfterWrite func()
 // processes serialize on the shared clone. Disjoint documents never conflict;
 // append-only event logs are union-merged.
 func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
+	return ReconcileCommitPushMutate(repoDir, projDir, base, msg, changes, nil)
+}
+
+// ReconcileCommitPushMutate is ReconcileCommitPush with an optional mutate
+// step run inside the same lock, right after resetting to base and before the
+// reconcile loop: it may write directly into repoDir's worktree (e.g. a
+// pickup auto-work, F-0208 criterion 1), and those writes are captured and
+// merged into changes alongside the caller's. A nil mutate makes this
+// identical to ReconcileCommitPush.
+func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []FileChange, mutate func() error) (string, []Conflict, error) {
 	var head string
 	var conflicts []Conflict
 	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
@@ -116,6 +126,16 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 			if err := gitback.ResetHard(repoDir, base); err != nil {
 				return err
 			}
+		}
+		if mutate != nil {
+			if err := mutate(); err != nil {
+				return err
+			}
+			extra, err := captureChanges(repoDir)
+			if err != nil {
+				return err
+			}
+			changes = append(changes, extra...)
 		}
 		var err error
 		head, conflicts, err = reconcileLocked(nil, repoDir, base, msg, changes)
