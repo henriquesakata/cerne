@@ -334,3 +334,35 @@ func TestStatusActive(t *testing.T) {
 		t.Errorf("--active must override --all:\n%s", out2)
 	}
 }
+
+// TestStatusEpicsWithTasks pins criterion 6 of F-0203: a legacy F- with
+// children (now including T- tasks) keeps acting as a structural epic — no
+// behavior derives from the prefix — and T-/E- ids surface in the rollup.
+func TestStatusEpicsWithTasks(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "PRD legado", State: domain.StateInDevelopment},
+		{ID: "T-0001", Title: "Passo um", Parent: "F-0001", State: domain.StateImplemented},
+		{ID: "T-0002", Title: "Passo dois", Parent: "F-0001", State: domain.StateApproved},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed tasks"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	out, err := execCerne(t, "status", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("status: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "  F-0001  PRD legado — 1/2 implemented\n") {
+		t.Fatalf("F- with task children must stay a structural epic:\n%s", out)
+	}
+	if !strings.Contains(out, "    T-0001  [implemented]  Passo um\n") {
+		t.Fatalf("missing task child line:\n%s", out)
+	}
+}

@@ -285,6 +285,14 @@ export default function FeaturePage({ id }: { id: string }) {
         <TitleEditor feature={f} onSaved={load} />
         <p className="feature-meta">
           <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>
+          {/* F-0203: chip de papel — épico estrutural (filhos) ou declarado (E-);
+              task pelo prefixo T-. */}
+          {(detail.children.length > 0 || f.id.startsWith('E-')) && (
+            <span className="badge badge-epic">{t.kanban.epicBadge}</span>
+          )}
+          {f.id.startsWith('T-') && (
+            <span className="badge badge-task">{t.kanban.taskBadge}</span>
+          )}
           {f.module && <span className="badge">{f.module}</span>}
           {f.facets?.map((x) => (
             <Tag key={`f-${x}`} axis="facet" value={x} />

@@ -132,7 +132,7 @@ func clarifyDocs(repoDir, id string) ([]entityDoc, error) {
 
 	if id != "" {
 		switch {
-		case strings.HasPrefix(id, "F-"):
+		case domain.IsFeatureID(id):
 			f, err := store.LoadFeature(repoDir, id)
 			if err != nil {
 				return nil, err
@@ -362,7 +362,7 @@ func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 	}
 	next := content[:target.Offset] + marker + content[target.Offset+len(target.Raw):]
 
-	if strings.HasPrefix(id, "F-") {
+	if domain.IsFeatureID(id) {
 		name := strings.TrimSuffix(filepath.Base(doc), ".md")
 		if _, ok := featureDocFilenames[name]; ok {
 			if err := SaveFeatureDoc(repoDir, projDir, id, name, next); err != nil {

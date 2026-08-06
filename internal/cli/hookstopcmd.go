@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -64,7 +65,7 @@ func runHookStopCheck(cmd *cobra.Command) {
 	switch {
 	case strings.HasPrefix(id, "W-"):
 		msg = fmt.Sprintf("cerne: work %s is still active as this turn ends. Close it — `cerne work done %s --note \"<outcome>\"` (or `cerne work abandon %s --reason \"...\"`) — or leave it open deliberately if the work continues next turn.", id, id, id)
-	case strings.HasPrefix(id, "F-"):
+	case domain.IsFeatureID(id):
 		msg = fmt.Sprintf("cerne: feature %s is in development as this turn ends. Before stopping, reflect finished tasks in plan.md, accumulate evidence in result.md, and `cerne sync` — the board should show real progress, not the last session's snapshot.", id)
 	default:
 		return

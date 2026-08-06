@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/spectmpl"
 )
 
 func newFeatureCmd() *cobra.Command {
@@ -68,37 +67,8 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 }
 
 func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool) error {
-	body, err := readOptionalBody(cmd, file)
-	if err != nil {
-		return err
-	}
-	hasBody := strings.TrimSpace(body) != ""
-	hasContext := strings.TrimSpace(context) != ""
-	if hasBody && hasContext {
-		return fmt.Errorf("--file/stdin and --context are mutually exclusive: the full spec already carries the context")
-	}
-	if !hasBody && !hasContext {
-		return errFeatureContextRequired
-	}
-	ctx, err := resolveProject(dir)
-	if err != nil {
-		return err
-	}
-	specBody := body
-	if hasContext {
-		specBody = spectmpl.StubWithContext(title, context)
-	}
-	f, err := app.CreateFeatureWithSpec(ctx.repoDir, ctx.projDir, title, module, parent,
-		splitInforms(facet), splitInforms(component), specBody, force)
-	if err != nil {
-		return err
-	}
-	if hasBody {
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (candidate) with spec — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID)
-		return nil
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s created (candidate) with its context seeded into the spec. Next step: complete the spec ('cerne pull' materializes the draft).\n", f.ID)
-	return nil
+	return runFeatureLikeNew(cmd, dir, title, module, parent, facet, component, file, context, force,
+		app.CreateFeatureWithSpec)
 }
 
 func newFeatureRetagCmd(dir *string) *cobra.Command {
