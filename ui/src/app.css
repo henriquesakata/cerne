@@ -225,6 +225,8 @@ h2 {
 /* F-0195: pergunta dirigida ao humano — cor própria, distinta do débito de
    épico (badge-behind), que é aviso de processo e não pedido de resposta. */
 .badge-clarify { background: var(--purple-bg); color: var(--purple); border-color: var(--purple-border); }
+/* F-0202: colisão entre agentes — quem mais está nessa feature agora. */
+.badge-work { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .card-parent {
   display: block;
   margin-top: 0.2rem;

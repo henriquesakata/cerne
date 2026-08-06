@@ -1026,6 +1026,57 @@ func TestStateIncludesOpenClarificationCounts(t *testing.T) {
 	}
 }
 
+// F-0202: the board needs to see agent collisions without opening the CLI, so
+// /state carries the active W-items referencing each feature.
+func TestStateIncludesActiveWork(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateApproved)
+	now := time.Now().UTC()
+	for _, w := range []store.Work{
+		{ID: "W-0001", Title: "Investigar X", State: domain.WorkActive, Actor: "alice@host", Refs: []string{"F-0001"}, CreatedAt: now, UpdatedAt: now},
+		{ID: "W-0002", Title: "Investigar Y", State: domain.WorkActive, Actor: "bob@host", Refs: []string{"F-0001"}, CreatedAt: now, UpdatedAt: now},
+		{ID: "W-0003", Title: "Já terminou", State: domain.WorkDone, Actor: "alice@host", Refs: []string{"F-0001"}, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.SaveWork(repoDir, w); err != nil {
+			t.Fatalf("SaveWork %s: %v", w.ID, err)
+		}
+	}
+
+	var got struct {
+		ActiveWork map[string][]activeWorkItem `json:"active_work"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	items := got.ActiveWork["F-0001"]
+	if len(items) != 2 {
+		t.Fatalf("active_work[F-0001] = %+v, want 2 items (done work must not count)", items)
+	}
+	actors := map[string]bool{}
+	for _, it := range items {
+		actors[it.Actor] = true
+	}
+	if !actors["alice@host"] || !actors["bob@host"] {
+		t.Fatalf("active_work[F-0001] actors = %+v, want alice@host and bob@host", items)
+	}
+}
+
+func TestStateActiveWorkEmptyNotNull(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+
+	var raw map[string]json.RawMessage
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &raw)
+	body, ok := raw["active_work"]
+	if !ok {
+		t.Fatal("active_work missing from /state")
+	}
+	if string(body) != "{}" {
+		t.Fatalf("active_work = %s, want {}", body)
+	}
+}
+
 func TestStateOpenClarificationsEmptyNotNull(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)

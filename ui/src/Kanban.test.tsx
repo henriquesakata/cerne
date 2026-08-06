@@ -14,7 +14,10 @@ const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
   ...extra,
 })
 
-const state = (open?: Record<string, number>): StateResponse => ({
+const state = (
+  open?: Record<string, number>,
+  activeWork?: Record<string, { id: string; actor: string }[]>,
+): StateResponse => ({
   project: { name: 'Projeto Demo', modules: [] },
   features: [
     feature('F-0001'),
@@ -26,6 +29,7 @@ const state = (open?: Record<string, number>): StateResponse => ({
   runbooks: [],
   notes: [],
   ...(open ? { open_clarifications: open } : {}),
+  ...(activeWork ? { active_work: activeWork } : {}),
 })
 
 let payload: StateResponse = state()
@@ -88,5 +92,48 @@ describe('Kanban — badge de esclarecimento pendente (F-0195)', () => {
       const lane = document.querySelector('.epic-lane-cards')
       expect(lane?.querySelector('.badge-clarify')).toBeInTheDocument()
     })
+  })
+})
+
+describe('Kanban — sem coluna candidate (F-0202)', () => {
+  it('não renderiza a coluna de candidatas', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(screen.queryByText('Candidatas')).not.toBeInTheDocument()
+  })
+})
+
+describe('Kanban — badge de W-itens ativos (F-0202)', () => {
+  it('mostra o badge com a contagem e os atores no title', async () => {
+    payload = state(undefined, {
+      'F-0001': [
+        { id: 'W-0001', actor: 'alice@host' },
+        { id: 'W-0002', actor: 'bob@host' },
+      ],
+    })
+    render(<Kanban />)
+
+    const badge = await waitFor(() => {
+      const el = cardOf('F-0001')?.querySelector('.badge-work')
+      expect(el).toBeInTheDocument()
+      return el as HTMLElement
+    })
+    expect(badge).toHaveTextContent('2')
+    expect(badge).toHaveAttribute('title', expect.stringContaining('alice@host'))
+    expect(badge).toHaveAttribute('title', expect.stringContaining('bob@host'))
+  })
+
+  it('não desenha badge na feature sem W-item ativo', async () => {
+    payload = state(undefined, { 'F-0001': [{ id: 'W-0001', actor: 'alice@host' }] })
+    render(<Kanban />)
+
+    await waitFor(() => expect(cardOf('F-0002')).toBeInTheDocument())
+    expect(cardOf('F-0002')?.querySelector('.badge-work')).toBeNull()
+  })
+
+  it('renderiza o board sem o campo active_work', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(document.querySelectorAll('.badge-work')).toHaveLength(0)
   })
 })

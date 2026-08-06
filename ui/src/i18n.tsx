@@ -21,6 +21,7 @@ const ptBR = {
   nav: {
     dashboard: 'Dashboard',
     kanban: 'Kanban',
+    backlog: 'Backlog',
     manage: 'Gestão',
     decisions: 'Decisões',
     references: 'Referências',
@@ -178,6 +179,14 @@ const ptBR = {
     pendingClarify: (n: number) => `❓ ${n}`,
     pendingClarifyTitle: (n: number) =>
       `${n} esclarecimento(s) aguardando sua resposta`,
+    activeWork: (n: number) => `👤 ${n}`,
+    activeWorkTitle: (actors: string[]) =>
+      `Em andamento por: ${actors.join(', ')}`,
+  },
+  backlog: {
+    loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
+    count: (n: number) => `${n} candidata(s)`,
+    empty: 'Nenhuma candidata no momento — comece uma com "cerne feature new".',
   },
   palette: {
     placeholder: 'Buscar por código ou título…',
@@ -531,6 +540,7 @@ const en: Messages = {
   nav: {
     dashboard: 'Dashboard',
     kanban: 'Kanban',
+    backlog: 'Backlog',
     manage: 'Manage',
     decisions: 'Decisions',
     references: 'References',
@@ -685,6 +695,13 @@ const en: Messages = {
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
     pendingClarifyTitle: (n: number) => `${n} clarification(s) awaiting your answer`,
+    activeWork: (n: number) => `👤 ${n}`,
+    activeWorkTitle: (actors: string[]) => `In progress by: ${actors.join(', ')}`,
+  },
+  backlog: {
+    loadError: (e: string) => `Failed to load state: ${e}`,
+    count: (n: number) => `${n} candidate(s)`,
+    empty: 'No candidates right now — start one with "cerne feature new".',
   },
   palette: {
     placeholder: 'Search by id or title…',

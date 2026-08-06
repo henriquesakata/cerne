@@ -113,6 +113,9 @@ export type StateResponse = {
   // F-0195: marcadores [ESCLARECER] abertos por entidade viva, derivados dos
   // docs a cada request. Só entidades com pendência; ausente em servidor antigo.
   open_clarifications?: Record<string, number>
+  // F-0202: W-itens ativos por entidade referenciada (--ref), para o badge de
+  // colisão entre agentes. Ausente em servidor antigo.
+  active_work?: Record<string, { id: string; actor: string }[]>
 }
 
 export type FeatureDocs = {
