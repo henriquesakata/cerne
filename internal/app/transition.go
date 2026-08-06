@@ -62,6 +62,7 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 // lock_wait/fetch/push story correlates with the HTTP log line.
 func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
 	var out TransitionOutcome
+	var title string
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
 		return out, err
 	}
@@ -211,12 +212,14 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 		if len(propagated) > 0 {
 			msg += fmt.Sprintf(" (+ epic %s)", strings.Join(propagated, ", "))
 		}
+		title = f.Title
 		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated}
 		return msg, nil
 	})
 	if err != nil {
 		return TransitionOutcome{}, err
 	}
+	dispatchWebhook(projDir, id, "feature", string(action), string(out.From), string(out.To), title)
 	return out, nil
 }
 

@@ -78,6 +78,7 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 // the decision.superseded event and syncs the backend + docs.lock in projDir.
 func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcome, error) {
 	var out DecisionOutcome
+	var title string
 	if err := ValidateTransitionFlags(domain.ActionSupersede, by, reason); err != nil {
 		return out, err
 	}
@@ -114,12 +115,14 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
+		title = d.Title
 		out = DecisionOutcome{ID: id, From: oldState, To: newState}
 		return fmt.Sprintf("cerne: supersede %s", id), nil
 	})
 	if err != nil {
 		return DecisionOutcome{}, err
 	}
+	dispatchWebhook(projDir, id, "decision", string(domain.ActionSupersede), string(out.From), string(out.To), title)
 	return out, nil
 }
 

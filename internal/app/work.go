@@ -78,6 +78,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	if err != nil {
 		return store.Work{}, err
 	}
+	dispatchWebhook(projDir, w.ID, "work", "start", "", string(w.State), w.Title)
 	return w, nil
 }
 
@@ -92,6 +93,7 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 		return WorkOutcome{}, fmt.Errorf("--reason is required to abandon")
 	}
 	var out WorkOutcome
+	var title, actionName string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		w, err := store.LoadWork(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
@@ -131,12 +133,15 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
+		title = w.Title
+		actionName = string(action)
 		out = WorkOutcome{ID: id, From: oldState, To: newState}
 		return fmt.Sprintf("cerne: finish %s", id), nil
 	})
 	if err != nil {
 		return WorkOutcome{}, err
 	}
+	dispatchWebhook(projDir, id, "work", actionName, string(out.From), string(out.To), title)
 	return out, nil
 }
 
