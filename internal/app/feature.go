@@ -29,6 +29,15 @@ var ErrParentNotFound = errors.New("parent feature (epic) not found")
 // (superseded/rejected): new work is not filed under a dead epic.
 var ErrParentTerminal = errors.New("the parent feature (epic) is closed")
 
+// ErrParentRequired is returned when creating a task without a parent: a task
+// is an execution unit of a PRD, never free-floating (F-0203).
+var ErrParentRequired = errors.New("a task requires --parent (the F-/E- it decomposes)")
+
+// ErrParentNotCommitted is returned when a task's parent is still a candidate:
+// the task is born approved because the human gate was paid on the parent PRD,
+// which therefore must be past its own candidacy (F-0203).
+var ErrParentNotCommitted = errors.New("the parent feature is not committed yet (still candidate)")
+
 // ErrTitleFrozen is returned when renaming a feature in a terminal state
 // (implemented/rejected/superseded): its title is frozen history.
 var ErrTitleFrozen = errors.New("the feature's title is frozen")
@@ -64,6 +73,33 @@ func CreateFeature(repoDir, projDir, title, module, parent string, facets, compo
 // duplicate-registration guard (F-0147) for a consciously distinct problem —
 // the exact-title guard (F-0121) is never bypassed.
 func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force)
+}
+
+// CreateEpicWithSpec creates a declared epic (E-, F-0203): a full feature
+// lifecycle under its own id sequence — a semantic signal at birth for a PRD
+// that is known to decompose. Epic behavior itself stays structural (children),
+// never derived from the prefix.
+func CreateEpicWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
+	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force)
+}
+
+// CreateTaskWithSpec creates a task (T-, F-0203): an execution unit of a
+// committed PRD, born approved — the human gate was paid on the parent. The
+// parent is mandatory and must be past candidacy; every refusal happens before
+// anything is written.
+func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
+	if strings.TrimSpace(parent) == "" {
+		return store.Feature{}, ErrParentRequired
+	}
+	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force)
+}
+
+// createFeatureCore is the shared creation flow behind F-/E-/T- (F-0203). The
+// prefix decides only the id sequence and the two task rules: born approved and
+// committed-parent required. Everything else — guards, stub, event, sync — is
+// identical across the three.
+func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Feature{}, fmt.Errorf("the feature title cannot be empty")
@@ -93,7 +129,7 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 		if err != nil {
 			return "", err
 		}
-		id, err := store.NextID(repoDir, "F")
+		id, err := store.NextID(repoDir, prefix)
 		if err != nil {
 			return "", err
 		}
@@ -102,13 +138,26 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 				return "", err
 			}
 		}
+		state := domain.StateCandidate
+		if prefix == "T" {
+			// A task is born approved: its human gate is the parent PRD's, which
+			// therefore must be committed (past candidacy) itself.
+			p, err := store.LoadFeature(repoDir, parent)
+			if err != nil {
+				return "", err
+			}
+			if p.State == domain.StateCandidate {
+				return "", fmt.Errorf("%w: %s — approve the PRD before decomposing it", ErrParentNotCommitted, parent)
+			}
+			state = domain.StateApproved
+		}
 		now := time.Now().UTC()
 		f = store.Feature{
 			ID:         id,
 			Title:      title,
 			Module:     module,
 			Parent:     parent,
-			State:      domain.StateCandidate,
+			State:      state,
 			Facets:     normFacets,
 			Components: normComponents,
 			CreatedAt:  now,
