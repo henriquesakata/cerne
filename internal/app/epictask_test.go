@@ -167,3 +167,23 @@ func TestWorkRefAcceptsTask(t *testing.T) {
 		t.Fatalf("refs = %+v, want both kept", w.Refs)
 	}
 }
+
+// TestReparentMixedPrefixes pins criterion 7 (F-0203): reparent accepts a T-
+// under an F- and under an E- (ValidateParentLink untouched).
+func TestReparentMixedPrefixes(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved)
+	seedFeatureInState(t, repoDir, "E-0001", domain.StateApproved)
+	seedFeatureInState(t, repoDir, "T-0001", domain.StateApproved)
+
+	if err := SetFeatureParent(repoDir, projDir, "T-0001", "F-0001"); err != nil {
+		t.Fatalf("reparent T- under F-: %v", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, "T-0001", "E-0001"); err != nil {
+		t.Fatalf("reparent T- under E-: %v", err)
+	}
+	got, err := store.LoadFeature(repoDir, "T-0001")
+	if err != nil || got.Parent != "E-0001" {
+		t.Fatalf("parent = %q, %v; want E-0001", got.Parent, err)
+	}
+}
