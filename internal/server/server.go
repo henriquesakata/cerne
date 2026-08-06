@@ -119,6 +119,38 @@ type stateResponse struct {
 	// opening it. Derived from the docs on every request — never persisted. Only
 	// entities with at least one open marker; always present, never null.
 	OpenClarifications map[string]int `json:"open_clarifications"`
+	// ActiveWork lists the active W-items referencing each feature (F-0202), so
+	// the board can flag agent collisions without a CLI round-trip. Derived on
+	// every request — never persisted. Only entities with active work; always
+	// present, never null.
+	ActiveWork map[string][]activeWorkItem `json:"active_work"`
+}
+
+// activeWorkItem is one active W-item referencing a feature: enough to badge
+// the card and name who is working it.
+type activeWorkItem struct {
+	ID    string `json:"id"`
+	Actor string `json:"actor"`
+}
+
+// activeWorkByRef groups every active work by each of its referenced entity
+// ids. Best-effort by design, mirroring countOpenClarifications: a load
+// failure degrades to an empty map instead of breaking the whole board.
+func activeWorkByRef(repoDir string) map[string][]activeWorkItem {
+	byRef := map[string][]activeWorkItem{}
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return byRef
+	}
+	for _, w := range works {
+		if w.State != domain.WorkActive {
+			continue
+		}
+		for _, ref := range w.Refs {
+			byRef[ref] = append(byRef[ref], activeWorkItem{ID: w.ID, Actor: w.Actor})
+		}
+	}
+	return byRef
 }
 
 // countOpenClarifications tallies the open markers per live entity. Best-effort
@@ -184,6 +216,7 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		Notes:              notes,
 		Capabilities:       capabilities,
 		OpenClarifications: countOpenClarifications(repoDir),
+		ActiveWork:         activeWorkByRef(repoDir),
 	})
 }
 

@@ -113,6 +113,9 @@ export type StateResponse = {
   // F-0195: marcadores [ESCLARECER] abertos por entidade viva, derivados dos
   // docs a cada request. Só entidades com pendência; ausente em servidor antigo.
   open_clarifications?: Record<string, number>
+  // F-0202: W-itens ativos por entidade referenciada (--ref), para o badge de
+  // colisão entre agentes. Ausente em servidor antigo.
+  active_work?: Record<string, { id: string; actor: string }[]>
 }
 
 export type FeatureDocs = {
@@ -614,6 +617,49 @@ export async function ask(query: string, history: boolean): Promise<AskAnswer> {
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as AskAnswer
+}
+
+// ---- chat de solicitação de features no Backlog (F-0210) ----
+
+export type ChatMsg = { role: 'user' | 'assistant'; content: string }
+
+// ChatAnswer espelha o payload de POST /api/chat. answered é false quando o
+// projeto não tem um provider [llm] configurado (delegação): nenhuma
+// resposta é inventada.
+export type ChatAnswer = {
+  answered: boolean
+  needs_provider?: boolean
+  reply?: string
+}
+
+// postChat envia o transcript inteiro (o servidor é stateless — case 0210
+// decidiu reenviar em vez de manter sessão) e recebe a próxima fala do agente.
+export async function postChat(messages: ChatMsg[]): Promise<ChatAnswer> {
+  const r = await fetch(`${base()}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as ChatAnswer
+}
+
+// registerChatCandidate registra a candidata proposta pelo agente, só depois
+// da confirmação explícita do usuário no chat — mesmo core do createFeature
+// com spec (POST /api/chat/register → app.CreateFeatureWithSpec).
+export async function registerChatCandidate(
+  title: string,
+  specBody: string,
+  facets: string[] = [],
+  components: string[] = [],
+): Promise<CreateOutcome> {
+  const r = await fetch(`${base()}/chat/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, spec_body: specBody, facets, components }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true, feature: ((await r.json()) as { feature: Feature }).feature }
 }
 
 export type WikiPageRef = { name: string; rel: string }
