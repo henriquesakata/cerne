@@ -9,6 +9,7 @@ import NotificationBell from './NotificationBell'
 const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
   { href: '#/', key: 'dashboard' },
   { href: '#/kanban', key: 'kanban' },
+  { href: '#/backlog', key: 'backlog' },
   { href: '#/manage', key: 'manage' },
   { href: '#/decisions', key: 'decisions' },
   { href: '#/references', key: 'references' },
@@ -31,6 +32,7 @@ const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
 function activeHref(hash: string): string {
   // Kanban e detalhe de feature destacam Kanban; '#/' (dashboard) é o fallback.
   if (hash.startsWith('#/kanban') || hash.startsWith('#/f/')) return '#/kanban'
+  if (hash.startsWith('#/backlog')) return '#/backlog'
   if (hash.startsWith('#/manage') || hash.startsWith('#/new')) return '#/manage'
   if (hash.startsWith('#/decisions') || hash.startsWith('#/d/')) return '#/decisions'
   if (hash.startsWith('#/references') || hash.startsWith('#/r/')) return '#/references'

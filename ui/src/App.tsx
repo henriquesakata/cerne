@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import Kanban from './Kanban'
+import Backlog from './Backlog'
 import FeaturePage from './FeaturePage'
 import Nav from './Nav'
 import Decisions, { DecisionDetail } from './Decisions'
@@ -102,6 +103,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/manage') return <Manage />
   if (hash === '#/new') return <NewFeature />
   if (hash === '#/kanban') return <Kanban />
+  if (hash === '#/backlog') return <Backlog />
   // Tela inicial (F-0132): o dashboard responde "como está o projeto?".
   return <Dashboard />
 }
