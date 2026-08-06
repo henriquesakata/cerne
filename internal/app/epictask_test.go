@@ -128,3 +128,42 @@ func TestCreateTaskRefusals(t *testing.T) {
 		})
 	}
 }
+
+// TestTaskStartWithoutPlan pins criterion 4 (F-0203) end to end: a T- starts
+// with no plan of its own (gate waived, auto-work opens — the normal F-0146
+// flow), but completing with no real result still refuses.
+func TestTaskStartWithoutPlan(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "T-0001", domain.StateApproved, "spec.md")
+
+	out, err := TransitionFeature(repoDir, projDir, "T-0001", domain.ActionStart, "", "", nil)
+	if err != nil {
+		t.Fatalf("start of a task without plan must pass: %v", err)
+	}
+	if out.To != domain.StateInDevelopment {
+		t.Fatalf("state = %s, want in_development", out.To)
+	}
+	ws := loadWorks(t, repoDir)
+	if len(ws) != 1 || ws[0].Refs[0] != "T-0001" || !ws[0].Auto {
+		t.Fatalf("works = %+v, want one auto work ref T-0001", ws)
+	}
+	// The result stub scaffolded at start is not real content: complete refuses.
+	if _, err := TransitionFeature(repoDir, projDir, "T-0001", domain.ActionComplete, "", "", nil); !errors.Is(err, domain.ErrGateResultRequired) {
+		t.Fatalf("complete err = %v, want ErrGateResultRequired", err)
+	}
+}
+
+// TestWorkRefAcceptsTask pins the prefix routing (F-0203): --ref T-/E- resolve
+// as features in work registration.
+func TestWorkRefAcceptsTask(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "T-0001", domain.StateApproved)
+	seedFeatureInState(t, repoDir, "E-0001", domain.StateApproved)
+	w, err := StartWork(repoDir, projDir, "Investigação", []string{"T-0001", "E-0001"}, "", false, nil)
+	if err != nil {
+		t.Fatalf("StartWork: %v", err)
+	}
+	if len(w.Refs) != 2 {
+		t.Fatalf("refs = %+v, want both kept", w.Refs)
+	}
+}

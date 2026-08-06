@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -44,7 +45,7 @@ func TerminalSuccessor(repoDir, id string) (string, bool, error) {
 // a mention may name an id that no longer resolves.
 func supersededByOf(repoDir, id string) (string, bool, error) {
 	switch {
-	case strings.HasPrefix(id, "F-"):
+	case domain.IsFeatureID(id):
 		f, err := store.LoadFeature(repoDir, id)
 		return supersededField(f.SupersededBy, err)
 	case strings.HasPrefix(id, "D-"):
