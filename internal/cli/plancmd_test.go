@@ -23,7 +23,7 @@ import (
 func TestBuildPlanDraftPrompt(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateApproved}
 	spec := "## Objetivo e critérios de aceitação\n\n1. QUANDO o extrato chega O SISTEMA DEVE conciliar."
-	prompt := BuildPlanDraftPrompt(f, spec, "# Conciliação bancária\n\n> Plano pendente")
+	prompt := BuildPlanDraftPrompt(f, spec, "# Conciliação bancária\n\n> Plano pendente", nil)
 
 	for _, want := range []string{"F-0007", "Conciliação bancária", "finance"} {
 		if !strings.Contains(prompt, want) {
@@ -45,6 +45,24 @@ func TestBuildPlanDraftPrompt(t *testing.T) {
 	for _, want := range []string{spectmpl.AmbiguityMarker, "teste primeiro", "número do critério", "Dimensione pelo trabalho", "ATENDIDO/PENDENTE"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestBuildPlanDraftPromptListsChildren (F-0213 crit.3): when the feature is an
+// epic (has children), the prompt lists the roster (id, title, state) and asks
+// for the canonical execution-map format.
+func TestBuildPlanDraftPromptListsChildren(t *testing.T) {
+	f := store.Feature{ID: "F-0211", Title: "Épico", State: domain.StateApproved}
+	children := []store.Feature{
+		{ID: "T-0001", Title: "room manager no server", State: domain.StateImplemented},
+		{ID: "T-0003", Title: "UI WarRoom", State: domain.StateApproved},
+	}
+	prompt := BuildPlanDraftPrompt(f, "", "", children)
+
+	for _, want := range []string{"T-0001", "room manager no server", "implemented", "T-0003", "UI WarRoom", "approved", "Mapa de execução", "Etapa 1"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/plantmpl"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -617,4 +618,69 @@ func TestCreateFeatureConcurrent(t *testing.T) {
 			t.Fatalf("spec of %s on origin: ok=%v content=%q — want the seeded body", ids[i], ok, spec)
 		}
 	}
+}
+
+// F-0213 crit.1: approving an epic (a feature with children already minted)
+// scaffolds its plan.md with the execution map built from those children.
+func TestApproveEpicWithChildrenScaffoldsExecutionMap(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child1, err := CreateFeature(repoDir, projDir, "Fase 1", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child1: %v", err)
+	}
+	child2, err := CreateFeature(repoDir, projDir, "Fase 2", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child2: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, epic.ID, "spec", realDoc(epic.ID)); err != nil {
+		t.Fatalf("save spec: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, epic.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve epic: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+	for _, want := range []string{
+		"Etapa 1: " + child1.ID,
+		"Etapa 2: " + child2.ID,
+		"TODO: agrupe em etapas",
+	} {
+		if !strings.Contains(plan, want) {
+			t.Fatalf("plan.md missing %q:\n%s", want, plan)
+		}
+	}
+}
+
+// F-0213 crit.2: a plain feature (no children) keeps the unchanged plan stub.
+func TestApproveFeatureWithoutChildrenPlanUnchanged(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeature(repoDir, projDir, "Feature simples", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "spec", realDoc(f.ID)); err != nil {
+		t.Fatalf("save spec: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, f.ID, "plan.md")
+	want := "---\ncerne_id: " + f.ID + "\n---\n\n" + plantmpl.Stub(f.Title)
+	if plan != want {
+		t.Fatalf("plan.md changed for a childless feature:\ngot:\n%s\nwant:\n%s", plan, want)
+	}
+}
+
+func readFeatureDocFile(t *testing.T, repoDir, id, file string) string {
+	t.Helper()
+	data, err := os.ReadFile(FeatureDocPath(repoDir, id, file))
+	if err != nil {
+		t.Fatalf("read %s/%s: %v", id, file, err)
+	}
+	return string(data)
 }

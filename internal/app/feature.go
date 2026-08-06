@@ -463,8 +463,28 @@ func writePlanStub(repoDir, id, title string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.Stub(title)
+	children, err := epicChildren(repoDir, id)
+	if err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.StubForEpic(title, children)
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// epicChildren returns id's children (if any) as plantmpl.EpicChild, in the
+// same order store.ChildrenByParent sorts them (by ID) — the roster the plan
+// scaffold's execution map is built from.
+func epicChildren(repoDir, id string) ([]plantmpl.EpicChild, error) {
+	feats, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	kids := store.ChildrenByParent(feats)[id]
+	out := make([]plantmpl.EpicChild, len(kids))
+	for i, k := range kids {
+		out[i] = plantmpl.EpicChild{ID: k.ID, Title: k.Title}
+	}
+	return out, nil
 }
 
 // writeResultStub creates content/features/<id>/result.md scaffolded from the
