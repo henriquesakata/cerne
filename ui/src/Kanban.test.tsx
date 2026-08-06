@@ -119,3 +119,49 @@ describe('Kanban — chips de papel épico/task (F-0203)', () => {
     expect(cardOf('F-0001')?.querySelector('.badge-epic')).toBeInTheDocument()
   })
 })
+
+describe('Kanban — chip de prioridade, handle do owner e ordenação (F-0204)', () => {
+  // Critério 4: chip de prioridade e handle do owner aparecem no card.
+  it('renderiza o chip de prioridade e o handle do owner', async () => {
+    payload = {
+      ...state(),
+      features: [feature('F-0001', { priority: 'p0', owner: 'ana' })],
+    }
+    render(<Kanban />)
+
+    const card = await waitFor(() => {
+      const el = cardOf('F-0001')
+      expect(el).toBeInTheDocument()
+      return el as HTMLElement
+    })
+    expect(card.querySelector('.badge-priority')).toHaveTextContent('p0')
+    expect(card).toHaveTextContent('@ana')
+  })
+
+  // Critério 4 (sem os campos): nenhum chip/handle desenhado.
+  it('não desenha chip nem handle quando owner/priority ausentes', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(cardOf('F-0001')?.querySelector('.badge-priority')).toBeNull()
+    expect(cardOf('F-0001')?.querySelector('.card-owner')).toBeNull()
+  })
+
+  // Critério 4: a coluna ordena por prioridade — p0 primeiro, sem prioridade
+  // por último — independentemente da ordem de chegada.
+  it('ordena os cards da coluna por prioridade (p0 primeiro, sem prioridade por último)', async () => {
+    payload = {
+      ...state(),
+      features: [
+        feature('F-0001', { state: 'candidate', priority: 'p2' }),
+        feature('F-0002', { state: 'candidate', priority: 'p0' }),
+        feature('F-0003', { state: 'candidate' }),
+      ],
+    }
+    render(<Kanban />)
+
+    await waitFor(() => expect(cardOf('F-0002')).toBeInTheDocument())
+    const column = cardOf('F-0002')?.closest('.column')
+    const ids = Array.from(column?.querySelectorAll('.card-id') ?? []).map((el) => el.textContent)
+    expect(ids).toEqual(['F-0002', 'F-0001', 'F-0003'])
+  })
+})

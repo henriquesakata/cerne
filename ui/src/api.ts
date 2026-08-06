@@ -31,6 +31,8 @@ export type Feature = {
   delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
   delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
   capabilities?: string[] // F-0188: C- ids da taxonomia funcional
+  owner?: string // F-0204: responsável (texto livre)
+  priority?: string // F-0204: p0..p3 (conjunto fechado)
   created_at: string
   updated_at: string
 }

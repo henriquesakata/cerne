@@ -127,6 +127,20 @@ type featureRow struct {
 	ID, State, Parent, Module, Title, Docs string
 }
 
+// ownerPrioritySuffix renders a feature's title with its owner/priority
+// (F-0204) appended as "[owner] [pN]" markers — only the markers present are
+// shown, and a feature with neither renders its plain title unchanged.
+func ownerPrioritySuffix(f store.Feature) string {
+	title := f.Title
+	if f.Owner != "" {
+		title += " [" + f.Owner + "]"
+	}
+	if f.Priority != "" {
+		title += " [" + f.Priority + "]"
+	}
+	return title
+}
+
 // deliveryLinks renders a feature's delivery URLs (F-0179) as clickable
 // markdown, " · "-joined; empty when the feature carries none.
 func deliveryLinks(f store.Feature) string {
@@ -222,7 +236,7 @@ func Materialize(repoDir, docsDir, scope string, okf bool) (map[string]string, e
 			if scope != "" && f.Module != scope {
 				continue
 			}
-			row := featureRow{ID: f.ID, State: string(f.State), Parent: f.Parent, Module: f.Module, Title: f.Title}
+			row := featureRow{ID: f.ID, State: string(f.State), Parent: f.Parent, Module: f.Module, Title: ownerPrioritySuffix(f)}
 			if featureIsCurrent(f) {
 				docs, err := copyFeatureDocs(repoDir, docsDir, f, okf, manifest, descs)
 				if err != nil {

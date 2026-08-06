@@ -35,6 +35,18 @@ const CLOSED_COLUMNS: FeatureState[] = ['superseded', 'rejected']
 
 const isClosed = (s: FeatureState) => s === 'superseded' || s === 'rejected'
 
+// PRIORITY_ORDER ranks p0..p3 (F-0204); a missing/unrecognized priority sorts
+// last, mirroring the CLI's `feature list --sort priority`.
+const PRIORITY_ORDER = ['p0', 'p1', 'p2', 'p3']
+const priorityRank = (p?: string) => {
+  const i = p ? PRIORITY_ORDER.indexOf(p) : -1
+  return i < 0 ? PRIORITY_ORDER.length : i
+}
+// sortByPriority orders a list of cards p0 first, unset last — stable within
+// the same rank (keeps the incoming, ID-sorted order).
+const sortByPriority = (fs: Feature[]) =>
+  [...fs].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))
+
 // toggleIn returns a handler that adds/removes a value from a Set state,
 // always producing a fresh Set so React sees the change.
 function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
@@ -257,7 +269,7 @@ function Columns({
               {t.kanban.columnLabels[s]} <span className="column-count">{fs.length}</span>
             </h2>
             {fs.length === 0 && <p className="column-empty">—</p>}
-            {fs.map((f) => (
+            {sortByPriority(fs).map((f) => (
               <Card
                 key={f.id}
                 feature={f}
@@ -333,7 +345,7 @@ function EpicBoard({
             </h2>
             <div className="epic-lane-cards">
               {kids.length === 0 && <p className="column-empty">—</p>}
-              {kids.map((f) => (
+              {sortByPriority(kids).map((f) => (
                 <Card
                   key={f.id}
                   feature={f}
@@ -352,7 +364,7 @@ function EpicBoard({
             {t.kanban.noEpic} <span className="column-count">{standalone.length}</span>
           </h2>
           <div className="epic-lane-cards">
-            {standalone.map((f) => (
+            {sortByPriority(standalone).map((f) => (
               <Card
                 key={f.id}
                 feature={f}
@@ -412,8 +424,10 @@ function Card({
           </span>
         )}
         {feature.module && <span className="badge">{feature.module}</span>}
+        {feature.priority && <span className="badge badge-priority">{feature.priority}</span>}
       </span>
       <span className="card-title">{feature.title}</span>
+      {feature.owner && <span className="card-owner">@{feature.owner}</span>}
       {hasTags && (
         <span className="note-tags">
           {feature.facets?.map((f) => (

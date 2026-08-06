@@ -31,6 +31,8 @@ func TestFeatureRoundTrip(t *testing.T) {
 	want.Parent = "F-0003"
 	want.DeliveryCommitURL = "https://gitlab.example/repo/-/commit/abc1234"
 	want.DeliveryMRURL = "https://gitlab.example/repo/-/merge_requests/7"
+	want.Owner = "ana"
+	want.Priority = "p1"
 	if err := SaveFeature(dir, want); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
@@ -41,12 +43,39 @@ func TestFeatureRoundTrip(t *testing.T) {
 	if got.ID != want.ID || got.Title != want.Title || got.Module != want.Module ||
 		got.State != want.State || got.SupersededBy != want.SupersededBy || got.Reason != want.Reason ||
 		got.Parent != want.Parent ||
-		got.DeliveryCommitURL != want.DeliveryCommitURL || got.DeliveryMRURL != want.DeliveryMRURL {
+		got.DeliveryCommitURL != want.DeliveryCommitURL || got.DeliveryMRURL != want.DeliveryMRURL ||
+		got.Owner != want.Owner || got.Priority != want.Priority {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("times: got %v / %v, want %v / %v",
 			got.CreatedAt, got.UpdatedAt, want.CreatedAt, want.UpdatedAt)
+	}
+}
+
+// TestFeatureLoadLegacyWithoutOwnerPriority pins F-0204's criterion 6: a
+// feature file written before owner/priority existed (no keys at all) loads
+// cleanly with both fields at their zero value — no migration needed.
+func TestFeatureLoadLegacyWithoutOwnerPriority(t *testing.T) {
+	dir := t.TempDir()
+	legacy := testFeature("F-0009")
+	if err := SaveFeature(dir, legacy); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	path := filepath.Join(dir, "entities", "features", "F-0009.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Contains(string(data), "owner") || strings.Contains(string(data), "priority") {
+		t.Fatalf("legacy fixture unexpectedly carries owner/priority: %s", data)
+	}
+	got, err := LoadFeature(dir, "F-0009")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if got.Owner != "" || got.Priority != "" {
+		t.Fatalf("got Owner=%q Priority=%q, want both empty", got.Owner, got.Priority)
 	}
 }
 

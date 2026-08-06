@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,6 +13,16 @@ import (
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
 )
+
+// priorityRank orders domain.ValidPriorities (p0..p3) by index; a missing or
+// unrecognized priority sorts last, so unprioritized features never jump the
+// queue (F-0204).
+func priorityRank(p string) int {
+	if i := slices.Index(domain.ValidPriorities, p); i >= 0 {
+		return i
+	}
+	return len(domain.ValidPriorities)
+}
 
 // featureStateOrder is the canonical, stable list of feature states — used to
 // validate --state and to render the "valid: …" hint. Kept in lifecycle order
@@ -27,27 +38,30 @@ var featureStateOrder = []domain.FeatureState{
 }
 
 func newFeatureListCmd(dir *string) *cobra.Command {
-	var state, module, parent, facet, component string
+	var state, module, parent, facet, component, owner, sort string
 	var all, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List features with filters (--state/--module/--parent/--facet/--component)",
+		Short: "List features with filters (--state/--module/--parent/--facet/--component/--owner)",
 		Long: "Lists features read straight from the backend (store), not the '.docs/' projection — so it sees the " +
 			"board even when '.docs/' is stale (no 'cerne pull'). One feature per line: id, state " +
-			"(English, the same value as --state), title and markers (module, facet/component, epic, successor). " +
-			"By default hides the terminals (superseded/rejected); --all includes them, and an explicit terminal --state " +
-			"shows them too. Filters --state/--module/--parent/--facet/--component combine with logical AND. " +
-			"--json for structured output (honors the filters).",
+			"(English, the same value as --state), title and markers (module, facet/component, epic, successor, " +
+			"owner/priority). By default hides the terminals (superseded/rejected); --all includes them, and an " +
+			"explicit terminal --state shows them too. Filters --state/--module/--parent/--facet/--component/--owner " +
+			"combine with logical AND. --sort priority orders p0..p3 first, unset priority last. --json for " +
+			"structured output (honors the filters and the sort).",
 		Example: "  cerne feature list                         # everything but history (superseded/rejected)\n" +
 			"  cerne feature list --state in_development   # only what is in development\n" +
 			"  cerne feature list --module gitback --json  # filtered by module, machine-readable\n" +
 			"  cerne feature list --facet infra            # by nature (axis D-0003)\n" +
 			"  cerne feature list --component gitback       # by subsystem/tool\n" +
 			"  cerne feature list --parent F-0050          # the children of an epic\n" +
+			"  cerne feature list --owner ana              # filtered by responsible (F-0204)\n" +
+			"  cerne feature list --sort priority          # p0 first, unset last (F-0204)\n" +
 			"  cerne feature list --all                    # includes superseded/rejected",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureList(cmd, *dir, state, module, parent, facet, component, all, asJSON)
+			return runFeatureList(cmd, *dir, state, module, parent, facet, component, owner, sort, all, asJSON)
 		},
 	}
 	cmd.Flags().StringVar(&state, "state", "", "filter by exact state (candidate|approved|in_development|implemented|done|superseded|rejected)")
@@ -55,12 +69,17 @@ func newFeatureListCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&parent, "parent", "", "filter by the children of this epic (e.g. F-0050)")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")
 	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. gitback)")
+	cmd.Flags().StringVar(&owner, "owner", "", "filter by owner (e.g. ana, F-0204)")
+	cmd.Flags().StringVar(&sort, "sort", "", "sort order: priority (p0..p3 first, unset last, F-0204)")
 	cmd.Flags().BoolVar(&all, "all", false, "include superseded/rejected features (history)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
 }
 
-func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, component string, all, asJSON bool) error {
+func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, component, owner, sortBy string, all, asJSON bool) error {
+	if sortBy != "" && sortBy != "priority" {
+		return fmt.Errorf("invalid --sort: %q (valid: priority)", sortBy)
+	}
 	// Normalize and validate --state up front so a typo ('dev') fails loudly
 	// instead of silently listing nothing.
 	stateQ := domain.FeatureState(strings.ToLower(strings.TrimSpace(state)))
@@ -73,6 +92,7 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 	// so '--facet Infra'/'--component Gitback' match what's persisted.
 	facetQ := strings.ToLower(strings.TrimSpace(facet))
 	compQ := slug.Make(component)
+	ownerQ := strings.ToLower(strings.TrimSpace(owner))
 
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -109,7 +129,16 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 		if compQ != "" && !slices.Contains(f.Components, compQ) {
 			continue
 		}
+		if ownerQ != "" && strings.ToLower(f.Owner) != ownerQ {
+			continue
+		}
 		shown = append(shown, f)
+	}
+
+	if sortBy == "priority" {
+		sort.SliceStable(shown, func(i, j int) bool {
+			return priorityRank(shown[i].Priority) < priorityRank(shown[j].Priority)
+		})
 	}
 
 	w := cmd.OutOrStdout()
@@ -122,7 +151,7 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 	}
 
 	if len(shown) == 0 {
-		noFilter := state == "" && module == "" && parent == "" && facet == "" && component == "" && !all
+		noFilter := state == "" && module == "" && parent == "" && facet == "" && component == "" && owner == "" && !all
 		if noFilter && len(features) == 0 {
 			fmt.Fprintln(w, "No features yet. Create the first one with 'cerne feature new'.")
 		} else {
@@ -154,6 +183,12 @@ func featureListLine(f store.Feature) string {
 	}
 	if f.Parent != "" {
 		marks = append(marks, "epic "+f.Parent)
+	}
+	if f.Owner != "" {
+		marks = append(marks, "owner "+f.Owner)
+	}
+	if f.Priority != "" {
+		marks = append(marks, "priority "+f.Priority)
 	}
 	if f.SupersededBy != "" {
 		marks = append(marks, "→ "+f.SupersededBy)

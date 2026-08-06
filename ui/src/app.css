@@ -235,6 +235,10 @@ h2 {
   color: var(--faint);
 }
 
+/* F-0204: prioridade (chip) e owner (handle) no card. */
+.badge-priority { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+.card-owner { display: block; margin-top: 0.1rem; font-size: 0.78rem; color: var(--muted); }
+
 /* group-by-epic board (kanban) */
 .epics-board { display: flex; flex-direction: column; gap: 1rem; }
 .epic-lane { border: 1px solid var(--border-warm); border-radius: 10px; padding: 0.75rem; background: var(--surface-tint); }
