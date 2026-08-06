@@ -104,6 +104,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           return n
         })
         apply(e.newValue)
+        window.location.hash = ''
       }
     }
     window.addEventListener('storage', onStorage)
@@ -119,6 +120,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       return n
     })
     apply(pid)
+    window.location.hash = ''
   }
 
   if (!ready) return <p className="status">{t.live.loading}</p>
