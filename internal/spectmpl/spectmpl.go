@@ -77,6 +77,10 @@ schemas, endpoints, eventos). Inclua o HOW — não o omita. -->
 ## Verificação
 <!-- Plano de testes (TDD), 1:1 com os critérios de aceitação. -->
 
+## Execução recomendada (agente)
+<!-- Capacidade de modelo sugerida (vocabulário genérico, coerente com a linha **Nível:**) e esforço.
+Tarefas a manter no mesmo agente (contexto compartilhado) e por quê; tarefas separáveis. -->
+
 ## Fora de escopo
 <!-- O que NÃO será feito agora e por quê (ou o que vira follow-up). -->
 `

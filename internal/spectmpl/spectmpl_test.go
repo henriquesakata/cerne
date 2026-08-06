@@ -68,6 +68,26 @@ func TestBodyHasCapabilityLevelGuidance(t *testing.T) {
 	}
 }
 
+// TestBodyHasAgentExecutionSection pins F-0207 criterion 1: "Execução
+// recomendada (agente)" sits between Verificação and Fora de escopo, outside
+// Sections (F-0207 fork: Body-only, so incomplete-doc never requires it).
+func TestBodyHasAgentExecutionSection(t *testing.T) {
+	verificacao := strings.Index(spectmpl.Body, "## Verificação")
+	agente := strings.Index(spectmpl.Body, "## Execução recomendada (agente)")
+	foraDeEscopo := strings.Index(spectmpl.Body, "## Fora de escopo")
+	if agente < 0 {
+		t.Fatalf("Body missing '## Execução recomendada (agente)' section")
+	}
+	if !(verificacao < agente && agente < foraDeEscopo) {
+		t.Fatalf("agent-execution section out of place (verificacao=%d agente=%d foraDeEscopo=%d)", verificacao, agente, foraDeEscopo)
+	}
+	for _, s := range spectmpl.Sections {
+		if s == "Execução recomendada (agente)" {
+			t.Fatalf("Execução recomendada (agente) must stay out of Sections (F-0207)")
+		}
+	}
+}
+
 // TestStub composes the scaffold cerne writes for a new feature: title heading
 // then the template body.
 func TestStub(t *testing.T) {

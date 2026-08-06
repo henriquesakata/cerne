@@ -49,6 +49,14 @@ func TestBuildSpecDraftPrompt(t *testing.T) {
 			t.Fatalf("prompt missing capability-level guidance %q:\n%s", want, prompt)
 		}
 	}
+	// F-0207 criterion 3: the prompt asks for the agent-execution section too,
+	// right after Verificação (mirrors spectmpl.Body's placement).
+	if i, j := strings.Index(prompt, "## Verificação"), strings.Index(prompt, "## Execução recomendada (agente)"); i < 0 || j < 0 || j < i {
+		t.Fatalf("prompt missing '## Execução recomendada (agente)' after Verificação:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "mesmo agente") {
+		t.Fatalf("prompt missing same-agent-grouping guidance:\n%s", prompt)
+	}
 }
 
 // TestSpecDraftByoKeyWritesAndCommits drives `cerne spec draft` in byo-key mode:
