@@ -59,6 +59,33 @@ type Config struct {
 	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
 	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
 	Webhook        WebhookConfig   `toml:"webhook"`   // F-0206: HTTP POST on every entity state transition
+	Agent          AgentConfig     `toml:"agent"`     // F-0210: domain persona for the Backlog chat
+}
+
+// AgentConfig is the optional [agent] block of .cernerc (F-0210): the domain
+// persona the Backlog chat assumes (e.g. a finance analyst on a finance
+// project). Profile is inline text; ProfileFile is a path, relative to the
+// project root, to a committable persona doc — when both are set, ProfileFile
+// wins (the versioned, reviewable form). Absent means a neutral
+// requirements-analyst persona (see app.DefaultAgentPersona).
+type AgentConfig struct {
+	Profile     string `toml:"profile,omitempty"`
+	ProfileFile string `toml:"profile_file,omitempty"`
+}
+
+// Resolve returns the persona text: ProfileFile's content (read relative to
+// projDir) when set, else Profile verbatim, else "" (the caller falls back to
+// the default persona). A ProfileFile that cannot be read is a real config
+// error, not a silent empty persona.
+func (a AgentConfig) Resolve(projDir string) (string, error) {
+	if a.ProfileFile != "" {
+		data, err := os.ReadFile(filepath.Join(projDir, a.ProfileFile))
+		if err != nil {
+			return "", fmt.Errorf("[agent] profile_file: %w", err)
+		}
+		return string(data), nil
+	}
+	return a.Profile, nil
 }
 
 // WebhookConfig is the optional [webhook] block of .cernerc (F-0206). Absent
@@ -280,6 +307,7 @@ func SaveConfig(dir string, c Config) error {
 		Telemetry                *TelemetryConfig    `toml:"telemetry,omitempty"`
 		Delivery                 *DeliveryConfig     `toml:"delivery,omitempty"`
 		Webhook                  *WebhookConfig      `toml:"webhook,omitempty"`
+		Agent                    *AgentConfig        `toml:"agent,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
@@ -305,6 +333,10 @@ func SaveConfig(dir string, c Config) error {
 	if c.Webhook != (WebhookConfig{}) {
 		hook := c.Webhook
 		w.Webhook = &hook
+	}
+	if c.Agent != (AgentConfig{}) {
+		agent := c.Agent
+		w.Agent = &agent
 	}
 	data, err := toml.Marshal(w)
 	if err != nil {

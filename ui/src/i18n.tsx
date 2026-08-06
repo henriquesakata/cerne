@@ -21,6 +21,7 @@ const ptBR = {
   nav: {
     dashboard: 'Dashboard',
     kanban: 'Kanban',
+    backlog: 'Backlog',
     manage: 'Gestão',
     decisions: 'Decisões',
     references: 'Referências',
@@ -183,6 +184,27 @@ const ptBR = {
     pendingClarify: (n: number) => `❓ ${n}`,
     pendingClarifyTitle: (n: number) =>
       `${n} esclarecimento(s) aguardando sua resposta`,
+    activeWork: (n: number) => `👤 ${n}`,
+    activeWorkTitle: (actors: string[]) =>
+      `Em andamento por: ${actors.join(', ')}`,
+  },
+  backlog: {
+    loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
+    count: (n: number) => `${n} candidata(s)`,
+    empty: 'Nenhuma candidata no momento — comece uma com "cerne feature new".',
+  },
+  backlogChat: {
+    title: 'Converse com o agente',
+    intro: 'Descreva o que você precisa — o agente conhece o domínio e o estado atual do projeto.',
+    placeholder: 'Descreva o que você precisa…',
+    send: 'Enviar',
+    thinking: 'Pensando…',
+    needsProvider:
+      'Configure um provider de IA (claude-cli ou byo-key) em .cernerc — [llm] — para conversar com o agente.',
+    proposalTitle: 'Título',
+    proposalBody: 'Spec proposta',
+    register: 'Registrar candidata',
+    registering: 'Registrando…',
   },
   palette: {
     placeholder: 'Buscar por código ou título…',
@@ -536,6 +558,7 @@ const en: Messages = {
   nav: {
     dashboard: 'Dashboard',
     kanban: 'Kanban',
+    backlog: 'Backlog',
     manage: 'Manage',
     decisions: 'Decisions',
     references: 'References',
@@ -695,6 +718,26 @@ const en: Messages = {
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
     pendingClarifyTitle: (n: number) => `${n} clarification(s) awaiting your answer`,
+    activeWork: (n: number) => `👤 ${n}`,
+    activeWorkTitle: (actors: string[]) => `In progress by: ${actors.join(', ')}`,
+  },
+  backlog: {
+    loadError: (e: string) => `Failed to load state: ${e}`,
+    count: (n: number) => `${n} candidate(s)`,
+    empty: 'No candidates right now — start one with "cerne feature new".',
+  },
+  backlogChat: {
+    title: 'Talk to the agent',
+    intro: "Describe what you need — the agent knows the project's domain and current state.",
+    placeholder: 'Describe what you need…',
+    send: 'Send',
+    thinking: 'Thinking…',
+    needsProvider:
+      'Configure an AI provider (claude-cli or byo-key) in .cernerc — [llm] — to talk to the agent.',
+    proposalTitle: 'Title',
+    proposalBody: 'Proposed spec',
+    register: 'Register candidate',
+    registering: 'Registering…',
   },
   palette: {
     placeholder: 'Search by id or title…',

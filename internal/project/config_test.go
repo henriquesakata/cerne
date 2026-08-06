@@ -150,6 +150,80 @@ func TestConfigDeliveryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigAgentRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	want := Config{ProjectID: "cerne", Backend: "/tmp/backend",
+		Agent: AgentConfig{Profile: "Você é um analista financeiro."}}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Agent.Profile != want.Agent.Profile {
+		t.Fatalf("Agent.Profile: got %q, want %q", got.Agent.Profile, want.Agent.Profile)
+	}
+	// Absent block ⇒ zero value, and the saved TOML carries no empty [agent] table.
+	if err := SaveConfig(dir, Config{ProjectID: "x", Backend: "/b"}); err != nil {
+		t.Fatalf("SaveConfig default: %v", err)
+	}
+	got, _, err = LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if got.Agent != (AgentConfig{}) {
+		t.Fatalf("Agent must default to zero, got %+v", got.Agent)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".cernerc"))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	if strings.Contains(string(data), "[agent]") {
+		t.Fatalf("zero Agent must not emit an [agent] table:\n%s", data)
+	}
+}
+
+func TestAgentConfigResolve(t *testing.T) {
+	projDir := t.TempDir()
+
+	// Absent → empty persona (the caller falls back to the default neutral one).
+	if got, err := (AgentConfig{}).Resolve(projDir); err != nil || got != "" {
+		t.Fatalf("Resolve absent = %q, %v; want \"\", nil", got, err)
+	}
+
+	// Inline profile → returned verbatim.
+	inline := AgentConfig{Profile: "Você é um analista financeiro."}
+	if got, err := inline.Resolve(projDir); err != nil || got != inline.Profile {
+		t.Fatalf("Resolve inline = %q, %v; want %q, nil", got, err, inline.Profile)
+	}
+
+	// profile_file → read relative to projDir.
+	if err := os.WriteFile(filepath.Join(projDir, "persona.md"), []byte("Persona do arquivo.\n"), 0o644); err != nil {
+		t.Fatalf("write persona.md: %v", err)
+	}
+	file := AgentConfig{ProfileFile: "persona.md"}
+	got, err := file.Resolve(projDir)
+	if err != nil {
+		t.Fatalf("Resolve profile_file: %v", err)
+	}
+	if got != "Persona do arquivo.\n" {
+		t.Fatalf("Resolve profile_file = %q, want file content", got)
+	}
+
+	// profile_file pointing at a missing file → error, not a silent empty persona.
+	missing := AgentConfig{ProfileFile: "nope.md"}
+	if _, err := missing.Resolve(projDir); err == nil {
+		t.Fatalf("Resolve missing profile_file: want error, got nil")
+	}
+
+	// Both set → profile_file wins (the versioned, reviewable form).
+	both := AgentConfig{Profile: "inline", ProfileFile: "persona.md"}
+	if got, err := both.Resolve(projDir); err != nil || got != "Persona do arquivo.\n" {
+		t.Fatalf("Resolve both = %q, %v; want file content wins", got, err)
+	}
+}
+
 func TestConfigModulePathsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Config{

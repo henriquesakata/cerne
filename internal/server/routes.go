@@ -104,6 +104,12 @@ func dataRoutes() []dataRoute {
 		{"POST", "/ask", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 			handleAsk(w, r, repoDir, projDir, projectID)
 		}},
+		{"POST", "/chat", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleChat(w, r, repoDir, projDir)
+		}},
+		{"POST", "/chat/register", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleChatRegister(w, r, repoDir, projDir)
+		}},
 		{"GET", "/config/llm", true, func(w http.ResponseWriter, _ *http.Request, _, projDir, _ string) {
 			handleLLMConfigGet(w, projDir)
 		}},
@@ -124,6 +130,26 @@ func dataRoutes() []dataRoute {
 		}},
 		{"GET", "/events", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleEvents(w, repoDir)
+		}},
+		// War room (T-0001): operational + local to the running server
+		// process — never exposed by `cerne serve` (remote=false).
+		{"POST", "/rooms", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomOpen(w, r, projectID)
+		}},
+		{"GET", "/rooms", false, func(w http.ResponseWriter, _ *http.Request, _, _, projectID string) {
+			handleRoomList(w, projectID)
+		}},
+		{"POST", "/rooms/{id}/join", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomJoin(w, r, projectID, r.PathValue("id"))
+		}},
+		{"POST", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomSay(w, r, projectID, r.PathValue("id"))
+		}},
+		{"GET", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomRead(w, r, projectID, r.PathValue("id"))
+		}},
+		{"POST", "/rooms/{id}/close", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomClose(w, projectID, r.PathValue("id"))
 		}},
 	}
 }

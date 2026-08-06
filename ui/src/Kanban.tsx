@@ -13,6 +13,7 @@ import {
   type StateResponse,
 } from './api'
 import Tag, { tagCounts } from './Tag'
+import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -22,10 +23,11 @@ import { useT } from './i18n'
 // single source of truth.
 const RULE_EPIC_BEHIND = 'epic-behind-children'
 
-// Lifecycle flow left to right (F-0131): candidata → aprovada → em
-// desenvolvimento → Ready (implemented, aguarda aceite humano) → Done.
+// Lifecycle flow left to right (F-0131): aprovada → em desenvolvimento →
+// Ready (implemented, aguarda aceite humano) → Done. Candidatas (sem
+// compromisso ainda) moraram aqui antes de F-0202 — agora vivem só no
+// Backlog, para não passar impressão de esteira no que é só exploração.
 const OPEN_COLUMNS: FeatureState[] = [
-  'candidate',
   'approved',
   'in_development',
   'implemented',
@@ -34,18 +36,6 @@ const OPEN_COLUMNS: FeatureState[] = [
 const CLOSED_COLUMNS: FeatureState[] = ['superseded', 'rejected']
 
 const isClosed = (s: FeatureState) => s === 'superseded' || s === 'rejected'
-
-// PRIORITY_ORDER ranks p0..p3 (F-0204); a missing/unrecognized priority sorts
-// last, mirroring the CLI's `feature list --sort priority`.
-const PRIORITY_ORDER = ['p0', 'p1', 'p2', 'p3']
-const priorityRank = (p?: string) => {
-  const i = p ? PRIORITY_ORDER.indexOf(p) : -1
-  return i < 0 ? PRIORITY_ORDER.length : i
-}
-// sortByPriority orders a list of cards p0 first, unset last — stable within
-// the same rank (keeps the incoming, ID-sorted order).
-const sortByPriority = (fs: Feature[]) =>
-  [...fs].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))
 
 // toggleIn returns a handler that adds/removes a value from a Set state,
 // always producing a fresh Set so React sees the change.
@@ -126,6 +116,10 @@ export default function Kanban() {
   // antigo não manda o campo — ausência é "sem pendência", nunca erro.
   const openClarifications = state.open_clarifications ?? {}
   const pendingClarify = (id: string) => openClarifications[id] ?? 0
+  // F-0202: W-itens ativos por feature, servidos junto do state (mesmo padrão
+  // de open_clarifications). Servidor antigo não manda o campo.
+  const activeWork = state.active_work ?? {}
+  const activeWorkFor = (id: string) => activeWork[id] ?? []
 
   const closed = state.features.filter((f) => isClosed(f.state)).length
 
@@ -219,6 +213,7 @@ export default function Kanban() {
           isEpic={isEpic}
           isBehind={isBehind}
           pendingClarify={pendingClarify}
+          activeWorkFor={activeWorkFor}
           showClosed={showClosed}
           matches={matches}
         />
@@ -228,6 +223,7 @@ export default function Kanban() {
           isEpic={isEpic}
           isBehind={isBehind}
           pendingClarify={pendingClarify}
+          activeWorkFor={activeWorkFor}
           showClosed={showClosed}
           matches={matches}
         />
@@ -241,6 +237,7 @@ function Columns({
   isEpic,
   isBehind,
   pendingClarify,
+  activeWorkFor,
   showClosed,
   matches,
 }: {
@@ -248,6 +245,7 @@ function Columns({
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
   pendingClarify: (id: string) => number
+  activeWorkFor: (id: string) => { id: string; actor: string }[]
   showClosed: boolean
   matches: (f: Feature) => boolean
 }) {
@@ -276,6 +274,7 @@ function Columns({
                 isEpic={isEpic(f.id)}
                 isBehind={isBehind(f.id)}
                 pending={pendingClarify(f.id)}
+                activeWork={activeWorkFor(f.id)}
               />
             ))}
           </section>
@@ -293,6 +292,7 @@ function EpicBoard({
   isEpic,
   isBehind,
   pendingClarify,
+  activeWorkFor,
   showClosed,
   matches,
 }: {
@@ -301,6 +301,7 @@ function EpicBoard({
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
   pendingClarify: (id: string) => number
+  activeWorkFor: (id: string) => { id: string; actor: string }[]
   showClosed: boolean
   matches: (f: Feature) => boolean
 }) {
@@ -352,6 +353,7 @@ function EpicBoard({
                   isEpic={isEpic(f.id)}
                   isBehind={isBehind(f.id)}
                   pending={pendingClarify(f.id)}
+                  activeWork={activeWorkFor(f.id)}
                 />
               ))}
             </div>
@@ -370,6 +372,7 @@ function EpicBoard({
                 feature={f}
                 isEpic={false}
                 pending={pendingClarify(f.id)}
+                activeWork={activeWorkFor(f.id)}
               />
             ))}
           </div>
@@ -384,11 +387,13 @@ function Card({
   isEpic,
   isBehind = false,
   pending = 0,
+  activeWork = [],
 }: {
   feature: Feature
   isEpic: boolean
   isBehind?: boolean
   pending?: number
+  activeWork?: { id: string; actor: string }[]
 }) {
   const { t } = useT()
   // Read-only chips: the whole card is an <a>, so a Tag button can't live here
@@ -421,6 +426,14 @@ function Card({
             title={t.kanban.pendingClarifyTitle(pending)}
           >
             {t.kanban.pendingClarify(pending)}
+          </span>
+        )}
+        {activeWork.length > 0 && (
+          <span
+            className="badge badge-work"
+            title={t.kanban.activeWorkTitle(activeWork.map((w) => w.actor))}
+          >
+            {t.kanban.activeWork(activeWork.length)}
           </span>
         )}
         {feature.module && <span className="badge">{feature.module}</span>}

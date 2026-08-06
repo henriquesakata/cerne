@@ -14,7 +14,10 @@ const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
   ...extra,
 })
 
-const state = (open?: Record<string, number>): StateResponse => ({
+const state = (
+  open?: Record<string, number>,
+  activeWork?: Record<string, { id: string; actor: string }[]>,
+): StateResponse => ({
   project: { name: 'Projeto Demo', modules: [] },
   features: [
     feature('F-0001'),
@@ -26,6 +29,7 @@ const state = (open?: Record<string, number>): StateResponse => ({
   runbooks: [],
   notes: [],
   ...(open ? { open_clarifications: open } : {}),
+  ...(activeWork ? { active_work: activeWork } : {}),
 })
 
 let payload: StateResponse = state()
@@ -91,6 +95,49 @@ describe('Kanban — badge de esclarecimento pendente (F-0195)', () => {
   })
 })
 
+describe('Kanban — sem coluna candidate (F-0202)', () => {
+  it('não renderiza a coluna de candidatas', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(screen.queryByText('Candidatas')).not.toBeInTheDocument()
+  })
+})
+
+describe('Kanban — badge de W-itens ativos (F-0202)', () => {
+  it('mostra o badge com a contagem e os atores no title', async () => {
+    payload = state(undefined, {
+      'F-0001': [
+        { id: 'W-0001', actor: 'alice@host' },
+        { id: 'W-0002', actor: 'bob@host' },
+      ],
+    })
+    render(<Kanban />)
+
+    const badge = await waitFor(() => {
+      const el = cardOf('F-0001')?.querySelector('.badge-work')
+      expect(el).toBeInTheDocument()
+      return el as HTMLElement
+    })
+    expect(badge).toHaveTextContent('2')
+    expect(badge).toHaveAttribute('title', expect.stringContaining('alice@host'))
+    expect(badge).toHaveAttribute('title', expect.stringContaining('bob@host'))
+  })
+
+  it('não desenha badge na feature sem W-item ativo', async () => {
+    payload = state(undefined, { 'F-0001': [{ id: 'W-0001', actor: 'alice@host' }] })
+    render(<Kanban />)
+
+    await waitFor(() => expect(cardOf('F-0002')).toBeInTheDocument())
+    expect(cardOf('F-0002')?.querySelector('.badge-work')).toBeNull()
+  })
+
+  it('renderiza o board sem o campo active_work', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(document.querySelectorAll('.badge-work')).toHaveLength(0)
+  })
+})
+
 describe('Kanban — chips de papel épico/task (F-0203)', () => {
   // Critério 8: papel épico = filhos OU prefixo E-; task = prefixo T-.
   it('marca E- como épico mesmo sem filhos e T- como task', async () => {
@@ -152,9 +199,9 @@ describe('Kanban — chip de prioridade, handle do owner e ordenação (F-0204)'
     payload = {
       ...state(),
       features: [
-        feature('F-0001', { state: 'candidate', priority: 'p2' }),
-        feature('F-0002', { state: 'candidate', priority: 'p0' }),
-        feature('F-0003', { state: 'candidate' }),
+        feature('F-0001', { state: 'approved', priority: 'p2' }),
+        feature('F-0002', { state: 'approved', priority: 'p0' }),
+        feature('F-0003', { state: 'approved' }),
       ],
     }
     render(<Kanban />)
