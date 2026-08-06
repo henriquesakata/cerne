@@ -796,3 +796,69 @@ export async function fetchLintStatus(): Promise<LintResult> {
   const body = (await r.json()) as { findings: LintFinding[] | null; stale?: boolean }
   return { findings: body.findings ?? [], stale: body.stale ?? false }
 }
+
+// ---- war room (T-0001/T-0003): salas de chat locais, operacionais ----
+
+export type RoomParticipant = { nick: string; bio?: string; joined_at: string }
+
+export type Room = {
+  id: string
+  topic: string
+  opened_at: string
+  closed_at?: string
+  participants: RoomParticipant[]
+}
+
+// RoomMessage espelha room.Message: um evento do transcript — abertura,
+// entrada, fala ou fechamento — todos no mesmo log ordenado por seq.
+export type RoomMessage = {
+  seq: number
+  type: 'open' | 'join' | 'message' | 'close'
+  nick?: string
+  bio?: string
+  body?: string
+  topic?: string
+  time: string
+}
+
+export async function fetchRooms(): Promise<Room[]> {
+  const r = await fetch(`${base()}/rooms`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { rooms: Room[] }).rooms
+}
+
+export async function joinRoom(id: string, nick: string, bio: string): Promise<Room> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nick, bio }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Room
+}
+
+export async function sayRoom(id: string, nick: string, body: string): Promise<RoomMessage> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nick, body }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as RoomMessage
+}
+
+// readRoomMessages busca eventos com seq > since; follow=true faz long-poll
+// (o servidor segura a resposta até uma novidade ou ~25s de timeout) — é o
+// mesmo endpoint usado pelo CLI (`cerne room read --follow`), critério 4.
+export async function readRoomMessages(
+  id: string,
+  since: number,
+  follow: boolean,
+  signal?: AbortSignal,
+): Promise<RoomMessage[]> {
+  const params = new URLSearchParams({ since: String(since) })
+  if (follow) params.set('follow', '1')
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/messages?${params}`, { signal })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { messages: RoomMessage[] }).messages
+}
