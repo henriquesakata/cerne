@@ -192,6 +192,19 @@ const ptBR = {
     count: (n: number) => `${n} candidata(s)`,
     empty: 'Nenhuma candidata no momento — comece uma com "cerne feature new".',
   },
+  backlogChat: {
+    title: 'Converse com o agente',
+    intro: 'Descreva o que você precisa — o agente conhece o domínio e o estado atual do projeto.',
+    placeholder: 'Descreva o que você precisa…',
+    send: 'Enviar',
+    thinking: 'Pensando…',
+    needsProvider:
+      'Configure um provider de IA (claude-cli ou byo-key) em .cernerc — [llm] — para conversar com o agente.',
+    proposalTitle: 'Título',
+    proposalBody: 'Spec proposta',
+    register: 'Registrar candidata',
+    registering: 'Registrando…',
+  },
   palette: {
     placeholder: 'Buscar por código ou título…',
     hint: '↑↓ navega · Enter abre · Esc fecha',
@@ -710,6 +723,19 @@ const en: Messages = {
     loadError: (e: string) => `Failed to load state: ${e}`,
     count: (n: number) => `${n} candidate(s)`,
     empty: 'No candidates right now — start one with "cerne feature new".',
+  },
+  backlogChat: {
+    title: 'Talk to the agent',
+    intro: "Describe what you need — the agent knows the project's domain and current state.",
+    placeholder: 'Describe what you need…',
+    send: 'Send',
+    thinking: 'Thinking…',
+    needsProvider:
+      'Configure an AI provider (claude-cli or byo-key) in .cernerc — [llm] — to talk to the agent.',
+    proposalTitle: 'Title',
+    proposalBody: 'Proposed spec',
+    register: 'Register candidate',
+    registering: 'Registering…',
   },
   palette: {
     placeholder: 'Search by id or title…',
