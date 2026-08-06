@@ -2,24 +2,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat from './BacklogChat'
-import type { ChatAnswer, CreateOutcome, Feature } from './api'
+import type { ChatAnswer, CreateOutcome, Feature, LLMMode } from './api'
 
 const postChat = vi.fn<(messages: unknown) => Promise<ChatAnswer>>()
 const registerChatCandidate = vi.fn<
   (title: string, specBody: string, facets?: string[], components?: string[]) => Promise<CreateOutcome>
 >()
+const fetchLLMMode = vi.fn<() => Promise<LLMMode>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   postChat: (messages: unknown) => postChat(messages),
   registerChatCandidate: (title: string, specBody: string, facets?: string[], components?: string[]) =>
     registerChatCandidate(title, specBody, facets, components),
+  fetchLLMMode: () => fetchLLMMode(),
 }))
 
 beforeEach(() => {
   cleanup()
   postChat.mockReset()
   registerChatCandidate.mockReset()
+  fetchLLMMode.mockReset()
+  fetchLLMMode.mockResolvedValue('byo-key')
 })
 
 const feature = (id: string): Feature => ({
@@ -47,7 +51,15 @@ describe('BacklogChat (F-0210)', () => {
     ])
   })
 
-  it('mostra desabilitado com orientação quando needs_provider', async () => {
+  it('nasce desabilitado com orientação quando o projeto não tem [llm] configurado (critério 5)', async () => {
+    fetchLLMMode.mockResolvedValue('delegation')
+    render(<BacklogChat />)
+
+    await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument())
+    expect(postChat).not.toHaveBeenCalled()
+  })
+
+  it('mostra desabilitado com orientação quando needs_provider no envio', async () => {
     postChat.mockResolvedValue({ answered: false, needs_provider: true })
     render(<BacklogChat />)
 

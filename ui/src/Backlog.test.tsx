@@ -55,4 +55,11 @@ describe('Backlog (F-0202)', () => {
       expect(screen.getByText(/cerne feature new/)).toBeInTheDocument(),
     )
   })
+
+  it('monta o chat com o agente ao lado da lista (F-0210)', async () => {
+    render(<Backlog />)
+    await waitFor(() =>
+      expect(screen.getByText(/converse com o agente/i)).toBeInTheDocument(),
+    )
+  })
 })

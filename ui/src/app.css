@@ -193,6 +193,102 @@ h2 {
 .column-count { font-weight: normal; color: var(--faint); }
 .column-empty { margin: 0.5rem 0 0; text-align: center; color: var(--dim); }
 
+/* ---- backlog (F-0202) + chat com o agente de domínio (F-0210) ---- */
+
+.backlog-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.backlog-list-col { min-width: 0; }
+
+.backlog-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--surface-2);
+}
+
+.backlog-chat h2 { margin: 0; font-size: 1.05rem; }
+
+.backlog-chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 8rem;
+  max-height: 28rem;
+  overflow-y: auto;
+}
+
+.backlog-chat-msg {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-card);
+}
+
+.backlog-chat-msg p { margin: 0; }
+
+.backlog-chat-msg-user {
+  align-self: flex-end;
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+
+.backlog-chat-proposal,
+.backlog-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.backlog-chat-proposal label,
+.backlog-chat-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.backlog-chat-proposal input,
+.backlog-chat-proposal textarea,
+.backlog-chat-form textarea {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  resize: vertical;
+}
+
+.backlog-chat-proposal button,
+.backlog-chat-form button {
+  align-self: flex-start;
+  font: inherit;
+  padding: 0.45rem 1.1rem;
+  border: 1px solid var(--fg);
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  cursor: pointer;
+}
+
+.backlog-chat-proposal button:disabled,
+.backlog-chat-form button:disabled { opacity: 0.5; cursor: default; }
+
+@media (max-width: 60rem) {
+  .backlog-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
 .card {
   display: block;
   margin-top: 0.5rem;

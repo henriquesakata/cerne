@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react'
 import { fetchState, type Feature } from './api'
 import Tag from './Tag'
+import BacklogChat from './BacklogChat'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
 // Backlog (F-0202): candidatas separadas do kanban — exploração, não esteira.
 // candidate significa apenas PRD registrado, sem gate humano ainda; misturar
 // com trabalho comprometido dava a impressão errada de urgência.
+// F-0210: layout de duas colunas — lista à esquerda, chat com o agente de
+// domínio à direita, pra que a candidata registrada apareça ali mesmo.
 export default function Backlog() {
   const [features, setFeatures] = useState<Feature[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const version = useLiveVersion()
   const { t } = useT()
 
@@ -20,26 +24,27 @@ export default function Backlog() {
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.backlog.loadError(error)}</p>
-  if (!features) return <p className="status">{t.common.loading}</p>
+  }, [version, refreshKey])
 
   return (
-    <main className="kanban">
-      <header className="kanban-header">
-        <h1>{t.nav.backlog}</h1>
-        <p className="counts">{t.backlog.count(features.length)}</p>
-      </header>
-      {features.length === 0 ? (
-        <p className="status">{t.backlog.empty}</p>
-      ) : (
-        <div className="epic-lane-cards">
-          {features.map((f) => (
-            <BacklogCard key={f.id} feature={f} />
-          ))}
-        </div>
-      )}
+    <main className="kanban backlog-layout">
+      <div className="backlog-list-col">
+        <header className="kanban-header">
+          <h1>{t.nav.backlog}</h1>
+          {features && <p className="counts">{t.backlog.count(features.length)}</p>}
+        </header>
+        {error && <p className="status error">{t.backlog.loadError(error)}</p>}
+        {!error && !features && <p className="status">{t.common.loading}</p>}
+        {features && features.length === 0 && <p className="status">{t.backlog.empty}</p>}
+        {features && features.length > 0 && (
+          <div className="epic-lane-cards">
+            {features.map((f) => (
+              <BacklogCard key={f.id} feature={f} />
+            ))}
+          </div>
+        )}
+      </div>
+      <BacklogChat onRegistered={() => setRefreshKey((k) => k + 1)} />
     </main>
   )
 }

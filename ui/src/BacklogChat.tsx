@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { postChat, registerChatCandidate, type ChatMsg, type Feature } from './api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { fetchLLMMode, postChat, registerChatCandidate, type ChatMsg, type Feature } from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
 
@@ -37,6 +37,14 @@ export default function BacklogChat({ onRegistered }: Props) {
   const [proposal, setProposal] = useState<ParsedProposal | null>(null)
   const [registering, setRegistering] = useState(false)
   const { t } = useT()
+
+  // Critério 5: sem [llm] configurado, o chat nasce desabilitado — nenhuma
+  // chamada ao provider é feita nem esperando o usuário digitar algo.
+  useEffect(() => {
+    fetchLLMMode()
+      .then((mode) => setNeedsProvider(mode === 'delegation'))
+      .catch(() => {})
+  }, [])
 
   const send = (e: FormEvent) => {
     e.preventDefault()
