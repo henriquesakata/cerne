@@ -140,13 +140,17 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString("Escreva uma spec COMPLETA e coerente para esta feature, em Markdown, com exatamente estas seções nesta ordem:\n")
 	for _, s := range spectmpl.Sections {
 		b.WriteString("## " + s + "\n")
+		if s == "Verificação" {
+			b.WriteString("## Execução recomendada (agente)\n")
+		}
 	}
 	b.WriteString("\nRegras de autoria:\n")
 	b.WriteString("- Abra pela Problema, ancorada em código real (arquivo.go:linha) quando possível; deixe a Verificação por último.\n")
 	b.WriteString("- Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". Invariantes estruturais como asserção direta.\n")
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- No Desenho, ancore em arquivos/pacotes reais com contratos explícitos (assinaturas, schemas); não omita o \"como\".\n")
-	b.WriteString("- Inclua nas linhas de metadados \"**Nível:** <" + strings.Join(spectmpl.Levels, "|") + "> — <justificativa em 1 frase>\", avaliando a complexidade da implementação; não cite nomes de modelos ou fornecedores de LLM.\n\n")
+	b.WriteString("- Inclua nas linhas de metadados \"**Nível:** <" + strings.Join(spectmpl.Levels, "|") + "> — <justificativa em 1 frase>\", avaliando a complexidade da implementação; não cite nomes de modelos ou fornecedores de LLM.\n")
+	b.WriteString("- Na Execução recomendada (agente): capacidade de modelo sugerida (vocabulário genérico, coerente com o Nível) e esforço; quais tarefas manter no mesmo agente (contexto compartilhado) e por quê; quais são separáveis.\n\n")
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString("Responda apenas com o conteúdo da spec.\n")
 	return b.String()
