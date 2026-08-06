@@ -58,6 +58,49 @@ func TestNext(t *testing.T) {
 	}
 }
 
+// TestNextListsEpicsReadyToClose pins crit.2: an in_development epic whose
+// children are all concluded (implemented) or dead (rejected) surfaces in its
+// own block; an epic with a live child pending does not.
+func TestNextListsEpicsReadyToClose(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0100", Title: "Épico pronto", State: domain.StateInDevelopment},
+		{ID: "F-0101", Title: "Filha concluída", Parent: "F-0100", State: domain.StateImplemented},
+		{ID: "F-0102", Title: "Filha rejeitada", Parent: "F-0100", State: domain.StateRejected, Reason: "não necessária"},
+		{ID: "F-0200", Title: "Épico ainda em curso", State: domain.StateInDevelopment},
+		{ID: "F-0201", Title: "Filha viva", Parent: "F-0200", State: domain.StateInDevelopment},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed next epics"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\noutput: %s", err, out)
+	}
+	i := strings.Index(out, "EPICS READY TO CLOSE (1)")
+	if i < 0 {
+		t.Fatalf("next missing epics-ready-to-close block:\n%s", out)
+	}
+	block := out[i:]
+	if j := strings.Index(block, "\n\n"); j >= 0 {
+		block = block[:j]
+	}
+	if !strings.Contains(block, "Épico pronto") {
+		t.Errorf("epics-ready-to-close block missing F-0100:\n%s", block)
+	}
+	if strings.Contains(block, "Épico ainda em curso") {
+		t.Errorf("epics-ready-to-close block lists epic with a live child pending:\n%s", block)
+	}
+}
+
 // TestNextEmpty: a project with no active work and no debts says so, exit 0.
 func TestNextEmpty(t *testing.T) {
 	projDir, _, _ := setupProject(t)

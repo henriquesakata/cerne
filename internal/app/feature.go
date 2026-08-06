@@ -489,3 +489,31 @@ func writeResultStub(repoDir, id, title string) error {
 	content := "---\ncerne_id: " + id + "\n---\n\n" + restmpl.Stub(title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }
+
+// writeEpicResultStub is writeResultStub's epic-closure counterpart (F-0214):
+// it scaffolds the same result template, prefixed with the children roster as
+// raw material for the author. The roster lives inside an HTML comment, so
+// doccheck still reads the file as scaffold (a roster is not a filled-in
+// result) — the complete gate stays closed until a real section is written.
+// No-op when a real result already exists, same protection as writeResultStub.
+func writeEpicResultStub(repoDir, id, title string, children []store.Feature) error {
+	path := FeatureDocPath(repoDir, id, "result.md")
+	data, err := os.ReadFile(path)
+	if err == nil && doccheck.HasRealContent(data) {
+		return nil // a real result already exists — don't overwrite it
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var roster strings.Builder
+	roster.WriteString("<!-- ROSTER DAS FILHAS (matéria-prima para a seção Resultado; apague ao preencher):\n")
+	for _, c := range children {
+		roster.WriteString(fmt.Sprintf("- %s: %s — result: content/features/%s/result.md\n", c.ID, c.Title, c.ID))
+	}
+	roster.WriteString("-->\n\n")
+	content := "---\ncerne_id: " + id + "\n---\n\n" + roster.String() + restmpl.Stub(title)
+	return os.WriteFile(path, []byte(content), 0o644)
+}

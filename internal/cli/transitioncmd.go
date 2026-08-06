@@ -127,5 +127,12 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if action == domain.ActionStart {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: when done, fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'.\n", id, id)
 	}
+	// Completing the last alive child of an epic scaffolds the epic's result
+	// (F-0214): point the author at it so the closure isn't left to be noticed
+	// later — the complete gate still requires a real result before it fires.
+	if out.EpicReadyToClose != "" {
+		epic := out.EpicReadyToClose
+		fmt.Fprintf(cmd.OutOrStdout(), "↳ epic %s ready to close: fill content/features/%s/result.md and run 'cerne feature complete %s'\n", epic, epic, epic)
+	}
 	return nil
 }
