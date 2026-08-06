@@ -176,6 +176,7 @@ const ptBR = {
     } satisfies Record<FeatureState, string>,
     noEpic: 'Sem épico',
     epicBadge: 'épico',
+    taskBadge: 'task',
     childInDev: 'filho em dev',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
@@ -688,6 +689,7 @@ const en: Messages = {
     },
     noEpic: 'No epic',
     epicBadge: 'epic',
+    taskBadge: 'task',
     childInDev: 'child in dev',
     childInDevTitle:
       'a child is already in development; plan and start the epic',

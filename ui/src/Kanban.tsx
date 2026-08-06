@@ -387,7 +387,14 @@ function Card({
     <a className={`card card-${feature.state}`} href={`#/f/${feature.id}`}>
       <span className="card-meta">
         <span className="card-id">{feature.id}</span>
-        {isEpic && <span className="badge badge-epic">{t.kanban.epicBadge}</span>}
+        {/* F-0203: papel épico é estrutural (tem filhos) OU declarado (E-);
+            papel task deriva só do prefixo T-. */}
+        {(isEpic || feature.id.startsWith('E-')) && (
+          <span className="badge badge-epic">{t.kanban.epicBadge}</span>
+        )}
+        {feature.id.startsWith('T-') && (
+          <span className="badge badge-task">{t.kanban.taskBadge}</span>
+        )}
         {isBehind && (
           <span
             className="badge badge-behind"

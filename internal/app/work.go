@@ -193,7 +193,7 @@ func validateWorkRefs(repoDir string, refs []string) ([]string, error) {
 		}
 		seen[id] = true
 		switch {
-		case strings.HasPrefix(id, "F-"):
+		case domain.IsFeatureID(id):
 			if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
 				return nil, fmt.Errorf("--ref: feature %s not found in the backend", id)
 			} else if err != nil {

@@ -68,7 +68,7 @@ func errataExcerpt(text string) string {
 // prefix. Errata is supported for feature/decision/runbook/note.
 func ensureErrataEntityExists(repoDir, id string) error {
 	switch {
-	case strings.HasPrefix(id, "F-"):
+	case domain.IsFeatureID(id):
 		_, err := store.LoadFeature(repoDir, id)
 		return err
 	case strings.HasPrefix(id, "D-"):

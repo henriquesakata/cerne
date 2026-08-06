@@ -82,7 +82,7 @@ func bindingLive(repoDir, id string) bool {
 	case strings.HasPrefix(id, "W-"):
 		w, err := store.LoadWork(repoDir, id)
 		return err == nil && w.State == domain.WorkActive
-	case strings.HasPrefix(id, "F-"):
+	case domain.IsFeatureID(id):
 		f, err := store.LoadFeature(repoDir, id)
 		return err == nil && f.State == domain.StateInDevelopment
 	default:

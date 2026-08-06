@@ -148,7 +148,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 		}
 		seen[id] = true
 		switch {
-		case strings.HasPrefix(id, "F-"):
+		case domain.IsFeatureID(id):
 			if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
 				return nil, fmt.Errorf("--informs: feature %s not found in backend", id)
 			} else if err != nil {
