@@ -47,6 +47,10 @@ var layoutSubdirsInit = []string{
 // idSubdirs maps a NextID prefix to its entity subdir.
 var idSubdirs = map[string]string{
 	"F":  featuresSubdir,
+	// E- (epic) and T- (task) reuse the feature entity (F-0203): same subdir,
+	// per-prefix sequences (NextID counts only files matching its own prefix).
+	"E":  featuresSubdir,
+	"T":  featuresSubdir,
 	"D":  decisionsSubdir,
 	"R":  referencesSubdir,
 	"RB": runbooksSubdir,

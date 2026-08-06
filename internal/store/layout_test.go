@@ -173,7 +173,9 @@ func TestReadEventsAbsentDir(t *testing.T) {
 
 func TestNextID(t *testing.T) {
 	seeded := t.TempDir()
-	for _, id := range []string{"F-0001", "F-0002"} {
+	// E-/T- share the features subdir with F- (F-0203): per-prefix sequences
+	// must stay independent inside the shared directory.
+	for _, id := range []string{"F-0001", "F-0002", "E-0003", "T-0005"} {
 		if err := SaveFeature(seeded, testFeature(id)); err != nil {
 			t.Fatalf("SaveFeature(%s): %v", id, err)
 		}
@@ -194,6 +196,10 @@ func TestNextID(t *testing.T) {
 	}{
 		{name: "empty backend features", dir: t.TempDir(), prefix: "F", want: "F-0001"},
 		{name: "after F-0002 exists", dir: seeded, prefix: "F", want: "F-0003"},
+		{name: "epic sequence independent of F", dir: seeded, prefix: "E", want: "E-0004"},
+		{name: "task sequence independent of F", dir: seeded, prefix: "T", want: "T-0006"},
+		{name: "empty backend epics", dir: t.TempDir(), prefix: "E", want: "E-0001"},
+		{name: "empty backend tasks", dir: t.TempDir(), prefix: "T", want: "T-0001"},
 		{name: "after D-0007 exists", dir: seeded, prefix: "D", want: "D-0008"},
 		{name: "references untouched", dir: seeded, prefix: "R", want: "R-0001"},
 		{name: "after N-0004 exists", dir: seeded, prefix: "N", want: "N-0005"},
