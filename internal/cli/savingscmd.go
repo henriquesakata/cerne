@@ -10,14 +10,14 @@ import (
 	"gitlab.com/rockt/cerne/internal/materialize"
 )
 
-// statsKindOrder is the fixed display order of the per-kind table rows.
-var statsKindOrder = []string{"feature", "decision", "reference", "runbook", "note"}
+// savingsKindOrder is the fixed display order of the per-kind table rows.
+var savingsKindOrder = []string{"feature", "decision", "reference", "runbook", "note"}
 
-func newStatsCmd() *cobra.Command {
+func newSavingsCmd() *cobra.Command {
 	var dir string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "stats",
+		Use:   "savings",
 		Short: "Context savings: full corpus vs the current .docs/ projection",
 		Long: "Measures how much documentation the backend holds (every entity, every state) against " +
 			"what the current .docs/ projection actually delivers to an agent — per kind and in total, " +
@@ -25,7 +25,7 @@ func newStatsCmd() *cobra.Command {
 			"the agent never has to read. --json emits the full object for machine consumption.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStats(cmd, dir, asJSON)
+			return runSavings(cmd, dir, asJSON)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -34,7 +34,7 @@ func newStatsCmd() *cobra.Command {
 	return cmd
 }
 
-func runStats(cmd *cobra.Command, dir string, asJSON bool) error {
+func runSavings(cmd *cobra.Command, dir string, asJSON bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -49,19 +49,19 @@ func runStats(cmd *cobra.Command, dir string, asJSON bool) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(s)
 	}
-	renderStats(out, s)
+	renderSavings(out, s)
 	return nil
 }
 
-// renderStats prints the compact savings table: per kind and total, the full
+// renderSavings prints the compact savings table: per kind and total, the full
 // corpus vs the current projection, then the saved line with the percentage.
-func renderStats(out io.Writer, s materialize.Stats) {
+func renderSavings(out io.Writer, s materialize.Stats) {
 	fmt.Fprintln(out, "Context savings — full corpus vs current .docs/ projection")
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "%-10s  %28s    %28s\n", "", "CORPUS (all states)", "CURRENT (projected)")
 	fmt.Fprintf(out, "%-10s  %6s  %9s  %9s    %6s  %9s  %9s\n",
 		"KIND", "COUNT", "BYTES", "~TOKENS", "COUNT", "BYTES", "~TOKENS")
-	for _, kind := range statsKindOrder {
+	for _, kind := range savingsKindOrder {
 		ks := s.Kinds[kind]
 		fmt.Fprintf(out, "%-10s  %6d  %9d  %9d    %6d  %9d  %9d\n",
 			kind, ks.Count, ks.Bytes, ks.Bytes/4, ks.CurrentCount, ks.CurrentBytes, ks.CurrentBytes/4)

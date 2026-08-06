@@ -57,11 +57,11 @@ func seedStatsProject(t *testing.T, repoDir string) {
 
 // TestStats: the human table (English, per F-0124) shows per-kind and total
 // corpus vs current projection plus the saved percentage.
-func TestStats(t *testing.T) {
+func TestSavings(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	seedStatsProject(t, repoDir)
 
-	out, err := execCerne(t, "stats", "--dir", projDir)
+	out, err := execCerne(t, "savings", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("stats: %v\noutput: %s", err, out)
 	}
@@ -79,11 +79,11 @@ func TestStats(t *testing.T) {
 
 // TestStatsJSON: --json emits the materialize.Stats object with the exact
 // fixture numbers.
-func TestStatsJSON(t *testing.T) {
+func TestSavingsJSON(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	seedStatsProject(t, repoDir)
 
-	out, err := execCerne(t, "stats", "--json", "--dir", projDir)
+	out, err := execCerne(t, "savings", "--json", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("stats --json: %v\noutput: %s", err, out)
 	}
