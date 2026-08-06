@@ -223,10 +223,34 @@ export type Stats = {
   saved_tokens_est: number
 }
 
-export async function fetchStats(): Promise<Stats> {
-  const r = await fetch(`${base()}/stats`)
+export async function fetchSavings(): Promise<Stats> {
+  const r = await fetch(`${base()}/savings`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as Stats
+}
+
+// Métricas de fluxo (F-0205): lead/cycle time por feature concluída, mediana +
+// p90, throughput mensal — espelho de stats.Metrics.
+export type FeatureFlowMetric = {
+  ID: string
+  Lead: number // nanoseconds (Go time.Duration)
+  Cycle: number
+}
+
+export type FlowMetrics = {
+  Features: FeatureFlowMetric[] | null
+  LeadMedian: number
+  LeadP90: number
+  CycleMedian: number
+  CycleP90: number
+  ThroughputByMonth: Record<string, number> | null
+  Excluded: number
+}
+
+export async function fetchFlowStats(): Promise<FlowMetrics> {
+  const r = await fetch(`${base()}/stats`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as FlowMetrics
 }
 
 // Atividade de agentes (F-0130): work-in-progress compartilhado no backend.

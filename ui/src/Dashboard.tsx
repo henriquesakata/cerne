@@ -2,12 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   fetchState,
   fetchLint,
-  fetchStats,
+  fetchSavings,
+  fetchFlowStats,
   fetchWork,
   fetchEvents,
   type Feature,
   type FeatureState,
   type Stats,
+  type FlowMetrics,
   type Work,
   type LifecycleEvent,
 } from './api'
@@ -83,6 +85,7 @@ export default function Dashboard() {
         <RosterCard />
         <LintCard />
         <SavingsCard />
+        <FlowStatsCard />
         <EpicsCard />
         <EventsCard />
         <ActivityCard />
@@ -240,7 +243,7 @@ function LintCard() {
 
 function SavingsCard() {
   const { t, lang } = useT()
-  const { data, error } = useCard<Stats>(fetchStats)
+  const { data, error } = useCard<Stats>(fetchSavings)
   return (
     <Card title={t.dashboard.savings} href="#/stats" error={error} className="dash-span-2">
       {data && (
@@ -254,6 +257,41 @@ function SavingsCard() {
             )}
           </p>
         </>
+      )}
+    </Card>
+  )
+}
+
+// fmtDays converts a Go time.Duration (nanoseconds) to a rounded-days label.
+function fmtDays(ns: number, lang: string): string {
+  const days = ns / (24 * 60 * 60 * 1e9)
+  return `${days.toLocaleString(lang, { maximumFractionDigits: 1 })}d`
+}
+
+function FlowStatsCard() {
+  const { t, lang } = useT()
+  const { data, error } = useCard<FlowMetrics>(fetchFlowStats)
+  const throughputValues = Object.values(data?.ThroughputByMonth ?? {})
+  const avgThroughput = throughputValues.length
+    ? throughputValues.reduce((a, b) => a + b, 0) / throughputValues.length
+    : 0
+  return (
+    <Card title={t.dashboard.flowStats} href="#/history" error={error} className="dash-span-2">
+      {data && (
+        (data.Features?.length ?? 0) === 0 ? (
+          <p className="muted">{t.dashboard.flowStatsEmpty}</p>
+        ) : (
+          <>
+            <p className="dash-big">{fmtDays(data.LeadMedian, lang)}</p>
+            <p className="dash-foot">
+              {t.dashboard.flowStatsFoot(
+                fmtDays(data.LeadMedian, lang),
+                fmtDays(data.CycleMedian, lang),
+                Math.round(avgThroughput * 10) / 10,
+              )}
+            </p>
+          </>
+        )
       )}
     </Card>
   )

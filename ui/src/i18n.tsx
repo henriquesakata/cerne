@@ -84,6 +84,10 @@ const ptBR = {
     lintClean: 'Sem débitos. ✓',
     savings: 'Economia de contexto',
     savingsFoot: (ktokens: number) => `~${ktokens}k tokens fora do contexto do agente`,
+    flowStats: 'Métricas de fluxo',
+    flowStatsEmpty: 'Nenhuma feature concluída ainda.',
+    flowStatsFoot: (lead: string, cycle: string, throughput: number) =>
+      `lead ${lead} · ciclo ${cycle} · ${throughput} concluída(s)/mês`,
     activity: 'Atividade',
     events: 'Últimos eventos',
     noEvents: 'Nenhum evento.',
@@ -594,6 +598,10 @@ const en: Messages = {
     lintClean: 'No debts. ✓',
     savings: 'Context savings',
     savingsFoot: (ktokens: number) => `~${ktokens}k tokens kept out of the agent's context`,
+    flowStats: 'Flow metrics',
+    flowStatsEmpty: 'No completed features yet.',
+    flowStatsFoot: (lead: string, cycle: string, throughput: number) =>
+      `lead ${lead} · cycle ${cycle} · ${throughput} completed/month`,
     activity: 'Activity',
     events: 'Recent events',
     noEvents: 'No events.',
