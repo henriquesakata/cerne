@@ -90,3 +90,32 @@ describe('Kanban — badge de esclarecimento pendente (F-0195)', () => {
     })
   })
 })
+
+describe('Kanban — chips de papel épico/task (F-0203)', () => {
+  // Critério 8: papel épico = filhos OU prefixo E-; task = prefixo T-.
+  it('marca E- como épico mesmo sem filhos e T- como task', async () => {
+    payload = {
+      ...state(),
+      features: [
+        feature('E-0001'),
+        feature('T-0001', { parent: 'E-0001' }),
+        feature('F-0009'),
+      ],
+    }
+    render(<Kanban />)
+
+    await waitFor(() => expect(cardOf('E-0001')).toBeInTheDocument())
+    expect(cardOf('E-0001')?.querySelector('.badge-epic')).toHaveTextContent('épico')
+    expect(cardOf('T-0001')?.querySelector('.badge-task')).toHaveTextContent('task')
+    expect(cardOf('T-0001')?.querySelector('.badge-epic')).toBeNull()
+    expect(cardOf('F-0009')?.querySelector('.badge-epic')).toBeNull()
+    expect(cardOf('F-0009')?.querySelector('.badge-task')).toBeNull()
+  })
+
+  // Invariante (critério 6): F- com filhos segue épico — papel estrutural.
+  it('mantém o chip de épico em F- com filhos', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(cardOf('F-0001')?.querySelector('.badge-epic')).toBeInTheDocument()
+  })
+})
