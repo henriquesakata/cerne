@@ -284,6 +284,35 @@ func TestPushUntrackedFile(t *testing.T) {
 	}
 }
 
+// TestPushOpensPickupAutoWork (F-0208 crit. 1): pushing an edited plan.md for
+// a still-approved feature opens the pickup auto-work in the same commit as
+// the push — the agent's first backend touch after claiming the feature.
+func TestPushOpensPickupAutoWork(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	planPath := filepath.Join(projDir, ".docs", "current", "features", "F-0001-feature-a", "plan.md")
+	mustWrite(t, planPath, "---\ncerne_id: F-0001\n---\n\n# Plano\n\nPasso 1: implementar.\n")
+
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push: %v\noutput: %s", err, out)
+	}
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllWorks: %v", err)
+	}
+	if len(works) != 1 || !works[0].Auto || works[0].State != domain.WorkActive || works[0].Refs[0] != id {
+		t.Fatalf("works = %+v, want 1 active auto ref %s", works, id)
+	}
+}
+
 func TestPushDecisionDoc(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	now := time.Now().UTC()

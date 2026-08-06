@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"path"
 	"slices"
 	"time"
 
@@ -72,6 +73,37 @@ func openAutoWork(repoDir string, f store.Feature) error {
 	return store.AppendEvent(repoDir, ev)
 }
 
+// OpenAutoWorkForPush (F-0208 criterion 1) opens the pickup auto-work when the
+// pushed batch includes a plan.md belonging to a feature still `approved`: the
+// agent's first CLI touch on the backend after claiming the feature registers
+// presence, closing the blind window before `cerne feature start` (whose gate
+// requires a real plan and so lags the actual pickup by minutes to hours). Runs
+// inside the same reconcile lock as the push (via ReconcileCommitPushMutate),
+// so the auto-work lands in the same commit. Reuses openAutoWork's dedup: a
+// prior manual or auto work by the same actor on the feature suppresses it.
+func OpenAutoWorkForPush(repoDir, projDir string, changes []FileChange) error {
+	if !activityAutoEnabled(projDir) {
+		return nil
+	}
+	for _, ch := range changes {
+		if ch.Deleted || path.Base(ch.Path) != "plan.md" {
+			continue
+		}
+		id := path.Base(path.Dir(ch.Path))
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			continue // not a feature doc, or feature unreadable: nothing to register
+		}
+		if f.State != domain.StateApproved {
+			continue
+		}
+		if err := openAutoWork(repoDir, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // closeAutoWorks ends every still-active AUTO work referencing the feature
 // that just left in_development: done on complete, abandoned on supersede.
 // Manual works (Auto=false) are never touched — closing those is the owner's
@@ -81,8 +113,19 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 	if err != nil {
 		return err
 	}
+	actor := autoWorkActor()
 	for _, w := range works {
-		if w.State != domain.WorkActive || !w.Auto || !slices.Contains(w.Refs, featureID) {
+		if w.State != domain.WorkActive {
+			continue
+		}
+		// F-0208 criterion 2: a manual pickup work (single ref, same actor) is
+		// adopted here too, so a work opened by openAutoWorkForPush never
+		// outlives the feature it registered — only single-ref works of the
+		// SAME actor qualify; a broader-scoped or another actor's work is left
+		// for its owner (stale-work lint still nags a forgotten one).
+		isAuto := w.Auto
+		isAdoptedManual := !w.Auto && w.Actor == actor && len(w.Refs) == 1 && w.Refs[0] == featureID
+		if (!isAuto && !isAdoptedManual) || !slices.Contains(w.Refs, featureID) {
 			continue
 		}
 		workAction := domain.ActionComplete
@@ -96,7 +139,11 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 			return err
 		}
 		w.State = newState
-		w.Note = "feature " + string(action)
+		note := "feature " + string(action)
+		if isAdoptedManual {
+			note += " (adotado)"
+		}
+		w.Note = note
 		w.UpdatedAt = time.Now().UTC()
 		if err := store.SaveWork(repoDir, w); err != nil {
 			return err
