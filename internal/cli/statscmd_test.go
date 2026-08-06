@@ -2,111 +2,102 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/materialize"
+	"gitlab.com/rockt/cerne/internal/stats"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// seedStatsProject writes entities and content docs straight into the backend
-// clone (stats is read-only, so uncommitted working-tree state is fine) with
-// exact byte sizes:
-//
-//	F-0001 candidate    spec 150               (current)
-//	F-0002 implemented  spec 300 + result 450
-//	D-0001 active       100                    (current)
-//
-// Corpus: 3 entities / 1000 bytes. Current: 2 / 250. Saved: 750 (75.0%).
-func seedStatsProject(t *testing.T, repoDir string) {
+// seedFlowEvents appends feature.created/started/completed events straight to
+// the backend's event log (stats is read-only, so bypassing the transition
+// gates here is fine — it only needs the log, not valid entity state).
+func seedFlowEvents(t *testing.T, repoDir string) {
 	t.Helper()
-	now := time.Now().UTC()
-	docs := map[string]string{
-		"content/features/F-0001/spec.md":   strings.Repeat("a", 150),
-		"content/features/F-0002/spec.md":   strings.Repeat("a", 300),
-		"content/features/F-0002/result.md": strings.Repeat("a", 450),
-		"content/decisions/D-0001.md":       strings.Repeat("a", 100),
+	day := func(n int) time.Time { return time.Date(2026, 1, n, 0, 0, 0, 0, time.UTC) }
+	events := []domain.Event{
+		{ID: "e1", EntityID: "F-0001", Type: "feature.created", At: day(1)},
+		{ID: "e2", EntityID: "F-0001", Type: "feature.started", At: day(3)},
+		{ID: "e3", EntityID: "F-0001", Type: "feature.completed", At: day(10)},
 	}
-	for rel, body := range docs {
-		path := filepath.Join(repoDir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("MkdirAll %s: %v", rel, err)
+	for _, ev := range events {
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
 		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile %s: %v", rel, err)
-		}
-	}
-	features := []store.Feature{
-		{ID: "F-0001", Title: "Login social", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now},
-		{ID: "F-0002", Title: "Tema escuro", State: domain.StateImplemented, CreatedAt: now, UpdatedAt: now},
-	}
-	for _, f := range features {
-		if err := store.SaveFeature(repoDir, f); err != nil {
-			t.Fatalf("SaveFeature %s: %v", f.ID, err)
-		}
-	}
-	d := store.Decision{ID: "D-0001", Title: "Usar Postgres", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}
-	if err := store.SaveDecision(repoDir, d); err != nil {
-		t.Fatalf("SaveDecision: %v", err)
 	}
 }
 
-// TestStats: the human table (English, per F-0124) shows per-kind and total
-// corpus vs current projection plus the saved percentage.
-func TestStats(t *testing.T) {
+func TestFlowStats(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	seedStatsProject(t, repoDir)
+	seedFlowEvents(t, repoDir)
 
 	out, err := execCerne(t, "stats", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("stats: %v\noutput: %s", err, out)
 	}
-	for _, want := range []string{
-		"KIND", "CORPUS", "CURRENT",
-		"feature", "decision",
-		"TOTAL", "1000", "250",
-		"Saved: 750 bytes", "~187 tokens", "75.0%",
-	} {
+	for _, want := range []string{"F-0001", "Lead", "Cycle", "Throughput"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stats output missing %q:\n%s", want, out)
 		}
 	}
 }
 
-// TestStatsJSON: --json emits the materialize.Stats object with the exact
-// fixture numbers.
-func TestStatsJSON(t *testing.T) {
+func TestFlowStatsJSON(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	seedStatsProject(t, repoDir)
+	seedFlowEvents(t, repoDir)
 
 	out, err := execCerne(t, "stats", "--json", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("stats --json: %v\noutput: %s", err, out)
 	}
-	var s materialize.Stats
-	if err := json.Unmarshal([]byte(out), &s); err != nil {
+	var m stats.Metrics
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		t.Fatalf("stats --json is not valid JSON: %v\n%s", err, out)
 	}
-	if s.TotalCount != 3 || s.CurrentCount != 2 {
-		t.Errorf("counts = %d/%d, want 3/2", s.TotalCount, s.CurrentCount)
+	if len(m.Features) != 1 || m.Features[0].ID != "F-0001" {
+		t.Fatalf("Features = %+v, want [F-0001]", m.Features)
 	}
-	if s.TotalBytes != 1000 || s.CurrentBytes != 250 || s.SavedBytes != 750 {
-		t.Errorf("bytes = %d/%d/%d, want 1000/250/750", s.TotalBytes, s.CurrentBytes, s.SavedBytes)
+	if m.Features[0].Lead != 9*24*time.Hour || m.Features[0].Cycle != 7*24*time.Hour {
+		t.Fatalf("Lead/Cycle = %v/%v, want 216h/168h", m.Features[0].Lead, m.Features[0].Cycle)
 	}
-	if s.SavedPct != 75 {
-		t.Errorf("SavedPct = %v, want 75", s.SavedPct)
+}
+
+func TestFlowStatsSince(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedFlowEvents(t, repoDir)
+
+	out, err := execCerne(t, "stats", "--since", "2026-06-01", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("stats --since: %v\noutput: %s", err, out)
 	}
-	if s.TotalTokensEst != 250 || s.CurrentTokensEst != 62 || s.SavedTokensEst != 187 {
-		t.Errorf("tokens = %d/%d/%d, want 250/62/187", s.TotalTokensEst, s.CurrentTokensEst, s.SavedTokensEst)
+	var m stats.Metrics
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		t.Fatalf("stats --since --json is not valid JSON: %v\n%s", err, out)
 	}
-	if got := s.Kinds["feature"]; got != (materialize.KindStats{Count: 2, Bytes: 900, CurrentCount: 1, CurrentBytes: 150}) {
-		t.Errorf("feature kind = %+v", got)
+	if len(m.Features) != 0 {
+		t.Fatalf("Features = %+v, want none (all completed before --since window)", m.Features)
 	}
-	if got := s.Kinds["decision"]; got != (materialize.KindStats{Count: 1, Bytes: 100, CurrentCount: 1, CurrentBytes: 100}) {
-		t.Errorf("decision kind = %+v", got)
+}
+
+func TestFlowStatsNoWrites(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedFlowEvents(t, repoDir)
+	before, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents before: %v", err)
+	}
+
+	if _, err := execCerne(t, "stats", "--dir", projDir); err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+
+	after, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents after: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("event log changed: before %d events, after %d — stats must be read-only", len(before), len(after))
 	}
 }

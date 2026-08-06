@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchStats, type Stats } from './api'
+import { fetchSavings, type Stats } from './api'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -27,7 +27,7 @@ export default function StatsPage() {
   const { t, lang } = useT()
 
   useEffect(() => {
-    fetchStats()
+    fetchSavings()
       .then((s) => {
         setStats(s)
         setError(null)
