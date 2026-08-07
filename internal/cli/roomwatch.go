@@ -1,14 +1,19 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
+	"github.com/spf13/cobra"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -125,4 +130,119 @@ func lockCheckpoint(path string) (func(), error) {
 	}
 	f.Close()
 	return func() { os.Remove(lockPath) }, nil
+}
+
+func newRoomWatchCmd() *cobra.Command {
+	var dir, session, cursorFile string
+	var port, since int
+	var once bool
+	cmd := &cobra.Command{
+		Use:   "watch <room>",
+		Short: "Watch a war room with a durable per-session cursor, filtering your own echo (F-0227)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			roomID := args[0]
+			// --session wins over the env var, same convention as `say` (F-0226).
+			if session == "" {
+				session = os.Getenv("CERNE_ROOM_SESSION")
+			}
+			if session == "" {
+				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
+			}
+			c, err := newRoomClient(dir, port)
+			if err != nil {
+				return err
+			}
+
+			cpPath := cursorFile
+			if cpPath == "" {
+				cpPath, err = checkpointPath(c.pid, roomID, session)
+				if err != nil {
+					return err
+				}
+			}
+			release, err := lockCheckpoint(cpPath)
+			if err != nil {
+				return err
+			}
+			defer release()
+
+			start, err := resolveWatchStart(cmd.Context(), c, roomID, session, cpPath, since, cmd.Flags().Changed("since"))
+			if err != nil {
+				return err
+			}
+
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
+			defer stop()
+			return roomWatchLoop(ctx, cmd.OutOrStdout(), c, roomID, session, cpPath, start, once)
+		},
+	}
+	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
+	cmd.Flags().IntVar(&since, "since", 0, "override the checkpoint/last_seq and start from this sequence number")
+	cmd.Flags().BoolVar(&once, "once", false, "exit 0 after printing the first relevant (non-echo) event")
+	cmd.Flags().StringVar(&cursorFile, "cursor-file", "", "override the default per-room-per-session checkpoint file path")
+	addRoomFlags(cmd, &dir, &port)
+	return cmd
+}
+
+// resolveWatchStart picks the watch's starting cursor (spec criterion 1):
+// an explicit --since wins; else a saved checkpoint; else the room's
+// current tail via resume (the same value a fresh `room join` would have
+// returned as last_seq).
+func resolveWatchStart(ctx context.Context, c roomClient, roomID, session, cpPath string, since int, sinceSet bool) (int, error) {
+	if sinceSet {
+		return since, nil
+	}
+	if cp, ok, err := loadCheckpoint(cpPath); err != nil {
+		return 0, err
+	} else if ok {
+		return cp.LastSeq, nil
+	}
+	sess, err := c.resume(ctx, roomID, session)
+	if err != nil {
+		return 0, err
+	}
+	return sess.LastSeq, nil
+}
+
+// roomWatchLoop long-polls id as session from since, printing every event
+// but its own echo (own:true never printed, but still advances the
+// checkpoint — criterion 3) and persisting the checkpoint only after each
+// event's write succeeds (criterion 2/8). once exits after the first batch
+// with at least one printed event; a close event always ends the loop,
+// printed and checkpointed, regardless of once (criterion 6).
+func roomWatchLoop(ctx context.Context, out io.Writer, c roomClient, id, session, cpPath string, since int, once bool) error {
+	for {
+		events, err := c.readAsSession(ctx, id, since, session)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		printedRelevant := false
+		for _, ev := range events {
+			own := ev.Own != nil && *ev.Own
+			if !own {
+				if _, err := fmt.Fprintln(out, formatRoomEvent(ev.Message)); err != nil {
+					return err
+				}
+				printedRelevant = true
+			}
+			since = ev.Seq
+			cp := roomCheckpoint{RoomID: id, SessionHash: hashSessionID(session), LastSeq: since, UpdatedAt: time.Now().UTC()}
+			if err := saveCheckpoint(cpPath, cp); err != nil {
+				return err
+			}
+			if ev.Type == "close" {
+				return nil
+			}
+		}
+		if once && printedRelevant {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+	}
 }
