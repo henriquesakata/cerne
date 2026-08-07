@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConfigRoundTrip(t *testing.T) {
@@ -601,5 +602,31 @@ func TestConfigCommitTrailerToggle(t *testing.T) {
 		if g.CommitTrailerEnabled() {
 			t.Errorf("CommitTrailer %q: want disabled", v)
 		}
+	}
+}
+
+// TestAgentChatTimeout pins the [agent] chat_timeout resolution (F-0224): zero
+// means the 300s default (agentic chat chains queries, one-shot budgets are
+// too tight), a set value wins, and the field round-trips through .cernerc.
+func TestAgentChatTimeout(t *testing.T) {
+	if got := (AgentConfig{}).ChatTimeoutOrDefault(); got != 300*time.Second {
+		t.Fatalf("default ChatTimeout = %v, want 300s", got)
+	}
+	if got := (AgentConfig{ChatTimeout: 45}).ChatTimeoutOrDefault(); got != 45*time.Second {
+		t.Fatalf("set ChatTimeout = %v, want 45s", got)
+	}
+
+	dir := t.TempDir()
+	want := Config{ProjectID: "cerne", Backend: "/tmp/backend",
+		Agent: AgentConfig{ChatTimeout: 120}}
+	if err := SaveConfig(dir, want); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Agent.ChatTimeout != 120 {
+		t.Fatalf("ChatTimeout round-trip: got %d, want 120", got.Agent.ChatTimeout)
 	}
 }
