@@ -60,6 +60,7 @@ type Config struct {
 	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
 	Webhook        WebhookConfig   `toml:"webhook"`   // F-0206: HTTP POST on every entity state transition
 	Agent          AgentConfig     `toml:"agent"`     // F-0210: domain persona for the Backlog chat
+	Guard          GuardConfig     `toml:"guard"`     // F-0225: commit-msg guard severity
 }
 
 // AgentConfig is the optional [agent] block of .cernerc (F-0210): the domain
@@ -210,6 +211,19 @@ func (g GatesConfig) RevertGate() string {
 	return GateHuman
 }
 
+// GuardConfig is the optional [guard] block of .cernerc (F-0225): the
+// severity of the commit-msg guard when a cited F-/T-/E- id is still
+// candidate/approved (or closed: rejected/superseded). Default is fail; the
+// project opts into a non-blocking notice with mode = "warn".
+type GuardConfig struct {
+	Mode string `toml:"mode,omitempty"` // "fail" (default) | "warn"
+}
+
+// FailMode resolves the guard severity: fail unless explicitly set to "warn".
+func (g GuardConfig) FailMode() bool {
+	return g.Mode != "warn"
+}
+
 // StaleReadyWindowDays returns the configured stale_ready_days or the 14-day
 // default when absent/zero.
 func (c Config) StaleReadyWindowDays() int {
@@ -308,6 +322,7 @@ func SaveConfig(dir string, c Config) error {
 		Delivery                 *DeliveryConfig     `toml:"delivery,omitempty"`
 		Webhook                  *WebhookConfig      `toml:"webhook,omitempty"`
 		Agent                    *AgentConfig        `toml:"agent,omitempty"`
+		Guard                    *GuardConfig        `toml:"guard,omitempty"`
 	}
 	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
 	if !c.Gates.isZero() {
@@ -337,6 +352,10 @@ func SaveConfig(dir string, c Config) error {
 	if c.Agent != (AgentConfig{}) {
 		agent := c.Agent
 		w.Agent = &agent
+	}
+	if c.Guard != (GuardConfig{}) {
+		guard := c.Guard
+		w.Guard = &guard
 	}
 	data, err := toml.Marshal(w)
 	if err != nil {
