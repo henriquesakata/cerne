@@ -202,8 +202,80 @@ func installClaude(projDir string) ([]Result, error) {
 	results = append(results, Result{Asset: "settings.json", Status: st})
 
 	results = append(results, installCommitTrailerGitHook(projDir))
+	results = append(results, installGuardCommitMsgGitHook(projDir))
 
 	return results, nil
+}
+
+// guardHookName is the git hook slot the commit guard uses (F-0225).
+const guardHookName = "commit-msg"
+
+// guardSnippet is the one-liner a project with its own hook manager (husky,
+// custom core.hooksPath) adds to integrate the guard.
+const guardSnippet = `cerne guard commit-msg "$1"`
+
+// guardMarker delimits the guard's own block inside a shared commit-msg hook,
+// so a second install recognizes it instead of appending a duplicate.
+const guardMarker = "# --- cerne guard (F-0225) — managed by `cerne hook install`, do not edit below ---"
+
+// guardHookBody is the wrapper appended after guardMarker. Fail-open: with
+// the cerne binary absent (or the guard command erroring for any reason
+// other than a real block) the commit proceeds.
+const guardHookBody = `
+command -v cerne >/dev/null 2>&1 || exit 0
+cerne guard commit-msg "$1"
+`
+
+// guardHookContent is the full file written into a FREE .git/hooks slot.
+const guardHookContent = "#!/usr/bin/env sh\n" +
+	"# commit-msg guard installed by 'cerne hook install' (F-0225). Blocks a\n" +
+	"# commit citing an F-/T-/E- id still candidate/approved or already closed.\n" +
+	"# Tool-managed — do not edit; fix it upstream in internal/hooks/ and\n" +
+	"# re-run 'cerne hook install'.\n" +
+	guardMarker + "\n" + guardHookBody
+
+// installGuardCommitMsgGitHook writes the commit-msg guard into a project's
+// .git/hooks (F-0225): a missing .git or a custom core.hooksPath is skipped
+// with the manual integration snippet, same as the trailer hook. Unlike the
+// trailer hook, a FOREIGN existing commit-msg hook is not skipped — the
+// guard's block is appended below a marker, since letting a project's own
+// husky/lefthook commit-msg hook run first is exactly what everyone wants,
+// and the guard command itself is fail-open on any real infra problem.
+func installGuardCommitMsgGitHook(projDir string) Result {
+	skipped := func(note string) Result {
+		return Result{Asset: guardHookName, Status: StatusSkipped, Note: note}
+	}
+	gitDir := filepath.Join(projDir, ".git")
+	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+		return skipped("not a git repository — integrate manually: " + guardSnippet)
+	}
+	if raw, err := os.ReadFile(filepath.Join(gitDir, "config")); err == nil && strings.Contains(string(raw), "hooksPath") {
+		return skipped("custom core.hooksPath — add to your hook manager: " + guardSnippet)
+	}
+	dst := filepath.Join(gitDir, "hooks", guardHookName)
+	existing, err := os.ReadFile(dst)
+	switch {
+	case err != nil:
+		if mkErr := os.MkdirAll(filepath.Dir(dst), 0o755); mkErr != nil {
+			return skipped("cannot create .git/hooks: " + mkErr.Error())
+		}
+		if wErr := os.WriteFile(dst, []byte(guardHookContent), 0o755); wErr != nil {
+			return skipped("cannot write hook: " + wErr.Error())
+		}
+		return Result{Asset: guardHookName, Status: StatusCreated}
+	case strings.Contains(string(existing), guardMarker):
+		return Result{Asset: guardHookName, Status: StatusUnchanged}
+	default:
+		content := string(existing)
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		content += guardMarker + "\n" + guardHookBody
+		if wErr := os.WriteFile(dst, []byte(content), 0o755); wErr != nil {
+			return skipped("cannot write hook: " + wErr.Error())
+		}
+		return Result{Asset: guardHookName, Status: StatusUpdated}
+	}
 }
 
 // trailerHookName is the git hook slot the commit trailer uses (F-0173).

@@ -64,7 +64,7 @@ func TestInstall_WiresWorkBindAndGate(t *testing.T) {
 		t.Fatalf("Install (2nd): %v", err)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Status != StatusUnchanged {

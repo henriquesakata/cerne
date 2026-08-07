@@ -31,7 +31,7 @@ func TestInstall_CreatesWhenAbsent(t *testing.T) {
 		t.Fatalf("settings.json is not valid JSON:\n%s", b)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Status != StatusCreated {
@@ -99,7 +99,7 @@ func TestInstall_Idempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Status != StatusUnchanged {
@@ -560,7 +560,7 @@ func TestInstall_IdempotentAfterRichMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Asset == "settings.json" && r.Status != StatusUnchanged {
@@ -656,7 +656,7 @@ func TestInstall_ActorEnvIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Asset == "settings.json" && r.Status != StatusUnchanged {
@@ -691,7 +691,7 @@ func TestInstall_WiresLifecycleReminder(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Status != StatusUnchanged {
@@ -722,7 +722,7 @@ func TestInstall_WiresStopCloseout(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
-		if r.Asset == trailerHookName {
+		if r.Asset == trailerHookName || r.Asset == guardHookName {
 			continue // skipped outside a real git repo (F-0173) — has its own test
 		}
 		if r.Status != StatusUnchanged {
@@ -837,6 +837,129 @@ func TestInstall_CommitTrailerGitHook(t *testing.T) {
 			t.Fatal(err)
 		}
 		if r, ok := find(results, "prepare-commit-msg"); !ok || r.Status != StatusSkipped {
+			t.Fatalf("result = %+v, want skipped", r)
+		}
+	})
+}
+
+// TestInstall_GuardCommitMsgGitHook (F-0225 crit. 4): the commit-msg guard is
+// written into a free slot; a foreign hook is preserved and gains the guard
+// appended below a marker (never clobbered, unlike the trailer hook, which
+// only ever skips); a second install is idempotent either way.
+func TestInstall_GuardCommitMsgGitHook(t *testing.T) {
+	find := func(rs []Result, asset string) (Result, bool) {
+		for _, r := range rs {
+			if r.Asset == asset {
+				return r, true
+			}
+		}
+		return Result{}, false
+	}
+
+	t.Run("free slot", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, ".git", "hooks", "commit-msg")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("git hook not written: %v", err)
+		}
+		if !strings.Contains(string(b), `cerne guard commit-msg "$1"`) {
+			t.Fatalf("git hook missing delegation:\n%s", b)
+		}
+		if runtime.GOOS != "windows" {
+			info, _ := os.Stat(p)
+			if info.Mode()&0o111 == 0 {
+				t.Fatalf("git hook not executable: %v", info.Mode())
+			}
+		}
+		r, ok := find(results, "commit-msg")
+		if !ok || r.Status != StatusCreated {
+			t.Fatalf("result = %+v, want created", r)
+		}
+		results, err = Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, _ := find(results, "commit-msg"); r.Status != StatusUnchanged {
+			t.Fatalf("second install = %+v, want unchanged", r)
+		}
+	})
+
+	t.Run("foreign hook gets the guard appended", func(t *testing.T) {
+		dir := t.TempDir()
+		hooksDir := filepath.Join(dir, ".git", "hooks")
+		if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		foreign := "#!/bin/sh\necho husky\n"
+		p := filepath.Join(hooksDir, "commit-msg")
+		if err := os.WriteFile(p, []byte(foreign), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(p)
+		if !strings.HasPrefix(string(b), foreign) {
+			t.Fatalf("foreign hook content not preserved at the top:\n%s", b)
+		}
+		if !strings.Contains(string(b), `cerne guard commit-msg "$1"`) {
+			t.Fatalf("guard not appended:\n%s", b)
+		}
+		r, _ := find(results, "commit-msg")
+		if r.Status != StatusUpdated {
+			t.Fatalf("result = %+v, want updated", r)
+		}
+		// Idempotent: a second install must not double-append.
+		results, err = Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b2, _ := os.ReadFile(p)
+		if strings.Count(string(b2), `cerne guard commit-msg "$1"`) != 1 {
+			t.Fatalf("guard appended more than once:\n%s", b2)
+		}
+		if r, _ := find(results, "commit-msg"); r.Status != StatusUnchanged {
+			t.Fatalf("second install = %+v, want unchanged", r)
+		}
+	})
+
+	t.Run("custom hooksPath skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitConfig := "[core]\n\thooksPath = .husky\n"
+		if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte(gitConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git", "hooks", "commit-msg")); !os.IsNotExist(err) {
+			t.Fatal("hook written despite custom hooksPath")
+		}
+		if r, _ := find(results, "commit-msg"); r.Status != StatusSkipped {
+			t.Fatalf("result = %+v, want skipped", r)
+		}
+	})
+
+	t.Run("not a git repo", func(t *testing.T) {
+		dir := t.TempDir()
+		results, err := Install(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, ok := find(results, "commit-msg"); !ok || r.Status != StatusSkipped {
 			t.Fatalf("result = %+v, want skipped", r)
 		}
 	})
