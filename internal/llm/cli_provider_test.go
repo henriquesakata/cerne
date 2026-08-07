@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"strings"
@@ -19,11 +20,11 @@ import (
 func TestCLIProviderCompleteSuccess(t *testing.T) {
 	var gotName, gotStdin string
 	var gotArgs []string
-	fake := func(_ context.Context, name string, args []string, stdin string) (string, error) {
+	fake := func(_ context.Context, _, name string, args []string, stdin string) (string, string, error) {
 		gotName = name
 		gotArgs = args
 		gotStdin = stdin
-		return "  resposta da assinatura\n", nil
+		return "  resposta da assinatura\n", "", nil
 	}
 	p := &cliProvider{bin: "claude", run: fake}
 
@@ -61,10 +62,10 @@ func TestCLIProviderLargePromptGoesToStdin(t *testing.T) {
 	prompt := strings.Repeat("contexto grande ", 4000) // ~64 KB, well over the argv cap
 	var gotArgs []string
 	var gotStdin string
-	fake := func(_ context.Context, _ string, args []string, stdin string) (string, error) {
+	fake := func(_ context.Context, _, _ string, args []string, stdin string) (string, string, error) {
 		gotArgs = args
 		gotStdin = stdin
-		return "ok", nil
+		return "ok", "", nil
 	}
 	p := &cliProvider{bin: "claude", run: fake}
 
@@ -85,8 +86,8 @@ func TestCLIProviderLargePromptGoesToStdin(t *testing.T) {
 // with an actionable pt-BR message that mentions claude -p and the byo-key fallback.
 func TestCLIProviderCompleteError(t *testing.T) {
 	cause := errors.New("exit status 1: not logged in")
-	fake := func(_ context.Context, _ string, _ []string, _ string) (string, error) {
-		return "", cause
+	fake := func(_ context.Context, _, _ string, _ []string, _ string) (string, string, error) {
+		return "", "", cause
 	}
 	p := &cliProvider{bin: "claude", run: fake}
 
@@ -183,7 +184,7 @@ func TestExecRunCapturesStdoutOnFailure(t *testing.T) {
 	// execRun offers no env injection (by design), so the guard travels via
 	// inherited environment: set here, seen by the re-executed child.
 	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
-	_, err := execRun(context.Background(), os.Args[0],
+	_, _, err := execRun(context.Background(), "", os.Args[0],
 		[]string{"-test.run=TestExecRunCapturesStdoutOnFailure$"}, "")
 	if err == nil {
 		t.Fatal("execRun on an exit-1 process returned nil error")
@@ -230,5 +231,161 @@ func TestNewProviderClaudeCLIDefaultBin(t *testing.T) {
 	}
 	if cp.bin != "claude" {
 		t.Fatalf("cliProvider.bin = %q, want default \"claude\"", cp.bin)
+	}
+}
+
+// TestAgentProviderAllowlistFlags pins the F-0224 permission boundary: the
+// agentic provider must pass EXACTLY the cerne read-command allowlist via one
+// comma-joined --allowedTools argument, run in the project dir, and keep the
+// prompt on stdin. The exact-string assertion is the guard against a write
+// command ever sneaking into the boundary.
+func TestAgentProviderAllowlistFlags(t *testing.T) {
+	var gotDir string
+	var gotArgs []string
+	var gotStdin string
+	fake := func(_ context.Context, dir, _ string, args []string, stdin string) (string, string, error) {
+		gotDir = dir
+		gotArgs = args
+		gotStdin = stdin
+		return "resposta com F-0132 citada", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+
+	out, err := p.Complete(context.Background(), "qual a spec da F-0132?")
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if out != "resposta com F-0132 citada" {
+		t.Fatalf("Complete = %q", out)
+	}
+	if gotDir != "/proj" {
+		t.Fatalf("runner dir = %q, want /proj (cerne commands must hit the project backend)", gotDir)
+	}
+	if gotStdin != "qual a spec da F-0132?" {
+		t.Fatalf("stdin = %q, want the prompt", gotStdin)
+	}
+	wantList := "Bash(cerne search:*),Bash(cerne show:*),Bash(cerne brief:*),Bash(cerne status:*)," +
+		"Bash(cerne note list:*),Bash(cerne note show:*),Bash(cerne reference list:*),Bash(cerne decision list:*)"
+	want := []string{"-p", "--output-format", "text", "--allowedTools", wantList}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("runner args = %v, want %v", gotArgs, want)
+	}
+}
+
+// TestAgentReadToolsNoWriteCommands is the negative boundary check (F-0224
+// criterion 4): no rule in the allowlist may cover a mutating cerne command.
+func TestAgentReadToolsNoWriteCommands(t *testing.T) {
+	banned := []string{"feature", "new", "approve", "start", "complete", "accept",
+		"reject", "retire", "push", "import", "retag", "substituir", "work", "hook"}
+	for _, rule := range AgentReadTools {
+		for _, b := range banned {
+			if strings.Contains(rule, b) {
+				t.Fatalf("allowlist rule %q covers write-adjacent token %q", rule, b)
+			}
+		}
+	}
+}
+
+// TestAgentProviderFallbackOldBinary: a CLI too old to know --allowedTools
+// (unknown flag/option error) gets exactly one retry in plain one-shot form.
+func TestAgentProviderFallbackOldBinary(t *testing.T) {
+	var calls [][]string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		calls = append(calls, args)
+		if len(calls) == 1 {
+			return "", "", errors.New("error: unknown option '--allowedTools'")
+		}
+		return "resposta one-shot", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+
+	out, err := p.Complete(context.Background(), "pergunta")
+	if err != nil {
+		t.Fatalf("Complete after fallback: %v", err)
+	}
+	if out != "resposta one-shot" {
+		t.Fatalf("Complete = %q", out)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("runner called %d times, want 2 (agentic then one-shot)", len(calls))
+	}
+	for _, a := range calls[1] {
+		if a == "--allowedTools" {
+			t.Fatalf("fallback args %v still carry --allowedTools", calls[1])
+		}
+	}
+	// A genuine failure (not an unknown flag) must NOT trigger the fallback.
+	calls = nil
+	failing := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		calls = append(calls, args)
+		return "", "", errors.New("exit status 1: not logged in")
+	}
+	p = &cliProvider{bin: "claude", run: failing, dir: "/proj", agentTools: AgentReadTools}
+	if _, err := p.Complete(context.Background(), "pergunta"); !errors.Is(err, ErrClaudeCLI) {
+		t.Fatalf("err = %v, want ErrClaudeCLI", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("runner called %d times on a real failure, want 1 (no retry)", len(calls))
+	}
+}
+
+// TestAgentProviderLogsStderr (F-0224 criterion 4): whatever the CLI printed
+// on stderr — where headless permission denials surface — must land in the
+// server log even on a successful completion.
+func TestAgentProviderLogsStderr(t *testing.T) {
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	denial := "Permission denied: Bash(cerne feature new \"x\")"
+	fake := func(_ context.Context, _, _ string, _ []string, _ string) (string, string, error) {
+		return "resposta", denial, nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+	if _, err := p.Complete(context.Background(), "p"); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if !strings.Contains(buf.String(), denial) {
+		t.Fatalf("server log %q does not carry the CLI stderr %q", buf.String(), denial)
+	}
+
+	// One-shot mode stays quiet: ask/compile callers keep their clean log.
+	buf.Reset()
+	p = &cliProvider{bin: "claude", run: fake}
+	if _, err := p.Complete(context.Background(), "p"); err != nil {
+		t.Fatalf("Complete one-shot: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("one-shot mode logged %q, want silence", buf.String())
+	}
+}
+
+// TestNewAgentProviderModes (F-0224): claude-cli yields the agentic provider
+// (allowlist + dir + default bin); byo-key passes through to the same static
+// httpProvider (criterion 3); delegation keeps its sentinel.
+func TestNewAgentProviderModes(t *testing.T) {
+	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj")
+	if err != nil {
+		t.Fatalf("NewAgentProvider(claude-cli): %v", err)
+	}
+	cp, ok := prov.(*cliProvider)
+	if !ok {
+		t.Fatalf("provider = %T, want *cliProvider", prov)
+	}
+	if cp.bin != "claude" || cp.dir != "/proj" || !reflect.DeepEqual(cp.agentTools, AgentReadTools) {
+		t.Fatalf("agentic provider misconfigured: bin=%q dir=%q tools=%v", cp.bin, cp.dir, cp.agentTools)
+	}
+
+	t.Setenv("TEST_CHAT_KEY", "k")
+	prov, err = NewAgentProvider(project.LLMConfig{Mode: "byo-key", KeyEnv: "TEST_CHAT_KEY"}, "/proj")
+	if err != nil {
+		t.Fatalf("NewAgentProvider(byo-key): %v", err)
+	}
+	if _, ok := prov.(*httpProvider); !ok {
+		t.Fatalf("byo-key provider = %T, want *httpProvider (static, no tool loop)", prov)
+	}
+
+	if _, err := NewAgentProvider(project.LLMConfig{}, "/proj"); !errors.Is(err, ErrNoProviderForDelegation) {
+		t.Fatalf("delegation err = %v, want ErrNoProviderForDelegation", err)
 	}
 }
