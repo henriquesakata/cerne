@@ -77,16 +77,17 @@ export default function Dashboard() {
     <main className="page">
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
-      {/* Composição fixa (F-0143/F-0145): linha 1 = heatmap em largura total;
-          linha 2 = contadores compactos (1/3 cada); linha 3 = Épicos + Eventos
-          ao meio (1/2 cada); linha 4 = Atividade em largura total. */}
+      {/* Composição fixa (F-0143/F-0145/F-0222): linha 1 = heatmap em largura
+          total; linha 2 = contadores compactos (1/3 cada); linha 3 = Épicos
+          em largura total; linha 4 = Flow Metrics + Eventos (1/2 cada);
+          linha 5 = Atividade em largura total. */}
       <div className="dash-grid">
         <HeatmapCard />
         <RosterCard />
         <LintCard />
         <SavingsCard />
-        <FlowStatsCard />
         <EpicsCard />
+        <FlowStatsCard />
         <EventsCard />
         <ActivityCard />
       </div>
@@ -193,7 +194,7 @@ function EpicsCard() {
   }
   const epics = features.filter((f) => byParent.has(f.id))
   return (
-    <Card title={t.dashboard.epics} href="#/kanban" error={error} className="dash-span-half">
+    <Card title={t.dashboard.epics} href="#/kanban" error={error} className="dash-span-full">
       {epics.length === 0 && <p className="muted">{t.dashboard.noEpics}</p>}
       <ul className="dash-list">
         {epics.slice(0, 6).map((e) => {
@@ -276,7 +277,7 @@ function FlowStatsCard() {
     ? throughputValues.reduce((a, b) => a + b, 0) / throughputValues.length
     : 0
   return (
-    <Card title={t.dashboard.flowStats} href="#/history" error={error} className="dash-span-2">
+    <Card title={t.dashboard.flowStats} href="#/history" error={error} className="dash-span-half">
       {data && (
         (data.Features?.length ?? 0) === 0 ? (
           <p className="muted">{t.dashboard.flowStatsEmpty}</p>
