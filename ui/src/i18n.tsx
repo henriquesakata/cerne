@@ -206,6 +206,9 @@ const ptBR = {
     proposalBody: 'Spec proposta',
     register: 'Registrar candidata',
     registering: 'Registrando…',
+    newConversation: 'Nova conversa',
+    modelLabel: 'Modelo',
+    effortLabel: 'Esforço',
   },
   warRoom: {
     title: 'War Room',
@@ -761,6 +764,9 @@ const en: Messages = {
     proposalBody: 'Proposed spec',
     register: 'Register candidate',
     registering: 'Registering…',
+    newConversation: 'New conversation',
+    modelLabel: 'Model',
+    effortLabel: 'Effort',
   },
   warRoom: {
     title: 'War Room',
