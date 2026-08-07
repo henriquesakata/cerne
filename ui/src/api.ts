@@ -829,6 +829,22 @@ export async function fetchRooms(): Promise<Room[]> {
   return ((await r.json()) as { rooms: Room[] }).rooms
 }
 
+export async function postRoomOpen(topic: string): Promise<Room> {
+  const r = await fetch(`${base()}/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Room
+}
+
+export async function postRoomClose(id: string): Promise<Room> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/close`, { method: 'POST' })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Room
+}
+
 export async function joinRoom(id: string, nick: string, bio: string): Promise<Room> {
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/join`, {
     method: 'POST',
