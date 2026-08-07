@@ -26,6 +26,31 @@ func TestLLMConfigGetDefault(t *testing.T) {
 	}
 }
 
+// TestLLMConfigGetServesModelsAndEfforts: F-0218 criterion 5 — GET carries
+// the known model/effort options so the Backlog chat selector never
+// hardcodes them, even in delegation (the selector itself stays hidden then).
+func TestLLMConfigGetServesModelsAndEfforts(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b"}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	var got struct {
+		Mode    string   `json:"mode"`
+		Models  []string `json:"models"`
+		Efforts []string `json:"efforts"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/config/llm", "", &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Models) == 0 {
+		t.Fatalf("models = %v, want non-empty", got.Models)
+	}
+	if len(got.Efforts) == 0 {
+		t.Fatalf("efforts = %v, want non-empty", got.Efforts)
+	}
+}
+
 // TestLLMConfigPutSwitchesMode: PUT changes the mode in .cernerc and preserves
 // the other config fields; a follow-up load reflects the new mode.
 func TestLLMConfigPutSwitchesMode(t *testing.T) {

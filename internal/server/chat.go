@@ -19,9 +19,14 @@ type chatMessage struct {
 	Content string `json:"content"`
 }
 
-// chatRequest is the POST /api/chat body.
+// chatRequest is the POST /api/chat body. Model/Effort (F-0218) are optional
+// per-call overrides from the chat's model/effort selector: Model replaces
+// cfg.LLM.Model for the byo-key provider; Effort travels here for forward
+// compatibility but no provider applies it yet (silently ignored).
 type chatRequest struct {
 	Messages []chatMessage `json:"messages"`
+	Model    string        `json:"model,omitempty"`
+	Effort   string        `json:"effort,omitempty"`
 }
 
 // chatResponse mirrors askResponse/generateDiagramResponse: Answered is false
@@ -53,6 +58,9 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 	if err != nil || llm.ResolveMode(cfg.LLM.Mode) == llm.ModeDelegation {
 		writeJSON(w, http.StatusOK, chatResponse{Answered: false, NeedsProvider: true})
 		return
+	}
+	if req.Model != "" {
+		cfg.LLM.Model = req.Model
 	}
 
 	sysPrompt, err := app.BuildChatSystemPrompt(repoDir, projDir, cfg)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,6 +70,67 @@ func TestChatByoKey(t *testing.T) {
 	}
 	if !strings.Contains(gotPrompt, "Preciso exportar relatórios.") {
 		t.Fatalf("prompt missing the user's message:\n%s", gotPrompt)
+	}
+}
+
+// TestChatModelOverride: F-0218 criterion 5 — an optional "model" on the
+// request body overrides cfg.LLM.Model for the byo-key provider's API call;
+// "effort" travels on the request too but no provider applies it yet (no-op,
+// per the spec's "sem suporte, omite silenciosamente").
+func TestChatModelOverride(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var gotPrompt string
+	srv := fakeChatProvider(t, &gotPrompt, "ok")
+	configureChatByoKey(t, projDir, srv.URL)
+
+	var got struct {
+		Answered bool `json:"answered"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"Oi"}],"model":"claude-opus-5","effort":"high"}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if !got.Answered {
+		t.Fatalf("answered = %v, want true", got.Answered)
+	}
+	var sentToProvider struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal([]byte(gotPrompt), &sentToProvider); err != nil {
+		t.Fatalf("unmarshal provider request: %v", err)
+	}
+	if sentToProvider.Model != "claude-opus-5" {
+		t.Fatalf("provider request model = %q, want claude-opus-5", sentToProvider.Model)
+	}
+}
+
+// TestChatNoModelOverrideUsesConfigDefault: without "model" on the request,
+// the provider gets the .cernerc default (regression guard for TestChatByoKey).
+func TestChatNoModelOverrideUsesConfigDefault(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var gotPrompt string
+	srv := fakeChatProvider(t, &gotPrompt, "ok")
+	configureChatByoKey(t, projDir, srv.URL)
+
+	var got struct {
+		Answered bool `json:"answered"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"Oi"}]}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	var sentToProvider struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal([]byte(gotPrompt), &sentToProvider); err != nil {
+		t.Fatalf("unmarshal provider request: %v", err)
+	}
+	if sentToProvider.Model == "" || sentToProvider.Model == "claude-opus-5" {
+		t.Fatalf("provider request model = %q, want the .cernerc default (unset here, so the byo-key WithDefaults value), not the override", sentToProvider.Model)
 	}
 }
 

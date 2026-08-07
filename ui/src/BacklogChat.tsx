@@ -1,5 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { fetchLLMMode, postChat, registerChatCandidate, type ChatMsg, type Feature } from './api'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  fetchLLMOptions,
+  getApiProject,
+  postChat,
+  registerChatCandidate,
+  type ChatMsg,
+  type Feature,
+} from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
 
@@ -26,28 +33,94 @@ export function parseProposal(reply: string): ParsedProposal | null {
   return { title: '', body: inner }
 }
 
+// TYPING_CHARS_PER_TICK/TYPING_TICK_MS (F-0218 critério 2): efeito de
+// digitação local — sem streaming de rede, só um render progressivo do texto
+// já recebido inteiro. Um clique no histórico pula direto pro texto completo.
+const TYPING_CHARS_PER_TICK = 3
+const TYPING_TICK_MS = 20
+
+// storageKey isola a conversa por projeto (critério 1) — cada pid tem sua
+// própria chave, então trocar de projeto nunca mistura históricos.
+function storageKey(): string {
+  return `cerne.chat.${getApiProject()}`
+}
+
+type StoredChat = { messages: ChatMsg[]; model?: string; effort?: string }
+
+function loadStoredChat(): StoredChat {
+  try {
+    const raw = localStorage.getItem(storageKey())
+    if (!raw) return { messages: [] }
+    const parsed = JSON.parse(raw) as StoredChat
+    return { messages: Array.isArray(parsed.messages) ? parsed.messages : [], model: parsed.model, effort: parsed.effort }
+  } catch {
+    return { messages: [] }
+  }
+}
+
 type Props = { onRegistered?: (feature: Feature) => void }
 
 export default function BacklogChat({ onRegistered }: Props) {
-  const [messages, setMessages] = useState<ChatMsg[]>([])
+  const initial = useRef(loadStoredChat()).current
+  const [messages, setMessages] = useState<ChatMsg[]>(initial.messages)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [needsProvider, setNeedsProvider] = useState(false)
   const [proposal, setProposal] = useState<ParsedProposal | null>(null)
   const [registering, setRegistering] = useState(false)
+  const [models, setModels] = useState<string[]>([])
+  const [efforts, setEfforts] = useState<string[]>([])
+  const [model, setModel] = useState(initial.model ?? '')
+  const [effort, setEffort] = useState(initial.effort ?? '')
+  const [typingLen, setTypingLen] = useState<number | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { t } = useT()
 
   // Critério 5: sem [llm] configurado, o chat nasce desabilitado — nenhuma
   // chamada ao provider é feita nem esperando o usuário digitar algo.
   useEffect(() => {
-    fetchLLMMode()
-      .then((mode) => setNeedsProvider(mode === 'delegation'))
+    fetchLLMOptions()
+      .then((opts) => {
+        setNeedsProvider(opts.mode === 'delegation')
+        setModels(opts.models)
+        setEfforts(opts.efforts)
+      })
       .catch(() => {})
   }, [])
 
-  const send = (e: FormEvent) => {
-    e.preventDefault()
+  // Critério 1: persiste a cada mudança de transcript/seleção — sobrevive a
+  // navegar pra outra tela e voltar (o componente é remontado do zero).
+  useEffect(() => {
+    localStorage.setItem(storageKey(), JSON.stringify({ messages, model, effort }))
+  }, [messages, model, effort])
+
+  // Critério 2: efeito de digitação sobre a última resposta do agente — sem
+  // streaming de rede, só revela o texto já recebido aos poucos.
+  useEffect(() => {
+    if (typingLen === null) return
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant' || typingLen >= last.content.length) {
+      setTypingLen(null)
+      return
+    }
+    const id = setTimeout(() => setTypingLen((n) => (n ?? 0) + TYPING_CHARS_PER_TICK), TYPING_TICK_MS)
+    return () => clearTimeout(id)
+  }, [typingLen, messages])
+
+  const skipTyping = () => {
+    const last = messages[messages.length - 1]
+    if (typingLen !== null && last) setTypingLen(last.content.length)
+  }
+
+  const autoExpand = () => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  const submitMessage = () => {
     const content = input.trim()
     if (content === '' || busy) return
     const next = [...messages, { role: 'user' as const, content }]
@@ -56,7 +129,7 @@ export default function BacklogChat({ onRegistered }: Props) {
     setBusy(true)
     setError(null)
     setProposal(null)
-    postChat(next)
+    postChat(next, { model: model || undefined, effort: effort || undefined })
       .then((res) => {
         setBusy(false)
         if (res.needs_provider) {
@@ -65,12 +138,30 @@ export default function BacklogChat({ onRegistered }: Props) {
         }
         const reply = res.reply ?? ''
         setMessages([...next, { role: 'assistant', content: reply }])
+        setTypingLen(0)
         setProposal(parseProposal(reply))
       })
       .catch((err: unknown) => {
         setBusy(false)
         setError(err instanceof Error ? err.message : String(err))
       })
+  }
+
+  const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Critério 4: Enter envia, Shift+Enter quebra linha (padrão Claude/ChatGPT).
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      submitMessage()
+    }
+  }
+
+  const newConversation = () => {
+    setMessages([])
+    setInput('')
+    setError(null)
+    setProposal(null)
+    setTypingLen(null)
+    localStorage.removeItem(storageKey())
   }
 
   const confirmRegister = () => {
@@ -104,14 +195,23 @@ export default function BacklogChat({ onRegistered }: Props) {
 
   return (
     <aside className="backlog-chat">
-      <h2>{t.backlogChat.title}</h2>
-      <div className="backlog-chat-history">
+      <div className="backlog-chat-toolbar">
+        <h2>{t.backlogChat.title}</h2>
+        <button type="button" className="backlog-chat-new" onClick={newConversation}>
+          {t.backlogChat.newConversation}
+        </button>
+      </div>
+      <div className="backlog-chat-history" onClick={skipTyping}>
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
-        {messages.map((m, i) => (
-          <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
-            {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : <p>{m.content}</p>}
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          const isTyping = typingLen !== null && i === messages.length - 1 && m.role === 'assistant'
+          const shown = isTyping ? m.content.slice(0, typingLen ?? 0) : m.content
+          return (
+            <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
+              {m.role === 'assistant' ? <Markdown>{shown}</Markdown> : <p>{shown}</p>}
+            </div>
+          )
+        })}
         {busy && <p className="status">{t.backlogChat.thinking}</p>}
       </div>
       {proposal && (
@@ -141,16 +241,59 @@ export default function BacklogChat({ onRegistered }: Props) {
         </div>
       )}
       {error && <p className="status error">{error}</p>}
-      <form className="backlog-chat-form" onSubmit={send}>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={t.backlogChat.placeholder}
-          rows={3}
-        />
-        <button type="submit" disabled={busy || input.trim() === ''}>
-          {t.backlogChat.send}
-        </button>
+      <form
+        className="backlog-chat-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submitMessage()
+        }}
+      >
+        <div className="backlog-chat-composer">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value)
+              autoExpand()
+            }}
+            onKeyDown={onComposerKeyDown}
+            placeholder={t.backlogChat.placeholder}
+            rows={1}
+          />
+          <button type="submit" disabled={busy || input.trim() === ''}>
+            {t.backlogChat.send}
+          </button>
+        </div>
+        {(models.length > 0 || efforts.length > 0) && (
+          <div className="backlog-chat-options">
+            {models.length > 0 && (
+              <label>
+                {t.backlogChat.modelLabel}{' '}
+                <select value={model} onChange={(e) => setModel(e.target.value)}>
+                  <option value="">—</option>
+                  {models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {efforts.length > 0 && (
+              <label>
+                {t.backlogChat.effortLabel}{' '}
+                <select value={effort} onChange={(e) => setEffort(e.target.value)}>
+                  <option value="">—</option>
+                  {efforts.map((ef) => (
+                    <option key={ef} value={ef}>
+                      {ef}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        )}
       </form>
     </aside>
   )
