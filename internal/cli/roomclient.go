@@ -117,15 +117,22 @@ func (c roomClient) list(ctx context.Context) ([]room.Room, error) {
 	return out.Rooms, err
 }
 
-func (c roomClient) join(ctx context.Context, id, nick, bio string) (room.Room, error) {
-	var rm room.Room
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/join", map[string]string{"nick": nick, "bio": bio}, &rm)
-	return rm, err
+// roomJoinResult mirrors the POST .../join response (F-0226): the public room
+// snapshot plus the private session capability minted for this participant.
+type roomJoinResult struct {
+	Room    room.Room    `json:"room"`
+	Session room.Session `json:"session"`
 }
 
-func (c roomClient) say(ctx context.Context, id, nick, body string) (room.Message, error) {
+func (c roomClient) join(ctx context.Context, id, nick, bio string) (roomJoinResult, error) {
+	var res roomJoinResult
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/join", map[string]string{"nick": nick, "bio": bio}, &res)
+	return res, err
+}
+
+func (c roomClient) say(ctx context.Context, id, sessionID, body string) (room.Message, error) {
 	var msg room.Message
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/messages", map[string]string{"nick": nick, "body": body}, &msg)
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/messages", map[string]string{"session_id": sessionID, "body": body}, &msg)
 	return msg, err
 }
 
