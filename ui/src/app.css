@@ -289,6 +289,27 @@ h2 {
   .backlog-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ---- war room (T-0003) ---- */
+
+.room-card {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+}
+
+.room-badge-open { border-color: var(--accent); color: var(--accent); }
+.room-badge-closed { opacity: 0.6; }
+
+.room-roster {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .card {
   display: block;
   margin-top: 0.5rem;

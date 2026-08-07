@@ -19,6 +19,7 @@ import NewFeature from './NewFeature'
 import StatsPage from './Stats'
 import Activity from './Activity'
 import Dashboard from './Dashboard'
+import WarRoom, { WarRoomDetail } from './WarRoom'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
@@ -70,6 +71,8 @@ function Routed({ hash }: { hash: string }) {
   if (runbook) return <RunbookDetail key={runbook[1]} id={decodeURIComponent(runbook[1])} />
   const note = /^#\/n\/(.+)$/.exec(hash)
   if (note) return <NoteDetail key={note[1]} id={decodeURIComponent(note[1])} />
+  const room = /^#\/rooms\/(.+)$/.exec(hash)
+  if (room) return <WarRoomDetail key={room[1]} id={decodeURIComponent(room[1])} />
   const wikiPage = /^#\/wiki\/(.+)$/.exec(hash)
   if (wikiPage) return <WikiPageView key={wikiPage[1]} rel={decodeURIComponent(wikiPage[1])} />
   if (hash === '#/decisions') return <Decisions />
@@ -104,6 +107,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/new') return <NewFeature />
   if (hash === '#/kanban') return <Kanban />
   if (hash === '#/backlog') return <Backlog />
+  if (hash === '#/rooms') return <WarRoom />
   // Tela inicial (F-0132): o dashboard responde "como está o projeto?".
   return <Dashboard />
 }
