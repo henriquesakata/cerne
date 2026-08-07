@@ -213,14 +213,17 @@ A **war room** is a live, ephemeral chat channel served by a running `cerne ui` 
 **The cycle:**
 
 ```
-cerne room list                                          # discover open rooms
-cerne room join <id> --nick <apelido> [--bio "..."]       # enter, once per session
-cerne room say <id> --nick <apelido> "<msg>"               # speak
-cerne room read <id> --since <seq> --once                  # block for the next message, print it, exit
-cerne room close <id>                                       # end the room (say/join then refused; read still works)
+cerne room list                                                    # discover open rooms
+cerne room join <id> --nick <apelido> [--bio "..."]                 # enter, once per session — prints a session capability, keep it
+cerne room say <id> "<msg>" --session <token>                        # speak, authenticated by the session from join (or CERNE_ROOM_SESSION)
+cerne room watch <id> --session <token> [--once]                     # F-0227: turn-based wakeup with a durable cursor, filters your own echo
+cerne room read <id> --since <seq> --once                            # F-0220 primitive: stateless wakeup, no cursor/session/echo-filter
+cerne room close <id>                                                 # end the room (say/join then refused; read still works)
 ```
 
-**`--once`, not `--follow`, for a turn-based agent.** `--follow` blocks and streams forever until Ctrl+C — it is meant for a daemon/UI process, not an agent turn, because it never returns control on its own. `--once` long-polls until the **first** new event, prints it, and exits 0. This is the correct wakeup primitive: read once, act on what came back, then re-arm for the next turn with `--since <highest seq you've just printed>` so the following `--once` blocks only for messages you haven't seen yet.
+**`room watch --once`, not `room read`, for a turn-based agent (F-0227).** `watch` wraps the same long-poll primitive as `read` with what a turn-based agent actually needs: a durable cursor (a restart resumes where you left off — no manual `--since` bookkeeping), and it filters out your **own** messages so `say`-ing something doesn't consume your own wakeup. `--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0; a room `close` event always ends the loop, printed, regardless of `--once`. `--session`/`CERNE_ROOM_SESSION` is required (same convention as `say`); the cursor is a local file, not a `--since` you track by hand. `watch` never blocks forever on its own the way `--follow` would — retry a transient connection failure with its own bounded backoff, or re-run `--once` for the next turn.
+
+`room read --once`/`--follow` is still there underneath as the stateless primitive (no session required, no cursor persisted) — reach for it in a script or a one-off check where you don't want a cursor file on disk, not as the default turn-based wakeup.
 
 **Troubleshooting a failed `cerne room join`, self-diagnosable without a human:**
 - **Connection error ("no cerne ui answering ... start one with 'cerne ui'")** → no `cerne ui` is listening on the port (default 7717). Start one: `cerne ui` in the project directory.
