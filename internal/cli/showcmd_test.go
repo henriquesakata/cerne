@@ -25,6 +25,39 @@ func TestShowFeature(t *testing.T) {
 	}
 }
 
+func TestShowEpicAndTask(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "epic", "new", "Épico teste", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("epic new: %v", err)
+	}
+	if _, err := execCerne(t, "feature", "approve", "E-0001", "--dir", projDir); err != nil {
+		t.Fatalf("feature approve E-0001: %v", err)
+	}
+	if _, err := execCerne(t, "task", "new", "Passo teste", "--parent", "E-0001", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("task new: %v", err)
+	}
+
+	out, err := execCerne(t, "show", "E-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show E-0001: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "E-0001") || !strings.Contains(out, "feature") {
+		t.Fatalf("show E-0001 output missing expected fields:\n%s", out)
+	}
+
+	out, err = execCerne(t, "show", "T-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show T-0001: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "T-0001") || !strings.Contains(out, "feature") {
+		t.Fatalf("show T-0001 output missing expected fields:\n%s", out)
+	}
+
+	if _, err := execCerne(t, "show", "T-9999", "--dir", projDir); err == nil {
+		t.Fatal("show T-9999: expected not-found error, got none")
+	}
+}
+
 func TestShowNoteWithBody(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	body := filepath.Join(t.TempDir(), "note.md")
