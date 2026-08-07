@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
-import type { Room, RoomMessage } from './api'
+import type { Room, RoomMessage, RoomSession } from './api'
 
 const fetchRooms = vi.fn<() => Promise<Room[]>>()
-const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<Room>>()
-const sayRoom = vi.fn<(id: string, nick: string, body: string) => Promise<RoomMessage>>()
+const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<{ room: Room; session: RoomSession }>>()
+const sayRoom = vi.fn<(id: string, sessionID: string, body: string) => Promise<RoomMessage>>()
+const resumeRoomSession = vi.fn<(id: string, sessionID: string) => Promise<RoomSession>>()
 const readRoomMessages = vi.fn<
   (id: string, since: number, follow: boolean, signal?: AbortSignal) => Promise<RoomMessage[]>
 >()
@@ -17,7 +18,8 @@ vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchRooms: () => fetchRooms(),
   joinRoom: (id: string, nick: string, bio: string) => joinRoom(id, nick, bio),
-  sayRoom: (id: string, nick: string, body: string) => sayRoom(id, nick, body),
+  sayRoom: (id: string, sessionID: string, body: string) => sayRoom(id, sessionID, body),
+  resumeRoomSession: (id: string, sessionID: string) => resumeRoomSession(id, sessionID),
   readRoomMessages: (id: string, since: number, follow: boolean, signal?: AbortSignal) =>
     readRoomMessages(id, since, follow, signal),
   postRoomOpen: (topic: string) => postRoomOpen(topic),
@@ -32,11 +34,24 @@ const room = (over: Partial<Room> = {}): Room => ({
   ...over,
 })
 
+const session = (over: Partial<RoomSession> = {}): RoomSession => ({
+  session_id: 'cafebabecafebabecafebabecafebabe',
+  room_id: 'R1',
+  nick: 'ana',
+  joined_at: '2026-08-06T00:00:01Z',
+  last_seq: 2,
+  ...over,
+})
+
+// chave usada pelo componente (pid vazio nos testes)
+const SESSION_KEY = 'warroom-session--R1'
+
 beforeEach(() => {
   cleanup()
   fetchRooms.mockReset()
   joinRoom.mockReset()
   sayRoom.mockReset()
+  resumeRoomSession.mockReset()
   readRoomMessages.mockReset()
   postRoomOpen.mockReset()
   postRoomClose.mockReset()
@@ -107,7 +122,7 @@ describe('WarRoomDetail (T-0003)', () => {
     expect(screen.getByText(/oi pessoal/)).toBeInTheDocument()
   })
 
-  it('exige entrar na sala antes de liberar o envio', async () => {
+  it('exige entrar na sala antes de liberar o envio e guarda a sessão (F-0226)', async () => {
     readRoomMessages.mockImplementationOnce(() =>
       Promise.resolve([{ seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }]),
     )
@@ -116,14 +131,22 @@ describe('WarRoomDetail (T-0003)', () => {
     await waitFor(() => expect(screen.getByPlaceholderText(/apelido/i)).toBeInTheDocument())
     expect(screen.queryByPlaceholderText(/escreva uma mensagem/i)).not.toBeInTheDocument()
 
-    joinRoom.mockResolvedValue(room({ id: 'R1', participants: [{ nick: 'ana', joined_at: 'x' }] }))
+    joinRoom.mockResolvedValue({
+      room: room({ id: 'R1', participants: [{ nick: 'ana', joined_at: 'x' }] }),
+      session: session(),
+    })
     fireEvent.change(screen.getByPlaceholderText(/apelido/i), { target: { value: 'ana' } })
     fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
     await waitFor(() => expect(joinRoom).toHaveBeenCalledWith('R1', 'ana', ''))
+    await waitFor(() => expect(screen.getByPlaceholderText(/escreva uma mensagem/i)).toBeInTheDocument())
+    expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}').session_id).toBe(
+      'cafebabecafebabecafebabecafebabe',
+    )
   })
 
-  it('não chama join de novo quando o nick salvo já está no roster (reload)', async () => {
-    localStorage.setItem('warroom-nick', 'ana')
+  it('reload retoma a sessão guardada via resume, sem novo join (F-0226 critério 9)', async () => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session()))
+    resumeRoomSession.mockResolvedValue(session())
     readRoomMessages.mockImplementationOnce(() =>
       Promise.resolve([
         { seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' },
@@ -133,7 +156,39 @@ describe('WarRoomDetail (T-0003)', () => {
     render(<WarRoomDetail id="R1" />)
 
     await waitFor(() => expect(screen.getByPlaceholderText(/escreva uma mensagem/i)).toBeInTheDocument())
+    expect(resumeRoomSession).toHaveBeenCalledWith('R1', 'cafebabecafebabecafebabecafebabe')
     expect(joinRoom).not.toHaveBeenCalled()
+  })
+
+  it('token inválido volta ao formulário de join sem impersonar (F-0226 critério 9)', async () => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session()))
+    resumeRoomSession.mockRejectedValue(new Error('invalid room session'))
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([{ seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }]),
+    )
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(resumeRoomSession).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByPlaceholderText(/apelido/i)).toBeInTheDocument())
+    expect(screen.queryByPlaceholderText(/escreva uma mensagem/i)).not.toBeInTheDocument()
+    await waitFor(() => expect(localStorage.getItem(SESSION_KEY)).toBeNull())
+  })
+
+  it('envio usa a capability da sessão, nunca o nick (F-0226 critério 9)', async () => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session()))
+    resumeRoomSession.mockResolvedValue(session())
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([{ seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }]),
+    )
+    sayRoom.mockResolvedValue({ seq: 2, type: 'message', nick: 'ana', body: 'oi', time: 'x' })
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByPlaceholderText(/escreva uma mensagem/i)).toBeInTheDocument())
+    fireEvent.change(screen.getByPlaceholderText(/escreva uma mensagem/i), { target: { value: 'oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() =>
+      expect(sayRoom).toHaveBeenCalledWith('R1', 'cafebabecafebabecafebabecafebabe', 'oi'),
+    )
   })
 
   it('sala fechada esconde os formulários e mostra aviso', async () => {
