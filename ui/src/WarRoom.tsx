@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   fetchRooms,
   joinRoom,
+  postRoomClose,
+  postRoomOpen,
   readRoomMessages,
   sayRoom,
   type Room,
@@ -18,6 +20,8 @@ const BIO_KEY = 'warroom-bio'
 export default function WarRoom() {
   const [rooms, setRooms] = useState<Room[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [topic, setTopic] = useState('')
+  const [opening, setOpening] = useState(false)
   const { t } = useT()
 
   useEffect(() => {
@@ -26,12 +30,38 @@ export default function WarRoom() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
+  const open = (e: FormEvent) => {
+    e.preventDefault()
+    const trimmed = topic.trim()
+    if (trimmed === '' || opening) return
+    setOpening(true)
+    setError(null)
+    postRoomOpen(trimmed)
+      .then((r) => {
+        window.location.hash = `#/rooms/${r.id}`
+      })
+      .catch((e: unknown) => {
+        setOpening(false)
+        setError(e instanceof Error ? e.message : String(e))
+      })
+  }
+
   return (
     <main className="kanban">
       <header className="kanban-header">
         <h1>{t.warRoom.title}</h1>
         {rooms && <p className="counts">{t.warRoom.participants(rooms.length)}</p>}
       </header>
+      <form className="backlog-chat-form" onSubmit={open}>
+        <input
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder={t.warRoom.topicPlaceholder}
+        />
+        <button type="submit" disabled={opening || topic.trim() === ''}>
+          {opening ? t.warRoom.opening : t.warRoom.openRoom}
+        </button>
+      </form>
       {error && <p className="status error">{t.warRoom.loadError(error)}</p>}
       {!error && !rooms && <p className="status">{t.common.loading}</p>}
       {rooms && rooms.length === 0 && <p className="status">{t.warRoom.empty}</p>}
@@ -70,6 +100,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [joining, setJoining] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [copied, setCopied] = useState(false)
   const { t } = useT()
 
   const sinceRef = useRef(0)
@@ -152,6 +184,33 @@ export function WarRoomDetail({ id }: { id: string }) {
       })
   }
 
+  const entryCommand = `cerne room join ${id} --nick <nick> [--bio "…"]`
+
+  const doClose = () => {
+    if (closing || !window.confirm(t.warRoom.closeConfirm)) return
+    setClosing(true)
+    setError(null)
+    postRoomClose(id)
+      .then(() => {
+        setClosing(false)
+        setClosed(true)
+      })
+      .catch((e: unknown) => {
+        setClosing(false)
+        setError(e instanceof Error ? e.message : String(e))
+      })
+  }
+
+  const copyEntryCommand = () => {
+    navigator.clipboard
+      ?.writeText(entryCommand)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {})
+  }
+
   const send = (e: FormEvent) => {
     e.preventDefault()
     const body = input.trim()
@@ -180,6 +239,19 @@ export function WarRoomDetail({ id }: { id: string }) {
             {id} {topic && `— ${topic}`}
           </h1>
           {closed && <span className="badge room-badge-closed">{t.warRoom.closedBadge}</span>}
+          {!closed && (
+            <p className="muted">
+              {t.warRoom.entryCommand(entryCommand)}{' '}
+              <button type="button" onClick={copyEntryCommand}>
+                {copied ? t.warRoom.copied : t.warRoom.copyCommand}
+              </button>
+            </p>
+          )}
+          {!closed && (
+            <button type="button" onClick={doClose} disabled={closing}>
+              {closing ? t.warRoom.closing : t.warRoom.closeRoom}
+            </button>
+          )}
         </header>
         <h2>{t.warRoom.roster}</h2>
         {roster.length === 0 && <p className="muted">{t.warRoom.noParticipants}</p>}

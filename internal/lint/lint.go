@@ -1421,6 +1421,9 @@ func gateFindings(repoDir string, features []store.Feature) ([]Finding, error) {
 		default:
 			continue
 		}
+		if domain.CheckGate(f.ID, domain.ActionStart, domain.DocSet{HasPlan: false}) == nil {
+			required = removeDoc(required, "plan.md")
+		}
 		for _, doc := range required {
 			real, err := isRealFile(filepath.Join(repoDir, "content", "features", f.ID, doc))
 			if err != nil {
@@ -1437,6 +1440,17 @@ func gateFindings(repoDir string, features []store.Feature) ([]Finding, error) {
 		}
 	}
 	return findings, nil
+}
+
+// removeDoc returns docs without name, preserving order.
+func removeDoc(docs []string, name string) []string {
+	out := docs[:0:0]
+	for _, d := range docs {
+		if d != name {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // isRealFile reports whether the file exists and has non-stub content.

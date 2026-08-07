@@ -53,6 +53,7 @@ func newRoomOpenCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "room %s opened: %s\n", rm.ID, rm.Topic)
 			fmt.Fprintf(out, "entry command: cerne room join %s --nick <nick> [--bio \"...\"]\n", rm.ID)
+			fmt.Fprintf(out, "listen: cerne room read %s --since 0 --once\n", rm.ID)
 			return nil
 		},
 	}
@@ -116,23 +117,27 @@ func newRoomSayCmd() *cobra.Command {
 func newRoomReadCmd() *cobra.Command {
 	var dir string
 	var port, since int
-	var follow bool
+	var follow, once bool
 	cmd := &cobra.Command{
 		Use:   "read <room>",
 		Short: "Read a war room's transcript, optionally following new messages",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if once && follow {
+				return errors.New("--once and --follow are mutually exclusive")
+			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
 				return err
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 			defer stop()
-			return roomReadLoop(ctx, cmd.OutOrStdout(), c, args[0], since, follow)
+			return roomReadLoop(ctx, cmd.OutOrStdout(), c, args[0], since, follow, once)
 		},
 	}
 	cmd.Flags().IntVar(&since, "since", 0, "only messages after this sequence number")
 	cmd.Flags().BoolVar(&follow, "follow", false, "block for new messages (long-poll) until Ctrl+C")
+	cmd.Flags().BoolVar(&once, "once", false, "block (long-poll) until at least one new event, print it, exit 0 — wakeup for turn-based agents")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
@@ -140,9 +145,12 @@ func newRoomReadCmd() *cobra.Command {
 // roomReadLoop prints the transcript from since onward. With follow it keeps
 // calling read (each call already blocks server-side up to its long-poll
 // timeout) until ctx is done, advancing since past every message printed.
-func roomReadLoop(ctx context.Context, out io.Writer, c roomClient, id string, since int, follow bool) error {
+// With once it long-polls (same server mechanism as follow) and returns as
+// soon as it has printed a non-empty batch — a room's close event is just
+// another typed Message on the stream, so it needs no special handling here.
+func roomReadLoop(ctx context.Context, out io.Writer, c roomClient, id string, since int, follow, once bool) error {
 	for {
-		msgs, err := c.read(ctx, id, since, follow)
+		msgs, err := c.read(ctx, id, since, follow || once)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -150,10 +158,18 @@ func roomReadLoop(ctx context.Context, out io.Writer, c roomClient, id string, s
 			return err
 		}
 		for _, m := range msgs {
-			fmt.Fprintf(out, "#%d [%s] %s\n", m.Seq, m.Nick, m.Body)
+			if m.Type == "message" {
+				fmt.Fprintf(out, "#%d [%s] %s\n", m.Seq, m.Nick, m.Body)
+			} else {
+				fmt.Fprintf(out, "#%d [%s]\n", m.Seq, m.Type)
+			}
 			since = m.Seq
 		}
-		if !follow {
+		if once {
+			if len(msgs) > 0 {
+				return nil
+			}
+		} else if !follow {
 			return nil
 		}
 		if ctx.Err() != nil {
