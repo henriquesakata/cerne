@@ -280,7 +280,11 @@ export default function FeaturePage({ id }: { id: string }) {
 
   return (
     <main className="feature">
-      <a className="back" href="#/kanban">{t.feature.backToKanban}</a>
+      {f.state === 'candidate' ? (
+        <a className="back" href="#/backlog">{t.feature.backToBacklog}</a>
+      ) : (
+        <a className="back" href="#/kanban">{t.feature.backToKanban}</a>
+      )}
       <header className="feature-header">
         <TitleEditor feature={f} onSaved={load} />
         <p className="feature-meta">

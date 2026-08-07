@@ -255,6 +255,7 @@ const ptBR = {
   feature: {
     loadError: (e: string) => `Erro ao carregar a feature: ${e}`,
     backToKanban: '← Kanban',
+    backToBacklog: '← Backlog',
     editTitle: 'Editar título',
     tabs: { spec: 'Spec', plan: 'Plano', result: 'Resultado' },
     epicLabel: 'Épico:',
@@ -822,6 +823,7 @@ const en: Messages = {
   feature: {
     loadError: (e: string) => `Failed to load the feature: ${e}`,
     backToKanban: '← Kanban',
+    backToBacklog: '← Backlog',
     editTitle: 'Edit title',
     tabs: { spec: 'Spec', plan: 'Plan', result: 'Result' },
     epicLabel: 'Epic:',
