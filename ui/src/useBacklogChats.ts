@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getApiProject, type ChatMsg } from './api'
+import { useT } from './i18n'
 
 // Conversation (F-0219) é uma conversa do chat do Backlog: a F-0218 persistia
 // uma única conversa por projeto, esta feature evolui pra lista navegável
@@ -102,6 +103,7 @@ export type UseBacklogChats = {
 // antiga (critério 5, ESCLARECIDO). confirmFn é injetável nos métodos
 // destrutivos pra não exigir mock de window.confirm nos testes.
 export function useBacklogChats(): UseBacklogChats {
+  const { t } = useT()
   const initial = useRef(loadStored()).current
   const [chats, setChats] = useState<Conversation[]>(
     initial.chats.length > 0 ? initial.chats : [emptyConversation()],
@@ -122,9 +124,7 @@ export function useBacklogChats(): UseBacklogChats {
     let base = chats
     if (chats.length >= MAX_CONVERSATIONS) {
       const oldest = [...chats].sort((a, b) => a.updatedAt - b.updatedAt)[0]
-      const ok = confirmFn(
-        `Limite de ${MAX_CONVERSATIONS} conversas atingido — "${oldest.title || '(sem título)'}" será removida. Continuar?`,
-      )
+      const ok = confirmFn(t.backlogChat.confirmCapReached(oldest.title || t.backlogChat.untitledConversation, MAX_CONVERSATIONS))
       if (!ok) return
       base = chats.filter((c) => c.id !== oldest.id)
     }
@@ -136,7 +136,7 @@ export function useBacklogChats(): UseBacklogChats {
   const deleteConversation = (id: string, confirmFn: (message: string) => boolean = window.confirm) => {
     const target = chats.find((c) => c.id === id)
     if (!target) return
-    if (!confirmFn(`Excluir a conversa "${target.title || '(sem título)'}"? Essa ação não pode ser desfeita.`)) return
+    if (!confirmFn(t.backlogChat.confirmDeleteConversation(target.title || t.backlogChat.untitledConversation))) return
     const next = chats.filter((c) => c.id !== id)
     if (next.length === 0) {
       const fresh = emptyConversation()
