@@ -205,21 +205,72 @@ func resolveWatchStart(ctx context.Context, c roomClient, roomID, session, cpPat
 	return sess.LastSeq, nil
 }
 
+// roomEventReader is the read side of roomClient that roomWatchLoop needs —
+// narrow enough to fake in tests without a real HTTP server (backoff timing
+// especially wants no real network/sleep involved).
+type roomEventReader interface {
+	readAsSession(ctx context.Context, id string, since int, sessionID string) ([]roomWatchEvent, error)
+}
+
+// Backoff tuning for a transient (connection-level) read failure: doubles
+// from roomWatchBackoffBase up to roomWatchBackoffMax, resetting to the base
+// after any successful read (empty or not). "Timeout vazio" (a long-poll
+// that simply found nothing new) is not a failure and never backs off.
+const (
+	roomWatchBackoffBase = 250 * time.Millisecond
+	roomWatchBackoffMax  = 10 * time.Second
+)
+
+func nextRoomWatchBackoff(attempt int) time.Duration {
+	if attempt > 6 { // 250ms<<6 = 16s, already past the cap
+		attempt = 6
+	}
+	d := roomWatchBackoffBase << attempt
+	if d > roomWatchBackoffMax {
+		return roomWatchBackoffMax
+	}
+	return d
+}
+
+// roomWatchSleep waits d or returns early on ctx cancellation (Ctrl+C must
+// interrupt a backoff wait, not just an in-flight long-poll). Package var so
+// tests can replace real waiting with instant, duration-recording stubs.
+var roomWatchSleep = func(ctx context.Context, d time.Duration) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
 // roomWatchLoop long-polls id as session from since, printing every event
 // but its own echo (own:true never printed, but still advances the
 // checkpoint — criterion 3) and persisting the checkpoint only after each
 // event's write succeeds (criterion 2/8). once exits after the first batch
 // with at least one printed event; a close event always ends the loop,
-// printed and checkpointed, regardless of once (criterion 6).
-func roomWatchLoop(ctx context.Context, out io.Writer, c roomClient, id, session, cpPath string, since int, once bool) error {
+// printed and checkpointed, regardless of once (criterion 6). A transient
+// read error retries with bounded backoff, cursor untouched; a definitive
+// one (errRoomTransient not set) returns immediately (criterion 5/6).
+func roomWatchLoop(ctx context.Context, out io.Writer, c roomEventReader, id, session, cpPath string, since int, once bool) error {
+	attempt := 0
 	for {
 		events, err := c.readAsSession(ctx, id, since, session)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return err
+			if !errors.Is(err, errRoomTransient) {
+				return err
+			}
+			roomWatchSleep(ctx, nextRoomWatchBackoff(attempt))
+			if ctx.Err() != nil {
+				return nil
+			}
+			attempt++
+			continue
 		}
+		attempt = 0
 		printedRelevant := false
 		for _, ev := range events {
 			own := ev.Own != nil && *ev.Own
