@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { fetchLLMOptions, postChat, registerChatCandidate, type ChatMsg, type Feature } from './api'
+import { fetchLLMOptions, registerChatCandidate, type ChatMsg, type Feature } from './api'
+import * as chatRequest from './chatRequest'
 import Markdown from './Markdown'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
@@ -57,6 +58,17 @@ export function parseProposal(reply: string): ParsedProposal | null {
 const TYPING_CHARS_PER_TICK = 3
 const TYPING_TICK_MS = 20
 
+// ELAPSED_TICK_MS (F-0230 critério 3): cadência do indicador "Processando…
+// <elapsed>" — só precisa granularidade de segundo, não de frame.
+const ELAPSED_TICK_MS = 1000
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes > 0 ? `${minutes}m${seconds}s` : `${seconds}s`
+}
+
 // BacklogChat (F-0219) é um componente controlado: recebe a conversa ativa
 // via prop e devolve toda mudança persistível via onUpdate — quem possui o
 // localStorage e a lista de conversas é useBacklogChats. O pai monta este
@@ -71,8 +83,8 @@ type Props = {
 export default function BacklogChat({ conversation, onUpdate, onRegistered }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>(conversation.messages)
   const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [failedMessages, setFailedMessages] = useState<ChatMsg[] | null>(null)
   const [needsProvider, setNeedsProvider] = useState(false)
   const [proposal, setProposal] = useState<ParsedProposal | null>(null)
   const [registering, setRegistering] = useState(false)
@@ -81,8 +93,12 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [model, setModel] = useState(conversation.model)
   const [effort, setEffort] = useState(conversation.effort)
   const [typingLen, setTypingLen] = useState<number | null>(null)
+  const [, forceTick] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { t } = useT()
+
+  const requestStatus = chatRequest.status(conversation.id)
+  const busy = requestStatus.pending
 
   // Critério 5: sem [llm] configurado, o chat nasce desabilitado — nenhuma
   // chamada ao provider é feita nem esperando o usuário digitar algo.
@@ -95,6 +111,51 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       })
       .catch(() => {})
   }, [])
+
+  // F-0230 critérios 1/2/4: assina o chatRequest desta conversa — se um
+  // pedido segue em voo (mesmo iniciado antes de montar, ex. voltando de
+  // outra tela), o indicador é restaurado; ao concluir, aplica o desfecho
+  // (sucesso relê o storage — fonte da verdade — erro/needs_provider viram
+  // estado local). Um único efeito cobre tanto "cheguei agora e algo já
+  // terminou enquanto eu não existia" (chamada síncrona) quanto "terminou
+  // enquanto eu estava montado" (via subscribe).
+  useEffect(() => {
+    const id = conversation.id
+    const reconcile = () => {
+      forceTick((n) => n + 1)
+      if (chatRequest.status(id).pending) return
+      const outcome = chatRequest.consumeOutcome(id)
+      if (!outcome) return
+      if (outcome.kind === 'error') {
+        setError(outcome.message)
+        return
+      }
+      if (outcome.kind === 'needs_provider') {
+        setNeedsProvider(true)
+        return
+      }
+      const fresh = chatRequest.getConversation(id)
+      if (!fresh) return
+      setMessages(fresh.messages)
+      setError(null)
+      setFailedMessages(null)
+      const last = fresh.messages[fresh.messages.length - 1]
+      if (last?.role === 'assistant') {
+        setTypingLen(0)
+        setProposal(parseProposal(last.content))
+      }
+    }
+    reconcile()
+    return chatRequest.subscribe(id, reconcile)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id])
+
+  // Cadência do indicador "Processando… <elapsed>" enquanto pendente.
+  useEffect(() => {
+    if (!busy) return
+    const id = setInterval(() => forceTick((n) => n + 1), ELAPSED_TICK_MS)
+    return () => clearInterval(id)
+  }, [busy])
 
   // F-0219 critério 2: repassa toda mudança de transcript/seleção pro dono
   // da persistência (useBacklogChats) — a conversa sobrevive a navegar e
@@ -129,31 +190,27 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     el.style.height = `${el.scrollHeight}px`
   }
 
+  // sendMessages guarda `next` como o candidato a reenvio (critério 4) — só
+  // vira "erro visível" se a requisição falhar; sucesso limpa em reconcile().
+  const sendMessages = (next: ChatMsg[]) => {
+    setError(null)
+    setProposal(null)
+    setFailedMessages(next)
+    chatRequest.send(conversation.id, next, { model: model || undefined, effort: effort || undefined })
+  }
+
   const submitMessage = () => {
     const content = input.trim()
     if (content === '' || busy) return
     const next = [...messages, { role: 'user' as const, content }]
     setMessages(next)
     setInput('')
-    setBusy(true)
-    setError(null)
-    setProposal(null)
-    postChat(next, { model: model || undefined, effort: effort || undefined })
-      .then((res) => {
-        setBusy(false)
-        if (res.needs_provider) {
-          setNeedsProvider(true)
-          return
-        }
-        const reply = res.reply ?? ''
-        setMessages([...next, { role: 'assistant', content: reply }])
-        setTypingLen(0)
-        setProposal(parseProposal(reply))
-      })
-      .catch((err: unknown) => {
-        setBusy(false)
-        setError(err instanceof Error ? err.message : String(err))
-      })
+    sendMessages(next)
+  }
+
+  const retry = () => {
+    if (busy || !failedMessages) return
+    sendMessages(failedMessages)
   }
 
   const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -215,7 +272,12 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
             </div>
           )
         })}
-        {busy && <p className="status">{t.backlogChat.thinking}</p>}
+        {busy && (
+          <p className="status backlog-chat-progress">
+            <span className="backlog-chat-spinner" aria-hidden="true" />
+            {t.backlogChat.processing(formatElapsed(Date.now() - requestStatus.startedAt), requestStatus.model, requestStatus.effort)}
+          </p>
+        )}
       </div>
       {proposal && (
         <div className="backlog-chat-proposal">
@@ -254,7 +316,16 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           </button>
         </div>
       )}
-      {error && <p className="status error">{error}</p>}
+      {error && (
+        <p className="status error backlog-chat-error">
+          {error}
+          {failedMessages && (
+            <button type="button" onClick={retry} disabled={busy}>
+              {t.backlogChat.retry}
+            </button>
+          )}
+        </p>
+      )}
       <form
         className="backlog-chat-form"
         onSubmit={(e) => {

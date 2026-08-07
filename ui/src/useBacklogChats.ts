@@ -47,20 +47,37 @@ function emptyConversation(): Conversation {
 
 type StoredIndex = { chats: Conversation[]; activeId: string }
 
-// loadStored lê a lista nova; na ausência dela, migra a chave única da F-0218
-// (se houver) como a primeira entrada, e remove a chave antiga — upgrade
-// transparente, sem perda (decisão da spec).
-function loadStored(): StoredIndex {
+// readChats/writeChats (F-0230): acesso cru ao storage da lista de conversas,
+// exportado pra ser reusado por chatRequest.ts — o singleton que sobrevive ao
+// unmount do BacklogChat grava a resposta direto aqui, fora do React.
+export function readChats(): StoredIndex {
   try {
     const raw = localStorage.getItem(chatsKey())
     if (raw) {
       const parsed = JSON.parse(raw) as StoredIndex
-      if (Array.isArray(parsed.chats) && parsed.chats.length > 0) {
-        return { chats: parsed.chats, activeId: parsed.activeId ?? parsed.chats[0].id }
-      }
+      if (Array.isArray(parsed.chats)) return { chats: parsed.chats, activeId: parsed.activeId ?? '' }
     }
   } catch {
-    // dado corrompido → cai pra migração/lista vazia
+    // dado corrompido → lista vazia
+  }
+  return { chats: [], activeId: '' }
+}
+
+export function writeChats(chats: Conversation[], activeId: string): void {
+  localStorage.setItem(chatsKey(), JSON.stringify({ chats, activeId }))
+}
+
+export function getConversation(id: string): Conversation | undefined {
+  return readChats().chats.find((c) => c.id === id)
+}
+
+// loadStored lê a lista nova; na ausência dela, migra a chave única da F-0218
+// (se houver) como a primeira entrada, e remove a chave antiga — upgrade
+// transparente, sem perda (decisão da spec).
+function loadStored(): StoredIndex {
+  const stored = readChats()
+  if (stored.chats.length > 0) {
+    return { chats: stored.chats, activeId: stored.activeId || stored.chats[0].id }
   }
 
   try {
@@ -112,13 +129,31 @@ export function useBacklogChats(): UseBacklogChats {
     initial.chats.length > 0 ? initial.activeId : chats[0].id,
   )
 
+  // F-0230: um chatRequest em segundo plano pode ter gravado a resposta de
+  // uma conversa INATIVA direto no storage (patchMessages) enquanto o hook
+  // ainda guarda essa conversa desatualizada em memória. Escrever `chats` cru
+  // apagaria essa resposta na próxima mudança de qualquer outra conversa —
+  // por isso o merge prefere, por entrada, quem tem `updatedAt` mais recente.
   useEffect(() => {
-    localStorage.setItem(chatsKey(), JSON.stringify({ chats, activeId }))
+    const stored = readChats().chats
+    const merged = chats.map((c) => {
+      const fresher = stored.find((s) => s.id === c.id)
+      return fresher && fresher.updatedAt > c.updatedAt ? fresher : c
+    })
+    writeChats(merged, activeId)
   }, [chats, activeId])
 
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
 
-  const select = (id: string) => setActiveId(id)
+  // select (F-0230): relê a conversa alvo do storage antes de ativar — se um
+  // chatRequest terminou em segundo plano enquanto ela não era a ativa (sem
+  // trocar de página, só de aba), a resposta gravada direto no storage entra
+  // no estado do hook aqui, sem esperar um reload.
+  const select = (id: string) => {
+    const fresh = getConversation(id)
+    if (fresh) setChats((prev) => prev.map((c) => (c.id === id ? fresh : c)))
+    setActiveId(id)
+  }
 
   const newConversation = (confirmFn: (message: string) => boolean = window.confirm) => {
     let base = chats
