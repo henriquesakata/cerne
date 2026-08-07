@@ -103,3 +103,35 @@ func TestLLMConfigPutInvalid(t *testing.T) {
 		t.Fatalf("invalid PUT wrote mode %q, want unchanged", cfg.LLM.Mode)
 	}
 }
+
+// TestLLMConfigGetLiveQuery (F-0224 criterion 3): GET /api/config/llm reports
+// whether the chat agent has live read access to cerne — true only in
+// claude-cli's agentic mode, false for byo-key (static context) and the
+// delegation default.
+func TestLLMConfigGetLiveQuery(t *testing.T) {
+	tests := []struct {
+		mode string
+		want bool
+	}{
+		{"claude-cli", true},
+		{"byo-key", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		repoDir, projDir := newBackend(t)
+		if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b",
+			LLM: project.LLMConfig{Mode: tt.mode}}); err != nil {
+			t.Fatalf("SaveConfig: %v", err)
+		}
+		var got struct {
+			LiveQuery bool `json:"live_query"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/config/llm", "", &got)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("mode %q: status = %d; body: %s", tt.mode, rec.Code, rec.Body.String())
+		}
+		if got.LiveQuery != tt.want {
+			t.Fatalf("mode %q: live_query = %v, want %v", tt.mode, got.LiveQuery, tt.want)
+		}
+	}
+}
