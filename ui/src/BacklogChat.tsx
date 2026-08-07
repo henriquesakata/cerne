@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import {
-  fetchLLMOptions,
-  getApiProject,
-  postChat,
-  registerChatCandidate,
-  type ChatMsg,
-  type Feature,
-} from './api'
+import { fetchLLMOptions, postChat, registerChatCandidate, type ChatMsg, type Feature } from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
+import type { Conversation } from './useBacklogChats'
 
 const PROPOSAL_FENCE = 'cerne-proposta'
 
@@ -39,30 +33,19 @@ export function parseProposal(reply: string): ParsedProposal | null {
 const TYPING_CHARS_PER_TICK = 3
 const TYPING_TICK_MS = 20
 
-// storageKey isola a conversa por projeto (critério 1) — cada pid tem sua
-// própria chave, então trocar de projeto nunca mistura históricos.
-function storageKey(): string {
-  return `cerne.chat.${getApiProject()}`
+// BacklogChat (F-0219) é um componente controlado: recebe a conversa ativa
+// via prop e devolve toda mudança persistível via onUpdate — quem possui o
+// localStorage e a lista de conversas é useBacklogChats. O pai monta este
+// componente com key={conversation.id}, então trocar de conversa remonta e
+// reseta de graça o estado efêmero abaixo (digitação, proposta, erro).
+type Props = {
+  conversation: Conversation
+  onUpdate: (patch: { messages?: ChatMsg[]; model?: string; effort?: string }) => void
+  onRegistered?: (feature: Feature) => void
 }
 
-type StoredChat = { messages: ChatMsg[]; model?: string; effort?: string }
-
-function loadStoredChat(): StoredChat {
-  try {
-    const raw = localStorage.getItem(storageKey())
-    if (!raw) return { messages: [] }
-    const parsed = JSON.parse(raw) as StoredChat
-    return { messages: Array.isArray(parsed.messages) ? parsed.messages : [], model: parsed.model, effort: parsed.effort }
-  } catch {
-    return { messages: [] }
-  }
-}
-
-type Props = { onRegistered?: (feature: Feature) => void }
-
-export default function BacklogChat({ onRegistered }: Props) {
-  const initial = useRef(loadStoredChat()).current
-  const [messages, setMessages] = useState<ChatMsg[]>(initial.messages)
+export default function BacklogChat({ conversation, onUpdate, onRegistered }: Props) {
+  const [messages, setMessages] = useState<ChatMsg[]>(conversation.messages)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,8 +54,8 @@ export default function BacklogChat({ onRegistered }: Props) {
   const [registering, setRegistering] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [efforts, setEfforts] = useState<string[]>([])
-  const [model, setModel] = useState(initial.model ?? '')
-  const [effort, setEffort] = useState(initial.effort ?? '')
+  const [model, setModel] = useState(conversation.model)
+  const [effort, setEffort] = useState(conversation.effort)
   const [typingLen, setTypingLen] = useState<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { t } = useT()
@@ -89,10 +72,12 @@ export default function BacklogChat({ onRegistered }: Props) {
       .catch(() => {})
   }, [])
 
-  // Critério 1: persiste a cada mudança de transcript/seleção — sobrevive a
-  // navegar pra outra tela e voltar (o componente é remontado do zero).
+  // F-0219 critério 2: repassa toda mudança de transcript/seleção pro dono
+  // da persistência (useBacklogChats) — a conversa sobrevive a navegar e
+  // trocar de conversa porque ele já a salvou, não este componente.
   useEffect(() => {
-    localStorage.setItem(storageKey(), JSON.stringify({ messages, model, effort }))
+    onUpdate({ messages, model, effort })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, model, effort])
 
   // Critério 2: efeito de digitação sobre a última resposta do agente — sem
@@ -155,15 +140,6 @@ export default function BacklogChat({ onRegistered }: Props) {
     }
   }
 
-  const newConversation = () => {
-    setMessages([])
-    setInput('')
-    setError(null)
-    setProposal(null)
-    setTypingLen(null)
-    localStorage.removeItem(storageKey())
-  }
-
   const confirmRegister = () => {
     if (!proposal) return
     setRegistering(true)
@@ -197,9 +173,6 @@ export default function BacklogChat({ onRegistered }: Props) {
     <aside className="backlog-chat">
       <div className="backlog-chat-toolbar">
         <h2>{t.backlogChat.title}</h2>
-        <button type="button" className="backlog-chat-new" onClick={newConversation}>
-          {t.backlogChat.newConversation}
-        </button>
       </div>
       <div className="backlog-chat-history" onClick={skipTyping}>
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}

@@ -209,6 +209,13 @@ const ptBR = {
     newConversation: 'Nova conversa',
     modelLabel: 'Modelo',
     effortLabel: 'Esforço',
+    conversationsTitle: 'Conversas',
+    untitledConversation: '(sem título)',
+    deleteConversation: 'Excluir',
+    confirmDeleteConversation: (title: string) =>
+      `Excluir a conversa "${title}"? Essa ação não pode ser desfeita.`,
+    confirmCapReached: (title: string, max: number) =>
+      `Limite de ${max} conversas atingido — "${title}" será removida. Continuar?`,
   },
   warRoom: {
     title: 'War Room',
@@ -777,6 +784,13 @@ const en: Messages = {
     newConversation: 'New conversation',
     modelLabel: 'Model',
     effortLabel: 'Effort',
+    conversationsTitle: 'Conversations',
+    untitledConversation: '(untitled)',
+    deleteConversation: 'Delete',
+    confirmDeleteConversation: (title: string) =>
+      `Delete the conversation "${title}"? This cannot be undone.`,
+    confirmCapReached: (title: string, max: number) =>
+      `${max}-conversation limit reached — "${title}" will be removed. Continue?`,
   },
   warRoom: {
     title: 'War Room',
