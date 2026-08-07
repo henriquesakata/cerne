@@ -11,8 +11,12 @@ import (
 
 // llmConfigResponse is the GET/PUT /api/config/llm payload: the effective LLM
 // mode. Secrets never travel here — the byo-key API key stays in the env.
+// Models/Efforts (F-0218) are the known options for the Backlog chat's
+// model/effort selector — served here so the UI never hardcodes them.
 type llmConfigResponse struct {
-	Mode string `json:"mode"`
+	Mode    string   `json:"mode"`
+	Models  []string `json:"models,omitempty"`
+	Efforts []string `json:"efforts,omitempty"`
 }
 
 // llmConfigRequest is the PUT /api/config/llm body.
@@ -36,14 +40,14 @@ func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
 	if errors.Is(err, project.ErrNoProject) {
 		// Serve/multiproject mode: the per-project dir holds only docs.lock, no
 		// .cernerc yet. Report the normalized default; a PUT seeds the .cernerc.
-		writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode("")})
+		writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode(""), Models: llm.KnownModels, Efforts: llm.KnownEfforts})
 		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode(cfg.LLM.Mode)})
+	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode(cfg.LLM.Mode), Models: llm.KnownModels, Efforts: llm.KnownEfforts})
 }
 
 // handleLLMConfigPut sets the [llm] mode in .cernerc, preserving every other
