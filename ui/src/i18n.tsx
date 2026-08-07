@@ -199,7 +199,9 @@ const ptBR = {
     intro: 'Descreva o que você precisa — o agente conhece o domínio e o estado atual do projeto.',
     placeholder: 'Descreva o que você precisa…',
     send: 'Enviar',
-    thinking: 'Pensando…',
+    processing: (elapsed: string, model: string, effort: string) =>
+      `Processando… ${elapsed}${model ? ` · ${model}` : ''}${effort ? `/${effort}` : ''}`,
+    retry: 'Reenviar',
     needsProvider:
       'Configure um provider de IA (claude-cli ou byo-key) em .cernerc — [llm] — para conversar com o agente.',
     proposalTitle: 'Título',
@@ -774,7 +776,9 @@ const en: Messages = {
     intro: "Describe what you need — the agent knows the project's domain and current state.",
     placeholder: 'Describe what you need…',
     send: 'Send',
-    thinking: 'Thinking…',
+    processing: (elapsed: string, model: string, effort: string) =>
+      `Processing… ${elapsed}${model ? ` · ${model}` : ''}${effort ? `/${effort}` : ''}`,
+    retry: 'Retry',
     needsProvider:
       'Configure an AI provider (claude-cli or byo-key) in .cernerc — [llm] — to talk to the agent.',
     proposalTitle: 'Title',

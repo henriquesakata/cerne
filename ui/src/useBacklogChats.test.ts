@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { useBacklogChats } from './useBacklogChats'
+import { getConversation, useBacklogChats, writeChats } from './useBacklogChats'
 import { setApiProject } from './api'
 
 beforeEach(() => {
@@ -119,6 +119,30 @@ describe('useBacklogChats (F-0219)', () => {
     act(() => result.current.newConversation(() => true))
     expect(result.current.chats).toHaveLength(50) // criou 1, podou a mais antiga
     expect(result.current.chats.find((c) => c.id === oldestId)).toBeUndefined()
+  })
+
+  it('F-0230: não apaga uma resposta gravada em segundo plano numa conversa inativa', () => {
+    const { result } = renderHook(() => useBacklogChats())
+    const activeId = result.current.active.id
+    act(() => result.current.newConversation())
+    const inactiveId = activeId // a antiga ativa agora é a inativa
+
+    // Simula chatRequest.send terminando em segundo plano: grava direto no
+    // storage com updatedAt mais novo, sem passar pelo estado do hook.
+    const idx = { chats: result.current.chats, activeId: result.current.active.id }
+    const patched = idx.chats.map((c) =>
+      c.id === inactiveId
+        ? { ...c, messages: [{ role: 'assistant' as const, content: 'Resposta em segundo plano' }], updatedAt: Date.now() + 1000 }
+        : c,
+    )
+    writeChats(patched, idx.activeId)
+
+    // Qualquer mudança na conversa ATIVA não pode reverter o patch acima.
+    act(() => result.current.updateActive({ messages: [{ role: 'user', content: 'oi' }] }))
+
+    expect(getConversation(inactiveId)?.messages).toEqual([
+      { role: 'assistant', content: 'Resposta em segundo plano' },
+    ])
   })
 
   it('migra a conversa única da F-0218 (chave cerne.chat.<pid>) como primeira entrada, e remove a chave antiga', () => {
