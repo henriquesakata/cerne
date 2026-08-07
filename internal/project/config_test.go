@@ -630,3 +630,33 @@ func TestAgentChatTimeout(t *testing.T) {
 		t.Fatalf("ChatTimeout round-trip: got %d, want 120", got.Agent.ChatTimeout)
 	}
 }
+
+// TestGuardConfig_FailMode (F-0225 crit. 5): absent/anything-but-"warn" fails
+// the commit-msg guard; "warn" downgrades it to a non-blocking notice.
+func TestGuardConfig_FailMode(t *testing.T) {
+	for _, v := range []string{"", "fail", "bogus"} {
+		g := GuardConfig{Mode: v}
+		if !g.FailMode() {
+			t.Errorf("Mode %q: want fail mode", v)
+		}
+	}
+	if (GuardConfig{Mode: "warn"}).FailMode() {
+		t.Fatal(`Mode "warn": want non-fail (warn) mode`)
+	}
+}
+
+func TestConfigGuardModeRoundtrip(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{ProjectID: "demo", Backend: "x"}
+	cfg.Guard.Mode = "warn"
+	if err := SaveConfig(dir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Guard.FailMode() {
+		t.Fatal("guard.mode = warn: want non-fail mode after roundtrip")
+	}
+}
