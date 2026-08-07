@@ -93,3 +93,57 @@ func TestBodyPullsConventionNotes(t *testing.T) {
 		}
 	}
 }
+
+// TestStubForEpicNoChildren: with no children StubForEpic must be
+// byte-identical to Stub (spec criterion 2 — no change for a plain feature).
+func TestStubForEpicNoChildren(t *testing.T) {
+	title := "Conciliação bancária"
+	if got, want := plantmpl.StubForEpic(title, nil), plantmpl.Stub(title); got != want {
+		t.Fatalf("StubForEpic with no children must equal Stub:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestStubForEpicWithChildren pins the canonical execution-map format
+// scaffolded into "Dependências e ordem": one numbered step per child, in
+// order, plus the authoring TODO guide (spec criterion 1).
+func TestStubForEpicWithChildren(t *testing.T) {
+	children := []plantmpl.EpicChild{
+		{ID: "T-0001", Title: "room manager no server"},
+		{ID: "T-0003", Title: "UI WarRoom"},
+		{ID: "T-0004", Title: "CLI cerne room"},
+	}
+	s := plantmpl.StubForEpic("Épico X", children)
+
+	if !strings.Contains(s, "## Dependências e ordem") {
+		t.Fatalf("missing section heading:\n%s", s)
+	}
+	wants := []string{
+		"Etapa 1: T-0001 (room manager no server)",
+		"Etapa 2: T-0003 (UI WarRoom)",
+		"Etapa 3: T-0004 (CLI cerne room)",
+		"TODO: agrupe em etapas — mesma etapa = paralelas",
+	}
+	for _, want := range wants {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+	// the map must land inside "Dependências e ordem", before the next section.
+	depIdx := strings.Index(s, "## Dependências e ordem")
+	nextIdx := strings.Index(s, "## Riscos e rollback")
+	mapIdx := strings.Index(s, "Etapa 1:")
+	if !(depIdx < mapIdx && mapIdx < nextIdx) {
+		t.Fatalf("execution map must sit inside Dependências e ordem, before Riscos e rollback:\n%s", s)
+	}
+}
+
+// TestStubForEpicWithChildrenReadsAsStub: the epic scaffold — TODO map
+// included — still counts as a stub until the author actually fills a
+// section (spec criterion 4, doccheck gate).
+func TestStubForEpicWithChildrenReadsAsStub(t *testing.T) {
+	children := []plantmpl.EpicChild{{ID: "T-0001", Title: "x"}}
+	doc := "---\ncerne_id: F-0001\n---\n\n" + plantmpl.StubForEpic("Épico X", children)
+	if doccheck.HasRealContent([]byte(doc)) {
+		t.Fatalf("epic plan scaffold must still read as a stub:\n%s", doc)
+	}
+}

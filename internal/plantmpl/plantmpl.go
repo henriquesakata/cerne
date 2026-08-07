@@ -13,7 +13,18 @@
 // and its sources are registered in the cerne backend as references.
 package plantmpl
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// EpicChild is the minimal shape StubForEpic needs from a child feature/task:
+// id and title. Kept independent of internal/store so plantmpl carries no
+// dependency on the entity model.
+type EpicChild struct {
+	ID    string
+	Title string
+}
 
 // Sections are the canonical plan sections, in template order.
 var Sections = []string{
@@ -84,4 +95,31 @@ suíte completa verde; todas as tarefas concluídas; result.md escrito. É o por
 // cerne_id frontmatter.
 func Stub(title string) string {
 	return "# " + strings.TrimSpace(title) + "\n\n" + Body
+}
+
+// executionMapGuide is the authoring instruction closing the scaffolded
+// execution map, telling the author to group children into real parallel
+// steps (cerne only knows the flat child list, not real dependency).
+const executionMapGuide = "TODO: agrupe em etapas — mesma etapa = paralelas"
+
+// StubForEpic returns the plan scaffold for a feature that already has
+// children (an epic): identical to Stub, except the "Dependências e ordem"
+// section gets a provisional Mapa de execução — one numbered step per child,
+// in the canonical "Etapa N: ID (title)" format, wrapped in an HTML comment
+// (like the rest of the template guidance) so it still reads as scaffold —
+// the start gate stays closed until the author fills a real section (spec
+// criterion 4). With no children it is byte-identical to Stub (criterion 2).
+func StubForEpic(title string, children []EpicChild) string {
+	s := Stub(title)
+	if len(children) == 0 {
+		return s
+	}
+	var m strings.Builder
+	m.WriteString("<!-- Mapa de execução:\n")
+	for i, c := range children {
+		fmt.Fprintf(&m, "Etapa %d: %s (%s)\n", i+1, c.ID, c.Title)
+	}
+	m.WriteString(executionMapGuide + " -->")
+	heading := "## Dependências e ordem\n"
+	return strings.Replace(s, heading, heading+"\n"+m.String()+"\n", 1)
 }
