@@ -215,6 +215,66 @@ func TestStartScaffoldsResultStub(t *testing.T) {
 	}
 }
 
+// TestCompleteReportsEpicReadyToClose (F-0214 crit.1): completing the last
+// alive child of an in_development epic scaffolds the epic's result.md with
+// the children roster and points the author at the next step, without
+// completing the epic itself.
+func TestCompleteReportsEpicReadyToClose(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	epic := newFeature(t, projDir, "Épico", 1)
+	writeDoc(t, repoDir, epic, "spec.md", realDoc(epic, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "approve", epic, "--dir", projDir); err != nil {
+		t.Fatalf("approve epic: %v", err)
+	}
+	writeDoc(t, repoDir, epic, "plan.md", realDoc(epic, "Passo 1: decompor."))
+	commitBackend(t, repoDir)
+
+	child := newFeature(t, projDir, "Fase 1", 2)
+	writeDoc(t, repoDir, child, "spec.md", realDoc(child, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "approve", child, "--dir", projDir); err != nil {
+		t.Fatalf("approve child: %v", err)
+	}
+	// Link the child to the epic and give it a plan so it can start.
+	f, err := store.LoadFeature(repoDir, child)
+	if err != nil {
+		t.Fatalf("LoadFeature child: %v", err)
+	}
+	f.Parent = epic
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatalf("SaveFeature child.Parent: %v", err)
+	}
+	writeDoc(t, repoDir, child, "plan.md", realDoc(child, "Passo 1: implementar."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "start", child, "--dir", projDir); err != nil {
+		t.Fatalf("start child: %v", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, epic); got.State != domain.StateInDevelopment {
+		t.Fatalf("epic state = %s, want in_development (propagated by child start)", got.State)
+	}
+
+	writeDoc(t, repoDir, child, "result.md", realDoc(child, "Entregue conforme o plano."))
+	commitBackend(t, repoDir)
+	out, err := execCerne(t, "feature", "complete", child, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("complete child: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "epic "+epic+" ready to close") {
+		t.Fatalf("complete output should report the epic ready to close:\n%s", out)
+	}
+	if got, _ := store.LoadFeature(repoDir, epic); got.State != domain.StateInDevelopment {
+		t.Fatalf("epic state = %s, want unchanged in_development (never auto-completes)", got.State)
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", epic, "result.md"))
+	if err != nil {
+		t.Fatalf("epic result.md should be scaffolded: %v", err)
+	}
+	if !strings.Contains(string(data), child) {
+		t.Fatalf("epic result.md roster missing child %s:\n%s", child, data)
+	}
+}
+
 func TestTransitionFlagRules(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)
