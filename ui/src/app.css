@@ -322,17 +322,6 @@ h2 {
 
 .backlog-chat-toolbar h2 { margin: 0; font-size: 1.05rem; }
 
-.backlog-chat-new {
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-}
-
 .backlog-chat-history {
   display: flex;
   flex-direction: column;
