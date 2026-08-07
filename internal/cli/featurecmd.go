@@ -21,6 +21,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newFeatureNewCmd(&dir))
 	cmd.AddCommand(newFeatureListCmd(&dir))
 	cmd.AddCommand(newFeatureRetagCmd(&dir))
+	cmd.AddCommand(newFeatureSetCmd(&dir))
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
 	cmd.AddCommand(newFeatureCapabilityCmd(&dir))
 	cmd.AddCommand(newFeatureRenameCmd(&dir))
@@ -38,7 +39,7 @@ var errFeatureContextRequired = errors.New(
 	"feature has no context: pass at least --context \"<1-3 sentences on why>\", or the full spec via --file <spec.md>/stdin")
 
 func newFeatureNewCmd(dir *string) *cobra.Command {
-	var module, parent, facet, component, file, context string
+	var module, parent, facet, component, file, context, owner, priority string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
@@ -53,7 +54,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureNew(cmd, *dir, args[0], module, parent, facet, component, file, context, force)
+			return runFeatureNew(cmd, *dir, args[0], module, parent, facet, component, file, context, force, owner, priority)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
@@ -63,11 +64,13 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 sentences) seeded into the spec's Problem section")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
+	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	return cmd
 }
 
-func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool) error {
-	return runFeatureLikeNew(cmd, dir, title, module, parent, facet, component, file, context, force,
+func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool, owner, priority string) error {
+	return runFeatureLikeNew(cmd, dir, title, module, parent, facet, component, file, context, force, owner, priority,
 		app.CreateFeatureWithSpec)
 }
 
@@ -106,5 +109,43 @@ func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		f.ID, strings.Join(f.Facets, ", "), strings.Join(f.Components, ", "))
+	return nil
+}
+
+func newFeatureSetCmd(dir *string) *cobra.Command {
+	var owner, priority string
+	cmd := &cobra.Command{
+		Use:   "set <id>",
+		Short: "Set a feature's owner and/or priority in place (F-0204)",
+		Long: "Changes owner and/or priority without touching the lifecycle — preserves state, module, tags and docs. " +
+			"Changes only the flag passed: 'set F-0001 --priority p1' keeps the owner; '--owner \"\"' clears the owner. " +
+			"A priority outside the closed set (p0,p1,p2,p3) is rejected, nothing written. Applies to a live or " +
+			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history.",
+		Example: "  cerne feature set F-0001 --owner ana --priority p1\n" +
+			"  cerne feature set F-0001 --priority p0   # owner untouched",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFeatureSet(cmd, *dir, args[0], owner, priority,
+				cmd.Flags().Changed("owner"), cmd.Flags().Changed("priority"))
+		},
+	}
+	cmd.Flags().StringVar(&owner, "owner", "", "new owner (free text) — empty clears")
+	cmd.Flags().StringVar(&priority, "priority", "", "new priority (closed set: p0,p1,p2,p3) — empty clears")
+	return cmd
+}
+
+func runFeatureSet(cmd *cobra.Command, dir, id, owner, priority string, setOwner, setPriority bool) error {
+	if !setOwner && !setPriority {
+		return fmt.Errorf("pass at least --owner or --priority")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	f, err := app.SetFeature(ctx.repoDir, ctx.projDir, id, owner, priority, setOwner, setPriority)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s set — owner: %q · priority: %q\n", f.ID, f.Owner, f.Priority)
 	return nil
 }

@@ -31,6 +31,12 @@ type Feature struct {
 	Reason       string              `json:"reason,omitempty"`
 	Facets       []string            `json:"facets,omitempty"`     // closed-set axis (D-0002/D-0003): infra/code/data/process/auth
 	Components   []string            `json:"components,omitempty"` // curated subsystem/tool axis (D-0002/D-0003): gitback, materialize, …
+	// Owner and Priority (F-0204): who is responsible and how urgent the demand
+	// is. Owner is a free-text handle (no roster/ACL — cerne has no user
+	// registry); Priority is the closed p0-p3 set (domain.ValidPriorities).
+	// Both omitempty — existing entities stay valid with no migration.
+	Owner    string `json:"owner,omitempty"`
+	Priority string `json:"priority,omitempty"`
 	// Delivery links (F-0179): the resolved URLs of the commit/MR that delivered
 	// this feature — output traceability, distinct from Reference's input
 	// provenance. Always stored as full URLs (a bare SHA is resolved at capture).

@@ -203,6 +203,57 @@ func TestFeatureListTagFilter(t *testing.T) {
 	}
 }
 
+// TestFeatureListOwnerAndSort pins F-0204's criterion 3: --owner filters
+// case-insensitively, --sort priority orders p0..p3 first with unprioritized
+// features last, and the line renders the owner/priority markers.
+func TestFeatureListOwnerAndSort(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Média", State: domain.StateCandidate, Owner: "ana", Priority: "p2"},
+		{ID: "F-0002", Title: "Urgente", State: domain.StateCandidate, Owner: "bob", Priority: "p0"},
+		{ID: "F-0003", Title: "Sem prioridade", State: domain.StateCandidate, Owner: "ana"},
+	}
+	for _, f := range features {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed owner/priority"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	// --owner filters case-insensitively.
+	out, err := execCerne(t, "feature", "list", "--owner", "Ana", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list --owner: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0001") || !strings.Contains(out, "F-0003") || strings.Contains(out, "F-0002") {
+		t.Fatalf("--owner Ana should match F-0001,F-0003 only:\n%s", out)
+	}
+	if !strings.Contains(out, "F-0001  [candidate]  Média  · owner ana · priority p2\n") {
+		t.Fatalf("owner/priority markers missing on the line:\n%s", out)
+	}
+
+	// --sort priority: p0 first, then p2, unset last.
+	out, err = execCerne(t, "feature", "list", "--sort", "priority", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature list --sort priority: %v\noutput: %s", err, out)
+	}
+	i2 := strings.Index(out, "F-0002")
+	i1 := strings.Index(out, "F-0001")
+	i3 := strings.Index(out, "F-0003")
+	if i2 < 0 || i1 < 0 || i3 < 0 || !(i2 < i1 && i1 < i3) {
+		t.Fatalf("--sort priority order = F-0002@%d, F-0001@%d, F-0003@%d, want F-0002 < F-0001 < F-0003:\n%s", i2, i1, i3, out)
+	}
+
+	// Invalid --sort value is rejected.
+	if _, err := execCerne(t, "feature", "list", "--sort", "bogus", "--dir", projDir); err == nil {
+		t.Fatalf("--sort bogus succeeded, want error")
+	}
+}
+
 // TestFeatureListJSON pins --json: it returns the FILTERED set (not the whole
 // roster), with no human table decoration.
 func TestFeatureListJSON(t *testing.T) {

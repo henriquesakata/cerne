@@ -42,12 +42,12 @@ func TestDupGuardRefusesLiveFeature(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md")
 
-	_, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001 v2", "", "", nil, nil, "", false)
+	_, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001 v2", "", "", nil, nil, "", false, "", "")
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
 
-	f, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001 v2", "", "", nil, nil, "", true)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001 v2", "", "", nil, nil, "", true, "", "")
 	if err != nil {
 		t.Fatalf("forced create: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestDupGuardRefusesActiveWork(t *testing.T) {
 	if _, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", false, nil); !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("work start err = %v, want ErrSimilarExists", err)
 	}
-	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Atividade W-0001", "", "", nil, nil, "", false); !errors.Is(err, ErrSimilarExists) {
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Atividade W-0001", "", "", nil, nil, "", false, "", ""); !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("feature new err = %v, want ErrSimilarExists", err)
 	}
 	if w, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", true, nil); err != nil || w.ID == "" {
@@ -95,7 +95,7 @@ func TestDupGuardReadyOnlyWarns(t *testing.T) {
 	if len(matches.Live) != 0 || len(matches.Ready) != 1 || matches.Ready[0].ID != "F-0001" {
 		t.Fatalf("matches = %+v, want ready-only F-0001", matches)
 	}
-	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001", "", "", nil, nil, "", false); err != nil {
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001", "", "", nil, nil, "", false, "", ""); err != nil {
 		t.Fatalf("ready match must not refuse: %v", err)
 	}
 }
@@ -107,7 +107,7 @@ func TestDupGuardIgnoresTerminal(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateRejected, "spec.md")
 	seedFeatureInState(t, repoDir, "F-0002", domain.StateDone, "spec.md")
 
-	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001", "", "", nil, nil, "", false); err != nil {
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature F-0001", "", "", nil, nil, "", false, "", ""); err != nil {
 		t.Fatalf("terminal must not refuse: %v", err)
 	}
 }

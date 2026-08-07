@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchState, type Feature } from './api'
 import Tag from './Tag'
 import BacklogChat from './BacklogChat'
+import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -38,7 +39,7 @@ export default function Backlog() {
         {features && features.length === 0 && <p className="status">{t.backlog.empty}</p>}
         {features && features.length > 0 && (
           <div className="epic-lane-cards">
-            {features.map((f) => (
+            {sortByPriority(features).map((f) => (
               <BacklogCard key={f.id} feature={f} />
             ))}
           </div>
@@ -57,8 +58,10 @@ function BacklogCard({ feature }: { feature: Feature }) {
       <span className="card-meta">
         <span className="card-id">{feature.id}</span>
         {feature.module && <span className="badge">{feature.module}</span>}
+        {feature.priority && <span className="badge badge-priority">{feature.priority}</span>}
       </span>
       <span className="card-title">{feature.title}</span>
+      {feature.owner && <span className="card-owner">@{feature.owner}</span>}
       {hasTags && (
         <span className="note-tags">
           {feature.facets?.map((f) => (

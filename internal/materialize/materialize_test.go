@@ -212,6 +212,36 @@ func TestMaterializeDoneNotMaterializedButListed(t *testing.T) {
 	}
 }
 
+// TestMaterializeContextOwnerPriority pins F-0204's criterion 5: the
+// CONTEXT.md roster row shows owner/priority as "[owner] [pN]" suffixes when
+// present, and a feature with neither renders its plain title (no suffix).
+func TestMaterializeContextOwnerPriority(t *testing.T) {
+	backend := seedBackend(t, "core")
+	f1 := store.Feature{ID: "F-0001", Title: "Com dono", Module: "core", State: domain.StateCandidate,
+		Owner: "ana", Priority: "p1", CreatedAt: seedTime, UpdatedAt: seedTime}
+	if err := store.SaveFeature(backend, f1); err != nil {
+		t.Fatalf("SaveFeature F-0001: %v", err)
+	}
+	f2 := store.Feature{ID: "F-0002", Title: "Sem dono", Module: "core", State: domain.StateCandidate,
+		CreatedAt: seedTime, UpdatedAt: seedTime}
+	if err := store.SaveFeature(backend, f2); err != nil {
+		t.Fatalf("SaveFeature F-0002: %v", err)
+	}
+
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(backend, docsDir, "", false); err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+
+	ctx := readContext(t, docsDir)
+	if !strings.Contains(ctx, "| F-0001 | candidate |  | core | Com dono [ana] [p1] |") {
+		t.Errorf("CONTEXT.md missing owner/priority suffix:\n%s", ctx)
+	}
+	if !strings.Contains(ctx, "| F-0002 | candidate |  | core | Sem dono |") {
+		t.Errorf("CONTEXT.md row without owner/priority should render the plain title:\n%s", ctx)
+	}
+}
+
 func TestMaterializeScope(t *testing.T) {
 	backend := seedBackend(t, "finance", "core")
 	addFeature(t, backend, "F-0001", "Parcelamento", "finance", domain.StateInDevelopment,

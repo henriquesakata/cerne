@@ -13,6 +13,7 @@ import {
   type StateResponse,
 } from './api'
 import Tag, { tagCounts } from './Tag'
+import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -266,7 +267,7 @@ function Columns({
               {t.kanban.columnLabels[s]} <span className="column-count">{fs.length}</span>
             </h2>
             {fs.length === 0 && <p className="column-empty">—</p>}
-            {fs.map((f) => (
+            {sortByPriority(fs).map((f) => (
               <Card
                 key={f.id}
                 feature={f}
@@ -345,7 +346,7 @@ function EpicBoard({
             </h2>
             <div className="epic-lane-cards">
               {kids.length === 0 && <p className="column-empty">—</p>}
-              {kids.map((f) => (
+              {sortByPriority(kids).map((f) => (
                 <Card
                   key={f.id}
                   feature={f}
@@ -365,7 +366,7 @@ function EpicBoard({
             {t.kanban.noEpic} <span className="column-count">{standalone.length}</span>
           </h2>
           <div className="epic-lane-cards">
-            {standalone.map((f) => (
+            {sortByPriority(standalone).map((f) => (
               <Card
                 key={f.id}
                 feature={f}
@@ -436,8 +437,10 @@ function Card({
           </span>
         )}
         {feature.module && <span className="badge">{feature.module}</span>}
+        {feature.priority && <span className="badge badge-priority">{feature.priority}</span>}
       </span>
       <span className="card-title">{feature.title}</span>
+      {feature.owner && <span className="card-owner">@{feature.owner}</span>}
       {hasTags && (
         <span className="note-tags">
           {feature.facets?.map((f) => (
