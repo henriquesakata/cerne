@@ -95,8 +95,8 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, room.ErrNickTaken):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
-	case errors.Is(err, room.ErrNotJoined):
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case errors.Is(err, room.ErrInvalidSession):
+		writeJSON(w, http.StatusUnauthorized, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	}
@@ -113,21 +113,23 @@ func handleRoomJoin(w http.ResponseWriter, r *http.Request, projectID, id string
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	rm, err := m.Join(id, req.Nick, req.Bio)
+	rm, sess, err := m.Join(id, req.Nick, req.Bio)
 	if err != nil {
 		writeRoomErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rm)
+	writeJSON(w, http.StatusOK, map[string]any{"room": rm, "session": sess})
 }
 
-type sayRequest struct {
-	Nick string `json:"nick"`
-	Body string `json:"body"`
+type resumeRequest struct {
+	SessionID string `json:"session_id"`
 }
 
-func handleRoomSay(w http.ResponseWriter, r *http.Request, projectID, id string) {
-	var req sayRequest
+// handleRoomResume validates an existing capability (F-0226): the session
+// comes back without any join event, so a restart/reload retakes the same
+// identity.
+func handleRoomResume(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	var req resumeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
@@ -137,12 +139,50 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, projectID, id string)
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	msg, err := m.Say(id, req.Nick, req.Body)
+	sess, err := m.Resume(id, req.SessionID)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sess)
+}
+
+type sayRequest struct {
+	SessionID string `json:"session_id"`
+	Body      string `json:"body"`
+}
+
+func handleRoomSay(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	var req sayRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if req.SessionID == "" {
+		// covers the pre-F-0226 payload ({nick, body}): nick is no longer
+		// an authority, point the old client at the migration path.
+		writeJSON(w, http.StatusUnauthorized, errorBody("a session capability is required — run 'cerne room join' to obtain one"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	msg, err := m.Say(id, req.SessionID, req.Body)
 	if err != nil {
 		writeRoomErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+// roomEventView is one transcript event as served over HTTP. Own is set on
+// every event only when the read was authenticated by a session (F-0226
+// criterion 10); public reads omit it.
+type roomEventView struct {
+	room.Message
+	Own *bool `json:"own,omitempty"`
 }
 
 func handleRoomRead(w http.ResponseWriter, r *http.Request, projectID, id string) {
@@ -154,15 +194,30 @@ func handleRoomRead(w http.ResponseWriter, r *http.Request, projectID, id string
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	var reader *room.Session
+	if token := r.Header.Get("X-Room-Session"); token != "" {
+		sess, err := m.Resume(id, token)
+		if err != nil {
+			writeRoomErr(w, err)
+			return
+		}
+		reader = &sess
+	}
 	msgs, err := m.Read(r.Context(), id, since, follow, roomReadTimeout)
 	if err != nil {
 		writeRoomErr(w, err)
 		return
 	}
-	if msgs == nil {
-		msgs = []room.Message{}
+	out := make([]roomEventView, 0, len(msgs))
+	for _, msg := range msgs {
+		v := roomEventView{Message: msg}
+		if reader != nil {
+			own := msg.Nick != "" && msg.Nick == reader.Nick
+			v.Own = &own
+		}
+		out = append(out, v)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
 }
 
 func handleRoomClose(w http.ResponseWriter, projectID, id string) {
