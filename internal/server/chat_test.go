@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -234,6 +235,115 @@ func TestChatRegister(t *testing.T) {
 	}
 	if head1 == head0 {
 		t.Fatalf("origin HEAD did not advance after registration")
+	}
+}
+
+// TestChatRegisterExistingCapability: F-0223 criterion 2 — a proposal that
+// names an existing C- id links it to the new candidate in the same act.
+func TestChatRegisterExistingCapability(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	if err := store.SaveCapability(repoDir, store.Capability{ID: "C-0001", Title: "Financeiro", State: domain.CapabilityActive}); err != nil {
+		t.Fatalf("SaveCapability: %v", err)
+	}
+	commitBackend(t, repoDir)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-cap"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","capability":"C-0001"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Feature.Capabilities) != 1 || got.Feature.Capabilities[0] != "C-0001" {
+		t.Fatalf("Capabilities = %v, want [C-0001]", got.Feature.Capabilities)
+	}
+}
+
+// TestChatRegisterUnknownCapability: an unknown C- id refuses with nothing
+// written — the candidate is never created (F-0223 criterion 2).
+func TestChatRegisterUnknownCapability(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	head0, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA before: %v", err)
+	}
+
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-cap-bad"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","capability":"C-9999"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllFeatures: %v", err)
+	}
+	for _, f := range features {
+		if f.Title == "Exportar relatórios em CSV" {
+			t.Fatalf("candidate written despite unknown capability: %+v", f)
+		}
+	}
+	head1, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA after: %v", err)
+	}
+	if head1 != head0 {
+		t.Fatalf("origin HEAD advanced on a refused register")
+	}
+}
+
+// TestChatRegisterNewCapability: a non-id capability string is treated as a
+// new node title, created and linked in the same act.
+func TestChatRegisterNewCapability(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-cap-new"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","capability":"Exportação de dados"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Feature.Capabilities) != 1 {
+		t.Fatalf("Capabilities = %v, want one new node linked", got.Feature.Capabilities)
+	}
+	caps, err := store.LoadAllCapabilities(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllCapabilities: %v", err)
+	}
+	if len(caps) != 1 || caps[0].Title != "Exportação de dados" {
+		t.Fatalf("capabilities = %+v, want one new node titled 'Exportação de dados'", caps)
+	}
+}
+
+// TestChatRegisterThenLintClean: F-0223 criterion 4 — a candidate registered
+// via chat with facet+capability passes lint without capability-orphan or
+// untagged-live for the new feature.
+func TestChatRegisterThenLintClean(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-lint"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","facets":["code"],"capability":"Exportação de dados"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatalf("lint.Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Entity != got.Feature.ID {
+			continue
+		}
+		if f.Rule == lint.RuleCapabilityOrphan || f.Rule == lint.RuleUntaggedLive {
+			t.Fatalf("finding %+v on freshly-registered chat candidate", f)
+		}
 	}
 }
 

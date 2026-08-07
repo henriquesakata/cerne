@@ -60,6 +60,16 @@ func TestBuildChatSystemPromptDefaultPersona(t *testing.T) {
 	if !strings.Contains(prompt, "cerne-proposta") {
 		t.Fatalf("prompt missing the proposal contract marker:\n%s", prompt)
 	}
+	for _, want := range []string{"facet:", "components:", "capability:"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing the %q metadata-line instruction:\n%s", want, prompt)
+		}
+	}
+	for _, facet := range []string{"infra", "code", "data", "process", "auth"} {
+		if !strings.Contains(prompt, facet) {
+			t.Fatalf("prompt missing facet option %q:\n%s", facet, prompt)
+		}
+	}
 }
 
 // TestBuildChatSystemPromptInlineProfile: [agent] profile inline text

@@ -85,12 +85,22 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("Quando tiver contexto suficiente — problema, objetivo, critérios de aceitação testáveis — e SOMENTE então, proponha a candidata.\n\n")
 	b.WriteString("Para propor, termine sua resposta com um bloco cercado assim:\n\n")
 	fmt.Fprintf(&b, "```%s\n", chatProposalFence)
-	b.WriteString("# <título curto da feature>\n\n")
+	b.WriteString("# <título curto da feature>\n")
+	b.WriteString("facet: <uma opção do conjunto fechado: " + strings.Join(domain.ValidFacets, ", ") + ">\n")
+	b.WriteString("components: <lista curta separada por vírgula>\n")
+	b.WriteString("capability: <um id C-NNNN da árvore acima, ou um título novo para propor um nó quando nenhuma servir>\n\n")
 	b.WriteString("Escreva a spec COMPLETA em Markdown, com exatamente estas seções nesta ordem:\n")
 	for _, s := range spectmpl.Sections {
 		b.WriteString("## " + s + "\n")
+		if s == "Verificação" {
+			// The chat always fills this section, unlike a plain spec draft
+			// (F-0207 keeps it out of spectmpl.Sections so stub-detection
+			// stays lenient) — the chat proposal has no later editing pass.
+			b.WriteString("## Execução recomendada (agente)\n")
+		}
 	}
 	b.WriteString("```\n\n")
+	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
 	b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
 	b.WriteString("Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor. ")
 	b.WriteString("Fora desse bloco, converse normalmente — só o produza quando estiver pronto para o usuário confirmar o registro.\n")
