@@ -661,11 +661,12 @@ export async function registerChatCandidate(
   specBody: string,
   facets: string[] = [],
   components: string[] = [],
+  capability = '',
 ): Promise<CreateOutcome> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, spec_body: specBody, facets, components }),
+    body: JSON.stringify({ title, spec_body: specBody, facets, components, capability }),
   })
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   return { ok: true, feature: ((await r.json()) as { feature: Feature }).feature }

@@ -3,13 +3,20 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
+
+// capabilityIDPattern distinguishes an existing C- id from a free-text title
+// proposing a new capability node in chatRegisterRequest.Capability.
+var capabilityIDPattern = regexp.MustCompile(`^C-\d+$`)
 
 // chatMessage is one turn of the Backlog chat transcript (F-0210), as sent by
 // the browser — the server is stateless, so the whole transcript travels on
@@ -93,6 +100,11 @@ type chatRegisterRequest struct {
 	SpecBody   string   `json:"spec_body"`
 	Facets     []string `json:"facets"`
 	Components []string `json:"components"`
+	// Capability (F-0223) is either an existing C-NNNN id (validated before
+	// the candidate is written — a bad id must not spend the write) or, when
+	// it doesn't match that shape, a title proposing a new node — created
+	// and linked after the candidate exists.
+	Capability string `json:"capability"`
 }
 
 // handleChatRegister registers the confirmed proposal as a candidate — the
@@ -110,6 +122,14 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("spec_body must not be empty"))
 		return
 	}
+	capability := strings.TrimSpace(req.Capability)
+	isNewCapability := capability != "" && !capabilityIDPattern.MatchString(capability)
+	if capability != "" && !isNewCapability {
+		if _, err := store.LoadCapability(repoDir, capability); err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, errorBody(fmt.Sprintf("unknown capability: %s", capability)))
+			return
+		}
+	}
 	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", "", req.Facets, req.Components, req.SpecBody, false, "", "")
 	if errors.Is(err, app.ErrSimilarExists) {
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
@@ -118,6 +138,22 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
+	}
+	if capability != "" {
+		capID := capability
+		if isNewCapability {
+			c, err := app.CreateCapability(repoDir, projDir, capability, "")
+			if err != nil {
+				writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+				return
+			}
+			capID = c.ID
+		}
+		f, err = app.LinkFeatureCapabilities(repoDir, projDir, f.ID, []string{capID}, false)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+			return
+		}
 	}
 	writeJSON(w, http.StatusCreated, createFeatureResponse{Feature: f})
 }

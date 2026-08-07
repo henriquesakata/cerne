@@ -7,15 +7,20 @@ import type { Conversation } from './useBacklogChats'
 
 const postChat = vi.fn<(messages: unknown, override?: ChatOverride) => Promise<ChatAnswer>>()
 const registerChatCandidate = vi.fn<
-  (title: string, specBody: string, facets?: string[], components?: string[]) => Promise<CreateOutcome>
+  (title: string, specBody: string, facets?: string[], components?: string[], capability?: string) => Promise<CreateOutcome>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   postChat: (messages: unknown, override?: ChatOverride) => postChat(messages, override),
-  registerChatCandidate: (title: string, specBody: string, facets?: string[], components?: string[]) =>
-    registerChatCandidate(title, specBody, facets, components),
+  registerChatCandidate: (
+    title: string,
+    specBody: string,
+    facets?: string[],
+    components?: string[],
+    capability?: string,
+  ) => registerChatCandidate(title, specBody, facets, components, capability),
   fetchLLMOptions: () => fetchLLMOptions(),
 }))
 
@@ -123,9 +128,46 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         expect.stringContaining('## Problema'),
         [],
         [],
+        '',
       ),
     )
     await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(feature('F-0099')))
+  })
+
+  it('F-0223: proposta com facet/components/capability mostra chips e registra as tags', async () => {
+    const proposal =
+      'Perfeito, aqui está a proposta:\n\n' +
+      '```cerne-proposta\n' +
+      '# Exportar relatórios em CSV\n' +
+      'facet: code\n' +
+      'components: chat, backlog\n' +
+      'capability: C-0001\n\n' +
+      '## Problema\nFalta exportação.\n' +
+      '```\n'
+    postChat.mockResolvedValue({ answered: true, reply: proposal })
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
+    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    const registerButton = await screen.findByRole('button', { name: /registrar candidata/i })
+    expect(screen.getByText('code')).toBeInTheDocument()
+    expect(screen.getByText('chat')).toBeInTheDocument()
+    expect(screen.getByText('backlog')).toBeInTheDocument()
+    expect(screen.getByText('C-0001')).toBeInTheDocument()
+
+    fireEvent.click(registerButton)
+
+    await waitFor(() =>
+      expect(registerChatCandidate).toHaveBeenCalledWith(
+        'Exportar relatórios em CSV',
+        expect.stringContaining('## Problema'),
+        ['code'],
+        ['chat', 'backlog'],
+        'C-0001',
+      ),
+    )
   })
 
   it('F-0219: carrega o transcript/seleção da conversa recebida via prop', () => {

@@ -8,9 +8,18 @@ const PROPOSAL_FENCE = 'cerne-proposta'
 
 // ParsedProposal is what the agent's reply carries when it is ready for
 // confirmation: a fenced ```cerne-proposta block whose first line is "#
-// <título>" and the rest is the spec body (same contract as
+// <título>", optionally followed by facet:/components:/capability: metadata
+// lines (F-0223), and the rest is the spec body (same contract as
 // app.BuildChatSystemPrompt / internal/app/diagram.go's extractFencedBlock).
-type ParsedProposal = { title: string; body: string }
+type ParsedProposal = {
+  title: string
+  body: string
+  facet: string
+  components: string[]
+  capability: string
+}
+
+const METADATA_LINE = /^(facet|components|capability):\s*(.*)$/i
 
 export function parseProposal(reply: string): ParsedProposal | null {
   const open = reply.indexOf('```' + PROPOSAL_FENCE)
@@ -21,10 +30,25 @@ export function parseProposal(reply: string): ParsedProposal | null {
   if (close < 0) return null
   const inner = reply.slice(afterFence + 1, close).trim()
   const titleMatch = /^#\s+(.+)\n+([\s\S]*)$/.exec(inner)
-  if (titleMatch) {
-    return { title: titleMatch[1].trim(), body: titleMatch[2].trim() }
+  const title = titleMatch ? titleMatch[1].trim() : ''
+  const rest = titleMatch ? titleMatch[2] : inner
+
+  let facet = ''
+  let components: string[] = []
+  let capability = ''
+  const lines = rest.split('\n')
+  let i = 0
+  while (i < lines.length) {
+    const m = METADATA_LINE.exec(lines[i].trim())
+    if (!m) break
+    const [, key, value] = m
+    if (key.toLowerCase() === 'facet') facet = value.trim().toLowerCase()
+    else if (key.toLowerCase() === 'components') components = value.split(',').map((c) => c.trim()).filter(Boolean)
+    else if (key.toLowerCase() === 'capability') capability = value.trim()
+    i++
   }
-  return { title: '', body: inner }
+  const body = lines.slice(i).join('\n').trim()
+  return { title, body, facet, components, capability }
 }
 
 // TYPING_CHARS_PER_TICK/TYPING_TICK_MS (F-0218 critério 2): efeito de
@@ -144,7 +168,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     if (!proposal) return
     setRegistering(true)
     setError(null)
-    registerChatCandidate(proposal.title, proposal.body, [], [])
+    registerChatCandidate(
+      proposal.title,
+      proposal.body,
+      proposal.facet ? [proposal.facet] : [],
+      proposal.components,
+      proposal.capability,
+    )
       .then((res) => {
         setRegistering(false)
         if (!res.ok) {
@@ -189,6 +219,17 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       </div>
       {proposal && (
         <div className="backlog-chat-proposal">
+          {(proposal.facet || proposal.components.length > 0 || proposal.capability) && (
+            <div className="backlog-chat-proposal-chips">
+              {proposal.facet && <span className="chip">{proposal.facet}</span>}
+              {proposal.components.map((c) => (
+                <span className="chip" key={c}>
+                  {c}
+                </span>
+              ))}
+              {proposal.capability && <span className="chip chip-capability">{proposal.capability}</span>}
+            </div>
+          )}
           <label>
             {t.backlogChat.proposalTitle}
             <input
