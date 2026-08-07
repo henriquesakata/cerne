@@ -864,21 +864,48 @@ export async function postRoomClose(id: string): Promise<Room> {
   return (await r.json()) as Room
 }
 
-export async function joinRoom(id: string, nick: string, bio: string): Promise<Room> {
+// RoomSession é a capability privada emitida no join (F-0226): quem
+// apresenta o session_id fala como o nick — o nick nunca é autoridade.
+export type RoomSession = {
+  session_id: string
+  room_id: string
+  nick: string
+  bio?: string
+  joined_at: string
+  last_seq: number
+}
+
+export async function joinRoom(
+  id: string,
+  nick: string,
+  bio: string,
+): Promise<{ room: Room; session: RoomSession }> {
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/join`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nick, bio }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as Room
+  return (await r.json()) as { room: Room; session: RoomSession }
 }
 
-export async function sayRoom(id: string, nick: string, body: string): Promise<RoomMessage> {
+// resumeRoomSession valida uma capability existente sem gerar novo evento de
+// join — é o caminho do reload (F-0226 critério 9).
+export async function resumeRoomSession(id: string, sessionID: string): Promise<RoomSession> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/sessions/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionID }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as RoomSession
+}
+
+export async function sayRoom(id: string, sessionID: string, body: string): Promise<RoomMessage> {
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nick, body }),
+    body: JSON.stringify({ session_id: sessionID, body }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as RoomMessage

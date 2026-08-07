@@ -76,11 +76,16 @@ func newRoomJoinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			rm, err := c.join(cmd.Context(), args[0], nick, bio)
+			res, err := c.join(cmd.Context(), args[0], nick, bio)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "joined %s as %s (%d participant(s))\n", rm.ID, nick, len(rm.Participants))
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", res.Room.ID, nick, len(res.Room.Participants))
+			fmt.Fprintf(out, "session: %s\n", res.Session.SessionID)
+			fmt.Fprintf(out, "keep this session token — losing it locks the nick until the room closes\n")
+			fmt.Fprintf(out, "say: cerne room say %s \"<message>\" --session %s\n", res.Room.ID, res.Session.SessionID)
+			fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", res.Session.SessionID)
 			return nil
 		},
 	}
@@ -91,25 +96,30 @@ func newRoomJoinCmd() *cobra.Command {
 }
 
 func newRoomSayCmd() *cobra.Command {
-	var dir, nick string
+	var dir, session string
 	var port int
 	cmd := &cobra.Command{
 		Use:   "say <room> <message>",
-		Short: "Send a message to a war room",
+		Short: "Send a message to a war room (authored by your session capability)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if nick == "" {
-				return errors.New("--nick is required")
+			// --session wins over the env var; the variable is a single-room
+			// convenience, not multi-room storage (F-0226 criterion 6).
+			if session == "" {
+				session = os.Getenv("CERNE_ROOM_SESSION")
+			}
+			if session == "" {
+				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
 			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
 				return err
 			}
-			_, err = c.say(cmd.Context(), args[0], nick, args[1])
+			_, err = c.say(cmd.Context(), args[0], session, args[1])
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&nick, "nick", "", "your nickname in the room (required)")
+	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
@@ -158,9 +168,14 @@ func roomReadLoop(ctx context.Context, out io.Writer, c roomClient, id string, s
 			return err
 		}
 		for _, m := range msgs {
-			if m.Type == "message" {
+			switch {
+			case m.Type == "message":
 				fmt.Fprintf(out, "#%d [%s] %s\n", m.Seq, m.Nick, m.Body)
-			} else {
+			case m.Type == "join" && m.Bio != "":
+				fmt.Fprintf(out, "#%d [join: %s — %s]\n", m.Seq, m.Nick, m.Bio)
+			case m.Type == "join":
+				fmt.Fprintf(out, "#%d [join: %s]\n", m.Seq, m.Nick)
+			default:
 				fmt.Fprintf(out, "#%d [%s]\n", m.Seq, m.Type)
 			}
 			since = m.Seq

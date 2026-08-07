@@ -7,6 +7,10 @@ package room
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,10 +24,10 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("room not found")
-	ErrClosed    = errors.New("room is closed")
-	ErrNickTaken = errors.New("nickname already in use in this room")
-	ErrNotJoined = errors.New("nickname is not a participant of this room")
+	ErrNotFound       = errors.New("room not found")
+	ErrClosed         = errors.New("room is closed")
+	ErrNickTaken      = errors.New("nickname already in use in this room")
+	ErrInvalidSession = errors.New("invalid room session")
 )
 
 const (
@@ -47,6 +51,35 @@ type Participant struct {
 	Nick     string    `json:"nick"`
 	Bio      string    `json:"bio,omitempty"`
 	JoinedAt time.Time `json:"joined_at"`
+}
+
+// Session is the private capability minted on Join (F-0226). SessionID is a
+// bearer token: whoever presents it speaks as Nick. It is returned only to
+// the joiner and never appears in the transcript or public read/list output.
+type Session struct {
+	SessionID string    `json:"session_id"`
+	RoomID    string    `json:"room_id"`
+	Nick      string    `json:"nick"`
+	Bio       string    `json:"bio,omitempty"`
+	JoinedAt  time.Time `json:"joined_at"`
+	LastSeq   int       `json:"last_seq"`
+}
+
+// sessionAuth is the server-side half of a Session: only the SHA-256 hash of
+// the capability is kept, never the raw token.
+type sessionAuth struct {
+	hash     [sha256.Size]byte
+	nick     string
+	joinedAt time.Time
+}
+
+// newSessionToken mints a 128-bit random capability, hex-encoded.
+func newSessionToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // Message is one line of the room transcript: an open/join/close system
@@ -78,10 +111,34 @@ type Manager struct {
 // long-poll broadcast all happen while it is held, so concurrent Say calls
 // never race for a seq slot.
 type roomState struct {
-	mu      sync.Mutex
-	meta    Room
-	log     []Message
-	changed chan struct{} // closed and replaced on every append; long-poll wakeup
+	mu       sync.Mutex
+	meta     Room
+	log      []Message
+	sessions []sessionAuth
+	changed  chan struct{} // closed and replaced on every append; long-poll wakeup
+}
+
+// findSessionLocked resolves a presented capability to its sessionAuth by
+// hashing it and comparing against every stored hash in constant time.
+// Caller must hold rs.mu.
+func (rs *roomState) findSessionLocked(sessionID string) (sessionAuth, bool) {
+	h := sha256.Sum256([]byte(sessionID))
+	for _, s := range rs.sessions {
+		if subtle.ConstantTimeCompare(h[:], s.hash[:]) == 1 {
+			return s, true
+		}
+	}
+	return sessionAuth{}, false
+}
+
+// bioOfLocked returns the roster bio for nick. Caller must hold rs.mu.
+func (rs *roomState) bioOfLocked(nick string) string {
+	for _, p := range rs.meta.Participants {
+		if p.Nick == nick {
+			return p.Bio
+		}
+	}
+	return ""
 }
 
 // NewManager creates dir if needed and replays every existing <id>.jsonl into
@@ -103,7 +160,7 @@ func (m *Manager) load() error {
 		return err
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") || strings.HasSuffix(e.Name(), sessionsSuffix) {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".jsonl")
@@ -111,12 +168,91 @@ func (m *Manager) load() error {
 		if err != nil {
 			return fmt.Errorf("replay %s: %w", id, err)
 		}
+		if err := loadSessions(filepath.Join(m.dir, id+sessionsSuffix), rs); err != nil {
+			return fmt.Errorf("replay %s sessions: %w", id, err)
+		}
 		m.rooms[id] = rs
 		if n, ok := roomNumber(id); ok && n > m.nextID {
 			m.nextID = n
 		}
 	}
 	return nil
+}
+
+const sessionsSuffix = ".sessions.jsonl"
+
+// sessionRecord is one line of the private <id>.sessions.jsonl sidecar: the
+// hex SHA-256 of the capability, never the raw token.
+type sessionRecord struct {
+	Hash     string    `json:"hash"`
+	Nick     string    `json:"nick"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+// loadSessions replays the private sidecar into rs. Only records whose nick
+// has a matching public join are activated — a crash between the private
+// write and the public event leaves an orphan row, which is ignored; the
+// last matching record per nick wins (a retry after such a crash). A missing
+// sidecar (legacy transcript) is fine: participants simply have no session.
+func loadSessions(path string, rs *roomState) error {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	joined := map[string]bool{}
+	for _, p := range rs.meta.Participants {
+		joined[p.Nick] = true
+	}
+	latest := map[string]sessionRecord{}
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var rec sessionRecord
+		if err := json.Unmarshal(line, &rec); err != nil {
+			return err
+		}
+		if joined[rec.Nick] {
+			latest[rec.Nick] = rec
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	for _, rec := range latest {
+		raw, err := hex.DecodeString(rec.Hash)
+		if err != nil || len(raw) != sha256.Size {
+			continue // corrupt row: skip rather than brick the room
+		}
+		sa := sessionAuth{nick: rec.Nick, joinedAt: rec.JoinedAt}
+		copy(sa.hash[:], raw)
+		rs.sessions = append(rs.sessions, sa)
+	}
+	return nil
+}
+
+// persistSession appends the private record for a freshly minted capability.
+// Written before the public join event, so a crash in between leaves only an
+// orphan sidecar row (ignored on replay), never a join without authority.
+func (m *Manager) persistSession(id string, rec sessionRecord) error {
+	line, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(m.dir, id+sessionsSuffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
 }
 
 func roomNumber(id string) (int, bool) {
@@ -231,34 +367,81 @@ func (m *Manager) Open(topic string) (Room, error) {
 	return rs.snapshotLocked(), nil
 }
 
-// Join registers nick as a participant. Rejected when the room is unknown,
-// closed, or the nick is already taken in this room.
-func (m *Manager) Join(id, nick, bio string) (Room, error) {
+// Join registers nick as a participant and mints its session capability.
+// Rejected when the room is unknown, closed, or the nick already has an
+// active session. A legacy participant (replayed transcript without session
+// data) may re-join to obtain a capability.
+func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
-		return Room{}, err
+		return Room{}, Session{}, err
 	}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	if rs.meta.ClosedAt != nil {
-		return Room{}, ErrClosed
+		return Room{}, Session{}, ErrClosed
 	}
-	for _, p := range rs.meta.Participants {
-		if p.Nick == nick {
-			return Room{}, ErrNickTaken
+	for _, s := range rs.sessions {
+		if s.nick == nick {
+			return Room{}, Session{}, ErrNickTaken
 		}
 	}
-	now := time.Now().UTC()
-	if err := m.appendLocked(rs, Message{Type: typeJoin, Nick: nick, Bio: bio, Time: now}); err != nil {
-		return Room{}, err
+	token, err := newSessionToken()
+	if err != nil {
+		return Room{}, Session{}, err
 	}
-	rs.meta.Participants = append(rs.meta.Participants, Participant{Nick: nick, Bio: bio, JoinedAt: now})
-	return rs.snapshotLocked(), nil
+	now := time.Now().UTC()
+	hash := sha256.Sum256([]byte(token))
+	if err := m.persistSession(rs.meta.ID, sessionRecord{Hash: hex.EncodeToString(hash[:]), Nick: nick, JoinedAt: now}); err != nil {
+		return Room{}, Session{}, err
+	}
+	if err := m.appendLocked(rs, Message{Type: typeJoin, Nick: nick, Bio: bio, Time: now}); err != nil {
+		return Room{}, Session{}, err
+	}
+	if !rs.hasParticipantLocked(nick) {
+		rs.meta.Participants = append(rs.meta.Participants, Participant{Nick: nick, Bio: bio, JoinedAt: now})
+	}
+	rs.sessions = append(rs.sessions, sessionAuth{hash: hash, nick: nick, joinedAt: now})
+	sess := Session{SessionID: token, RoomID: rs.meta.ID, Nick: nick, Bio: bio, JoinedAt: now, LastSeq: len(rs.log)}
+	return rs.snapshotLocked(), sess, nil
 }
 
-// Say appends a message from nick. Rejected when the room is unknown,
-// closed, or nick has not joined.
-func (m *Manager) Say(id, nick, body string) (Message, error) {
+func (rs *roomState) hasParticipantLocked(nick string) bool {
+	for _, p := range rs.meta.Participants {
+		if p.Nick == nick {
+			return true
+		}
+	}
+	return false
+}
+
+// Resume validates an existing capability and returns its current session
+// without appending any event. Idempotent.
+func (m *Manager) Resume(id, sessionID string) (Session, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return Session{}, err
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	sa, ok := rs.findSessionLocked(sessionID)
+	if !ok {
+		return Session{}, ErrInvalidSession
+	}
+	return Session{
+		SessionID: sessionID,
+		RoomID:    rs.meta.ID,
+		Nick:      sa.nick,
+		Bio:       rs.bioOfLocked(sa.nick),
+		JoinedAt:  sa.joinedAt,
+		LastSeq:   len(rs.log),
+	}, nil
+}
+
+// Say appends a message authored by the session's nick — the capability, not
+// any client-supplied name, is the authority (F-0226). Rejected when the
+// room is unknown or closed, or the capability doesn't belong to this room.
+func (m *Manager) Say(id, sessionID, body string) (Message, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
 		return Message{}, err
@@ -268,17 +451,11 @@ func (m *Manager) Say(id, nick, body string) (Message, error) {
 	if rs.meta.ClosedAt != nil {
 		return Message{}, ErrClosed
 	}
-	joined := false
-	for _, p := range rs.meta.Participants {
-		if p.Nick == nick {
-			joined = true
-			break
-		}
+	sa, ok := rs.findSessionLocked(sessionID)
+	if !ok {
+		return Message{}, ErrInvalidSession
 	}
-	if !joined {
-		return Message{}, ErrNotJoined
-	}
-	rec := Message{Type: typeMessage, Nick: nick, Body: body, Time: time.Now().UTC()}
+	rec := Message{Type: typeMessage, Nick: sa.nick, Body: body, Time: time.Now().UTC()}
 	if err := m.appendLocked(rs, rec); err != nil {
 		return Message{}, err
 	}

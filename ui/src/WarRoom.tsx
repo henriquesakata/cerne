@@ -1,18 +1,35 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   fetchRooms,
+  getApiProject,
   joinRoom,
   postRoomClose,
   postRoomOpen,
   readRoomMessages,
+  resumeRoomSession,
   sayRoom,
   type Room,
   type RoomMessage,
+  type RoomSession,
 } from './api'
 import { useT } from './i18n'
 
 const NICK_KEY = 'warroom-nick'
 const BIO_KEY = 'warroom-bio'
+
+// Chave da capability de sessão (F-0226), escopada por projeto+sala: a mesma
+// pessoa pode participar de salas diferentes (e projetos diferentes) sem uma
+// sessão atropelar a outra.
+const sessionKey = (roomId: string) => `warroom-session-${getApiProject()}-${roomId}`
+
+function loadStoredSession(roomId: string): RoomSession | null {
+  try {
+    const raw = localStorage.getItem(sessionKey(roomId))
+    return raw ? (JSON.parse(raw) as RoomSession) : null
+  } catch {
+    return null
+  }
+}
 
 // WarRoom (T-0003): lista de salas — critério 4 de [[F-0211]]. As salas em si
 // (open/join/say/read/close) já existem no server desde [[T-0001]]; esta
@@ -97,6 +114,7 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const [nick, setNick] = useState(() => localStorage.getItem(NICK_KEY) ?? '')
   const [bio, setBio] = useState(() => localStorage.getItem(BIO_KEY) ?? '')
+  const [session, setSession] = useState<RoomSession | null>(null)
   const [joining, setJoining] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -165,7 +183,27 @@ export function WarRoomDetail({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  const joined = nick.trim() !== '' && roster.some((p) => p.nick === nick.trim())
+  // Reload retoma a sessão guardada validando a capability no servidor
+  // (F-0226 critério 9); token inválido volta ao formulário de join sem
+  // impersonar o nick salvo.
+  useEffect(() => {
+    setSession(null)
+    const stored = loadStoredSession(id)
+    if (!stored) return
+    let cancelled = false
+    resumeRoomSession(id, stored.session_id)
+      .then((s) => {
+        if (!cancelled) setSession(s)
+      })
+      .catch(() => {
+        localStorage.removeItem(sessionKey(id))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  const joined = session !== null
 
   const doJoin = (e: FormEvent) => {
     e.preventDefault()
@@ -173,11 +211,14 @@ export function WarRoomDetail({ id }: { id: string }) {
     if (trimmedNick === '' || joining) return
     localStorage.setItem(NICK_KEY, trimmedNick)
     localStorage.setItem(BIO_KEY, bio)
-    if (roster.some((p) => p.nick === trimmedNick)) return // já participante (reload)
     setJoining(true)
     setError(null)
     joinRoom(id, trimmedNick, bio)
-      .then(() => setJoining(false))
+      .then(({ session: s }) => {
+        setJoining(false)
+        localStorage.setItem(sessionKey(id), JSON.stringify(s))
+        setSession(s)
+      })
       .catch((e: unknown) => {
         setJoining(false)
         setError(e instanceof Error ? e.message : String(e))
@@ -214,10 +255,10 @@ export function WarRoomDetail({ id }: { id: string }) {
   const send = (e: FormEvent) => {
     e.preventDefault()
     const body = input.trim()
-    if (body === '' || sending) return
+    if (body === '' || sending || !session) return
     setSending(true)
     setError(null)
-    sayRoom(id, nick.trim(), body)
+    sayRoom(id, session.session_id, body)
       .then(() => {
         setSending(false)
         setInput('')

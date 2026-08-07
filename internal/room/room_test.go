@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -46,10 +48,20 @@ func TestOpenAssignsSequentialIDs(t *testing.T) {
 	}
 }
 
+// mustJoin joins nick and returns the minted session.
+func mustJoin(t *testing.T, m *Manager, id, nick, bio string) Session {
+	t.Helper()
+	_, sess, err := m.Join(id, nick, bio)
+	if err != nil {
+		t.Fatalf("Join %s: %v", nick, err)
+	}
+	return sess
+}
+
 func TestJoinRegistersParticipant(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	got, err := m.Join(r.ID, "alice", "otimista")
+	got, _, err := m.Join(r.ID, "alice", "otimista")
 	if err != nil {
 		t.Fatalf("Join: %v", err)
 	}
@@ -58,20 +70,48 @@ func TestJoinRegistersParticipant(t *testing.T) {
 	}
 }
 
+func TestJoinMintsSessionCapability(t *testing.T) {
+	m := newManager(t)
+	r, _ := m.Open("topico")
+	_, sess, err := m.Join(r.ID, "alice", "otimista")
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if len(sess.SessionID) < 32 {
+		t.Fatalf("SessionID = %q, want >= 32 hex chars (128 bits)", sess.SessionID)
+	}
+	if _, err := hex.DecodeString(sess.SessionID); err != nil {
+		t.Fatalf("SessionID %q not hex: %v", sess.SessionID, err)
+	}
+	if sess.RoomID != r.ID || sess.Nick != "alice" || sess.Bio != "otimista" {
+		t.Fatalf("session = %+v", sess)
+	}
+	if sess.JoinedAt.IsZero() {
+		t.Fatalf("JoinedAt zero")
+	}
+	if sess.LastSeq != 2 { // open=1, join=2
+		t.Fatalf("LastSeq = %d, want 2", sess.LastSeq)
+	}
+	sess2 := mustJoin(t, m, r.ID, "bob", "")
+	if sess2.SessionID == sess.SessionID {
+		t.Fatalf("two sessions share the same capability")
+	}
+}
+
 func TestJoinDuplicateNickRejected(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
+	if _, _, err := m.Join(r.ID, "alice", ""); err != nil {
 		t.Fatalf("first Join: %v", err)
 	}
-	if _, err := m.Join(r.ID, "alice", ""); !errors.Is(err, ErrNickTaken) {
+	if _, _, err := m.Join(r.ID, "alice", ""); !errors.Is(err, ErrNickTaken) {
 		t.Fatalf("second Join err = %v, want ErrNickTaken", err)
 	}
 }
 
 func TestJoinUnknownRoomNotFound(t *testing.T) {
 	m := newManager(t)
-	if _, err := m.Join("R99", "alice", ""); !errors.Is(err, ErrNotFound) {
+	if _, _, err := m.Join("R99", "alice", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
@@ -82,7 +122,7 @@ func TestJoinClosedRoomRejected(t *testing.T) {
 	if _, err := m.Close(r.ID); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := m.Join(r.ID, "alice", ""); !errors.Is(err, ErrClosed) {
+	if _, _, err := m.Join(r.ID, "alice", ""); !errors.Is(err, ErrClosed) {
 		t.Fatalf("err = %v, want ErrClosed", err)
 	}
 }
@@ -90,10 +130,8 @@ func TestJoinClosedRoomRejected(t *testing.T) {
 func TestSayAppendsMessageWithSeq(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
-	msg, err := m.Say(r.ID, "alice", "oi pessoal")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	msg, err := m.Say(r.ID, sess.SessionID, "oi pessoal")
 	if err != nil {
 		t.Fatalf("Say: %v", err)
 	}
@@ -105,39 +143,86 @@ func TestSayAppendsMessageWithSeq(t *testing.T) {
 	}
 }
 
-func TestSayNotJoinedRejected(t *testing.T) {
+func TestSayInvalidSessionRejected(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Say(r.ID, "alice", "oi"); !errors.Is(err, ErrNotJoined) {
-		t.Fatalf("err = %v, want ErrNotJoined", err)
+	mustJoin(t, m, r.ID, "alice", "")
+	other, _ := m.Open("outra sala")
+	otherSess := mustJoin(t, m, other.ID, "bob", "")
+
+	cases := []struct {
+		name, sessionID string
+	}{
+		{"empty", ""},
+		{"random", "deadbeefdeadbeefdeadbeefdeadbeef"},
+		{"other room's capability", otherSess.SessionID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+			if _, err := m.Say(r.ID, tc.sessionID, "oi"); !errors.Is(err, ErrInvalidSession) {
+				t.Fatalf("err = %v, want ErrInvalidSession", err)
+			}
+			after, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+			if len(after) != len(before) {
+				t.Fatalf("log grew from %d to %d events on rejected Say", len(before), len(after))
+			}
+		})
 	}
 }
 
 func TestSayClosedRoomRejected(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
+	sess := mustJoin(t, m, r.ID, "alice", "")
 	if _, err := m.Close(r.ID); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := m.Say(r.ID, "alice", "oi"); !errors.Is(err, ErrClosed) {
+	if _, err := m.Say(r.ID, sess.SessionID, "oi"); !errors.Is(err, ErrClosed) {
 		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+}
+
+func TestResumeReturnsSameSessionWithoutEvent(t *testing.T) {
+	m := newManager(t)
+	r, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "bio-alice")
+
+	before, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+	got, err := m.Resume(r.ID, sess.SessionID)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if got.SessionID != sess.SessionID || got.Nick != "alice" || got.Bio != "bio-alice" || got.RoomID != r.ID {
+		t.Fatalf("resumed session = %+v", got)
+	}
+	after, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+	if len(after) != len(before) {
+		t.Fatalf("Resume appended an event: %d -> %d", len(before), len(after))
+	}
+}
+
+func TestResumeInvalidSessionRejected(t *testing.T) {
+	m := newManager(t)
+	r, _ := m.Open("topico")
+	mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Resume(r.ID, "deadbeefdeadbeefdeadbeefdeadbeef"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("err = %v, want ErrInvalidSession", err)
+	}
+	if _, err := m.Resume("R99", "deadbeef"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 
 func TestReadSinceFiltersEarlierEvents(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
-	first, err := m.Say(r.ID, "alice", "um")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	first, err := m.Say(r.ID, sess.SessionID, "um")
 	if err != nil {
 		t.Fatalf("Say: %v", err)
 	}
-	if _, err := m.Say(r.ID, "alice", "dois"); err != nil {
+	if _, err := m.Say(r.ID, sess.SessionID, "dois"); err != nil {
 		t.Fatalf("Say: %v", err)
 	}
 
@@ -153,9 +238,7 @@ func TestReadSinceFiltersEarlierEvents(t *testing.T) {
 func TestReadFollowWakesOnNewMessage(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
+	sess := mustJoin(t, m, r.ID, "alice", "")
 	baseline, err := m.Read(context.Background(), r.ID, 0, false, time.Second)
 	if err != nil {
 		t.Fatalf("Read baseline: %v", err)
@@ -172,7 +255,7 @@ func TestReadFollowWakesOnNewMessage(t *testing.T) {
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-	if _, err := m.Say(r.ID, "alice", "acordou"); err != nil {
+	if _, err := m.Say(r.ID, sess.SessionID, "acordou"); err != nil {
 		t.Fatalf("Say: %v", err)
 	}
 
@@ -220,10 +303,8 @@ func TestReadFollowTimesOutEmpty(t *testing.T) {
 func TestCloseKeepsTranscriptReadable(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
-	if _, err := m.Say(r.ID, "alice", "oi"); err != nil {
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Say(r.ID, sess.SessionID, "oi"); err != nil {
 		t.Fatalf("Say: %v", err)
 	}
 	if _, err := m.Close(r.ID); err != nil {
@@ -270,9 +351,7 @@ func TestListIncludesClosedRooms(t *testing.T) {
 func TestSayConcurrentProducesDenseOrderedSeq(t *testing.T) {
 	m := newManager(t)
 	r, _ := m.Open("topico")
-	if _, err := m.Join(r.ID, "alice", ""); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
+	sess := mustJoin(t, m, r.ID, "alice", "")
 
 	const n = 50
 	var wg sync.WaitGroup
@@ -281,7 +360,7 @@ func TestSayConcurrentProducesDenseOrderedSeq(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			if _, err := m.Say(r.ID, "alice", "msg"); err != nil {
+			if _, err := m.Say(r.ID, sess.SessionID, "msg"); err != nil {
 				errs <- err
 			}
 		}()
@@ -356,10 +435,8 @@ func TestManagerLoadReplaysExistingFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := m1.Join(r.ID, "alice", "bio-alice"); err != nil {
-		t.Fatalf("Join: %v", err)
-	}
-	if _, err := m1.Say(r.ID, "alice", "primeira mensagem"); err != nil {
+	sess := mustJoin(t, m1, r.ID, "alice", "bio-alice")
+	if _, err := m1.Say(r.ID, sess.SessionID, "primeira mensagem"); err != nil {
 		t.Fatalf("Say: %v", err)
 	}
 
@@ -399,5 +476,138 @@ func TestManagerLoadReplaysExistingFiles(t *testing.T) {
 	}
 	if r2.ID == r.ID {
 		t.Fatalf("new room ID collides with reloaded room: %s", r2.ID)
+	}
+}
+
+func TestSessionSidecarIsPrivateAndTokenNeverPersisted(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "bio")
+
+	public, err := os.ReadFile(filepath.Join(dir, r.ID+".jsonl"))
+	if err != nil {
+		t.Fatalf("read public transcript: %v", err)
+	}
+	hash := sha256.Sum256([]byte(sess.SessionID))
+	for name, needle := range map[string]string{"token": sess.SessionID, "hash": hex.EncodeToString(hash[:])} {
+		if bytes.Contains(public, []byte(needle)) {
+			t.Fatalf("public transcript leaks the session %s", name)
+		}
+	}
+
+	info, err := os.Stat(filepath.Join(dir, r.ID+".sessions.jsonl"))
+	if err != nil {
+		t.Fatalf("stat sidecar: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("sidecar mode = %o, want 600", perm)
+	}
+	sidecar, err := os.ReadFile(filepath.Join(dir, r.ID+".sessions.jsonl"))
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	if bytes.Contains(sidecar, []byte(sess.SessionID)) {
+		t.Fatalf("sidecar stores the raw token, want hash only")
+	}
+	if !bytes.Contains(sidecar, []byte(hex.EncodeToString(hash[:]))) {
+		t.Fatalf("sidecar missing the token hash")
+	}
+}
+
+func TestReplayRestoresSessionsAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _ := m1.Open("topico")
+	sess := mustJoin(t, m1, r.ID, "alice", "bio-alice")
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (reload): %v", err)
+	}
+	msg, err := m2.Say(r.ID, sess.SessionID, "sobrevivi ao restart")
+	if err != nil {
+		t.Fatalf("Say with pre-restart capability: %v", err)
+	}
+	if msg.Nick != "alice" {
+		t.Fatalf("Nick = %q, want alice", msg.Nick)
+	}
+	got, err := m2.Resume(r.ID, sess.SessionID)
+	if err != nil {
+		t.Fatalf("Resume after restart: %v", err)
+	}
+	if got.Nick != "alice" || got.Bio != "bio-alice" {
+		t.Fatalf("resumed session = %+v", got)
+	}
+}
+
+func TestReplayIgnoresOrphanSidecarRecord(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _ := m1.Open("topico")
+	// simulate a crash between the private record and the public join event:
+	// a sidecar row whose nick has no join in the transcript.
+	orphan := sha256.Sum256([]byte("orphan-token"))
+	line, _ := json.Marshal(map[string]any{"hash": hex.EncodeToString(orphan[:]), "nick": "ghost", "joined_at": time.Now().UTC()})
+	f, err := os.OpenFile(filepath.Join(dir, r.ID+".sessions.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open sidecar: %v", err)
+	}
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+	f.Close()
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (reload): %v", err)
+	}
+	if _, err := m2.Say(r.ID, "orphan-token", "boo"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("orphan capability accepted: err = %v, want ErrInvalidSession", err)
+	}
+}
+
+func TestLegacyTranscriptReadableAndNickRejoinable(t *testing.T) {
+	dir := t.TempDir()
+	// hand-written legacy transcript: joins/messages, no sessions sidecar.
+	legacy := `{"seq":1,"type":"open","topic":"legado","time":"2026-08-01T00:00:00Z"}
+{"seq":2,"type":"join","nick":"alice","bio":"veterana","time":"2026-08-01T00:00:01Z"}
+{"seq":3,"type":"message","nick":"alice","body":"mensagem antiga","time":"2026-08-01T00:00:02Z"}
+`
+	if err := os.WriteFile(filepath.Join(dir, "R1.jsonl"), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy transcript: %v", err)
+	}
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	msgs, err := m.Read(context.Background(), "R1", 0, false, time.Second)
+	if err != nil || len(msgs) != 3 {
+		t.Fatalf("Read legacy = %d msgs, err %v; want 3", len(msgs), err)
+	}
+	// legacy participant has no capability: nothing authenticates as alice...
+	if _, err := m.Say("R1", "anything", "oi"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("err = %v, want ErrInvalidSession", err)
+	}
+	// ...until a fresh join mints one (criterion 8); the nick is NOT a collision.
+	_, sess, err := m.Join("R1", "alice", "veterana")
+	if err != nil {
+		t.Fatalf("legacy nick re-join: %v", err)
+	}
+	if msg, err := m.Say("R1", sess.SessionID, "voltei"); err != nil || msg.Nick != "alice" {
+		t.Fatalf("Say after re-join: msg = %+v, err %v", msg, err)
+	}
+	// with an active session, the nick collides again (criterion 5).
+	if _, _, err := m.Join("R1", "alice", ""); !errors.Is(err, ErrNickTaken) {
+		t.Fatalf("err = %v, want ErrNickTaken", err)
 	}
 }

@@ -68,6 +68,24 @@ func runRoom(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+// joinRoomAs joins nick via the CLI and returns the session capability
+// printed by `room join` (F-0226).
+func joinRoomAs(t *testing.T, dirFlag []string, roomID, nick string, extra ...string) string {
+	t.Helper()
+	args := append([]string{"join", roomID, "--nick", nick}, extra...)
+	out, err := runRoom(t, append(args, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join %s: %v", nick, err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if tok, ok := strings.CutPrefix(line, "session: "); ok {
+			return strings.TrimSpace(tok)
+		}
+	}
+	t.Fatalf("join output = %q, want a session: line", out)
+	return ""
+}
+
 func TestRoomOpenPrintsEntryCommand(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-open")
 	out, err := runRoom(t, "open", "how do we ship F-0211", "--dir", dir, "--port", strconv.Itoa(port))
@@ -107,9 +125,9 @@ func TestRoomSayThenRead(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-sayread")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
 	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
-	runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
 
-	if _, err := runRoom(t, append([]string{"say", "R1", "--nick", "ana", "ola pessoal"}, dirFlag...)...); err != nil {
+	if _, err := runRoom(t, append([]string{"say", "R1", "--session", sess, "ola pessoal"}, dirFlag...)...); err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	out, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
@@ -134,7 +152,7 @@ func TestRoomReadFollowSeesNewMessage(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-follow")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
 	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
-	runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
 
 	c, err := newRoomClient(dir, port)
 	if err != nil {
@@ -151,7 +169,7 @@ func TestRoomReadFollowSeesNewMessage(t *testing.T) {
 	}()
 
 	time.Sleep(200 * time.Millisecond)
-	if _, err := c.say(context.Background(), "R1", "ana", "chegou"); err != nil {
+	if _, err := c.say(context.Background(), "R1", sess, "chegou"); err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	<-done
@@ -178,7 +196,7 @@ func TestRoomReadOnceExitsOnFirstBatch(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-once")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
 	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
-	runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
 
 	c, err := newRoomClient(dir, port)
 	if err != nil {
@@ -196,7 +214,7 @@ func TestRoomReadOnceExitsOnFirstBatch(t *testing.T) {
 	}()
 
 	time.Sleep(200 * time.Millisecond)
-	if _, err := c.say(context.Background(), "R1", "ana", "chegou"); err != nil {
+	if _, err := c.say(context.Background(), "R1", sess, "chegou"); err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	<-done
@@ -280,8 +298,105 @@ func TestRoomClose(t *testing.T) {
 		t.Fatalf("read after close: %v", err)
 	}
 	// say is refused post-close.
-	if _, err := runRoom(t, append([]string{"say", "R1", "--nick", "ana", "oi"}, dirFlag...)...); err == nil {
+	if _, err := runRoom(t, append([]string{"say", "R1", "--session", "deadbeef", "oi"}, dirFlag...)...); err == nil {
 		t.Fatal("say after close: want error, got nil")
+	}
+}
+
+func TestRoomJoinPrintsSessionAndNextSteps(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-join-session")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+
+	out, err := runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	sess := joinRoomAs(t, dirFlag, "R1", "bia") // helper parses the session: line
+	if len(sess) < 32 {
+		t.Fatalf("session = %q, want >= 32 chars", sess)
+	}
+	if !strings.Contains(out, "session: ") {
+		t.Fatalf("output = %q, want the session line", out)
+	}
+	if !strings.Contains(out, "cerne room say R1 \"<message>\" --session ") {
+		t.Fatalf("output = %q, want a copyable say example", out)
+	}
+	if !strings.Contains(out, "export CERNE_ROOM_SESSION=") {
+		t.Fatalf("output = %q, want the env convenience line", out)
+	}
+	if !strings.Contains(out, "keep this session token") {
+		t.Fatalf("output = %q, want the keep-the-token warning", out)
+	}
+	if strings.Contains(out, "watch") {
+		t.Fatalf("output = %q, watch example must wait for F-0227", out)
+	}
+}
+
+func TestRoomSayWithoutSessionIsLocalError(t *testing.T) {
+	// no server needed: the check fires before any HTTP.
+	_, err := runRoom(t, "say", "R1", "oi")
+	if err == nil {
+		t.Fatal("say without session: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--session") || !strings.Contains(err.Error(), "CERNE_ROOM_SESSION") {
+		t.Fatalf("error = %q, want both --session and CERNE_ROOM_SESSION mentioned", err.Error())
+	}
+	if !strings.Contains(err.Error(), "room join") {
+		t.Fatalf("error = %q, want a pointer to room join", err.Error())
+	}
+}
+
+func TestRoomSayNickFlagRemoved(t *testing.T) {
+	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("say --nick: err = %v, want unknown flag (contract migrated to --session)", err)
+	}
+}
+
+func TestRoomSayEnvFallbackAndFlagPrecedence(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-say-env")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+
+	// env fallback: no flag, valid capability in CERNE_ROOM_SESSION.
+	t.Setenv("CERNE_ROOM_SESSION", sess)
+	if _, err := runRoom(t, append([]string{"say", "R1", "via env"}, dirFlag...)...); err != nil {
+		t.Fatalf("say via env: %v", err)
+	}
+
+	// flag precedence: bogus env, valid flag — the flag must win.
+	t.Setenv("CERNE_ROOM_SESSION", "deadbeef")
+	if _, err := runRoom(t, append([]string{"say", "R1", "--session", sess, "via flag"}, dirFlag...)...); err != nil {
+		t.Fatalf("say with flag over bogus env: %v", err)
+	}
+
+	// bogus env alone is refused by the server (401).
+	if _, err := runRoom(t, append([]string{"say", "R1", "still bogus"}, dirFlag...)...); err == nil {
+		t.Fatal("say with bogus env capability: want error, got nil")
+	}
+}
+
+func TestRoomReadRendersJoinWithNickAndBio(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-read-join")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	joinRoomAs(t, dirFlag, "R1", "ana", "--bio", "pessimista de plantão")
+	joinRoomAs(t, dirFlag, "R1", "bob")
+
+	out, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(out, "[join: ana — pessimista de plantão]") {
+		t.Fatalf("read output = %q, want join rendered with nick and bio", out)
+	}
+	if !strings.Contains(out, "[join: bob]") {
+		t.Fatalf("read output = %q, want join without bio rendered without separator", out)
+	}
+	if !strings.Contains(out, "#1 [open]") {
+		t.Fatalf("read output = %q, want open still rendered as a system event", out)
 	}
 }
 
