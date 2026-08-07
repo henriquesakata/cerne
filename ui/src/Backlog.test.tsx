@@ -62,4 +62,23 @@ describe('Backlog (F-0202)', () => {
       expect(screen.getByText(/converse com o agente/i)).toBeInTheDocument(),
     )
   })
+
+  // F-0204: o Backlog ordena por prioridade por default (p0 primeiro, sem
+  // prioridade por último), e mostra chip de prioridade + handle do owner.
+  it('ordena por prioridade e mostra chip/handle', async () => {
+    payload = state([
+      feature('F-0001', { priority: 'p2' }),
+      feature('F-0002', { priority: 'p0', owner: 'ana' }),
+      feature('F-0003'),
+    ])
+    render(<Backlog />)
+
+    await waitFor(() => expect(screen.getByText('F-0002')).toBeInTheDocument())
+    const ids = Array.from(document.querySelectorAll('.card-id')).map((el) => el.textContent)
+    expect(ids).toEqual(['F-0002', 'F-0001', 'F-0003'])
+
+    const card = screen.getByText('F-0002').closest('a')
+    expect(card?.querySelector('.badge-priority')).toHaveTextContent('p0')
+    expect(card).toHaveTextContent('@ana')
+  })
 })

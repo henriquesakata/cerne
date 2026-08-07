@@ -58,7 +58,12 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 	}
 	spec := readFeatureDoc(ctx.repoDir, id, "spec.md")
 	current := readFeatureDoc(ctx.repoDir, id, "plan.md")
-	prompt := BuildPlanDraftPrompt(f, spec, current)
+	feats, err := store.LoadAllFeatures(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	children := store.ChildrenByParent(feats)[id]
+	prompt := BuildPlanDraftPrompt(f, spec, current, children)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -120,7 +125,10 @@ func writePlanDraft(repoDir, id, body string) error {
 // plantmpl.Sections in order plus the authoring rules: small ordered test-first
 // tasks, verification tied to a numbered spec criterion, exact commit messages,
 // the [ESCLARECER] ambiguity marker, right-sizing, and a binary definition of done.
-func BuildPlanDraftPrompt(f store.Feature, specContent, currentContent string) string {
+// children, when non-empty, makes the prompt list the roster (id, title,
+// state) and ask for the canonical "Etapa N: ID (título)" execution map
+// (F-0213 criterion 3) — mesma etapa = paralelas, ordem/paralelismo justificados.
+func BuildPlanDraftPrompt(f store.Feature, specContent, currentContent string, children []store.Feature) string {
 	module := f.Module
 	if module == "" {
 		module = "(sem módulo)"
@@ -139,6 +147,16 @@ func BuildPlanDraftPrompt(f store.Feature, specContent, currentContent string) s
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
+	if len(children) > 0 {
+		b.WriteString("Esta feature é um ÉPICO — já tem estas tasks/filhas mintadas:\n")
+		for _, c := range children {
+			fmt.Fprintf(&b, "- %s (%s) — estado: %s\n", c.ID, c.Title, c.State)
+		}
+		b.WriteString("Na seção \"Dependências e ordem\", inclua um Mapa de execução no formato canônico — uma linha " +
+			"por etapa, filhos da mesma etapa são paralelos:\n")
+		b.WriteString("  Etapa 1: T-0001 (título)\n  Etapa 2 (paralelas): T-0002 (título) · T-0003 (título)\n")
+		b.WriteString("Justifique a ordem/paralelismo escolhido.\n\n")
+	}
 	b.WriteString("Escreva um plano COMPLETO e executável, em Markdown, com exatamente estas seções nesta ordem:\n")
 	for _, s := range plantmpl.Sections {
 		b.WriteString("## " + s + "\n")

@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/plantmpl"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -98,7 +99,7 @@ func TestCreateFeatureWithSpec(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 
 	body := "# Minha feature\n\n## Problema\n\nAgentes esquecem a spec.\n"
-	f, err := CreateFeatureWithSpec(repoDir, projDir, "Minha feature", "", "", nil, nil, body, false)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Minha feature", "", "", nil, nil, body, false, "", "")
 	if err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestCreateFeatureWithSpec(t *testing.T) {
 // degrades to the current stub behavior.
 func TestCreateFeatureWithSpecEmptyBodyScaffoldsStub(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	f, err := CreateFeatureWithSpec(repoDir, projDir, "Sem corpo", "", "", nil, nil, "   ", false)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Sem corpo", "", "", nil, nil, "   ", false, "", "")
 	if err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}
@@ -135,6 +136,38 @@ func TestCreateFeatureWithSpecEmptyBodyScaffoldsStub(t *testing.T) {
 	}
 	if ds.HasSpec {
 		t.Fatalf("empty body must scaffold the stub (not real content)")
+	}
+}
+
+// TestCreateFeatureOwnerPriority pins F-0204's criterion 1: owner/priority
+// persist on creation, and an invalid priority is refused with nothing
+// written (no id minted, no event).
+func TestCreateFeatureOwnerPriority(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Com dono", "", "", nil, nil, "", false, "  ana  ", "P1")
+	if err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	if f.Owner != "ana" || f.Priority != "p1" {
+		t.Fatalf("feature = %+v, want Owner=ana Priority=p1 (trimmed/lowercased)", f)
+	}
+	got, err := store.LoadFeature(repoDir, f.ID)
+	if err != nil || got.Owner != "ana" || got.Priority != "p1" {
+		t.Fatalf("LoadFeature = %+v, %v; want persisted owner/priority", got, err)
+	}
+}
+
+func TestCreateFeatureInvalidPriorityWritesNothing(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Prioridade ruim", "", "", nil, nil, "", false, "", "p9"); !errors.Is(err, domain.ErrInvalidPriority) {
+		t.Fatalf("err = %v, want ErrInvalidPriority", err)
+	}
+	feats, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllFeatures: %v", err)
+	}
+	if len(feats) != 0 {
+		t.Fatalf("feats = %+v, want nothing written on invalid priority", feats)
 	}
 }
 
@@ -510,6 +543,56 @@ func TestRetagFeature(t *testing.T) {
 	}
 }
 
+// TestSetFeature pins F-0204's criterion 2: SetFeature mutates owner/priority
+// in place via the set flags, validates priority before writing, and refuses
+// on a terminal (frozen) feature.
+func TestSetFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+
+	// Set owner only — priority stays empty.
+	f, err := SetFeature(repoDir, projDir, "F-0001", "ana", "", true, false)
+	if err != nil {
+		t.Fatalf("set owner: %v", err)
+	}
+	if f.Owner != "ana" || f.Priority != "" {
+		t.Fatalf("after owner set = owner %q priority %q, want ana / \"\"", f.Owner, f.Priority)
+	}
+	// Set priority only — owner preserved.
+	f, err = SetFeature(repoDir, projDir, "F-0001", "", "p2", false, true)
+	if err != nil {
+		t.Fatalf("set priority: %v", err)
+	}
+	if f.Owner != "ana" || f.Priority != "p2" {
+		t.Fatalf("after priority set = owner %q priority %q, want ana / p2", f.Owner, f.Priority)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	last := evs[len(evs)-1]
+	if last.Type != "feature.set" || last.EntityID != "F-0001" || last.Payload["priority"] != "p2" {
+		t.Fatalf("event = %+v, want feature.set with priority p2", last)
+	}
+	// Invalid priority leaves the feature untouched.
+	if _, err := SetFeature(repoDir, projDir, "F-0001", "", "p9", false, true); !errors.Is(err, domain.ErrInvalidPriority) {
+		t.Fatalf("err = %v, want ErrInvalidPriority", err)
+	}
+	got, _ := store.LoadFeature(repoDir, "F-0001")
+	if got.Priority != "p2" {
+		t.Fatalf("priority = %q, want unchanged p2 after invalid set", got.Priority)
+	}
+
+	// Gate: a terminal feature (implemented, per domain.TitleEditable) is frozen.
+	frozen := store.Feature{ID: "F-0002", Title: "Pronta", State: domain.StateImplemented}
+	if err := store.SaveFeature(repoDir, frozen); err != nil {
+		t.Fatalf("SaveFeature frozen: %v", err)
+	}
+	commitBackend(t, repoDir) // MutateAndSnapshot's pre-mutate hard reset drops uncommitted files
+	if _, err := SetFeature(repoDir, projDir, "F-0002", "ana", "", true, false); !errors.Is(err, ErrFeatureFrozen) {
+		t.Fatalf("err = %v, want ErrFeatureFrozen", err)
+	}
+}
+
 // TestCreateFeatureDuplicateTitle pins the F-0121 retry guard: a title whose
 // normalized form (domain.NormalizeTitle, the F-0045 rule) matches a LIVE
 // feature is refused with ErrDuplicateTitle naming the existing id — nothing
@@ -598,7 +681,7 @@ func TestCreateFeatureConcurrent(t *testing.T) {
 			defer wg.Done()
 			f, err := CreateFeatureWithSpec(repoDir, projDir,
 				fmt.Sprintf("Concorrente %d", i), "", "", nil, nil,
-				fmt.Sprintf("## Problema\n\ncorpo %d\n", i), false)
+				fmt.Sprintf("## Problema\n\ncorpo %d\n", i), false, "", "")
 			ids[i], errs[i] = f.ID, err
 		}(i)
 	}
@@ -617,4 +700,69 @@ func TestCreateFeatureConcurrent(t *testing.T) {
 			t.Fatalf("spec of %s on origin: ok=%v content=%q — want the seeded body", ids[i], ok, spec)
 		}
 	}
+}
+
+// F-0213 crit.1: approving an epic (a feature with children already minted)
+// scaffolds its plan.md with the execution map built from those children.
+func TestApproveEpicWithChildrenScaffoldsExecutionMap(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child1, err := CreateFeature(repoDir, projDir, "Fase 1", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child1: %v", err)
+	}
+	child2, err := CreateFeature(repoDir, projDir, "Fase 2", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child2: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, epic.ID, "spec", realDoc(epic.ID)); err != nil {
+		t.Fatalf("save spec: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, epic.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve epic: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+	for _, want := range []string{
+		"Etapa 1: " + child1.ID,
+		"Etapa 2: " + child2.ID,
+		"TODO: agrupe em etapas",
+	} {
+		if !strings.Contains(plan, want) {
+			t.Fatalf("plan.md missing %q:\n%s", want, plan)
+		}
+	}
+}
+
+// F-0213 crit.2: a plain feature (no children) keeps the unchanged plan stub.
+func TestApproveFeatureWithoutChildrenPlanUnchanged(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeature(repoDir, projDir, "Feature simples", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "spec", realDoc(f.ID)); err != nil {
+		t.Fatalf("save spec: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, f.ID, "plan.md")
+	want := "---\ncerne_id: " + f.ID + "\n---\n\n" + plantmpl.Stub(f.Title)
+	if plan != want {
+		t.Fatalf("plan.md changed for a childless feature:\ngot:\n%s\nwant:\n%s", plan, want)
+	}
+}
+
+func readFeatureDocFile(t *testing.T, repoDir, id, file string) string {
+	t.Helper()
+	data, err := os.ReadFile(FeatureDocPath(repoDir, id, file))
+	if err != nil {
+		t.Fatalf("read %s/%s: %v", id, file, err)
+	}
+	return string(data)
 }

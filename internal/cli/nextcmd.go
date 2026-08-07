@@ -98,6 +98,40 @@ func runNext(cmd *cobra.Command, dir string) error {
 		fmt.Fprintln(out)
 	}
 
+	// Epics ready to close (F-0214): in_development with every child concluded
+	// or dead (implemented/done/rejected/superseded) — the result is likely
+	// already scaffolded by the last child's complete, but this block is a
+	// backstop for any session that missed that stdout line.
+	byParent := store.ChildrenByParent(features)
+	var readyEpics []store.Feature
+	for _, f := range features {
+		if f.State != domain.StateInDevelopment {
+			continue
+		}
+		children := byParent[f.ID]
+		if len(children) == 0 {
+			continue
+		}
+		allConcluded := true
+		for _, c := range children {
+			if domain.TitleEditable(c.State) {
+				allConcluded = false
+				break
+			}
+		}
+		if allConcluded {
+			readyEpics = append(readyEpics, f)
+		}
+	}
+	if len(readyEpics) > 0 {
+		printed = true
+		fmt.Fprintf(out, "EPICS READY TO CLOSE (%d) — fill the result and run 'cerne feature complete <id>'\n", len(readyEpics))
+		for _, f := range readyEpics {
+			fmt.Fprintln(out, statusLine(f, width))
+		}
+		fmt.Fprintln(out)
+	}
+
 	if len(findings) > 0 {
 		printed = true
 		fmt.Fprintln(out, "DEBTS (cerne lint):")

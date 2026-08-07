@@ -377,3 +377,81 @@ func TestFeatureRetag(t *testing.T) {
 		t.Fatalf("Components = %v, want [gitback]", f.Components)
 	}
 }
+
+// TestFeatureNewOwnerPriority pins F-0204's criterion 1 at the CLI: --owner
+// and --priority persist, and an invalid priority is refused before anything
+// is minted.
+func TestFeatureNewOwnerPriority(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	out, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste",
+		"--owner", "ana", "--priority", "p1", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.Owner != "ana" || f.Priority != "p1" {
+		t.Fatalf("feature = %+v, want Owner=ana Priority=p1", f)
+	}
+
+	if _, err := execCerne(t, "feature", "new", "Feat 2", "--context", "ctx de teste",
+		"--priority", "p9", "--dir", projDir); err == nil {
+		t.Fatalf("--priority p9 succeeded, want error")
+	}
+	if _, err := store.LoadFeature(repoDir, "F-0002"); err == nil {
+		t.Fatalf("F-0002 minted despite invalid --priority")
+	}
+}
+
+// TestFeatureSet pins F-0204's criterion 2 at the CLI: 'feature set' mutates
+// owner/priority in place, the no-flags guard, priority validation, and the
+// terminal-state gate.
+func TestFeatureSet(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+
+	// set with no flag is a usage error.
+	if _, err := execCerne(t, "feature", "set", "F-0001", "--dir", projDir); err == nil {
+		t.Fatalf("set with no flags succeeded, want error")
+	}
+
+	out, err := execCerne(t, "feature", "set", "F-0001", "--owner", "ana", "--priority", "p0", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature set: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "F-0001 set") {
+		t.Fatalf("output missing confirmation:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	if f.Owner != "ana" || f.Priority != "p0" {
+		t.Fatalf("feature = %+v, want Owner=ana Priority=p0", f)
+	}
+
+	// Invalid priority: refused, nothing changed.
+	if _, err := execCerne(t, "feature", "set", "F-0001", "--priority", "urgent", "--dir", projDir); err == nil {
+		t.Fatalf("--priority urgent succeeded, want error")
+	}
+	f, err = store.LoadFeature(repoDir, "F-0001")
+	if err != nil || f.Priority != "p0" {
+		t.Fatalf("Priority = %q, %v, want unchanged p0", f.Priority, err)
+	}
+
+	// Terminal feature is frozen.
+	frozen := store.Feature{ID: "F-0002", Title: "Pronta", State: domain.StateImplemented}
+	if err := store.SaveFeature(repoDir, frozen); err != nil {
+		t.Fatalf("SaveFeature frozen: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed F-0002"); err != nil {
+		t.Fatalf("CommitAndPush seed: %v", err)
+	}
+	if _, err := execCerne(t, "feature", "set", "F-0002", "--owner", "ana", "--dir", projDir); err == nil {
+		t.Fatalf("set on implemented feature succeeded, want error")
+	}
+}

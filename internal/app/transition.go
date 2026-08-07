@@ -27,6 +27,11 @@ type TransitionOutcome struct {
 	// alongside this feature, nearest-first. Empty for the common case and for
 	// every action other than start. See propagateStartToAncestors.
 	Propagated []string
+	// EpicReadyToClose holds the parent epic ID when this complete left no
+	// other alive (non-rejected/superseded), non-implemented child — the epic's
+	// result was scaffolded with the children roster. Empty for the common case
+	// and for every action other than complete. See scaffoldEpicCloseIfReady.
+	EpicReadyToClose string
 }
 
 // eventTypes maps each lifecycle action to the event type it appends.
@@ -208,12 +213,26 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 				return "", err
 			}
 		}
+		// Completing a child conducts the epic closure (F-0214, close-side
+		// counterpart of the start-side propagation above): once no other alive
+		// child is left pending, scaffold the epic's result with the children
+		// roster so the author lands on a structured closeout instead of a blank
+		// file. It never completes the epic — that stays a document + human gate.
+		var epicReady string
+		if action == domain.ActionComplete && f.Parent != "" {
+			if epicReady, err = scaffoldEpicCloseIfReady(repoDir, f.Parent); err != nil {
+				return "", err
+			}
+		}
 		msg := fmt.Sprintf("cerne: %s %s", action, id)
 		if len(propagated) > 0 {
 			msg += fmt.Sprintf(" (+ epic %s)", strings.Join(propagated, ", "))
 		}
+		if epicReady != "" {
+			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
+		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady}
 		return msg, nil
 	})
 	if err != nil {
@@ -284,6 +303,39 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 		cur = parent
 	}
 	return started, nil
+}
+
+// scaffoldEpicCloseIfReady checks whether parentID's children are all
+// concluded (implemented/done) or dead (rejected/superseded) after a child
+// just completed, and if so scaffolds the epic's result with the children
+// roster. Returns the epic ID when it scaffolded, "" when the epic is not
+// mid-flight or a live child is still pending — the mirror check of the start
+// gate in propagateStartToAncestors, but it never advances the epic's state.
+func scaffoldEpicCloseIfReady(repoDir, parentID string) (string, error) {
+	parent, err := store.LoadFeature(repoDir, parentID)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil // dangling parent: lint's parent-not-found reports it
+	}
+	if err != nil {
+		return "", err
+	}
+	if parent.State != domain.StateInDevelopment {
+		return "", nil // epic not mid-flight: nothing to close
+	}
+	all, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return "", err
+	}
+	children := store.ChildrenByParent(all)[parentID]
+	for _, c := range children {
+		if domain.TitleEditable(c.State) {
+			return "", nil // still a live, unfinished child: nothing to do
+		}
+	}
+	if err := writeEpicResultStub(repoDir, parent.ID, parent.Title, children); err != nil {
+		return "", err
+	}
+	return parent.ID, nil
 }
 
 // ValidateTransitionFlags enforces which flags each action accepts:

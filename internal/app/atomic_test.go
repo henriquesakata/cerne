@@ -78,7 +78,7 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 func TestTransitionDoesNotSweepStrayState(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 	f, err := CreateFeatureWithSpec(repoDir, projDir, "Com spec real", "", "", nil, nil,
-		"## Problema\n\nSpec real: portão de approve aberto.\n", false)
+		"## Problema\n\nSpec real: portão de approve aberto.\n", false, "", "")
 	if err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}

@@ -42,6 +42,11 @@ var ErrParentNotCommitted = errors.New("the parent feature is not committed yet 
 // (implemented/rejected/superseded): its title is frozen history.
 var ErrTitleFrozen = errors.New("the feature's title is frozen")
 
+// ErrFeatureFrozen is returned by SetFeature for a feature past the live
+// states (implemented/done/rejected/superseded, domain.TitleEditable's
+// definition of terminal): owner/priority are mutable data, not history.
+var ErrFeatureFrozen = errors.New("the feature is closed")
+
 // ErrDuplicateTitle is returned when creating a feature whose normalized title
 // (domain.NormalizeTitle, the F-0045 rule) matches a live feature: the usual
 // cause is a retry of a creation that failed after the entity already reached
@@ -63,7 +68,7 @@ var featureDocFilenames = map[string]string{
 // component curated), extended to features by D-0003 — validated before any side
 // effect so an unknown facet aborts without minting an id or writing a file.
 func CreateFeature(repoDir, projDir, title, module, parent string, facets, components []string) (store.Feature, error) {
-	return CreateFeatureWithSpec(repoDir, projDir, title, module, parent, facets, components, "", false)
+	return CreateFeatureWithSpec(repoDir, projDir, title, module, parent, facets, components, "", false, "", "")
 }
 
 // CreateFeatureWithSpec is CreateFeature with the one-shot spec path (F-0120):
@@ -72,34 +77,34 @@ func CreateFeature(repoDir, projDir, title, module, parent string, facets, compo
 // to fill or push. An empty body scaffolds the usual stub. force bypasses the
 // duplicate-registration guard (F-0147) for a consciously distinct problem —
 // the exact-title guard (F-0121) is never bypassed.
-func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force)
+func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority)
 }
 
 // CreateEpicWithSpec creates a declared epic (E-, F-0203): a full feature
 // lifecycle under its own id sequence — a semantic signal at birth for a PRD
 // that is known to decompose. Epic behavior itself stays structural (children),
 // never derived from the prefix.
-func CreateEpicWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force)
+func CreateEpicWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
+	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force, owner, priority)
 }
 
 // CreateTaskWithSpec creates a task (T-, F-0203): an execution unit of a
 // committed PRD, born approved — the human gate was paid on the parent. The
 // parent is mandatory and must be past candidacy; every refusal happens before
 // anything is written.
-func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
+func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
 	if strings.TrimSpace(parent) == "" {
 		return store.Feature{}, ErrParentRequired
 	}
-	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force)
+	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force, owner, priority)
 }
 
 // createFeatureCore is the shared creation flow behind F-/E-/T- (F-0203). The
 // prefix decides only the id sequence and the two task rules: born approved and
 // committed-parent required. Everything else — guards, stub, event, sync — is
 // identical across the three.
-func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool) (store.Feature, error) {
+func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Feature{}, fmt.Errorf("the feature title cannot be empty")
@@ -109,6 +114,11 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 		return store.Feature{}, err
 	}
 	normComponents := domain.NormalizeComponents(components)
+	owner = strings.TrimSpace(owner)
+	normPriority, err := domain.NormalizePriority(priority)
+	if err != nil {
+		return store.Feature{}, err
+	}
 	// The whole creation — duplicate guard, id mint, entity+spec+event writes —
 	// runs inside ONE critical section of the backend lock (F-0121): a
 	// concurrent local process can neither sweep the half-written state into
@@ -160,6 +170,8 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 			State:      state,
 			Facets:     normFacets,
 			Components: normComponents,
+			Owner:      owner,
+			Priority:   normPriority,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
@@ -390,6 +402,54 @@ func RenameFeature(repoDir, projDir, id, newTitle string) error {
 	return err
 }
 
+// SetFeature changes a live feature's owner and/or priority in place, appends
+// a feature.set event, then commits, pushes and refreshes the docs.lock
+// snapshot (F-0204). Each field is replaced only when its set flag is true, so
+// a caller can update priority without touching owner (mirrors RetagFeature).
+// Priority is validated against the closed set before any write
+// (ErrInvalidPriority, wrapped); a terminal feature (domain.TitleEditable's
+// definition — implemented/done/rejected/superseded) is frozen (ErrFeatureFrozen,
+// wrapped); store.ErrNotFound (wrapped) for an unknown feature.
+func SetFeature(repoDir, projDir, id, owner, priority string, setOwner, setPriority bool) (store.Feature, error) {
+	var f store.Feature
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		f, err = store.LoadFeature(repoDir, id)
+		if err != nil {
+			return "", err
+		}
+		if !domain.TitleEditable(f.State) {
+			return "", fmt.Errorf("%w: %s (%s)", ErrFeatureFrozen, id, f.State)
+		}
+		payload := map[string]string{}
+		if setOwner {
+			f.Owner = strings.TrimSpace(owner)
+			payload["owner"] = f.Owner
+		}
+		if setPriority {
+			np, err := domain.NormalizePriority(priority)
+			if err != nil {
+				return "", err // invalid priority: feature untouched
+			}
+			f.Priority = np
+			payload["priority"] = f.Priority
+		}
+		f.UpdatedAt = time.Now().UTC()
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "feature.set", payload, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: set %s", id), nil
+	})
+	if err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
 // SaveFeatureDoc writes the markdown content of a feature lifecycle document
 // (doc ∈ spec|plan|result) to content/features/<id>/<doc>.md, then commits,
 // pushes and refreshes the docs.lock snapshot. A byte-identical write is a
@@ -463,8 +523,28 @@ func writePlanStub(repoDir, id, title string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.Stub(title)
+	children, err := epicChildren(repoDir, id)
+	if err != nil {
+		return err
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.StubForEpic(title, children)
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// epicChildren returns id's children (if any) as plantmpl.EpicChild, in the
+// same order store.ChildrenByParent sorts them (by ID) — the roster the plan
+// scaffold's execution map is built from.
+func epicChildren(repoDir, id string) ([]plantmpl.EpicChild, error) {
+	feats, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	kids := store.ChildrenByParent(feats)[id]
+	out := make([]plantmpl.EpicChild, len(kids))
+	for i, k := range kids {
+		out[i] = plantmpl.EpicChild{ID: k.ID, Title: k.Title}
+	}
+	return out, nil
 }
 
 // writeResultStub creates content/features/<id>/result.md scaffolded from the
@@ -487,5 +567,33 @@ func writeResultStub(repoDir, id, title string) error {
 		return err
 	}
 	content := "---\ncerne_id: " + id + "\n---\n\n" + restmpl.Stub(title)
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// writeEpicResultStub is writeResultStub's epic-closure counterpart (F-0214):
+// it scaffolds the same result template, prefixed with the children roster as
+// raw material for the author. The roster lives inside an HTML comment, so
+// doccheck still reads the file as scaffold (a roster is not a filled-in
+// result) — the complete gate stays closed until a real section is written.
+// No-op when a real result already exists, same protection as writeResultStub.
+func writeEpicResultStub(repoDir, id, title string, children []store.Feature) error {
+	path := FeatureDocPath(repoDir, id, "result.md")
+	data, err := os.ReadFile(path)
+	if err == nil && doccheck.HasRealContent(data) {
+		return nil // a real result already exists — don't overwrite it
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var roster strings.Builder
+	roster.WriteString("<!-- ROSTER DAS FILHAS (matéria-prima para a seção Resultado; apague ao preencher):\n")
+	for _, c := range children {
+		roster.WriteString(fmt.Sprintf("- %s: %s — result: content/features/%s/result.md\n", c.ID, c.Title, c.ID))
+	}
+	roster.WriteString("-->\n\n")
+	content := "---\ncerne_id: " + id + "\n---\n\n" + roster.String() + restmpl.Stub(title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }

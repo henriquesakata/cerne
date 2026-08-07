@@ -24,7 +24,7 @@ func setFeatureState(t *testing.T, repoDir string, f store.Feature, s domain.Fea
 
 func TestCreateEpic(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	e, err := CreateEpicWithSpec(repoDir, projDir, "Meu épico", "", "", nil, nil, "", false)
+	e, err := CreateEpicWithSpec(repoDir, projDir, "Meu épico", "", "", nil, nil, "", false, "", "")
 	if err != nil {
 		t.Fatalf("CreateEpicWithSpec: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestCreateTask(t *testing.T) {
 	}
 	setFeatureState(t, repoDir, prd, domain.StateApproved)
 
-	tk, err := CreateTaskWithSpec(repoDir, projDir, "Primeiro passo", "", prd.ID, nil, nil, "", false)
+	tk, err := CreateTaskWithSpec(repoDir, projDir, "Primeiro passo", "", prd.ID, nil, nil, "", false, "", "")
 	if err != nil {
 		t.Fatalf("CreateTaskWithSpec: %v", err)
 	}
@@ -78,12 +78,12 @@ func TestCreateTask(t *testing.T) {
 // TestCreateTaskUnderEpic pins the mixed-prefix link: T- under a declared E-.
 func TestCreateTaskUnderEpic(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	e, err := CreateEpicWithSpec(repoDir, projDir, "Épico", "", "", nil, nil, "", false)
+	e, err := CreateEpicWithSpec(repoDir, projDir, "Épico", "", "", nil, nil, "", false, "", "")
 	if err != nil {
 		t.Fatalf("CreateEpicWithSpec: %v", err)
 	}
 	setFeatureState(t, repoDir, e, domain.StateInDevelopment)
-	tk, err := CreateTaskWithSpec(repoDir, projDir, "Passo", "", e.ID, nil, nil, "", false)
+	tk, err := CreateTaskWithSpec(repoDir, projDir, "Passo", "", e.ID, nil, nil, "", false, "", "")
 	if err != nil {
 		t.Fatalf("CreateTaskWithSpec under epic: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCreateTaskRefusals(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := CreateTaskWithSpec(repoDir, projDir, "Passo", "", c.parent, nil, nil, "", false)
+			_, err := CreateTaskWithSpec(repoDir, projDir, "Passo", "", c.parent, nil, nil, "", false, "", "")
 			if !errors.Is(err, c.wantErr) {
 				t.Fatalf("err = %v, want errors.Is %v", err, c.wantErr)
 			}

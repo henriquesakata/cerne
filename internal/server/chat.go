@@ -102,7 +102,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("spec_body must not be empty"))
 		return
 	}
-	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", "", req.Facets, req.Components, req.SpecBody, false)
+	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", "", req.Facets, req.Components, req.SpecBody, false, "", "")
 	if errors.Is(err, app.ErrSimilarExists) {
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 		return
