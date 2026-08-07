@@ -256,6 +256,44 @@ func TestGateFindingsDoneRequiresDocs(t *testing.T) {
 	}
 }
 
+// TestGateFindingsTaskSkipsPlanGate (F-0216): a task (T-) has no plan gate
+// by design (F-0203) — lint must not flag it missing, but still requires
+// spec/result like any feature-shaped entity.
+func TestGateFindingsTaskSkipsPlanGate(t *testing.T) {
+	dir := t.TempDir()
+	features := []store.Feature{
+		{ID: "T-0001", Title: "Task sem plan", State: domain.StateImplemented},
+		{ID: "T-0002", Title: "Task sem result", State: domain.StateImplemented},
+		{ID: "F-0001", Title: "Feature sem plan", State: domain.StateInDevelopment},
+	}
+	writeDoc(t, dir, "content/features/T-0001/spec.md",
+		"---\ncerne_id: T-0001\n---\n\n# Task sem plan\n\nProblema real.\n")
+	writeDoc(t, dir, "content/features/T-0001/result.md",
+		"---\ncerne_id: T-0001\n---\n\n# Task sem plan\n\nResultado real.\n")
+	writeDoc(t, dir, "content/features/T-0002/spec.md",
+		"---\ncerne_id: T-0002\n---\n\n# Task sem result\n\nProblema real.\n")
+	writeDoc(t, dir, "content/features/F-0001/spec.md",
+		"---\ncerne_id: F-0001\n---\n\n# Feature sem plan\n\nProblema real.\n")
+
+	got, err := gateFindings(dir, features)
+	if err != nil {
+		t.Fatalf("gateFindings: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("gateFindings = %+v, want 2 findings (T-0002 result, F-0001 plan)", got)
+	}
+	byEntity := map[string]Finding{}
+	for _, f := range got {
+		byEntity[f.Entity] = f
+	}
+	if f, ok := byEntity["T-0002"]; !ok || !strings.Contains(f.Detail, "result.md") {
+		t.Fatalf("want T-0002 missing result.md finding, got %+v", got)
+	}
+	if f, ok := byEntity["F-0001"]; !ok || !strings.Contains(f.Detail, "plan.md") {
+		t.Fatalf("want F-0001 missing plan.md finding (regression), got %+v", got)
+	}
+}
+
 // TestEpicRulesCountDone (F-0131): done counts the same as implemented in
 // both epic rules — it is implemented's human-accepted successor, never less
 // concluded.
