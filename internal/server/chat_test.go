@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -314,6 +315,35 @@ func TestChatRegisterNewCapability(t *testing.T) {
 	}
 	if len(caps) != 1 || caps[0].Title != "Exportação de dados" {
 		t.Fatalf("capabilities = %+v, want one new node titled 'Exportação de dados'", caps)
+	}
+}
+
+// TestChatRegisterThenLintClean: F-0223 criterion 4 — a candidate registered
+// via chat with facet+capability passes lint without capability-orphan or
+// untagged-live for the new feature.
+func TestChatRegisterThenLintClean(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-lint"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","facets":["code"],"capability":"Exportação de dados"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatalf("lint.Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Entity != got.Feature.ID {
+			continue
+		}
+		if f.Rule == lint.RuleCapabilityOrphan || f.Rule == lint.RuleUntaggedLive {
+			t.Fatalf("finding %+v on freshly-registered chat candidate", f)
+		}
 	}
 }
 
