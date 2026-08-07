@@ -204,25 +204,49 @@ h2 {
 
 .backlog-list-col { min-width: 0; }
 
+/* F-0218: max-height relativo ao viewport (não depende da cadeia de altura
+   do #root/.kanban, que só tem min-height — um flex:1 ali não capa a
+   página, ela cresceria inteira em vez de rolar só o histórico) — assim o
+   chat ocupa a altura útil da tela e o histórico rola por dentro. */
 .backlog-chat {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   min-width: 0;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 13rem);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 1rem;
   background: var(--surface-2);
 }
 
-.backlog-chat h2 { margin: 0; font-size: 1.05rem; }
+.backlog-chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.backlog-chat-toolbar h2 { margin: 0; font-size: 1.05rem; }
+
+.backlog-chat-new {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
 
 .backlog-chat-history {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  flex: 1;
   min-height: 8rem;
-  max-height: 28rem;
   overflow-y: auto;
 }
 
@@ -247,6 +271,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .backlog-chat-proposal label,
@@ -259,8 +284,7 @@ h2 {
 }
 
 .backlog-chat-proposal input,
-.backlog-chat-proposal textarea,
-.backlog-chat-form textarea {
+.backlog-chat-proposal textarea {
   font: inherit;
   font-size: 0.9rem;
   padding: 0.45rem 0.6rem;
@@ -268,6 +292,42 @@ h2 {
   border-radius: 6px;
   background: var(--surface);
   resize: vertical;
+}
+
+.backlog-chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.backlog-chat-form textarea {
+  flex: 1;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  resize: none;
+  max-height: 10rem;
+  overflow-y: auto;
+}
+
+.backlog-chat-options {
+  display: flex;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.backlog-chat-options select {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
 }
 
 .backlog-chat-proposal button,

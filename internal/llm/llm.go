@@ -33,6 +33,23 @@ func ResolveMode(mode string) string {
 	return mode
 }
 
+// KnownModels lists the model ids offered by the Backlog chat's model
+// selector (F-0218). Only the byo-key httpProvider currently honors an
+// override (its Model field goes straight into the Messages API request);
+// claude-cli deliberately never passes --model (see cliProvider.Complete).
+var KnownModels = []string{
+	"claude-opus-5",
+	"claude-sonnet-5",
+	"claude-fable-5",
+	"claude-haiku-4-5-20251001",
+}
+
+// KnownEfforts lists the reasoning-effort levels offered alongside
+// KnownModels. No provider applies Effort yet — accepted on the request for
+// forward compatibility (F-0218 criterion 5: unsupported means silently
+// ignored, not an error).
+var KnownEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+
 // Fake is a deterministic Provider for tests: it returns Reply and records
 // every prompt it was given, so tests can assert on prompt assembly without
 // calling a real LLM.

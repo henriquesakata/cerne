@@ -146,7 +146,7 @@ func TestRoomReadFollowSeesNewMessage(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		_ = roomReadLoop(ctx, &out, c, "R1", 0, true)
+		_ = roomReadLoop(ctx, &out, c, "R1", 0, true, false)
 		close(done)
 	}()
 
@@ -157,6 +157,108 @@ func TestRoomReadFollowSeesNewMessage(t *testing.T) {
 	<-done
 	if !strings.Contains(out.String(), "chegou") {
 		t.Fatalf("follow output = %q, want it to contain the new message", out.String())
+	}
+}
+
+func TestRoomReadOnceAndFollowMutuallyExclusive(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-once-follow")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+
+	_, err := runRoom(t, append([]string{"read", "R1", "--once", "--follow"}, dirFlag...)...)
+	if err == nil {
+		t.Fatal("--once --follow: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("error = %q, want mutually exclusive message", err.Error())
+	}
+}
+
+func TestRoomReadOnceExitsOnFirstBatch(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-once")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+
+	c, err := newRoomClient(dir, port)
+	if err != nil {
+		t.Fatalf("newRoomClient: %v", err)
+	}
+
+	done := make(chan struct{})
+	var out bytes.Buffer
+	var loopErr error
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		loopErr = roomReadLoop(ctx, &out, c, "R1", 2, false, true)
+		close(done)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	if _, err := c.say(context.Background(), "R1", "ana", "chegou"); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	<-done
+	if loopErr != nil {
+		t.Fatalf("roomReadLoop: %v", loopErr)
+	}
+	if !strings.Contains(out.String(), "#3 [ana] chegou") {
+		t.Fatalf("once output = %q, want the new message with its seq", out.String())
+	}
+}
+
+func TestRoomReadOnceOnClose(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-once-close")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+
+	c, err := newRoomClient(dir, port)
+	if err != nil {
+		t.Fatalf("newRoomClient: %v", err)
+	}
+
+	done := make(chan struct{})
+	var out bytes.Buffer
+	var loopErr error
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		loopErr = roomReadLoop(ctx, &out, c, "R1", 1, false, true)
+		close(done)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	if _, err := c.close(context.Background(), "R1"); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	<-done
+	if loopErr != nil {
+		t.Fatalf("roomReadLoop: %v", loopErr)
+	}
+	if !strings.Contains(out.String(), "close") {
+		t.Fatalf("once output on close = %q, want the close event", out.String())
+	}
+}
+
+func TestRoomReadOnceUnknownRoomErrors(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-once-missing")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+
+	_, err := runRoom(t, append([]string{"read", "R1", "--once"}, dirFlag...)...)
+	if err == nil {
+		t.Fatal("read --once on unknown room: want error, got nil")
+	}
+}
+
+func TestRoomOpenPrintsListenLine(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-listen")
+	out, err := runRoom(t, "open", "topic", "--dir", dir, "--port", strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("room open: %v", err)
+	}
+	if !strings.Contains(out, "listen: cerne room read R1 --since 0 --once") {
+		t.Fatalf("output = %q, want a listen: suggestion with --once", out)
 	}
 }
 

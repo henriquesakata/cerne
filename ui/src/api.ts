@@ -186,6 +186,9 @@ let activePid = ''
 export function setApiProject(pid: string): void {
   activePid = pid
 }
+export function getApiProject(): string {
+  return activePid
+}
 function base(): string {
   return `/api/projects/${encodeURIComponent(activePid)}`
 }
@@ -634,13 +637,17 @@ export type ChatAnswer = {
   reply?: string
 }
 
+// ChatOverride (F-0218) carrega a escolha do seletor de modelo/esforço do
+// composer — opcional; omitida, o provider usa o default do .cernerc.
+export type ChatOverride = { model?: string; effort?: string }
+
 // postChat envia o transcript inteiro (o servidor é stateless — case 0210
 // decidiu reenviar em vez de manter sessão) e recebe a próxima fala do agente.
-export async function postChat(messages: ChatMsg[]): Promise<ChatAnswer> {
+export async function postChat(messages: ChatMsg[], override?: ChatOverride): Promise<ChatAnswer> {
   const r = await fetch(`${base()}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, model: override?.model, effort: override?.effort }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as ChatAnswer
@@ -691,6 +698,17 @@ export async function fetchLLMMode(): Promise<LLMMode> {
   const r = await fetch(`${base()}/config/llm`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { mode: LLMMode }).mode
+}
+
+// LLMOptions (F-0218) é o payload completo de GET /api/config/llm: modo +
+// as listas conhecidas de modelo/esforço que alimentam o seletor do chat.
+export type LLMOptions = { mode: LLMMode; models: string[]; efforts: string[] }
+
+export async function fetchLLMOptions(): Promise<LLMOptions> {
+  const r = await fetch(`${base()}/config/llm`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  const j = (await r.json()) as { mode: LLMMode; models?: string[]; efforts?: string[] }
+  return { mode: j.mode, models: j.models ?? [], efforts: j.efforts ?? [] }
 }
 
 // setLLMMode grava o modo no .cernerc; o servidor relê a config a cada
@@ -827,6 +845,22 @@ export async function fetchRooms(): Promise<Room[]> {
   const r = await fetch(`${base()}/rooms`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { rooms: Room[] }).rooms
+}
+
+export async function postRoomOpen(topic: string): Promise<Room> {
+  const r = await fetch(`${base()}/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Room
+}
+
+export async function postRoomClose(id: string): Promise<Room> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/close`, { method: 'POST' })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as Room
 }
 
 export async function joinRoom(id: string, nick: string, bio: string): Promise<Room> {
