@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -80,12 +81,16 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 		msgs[i] = app.ChatMessage{Role: m.Role, Content: m.Content}
 	}
 
-	prov, err := llm.NewProvider(cfg.LLM)
+	// F-0224: the chat provider runs claude-cli as a read-only agent in the
+	// project dir; the budget covers chained cerne queries, not just one shot.
+	prov, err := llm.NewAgentProvider(cfg.LLM, projDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	reply, err := prov.Complete(r.Context(), app.BuildChatPrompt(sysPrompt, msgs))
+	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
+	defer cancel()
+	reply, err := prov.Complete(ctx, app.BuildChatPrompt(sysPrompt, msgs))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
