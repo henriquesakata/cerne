@@ -28,6 +28,7 @@ var errRoomTransient = errors.New("transient room connection error")
 type roomClient struct {
 	base string // e.g. http://127.0.0.1:7717/api/projects/<pid>
 	port int
+	pid  string // cfg.ProjectID — used by `room watch` (F-0227) to place its checkpoint under project.CacheDir
 }
 
 func newRoomClient(dir string, port int) (roomClient, error) {
@@ -48,6 +49,7 @@ func newRoomClient(dir string, port int) (roomClient, error) {
 	return roomClient{
 		base: fmt.Sprintf("http://127.0.0.1:%d/api/projects/%s", port, url.PathEscape(cfg.ProjectID)),
 		port: port,
+		pid:  cfg.ProjectID,
 	}, nil
 }
 
