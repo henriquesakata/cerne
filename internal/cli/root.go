@@ -73,5 +73,6 @@ func Root() *cobra.Command {
 	root.AddCommand(newSkillCmd())
 	root.AddCommand(newHookCmd())
 	root.AddCommand(newLockCmd())
+	root.AddCommand(newRoomCmd())
 	return root
 }
