@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -72,6 +73,17 @@ type Config struct {
 type AgentConfig struct {
 	Profile     string `toml:"profile,omitempty"`
 	ProfileFile string `toml:"profile_file,omitempty"`
+	ChatTimeout int    `toml:"chat_timeout,omitzero"` // F-0224: chat call budget in seconds; default 300 (agentic chains cost more than one-shot)
+}
+
+// ChatTimeoutOrDefault returns the chat call budget: the configured
+// chat_timeout, or 300s when absent/zero — sized for the agentic claude-cli
+// mode (F-0224), where the agent chains cerne read commands before answering.
+func (a AgentConfig) ChatTimeoutOrDefault() time.Duration {
+	if a.ChatTimeout > 0 {
+		return time.Duration(a.ChatTimeout) * time.Second
+	}
+	return 300 * time.Second
 }
 
 // Resolve returns the persona text: ProfileFile's content (read relative to

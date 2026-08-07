@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -80,6 +81,17 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 		}
 	}
 	b.WriteString("\n")
+
+	if llm.ResolveMode(cfg.LLM.Mode) == llm.ModeClaudeCLI {
+		// F-0224: only the claude-cli provider runs as an agent with tool
+		// access — byo-key/delegation get no consultation instructions for
+		// commands they cannot execute (criterion 3).
+		b.WriteString("Você tem acesso de LEITURA ao cerne deste projeto via linha de comando. ")
+		b.WriteString("Comandos permitidos: cerne search \"<termos>\", cerne show <id> (qualquer F-/D-/R-/N-/RB-), cerne brief, cerne status, cerne note list, cerne note show <id>, cerne reference list, cerne decision list. ")
+		b.WriteString("Quando a resposta exigir detalhe além do roster acima — a spec de uma feature citada, uma decisão, uma nota, histórico — CONSULTE antes de responder, em vez de supor ou perguntar ao usuário o que o cerne responde. ")
+		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\"); se não consultou nada, não invente citações. ")
+		b.WriteString("Comandos de escrita não estão disponíveis — o registro de candidata acontece só pela confirmação do usuário na UI.\n\n")
+	}
 
 	b.WriteString("Conduza a conversa fazendo as perguntas necessárias para entender o problema real, não apenas a solução pedida. ")
 	b.WriteString("Quando tiver contexto suficiente — problema, objetivo, critérios de aceitação testáveis — e SOMENTE então, proponha a candidata.\n\n")

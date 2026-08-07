@@ -17,6 +17,10 @@ type llmConfigResponse struct {
 	Mode    string   `json:"mode"`
 	Models  []string `json:"models,omitempty"`
 	Efforts []string `json:"efforts,omitempty"`
+	// LiveQuery (F-0224) tells the UI whether the chat agent can consult the
+	// cerne read commands live (claude-cli's agentic mode) or only sees the
+	// static context (byo-key/delegation).
+	LiveQuery bool `json:"live_query"`
 }
 
 // llmConfigRequest is the PUT /api/config/llm body.
@@ -47,7 +51,8 @@ func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: llm.ResolveMode(cfg.LLM.Mode), Models: llm.KnownModels, Efforts: llm.KnownEfforts})
+	mode := llm.ResolveMode(cfg.LLM.Mode)
+	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: mode, Models: llm.KnownModels, Efforts: llm.KnownEfforts, LiveQuery: mode == llm.ModeClaudeCLI})
 }
 
 // handleLLMConfigPut sets the [llm] mode in .cernerc, preserving every other

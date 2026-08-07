@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 )
@@ -17,10 +18,28 @@ const ModeClaudeCLI = "claude-cli"
 // found, non-zero exit, login missing). Callers detect it with errors.Is.
 var ErrClaudeCLI = errors.New("claude-cli invocation failed")
 
-// runner abstracts running an external command (feeding it stdin and capturing
-// its stdout), so the provider can be unit-tested with a fake instead of the
-// real Claude Code CLI.
-type runner func(ctx context.Context, name string, args []string, stdin string) (string, error)
+// AgentReadTools is the exact tool allowlist the agentic chat provider grants
+// the Claude Code CLI (F-0224 criterion 1): cerne's READ commands only. The
+// entries are Claude Code permission rules; note/reference/decision are
+// scoped to their read subcommands so the sibling write commands (note new,
+// decision new, reference new) stay outside the boundary. In headless mode
+// (-p) every tool not on this list is denied by the CLI itself — this list is
+// the whole write-protection boundary, so never add a mutating command here.
+var AgentReadTools = []string{
+	"Bash(cerne search:*)",
+	"Bash(cerne show:*)",
+	"Bash(cerne brief:*)",
+	"Bash(cerne status:*)",
+	"Bash(cerne note list:*)",
+	"Bash(cerne note show:*)",
+	"Bash(cerne reference list:*)",
+	"Bash(cerne decision list:*)",
+}
+
+// runner abstracts running an external command in a working directory
+// (feeding it stdin and capturing both output streams), so the provider can
+// be unit-tested with a fake instead of the real Claude Code CLI.
+type runner func(ctx context.Context, dir, name string, args []string, stdin string) (stdout, stderr string, err error)
 
 // maxOutputBytes bounds how much of a failed command's output (either stream)
 // is echoed in the error so a verbose CLI does not flood the message.
@@ -42,35 +61,50 @@ func describeExit(name, state string, stdout, stderr []byte) string {
 	return fmt.Sprintf("%q exited with %s (no output)", name, state)
 }
 
-// execRun is the default runner: it runs name+args via exec.CommandContext,
-// feeding stdin to the process and returning stdout on success. A non-zero
-// exit yields an error carrying the process's own explanation via
-// describeExit; an exec error (e.g. executable not found) is reported with an
-// actionable message naming the binary.
-func execRun(ctx context.Context, name string, args []string, stdin string) (string, error) {
+// execRun is the default runner: it runs name+args in dir (empty = inherit)
+// via exec.CommandContext, feeding stdin to the process and returning both
+// streams on success. A non-zero exit yields an error carrying the process's
+// own explanation via describeExit; an exec error (e.g. executable not found)
+// is reported with an actionable message naming the binary.
+func execRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err == nil {
-		return stdout.String(), nil
+		return stdout.String(), stderr.String(), nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return "", errors.New(describeExit(name, exitErr.ProcessState.String(), stdout.Bytes(), stderr.Bytes()))
+		return "", "", errors.New(describeExit(name, exitErr.ProcessState.String(), stdout.Bytes(), stderr.Bytes()))
 	}
 	// Non-exit error: the binary could not be started (not in PATH, etc.).
-	return "", fmt.Errorf("could not run %q (install Claude Code and ensure it is on PATH): %w", name, err)
+	return "", "", fmt.Errorf("could not run %q (install Claude Code and ensure it is on PATH): %w", name, err)
 }
 
 // cliProvider is a Provider that performs one completion per call by shelling to
 // the Claude Code CLI in headless mode. It carries no API key: authentication is
 // the user's Claude Code subscription (claude /login or CLAUDE_CODE_OAUTH_TOKEN).
+// With agentTools set (F-0224) the CLI runs as a read-only agent: it may chain
+// the allowlisted cerne commands (executed in dir, the project root) before
+// answering; nil agentTools is the original one-shot text generator, byte-for-
+// byte, used by ask/compile/diagram.
 type cliProvider struct {
-	bin string
-	run runner
+	bin        string
+	run        runner
+	dir        string   // working directory for the CLI (project root in agentic mode)
+	agentTools []string // Claude Code permission rules passed via --allowedTools; nil = one-shot
+}
+
+// isUnknownFlag reports whether err looks like the CLI rejecting a flag it
+// does not know — an old Claude Code without --allowedTools. Covers the
+// cobra ("unknown flag") and commander ("unknown option") phrasings.
+func isUnknownFlag(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "unknown flag") || strings.Contains(msg, "unknown option")
 }
 
 // Complete runs `claude -p --output-format text` with the prompt on STDIN (not
@@ -82,10 +116,27 @@ type cliProvider struct {
 // It deliberately omits --bare (which would ignore the subscription token and
 // require an API key) and --model (which would force a model possibly
 // unavailable on the plan). Any failure becomes an actionable ErrClaudeCLI.
+//
+// In agentic mode (agentTools set, F-0224) the allowlist travels as one
+// comma-joined --allowedTools argument; a CLI too old to know the flag gets
+// one retry in plain one-shot form. Whatever the CLI printed on stderr — the
+// stream where headless permission denials surface — is echoed to the server
+// log, so an attempt outside the allowlist is visible (criterion 4).
 func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, error) {
-	out, err := p.run(ctx, p.bin, []string{"-p", "--output-format", "text"}, prompt)
+	args := []string{"-p", "--output-format", "text"}
+	agentic := len(p.agentTools) > 0
+	if agentic {
+		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
+	}
+	out, stderr, err := p.run(ctx, p.dir, p.bin, args, prompt)
+	if err != nil && agentic && isUnknownFlag(err) {
+		out, stderr, err = p.run(ctx, p.dir, p.bin, []string{"-p", "--output-format", "text"}, prompt)
+	}
 	if err != nil {
 		return "", fmt.Errorf("%w: failed to call Claude Code (claude -p): %w — check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"", ErrClaudeCLI, err)
+	}
+	if s := strings.TrimSpace(stderr); agentic && s != "" {
+		log.Printf("claude-cli stderr: %s", truncate([]byte(s), maxOutputBytes))
 	}
 	return strings.TrimSpace(out), nil
 }
