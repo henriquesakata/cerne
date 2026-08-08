@@ -191,3 +191,119 @@ func TestNewProviderAppliesDefaults(t *testing.T) {
 		t.Fatalf("default model = %v, want claude-opus-4-8", gotModel)
 	}
 }
+
+// sseChatServer is an httptest server speaking the Messages API streaming wire
+// format: it records the request body and replies with the given SSE events.
+func sseChatServer(t *testing.T, gotBody *map[string]any, events []string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if gotBody != nil {
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, gotBody)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, ev := range events {
+			_, _ = io.WriteString(w, ev+"\n\n")
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func newStreamProvider(t *testing.T, baseURL string) *httpProvider {
+	t.Helper()
+	t.Setenv("TEST_LLM_KEY", "sk")
+	prov, err := NewProvider(project.LLMConfig{Mode: "byo-key", KeyEnv: "TEST_LLM_KEY", BaseURL: baseURL})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	return prov.(*httpProvider)
+}
+
+// TestHTTPProviderStream (F-0240 criterion 1): two content_block_delta events
+// reach onDelta in order, the return is their concatenation, and the request
+// asks the API for streaming.
+func TestHTTPProviderStream(t *testing.T) {
+	var body map[string]any
+	srv := sseChatServer(t, &body, []string{
+		`event: message_start` + "\n" + `data: {"type":"message_start"}`,
+		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"parte um. "}}`,
+		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"parte dois."}}`,
+		`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+	})
+
+	var deltas []string
+	got, err := newStreamProvider(t, srv.URL).Stream(context.Background(), "p", func(d string) error {
+		deltas = append(deltas, d)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if got != "parte um. parte dois." {
+		t.Fatalf("Stream = %q, want the concatenation", got)
+	}
+	if len(deltas) != 2 || deltas[0] != "parte um. " || deltas[1] != "parte dois." {
+		t.Fatalf("deltas = %#v", deltas)
+	}
+	if body["stream"] != true {
+		t.Fatalf("request body.stream = %v, want true", body["stream"])
+	}
+}
+
+// TestHTTPProviderStreamAPIError (F-0240 criterion 8): an error event after the
+// first delta surfaces as an error, with the delta already delivered.
+func TestHTTPProviderStreamAPIError(t *testing.T) {
+	srv := sseChatServer(t, nil, []string{
+		`data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"começo"}}`,
+		`data: {"type":"error","error":{"message":"overloaded"}}`,
+	})
+
+	var deltas []string
+	_, err := newStreamProvider(t, srv.URL).Stream(context.Background(), "p", func(d string) error {
+		deltas = append(deltas, d)
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "overloaded") {
+		t.Fatalf("err = %v, want the API error message", err)
+	}
+	if len(deltas) != 1 || deltas[0] != "começo" {
+		t.Fatalf("deltas = %#v, want the partial delivered before the error", deltas)
+	}
+}
+
+// TestHTTPProviderStreamOnDeltaAbort: a callback error aborts the stream and
+// is returned as-is.
+func TestHTTPProviderStreamOnDeltaAbort(t *testing.T) {
+	srv := sseChatServer(t, nil, []string{
+		`data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}`,
+		`data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"b"}}`,
+	})
+
+	boom := errors.New("client gone")
+	calls := 0
+	_, err := newStreamProvider(t, srv.URL).Stream(context.Background(), "p", func(string) error {
+		calls++
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want the callback error", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (aborted on first)", calls)
+	}
+}
+
+// TestHTTPProviderStreamNon2xx mirrors Complete's error contract.
+func TestHTTPProviderStreamNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"rate limited"}}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := newStreamProvider(t, srv.URL).Stream(context.Background(), "p", func(string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("err = %v, want a 429 status error", err)
+	}
+}
