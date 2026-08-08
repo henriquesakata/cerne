@@ -24,14 +24,16 @@ import (
 )
 
 var (
-	ErrNotFound          = errors.New("room not found")
-	ErrClosed            = errors.New("room is closed")
-	ErrNickTaken         = errors.New("nickname already in use in this room")
-	ErrInvalidSession    = errors.New("invalid room session")
-	ErrNotFacilitator    = errors.New("caller is not the room facilitator")
-	ErrIncompleteMinutes = errors.New("minutes missing a required field")
-	ErrOpenItems         = errors.New("room has open facilitation items")
-	ErrItemNotFound      = errors.New("facilitation item not found or already resolved")
+	ErrNotFound             = errors.New("room not found")
+	ErrClosed               = errors.New("room is closed")
+	ErrNickTaken            = errors.New("nickname already in use in this room")
+	ErrInvalidSession       = errors.New("invalid room session")
+	ErrNotFacilitator       = errors.New("caller is not the room facilitator")
+	ErrIncompleteMinutes    = errors.New("minutes missing a required field")
+	ErrOpenItems            = errors.New("room has open facilitation items")
+	ErrItemNotFound         = errors.New("facilitation item not found or already resolved")
+	ErrRoomOpen             = errors.New("room is still open — close it with minutes first")
+	ErrMinutesAlreadyLinked = errors.New("room minutes are already registered as a note")
 )
 
 const (
@@ -52,6 +54,12 @@ type Room struct {
 	ClosedAt     *time.Time    `json:"closed_at,omitempty"`
 	Participants []Participant `json:"participants"`
 	Minutes      *Minutes      `json:"minutes,omitempty"`
+	// MessageCount is the transcript's current length (every event, not just
+	// said messages) — the "período seq" of a registered minutes note (F-0238).
+	MessageCount int `json:"message_count"`
+	// MinutesNote is the id of the note (N-NNNN) this room's closing minutes
+	// were registered as, set by SetMinutesNote (F-0238). Empty until then.
+	MinutesNote string `json:"minutes_note,omitempty"`
 }
 
 // Participant is one joined nick.
@@ -182,7 +190,8 @@ func (m *Manager) load() error {
 	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") ||
-			strings.HasSuffix(e.Name(), sessionsSuffix) || strings.HasSuffix(e.Name(), facilitatorSuffix) {
+			strings.HasSuffix(e.Name(), sessionsSuffix) || strings.HasSuffix(e.Name(), facilitatorSuffix) ||
+			strings.HasSuffix(e.Name(), minutesNoteSuffix) {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".jsonl")
@@ -195,6 +204,9 @@ func (m *Manager) load() error {
 		}
 		if err := loadFacilitator(filepath.Join(m.dir, id+facilitatorSuffix), rs); err != nil {
 			return fmt.Errorf("replay %s facilitator: %w", id, err)
+		}
+		if err := loadMinutesNote(filepath.Join(m.dir, id+minutesNoteSuffix), rs); err != nil {
+			return fmt.Errorf("replay %s minutes note: %w", id, err)
 		}
 		m.rooms[id] = rs
 		if n, ok := roomNumber(id); ok && n > m.nextID {
@@ -349,6 +361,95 @@ func loadFacilitator(path string, rs *roomState) error {
 	return nil
 }
 
+const minutesNoteSuffix = ".minutes-note.jsonl"
+
+// minutesNoteRecord is one line of the private <id>.minutes-note.jsonl
+// sidecar: append-only, same shape as the facilitator sidecar. The last line
+// is the active link (a forced re-registration appends rather than
+// overwrites, so the history of who registered what stays on disk).
+type minutesNoteRecord struct {
+	NoteID       string    `json:"note_id"`
+	RegisteredAt time.Time `json:"registered_at"`
+}
+
+// persistMinutesNote appends a newly registered (or force-overwritten)
+// minutes-note link.
+func (m *Manager) persistMinutesNote(id string, rec minutesNoteRecord) error {
+	line, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(m.dir, id+minutesNoteSuffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// loadMinutesNote replays the sidecar into rs, keeping only the last
+// (most recent) record — a missing sidecar (no registration yet) leaves
+// rs.meta.MinutesNote empty.
+func loadMinutesNote(path string, rs *roomState) error {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var last minutesNoteRecord
+	found := false
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var rec minutesNoteRecord
+		if err := json.Unmarshal(line, &rec); err != nil {
+			return err
+		}
+		last = rec
+		found = true
+	}
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	if found {
+		rs.meta.MinutesNote = last.NoteID
+	}
+	return nil
+}
+
+// SetMinutesNote records id's closing minutes as registered under noteID
+// (F-0238 — `cerne room minutes register`): the room must already be closed
+// (ErrRoomOpen otherwise), and an existing link is preserved unless force is
+// true (ErrMinutesAlreadyLinked otherwise, with the current link still
+// readable on the returned Room, so the caller can report which note it is).
+func (m *Manager) SetMinutesNote(id, noteID string, force bool) (Room, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return Room{}, err
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.meta.ClosedAt == nil {
+		return Room{}, ErrRoomOpen
+	}
+	if rs.meta.MinutesNote != "" && !force {
+		return rs.snapshotLocked(), ErrMinutesAlreadyLinked
+	}
+	if err := m.persistMinutesNote(id, minutesNoteRecord{NoteID: noteID, RegisteredAt: time.Now().UTC()}); err != nil {
+		return Room{}, err
+	}
+	rs.meta.MinutesNote = noteID
+	return rs.snapshotLocked(), nil
+}
+
 func roomNumber(id string) (int, bool) {
 	n, err := strconv.Atoi(strings.TrimPrefix(id, "R"))
 	if err != nil {
@@ -459,6 +560,7 @@ func (m *Manager) persist(id string, rec Message) error {
 func (rs *roomState) snapshotLocked() Room {
 	cp := rs.meta
 	cp.Participants = append([]Participant(nil), rs.meta.Participants...)
+	cp.MessageCount = len(rs.log)
 	return cp
 }
 
