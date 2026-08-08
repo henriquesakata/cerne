@@ -4,7 +4,8 @@
 # Catches the "late-surfacing build failure" friction (wrong-package import,
 # missing symbol) BEFORE it lands in a commit / CI / MR, instead of after.
 # PreToolUse hook (matcher Bash): inspects the git commit command and runs
-# `go build ./...` (fast; compiles every package). Blocks (exit 2) on failure so
+# `go build -ldflags="-s -w" ./...` (fast; compiles every package — the strip
+# flags keep the cmd/cerne link off the critical path, see CLAUDE.md). Blocks (exit 2) on failure so
 # the commit is retried after a fix. Full `go test`/`go vet` stay manual/CI —
 # too slow to gate every commit (see CLAUDE.md Build/test/run).
 #
@@ -36,7 +37,7 @@ else
 fi
 
 root="${CLAUDE_PROJECT_DIR:-.}"
-out=$(cd "$root" 2>/dev/null && "$GO" build ./... 2>&1)
+out=$(cd "$root" 2>/dev/null && "$GO" build -ldflags="-s -w" ./... 2>&1)
 if [ $? -ne 0 ]; then
   echo "BLOQUEADO: go build ./... falhou — corrija antes de commitar (evita build quebrado no CI/MR)." >&2
   printf '%s\n' "$out" | tail -20 >&2

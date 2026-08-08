@@ -154,6 +154,12 @@ func dataRoutes() []dataRoute {
 		{"POST", "/rooms/{id}/close", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomClose(w, r, projectID, r.PathValue("id"))
 		}},
+		// F-0238: the sala->nota vínculo — the note is created in the
+		// backend by the CLI (app.CreateNote), this endpoint just records
+		// the link on the room that already knows about its own minutes.
+		{"POST", "/rooms/{id}/minutes/note", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomSetMinutesNote(w, r, projectID, r.PathValue("id"))
+		}},
 		// Facilitation (F-0228): a room-scoped capability, separate from
 		// participant sessions, that gates pending-item triage, resolution
 		// and structured close.

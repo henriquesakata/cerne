@@ -554,3 +554,80 @@ func TestRoomReadFollowWakesOnNewMessage(t *testing.T) {
 		t.Fatal("GET .../messages?follow=1 did not wake up on the new message")
 	}
 }
+
+// --- F-0238: the sala->nota vínculo endpoint (POST .../minutes/note) ---
+
+func closeMinimalRoom(t *testing.T, h http.Handler, id, facilitatorID string) roomJSON {
+	t.Helper()
+	var closed roomJSON
+	closeBody := `{"facilitator_id":"` + facilitatorID + `","minutes":{"conclusion":"ok","rationale":"ok"}}`
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+id+"/close", closeBody, &closed)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("close status=%d body=%+v", rec.Code, closed)
+	}
+	return closed
+}
+
+func TestSetMinutesNoteRejectsOpenRoom(t *testing.T) {
+	h := newRoomServer(t, "proj-minutes-note-open")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+
+	var errBody map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/note", `{"note_id":"N-0001"}`, &errBody)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSetMinutesNoteHappyPathAndDuplicate(t *testing.T) {
+	h := newRoomServer(t, "proj-minutes-note")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	closeMinimalRoom(t, h, opened.ID, opened.FacilitatorID)
+
+	var linked struct {
+		MinutesNote string `json:"minutes_note"`
+	}
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/note", `{"note_id":"N-0001"}`, &linked)
+	if rec.Code != http.StatusOK || linked.MinutesNote != "N-0001" {
+		t.Fatalf("status=%d body=%+v, want 200 with minutes_note N-0001", rec.Code, linked)
+	}
+
+	var dupErr struct {
+		Error       string `json:"error"`
+		MinutesNote string `json:"minutes_note"`
+	}
+	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/note", `{"note_id":"N-0002"}`, &dupErr)
+	if rec.Code != http.StatusConflict || dupErr.MinutesNote != "N-0001" {
+		t.Fatalf("duplicate status=%d body=%+v, want 409 pointing at N-0001", rec.Code, dupErr)
+	}
+
+	var forced struct {
+		MinutesNote string `json:"minutes_note"`
+	}
+	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/note", `{"note_id":"N-0002","force":true}`, &forced)
+	if rec.Code != http.StatusOK || forced.MinutesNote != "N-0002" {
+		t.Fatalf("forced status=%d body=%+v, want 200 with minutes_note N-0002", rec.Code, forced)
+	}
+}
+
+func TestListedRoomIncludesMinutesNote(t *testing.T) {
+	h := newRoomServer(t, "proj-minutes-note-list")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	closeMinimalRoom(t, h, opened.ID, opened.FacilitatorID)
+	var linked struct{}
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/note", `{"note_id":"N-0009"}`, &linked)
+
+	var got struct {
+		Rooms []struct {
+			ID          string `json:"id"`
+			MinutesNote string `json:"minutes_note"`
+		} `json:"rooms"`
+	}
+	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
+	if rec.Code != http.StatusOK || len(got.Rooms) != 1 || got.Rooms[0].MinutesNote != "N-0009" {
+		t.Fatalf("list status=%d body=%+v, want the room carrying minutes_note", rec.Code, got)
+	}
+}

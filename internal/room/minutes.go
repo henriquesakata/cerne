@@ -3,6 +3,7 @@ package room
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Facilitation item status (F-0228 criteria 2-4).
@@ -60,6 +61,50 @@ func RenderMinutesMarkdown(r Room) string {
 	mn := r.Minutes
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Ata — %s (%s)\n\n", r.ID, r.Topic)
+	fmt.Fprintf(&b, "## Conclusão\n\n%s\n\n", mn.Conclusion)
+	fmt.Fprintf(&b, "## Justificativa\n\n%s\n\n", mn.Rationale)
+	writeMinutesList(&b, "Opções descartadas", mn.DiscardedOptions)
+	writeMinutesList(&b, "Responsáveis", mn.Owners)
+	writeMinutesList(&b, "Próximos passos", mn.NextSteps)
+	if len(mn.OpenItems) > 0 {
+		writeMinutesList(&b, "Itens deixados em aberto (exceção registrada)", mn.OpenItems)
+	}
+	return b.String()
+}
+
+// RenderMinutesNoteBody projects a closed room's minutes into the Markdown
+// body of the governed note `cerne room minutes register` creates (F-0238
+// criterion 7): the same deterministic sections as RenderMinutesMarkdown,
+// preceded by the provenance the note carries once it leaves the room —
+// objective (the open topic), start/end with duration, message count and
+// the roster with bio and join time. registeredAt is the moment of
+// registration, passed in rather than read from the clock so the projection
+// stays deterministic and testable. Returns "" for a room with no minutes.
+func RenderMinutesNoteBody(r Room, registeredAt time.Time) string {
+	if r.Minutes == nil {
+		return ""
+	}
+	mn := r.Minutes
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Ata — %s: %s\n\n", r.ID, r.Topic)
+	fmt.Fprintf(&b, "## Proveniência\n\n")
+	fmt.Fprintf(&b, "- Sala: %s\n", r.ID)
+	fmt.Fprintf(&b, "- Objetivo: %s\n", r.Topic)
+	fmt.Fprintf(&b, "- Início: %s\n", r.OpenedAt.Format(time.RFC3339))
+	if r.ClosedAt != nil {
+		fmt.Fprintf(&b, "- Fim: %s (duração: %s)\n", r.ClosedAt.Format(time.RFC3339), r.ClosedAt.Sub(r.OpenedAt).Round(time.Second))
+	}
+	fmt.Fprintf(&b, "- Mensagens: #1–#%d\n", r.MessageCount)
+	fmt.Fprintf(&b, "- Registrado em: %s\n\n", registeredAt.Format(time.RFC3339))
+	fmt.Fprintf(&b, "## Participantes\n\n")
+	for _, p := range r.Participants {
+		if p.Bio != "" {
+			fmt.Fprintf(&b, "- %s — %s (entrou às %s)\n", p.Nick, p.Bio, p.JoinedAt.Format(time.RFC3339))
+		} else {
+			fmt.Fprintf(&b, "- %s (entrou às %s)\n", p.Nick, p.JoinedAt.Format(time.RFC3339))
+		}
+	}
+	b.WriteString("\n")
 	fmt.Fprintf(&b, "## Conclusão\n\n%s\n\n", mn.Conclusion)
 	fmt.Fprintf(&b, "## Justificativa\n\n%s\n\n", mn.Rationale)
 	writeMinutesList(&b, "Opções descartadas", mn.DiscardedOptions)

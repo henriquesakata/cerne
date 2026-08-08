@@ -9,8 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/room"
 )
 
@@ -453,6 +456,7 @@ func newRoomMinutesCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newRoomMinutesTemplateCmd())
 	cmd.AddCommand(newRoomMinutesShowCmd())
+	cmd.AddCommand(newRoomMinutesRegisterCmd())
 	return cmd
 }
 
@@ -508,6 +512,77 @@ func newRoomMinutesShowCmd() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", "markdown", "output format")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
+}
+
+func newRoomMinutesRegisterCmd() *cobra.Command {
+	var dir, informs, facet, component string
+	var port int
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "register <room>",
+		Short: "Register a closed room's minutes as a governed note, with provenance (F-0238)",
+		Long: "Projects a closed room's structured minutes (F-0228) plus provenance (objective, start/end, " +
+			"participants) into a note (N-), so it is findable via 'search'/'ask' and backlinked from the " +
+			"features/decisions it informed. The component 'ata' is always added. Refuses an open room " +
+			"(close it first) and a room whose minutes are already registered, unless --force.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRoomMinutesRegister(cmd, dir, port, args[0], informs, facet, component, force)
+		},
+	}
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this meeting informed")
+	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
+	cmd.Flags().StringVar(&component, "component", "", "extra components (comma-separated) — 'ata' is always added")
+	cmd.Flags().BoolVar(&force, "force", false, "re-register even if the room's minutes are already linked to a note")
+	addRoomFlags(cmd, &dir, &port)
+	return cmd
+}
+
+func runRoomMinutesRegister(cmd *cobra.Command, dir string, port int, roomID, informs, facet, component string, force bool) error {
+	c, err := newRoomClient(dir, port)
+	if err != nil {
+		return err
+	}
+	rooms, err := c.list(cmd.Context())
+	if err != nil {
+		return err
+	}
+	var rm *room.Room
+	for i := range rooms {
+		if rooms[i].ID == roomID {
+			rm = &rooms[i]
+			break
+		}
+	}
+	if rm == nil {
+		return fmt.Errorf("room %s not found", roomID)
+	}
+	if rm.ClosedAt == nil {
+		return fmt.Errorf("room %s is still open — close it with minutes first: cerne room close %s --minutes <path>", roomID, roomID)
+	}
+	if rm.MinutesNote != "" && !force {
+		return fmt.Errorf("room %s minutes are already registered as %s (pass --force to re-register)", roomID, rm.MinutesNote)
+	}
+
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	body := room.RenderMinutesNoteBody(*rm, time.Now().UTC())
+	title := fmt.Sprintf("Ata — %s: %s", rm.ID, rm.Topic)
+	components := append([]string{domain.AtaComponent}, splitInforms(component)...)
+	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), components)
+	if err != nil {
+		return err
+	}
+	if _, err := c.setMinutesNote(cmd.Context(), roomID, n.ID, force); err != nil {
+		return fmt.Errorf("note %s created but failed to link it to the room %s: %w", n.ID, roomID, err)
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "%s registered as %s. Run 'cerne pull' to materialize it locally.\n", roomID, n.ID)
+	fmt.Fprintf(out, "features/decisions derived from this meeting should cite [[%s]] in their spec's Origem line — the graph then links room → minutes → derived entities.\n", n.ID)
+	return nil
 }
 
 func newRoomListCmd() *cobra.Command {

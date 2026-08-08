@@ -841,6 +841,9 @@ export type Room = {
   closed_at?: string
   participants: RoomParticipant[]
   minutes?: Minutes
+  // minutes_note é o id (N-NNNN) da nota governada em que a ata da sala foi
+  // registrada via 'cerne room minutes register' (F-0238); vazio até então.
+  minutes_note?: string
 }
 
 // RoomMessage espelha room.Message: um evento do transcript — abertura,
