@@ -130,7 +130,13 @@
 body { margin: 0; }
 /* Coluna flex de viewport inteira: páginas normais fluem como blocos; a do
    grafo estica (flex: 1) para ocupar a altura restante dinamicamente. */
-#root { display: flex; flex-direction: column; min-height: 100dvh; }
+/* `height`, não `min-height` (F-0241): com min-height o root cresce junto com o
+   conteúdo, e aí nenhum descendente tem altura definida para se prender — a
+   transcrição do Backlog empurrava painel e página inteira em vez de rolar por
+   dentro. Com altura definida, um filho `flex: 1; min-height: 0` fica de fato
+   limitado. Páginas que precisam rolar continuam rolando: o conteúdo transborda
+   o root (overflow visible) e a rolagem é do documento, como antes. */
+#root { display: flex; flex-direction: column; height: 100dvh; }
 h1 { margin: 0; font-size: 1.5rem; }
 
 h2 {
@@ -234,6 +240,12 @@ h2 {
 .backlog-layout {
   display: grid;
   grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  /* A linha PRECISA ser declarada: `auto` (o padrão) dimensiona pelo conteúdo,
+     então a transcrição empurrava a linha, o painel e a página inteira em vez
+     de rolar por dentro — o `align-items: stretch` fazia o painel acompanhar a
+     linha, mas nada limitava a linha. minmax(0, 1fr) prende ao grid, e o
+     mínimo 0 é o que autoriza encolher abaixo do conteúdo (F-0241). */
+  grid-template-rows: minmax(0, 1fr);
   gap: 1.5rem;
   align-items: stretch;
   flex: 1;

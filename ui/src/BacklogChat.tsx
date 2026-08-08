@@ -163,6 +163,20 @@ export function pickDefault(options: string[], preferred: RegExp): string {
   return options.find((o) => preferred.test(o)) ?? options[0] ?? ''
 }
 
+// Ordem de exibição dos modelos: o servidor devolve na ordem dele, que não é a
+// que o leitor espera. Casamento por nome, não por id literal, pelo mesmo
+// motivo de PREFERRED_MODEL. Modelo desconhecido vai para o fim preservando a
+// ordem recebida — some da lista seria pior que aparecer por último.
+const MODEL_ORDER = [/fable/i, /opus/i, /sonnet/i, /haiku/i]
+
+export function sortModels(models: string[]): string[] {
+  const rank = (m: string) => {
+    const i = MODEL_ORDER.findIndex((re) => re.test(m))
+    return i < 0 ? MODEL_ORDER.length : i
+  }
+  return [...models].sort((a, b) => rank(a) - rank(b))
+}
+
 // Tolerância do glue-scroll (F-0239): "no fim" não pode exigir pixel exato —
 // zoom, altura fracionária e a última linha crescendo já tiram o scrollTop do
 // valor cheio, e aí a transcrição descolaria sozinha.
@@ -228,7 +242,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     fetchLLMOptions()
       .then((opts) => {
         setNeedsProvider(opts.mode === 'delegation')
-        setModels(opts.models)
+        setModels(sortModels(opts.models))
         setEfforts(opts.efforts)
         // F-0241: a seleção deixa de admitir vazio. O padrão sai da lista que
         // o servidor devolveu — id fixo quebraria um projeto cujo .cernerc não
