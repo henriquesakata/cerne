@@ -435,13 +435,25 @@ token for graph nodes.
 flow and dismisses on outside click. Never use a shadow for emphasis, for a card
 at rest, or to separate two things a rule could separate.
 
-**The Still Frame Rule.** There are no `transition`, `animation`, or `@keyframes`
-declarations in this system, and none may be added to chrome. State changes are
-instant because the underlying data changed instantly; an animated state chip
-implies a process that is not happening. This composes with hover elevation:
-permitted hover states appear *immediately*, without an eased transition. Motion
-belongs only inside the visualization surfaces that own their own runtime (React
-Flow, Mermaid, Excalidraw).
+**The Still Frame Rule.** Motion is permitted only where it represents work that
+is *actually in progress*. State changes are instant, because the underlying data
+changed instantly — an animated state chip implies a process that is not
+happening. This composes with hover elevation: permitted hover states appear
+*immediately*, without an eased transition.
+
+The whole stylesheet contains exactly **one** motion declaration, and it earns
+the rule rather than breaking it: `.backlog-chat-spinner`
+(`animation: backlog-chat-spin 0.8s linear infinite`, F-0230), which spins while
+an agent request is genuinely in flight. Audit test for any new motion: name the
+process it depicts, and show that the process is running. If you cannot, the
+motion is decoration.
+
+Beyond that, motion belongs only inside the visualization surfaces that own their
+own runtime (React Flow, Mermaid, Excalidraw).
+
+*Corrigido em 2026-08-08:* esta regra afirmava que o sistema não tinha nenhuma
+declaração de movimento. Era verdade quando medida, e deixou de ser quando o
+F-0230 entrou por merge. O documento estava errado, não o spinner.
 
 ## Shapes
 

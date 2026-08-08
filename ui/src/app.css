@@ -338,7 +338,16 @@ h2 {
   gap: 0.75rem;
   min-width: 0;
   box-sizing: border-box;
-  max-height: calc(100dvh - 13rem);
+  /* `height`, não `max-height` (F-0239): com max-height o painel encolhia ao
+     conteúdo — com histórico vazio o min-height de 8rem do -history mandava e
+     sobrava 28–49% de viewport morto abaixo. Preenchendo a altura, o -history
+     (flex: 1) cresce e o compositor fica ancorado no rodapé; o vão de 105px
+     entre a introdução e o input vira área de transcrição.
+     A reserva cobre nav + cabeçalho da página (73px medidos) + respiro do
+     rodapé, com folga para o cabeçalho quebrar em telas estreitas; 13rem
+     reservava 208px e sobrava viewport morto. O overflow-y do -history contém
+     qualquer estouro se a folga não bastar. */
+  height: calc(100dvh - 9rem);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 1rem;
@@ -352,7 +361,9 @@ h2 {
   gap: 0.5rem;
 }
 
-.backlog-chat-toolbar h2 { margin: 0; font-size: 1.05rem; }
+/* 1rem = degrau `title`; era 1.05rem, um dos 9 tamanhos em débito no
+   ui/DESIGN.md — colapsado ao tocar esta superfície (F-0239). */
+.backlog-chat-toolbar h2 { margin: 0; font-size: 1rem; }
 
 .backlog-chat-history {
   display: flex;
@@ -452,16 +463,28 @@ h2 {
   overflow-y: auto;
 }
 
+/* Controles junto ao compositor, em linha (F-0239): rótulo e select no mesmo
+   eixo, como as chips de contexto da referência — não rótulo empilhado sobre
+   select, que gastava duas linhas para dois campos. */
 .backlog-chat-options {
   display: flex;
-  gap: 0.4rem;
-  font-size: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.8rem;
+  font-size: 0.78rem;
   color: var(--muted);
+}
+
+.backlog-chat-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
 }
 
 .backlog-chat-options select {
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   padding: 0.2rem 0.3rem;
   border: 1px solid var(--border);
   border-radius: 6px;

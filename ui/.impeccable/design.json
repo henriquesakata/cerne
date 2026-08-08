@@ -408,7 +408,7 @@
       },
       {
         "name": "The Still Frame Rule",
-        "body": "There are no transition, animation, or @keyframes declarations in this system, and none may be added to chrome. State changes are instant because the underlying data changed instantly; an animated state chip implies a process that is not happening. This composes with hover elevation: permitted hover states appear immediately, without an eased transition. Motion belongs only inside the visualization surfaces that own their own runtime (React Flow, Mermaid, Excalidraw).",
+        "body": "Motion is permitted only where it represents work that is ACTUALLY IN PROGRESS. State changes are instant, because the underlying data changed instantly — an animated state chip implies a process that is not happening. This composes with hover elevation: permitted hover states appear immediately, without an eased transition. The stylesheet contains exactly one motion declaration, and it earns the rule rather than breaking it: .backlog-chat-spinner (animation: backlog-chat-spin 0.8s linear infinite, F-0230), spinning while an agent request is genuinely in flight. Audit test for any new motion: name the process it depicts and show that it is running; if you cannot, the motion is decoration. Beyond that, motion belongs only inside the visualization surfaces that own their own runtime (React Flow, Mermaid, Excalidraw). Corrected 2026-08-08: this rule previously claimed the system had no motion at all — true when measured, false once F-0230 arrived by merge. The document was wrong, not the spinner.",
         "section": "elevation"
       },
       {
