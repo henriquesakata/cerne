@@ -24,9 +24,14 @@ func newManager(t *testing.T) *Manager {
 	return m
 }
 
+// minimalMinutes satisfies Close's required-field validation with no
+// substantive content — for tests that only care about close mechanics, not
+// minutes content.
+var minimalMinutes = Minutes{Conclusion: "ok", Rationale: "ok"}
+
 func TestOpenAssignsSequentialIDs(t *testing.T) {
 	m := newManager(t)
-	r1, err := m.Open("primeiro topico")
+	r1, _, err := m.Open("primeiro topico")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -39,7 +44,7 @@ func TestOpenAssignsSequentialIDs(t *testing.T) {
 	if len(r1.Participants) != 0 {
 		t.Fatalf("Participants = %v, want empty", r1.Participants)
 	}
-	r2, err := m.Open("segundo")
+	r2, _, err := m.Open("segundo")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -60,7 +65,7 @@ func mustJoin(t *testing.T, m *Manager, id, nick, bio string) Session {
 
 func TestJoinRegistersParticipant(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	got, _, err := m.Join(r.ID, "alice", "otimista")
 	if err != nil {
 		t.Fatalf("Join: %v", err)
@@ -72,7 +77,7 @@ func TestJoinRegistersParticipant(t *testing.T) {
 
 func TestJoinMintsSessionCapability(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	_, sess, err := m.Join(r.ID, "alice", "otimista")
 	if err != nil {
 		t.Fatalf("Join: %v", err)
@@ -100,7 +105,7 @@ func TestJoinMintsSessionCapability(t *testing.T) {
 
 func TestJoinDuplicateNickRejected(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	if _, _, err := m.Join(r.ID, "alice", ""); err != nil {
 		t.Fatalf("first Join: %v", err)
 	}
@@ -118,8 +123,8 @@ func TestJoinUnknownRoomNotFound(t *testing.T) {
 
 func TestJoinClosedRoomRejected(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
-	if _, err := m.Close(r.ID); err != nil {
+	r, fac, _ := m.Open("topico")
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if _, _, err := m.Join(r.ID, "alice", ""); !errors.Is(err, ErrClosed) {
@@ -129,7 +134,7 @@ func TestJoinClosedRoomRejected(t *testing.T) {
 
 func TestSayAppendsMessageWithSeq(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "")
 	msg, err := m.Say(r.ID, sess.SessionID, "oi pessoal")
 	if err != nil {
@@ -145,9 +150,9 @@ func TestSayAppendsMessageWithSeq(t *testing.T) {
 
 func TestSayInvalidSessionRejected(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	mustJoin(t, m, r.ID, "alice", "")
-	other, _ := m.Open("outra sala")
+	other, _, _ := m.Open("outra sala")
 	otherSess := mustJoin(t, m, other.ID, "bob", "")
 
 	cases := []struct {
@@ -173,9 +178,9 @@ func TestSayInvalidSessionRejected(t *testing.T) {
 
 func TestSayClosedRoomRejected(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, fac, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "")
-	if _, err := m.Close(r.ID); err != nil {
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if _, err := m.Say(r.ID, sess.SessionID, "oi"); !errors.Is(err, ErrClosed) {
@@ -185,7 +190,7 @@ func TestSayClosedRoomRejected(t *testing.T) {
 
 func TestResumeReturnsSameSessionWithoutEvent(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "bio-alice")
 
 	before, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
@@ -204,7 +209,7 @@ func TestResumeReturnsSameSessionWithoutEvent(t *testing.T) {
 
 func TestResumeInvalidSessionRejected(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	mustJoin(t, m, r.ID, "alice", "")
 	if _, err := m.Resume(r.ID, "deadbeefdeadbeefdeadbeefdeadbeef"); !errors.Is(err, ErrInvalidSession) {
 		t.Fatalf("err = %v, want ErrInvalidSession", err)
@@ -216,7 +221,7 @@ func TestResumeInvalidSessionRejected(t *testing.T) {
 
 func TestReadSinceFiltersEarlierEvents(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "")
 	first, err := m.Say(r.ID, sess.SessionID, "um")
 	if err != nil {
@@ -237,7 +242,7 @@ func TestReadSinceFiltersEarlierEvents(t *testing.T) {
 
 func TestReadFollowWakesOnNewMessage(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "")
 	baseline, err := m.Read(context.Background(), r.ID, 0, false, time.Second)
 	if err != nil {
@@ -277,7 +282,7 @@ func TestReadFollowWakesOnNewMessage(t *testing.T) {
 
 func TestReadFollowTimesOutEmpty(t *testing.T) {
 	m := newManager(t)
-	r, err := m.Open("topico")
+	r, _, err := m.Open("topico")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -302,12 +307,12 @@ func TestReadFollowTimesOutEmpty(t *testing.T) {
 
 func TestCloseKeepsTranscriptReadable(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, fac, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "")
 	if _, err := m.Say(r.ID, sess.SessionID, "oi"); err != nil {
 		t.Fatalf("Say: %v", err)
 	}
-	if _, err := m.Close(r.ID); err != nil {
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	msgs, err := m.Read(context.Background(), r.ID, 0, false, time.Second)
@@ -321,9 +326,9 @@ func TestCloseKeepsTranscriptReadable(t *testing.T) {
 
 func TestListIncludesClosedRooms(t *testing.T) {
 	m := newManager(t)
-	r1, _ := m.Open("um")
-	r2, _ := m.Open("dois")
-	if _, err := m.Close(r2.ID); err != nil {
+	r1, _, _ := m.Open("um")
+	r2, fac2, _ := m.Open("dois")
+	if _, err := m.Close(r2.ID, fac2, minimalMinutes, false); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
@@ -350,7 +355,7 @@ func TestListIncludesClosedRooms(t *testing.T) {
 
 func TestSayConcurrentProducesDenseOrderedSeq(t *testing.T) {
 	m := newManager(t)
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "")
 
 	const n = 50
@@ -431,7 +436,7 @@ func TestManagerLoadReplaysExistingFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	r, err := m1.Open("topico persistente")
+	r, _, err := m1.Open("topico persistente")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -470,7 +475,7 @@ func TestManagerLoadReplaysExistingFiles(t *testing.T) {
 		t.Fatalf("msgs = %+v, want the replayed message", msgs)
 	}
 
-	r2, err := m2.Open("novo topico")
+	r2, _, err := m2.Open("novo topico")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -485,7 +490,7 @@ func TestSessionSidecarIsPrivateAndTokenNeverPersisted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	r, _ := m.Open("topico")
+	r, _, _ := m.Open("topico")
 	sess := mustJoin(t, m, r.ID, "alice", "bio")
 
 	public, err := os.ReadFile(filepath.Join(dir, r.ID+".jsonl"))
@@ -524,7 +529,7 @@ func TestReplayRestoresSessionsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	r, _ := m1.Open("topico")
+	r, _, _ := m1.Open("topico")
 	sess := mustJoin(t, m1, r.ID, "alice", "bio-alice")
 
 	m2, err := NewManager(dir)
@@ -553,7 +558,7 @@ func TestReplayIgnoresOrphanSidecarRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	r, _ := m1.Open("topico")
+	r, _, _ := m1.Open("topico")
 	// simulate a crash between the private record and the public join event:
 	// a sidecar row whose nick has no join in the transcript.
 	orphan := sha256.Sum256([]byte("orphan-token"))
@@ -609,5 +614,344 @@ func TestLegacyTranscriptReadableAndNickRejoinable(t *testing.T) {
 	// with an active session, the nick collides again (criterion 5).
 	if _, _, err := m.Join("R1", "alice", ""); !errors.Is(err, ErrNickTaken) {
 		t.Fatalf("err = %v, want ErrNickTaken", err)
+	}
+}
+
+// --- F-0228 criterion 1: facilitator capability ---
+
+func TestOpenMintsFacilitatorCapability(t *testing.T) {
+	m := newManager(t)
+	r, fac, err := m.Open("topico")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if len(fac) < 32 {
+		t.Fatalf("facilitator capability = %q, want >= 32 hex chars", fac)
+	}
+	if _, err := hex.DecodeString(fac); err != nil {
+		t.Fatalf("facilitator capability %q not hex: %v", fac, err)
+	}
+	// never appears in the room snapshot or the transcript.
+	if r.ID == "" {
+		t.Fatalf("room not opened")
+	}
+	msgs, err := m.Read(context.Background(), r.ID, 0, false, time.Second)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	for _, msg := range msgs {
+		raw, _ := json.Marshal(msg)
+		if bytes.Contains(raw, []byte(fac)) {
+			t.Fatalf("facilitator capability leaked into transcript: %s", raw)
+		}
+	}
+}
+
+func TestHandoffFacilitatorRotatesAtomically(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	newFac, err := m.HandoffFacilitator(r.ID, fac)
+	if err != nil {
+		t.Fatalf("HandoffFacilitator: %v", err)
+	}
+	if newFac == fac {
+		t.Fatalf("handoff returned the same capability")
+	}
+	// the old capability is immediately invalid.
+	if _, err := m.Resolve(r.ID, fac, "I1", "n/a"); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("old capability err = %v, want ErrNotFacilitator", err)
+	}
+	// the new one works (idempotent Close proves it's accepted).
+	if _, err := m.Close(r.ID, newFac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close with new facilitator capability: %v", err)
+	}
+}
+
+func TestHandoffFacilitatorRejectsWrongCapability(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	if _, err := m.HandoffFacilitator(r.ID, "deadbeefdeadbeefdeadbeefdeadbeef"); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("err = %v, want ErrNotFacilitator", err)
+	}
+}
+
+func TestFacilitatorCapabilitySurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m1.Open("topico")
+	newFac, err := m1.HandoffFacilitator(r.ID, fac)
+	if err != nil {
+		t.Fatalf("HandoffFacilitator: %v", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	// old capability still invalid, rotated one still valid, after replay.
+	if _, err := m2.Close(r.ID, fac, minimalMinutes, false); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("stale capability after restart err = %v, want ErrNotFacilitator", err)
+	}
+	if _, err := m2.Close(r.ID, newFac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close with rotated capability after restart: %v", err)
+	}
+}
+
+// --- F-0228 criterion 2: typed proposal/decision-request items ---
+
+func TestProposeAppendsTypedEventPreservingSeq(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	item, err := m.Propose(r.ID, sess.SessionID, "usar postgres", "menos manutenção")
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	if item.Kind != typeProposal || item.Author != "alice" || item.Title != "usar postgres" || item.Status != itemStatusOpen {
+		t.Fatalf("item = %+v", item)
+	}
+	if item.SourceSeq != 3 { // open=1, join=2, proposal=3
+		t.Fatalf("SourceSeq = %d, want 3", item.SourceSeq)
+	}
+	if item.ID != "I3" {
+		t.Fatalf("ID = %q, want I3 (derived from seq)", item.ID)
+	}
+}
+
+func TestRequestDecisionAppendsTypedEvent(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	item, err := m.RequestDecision(r.ID, sess.SessionID, "qual banco?", "postgres ou sqlite")
+	if err != nil {
+		t.Fatalf("RequestDecision: %v", err)
+	}
+	if item.Kind != typeDecisionRequest {
+		t.Fatalf("Kind = %q, want %q", item.Kind, typeDecisionRequest)
+	}
+}
+
+func TestProposeRejectsUnauthenticatedSession(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	if _, err := m.Propose(r.ID, "deadbeefdeadbeefdeadbeefdeadbeef", "t", "b"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("err = %v, want ErrInvalidSession", err)
+	}
+}
+
+func TestItemsReplayAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m1.Open("topico")
+	sess := mustJoin(t, m1, r.ID, "alice", "")
+	item, err := m1.Propose(r.ID, sess.SessionID, "usar postgres", "menos manutenção")
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	if _, err := m1.Resolve(r.ID, fac, item.ID, "aceito"); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	pending, err := m2.Pending(r.ID)
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending after restart = %+v, want empty (item was resolved before restart)", pending)
+	}
+}
+
+// --- F-0228 criteria 3-4: pending listing + facilitator-only resolve ---
+
+func TestPendingListsOnlyOpenItemsInSeqOrder(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	first, _ := m.Propose(r.ID, sess.SessionID, "primeiro", "")
+	second, _ := m.RequestDecision(r.ID, sess.SessionID, "segundo", "")
+	if _, err := m.Resolve(r.ID, fac, first.ID, "resolvido"); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	pending, err := m.Pending(r.ID)
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != second.ID {
+		t.Fatalf("pending = %+v, want only %q", pending, second.ID)
+	}
+}
+
+func TestResolveRequiresFacilitatorCapability(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	item, _ := m.Propose(r.ID, sess.SessionID, "t", "b")
+
+	if _, err := m.Resolve(r.ID, sess.SessionID, item.ID, "aceito"); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("resolve with a session (not facilitator) err = %v, want ErrNotFacilitator", err)
+	}
+}
+
+func TestResolveMarksItemResolvedWithResultAndRefSeq(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	item, _ := m.Propose(r.ID, sess.SessionID, "t", "b")
+
+	resolved, err := m.Resolve(r.ID, fac, item.ID, "aceito")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.Status != itemStatusResolved || resolved.Result != "aceito" || resolved.ResolutionSeq <= item.SourceSeq {
+		t.Fatalf("resolved = %+v", resolved)
+	}
+}
+
+func TestResolveRejectsUnknownOrAlreadyResolvedItem(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	item, _ := m.Propose(r.ID, sess.SessionID, "t", "b")
+
+	if _, err := m.Resolve(r.ID, fac, "I999", "x"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("resolve unknown item err = %v, want ErrItemNotFound", err)
+	}
+	if _, err := m.Resolve(r.ID, fac, item.ID, "aceito"); err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	if _, err := m.Resolve(r.ID, fac, item.ID, "de novo"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("resolve already-resolved item err = %v, want ErrItemNotFound", err)
+	}
+}
+
+// --- F-0228 criteria 5-7: structured close ---
+
+func TestCloseRequiresFacilitatorCapability(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	if _, err := m.Close(r.ID, "deadbeefdeadbeefdeadbeefdeadbeef", minimalMinutes, false); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("err = %v, want ErrNotFacilitator", err)
+	}
+}
+
+func TestCloseBlocksOnOpenItemsByDefault(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	m.Propose(r.ID, sess.SessionID, "t", "b")
+
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); !errors.Is(err, ErrOpenItems) {
+		t.Fatalf("err = %v, want ErrOpenItems", err)
+	}
+	// the room is still open: Say still works.
+	if _, err := m.Say(r.ID, sess.SessionID, "ainda aberta"); err != nil {
+		t.Fatalf("Say after blocked close: %v", err)
+	}
+}
+
+func TestCloseAllowOpenItemsRecordsExceptionInMinutes(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	item, _ := m.Propose(r.ID, sess.SessionID, "t", "b")
+
+	closed, err := m.Close(r.ID, fac, minimalMinutes, true)
+	if err != nil {
+		t.Fatalf("Close --allow-open-items: %v", err)
+	}
+	if closed.Minutes == nil || len(closed.Minutes.OpenItems) != 1 || closed.Minutes.OpenItems[0] != item.ID {
+		t.Fatalf("minutes = %+v, want the open item recorded as an exception", closed.Minutes)
+	}
+}
+
+func TestCloseRejectsIncompleteMinutes(t *testing.T) {
+	m := newManager(t)
+	cases := []struct {
+		name string
+		mn   Minutes
+	}{
+		{"empty conclusion", Minutes{Rationale: "ok"}},
+		{"empty rationale", Minutes{Conclusion: "ok"}},
+		{"both blank", Minutes{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, fac, _ := m.Open("topico " + tc.name)
+			if _, err := m.Close(r.ID, fac, tc.mn, false); !errors.Is(err, ErrIncompleteMinutes) {
+				t.Fatalf("err = %v, want ErrIncompleteMinutes", err)
+			}
+		})
+	}
+	// lists left empty are fine — only the scalar fields are required.
+	r, fac, _ := m.Open("topico listas vazias")
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close with empty lists: %v", err)
+	}
+}
+
+func TestCloseIdempotentReturnsSameMinutes(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	first, err := m.Close(r.ID, fac, minimalMinutes, false)
+	if err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	second, err := m.Close(r.ID, fac, Minutes{Conclusion: "outra coisa", Rationale: "ignorada"}, false)
+	if err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	if second.Minutes.Conclusion != first.Minutes.Conclusion {
+		t.Fatalf("idempotent close changed the minutes: %+v -> %+v", first.Minutes, second.Minutes)
+	}
+}
+
+func TestCloseMinutesSurviveRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m1.Open("topico")
+	mn := Minutes{Conclusion: "reverter o deploy", Rationale: "mais rápido", Owners: []string{"alice"}}
+	if _, err := m1.Close(r.ID, fac, mn, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	rooms := m2.List()
+	if len(rooms) != 1 || rooms[0].Minutes == nil || rooms[0].Minutes.Conclusion != mn.Conclusion {
+		t.Fatalf("rooms after restart = %+v, want the minutes preserved", rooms)
+	}
+}
+
+func TestCloseStillRejectsJoinAndSayReadStillWorks(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, _, err := m.Join(r.ID, "bob", ""); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Join after close err = %v, want ErrClosed", err)
+	}
+	if _, err := m.Say(r.ID, sess.SessionID, "oi"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Say after close err = %v, want ErrClosed", err)
+	}
+	if _, err := m.Read(context.Background(), r.ID, 0, false, time.Second); err != nil {
+		t.Fatalf("Read after close: %v", err)
 	}
 }

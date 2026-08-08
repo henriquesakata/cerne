@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/rockt/cerne/internal/room"
 )
 
 func TestRoomWatchRequiresSession(t *testing.T) {
@@ -198,7 +200,7 @@ func TestRoomWatchLoopOnceWaitsPastEcho(t *testing.T) {
 func TestRoomWatchLoopClosePrintsCheckpointsAndExits(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-watch-close")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
-	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
 	sess := joinRoomAs(t, dirFlag, "R1", "ana")
 
 	c, err := newRoomClient(dir, port)
@@ -218,7 +220,7 @@ func TestRoomWatchLoopClosePrintsCheckpointsAndExits(t *testing.T) {
 	}()
 
 	time.Sleep(200 * time.Millisecond)
-	if _, err := c.close(context.Background(), "R1"); err != nil {
+	if _, err := c.close(context.Background(), "R1", facilitator, room.Minutes{Conclusion: "ok", Rationale: "ok"}, false); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	<-done

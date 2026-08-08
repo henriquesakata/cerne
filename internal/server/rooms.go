@@ -61,12 +61,12 @@ func handleRoomOpen(w http.ResponseWriter, r *http.Request, projectID string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	rm, err := m.Open(req.Topic)
+	rm, facilitatorID, err := m.Open(req.Topic)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusCreated, rm)
+	writeJSON(w, http.StatusCreated, map[string]any{"room": rm, "facilitator_id": facilitatorID})
 }
 
 func handleRoomList(w http.ResponseWriter, projectID string) {
@@ -91,12 +91,20 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, room.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("room not found"))
+	case errors.Is(err, room.ErrItemNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody(err.Error()))
 	case errors.Is(err, room.ErrClosed):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, room.ErrNickTaken):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, room.ErrOpenItems):
+		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, room.ErrInvalidSession):
 		writeJSON(w, http.StatusUnauthorized, errorBody(err.Error()))
+	case errors.Is(err, room.ErrNotFacilitator):
+		writeJSON(w, http.StatusForbidden, errorBody(err.Error()))
+	case errors.Is(err, room.ErrIncompleteMinutes):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	}
@@ -220,14 +228,148 @@ func handleRoomRead(w http.ResponseWriter, r *http.Request, projectID, id string
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
 }
 
-func handleRoomClose(w http.ResponseWriter, projectID, id string) {
+type handoffFacilitatorRequest struct {
+	FacilitatorID string `json:"facilitator_id"`
+}
+
+// handleRoomFacilitatorHandoff rotates the room's facilitator capability
+// (F-0228 criterion 1): the presented capability is validated and replaced
+// atomically, so the caller can transfer control (e.g. to a human) by
+// handing over only the freshly minted id.
+func handleRoomFacilitatorHandoff(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	var req handoffFacilitatorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
 	m, err := roomManagerFor(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	rm, err := m.Close(id)
+	next, err := m.HandoffFacilitator(id, req.FacilitatorID)
 	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"facilitator_id": next})
+}
+
+type createItemRequest struct {
+	SessionID string `json:"session_id"`
+	Kind      string `json:"kind"` // proposal|decision_request
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+}
+
+// handleRoomCreateItem raises a proposal or decision-request item on behalf
+// of an authenticated participant (F-0228 criterion 2).
+func handleRoomCreateItem(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	var req createItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	var (
+		item    room.FacilitationItem
+		itemErr error
+	)
+	switch req.Kind {
+	case "proposal":
+		item, itemErr = m.Propose(id, req.SessionID, req.Title, req.Body)
+	case "decision_request":
+		item, itemErr = m.RequestDecision(id, req.SessionID, req.Title, req.Body)
+	default:
+		writeJSON(w, http.StatusBadRequest, errorBody(`kind must be "proposal" or "decision_request"`))
+		return
+	}
+	if itemErr != nil {
+		writeRoomErr(w, itemErr)
+		return
+	}
+	writeJSON(w, http.StatusCreated, item)
+}
+
+// handleRoomPending lists the room's open facilitation items — the
+// facilitator's triage queue, no LLM synthesis (F-0228 criterion 3).
+func handleRoomPending(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	if err := m.CheckFacilitator(id, r.Header.Get("X-Room-Facilitator")); err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	items, err := m.Pending(id)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	if items == nil {
+		items = []room.FacilitationItem{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+type resolveItemRequest struct {
+	FacilitatorID string `json:"facilitator_id"`
+	Result        string `json:"result"`
+}
+
+// handleRoomResolveItem resolves an open facilitation item; only the
+// facilitator may (F-0228 criterion 4).
+func handleRoomResolveItem(w http.ResponseWriter, r *http.Request, projectID, id, itemID string) {
+	var req resolveItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	item, err := m.Resolve(id, req.FacilitatorID, itemID, req.Result)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+type closeRoomRequest struct {
+	FacilitatorID  string       `json:"facilitator_id"`
+	Minutes        room.Minutes `json:"minutes"`
+	AllowOpenItems bool         `json:"allow_open_items"`
+}
+
+func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	var req closeRoomRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	rm, err := m.Close(id, req.FacilitatorID, req.Minutes, req.AllowOpenItems)
+	if err != nil {
+		if errors.Is(err, room.ErrOpenItems) {
+			pending, pendErr := m.Pending(id)
+			if pendErr == nil {
+				writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "pending": pending})
+				return
+			}
+		}
 		writeRoomErr(w, err)
 		return
 	}

@@ -17,6 +17,23 @@ type roomJSON struct {
 	Topic        string            `json:"topic"`
 	ClosedAt     *time.Time        `json:"closed_at"`
 	Participants []participantJSON `json:"participants"`
+	Minutes      *minutesJSON      `json:"minutes"`
+}
+
+// openJSON is the POST /api/rooms response (F-0228): the room snapshot plus
+// the private facilitator capability, minted once and never repeated.
+type openJSON struct {
+	roomJSON      `json:"room"`
+	FacilitatorID string `json:"facilitator_id"`
+}
+
+type minutesJSON struct {
+	Conclusion       string   `json:"conclusion"`
+	Rationale        string   `json:"rationale"`
+	DiscardedOptions []string `json:"discarded_options"`
+	Owners           []string `json:"owners"`
+	NextSteps        []string `json:"next_steps"`
+	OpenItems        []string `json:"open_items"`
 }
 
 type participantJSON struct {
@@ -68,7 +85,7 @@ func joinAs(t *testing.T, h http.Handler, id, nick string) sessionJSON {
 
 func TestRoomOpenEndpoint(t *testing.T) {
 	h := newRoomServer(t, "proj-room-open")
-	var got roomJSON
+	var got openJSON
 	rec := doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"deploy quebrado"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
@@ -76,11 +93,14 @@ func TestRoomOpenEndpoint(t *testing.T) {
 	if got.ID != "R1" || got.Topic != "deploy quebrado" || len(got.Participants) != 0 {
 		t.Fatalf("room = %+v", got)
 	}
+	if len(got.FacilitatorID) < 32 {
+		t.Fatalf("facilitator_id = %q, want >= 32 hex chars", got.FacilitatorID)
+	}
 }
 
 func TestRoomJoinReturnsRoomAndSession(t *testing.T) {
 	h := newRoomServer(t, "proj-room-join-session")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 
 	var got joinJSON
@@ -102,7 +122,7 @@ func TestRoomJoinReturnsRoomAndSession(t *testing.T) {
 // transcript reads.
 func TestRoomSessionNeverLeaksInPublicReads(t *testing.T) {
 	h := newRoomServer(t, "proj-room-leak")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	sess := joinAs(t, h, opened.ID, "alice")
 
@@ -121,7 +141,7 @@ func TestRoomSessionNeverLeaksInPublicReads(t *testing.T) {
 
 func TestRoomResumeReturnsSessionWithoutEvent(t *testing.T) {
 	h := newRoomServer(t, "proj-room-resume")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	sess := joinAs(t, h, opened.ID, "alice")
 
@@ -153,7 +173,7 @@ func TestRoomResumeReturnsSessionWithoutEvent(t *testing.T) {
 
 func TestRoomJoinDuplicateNickConflict(t *testing.T) {
 	h := newRoomServer(t, "proj-room-join-dup")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	joinAs(t, h, opened.ID, "alice")
 	var errBody map[string]string
@@ -177,7 +197,7 @@ func TestRoomJoinUnknownRoomNotFound(t *testing.T) {
 // never accepted as authority.
 func TestRoomSayRequiresSession(t *testing.T) {
 	h := newRoomServer(t, "proj-room-say-auth")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	joinAs(t, h, opened.ID, "alice")
 
@@ -203,7 +223,7 @@ func TestRoomSayRequiresSession(t *testing.T) {
 
 func TestRoomSayAndReadSince(t *testing.T) {
 	h := newRoomServer(t, "proj-room-say")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	sess := joinAs(t, h, opened.ID, "alice")
 
@@ -242,7 +262,7 @@ func TestRoomSayAndReadSince(t *testing.T) {
 // header is 401.
 func TestRoomReadAuthenticatedProjectsOwn(t *testing.T) {
 	h := newRoomServer(t, "proj-room-own")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	alice := joinAs(t, h, opened.ID, "alice")
 	bob := joinAs(t, h, opened.ID, "bob")
@@ -286,13 +306,14 @@ func TestRoomReadAuthenticatedProjectsOwn(t *testing.T) {
 
 func TestRoomCloseRejectsJoinAndSayButKeepsRead(t *testing.T) {
 	h := newRoomServer(t, "proj-room-close")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	sess := joinAs(t, h, opened.ID, "alice")
 	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/messages", `{"session_id":"`+sess.SessionID+`","body":"oi"}`, &messageJSON{})
 
 	var closed roomJSON
-	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", "", &closed)
+	closeBody := `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"encerrado","rationale":"fim do teste"}}`
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &closed)
 	if rec.Code != http.StatusOK || closed.ClosedAt == nil {
 		t.Fatalf("close status=%d body=%+v", rec.Code, closed)
 	}
@@ -320,9 +341,179 @@ func TestRoomCloseRejectsJoinAndSayButKeepsRead(t *testing.T) {
 // end through the HTTP handler: a GET with follow=1 blocks in one goroutine
 // until a concurrent POST .../messages wakes it — the mechanic T-0001 exists
 // for (criterion 4 of the T-0001 spec).
+// --- F-0228: facilitator, items, minutes ---
+
+// itemJSON mirrors room.FacilitationItem over HTTP.
+type itemJSON struct {
+	ID            string `json:"id"`
+	Kind          string `json:"kind"`
+	Author        string `json:"author"`
+	Title         string `json:"title"`
+	Body          string `json:"body"`
+	SourceSeq     int    `json:"source_seq"`
+	Status        string `json:"status"`
+	Result        string `json:"result"`
+	ResolutionSeq int    `json:"resolution_seq"`
+}
+
+func TestFacilitatorIDNeverLeaksInPublicReadsOrList(t *testing.T) {
+	h := newRoomServer(t, "proj-fac-leak")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+
+	for _, path := range []string{"/api/rooms", "/api/rooms/" + opened.ID + "/messages?since=0"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if strings.Contains(rec.Body.String(), opened.FacilitatorID) {
+			t.Fatalf("GET %s leaks the facilitator capability: %s", path, rec.Body.String())
+		}
+	}
+}
+
+func TestHandoffFacilitatorRotatesAndRejectsOld(t *testing.T) {
+	h := newRoomServer(t, "proj-fac-handoff")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+
+	var got map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/facilitator/handoff", `{"facilitator_id":"`+opened.FacilitatorID+`"}`, &got)
+	if rec.Code != http.StatusOK || len(got["facilitator_id"]) < 32 || got["facilitator_id"] == opened.FacilitatorID {
+		t.Fatalf("handoff status=%d body=%+v", rec.Code, got)
+	}
+
+	closeBody := `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"ok","rationale":"ok"}}`
+	var errBody map[string]string
+	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &errBody)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("close with rotated-out capability status = %d, want 403; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateItemRequiresSession(t *testing.T) {
+	h := newRoomServer(t, "proj-item-auth")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+
+	var errBody map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"kind":"proposal","title":"t","body":"b"}`, &errBody)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("create item without session status = %d, want 401; body: %s", rec.Code, rec.Body.String())
+	}
+
+	sess := joinAs(t, h, opened.ID, "alice")
+	var item itemJSON
+	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"session_id":"`+sess.SessionID+`","kind":"proposal","title":"usar postgres","body":"menos manutencao"}`, &item)
+	if rec.Code != http.StatusCreated || item.Kind != "proposal" || item.Author != "alice" || item.Status != "open" {
+		t.Fatalf("create item status=%d item=%+v", rec.Code, item)
+	}
+}
+
+func TestPendingRequiresFacilitator(t *testing.T) {
+	h := newRoomServer(t, "proj-pending-auth")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	sess := joinAs(t, h, opened.ID, "alice")
+	var item itemJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"session_id":"`+sess.SessionID+`","kind":"proposal","title":"t","body":"b"}`, &item)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/items/pending", nil)
+	req.Header.Set("X-Room-Facilitator", "deadbeefdeadbeefdeadbeefdeadbeef")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("pending with bogus facilitator status = %d, want 403", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/items/pending", nil)
+	req.Header.Set("X-Room-Facilitator", opened.FacilitatorID)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var got struct {
+		Items []itemJSON `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON %q: %v", rec.Body.String(), err)
+	}
+	if rec.Code != http.StatusOK || len(got.Items) != 1 || got.Items[0].ID != item.ID {
+		t.Fatalf("pending status=%d items=%+v", rec.Code, got.Items)
+	}
+}
+
+func TestResolveRequiresFacilitatorReturns403ForSession(t *testing.T) {
+	h := newRoomServer(t, "proj-resolve-auth")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	sess := joinAs(t, h, opened.ID, "alice")
+	var item itemJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"session_id":"`+sess.SessionID+`","kind":"proposal","title":"t","body":"b"}`, &item)
+
+	var errBody map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items/"+item.ID+"/resolve", `{"facilitator_id":"`+sess.SessionID+`","result":"aceito"}`, &errBody)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("resolve with a session (not facilitator) capability status = %d, want 403", rec.Code)
+	}
+
+	var resolved itemJSON
+	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items/"+item.ID+"/resolve", `{"facilitator_id":"`+opened.FacilitatorID+`","result":"aceito"}`, &resolved)
+	if rec.Code != http.StatusOK || resolved.Status != "resolved" || resolved.Result != "aceito" {
+		t.Fatalf("resolve status=%d item=%+v", rec.Code, resolved)
+	}
+}
+
+func TestCloseReturns422OnIncompleteMinutes(t *testing.T) {
+	h := newRoomServer(t, "proj-close-422")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+
+	var errBody map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", `{"facilitator_id":"`+opened.FacilitatorID+`","minutes":{"conclusion":"","rationale":""}}`, &errBody)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("close with incomplete minutes status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCloseReturns409OnOpenItemsWithoutOverride(t *testing.T) {
+	h := newRoomServer(t, "proj-close-409")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	sess := joinAs(t, h, opened.ID, "alice")
+	var item itemJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"session_id":"`+sess.SessionID+`","kind":"proposal","title":"t","body":"b"}`, &item)
+
+	var got map[string]any
+	closeBody := `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"ok","rationale":"ok"}}`
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &got)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("close with an open item status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+	}
+	if got["pending"] == nil {
+		t.Fatalf("409 body = %+v, want the pending items listed", got)
+	}
+}
+
+func TestCloseWithAllowOpenItemsSucceeds(t *testing.T) {
+	h := newRoomServer(t, "proj-close-override")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	sess := joinAs(t, h, opened.ID, "alice")
+	var item itemJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"session_id":"`+sess.SessionID+`","kind":"proposal","title":"t","body":"b"}`, &item)
+
+	var closed roomJSON
+	closeBody := `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"ok","rationale":"ok"},"allow_open_items":true}`
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &closed)
+	if rec.Code != http.StatusOK || closed.ClosedAt == nil {
+		t.Fatalf("close --allow-open-items status=%d body=%+v", rec.Code, closed)
+	}
+	if closed.Minutes == nil || len(closed.Minutes.OpenItems) != 1 || closed.Minutes.OpenItems[0] != item.ID {
+		t.Fatalf("closed minutes = %+v, want the open item recorded as an exception", closed.Minutes)
+	}
+}
+
 func TestRoomReadFollowWakesOnNewMessage(t *testing.T) {
 	h := newRoomServer(t, "proj-room-follow")
-	var opened roomJSON
+	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 	sess := joinAs(t, h, opened.ID, "alice")
 

@@ -64,7 +64,8 @@ func (c roomClient) do(ctx context.Context, method, path string, body, out any) 
 }
 
 // doWithHeaders is do plus extra request headers (e.g. X-Room-Session for a
-// session-authenticated read). A connection-level failure is wrapped with
+// session-authenticated read, X-Room-Facilitator for the F-0228 facilitator
+// control plane). A connection-level failure is wrapped with
 // errRoomTransient so callers like the F-0227 watch loop can tell it apart
 // from a definitive HTTP error response.
 func (c roomClient) doWithHeaders(ctx context.Context, method, path string, headers map[string]string, body, out any) error {
@@ -123,10 +124,18 @@ func (c roomClient) doWithHeaders(ctx context.Context, method, path string, head
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func (c roomClient) open(ctx context.Context, topic string) (room.Room, error) {
-	var rm room.Room
-	err := c.do(ctx, http.MethodPost, "/rooms", map[string]string{"topic": topic}, &rm)
-	return rm, err
+// roomOpenResult mirrors the POST /rooms response (F-0228): the public room
+// snapshot plus the private facilitator capability, minted once for the
+// opener.
+type roomOpenResult struct {
+	Room          room.Room `json:"room"`
+	FacilitatorID string    `json:"facilitator_id"`
+}
+
+func (c roomClient) open(ctx context.Context, topic string) (roomOpenResult, error) {
+	var res roomOpenResult
+	err := c.do(ctx, http.MethodPost, "/rooms", map[string]string{"topic": topic}, &res)
+	return res, err
 }
 
 func (c roomClient) list(ctx context.Context) ([]room.Room, error) {
@@ -198,8 +207,51 @@ func (c roomClient) resume(ctx context.Context, id, sessionID string) (room.Sess
 	return sess, err
 }
 
-func (c roomClient) close(ctx context.Context, id string) (room.Room, error) {
+// close closes the room with the facilitator's structured minutes (F-0228);
+// blocked by default while facilitation items are still open unless
+// allowOpenItems forces it through.
+func (c roomClient) close(ctx context.Context, id, facilitatorID string, minutes room.Minutes, allowOpenItems bool) (room.Room, error) {
 	var rm room.Room
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", nil, &rm)
+	body := map[string]any{"facilitator_id": facilitatorID, "minutes": minutes, "allow_open_items": allowOpenItems}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", body, &rm)
 	return rm, err
+}
+
+// handoffFacilitator rotates the room's facilitator capability (F-0228
+// criterion 1), returning the new one; current is invalidated in the same
+// step.
+func (c roomClient) handoffFacilitator(ctx context.Context, id, facilitatorID string) (string, error) {
+	var out struct {
+		FacilitatorID string `json:"facilitator_id"`
+	}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/facilitator/handoff", map[string]string{"facilitator_id": facilitatorID}, &out)
+	return out.FacilitatorID, err
+}
+
+// createItem raises a proposal or decision-request item as sessionID's
+// participant (F-0228 criterion 2). kind is "proposal" or "decision_request".
+func (c roomClient) createItem(ctx context.Context, id, sessionID, kind, title, body string) (room.FacilitationItem, error) {
+	var item room.FacilitationItem
+	req := map[string]string{"session_id": sessionID, "kind": kind, "title": title, "body": body}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/items", req, &item)
+	return item, err
+}
+
+// pending lists id's open facilitation items (F-0228 criterion 3).
+func (c roomClient) pending(ctx context.Context, id, facilitatorID string) ([]room.FacilitationItem, error) {
+	var out struct {
+		Items []room.FacilitationItem `json:"items"`
+	}
+	headers := map[string]string{"X-Room-Facilitator": facilitatorID}
+	err := c.doWithHeaders(ctx, http.MethodGet, "/rooms/"+url.PathEscape(id)+"/items/pending", headers, nil, &out)
+	return out.Items, err
+}
+
+// resolve resolves an open facilitation item; only the facilitator may
+// (F-0228 criterion 4).
+func (c roomClient) resolve(ctx context.Context, id, facilitatorID, itemID, result string) (room.FacilitationItem, error) {
+	var item room.FacilitationItem
+	req := map[string]string{"facilitator_id": facilitatorID, "result": result}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/items/"+url.PathEscape(itemID)+"/resolve", req, &item)
+	return item, err
 }

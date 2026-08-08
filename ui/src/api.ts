@@ -822,24 +822,55 @@ export async function fetchLintStatus(): Promise<LintResult> {
 
 export type RoomParticipant = { nick: string; bio?: string; joined_at: string }
 
+// Minutes é a ata estruturada exigida do facilitador para fechar a sala
+// (F-0228 critério 6): conclusion/rationale são obrigatórios, as listas
+// podem vir vazias.
+export type Minutes = {
+  conclusion: string
+  rationale: string
+  discarded_options: string[]
+  owners: string[]
+  next_steps: string[]
+  open_items?: string[]
+}
+
 export type Room = {
   id: string
   topic: string
   opened_at: string
   closed_at?: string
   participants: RoomParticipant[]
+  minutes?: Minutes
 }
 
 // RoomMessage espelha room.Message: um evento do transcript — abertura,
-// entrada, fala ou fechamento — todos no mesmo log ordenado por seq.
+// entrada, fala, fechamento ou facilitação — todos no mesmo log ordenado
+// por seq.
 export type RoomMessage = {
   seq: number
-  type: 'open' | 'join' | 'message' | 'close'
+  type: 'open' | 'join' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution'
   nick?: string
   bio?: string
   body?: string
   topic?: string
+  title?: string
+  item_id?: string
+  minutes?: Minutes
   time: string
+}
+
+// FacilitationItem é uma proposta ou pedido de decisão levantado por um
+// participante autenticado, triado pelo facilitador (F-0228 critérios 2-4).
+export type FacilitationItem = {
+  id: string
+  kind: 'proposal' | 'decision_request'
+  author: string
+  title: string
+  body: string
+  source_seq: number
+  status: 'open' | 'resolved'
+  result?: string
+  resolution_seq?: number
 }
 
 export async function fetchRooms(): Promise<Room[]> {
@@ -848,18 +879,89 @@ export async function fetchRooms(): Promise<Room[]> {
   return ((await r.json()) as { rooms: Room[] }).rooms
 }
 
-export async function postRoomOpen(topic: string): Promise<Room> {
+// postRoomOpen abre a sala e devolve, junto do snapshot público, a
+// capability privada de facilitador (F-0228 critério 1) — nunca reexibida.
+export async function postRoomOpen(topic: string): Promise<{ room: Room; facilitator_id: string }> {
   const r = await fetch(`${base()}/rooms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ topic }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as Room
+  return (await r.json()) as { room: Room; facilitator_id: string }
 }
 
-export async function postRoomClose(id: string): Promise<Room> {
-  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/close`, { method: 'POST' })
+// postRoomFacilitatorHandoff roda a capability de facilitador (F-0228
+// critério 1): a atual é invalidada no mesmo passo em que a nova é emitida.
+export async function postRoomFacilitatorHandoff(id: string, facilitatorId: string): Promise<string> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/facilitator/handoff`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ facilitator_id: facilitatorId }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { facilitator_id: string }).facilitator_id
+}
+
+// postRoomItem levanta uma proposta ou pedido de decisão em nome do
+// participante autenticado (F-0228 critério 2).
+export async function postRoomItem(
+  id: string,
+  sessionID: string,
+  kind: FacilitationItem['kind'],
+  title: string,
+  body: string,
+): Promise<FacilitationItem> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionID, kind, title, body }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as FacilitationItem
+}
+
+// fetchRoomPending lista os itens de facilitação ainda abertos — a fila de
+// triagem do facilitador, sem síntese por IA (F-0228 critério 3).
+export async function fetchRoomPending(id: string, facilitatorId: string): Promise<FacilitationItem[]> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/items/pending`, {
+    headers: { 'X-Room-Facilitator': facilitatorId },
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { items: FacilitationItem[] }).items
+}
+
+// postRoomResolveItem resolve um item aberto; só o facilitador pode
+// (F-0228 critério 4).
+export async function postRoomResolveItem(
+  id: string,
+  facilitatorId: string,
+  itemId: string,
+  result: string,
+): Promise<FacilitationItem> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ facilitator_id: facilitatorId, result }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as FacilitationItem
+}
+
+// postRoomClose fecha a sala com a ata estruturada; por padrão recusa com
+// itens abertos (F-0228 critério 5) — allowOpenItems força e registra a
+// exceção na própria ata.
+export async function postRoomClose(
+  id: string,
+  facilitatorId: string,
+  minutes: Minutes,
+  allowOpenItems = false,
+): Promise<Room> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ facilitator_id: facilitatorId, minutes, allow_open_items: allowOpenItems }),
+  })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as Room
 }
