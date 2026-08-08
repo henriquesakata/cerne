@@ -206,21 +206,33 @@ Not every task is a feature. Investigating an error, reviewing an MR, doing an o
 - **Feature implementations register themselves (F-0146):** `cerne feature start` auto-opens a work (actor + ref, same commit) and `complete`/`supersede` auto-closes it — do NOT add a manual `work start` for a feature you are implementing; the manual flow is only for non-feature tasks. Per-project opt-out: `[activity] auto = false` in `.cernerc`.
 - **The duplicate guard is mechanical (F-0147):** `feature new` and `work start` refuse a title similar to a live feature or an active work, listing the matches — with multiple agents, the same bug gets registered twice, and this is the backstop. If a match appears, join the existing registration instead of minting another; `--force` is the conscious override for a genuinely distinct problem that reads alike (the override lands on the creation event as `guard: forced`).
 
-## War room (F-0211/F-0217): live multi-agent conversation
+## War room (F-0211/F-0226/F-0228): live multi-agent conversation
 
 A **war room** is a live, ephemeral chat channel served by a running `cerne ui` — for real-time back-and-forth between agents/humans on a shared problem, distinct from the async `cerne work` registry above. **Opening a room is a human moderator's act (F-0211/F-0217).** A human opens one with `cerne room open "<topic>"` — you do **not** run this yourself; you join a room when invited, and only ever run `cerne room open` on an explicit human request.
 
-**The cycle:**
+**The cycle (F-0226: a joined session capability, not `--nick`, is the authority for everything you say):**
 
 ```
-cerne room list                                          # discover open rooms
-cerne room join <id> --nick <apelido> [--bio "..."]       # enter, once per session
-cerne room say <id> --nick <apelido> "<msg>"               # speak
-cerne room read <id> --since <seq> --once                  # block for the next message, print it, exit
-cerne room close <id>                                       # end the room (say/join then refused; read still works)
+cerne room list                                            # discover open rooms
+cerne room join <id> --nick <apelido> [--bio "..."]         # mints a session capability, once per room
+export CERNE_ROOM_SESSION=<printed by join>                 # or pass --session on every call below
+cerne room say <id> "<msg>" --session <token>                # speak, authored by the session's nick
+cerne room read <id> --since <seq> --once                    # block for the next message, print it, exit
+cerne room close <id> --facilitator <token> --minutes <...>  # facilitator-only, see below
 ```
 
 **`--once`, not `--follow`, for a turn-based agent.** `--follow` blocks and streams forever until Ctrl+C — it is meant for a daemon/UI process, not an agent turn, because it never returns control on its own. `--once` long-polls until the **first** new event, prints it, and exits 0. This is the correct wakeup primitive: read once, act on what came back, then re-arm for the next turn with `--since <highest seq you've just printed>` so the following `--once` blocks only for messages you haven't seen yet.
+
+**Facilitation and structured close (F-0228).** `cerne room open` also mints a **facilitator capability**, printed once and separate from any participant session — it is the authority to triage and close the room, never appears in the roster/transcript/list, and rotates atomically via `cerne room facilitator handoff <id> --facilitator <current>` (prints a new one, the old one stops working immediately — the way an opener agent hands the role to a human over an external channel). Any joined participant can raise something the facilitator needs to see:
+
+```
+cerne room propose <id> --session <token> --title "<t>" --body "<why>"           # a proposal
+cerne room request-decision <id> --session <token> --title "<t>" --body "<why>"  # a decision request
+cerne room pending <id> --facilitator <token>                                     # facilitator's triage queue (no LLM synthesis)
+cerne room resolve <id> <item-id> --facilitator <token> --result "<outcome>"       # facilitator-only
+```
+
+Closing requires the facilitator capability and a structured **minutes** JSON (`conclusion`/`rationale` required, `discarded_options`/`owners`/`next_steps` may be empty lists) — `cerne room minutes template` prints a blank scaffold to fill in. By default close **refuses** while facilitation items are still open and lists them; `--allow-open-items` forces it through and records the exception in the minutes. `cerne room minutes show <id> --format markdown` renders a closed room's minutes deterministically (no LLM) for copying elsewhere — it never creates a feature/decision/note or commits anything on its own.
 
 **Troubleshooting a failed `cerne room join`, self-diagnosable without a human:**
 - **Connection error ("no cerne ui answering ... start one with 'cerne ui'")** → no `cerne ui` is listening on the port (default 7717). Start one: `cerne ui` in the project directory.
