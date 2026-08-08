@@ -641,16 +641,54 @@ export type ChatAnswer = {
 // composer — opcional; omitida, o provider usa o default do .cernerc.
 export type ChatOverride = { model?: string; effort?: string }
 
-// postChat envia o transcript inteiro (o servidor é stateless — case 0210
-// decidiu reenviar em vez de manter sessão) e recebe a próxima fala do agente.
-export async function postChat(messages: ChatMsg[], override?: ChatOverride): Promise<ChatAnswer> {
+// streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
+// case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
+// NDJSON: cada linha {"delta":...} vira onDelta; a última linha é o evento
+// terminal — o mesmo payload de sempre, então o caminho sem streaming do
+// servidor (uma única escrita) também é um stream válido de um evento só.
+// Uma linha {"error":...} vira throw: o que onDelta já entregou permanece
+// com o chamador (critério 8).
+export async function streamChat(
+  messages: ChatMsg[],
+  override: ChatOverride | undefined,
+  onDelta: (delta: string) => void,
+): Promise<ChatAnswer> {
   const r = await fetch(`${base()}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, model: override?.model, effort: override?.effort }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as ChatAnswer
+  if (!r.body) return (await r.json()) as ChatAnswer
+
+  const parseLine = (line: string): ChatAnswer | null => {
+    if (line.trim() === '') return null
+    const ev = JSON.parse(line) as { delta?: string; error?: string } & ChatAnswer
+    if (ev.error) throw new Error(ev.error)
+    if (typeof ev.delta === 'string') {
+      onDelta(ev.delta)
+      return null
+    }
+    return ev
+  }
+
+  const reader = r.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let terminal: ChatAnswer | null = null
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    for (let nl = buf.indexOf('\n'); nl >= 0; nl = buf.indexOf('\n')) {
+      terminal = parseLine(buf.slice(0, nl)) ?? terminal
+      buf = buf.slice(nl + 1)
+    }
+  }
+  buf += decoder.decode()
+  terminal = parseLine(buf) ?? terminal
+  if (!terminal) throw new Error('transmissão terminou sem o evento final')
+  return terminal
 }
 
 // registerChatCandidate registra a candidata proposta pelo agente, só depois

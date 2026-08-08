@@ -24,7 +24,7 @@ const state = (features: Feature[]): StateResponse => ({
 })
 
 let payload: StateResponse = state([])
-const postChat = vi.fn<(messages: unknown, override?: ChatOverride) => Promise<ChatAnswer>>()
+const streamChat = vi.fn<(messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => Promise<ChatAnswer>>()
 const registerChatCandidate = vi.fn<
   (title: string, specBody: string, facets?: string[], components?: string[]) => Promise<CreateOutcome>
 >()
@@ -33,7 +33,7 @@ const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchState: vi.fn(async () => payload),
-  postChat: (messages: unknown, override?: ChatOverride) => postChat(messages, override),
+  streamChat: (messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => streamChat(messages, override, onDelta),
   registerChatCandidate: (title: string, specBody: string, facets?: string[], components?: string[]) =>
     registerChatCandidate(title, specBody, facets, components),
   fetchLLMOptions: () => fetchLLMOptions(),
@@ -43,7 +43,7 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   payload = state([])
-  postChat.mockReset()
+  streamChat.mockReset()
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
   fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], efforts: [] })
@@ -107,7 +107,7 @@ describe('Backlog (F-0202)', () => {
   it('F-0219: registrar candidata sufixa o id gerado no título da conversa ativa', async () => {
     const proposalReply =
       'Aqui está:\n\n```cerne-proposta\n# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n```\n'
-    postChat.mockResolvedValue({ answered: true, reply: proposalReply })
+    streamChat.mockResolvedValue({ answered: true, reply: proposalReply })
     registerChatCandidate.mockResolvedValue({
       ok: true,
       feature: {

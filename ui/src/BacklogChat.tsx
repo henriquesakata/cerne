@@ -59,12 +59,6 @@ export function parseProposal(reply: string): ParsedProposal | null {
   return { title, body, facet, components, capability }
 }
 
-// TYPING_CHARS_PER_TICK/TYPING_TICK_MS (F-0218 critério 2): efeito de
-// digitação local — sem streaming de rede, só um render progressivo do texto
-// já recebido inteiro. Um clique no histórico pula direto pro texto completo.
-const TYPING_CHARS_PER_TICK = 3
-const TYPING_TICK_MS = 20
-
 // Tolerância do glue-scroll (F-0239): "no fim" não pode exigir pixel exato —
 // zoom, altura fracionária e a última linha crescendo já tiram o scrollTop do
 // valor cheio, e aí a transcrição descolaria sozinha.
@@ -113,7 +107,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [efforts, setEfforts] = useState<string[]>([])
   const [model, setModel] = useState(conversation.model)
   const [effort, setEffort] = useState(conversation.effort)
-  const [typingLen, setTypingLen] = useState<number | null>(null)
   const [, forceTick] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const historyRef = useRef<HTMLDivElement>(null)
@@ -148,7 +141,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     const id = conversation.id
     const reconcile = () => {
       forceTick((n) => n + 1)
-      if (chatRequest.status(id).pending) return
+      if (chatRequest.status(id).pending) {
+        // F-0240: durante a transmissão os deltas já estão no storage —
+        // reler aqui é como o texto parcial aparece na tela.
+        const inFlight = chatRequest.getConversation(id)
+        if (inFlight) setMessages(inFlight.messages)
+        return
+      }
       const outcome = chatRequest.consumeOutcome(id)
       if (!outcome) return
       if (outcome.kind === 'error') {
@@ -166,7 +165,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       setFailedMessages(null)
       const last = fresh.messages[fresh.messages.length - 1]
       if (last?.role === 'assistant') {
-        setTypingLen(0)
         setProposal(parseProposal(last.content))
       }
     }
@@ -190,24 +188,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, model, effort])
 
-  // Critério 2: efeito de digitação sobre a última resposta do agente — sem
-  // streaming de rede, só revela o texto já recebido aos poucos.
-  useEffect(() => {
-    if (typingLen === null) return
-    const last = messages[messages.length - 1]
-    if (!last || last.role !== 'assistant' || typingLen >= last.content.length) {
-      setTypingLen(null)
-      return
-    }
-    const id = setTimeout(() => setTypingLen((n) => (n ?? 0) + TYPING_CHARS_PER_TICK), TYPING_TICK_MS)
-    return () => clearTimeout(id)
-  }, [typingLen, messages])
-
-  const skipTyping = () => {
-    const last = messages[messages.length - 1]
-    if (typingLen !== null && last) setTypingLen(last.content.length)
-  }
-
   // Glue-scroll (F-0239): a transcrição só se cola ao fim se o leitor já
   // estiver lá. Quem rolou para cima está lendo o histórico — arrastá-lo de
   // volta a cada caractere que chega seria roubar o controle.
@@ -216,13 +196,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   }
 
   // useLayoutEffect, não useEffect: o ajuste acontece antes da pintura, então
-  // não há quadro intermediário com a barra fora do lugar. typingLen entra nas
-  // dependências para colar durante a digitação, não só a cada mensagem nova.
+  // não há quadro intermediário com a barra fora do lugar. messages muda a
+  // cada delta transmitido (F-0240), então a cola acompanha a transmissão.
   useLayoutEffect(() => {
     const el = historyRef.current
     if (!el || !stuckRef.current) return
     el.scrollTop = el.scrollHeight
-  }, [messages, typingLen, busy])
+  }, [messages, busy])
 
   const autoExpand = () => {
     const el = textareaRef.current
@@ -302,22 +282,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       <div className="backlog-chat-toolbar">
         <h2>{t.backlogChat.title}</h2>
       </div>
-      <div
-        className="backlog-chat-history"
-        ref={historyRef}
-        onScroll={onHistoryScroll}
-        onClick={skipTyping}
-      >
+      <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
-        {messages.map((m, i) => {
-          const isTyping = typingLen !== null && i === messages.length - 1 && m.role === 'assistant'
-          const shown = isTyping ? m.content.slice(0, typingLen ?? 0) : m.content
-          return (
-            <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
-              {m.role === 'assistant' ? <Markdown>{shown}</Markdown> : <p>{shown}</p>}
-            </div>
-          )
-        })}
+        {messages.map((m, i) => (
+          <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
+            {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : <p>{m.content}</p>}
+          </div>
+        ))}
         {busy && (
           <p className="status backlog-chat-progress">
             <span className="backlog-chat-spinner" aria-hidden="true" />
