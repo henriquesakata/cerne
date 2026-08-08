@@ -262,8 +262,11 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     renderChat()
 
     await screen.findByText('claude-opus-5')
-    fireEvent.change(screen.getByLabelText(/modelo/i), { target: { value: 'claude-opus-5' } })
-    fireEvent.change(screen.getByLabelText(/esfor/i), { target: { value: 'high' } })
+    // F-0241: seleção pelo menu, não por change num <select>
+    fireEvent.click(screen.getByLabelText(/modelo/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /claude-opus-5/ }))
+    fireEvent.click(screen.getByLabelText(/esfor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /high/ }))
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -285,8 +288,42 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     renderChat({ model: 'claude-opus-5', effort: 'high' })
 
     await screen.findByText('claude-opus-5')
-    expect(screen.getByLabelText(/modelo/i)).toHaveValue('claude-opus-5')
-    expect(screen.getByLabelText(/esfor/i)).toHaveValue('high')
+    // F-0241: o seletor virou botão + menu (o <select> nativo não renderiza
+    // marca de selecionado nem dígito de atalho), então o valor corrente é o
+    // texto do gatilho, não a `value` de um combobox. A garantia é a mesma.
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-opus-5')
+    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('high')
+  })
+
+  it('F-0241: sem seleção salva, model e effort nascem com o padrão preferido', async () => {
+    fetchLLMOptions.mockResolvedValue({
+      mode: 'byo-key',
+      models: ['claude-sonnet-5', 'claude-opus-5'],
+      efforts: ['low', 'medium', 'high'],
+    })
+    renderChat({ model: '', effort: '' })
+
+    // preferência é opus/high, mesmo não sendo os primeiros da lista
+    await waitFor(() =>
+      expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-opus-5'),
+    )
+    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('high')
+  })
+
+  it('F-0241: escolher no menu troca o valor e fecha', async () => {
+    fetchLLMOptions.mockResolvedValue({
+      mode: 'byo-key',
+      models: ['claude-opus-5', 'claude-sonnet-5'],
+      efforts: ['low', 'high'],
+    })
+    renderChat({ model: 'claude-opus-5', effort: 'high' })
+
+    await screen.findByText('claude-opus-5')
+    fireEvent.click(screen.getByLabelText(/modelo/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /claude-sonnet-5/ }))
+
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-sonnet-5')
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })
 
@@ -326,7 +363,9 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
       fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['medium'] })
       renderChat({ model: 'claude-opus-5', effort: 'medium' })
 
-      await vi.waitFor(() => expect(screen.getByLabelText(/modelo/i)).toHaveValue('claude-opus-5'))
+      await vi.waitFor(() =>
+        expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-opus-5'),
+      )
       fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
       fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
