@@ -71,25 +71,91 @@ function Card({
   )
 }
 
+// gateCounts extrai o que só um humano resolve: candidate aguarda approve,
+// implemented aguarda accept (F-0131), e o lint é a dívida documental aberta.
+// Puro para poder ser testado sem render.
+export function gateCounts(
+  features: Feature[],
+  findings: { rule: string }[],
+): { approve: number; accept: number; lint: number; total: number } {
+  const approve = features.filter((f) => f.state === 'candidate').length
+  const accept = features.filter((f) => f.state === 'implemented').length
+  const lint = findings.length
+  return { approve, accept, lint, total: approve + accept + lint }
+}
+
+// AttentionBand (F-0233): a única coisa nesta tela que a CLI não faz sozinha.
+// Fica fora do .dash-grid de propósito — é uma linha de razão, não um nono card.
+function AttentionBand() {
+  const { t } = useT()
+  const state = useCard(fetchState)
+  const lint = useCard(fetchLint)
+
+  // Enquanto qualquer um dos dois não respondeu, não afirmamos "nada aguarda":
+  // uma faixa vazia por falta de dado mentiria sobre o estado do projeto.
+  if (!state.data || !lint.data) return null
+
+  const { approve, accept, lint: debts, total } = gateCounts(state.data.features, lint.data)
+
+  return (
+    <section className="dash-attention">
+      <h2>{t.dashboard.attention}</h2>
+      {total === 0 ? (
+        <p className="dash-attention-clear">{t.dashboard.attentionClear}</p>
+      ) : (
+        <ul className="dash-attention-list">
+          {approve > 0 && (
+            <li>
+              <a href="#/backlog">
+                <span className="chip chip-candidate">{t.state.candidate}</span>
+                <span className="dash-attention-label">{t.dashboard.attentionApprove(approve)}</span>
+              </a>
+            </li>
+          )}
+          {accept > 0 && (
+            <li>
+              <a href="#/kanban">
+                <span className="chip chip-implemented">{t.state.implemented}</span>
+                <span className="dash-attention-label">{t.dashboard.attentionAccept(accept)}</span>
+              </a>
+            </li>
+          )}
+          {debts > 0 && (
+            <li>
+              <a href="#/lint">
+                <span className="chip chip-lint">{t.dashboard.attentionLintChip}</span>
+                <span className="dash-attention-label">{t.dashboard.attentionLint(debts)}</span>
+              </a>
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 export default function Dashboard() {
   const { t } = useT()
   return (
     <main className="page">
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
-      {/* Composição fixa (F-0143/F-0145/F-0222): linha 1 = heatmap em largura
-          total; linha 2 = contadores compactos (1/3 cada); linha 3 = Épicos
-          em largura total; linha 4 = Flow Metrics + Eventos (1/2 cada);
-          linha 5 = Atividade em largura total. */}
+      <AttentionBand />
+      {/* Composição (F-0233): a faixa de gates lidera fora do grid — é o único
+          trabalho que a CLI não faz por você. No grid, largura segue densidade:
+          linha 1 = heatmap (F-0145, intocado); linha 2 = contadores 1/3 cada
+          (F-0132, intocado); linha 3 = Épicos, o card mais denso, em largura
+          total; linha 4 = Atividade + Eventos, duas listas equivalentes ao
+          meio; linha 5 = Flow Metrics como faixa rasa de números, não card. */}
       <div className="dash-grid">
         <HeatmapCard />
         <RosterCard />
         <LintCard />
         <SavingsCard />
         <EpicsCard />
-        <FlowStatsCard />
-        <EventsCard />
         <ActivityCard />
+        <EventsCard />
+        <FlowStatsCard />
       </div>
     </main>
   )
@@ -214,6 +280,9 @@ function EpicsCard() {
           )
         })}
       </ul>
+      {epics.length > 0 && (
+        <p className="dash-foot">{t.dashboard.epicsFoot(Math.min(6, epics.length), epics.length)}</p>
+      )}
     </Card>
   )
 }
@@ -277,21 +346,32 @@ function FlowStatsCard() {
     ? throughputValues.reduce((a, b) => a + b, 0) / throughputValues.length
     : 0
   return (
-    <Card title={t.dashboard.flowStats} href="#/history" error={error} className="dash-span-half">
+    <Card
+      title={t.dashboard.flowStats}
+      href="#/history"
+      error={error}
+      className="dash-span-full dash-band"
+    >
       {data && (
         (data.Features?.length ?? 0) === 0 ? (
           <p className="muted">{t.dashboard.flowStatsEmpty}</p>
         ) : (
-          <>
-            <p className="dash-big">{fmtDays(data.LeadMedian, lang)}</p>
-            <p className="dash-foot">
-              {t.dashboard.flowStatsFoot(
-                fmtDays(data.LeadMedian, lang),
-                fmtDays(data.CycleMedian, lang),
-                Math.round(avgThroughput * 10) / 10,
-              )}
-            </p>
-          </>
+          // Três indicadores de igual peso: um número gigante para um deles
+          // implicaria uma hierarquia que os dados não têm (F-0233).
+          <dl className="dash-stats">
+            <div>
+              <dt>{t.dashboard.flowLead}</dt>
+              <dd>{fmtDays(data.LeadMedian, lang)}</dd>
+            </div>
+            <div>
+              <dt>{t.dashboard.flowCycle}</dt>
+              <dd>{fmtDays(data.CycleMedian, lang)}</dd>
+            </div>
+            <div>
+              <dt>{t.dashboard.flowThroughput}</dt>
+              <dd>{(Math.round(avgThroughput * 10) / 10).toLocaleString(lang)}</dd>
+            </div>
+          </dl>
         )
       )}
     </Card>
@@ -303,7 +383,7 @@ function ActivityCard() {
   const { data, error } = useCard<Work[]>(fetchWork)
   const active = (data ?? []).filter((w) => w.state === 'active')
   return (
-    <Card title={t.dashboard.activity} href="#/activity" error={error} className="dash-span-full">
+    <Card title={t.dashboard.activity} href="#/activity" error={error} className="dash-span-half">
       {active.length === 0 ? (
         <p className="muted">{t.activity.emptyActive}</p>
       ) : (

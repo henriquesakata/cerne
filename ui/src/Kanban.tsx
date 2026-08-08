@@ -37,6 +37,40 @@ const CLOSED_COLUMNS: FeatureState[] = ['superseded', 'rejected']
 
 const isClosed = (s: FeatureState) => s === 'superseded' || s === 'rejected'
 
+// Estados terminais: nada a fazer com eles, são registro. done passou pelo
+// aceite humano (F-0131); superseded/rejected saíram do ciclo.
+const isTerminal = (s: FeatureState) =>
+  s === 'done' || s === 'superseded' || s === 'rejected'
+
+// Quantos cards de histórico cada grupo mostra antes de virar link (F-0236).
+export const HISTORY_CAP = 8
+
+// capHistory limita SÓ o histórico de uma lista já ordenada. Trabalho vivo
+// nunca é cortado: esconder um card que exige ação transformaria o corte num
+// bug. Preserva a ordem recebida — não reordena para caber.
+//
+// Sem isto o board renderiza tudo: 518 cards na coluna Done (65.751px) e 427
+// na faixa "sem épico" (16.206px), medidos contra o backend do hub.
+export function capHistory(
+  sorted: Feature[],
+  cap = HISTORY_CAP,
+): { shown: Feature[]; hidden: number } {
+  const shown: Feature[] = []
+  let kept = 0
+  let hidden = 0
+  for (const f of sorted) {
+    if (!isTerminal(f.state)) {
+      shown.push(f)
+    } else if (kept < cap) {
+      shown.push(f)
+      kept++
+    } else {
+      hidden++
+    }
+  }
+  return { shown, hidden }
+}
+
 // toggleIn returns a handler that adds/removes a value from a Set state,
 // always producing a fresh Set so React sees the change.
 function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
@@ -168,6 +202,16 @@ export default function Kanban() {
         </label>
       </header>
       {hasOptions && (
+        // <details> nativo: fechado por padrão devolve ~200px do primeiro
+        // viewport (eram 89 chips de componente, 43 deles filtrando ≤2
+        // features). Sem estado novo, e o teclado funciona de graça (F-0236).
+        <details className="filter-disclosure">
+          <summary>
+            {t.common.filters}
+            {hasFilter && (
+              <span className="column-count">{selFacets.size + selComponents.size}</span>
+            )}
+          </summary>
         <div className="note-filter">
           {allFacets.length > 0 && (
             <div className="note-filter-group">
@@ -205,6 +249,7 @@ export default function Kanban() {
             </button>
           )}
         </div>
+        </details>
       )}
       {groupByEpic ? (
         <EpicBoard
@@ -229,6 +274,18 @@ export default function Kanban() {
         />
       )}
     </main>
+  )
+}
+
+// MoreInHistory fecha um grupo cortado. Manage é o destino certo: lista
+// features por estado. History é log de eventos, não de features.
+function MoreInHistory({ hidden }: { hidden: number }) {
+  const { t } = useT()
+  if (hidden === 0) return null
+  return (
+    <a className="column-more" href="#/manage">
+      {t.kanban.moreInHistory(hidden)}
+    </a>
   )
 }
 
@@ -267,16 +324,24 @@ function Columns({
               {t.kanban.columnLabels[s]} <span className="column-count">{fs.length}</span>
             </h2>
             {fs.length === 0 && <p className="column-empty">—</p>}
-            {sortByPriority(fs).map((f) => (
-              <Card
-                key={f.id}
-                feature={f}
-                isEpic={isEpic(f.id)}
-                isBehind={isBehind(f.id)}
-                pending={pendingClarify(f.id)}
-                activeWork={activeWorkFor(f.id)}
-              />
-            ))}
+            {(() => {
+              const { shown, hidden } = capHistory(sortByPriority(fs))
+              return (
+                <>
+                  {shown.map((f) => (
+                    <Card
+                      key={f.id}
+                      feature={f}
+                      isEpic={isEpic(f.id)}
+                      isBehind={isBehind(f.id)}
+                      pending={pendingClarify(f.id)}
+                      activeWork={activeWorkFor(f.id)}
+                    />
+                  ))}
+                  <MoreInHistory hidden={hidden} />
+                </>
+              )
+            })()}
           </section>
         )
       })}
@@ -346,16 +411,24 @@ function EpicBoard({
             </h2>
             <div className="epic-lane-cards">
               {kids.length === 0 && <p className="column-empty">—</p>}
-              {sortByPriority(kids).map((f) => (
-                <Card
-                  key={f.id}
-                  feature={f}
-                  isEpic={isEpic(f.id)}
-                  isBehind={isBehind(f.id)}
-                  pending={pendingClarify(f.id)}
-                  activeWork={activeWorkFor(f.id)}
-                />
-              ))}
+              {(() => {
+                const { shown, hidden } = capHistory(sortByPriority(kids))
+                return (
+                  <>
+                    {shown.map((f) => (
+                      <Card
+                        key={f.id}
+                        feature={f}
+                        isEpic={isEpic(f.id)}
+                        isBehind={isBehind(f.id)}
+                        pending={pendingClarify(f.id)}
+                        activeWork={activeWorkFor(f.id)}
+                      />
+                    ))}
+                    <MoreInHistory hidden={hidden} />
+                  </>
+                )
+              })()}
             </div>
           </section>
         )
@@ -366,15 +439,23 @@ function EpicBoard({
             {t.kanban.noEpic} <span className="column-count">{standalone.length}</span>
           </h2>
           <div className="epic-lane-cards">
-            {sortByPriority(standalone).map((f) => (
-              <Card
-                key={f.id}
-                feature={f}
-                isEpic={false}
-                pending={pendingClarify(f.id)}
-                activeWork={activeWorkFor(f.id)}
-              />
-            ))}
+            {(() => {
+              const { shown, hidden } = capHistory(sortByPriority(standalone))
+              return (
+                <>
+                  {shown.map((f) => (
+                    <Card
+                      key={f.id}
+                      feature={f}
+                      isEpic={false}
+                      pending={pendingClarify(f.id)}
+                      activeWork={activeWorkFor(f.id)}
+                    />
+                  ))}
+                  <MoreInHistory hidden={hidden} />
+                </>
+              )
+            })()}
           </div>
         </section>
       )}

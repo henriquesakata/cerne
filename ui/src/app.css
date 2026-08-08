@@ -191,6 +191,38 @@ h2 {
 }
 
 .column-count { font-weight: normal; color: var(--faint); }
+
+/* Rodapé de grupo cortado (F-0236): não é card — é uma nota de rodapé do
+   grupo, então some o fundo e fica o filete de cima. */
+.column-more {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.2rem 0;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.column-more:hover { color: var(--fg); text-decoration: underline; }
+.column-more:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+
+/* Disclosure dos filtros (F-0236): fechado devolve ~200px do primeiro
+   viewport. O marcador nativo fica — é o affordance que o browser já ensina. */
+.filter-disclosure { margin: 0.75rem 0 0; }
+
+.filter-disclosure > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 0.2rem 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.filter-disclosure > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+.filter-disclosure > summary > .column-count { margin-left: 0.4rem; }
 .column-empty { margin: 0.5rem 0 0; text-align: center; color: var(--dim); }
 
 /* ---- backlog (F-0202) + chat com o agente de domínio (F-0210) ---- */
@@ -569,6 +601,9 @@ h2 {
 .chip-done { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
 .chip-rejected,
 .chip-superseded { background: var(--state-terminal-bg); color: var(--faint); text-decoration: line-through; }
+/* lint não é estado de ciclo de vida, é severidade — âmbar, o mesmo tom que a
+   tela de lint usa para aviso (F-0233). */
+.chip-lint { background: var(--amber-bg); color: var(--amber); }
 
 .feature-body {
   display: grid;
@@ -950,9 +985,14 @@ h2 {
 .nav-more-item:hover { background: var(--surface-3); }
 .nav-more-item.active { background: var(--fg); color: var(--bg); }
 
-/* linha de medição: fora do fluxo, invisível, nunca quebra */
+/* Linha de medição: fora do fluxo, invisível, nunca quebra.
+   `fixed`, não `absolute` (F-0234): com nowrap ela é mais larga que a janela, e
+   um absolute estica a área rolável do documento — dava barra horizontal em
+   todas as rotas (scrollWidth 1679 num viewport de 1280). Caixa fixed não
+   entra no scrollable overflow do documento, e a largura dos filhos continua
+   vindo do conteúdo, então a medição do Nav não muda. */
 .nav-measure {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   display: flex;
@@ -1095,11 +1135,13 @@ h2 {
 
 /* ---- seção de errata (F-0163): correções aditivas sempre visíveis ---- */
 
+/* Borda inteira em 1px na cor semântica, não filete lateral de 3px (F-0234):
+   a doutrina do sistema é borda de 1px, e a cor continua nomeando o que a
+   seção é. O side-tab colorido era o único desvio de largura no arquivo. */
 .errata-section {
   margin: 0.75rem 0;
   padding: 0.6rem 0.9rem;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--danger);
+  border: 1px solid var(--danger);
   border-radius: 8px;
   background: var(--surface-2);
 }
@@ -1115,8 +1157,7 @@ h2 {
 .backlinks-section {
   margin: 0.75rem 0;
   padding: 0.6rem 0.9rem;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--teal);
+  border: 1px solid var(--teal);
   border-radius: 8px;
   background: var(--surface-2);
 }
@@ -1162,11 +1203,48 @@ h2 {
 
 /* ---- dashboard (#/, F-0132): resumo em cards ---- */
 
+/* Faixa de gates humanos (F-0233): deliberadamente NÃO é um .dash-card — vira
+   um lançamento de razão, com filete em cima e embaixo, para não virar o nono
+   card de um grid que já tem oito. É o que só o humano resolve. */
+.dash-attention {
+  margin-top: 1.25rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-attention > h2 { margin: 0 0 0.5rem; }
+
+.dash-attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.dash-attention-list a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.dash-attention-list a:hover .dash-attention-label { text-decoration: underline; }
+.dash-attention-list a:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+.dash-attention-label { font-size: 0.95rem; }
+.dash-attention-clear { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
 .dash-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 1rem;
-  margin-top: 1.25rem;
+  /* Ritmo: colunas apertadas dentro da linha, respiro maior entre linhas — é o
+     que separa os grupos sem precisar de mais uma borda (F-0233). */
+  column-gap: 1rem;
+  row-gap: 1.5rem;
+  margin-top: 1.5rem;
 }
 
 /* Composição fixa (F-0143): grid de 6 colunas — cards compactos ocupam 1/3
@@ -1220,6 +1298,38 @@ h2 {
   border-radius: 8px;
   padding: 0.9rem 1rem;
   min-height: 8rem;
+  /* Grid item tem min-width: auto, que o ancora no próprio min-content. Um
+     título de work com white-space: nowrap contribui a largura inteira do
+     texto, então o card se recusava a encolher e empurrava .page além da
+     janela (1007px num viewport de 900). O ellipsis que já existe dentro só
+     funciona depois que o item pode encolher (F-0234). */
+  min-width: 0;
+}
+
+/* .dash-band: card raso para conteúdo que é uma linha de números, não uma
+   lista. Sem o piso de 8rem, que é o que criava espaço morto quando um card de
+   49 caracteres era esticado pela altura do vizinho (F-0233). */
+.dash-band { min-height: 0; }
+
+.dash-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2.5rem;
+  margin: 0;
+}
+
+.dash-stats dt {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.dash-stats dd {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .dash-card > h2 { margin: 0 0 0.6rem; }
@@ -1436,8 +1546,7 @@ h2 {
 .ask-notice {
   margin: 1rem 0;
   padding: 0.75rem 0.9rem;
-  border: 1px solid var(--border-warm);
-  border-left: 3px solid var(--gold);
+  border: 1px solid var(--gold);
   border-radius: 6px;
   background: var(--gold-bg);
   color: var(--gold-fg);

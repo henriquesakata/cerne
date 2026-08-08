@@ -1,0 +1,454 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-08T02:29:44Z",
+  "title": "Design System: cerne",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Unbleached Paper",
+        "canonical": "#faf7f2",
+        "darkValue": "#191817",
+        "tonalRamp": ["#191817", "#232220", "#2a2825", "#34322d", "#b9b2a4", "#ece9e2", "#f3efe7", "#faf7f2"]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Oak-Gall Ink",
+        "canonical": "#1f2421",
+        "darkValue": "#e8e4da",
+        "tonalRamp": ["#1f2421", "#343a36", "#4a514c", "#5c635e", "#8a8f8b", "#a9ada3", "#c4bfb4", "#e8e4da"]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Faded Ink",
+        "canonical": "#5c635e",
+        "darkValue": "#a9ada3"
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Ghost Ink",
+        "canonical": "#8a8f8b",
+        "darkValue": "#7d8178"
+      },
+      "ink-dim": {
+        "role": "neutral",
+        "displayName": "Dim Ink",
+        "canonical": "#c4bfb4",
+        "darkValue": "#55534b"
+      },
+      "leaf": {
+        "role": "neutral",
+        "displayName": "Fresh Leaf",
+        "canonical": "#ffffff",
+        "darkValue": "#232220"
+      },
+      "surface-sunk": {
+        "role": "neutral",
+        "displayName": "Foxed Surface",
+        "canonical": "#f3efe7",
+        "darkValue": "#2a2825"
+      },
+      "surface-sunk-deep": {
+        "role": "neutral",
+        "displayName": "Foxed Deep",
+        "canonical": "#ece9e2",
+        "darkValue": "#34322d"
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Ledger Rule",
+        "canonical": "#d8d2c6",
+        "darkValue": "#45423a"
+      },
+      "rule-soft": {
+        "role": "neutral",
+        "displayName": "Faint Rule",
+        "canonical": "#e6e1d8",
+        "darkValue": "#383630"
+      },
+      "rule-card": {
+        "role": "neutral",
+        "displayName": "Card Rule",
+        "canonical": "#e0dacf",
+        "darkValue": "#3c3932"
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "canonical": "#b9b2a4",
+        "darkValue": "#5d594c"
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Danger",
+        "canonical": "#aa3333",
+        "darkValue": "#e07a7a",
+        "tonalRamp": ["#3a1010", "#571818", "#742020", "#912a2a", "#aa3333", "#c76060", "#e07a7a", "#f4c4c4"]
+      },
+      "link": {
+        "role": "secondary",
+        "displayName": "Ledger Blue",
+        "canonical": "#1d4f82",
+        "darkValue": "#82b4ea",
+        "tonalRamp": ["#0d2440", "#143a5f", "#1d4f82", "#2f6ba6", "#4a8ac4", "#82b4ea", "#b3d1f2", "#dbe9f7"]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Marginal Blue",
+        "canonical": "#3a5bbf",
+        "darkValue": "#93a9ec"
+      },
+      "state-indev-bg": {
+        "role": "tertiary",
+        "displayName": "In-Development Wash",
+        "canonical": "#dbe9f7",
+        "darkValue": "#203146"
+      },
+      "approved-green": {
+        "role": "tertiary",
+        "displayName": "Approved Green",
+        "canonical": "#2c5e2e",
+        "darkValue": "#93cc93",
+        "tonalRamp": ["#12210f", "#1c3419", "#20361f", "#2c5e2e", "#3c5c3c", "#6fa46f", "#93cc93", "#dff0d8"]
+      },
+      "approved-green-bg": {
+        "role": "tertiary",
+        "displayName": "Approved Wash",
+        "canonical": "#dff0d8",
+        "darkValue": "#20361f"
+      },
+      "approved-green-border": {
+        "role": "tertiary",
+        "displayName": "Approved Edge",
+        "canonical": "#bcd4b4",
+        "darkValue": "#3c5c3c"
+      },
+      "implemented-violet": {
+        "role": "tertiary",
+        "displayName": "Implemented Violet",
+        "canonical": "#5b3d8a",
+        "darkValue": "#c2a5ea",
+        "tonalRamp": ["#231a33", "#2e2639", "#3f2c5f", "#5b3d8a", "#7f5fb0", "#a385d4", "#c2a5ea", "#ece4f5"]
+      },
+      "implemented-violet-bg": {
+        "role": "tertiary",
+        "displayName": "Implemented Wash",
+        "canonical": "#ece4f5",
+        "darkValue": "#2e2639"
+      },
+      "warning-amber": {
+        "role": "tertiary",
+        "displayName": "Warning Amber",
+        "canonical": "#b45309",
+        "darkValue": "#e2a458",
+        "tonalRamp": ["#2b1d08", "#382c16", "#6b3506", "#b45309", "#d97706", "#e2a458", "#f0d9a8", "#fdf0d5"]
+      },
+      "warning-amber-bg": {
+        "role": "tertiary",
+        "displayName": "Warning Wash",
+        "canonical": "#fdf0d5",
+        "darkValue": "#382c16"
+      },
+      "notice-gold": {
+        "role": "tertiary",
+        "displayName": "Notice Gold",
+        "canonical": "#c9a23a",
+        "darkValue": "#d6b258"
+      },
+      "notice-gold-bg": {
+        "role": "tertiary",
+        "displayName": "Notice Wash",
+        "canonical": "#fbf7ec",
+        "darkValue": "#2f2a19"
+      },
+      "state-terminal-bg": {
+        "role": "neutral",
+        "displayName": "Struck Wash",
+        "canonical": "#efece6",
+        "darkValue": "#2b2a26"
+      },
+      "graph-teal": {
+        "role": "tertiary",
+        "displayName": "Graph Teal",
+        "canonical": "#0d9488",
+        "darkValue": "#41bfb1"
+      },
+      "graph-gray": {
+        "role": "tertiary",
+        "displayName": "Graph Gray",
+        "canonical": "#9ca3af",
+        "darkValue": "#8d949f"
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Hero Number",
+        "purpose": "A single headline measurement on a dashboard card, at most one per screen. Not a heading."
+      },
+      "display": {
+        "displayName": "Display",
+        "purpose": "The page title, one per screen (h1). Largest heading in the system, and still modest."
+      },
+      "prose-heading": {
+        "displayName": "Prose Heading",
+        "purpose": "Headings inside rendered markdown (.doc). A separate context from chrome, with its own hierarchy."
+      },
+      "prose-subheading": {
+        "displayName": "Prose Subheading",
+        "purpose": "Second-level headings inside rendered markdown (.doc)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel and card headings, diagram toolbar labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Spec and result prose, list content, page-level form fields. The most-read size in the product."
+      },
+      "prose-lead": {
+        "displayName": "Prose Lead",
+        "purpose": "Running text inside .doc, and entity titles."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Interactive chrome: nav links, tabs, ghost buttons."
+      },
+      "label": {
+        "displayName": "Section Label",
+        "purpose": "Section headings (h2) and stat labels: uppercase, muted, deliberately smaller than body text."
+      },
+      "mono": {
+        "displayName": "Machine Voice",
+        "purpose": "Entity ids, event types, code, diagram names, and the wordmark. Never prose. Also the state-chip size at weight 600."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Tags and badges. The smallest type that ships, and only for things that classify."
+      }
+    },
+    "typographyDebt": {
+      "recordedAt": "2026-08-07",
+      "feature": "F-0234",
+      "note": "Sizes present in ui/src/app.css but NOT part of the scale. Drift, not steps — six live within 0.12rem of each other. Do not add new uses; collapse when touching the surface. The design hook reporting these is correct behaviour, not a false positive.",
+      "collapse": [
+        { "value": "0.65rem", "uses": 2, "where": [".diagram-tag", ".heatmap-months"], "target": "micro" },
+        { "value": "0.68rem", "uses": 4, "where": [".mnode-toggle", ".notif-badge", ".notif-chip-action"], "target": "micro" },
+        { "value": "0.7rem", "uses": 1, "where": [".clarify-count"], "target": "micro" },
+        { "value": "0.75rem", "uses": 7, "where": [".backlog-chat-options", ".card-superseded-by"], "target": "mono" },
+        { "value": "0.8rem", "uses": 13, "where": [".backlinks-type", ".conversation-list-new", ".notif-toggle"], "target": "label" },
+        { "value": "0.82rem", "uses": 11, "where": [".action-form", ".dash-foot", ".mermaid-error"], "target": "label" },
+        { "value": "0.88rem", "uses": 8, "where": [".action-form", ".actions", ".artifacts"], "target": "control" },
+        { "value": "1.05rem", "uses": 1, "where": [".backlog-chat-toolbar h2"], "target": "title" },
+        { "value": "3rem", "uses": 1, "where": [".stats-pct"], "target": "hero" }
+      ]
+    },
+    "shadows": [
+      {
+        "name": "overflow-menu",
+        "value": "0 6px 24px rgba(0, 0, 0, 0.18)",
+        "purpose": "The nav overflow (\"Mais\") menu. Detached from the page, dismisses on outside click."
+      },
+      {
+        "name": "dropdown",
+        "value": "0 4px 16px rgba(0, 0, 0, 0.18)",
+        "purpose": "The notification panel anchored under the bell."
+      },
+      {
+        "name": "popover",
+        "value": "0 8px 24px rgba(0, 0, 0, 0.25)",
+        "purpose": "The clarify popover, anchored to an ESCLARECER marker inside a document."
+      },
+      {
+        "name": "palette",
+        "value": "0 10px 30px rgba(31, 36, 33, 0.18)",
+        "purpose": "The modal command palette. The only shadow tinted with ink rather than neutral black."
+      },
+      {
+        "name": "graph-node",
+        "value": "0 1px 3px rgba(31, 36, 33, 0.1)",
+        "purpose": "Entity graph nodes (token --gnode-shadow; 0 1px 4px rgba(0,0,0,0.4) in dark). Nodes sit on a canvas, not on the page."
+      }
+    ],
+    "breakpoints": [
+      { "name": "wide", "value": "60rem" },
+      { "name": "narrow", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The only filled button in the system. Full ink; there is no coloured variant.",
+      "html": "<button class=\"ds-btn-primary\">Criar feature</button>",
+      "css": ".ds-btn-primary { font: inherit; font-size: 0.95rem; padding: 0.45rem 1.1rem; border: 1px solid var(--fg, #1f2421); border-radius: 6px; background: var(--fg, #1f2421); color: var(--bg, #faf7f2); cursor: pointer; } .ds-btn-primary:hover { filter: brightness(1.15); } .ds-btn-primary:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; } .ds-btn-primary:disabled { opacity: 0.5; cursor: default; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "tab",
+      "description": "Borderless trigger for icons and overflow menus. font: inherit is mandatory.",
+      "html": "<button class=\"ds-btn-ghost\">Mais <span aria-hidden=\"true\">▾</span></button>",
+      "css": ".ds-btn-ghost { font: inherit; font-size: 0.9rem; padding: 0.3rem 0.7rem; border: none; border-radius: 6px; background: transparent; color: var(--muted, #5c635e); cursor: pointer; } .ds-btn-ghost:hover { background: var(--surface-3, #ece9e2); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; }"
+    },
+    {
+      "name": "Feature Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A roster entry. The whole card is the link target; hover darkens the border rather than lifting the card.",
+      "html": "<a class=\"ds-card\" href=\"#\"><span class=\"ds-card-meta\"><span class=\"ds-card-id\">F-0167</span><span class=\"ds-chip ds-chip-indev\">Em desenvolvimento</span></span><span class=\"ds-card-title\">Wiki-links resolvidos no lint e no grafo</span></a>",
+      "css": ".ds-card { display: block; padding: 0.6rem 0.7rem; background: var(--surface, #fff); border: 1px solid var(--border-card, #e0dacf); border-radius: 6px; text-decoration: none; color: var(--fg, #1f2421); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-card:hover { border-color: var(--border-strong, #b9b2a4); } .ds-card:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; } .ds-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.2rem; } .ds-card-id { font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--muted, #5c635e); } .ds-card-title { font-size: 0.95rem; line-height: 1.4; } .ds-chip { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; } .ds-chip-indev { background: var(--state-indev-bg, #dbe9f7); color: var(--link, #1d4f82); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Every field: 1px rule, 6px radius, raised surface, font: inherit. Focus is an ink outline, never a glow.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Buscar features, decisões, notas…\" />",
+      "css": ".ds-input { font: inherit; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 0.95rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border, #d8d2c6); border-radius: 6px; background: var(--surface, #fff); color: var(--fg, #1f2421); min-width: 18rem; } .ds-input::placeholder { color: var(--faint, #8a8f8b); } .ds-input:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; }"
+    },
+    {
+      "name": "Navigation Bar",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Sticky bar on the recessed surface. The active route inverts to full ink — the darkest element on screen.",
+      "html": "<nav class=\"ds-nav\"><span class=\"ds-nav-brand\">cerne</span><a class=\"ds-nav-link ds-nav-link-active\" href=\"#\">Kanban</a><a class=\"ds-nav-link\" href=\"#\">Backlog</a><a class=\"ds-nav-link\" href=\"#\">Decisões</a><a class=\"ds-nav-link\" href=\"#\">Grafo</a></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1.5rem; background: var(--surface-2, #f3efe7); border-bottom: 1px solid var(--border-soft, #e6e1d8); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-nav-brand { font-weight: 700; font-family: ui-monospace, monospace; color: var(--fg, #1f2421); margin-right: 0.5rem; } .ds-nav-link { padding: 0.3rem 0.7rem; border-radius: 6px; text-decoration: none; color: var(--muted, #5c635e); font-size: 0.9rem; white-space: nowrap; } .ds-nav-link:hover { background: var(--surface-3, #ece9e2); } .ds-nav-link:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; } .ds-nav-link-active { background: var(--fg, #1f2421); color: var(--bg, #faf7f2); }"
+    },
+    {
+      "name": "Filter Pill",
+      "kind": "chip",
+      "refersTo": "filter",
+      "description": "Roster filters. Full-round because they classify; active inverts to ink and demotes its count.",
+      "html": "<span class=\"ds-filters\"><button class=\"ds-filter ds-filter-active\">Ativas <span class=\"ds-filter-count\">12</span></button><button class=\"ds-filter\">Todas <span class=\"ds-filter-count\">148</span></button></span>",
+      "css": ".ds-filters { display: inline-flex; gap: 0.25rem; } .ds-filter { font: inherit; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 0.85rem; padding: 0.3rem 0.7rem; border: 1px solid var(--border, #d8d2c6); border-radius: 999px; background: var(--surface, #fff); color: var(--muted, #5c635e); cursor: pointer; } .ds-filter:hover { background: var(--surface-2, #f3efe7); } .ds-filter:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; } .ds-filter-active { background: var(--fg, #1f2421); color: var(--bg, #faf7f2); border-color: var(--fg, #1f2421); } .ds-filter-count { font-weight: normal; color: var(--faint, #8a8f8b); } .ds-filter-active .ds-filter-count { color: var(--dim-inverse, #cbd2cc); }"
+    },
+    {
+      "name": "Lifecycle State Chips",
+      "kind": "chip",
+      "refersTo": "chip-in-development",
+      "description": "The full state vocabulary. Each pair is fixed to a backend state; terminal states are struck through, never hidden.",
+      "html": "<span class=\"ds-chips\"><span class=\"ds-chip ds-chip-candidate\">Candidata</span><span class=\"ds-chip ds-chip-approved\">Aprovada</span><span class=\"ds-chip ds-chip-indev\">Em desenvolvimento</span><span class=\"ds-chip ds-chip-implemented\">Pronta</span><span class=\"ds-chip ds-chip-done\">Aceita</span><span class=\"ds-chip ds-chip-terminal\">Superseded</span></span>",
+      "css": ".ds-chips { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-chip { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; } .ds-chip-candidate { background: var(--surface-3, #ece9e2); color: var(--muted, #5c635e); } .ds-chip-approved { background: var(--green-bg, #dff0d8); color: var(--green, #2c5e2e); } .ds-chip-indev { background: var(--state-indev-bg, #dbe9f7); color: var(--link, #1d4f82); } .ds-chip-implemented { background: var(--purple-bg, #ece4f5); color: var(--purple, #5b3d8a); } .ds-chip-done { background: var(--green-bg, #dff0d8); color: var(--green, #2c5e2e); border: 1px solid var(--green-border, #bcd4b4); } .ds-chip-terminal { background: var(--state-terminal-bg, #efece6); color: var(--faint, #8a8f8b); text-decoration: line-through; }"
+    },
+    {
+      "name": "Tabs",
+      "kind": "custom",
+      "refersTo": "tab",
+      "description": "Document tabs on the feature page. Active promotes text to ink and inks the 2px underline — the only 2px border in the system.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Spec</button><button class=\"ds-tab\">Plano</button><button class=\"ds-tab\">Resultado</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border-soft, #e6e1d8); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-tab { border: none; background: none; padding: 0.45rem 0.8rem; font: inherit; font-size: 0.9rem; color: var(--muted, #5c635e); cursor: pointer; border-bottom: 2px solid transparent; } .ds-tab:hover { color: var(--fg, #1f2421); } .ds-tab:focus-visible { outline: 2px solid var(--fg, #1f2421); outline-offset: 1px; } .ds-tab-active { color: var(--fg, #1f2421); border-bottom-color: var(--fg, #1f2421); }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Neutral counter/marker on the recessed surface, outlined rather than filled.",
+      "html": "<span class=\"ds-badge\">épico</span>",
+      "css": ".ds-badge { display: inline-block; padding: 0.05rem 0.4rem; border: 1px solid var(--border, #d8d2c6); border-radius: 999px; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 0.72rem; color: var(--muted, #5c635e); background: var(--surface-2, #f3efe7); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Heartwood Ledger",
+    "overview": "cerne is a record of what a project actually is, kept the way a ledger is kept: warm paper, one ink, ruled lines, and colour used only where the entry itself demands it. The product's whole thesis is that project state is data, derived and never authored — so the interface behaves like a page that was printed from that data, not a canvas someone decorated afterward. Nothing here is present for atmosphere. Every mark on the page is either a value, a boundary, or a state.\n\nThe base is deliberately warm — unbleached paper (#faf7f2), not the cool gray of every dashboard template — and the ink is a near-black with a faint green cast (#1f2421) rather than pure #000. That pairing is the whole identity: it reads as something set down and kept, and it makes the semantic colours land as marks on a page instead of as brand chrome. There is no brand accent, no gradient, no logo colour. When a control is active, it does not tint — it fills with full ink and inverts, the way a stamp presses.\n\nDensity is high and unapologetic: the primary user opens this daily to scan a roster and clear gates, and a second, non-technical reader must still be able to follow the rollups. The system serves both through typographic hierarchy and tonal layering, never through decorative separation. Components are printed and set: consistent corners, full ink when active, nothing halfway.",
+    "keyCharacteristics": [
+      "Warm neutral base, never cool gray.",
+      "One ink; no brand accent colour exists.",
+      "Colour is reserved for lifecycle state and entity kind.",
+      "Monospace marks machine truth; sans carries human prose.",
+      "Flat by default; shadow means \"detached from the page\".",
+      "Motionless: state changes are instant.",
+      "System fonts only — the bundle ships inside a distributed binary."
+    ],
+    "rules": [
+      {
+        "name": "The Signal Rule",
+        "body": "Colour never decorates chrome. Every chromatic token in this system names a lifecycle state, an entity kind, or a severity. If you cannot say which datum a colour means, it does not belong on the screen. Audit test: point at any coloured pixel and name the backend field it reflects.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm Base Rule",
+        "body": "Neutrals are warm. paper (#faf7f2) and its dark counterpart (#191817) are unbleached, and the ink is green-cast, never #000. Introducing a cool gray anywhere is a defect, not a variation.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two-Block Rule",
+        "body": "No theme colour may exist outside :root and [data-theme='dark'] in src/app.css. A literal hex anywhere else in the stylesheet or in a component is a bug — it will break dark mode silently.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Brand Accent Rule",
+        "body": "There is no brand colour and none may be invented. A control that wants emphasis takes full ink, not a hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Voices Rule",
+        "body": "Sans is the human voice; mono is the machine's. Entity ids, event types, and code are always mono. Prose is never mono. The wordmark is mono because the product's name is also an identifier. Getting this backwards turns a semantic distinction into decoration.",
+        "section": "typography"
+      },
+      {
+        "name": "The Quiet Heading Rule",
+        "body": "h2 is smaller than body text, uppercase, and muted. Section headings label a region; they do not compete with its contents. Never scale a heading up to create hierarchy — demote what surrounds it instead.",
+        "section": "typography"
+      },
+      {
+        "name": "The No New Step Rule",
+        "body": "The eleven typography steps are a closed set. A size that is not one of them is drift, however small the gap looks in isolation: 0.82rem next to 0.85rem is not a decision, it is an accident that outlived its author. Adding a step means editing DESIGN.md first, with the reason.",
+        "section": "typography"
+      },
+      {
+        "name": "The Collapse-Don't-Reflow Rule",
+        "body": "Responsive adaptation means a grid becomes one column. It does not mean new components, hidden content, or a different information hierarchy at small widths.",
+        "section": "layout"
+      },
+      {
+        "name": "The Detached Shadow Rule",
+        "body": "A shadow means the element is out of the document flow and dismisses on outside click. Never use a shadow for emphasis, for a card at rest, or to separate two things a rule could separate.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Still Frame Rule",
+        "body": "There are no transition, animation, or @keyframes declarations in this system, and none may be added to chrome. State changes are instant because the underlying data changed instantly; an animated state chip implies a process that is not happening. This composes with hover elevation: permitted hover states appear immediately, without an eased transition. Motion belongs only inside the visualization surfaces that own their own runtime (React Flow, Mermaid, Excalidraw).",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill Means Category Rule",
+        "body": "Full-round (999px) is a semantic signal, not a style choice. If the element does not classify data, it takes 6px.",
+        "section": "shapes"
+      },
+      {
+        "name": "The 1px Container Rule",
+        "body": "Container borders are 1px solid. The token is a rule token by default; a container whose WHOLE border carries a semantic colour is allowed, because the colour then names what the container is rather than decorating one edge of it — .errata-section (danger), .backlinks-section (teal), .ask-notice (gold). The one width exception is the active tab underline (2px solid ink), a marker rather than a container edge. .doc blockquote keeps a 3px left rule in the neutral --border token: a typographic device on running text, no colour, not the side-tab pattern. Resolved 2026-08-07 (F-0234): the three previously carried a 3px coloured LEFT border — the accent side-tab — which broke both the 1px doctrine and the ban on decorative colour.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Struck Record Rule",
+        "body": "Terminal states are struck through, never hidden and never greyed into invisibility. The product's thesis is that history stays readable; the strikethrough is that thesis rendered.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do define every theme colour in :root and [data-theme='dark'] in src/app.css, and reference it as var(--token) everywhere else.",
+      "Do invert to full ink (background: ink; color: paper) for the active or primary state of any control.",
+      "Do use ui-monospace for entity ids, event types, code, and the wordmark — and only for those.",
+      "Do use a 999px radius only for elements that classify or count; use 6px for everything else.",
+      "Do express depth with the leaf / surface-sunk / surface-sunk-deep ladder plus a 1px rule token.",
+      "Do strike through terminal lifecycle states rather than hiding them.",
+      "Do set font: inherit on every <button>, <input>, <select>, and <textarea>.",
+      "Do let pt-BR labels run longer than their English equivalents — wrap and flex-wrap rather than fixing widths to fit a shorter string.",
+      "Do collapse multi-column grids to 1fr at 60rem / 720px and change nothing else."
+    ],
+    "donts": [
+      "Don't introduce a brand accent colour, a gradient, or a coloured primary button. Full ink is the emphasis mechanism.",
+      "Don't write a literal colour value outside the two theme blocks.",
+      "Don't add transition, animation, or @keyframes to chrome.",
+      "Don't put a shadow on anything that stays in the document flow.",
+      "Don't load a webfont or add an icon font. The bundle ships inside the distributed Go binary (go:embed ui/dist); system faces and inline SVG only.",
+      "Don't use a cool gray anywhere — the neutral ladder is warm by decision.",
+      "Don't reuse a lifecycle state colour for a non-state purpose, or invent a new hue without a backend field behind it.",
+      "Don't scale headings up to build hierarchy; h2 is smaller than body and stays that way.",
+      "Don't add avatars, presence indicators, or collaboration chrome — the product is local and single-operator.",
+      "Don't nest a card inside a card, or place a rounded icon tile above a heading. Both are the generic-dashboard tell this system rejects."
+    ]
+  }
+}

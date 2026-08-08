@@ -4,6 +4,12 @@
 # cerne-authoring skill: instalada pela ferramenta (cerne skill install), não versionada
 .claude/skills/
 
+# impeccable: estado local de sessão/hook (paths absolutos, session ids).
+# ui/.impeccable/design.json É versionado — é o sidecar do design system.
+**/.impeccable/hook.cache.json
+**/.impeccable/live/
+**/.impeccable/roots.json
+
 # OS / editor
 .DS_Store
 Thumbs.db
