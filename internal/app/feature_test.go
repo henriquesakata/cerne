@@ -758,6 +758,127 @@ func TestApproveFeatureWithoutChildrenPlanUnchanged(t *testing.T) {
 	}
 }
 
+// F-0235 crit.1: a candidate epic gains its plan-with-execution-map the
+// moment it gets its first child, not only at approve (F-0213) — the epic is
+// never registered decomposed-but-unplanned.
+func TestCreateFeatureScaffoldsParentPlan_WhenStub(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	if epic.State != domain.StateCandidate {
+		t.Fatalf("epic.State = %s, want candidate", epic.State)
+	}
+
+	child, err := CreateFeature(repoDir, projDir, "Fase 1", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+	if !strings.Contains(plan, "Etapa 1: "+child.ID) {
+		t.Fatalf("plan.md not scaffolded with the new child while parent is still candidate:\n%s", plan)
+	}
+}
+
+// F-0235 crit.2: a second child arriving while the plan is still a stub
+// re-scaffolds the execution map to include it.
+func TestCreateFeatureReScaffoldsParentPlan_WithSecondChild(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child1, err := CreateFeature(repoDir, projDir, "Fase 1", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child1: %v", err)
+	}
+	child2, err := CreateFeature(repoDir, projDir, "Fase 2", "", epic.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child2: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+	for _, want := range []string{"Etapa 1: " + child1.ID, "Etapa 2: " + child2.ID} {
+		if !strings.Contains(plan, want) {
+			t.Fatalf("plan.md missing %q after second child:\n%s", want, plan)
+		}
+	}
+}
+
+// F-0235: once the parent's plan is filled with real content, further
+// children never touch it — "plano preenchido = nunca tocado".
+func TestCreateFeatureNeverOverwritesRealParentPlan(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, epic.ID, "plan", realDoc(epic.ID)); err != nil {
+		t.Fatalf("save real plan: %v", err)
+	}
+	want := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+
+	if _, err := CreateFeature(repoDir, projDir, "Fase 1", "", epic.ID, nil, nil); err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+	if plan != want {
+		t.Fatalf("real plan was overwritten by child creation:\ngot:\n%s\nwant:\n%s", plan, want)
+	}
+}
+
+// F-0235 crit.1: reparenting under a stub-planned epic scaffolds it the same
+// way creation does.
+func TestSetFeatureParentScaffoldsParentPlan_WhenStub(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	f, err := CreateFeature(repoDir, projDir, "Solta", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature f: %v", err)
+	}
+
+	if err := SetFeatureParent(repoDir, projDir, f.ID, epic.ID); err != nil {
+		t.Fatalf("SetFeatureParent: %v", err)
+	}
+
+	plan := readFeatureDocFile(t, repoDir, epic.ID, "plan.md")
+	if !strings.Contains(plan, "Etapa 1: "+f.ID) {
+		t.Fatalf("plan.md not scaffolded after reparent:\n%s", plan)
+	}
+}
+
+// F-0235: EpicPlanStub is the signal the cmd layer prints the approve
+// advisory from — true for a fresh/stub plan, false once real content lands,
+// false when the doc does not exist at all.
+func TestEpicPlanStub(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if EpicPlanStub(repoDir, "F-9999") {
+		t.Fatalf("EpicPlanStub = true for a feature whose plan.md does not exist yet, want false")
+	}
+	f, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if _, err := CreateFeature(repoDir, projDir, "Fase 1", "", f.ID, nil, nil); err != nil {
+		t.Fatalf("CreateFeature child (scaffolds parent plan.md): %v", err)
+	}
+	if !EpicPlanStub(repoDir, f.ID) {
+		t.Fatalf("EpicPlanStub = false right after scaffold, want true")
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "plan", realDoc(f.ID)); err != nil {
+		t.Fatalf("save real plan: %v", err)
+	}
+	if EpicPlanStub(repoDir, f.ID) {
+		t.Fatalf("EpicPlanStub = true after a real plan was saved, want false")
+	}
+}
+
 func readFeatureDocFile(t *testing.T, repoDir, id, file string) string {
 	t.Helper()
 	data, err := os.ReadFile(FeatureDocPath(repoDir, id, file))
