@@ -143,3 +143,35 @@ func TestBuildChatPrompt(t *testing.T) {
 		t.Fatalf("prompt must end with the agent cue:\n%s", prompt)
 	}
 }
+
+// TestBuildChatSystemPromptLiveQuery (F-0224 criterion 2): in claude-cli mode
+// the prompt instructs the agent to consult the cerne read commands before
+// answering and to cite the consulted ids; in byo-key/delegation (no tool
+// access) the block must be absent so the model is not told to run commands
+// it cannot run.
+func TestBuildChatSystemPromptLiveQuery(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	cli := project.Config{LLM: project.LLMConfig{Mode: "claude-cli"}}
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, cli)
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt(claude-cli): %v", err)
+	}
+	for _, want := range []string{"cerne search", "cerne show", "cerne brief", "cerne status",
+		"cerne note list", "cerne note show", "cerne reference list", "cerne decision list",
+		"cite os ids"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("claude-cli prompt missing %q:\n%s", want, prompt)
+		}
+	}
+
+	for _, mode := range []string{"", "byo-key"} {
+		prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{LLM: project.LLMConfig{Mode: mode}})
+		if err != nil {
+			t.Fatalf("BuildChatSystemPrompt(%q): %v", mode, err)
+		}
+		if strings.Contains(prompt, "cerne search") || strings.Contains(prompt, "cite os ids") {
+			t.Fatalf("mode %q prompt must not carry the live-query block:\n%s", mode, prompt)
+		}
+	}
+}

@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat from './BacklogChat'
-import type { ChatAnswer, ChatOverride, CreateOutcome, Feature, LLMOptions } from './api'
-import type { Conversation } from './useBacklogChats'
+import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions } from './api'
+import { getConversation, writeChats, type Conversation } from './useBacklogChats'
 
 const postChat = vi.fn<(messages: unknown, override?: ChatOverride) => Promise<ChatAnswer>>()
 const registerChatCandidate = vi.fn<
@@ -24,13 +24,39 @@ vi.mock('./api', async (importOriginal) => ({
   fetchLLMOptions: () => fetchLLMOptions(),
 }))
 
+let nextConvId = 0
+
 beforeEach(() => {
   cleanup()
+  localStorage.clear()
+  setApiProject('proj-x')
   postChat.mockReset()
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
   fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], efforts: [] })
+  nextConvId += 1
 })
+
+// renderChat (F-0230): chatRequest.send grava a resposta direto no storage
+// da lista de conversas — precisa existir lá antes do envio, exatamente como
+// acontece de verdade (useBacklogChats já a persistiu antes do fetch
+// resolver). Cada teste ganha um id novo pra não herdar status pendente de
+// um teste anterior (o singleton do chatRequest é module-scoped).
+function renderChat(patch: Partial<Conversation> = {}, props: { onUpdate?: (p: unknown) => void; onRegistered?: (f: Feature) => void } = {}) {
+  const conversation: Conversation = {
+    id: `c${nextConvId}`,
+    title: '',
+    updatedAt: 0,
+    messages: [],
+    model: '',
+    effort: '',
+    ...patch,
+  }
+  writeChats([conversation], conversation.id)
+  const onUpdate = props.onUpdate ?? vi.fn()
+  const utils = render(<BacklogChat conversation={conversation} onUpdate={onUpdate} onRegistered={props.onRegistered} />)
+  return { ...utils, conversation, onUpdate }
+}
 
 const feature = (id: string): Feature => ({
   id,
@@ -41,20 +67,10 @@ const feature = (id: string): Feature => ({
   updated_at: '2026-08-06T00:00:00Z',
 })
 
-const conversation = (patch: Partial<Conversation> = {}): Conversation => ({
-  id: 'c1',
-  title: '',
-  updatedAt: 0,
-  messages: [],
-  model: '',
-  effort: '',
-  ...patch,
-})
-
 describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   it('envia a mensagem e mostra a resposta do agente', async () => {
     postChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), {
       target: { value: 'Preciso exportar relatórios.' },
@@ -70,7 +86,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 
   it('nasce desabilitado com orientação quando o projeto não tem [llm] configurado (critério 5)', async () => {
     fetchLLMOptions.mockResolvedValue({ mode: 'delegation', models: [], efforts: [] })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
 
     await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument())
     expect(postChat).not.toHaveBeenCalled()
@@ -78,7 +94,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 
   it('mostra desabilitado com orientação quando needs_provider no envio', async () => {
     postChat.mockResolvedValue({ answered: false, needs_provider: true })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), {
       target: { value: 'Oi' },
@@ -92,7 +108,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 
   it('sem bloco de proposta, não mostra botão de registrar', async () => {
     postChat.mockResolvedValue({ answered: true, reply: 'Me conta mais sobre o formato.' })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
@@ -110,7 +126,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     postChat.mockResolvedValue({ answered: true, reply: proposal })
     registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
     const onRegistered = vi.fn()
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} onRegistered={onRegistered} />)
+    renderChat({}, { onRegistered })
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -146,7 +162,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       '```\n'
     postChat.mockResolvedValue({ answered: true, reply: proposal })
     registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -171,20 +187,14 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   })
 
   it('F-0219: carrega o transcript/seleção da conversa recebida via prop', () => {
-    render(
-      <BacklogChat
-        conversation={conversation({ messages: [{ role: 'user', content: 'Já dito antes' }], model: 'claude-opus-5' })}
-        onUpdate={vi.fn()}
-      />,
-    )
+    renderChat({ messages: [{ role: 'user', content: 'Já dito antes' }], model: 'claude-opus-5' })
     expect(screen.getByText('Já dito antes')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /nova conversa/i })).not.toBeInTheDocument()
   })
 
   it('F-0219: repassa toda mudança de transcript/modelo/esforço via onUpdate (quem persiste é o hook)', async () => {
     postChat.mockResolvedValue({ answered: true, reply: 'Entendido.' })
-    const onUpdate = vi.fn()
-    render(<BacklogChat conversation={conversation()} onUpdate={onUpdate} />)
+    const { onUpdate } = renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Preciso de X.' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -203,7 +213,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   it('critério 2: efeito de digitação completa eventualmente e um clique no histórico pula pro texto inteiro', async () => {
     const fullReply = 'Uma resposta razoavelmente longa para exercitar o efeito de digitação aos poucos.'
     postChat.mockResolvedValue({ answered: true, reply: fullReply })
-    const { container } = render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    const { container } = renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -220,7 +230,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   it('critério 2: sem clique, o efeito de digitação converge pro texto completo', async () => {
     const fullReply = 'Resposta curta.'
     postChat.mockResolvedValue({ answered: true, reply: fullReply })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -230,7 +240,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 
   it('critério 4: Enter envia, Shift+Enter quebra linha sem enviar', async () => {
     postChat.mockResolvedValue({ answered: true, reply: 'ok' })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
     const textarea = screen.getByPlaceholderText(/descreva/i)
 
     fireEvent.change(textarea, { target: { value: 'Linha 1' } })
@@ -249,7 +259,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       efforts: ['low', 'high'],
     })
     postChat.mockResolvedValue({ answered: true, reply: 'ok' })
-    render(<BacklogChat conversation={conversation()} onUpdate={vi.fn()} />)
+    renderChat()
 
     await screen.findByText('claude-opus-5')
     fireEvent.change(screen.getByLabelText(/modelo/i), { target: { value: 'claude-opus-5' } })
@@ -272,10 +282,85 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       models: ['claude-opus-5', 'claude-sonnet-5'],
       efforts: ['low', 'high'],
     })
-    render(<BacklogChat conversation={conversation({ model: 'claude-opus-5', effort: 'high' })} onUpdate={vi.fn()} />)
+    renderChat({ model: 'claude-opus-5', effort: 'high' })
 
     await screen.findByText('claude-opus-5')
     expect(screen.getByLabelText(/modelo/i)).toHaveValue('claude-opus-5')
     expect(screen.getByLabelText(/esfor/i)).toHaveValue('high')
+  })
+})
+
+describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () => {
+  it('critério 1: desmonta durante a requisição → a resposta é gravada e aparece ao remontar', async () => {
+    let resolve!: (v: ChatAnswer) => void
+    postChat.mockReturnValue(new Promise((r) => (resolve = r)))
+    const { unmount, conversation } = renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    unmount()
+
+    resolve({ answered: true, reply: 'Voltei.' })
+    await vi.waitFor(() => expect(getConversation(conversation.id)?.messages).toHaveLength(2))
+
+    render(<BacklogChat conversation={conversation} onUpdate={vi.fn()} />)
+    expect(await screen.findByText('Voltei.')).toBeInTheDocument()
+  })
+
+  it('critério 2: remonta com a resposta ainda em voo → o indicador de processamento reaparece', async () => {
+    postChat.mockReturnValue(new Promise(() => {}))
+    const { unmount, conversation } = renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    unmount()
+
+    render(<BacklogChat conversation={conversation} onUpdate={vi.fn()} />)
+    expect(screen.getByText(/processando/i)).toBeInTheDocument()
+  })
+
+  it('critério 3: o indicador mostra tempo decorrido e modelo/esforço, nunca texto estático', async () => {
+    vi.useFakeTimers()
+    try {
+      postChat.mockReturnValue(new Promise(() => {}))
+      fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['medium'] })
+      renderChat({ model: 'claude-opus-5', effort: 'medium' })
+
+      await vi.waitFor(() => expect(screen.getByLabelText(/modelo/i)).toHaveValue('claude-opus-5'))
+      fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+      fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+      await vi.advanceTimersByTimeAsync(83_000)
+      expect(screen.getByText(/1m23s/)).toBeInTheDocument()
+      expect(screen.getByText(/claude-opus-5\/medium/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('critério 4: falha vira bolha de erro com reenviar; reenviar refaz a chamada com sucesso', async () => {
+    postChat.mockRejectedValueOnce(new Error('rede caiu'))
+    renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText('rede caiu')
+
+    postChat.mockResolvedValueOnce({ answered: true, reply: 'Tudo certo agora.' })
+    fireEvent.click(screen.getByRole('button', { name: /reenviar/i }))
+
+    await waitFor(() => expect(screen.getByText('Tudo certo agora.')).toBeInTheDocument())
+    expect(postChat).toHaveBeenCalledTimes(2)
+  })
+
+  it('critério 5: um segundo envio na mesma conversa é bloqueado enquanto a primeira segue pendente', async () => {
+    postChat.mockReturnValue(new Promise(() => {}))
+    renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    expect(screen.getByRole('button', { name: /enviar/i })).toBeDisabled()
+    expect(postChat).toHaveBeenCalledTimes(1)
   })
 })

@@ -185,6 +185,19 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 		} else if err := writeSpecStub(repoDir, id, title); err != nil {
 			return "", err
 		}
+		// F-0235: a parent gaining its first (or another) child is decomposition —
+		// scaffold its plan-with-execution-map now, not only at approve (F-0213),
+		// so the epic is never registered without a plan slot. No-op if a real
+		// plan already exists; fires in any parent state, candidate included.
+		if parent != "" {
+			p, err := store.LoadFeature(repoDir, parent)
+			if err != nil {
+				return "", err
+			}
+			if err := writePlanStub(repoDir, parent, p.Title); err != nil {
+				return "", err
+			}
+		}
 		payload := map[string]string{"title": title, "module": module}
 		if parent != "" {
 			payload["parent"] = parent
@@ -345,6 +358,18 @@ func SetFeatureParent(repoDir, projDir, id, parent string) error {
 		f.UpdatedAt = time.Now().UTC()
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
+		}
+		// F-0235: reparenting under a new epic is decomposition too — scaffold its
+		// plan-with-execution-map the same as creation does (no-op if a real plan
+		// already exists).
+		if parent != "" {
+			p, err := store.LoadFeature(repoDir, parent)
+			if err != nil {
+				return "", err
+			}
+			if err := writePlanStub(repoDir, parent, p.Title); err != nil {
+				return "", err
+			}
 		}
 		ev := domain.NewEvent(id, "feature.reparented", map[string]string{"from": from, "to": parent}, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
@@ -529,6 +554,18 @@ func writePlanStub(repoDir, id, title string) error {
 	}
 	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.StubForEpic(title, children)
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// EpicPlanStub reports whether id's plan.md is still the unfilled scaffold —
+// used by the cmd layer to decide whether to print the "fill the plan before
+// approve" advisory (F-0235) after registering or reparenting a child. A
+// missing plan.md counts as false: nothing was just scaffolded to advise about.
+func EpicPlanStub(repoDir, id string) bool {
+	data, err := os.ReadFile(FeatureDocPath(repoDir, id, "plan.md"))
+	if err != nil {
+		return false
+	}
+	return !doccheck.HasRealContent(data)
 }
 
 // epicChildren returns id's children (if any) as plantmpl.EpicChild, in the

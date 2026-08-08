@@ -71,6 +71,20 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	}, nil
 }
 
+// NewAgentProvider builds the provider for the Backlog chat (F-0224). Only
+// claude-cli differs from NewProvider: the CLI runs as a read-only agent —
+// AgentReadTools allowlist, working directory = dir (the project root, so the
+// cerne commands hit the right backend). Every other mode delegates to
+// NewProvider unchanged: byo-key stays the static one-shot HTTP call (no tool
+// loop in v1, criterion 3) and delegation keeps its sentinel.
+func NewAgentProvider(cfg project.LLMConfig, dir string) (Provider, error) {
+	cfg = cfg.WithDefaults()
+	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
+		return &cliProvider{bin: cfg.ClaudeBin, run: execRun, dir: dir, agentTools: AgentReadTools}, nil
+	}
+	return NewProvider(cfg)
+}
+
 // messagesRequest is the request body for POST /v1/messages. Only the fields the
 // single-shot completion needs are sent: no temperature/top_p/top_k/thinking
 // (they 400 on the default model).

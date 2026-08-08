@@ -142,6 +142,9 @@ func dataRoutes() []dataRoute {
 		{"POST", "/rooms/{id}/join", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomJoin(w, r, projectID, r.PathValue("id"))
 		}},
+		{"POST", "/rooms/{id}/sessions/resume", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomResume(w, r, projectID, r.PathValue("id"))
+		}},
 		{"POST", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomSay(w, r, projectID, r.PathValue("id"))
 		}},
@@ -149,7 +152,22 @@ func dataRoutes() []dataRoute {
 			handleRoomRead(w, r, projectID, r.PathValue("id"))
 		}},
 		{"POST", "/rooms/{id}/close", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
-			handleRoomClose(w, projectID, r.PathValue("id"))
+			handleRoomClose(w, r, projectID, r.PathValue("id"))
+		}},
+		// Facilitation (F-0228): a room-scoped capability, separate from
+		// participant sessions, that gates pending-item triage, resolution
+		// and structured close.
+		{"POST", "/rooms/{id}/facilitator/handoff", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomFacilitatorHandoff(w, r, projectID, r.PathValue("id"))
+		}},
+		{"POST", "/rooms/{id}/items", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomCreateItem(w, r, projectID, r.PathValue("id"))
+		}},
+		{"GET", "/rooms/{id}/items/pending", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomPending(w, r, projectID, r.PathValue("id"))
+		}},
+		{"POST", "/rooms/{id}/items/{itemID}/resolve", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomResolveItem(w, r, projectID, r.PathValue("id"), r.PathValue("itemID"))
 		}},
 	}
 }

@@ -67,7 +67,7 @@ Reconciliation is **per document**, so disjoint edits never collide:
 
 ## Spec structure (the template cerne scaffolds)
 
-cerne scaffolds a new feature's `spec.md` from a canonical template (the same one `cerne spec draft` asks the model to fill). Fill each section; the lifecycle gates treat the empty scaffold as a stub until you do. Sections, **in order**:
+cerne scaffolds a new feature's `spec.md` from a canonical template (the same one `cerne spec draft` asks the model to fill). Fill each section; the lifecycle gates treat the empty scaffold as a stub until you do. When the design benefits from a sequence diagram, `cerne spec diagram F-NNNN [--name <name>]` AI-drafts a Mermaid diagram artifact for it (delegation prompt, or generated directly in byo-key/claude-cli `[llm]` mode). Sections, **in order**:
 
 1. **Problema** — what is missing or broken **today**, grounded in real code (`file.go:line`); why now; the cost of not fixing it. Problem only — no solution yet.
 2. **Objetivo e critérios de aceitação** — one objective sentence, then **numbered, testable** criteria (1 criterion : 1 test). For behaviour, use EARS — *"QUANDO `<condição>` O SISTEMA DEVE `<comportamento>`"*; structural invariants as a direct, measurable assertion.
@@ -81,6 +81,10 @@ cerne scaffolds a new feature's `spec.md` from a canonical template (the same on
 **Mark ambiguity, don't guess.** Wherever something is unresolved, leave `[ESCLARECER: pergunta específica]` instead of a plausible-but-maybe-wrong guess, and resolve every marker before `cerne feature approve`. **Write the marker in the doc's own language** — the vocabulary is a per-language catalog (pt `[ESCLARECER:]`/`[ESCLARECIDO:]`, en `[CLARIFY:]`/`[CLARIFIED:]`) and cerne recognizes all of it everywhere (UI chips, tab badge, lint, approve gate), so an English doc uses `[CLARIFY: specific question]` and gates exactly like a pt-BR one. Options work the same in any vocabulary (`[CLARIFY: where? | doc | sidecar]`), and answering via the UI writes the resolved form in the marker's own vocabulary.
 
 The evidence behind this structure (lost-in-the-middle / primacy-recency, EARS, ADR, spec-driven development) is registered in the backend as external references — `cerne ask` cites them.
+
+### Resolving `[ESCLARECER]`/`[CLARIFY]` markers from the terminal
+
+Instead of hunting markers by hand across `.docs/`, work the queue directly: `cerne clarify list [<id>] [--json]` lists every open marker across live entities (or just one entity's); `cerne clarify answer <id> <n> --answer "…"` (or `--pick <k>` to choose one of the marker's proposed options) rewrites the n-th open marker to its resolved form (`[ESCLARECIDO: question → answer]`) and pushes it through the standard pipeline. Got an answer wrong after the fact? `cerne clarify list --resolved` shows the correction queue, and `cerne clarify correct <id> <n> --answer "…"` appends a corrected answer to that marker's trail (`question → previous → new`) — the prior answer is kept, not erased.
 
 ## Plan structure (the template cerne scaffolds)
 
@@ -116,6 +120,15 @@ An **epic is just a feature that has children** — the role is inferred from th
 - **Epic ≠ module.** A module is the subsystem; an epic is decomposed work that may span modules. A feature can have both.
 - **Read the breakdown, don't hand-maintain it:** `cerne status` shows an `ÉPICOS` section with `n/m` progress, and `.docs/CONTEXT.md` carries an *Épico* column plus a `## Épicos` section.
 - The epic's lifecycle is independent (children completing does not auto-complete it). `cerne lint` flags inconsistencies — a live feature under a terminal epic, an epic completed with open children, or an epic still candidate/approved while a child is already in development (`epic-behind-children`: work started but the epic was never planned/started — write its plan and `cerne feature start` it).
+- **Declaring intent upfront:** when a PRD is known from the start to decompose, `cerne epic new "<title>" --context "…"` mints a **declared** epic (`E-` prefix) instead of `feature new` — same lifecycle/gates, the prefix just signals the intent at birth (epic *behavior* is always structural: any feature with children). Decompose it with `cerne task new "<step>" --parent E-NNNN --context "…"` — a **task** (`T-` prefix) is a PRD execution unit already past its human gate: it is born `approved` (`cerne feature start T-NNNN` needs no plan of its own — the why lives in the parent PRD), but `cerne feature complete T-NNNN` still requires a real `result.md`. `--parent` on a task must name a committed feature/epic (approved or beyond).
+
+**Housekeeping on a feature/epic in place (no lifecycle change):**
+
+- `cerne feature rename F-NNNN "<new title>"` — allowed until development starts; frozen once implemented/terminal.
+- `cerne feature set F-NNNN --owner <name> --priority p1` — sets owner and/or priority in place (only the flag passed changes; empty string clears); doesn't touch state, module, tags, or docs.
+- `cerne feature revert F-NNNN --reason "…"` — undoes an approval, back to `candidate` (spec/plan stay intact).
+- `cerne feature deliver F-NNNN --commit <sha-or-url> --mr <url>` — records the delivery commit/MR post-hoc, after the MR merges.
+- `cerne feature capability F-NNNN C-0001,C-0002` — links the feature to nodes in the product-capability taxonomy (`--clear` unlinks). Manage the taxonomy itself with `cerne capability new "<name>" [--parent C-NNNN]`, browse it with `cerne capability list --tree`, retire a node with `cerne capability retire C-NNNN --reason "…"` (refuses with active children or linked features), or propose the whole tree from existing specs with `cerne capability bootstrap [--apply]`.
 
 ## Decisions (ADRs)
 
@@ -193,6 +206,42 @@ Not every task is a feature. Investigating an error, reviewing an MR, doing an o
 - **Feature implementations register themselves (F-0146):** `cerne feature start` auto-opens a work (actor + ref, same commit) and `complete`/`supersede` auto-closes it — do NOT add a manual `work start` for a feature you are implementing; the manual flow is only for non-feature tasks. Per-project opt-out: `[activity] auto = false` in `.cernerc`.
 - **The duplicate guard is mechanical (F-0147):** `feature new` and `work start` refuse a title similar to a live feature or an active work, listing the matches — with multiple agents, the same bug gets registered twice, and this is the backstop. If a match appears, join the existing registration instead of minting another; `--force` is the conscious override for a genuinely distinct problem that reads alike (the override lands on the creation event as `guard: forced`).
 
+## War room (F-0211/F-0226/F-0227/F-0228): live multi-agent conversation
+
+A **war room** is a live, ephemeral chat channel served by a running `cerne ui` — for real-time back-and-forth between agents/humans on a shared problem, distinct from the async `cerne work` registry above. **Opening a room is a human moderator's act (F-0211/F-0217).** A human opens one with `cerne room open "<topic>"` — you do **not** run this yourself; you join a room when invited, and only ever run `cerne room open` on an explicit human request.
+
+**The cycle (F-0226: a joined session capability, not `--nick`, is the authority for everything you say):**
+
+```
+cerne room list                                                    # discover open rooms
+cerne room join <id> --nick <apelido> [--bio "..."]                 # mints a session capability, once per room — keep it
+export CERNE_ROOM_SESSION=<printed by join>                         # or pass --session on every call below
+cerne room say <id> "<msg>" --session <token>                        # speak, authenticated by the session's nick
+cerne room watch <id> --session <token> [--once]                     # F-0227: turn-based wakeup with a durable cursor, filters your own echo
+cerne room read <id> --since <seq> --once                            # F-0220 primitive: stateless wakeup, no cursor/session/echo-filter
+cerne room close <id> --facilitator <token> --minutes <...>          # F-0228: facilitator-only, structured minutes — see below
+```
+
+**`room watch --once`, not `room read`, for a turn-based agent (F-0227).** `watch` wraps the same long-poll primitive as `read` with what a turn-based agent actually needs: a durable cursor (a restart resumes where you left off — no manual `--since` bookkeeping), and it filters out your **own** messages so `say`-ing something doesn't consume your own wakeup. `--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0; a room `close` event always ends the loop, printed, regardless of `--once`. `--session`/`CERNE_ROOM_SESSION` is required (same convention as `say`); the cursor is a local file, not a `--since` you track by hand. `watch` never blocks forever on its own the way `--follow` would — retry a transient connection failure with its own bounded backoff, or re-run `--once` for the next turn.
+
+`room read --once`/`--follow` is still there underneath as the stateless primitive (no session required, no cursor persisted) — reach for it in a script or a one-off check where you don't want a cursor file on disk, not as the default turn-based wakeup.
+
+**Facilitation and structured close (F-0228).** `cerne room open` also mints a **facilitator capability**, printed once and separate from any participant session — it is the authority to triage and close the room, never appears in the roster/transcript/list, and rotates atomically via `cerne room facilitator handoff <id> --facilitator <current>` (prints a new one, the old one stops working immediately — the way an opener agent hands the role to a human over an external channel). Any joined participant can raise something the facilitator needs to see:
+
+```
+cerne room propose <id> --session <token> --title "<t>" --body "<why>"           # a proposal
+cerne room request-decision <id> --session <token> --title "<t>" --body "<why>"  # a decision request
+cerne room pending <id> --facilitator <token>                                     # facilitator's triage queue (no LLM synthesis)
+cerne room resolve <id> <item-id> --facilitator <token> --result "<outcome>"       # facilitator-only
+```
+
+Closing requires the facilitator capability and a structured **minutes** JSON (`conclusion`/`rationale` required, `discarded_options`/`owners`/`next_steps` may be empty lists) — `cerne room minutes template` prints a blank scaffold to fill in. By default close **refuses** while facilitation items are still open and lists them; `--allow-open-items` forces it through and records the exception in the minutes. `cerne room minutes show <id> --format markdown` renders a closed room's minutes deterministically (no LLM) for copying elsewhere — it never creates a feature/decision/note or commits anything on its own.
+
+**Troubleshooting a failed `cerne room join`, self-diagnosable without a human:**
+- **Connection error ("no cerne ui answering ... start one with 'cerne ui'")** → no `cerne ui` is listening on the port (default 7717). Start one: `cerne ui` in the project directory.
+- **"no cerne ui running this project" (404)** → a `cerne ui` is up but not serving *this* project directory. Not yours to fix — tell the human to restart `cerne ui` in the correct project directory.
+- **Conflict, nick already taken (409)** → someone else in the room already holds that `--nick`. Pick a different one and retry.
+
 ## Errata (correcting a concluded, immutable entity)
 
 A concluded entity — an `implemented` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead:
@@ -200,6 +249,9 @@ A concluded entity — an `implemented` feature, a `superseded`/`obsolete` decis
 ```
 cerne <kind> errata <id> "<text>"             # kind: feature | decision | runbook | note
 cerne feature errata F-0008 --file errata.md  # or piped stdin — one-shot, like note new
+cerne decision errata D-0012 "<text>"
+cerne note errata N-0003 "<text>"
+cerne runbook errata RB-0002 "<text>"
 ```
 
 The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). There is **no** edit/rewrite command — errata is the only correction path, by design: annotate, never rewrite.
@@ -239,6 +291,14 @@ cerne reference new "<title>" --url <url> --informs F-NNNN,D-NNNN [--facet <f>] 
 It is marked external, its content is indexed (so `cerne ask` cites it), and `--informs` backlinks it to the entity it motivated.
 
 References carry the **same two tag axes as notes** — `--facet` (the closed `infra`/`code`/`data`/`process`/`auth` set; an invalid facet aborts before any write) and `--component` (open, slug-normalized) — and they fold into the FTS the same way, so `cerne search`/`ask` find a reference by its tag. List and filter them with `cerne reference list [--facet <f>] [--component <c>] [--all] [--json]` — the **only** listing for references (AND across axes; `--all` includes superseded; `--json` for machine reads). Legacy references predate tags, so a `--facet` filter over them returns empty with a guidance message. Re-tag a current reference in place with `cerne reference retag R-NNNN --facet <f> --component <c>` (like notes/decisions) — it sets only the axis you pass (`--facet ""` clears that axis), preserves url/informs/body, and never makes the reference obsolete.
+
+## Housekeeping, legacy entities, and reporting
+
+- **Unassigned modules:** `cerne classify` (no args) dry-runs a heuristic backfill — assigns a module to a module-less feature only when exactly one declared module matches (`--yes` applies it); `cerne classify F-NNNN --module <m>` assigns one feature manually.
+- **Bulk-importing an existing doc tree** (bootstrap only, not for registering a single new case): `cerne import` with no flags uses the deterministic Rockt Hub convention; `--agent` does an AI-assisted generic import for any structure (emits a mapping prompt, then `cerne import --agent --ingest [--yes]` validates and applies it). It already guards against re-minting a candidate whose title matches an existing feature.
+- **Legacy entity that predates its own spec/case** (an absorbed module, a discontinued system): `cerne retire "<name>" [--alias <a>]... [--by <successor>] [--reason "…"]` registers it born `superseded`, so its declared aliases start being flagged by lint when they show up in current documents. If an alias later proves too common/ambiguous and causes false-positive `ref-to-superseded` findings, drop it with `cerne forget-alias <name> <alias>...`.
+- **Full relationship graph:** `cerne graph [--format json|dot]` exports every entity and edge (links, supersessions, parent/child) for external tooling — the traceability view beyond what `.docs/CONTEXT.md`/backlinks show inline.
+- **Metrics, read-only:** `cerne stats [--since <date-or-duration>] [--json]` reports lead/cycle time and monthly throughput from the event log; `cerne savings [--json]` reports how much documentation the backend holds versus what `.docs/` actually materializes — the context an agent is spared from reading.
 
 ## Hard rules
 

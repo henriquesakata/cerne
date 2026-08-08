@@ -372,6 +372,32 @@ h2 {
 
 .backlog-chat-msg p { margin: 0; }
 
+.backlog-chat-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.backlog-chat-spinner {
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid var(--border-soft);
+  border-top-color: var(--fg);
+  border-radius: 50%;
+  animation: backlog-chat-spin 0.8s linear infinite;
+}
+
+@keyframes backlog-chat-spin {
+  to { transform: rotate(360deg); }
+}
+
+.backlog-chat-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
 .backlog-chat-msg-user {
   align-self: flex-end;
   background: var(--fg);

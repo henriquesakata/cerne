@@ -46,6 +46,9 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 		fmt.Fprintf(cmd.OutOrStdout(), "%s detached from its epic.\n", id)
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s is now a child of %s.\n", id, parent)
+		if app.EpicPlanStub(ctx.repoDir, parent) {
+			fmt.Fprintf(cmd.OutOrStdout(), "plano do épico scaffoldado — preencha antes do approve (N-0031)\n")
+		}
 	}
 	return nil
 }

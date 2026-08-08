@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -373,5 +374,28 @@ func TestChatRegisterDuplicate(t *testing.T) {
 	}
 	if !strings.Contains(got["error"], "already exists") {
 		t.Fatalf("error = %q, want a duplicate-title message", got["error"])
+	}
+}
+
+// TestChatClaudeCLIRoutesAgentProvider (F-0224): with mode=claude-cli the
+// handler builds the agentic provider — a claude_bin that cannot be started
+// surfaces as a 500 naming the binary, proving the request routed to the CLI
+// path (and not to byo-key/delegation).
+func TestChatClaudeCLIRoutesAgentProvider(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b",
+		LLM: project.LLMConfig{Mode: "claude-cli", ClaudeBin: filepath.Join(t.TempDir(), "missing-claude")}}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"oi"}]}`, &got)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(got.Error, "missing-claude") {
+		t.Fatalf("error %q does not name the claude binary (did the request route to the CLI provider?)", got.Error)
 	}
 }

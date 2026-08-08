@@ -25,6 +25,10 @@ func TestFeatureReparent(t *testing.T) {
 	if !strings.Contains(out, "F-0002 is now a child of F-0001") {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
+	// F-0235 crit.5: reparenting under a still-stub-planned epic prints the advisory.
+	if !strings.Contains(out, "plano do épico scaffoldado — preencha antes do approve (N-0031)") {
+		t.Fatalf("output missing epic-scaffold advisory:\n%s", out)
+	}
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "F-0001" {
 		t.Fatalf("parent = %q, want F-0001", f.Parent)
 	}
