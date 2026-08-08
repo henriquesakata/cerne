@@ -26,7 +26,7 @@ cerne is the **guardian and source of truth** for this project's documentation. 
 ## Build / test / run
 
 ```bash
-go build -o cerne.exe ./cmd/cerne     # build the binary (UI is embedded via go:embed)
+go build -ldflags="-s -w" -o cerne.exe ./cmd/cerne # build the binary (UI is embedded via go:embed)
 go vet ./... && go test ./... -count=1 # full suite — currently 235 tests, must stay green
 go test ./internal/<pkg>/ -run TestX -v # focused
 cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (embedded). npm ci (not install) = exact lockfile → reproducible dist
@@ -34,8 +34,9 @@ cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (e
 
 - **`ui/dist` is `go:embed`-ed → the committed dist is what ships.** A UI change lands only if `ui/dist` is rebuilt *and* committed (F-0136 — F-0125/F-0126 shipped stale because only `ui/src` was merged). **Canonical build platform = CI Linux (`node:24`).** Do **not** commit a dist built on darwin/Windows — the vite output is not bit-identical across toolchains (hash-churn on locale chunks), so a foreign dist fails the drift gate. Build the baseline in a `node:24` Linux container (`docker run --platform linux/amd64 -v "$PWD":/app -w /app/ui node:24 sh -c "npm ci && npm run build"`) and commit that.
 - CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`, plus **`ui:dist-drift`** (`node:24`, on `ui/**` changes): rebuilds the UI and fails if the committed `ui/dist` differs from a fresh build — the guard against stale embedded UI.
-- `go install ./cmd/cerne` installs `cerne` to `C:\Users\Henrique\go\bin` (on PATH).
-- **RULE — reinstall the dogfood binary after changing cerne.** This repo runs its *own* `cerne` (the binary on PATH), so a behavior change (new command/entity/flag/lifecycle) is **invisible until you reinstall**: `go install ./cmd/cerne`. Otherwise `cerne …` silently runs the previous build — e.g. `cerne note` does not exist until the F-0044 build is installed. Always reinstall before dogfooding the change you just made.
+- **`-ldflags="-s -w"` on every binary build.** Linking the 48 MB binary (9.6 MB of it the embedded `ui/dist`) dominates the build: stripping the symbol table + DWARF takes the link from **11.1 s → 3.5 s** and the binary from **48 MB → 35 MB**, and `go build ./...` (what the pre-commit hook runs) from **17.4 s → 5.3 s**. Panic tracebacks stay symbolized — Go's runtime reads its own pclntab, not the symtab. The only loss is `delve`: drop the flags for a debugging build.
+- `go install -ldflags="-s -w" ./cmd/cerne` installs `cerne` to `C:\Users\Henrique\go\bin` (on PATH).
+- **RULE — reinstall the dogfood binary after changing cerne.** This repo runs its *own* `cerne` (the binary on PATH), so a behavior change (new command/entity/flag/lifecycle) is **invisible until you reinstall**: `go install -ldflags="-s -w" ./cmd/cerne`. Otherwise `cerne …` silently runs the previous build — e.g. `cerne note` does not exist until the F-0044 build is installed. Always reinstall before dogfooding the change you just made.
 - Try the UI: `cerne ui` (serves `localhost:7717`).
 
 ## Architecture (one binary, four layers)
