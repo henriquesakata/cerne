@@ -3,6 +3,7 @@ package room
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderMinutesMarkdownGolden(t *testing.T) {
@@ -54,5 +55,57 @@ func TestRenderMinutesMarkdownShowsOpenItemsException(t *testing.T) {
 func TestRenderMinutesMarkdownNilReturnsEmpty(t *testing.T) {
 	if got := RenderMinutesMarkdown(Room{ID: "R1", Topic: "t"}); got != "" {
 		t.Fatalf("RenderMinutesMarkdown = %q, want empty for a room with no minutes", got)
+	}
+}
+
+// F-0238: the note body is the same projection plus provenance (F-0238
+// criterion 7) — room, objective, start/end + duration, message count and
+// participants (nick, bio, joined_at).
+
+func TestRenderMinutesNoteBodyGolden(t *testing.T) {
+	opened := time.Date(2026, 8, 7, 13, 0, 0, 0, time.UTC)
+	closed := time.Date(2026, 8, 7, 14, 32, 0, 0, time.UTC)
+	registered := time.Date(2026, 8, 8, 9, 0, 0, 0, time.UTC)
+	r := Room{
+		ID:           "R3",
+		Topic:        "deploy quebrado",
+		OpenedAt:     opened,
+		ClosedAt:     &closed,
+		MessageCount: 12,
+		Participants: []Participant{
+			{Nick: "alice", Bio: "facilitadora", JoinedAt: opened.Add(5 * time.Second)},
+			{Nick: "bob", JoinedAt: opened.Add(70 * time.Second)},
+		},
+		Minutes: &Minutes{
+			Conclusion: "Reverter o deploy.",
+			Rationale:  "Mais rápido.",
+		},
+	}
+	got := RenderMinutesNoteBody(r, registered)
+
+	for _, want := range []string{
+		"# Ata — R3: deploy quebrado\n",
+		"## Proveniência\n",
+		"- Sala: R3\n",
+		"- Objetivo: deploy quebrado\n",
+		"- Início: " + opened.Format(time.RFC3339) + "\n",
+		"- Fim: " + closed.Format(time.RFC3339),
+		"- Mensagens: #1–#12\n",
+		"- Registrado em: " + registered.Format(time.RFC3339) + "\n",
+		"## Participantes\n",
+		"- alice — facilitadora (entrou às " + opened.Add(5*time.Second).Format(time.RFC3339) + ")\n",
+		"- bob (entrou às " + opened.Add(70*time.Second).Format(time.RFC3339) + ")\n",
+		"## Conclusão\n\nReverter o deploy.\n\n",
+		"## Justificativa\n\nMais rápido.\n\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("RenderMinutesNoteBody missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderMinutesNoteBodyNilReturnsEmpty(t *testing.T) {
+	if got := RenderMinutesNoteBody(Room{ID: "R1", Topic: "t"}, time.Now()); got != "" {
+		t.Fatalf("RenderMinutesNoteBody = %q, want empty for a room with no minutes", got)
 	}
 }
