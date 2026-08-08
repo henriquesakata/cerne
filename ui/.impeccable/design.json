@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-08T02:29:44Z",
+  "generatedAt": "2026-08-08T18:14:30Z",
   "title": "Design System: cerne",
   "extensions": {
     "colorMeta": {
@@ -379,6 +379,11 @@
       {
         "name": "The No Brand Accent Rule",
         "body": "There is no brand colour and none may be invented. A control that wants emphasis takes full ink, not a hue.",
+        "section": "colors"
+      },
+      {
+        "name": "Full ink is for controls, not for prose",
+        "body": "Inversion works because a control is small: a button, an active nav link, a selected filter. Applied to a block of running text it stops reading as emphasis and becomes glare — in dark mode ink is #e8e4da, so an inverted paragraph is a near-white panel. A block of prose that needs to be set apart uses a recessed surface (surface-sunk-deep) and keeps its text in ink. Recorded 2026-08-08 (F-0241) after the chat message bubble was inverted and had to be undone. Consequence: a control inside a container whose buttons are styled full ink must be excluded at the source of that rule, not patched afterwards with higher specificity — .backlog-chat-form button outranked the composer's control classes and repainted them full ink.",
         "section": "colors"
       },
       {

@@ -227,14 +227,21 @@ h2 {
 
 /* ---- backlog (F-0202) + chat com o agente de domínio (F-0210) ---- */
 
+/* O grid preenche a altura restante depois da nav (#root já é flex column com
+   min-height: 100dvh). Assim a coluna do chat estica sozinha e some a reserva
+   fixa que o F-0239 usava — 9rem só acertava para uma altura de cabeçalho, e
+   sobrava folga quando ele crescia (F-0241). */
 .backlog-layout {
   display: grid;
   grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
   gap: 1.5rem;
-  align-items: start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
-.backlog-list-col { min-width: 0; }
+/* A lista não estica: seu conteúdo termina onde termina. */
+.backlog-list-col { min-width: 0; align-self: start; }
 
 /* F-0219: sidebar de conversas — <details> nativo cobre o colapsável. */
 .conversation-list {
@@ -343,11 +350,12 @@ h2 {
      sobrava 28–49% de viewport morto abaixo. Preenchendo a altura, o -history
      (flex: 1) cresce e o compositor fica ancorado no rodapé; o vão de 105px
      entre a introdução e o input vira área de transcrição.
-     A reserva cobre nav + cabeçalho da página (73px medidos) + respiro do
-     rodapé, com folga para o cabeçalho quebrar em telas estreitas; 13rem
-     reservava 208px e sobrava viewport morto. O overflow-y do -history contém
-     qualquer estouro se a folga não bastar. */
-  height: calc(100dvh - 9rem);
+     Sem altura própria (F-0241): o painel é item esticado do .backlog-layout,
+     que preenche a altura restante. A reserva em rem do F-0239 só acertava
+     para uma altura de cabeçalho — quando ele crescia, sobrava folga até o
+     rodapé. min-height: 0 é o que deixa o -history encolher e rolar dentro do
+     flex; sem isso ele estoura em vez de rolar. */
+  min-height: 0;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 1rem;
@@ -409,11 +417,14 @@ h2 {
   justify-content: space-between;
 }
 
+/* A bolha do usuário se distingue por posição (flex-end) e por tom recuado, não
+   por inversão. A Full Ink Rule vale para controle — botão, nav ativo, filtro —
+   onde a área é pequena; um parágrafo inteiro em tinta cheia vira bloco
+   luminoso e ofusca no tema escuro, onde --fg é quase branco (F-0241). */
 .backlog-chat-msg-user {
   align-self: flex-end;
-  background: var(--fg);
-  color: var(--bg);
-  border-color: var(--fg);
+  background: var(--surface-3);
+  border-color: var(--border);
 }
 
 .backlog-chat-proposal,
@@ -444,11 +455,37 @@ h2 {
   resize: vertical;
 }
 
+/* Compositor com o submit dentro do campo (F-0241): position relative aqui,
+   botão absoluto no canto, e padding-right no textarea do tamanho do botão para
+   o texto nunca correr por baixo dele. */
 .backlog-chat-composer {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
 }
+
+.backlog-chat-send {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.backlog-chat-send:hover:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.backlog-chat-send:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.backlog-chat-send:disabled { opacity: 0.4; cursor: default; }
 
 .backlog-chat-form textarea {
   flex: 1;
@@ -461,7 +498,76 @@ h2 {
   resize: none;
   max-height: 10rem;
   overflow-y: auto;
+  /* espaço do botão de submit, que é absoluto dentro do campo (F-0241) */
+  padding-right: 2.4rem;
 }
+
+/* Seletor em menu (F-0241): substitui o <select> nativo, que não renderiza
+   marca de selecionado nem dígito de atalho. */
+.chat-menu { position: relative; display: inline-flex; }
+
+.chat-menu-trigger {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.chat-menu-trigger:hover { background: var(--surface-2); }
+.chat-menu-trigger:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+
+.chat-menu-list {
+  position: absolute;
+  bottom: calc(100% + 0.3rem);
+  /* ancorado à direita: com o gatilho no canto direito, abrir da esquerda
+     jogaria a lista para fora do painel (F-0241) */
+  right: 0;
+  z-index: 20;
+  min-width: 11rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  /* sombra: o menu saiu do fluxo e some ao clicar fora — é o caso que a
+     Detached Shadow Rule autoriza */
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.chat-menu-list:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+.chat-menu-title {
+  margin: 0 0 0.2rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.chat-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-menu-item:hover { background: var(--surface-2); }
+.chat-menu-item:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+.chat-menu-item-key { color: var(--faint); font-variant-numeric: tabular-nums; }
 
 /* Controles junto ao compositor, em linha (F-0239): rótulo e select no mesmo
    eixo, como as chips de contexto da referência — não rótulo empilhado sobre
@@ -470,7 +576,9 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem 0.8rem;
+  /* à direita, sob o canto do compositor, como na referência (F-0241) */
+  justify-content: flex-end;
+  gap: 0.3rem 0.5rem;
   font-size: 0.78rem;
   color: var(--muted);
 }
@@ -492,8 +600,13 @@ h2 {
   color: inherit;
 }
 
+/* O botão primário do formulário é tinta cheia. Os controles do compositor
+   (submit no campo, gatilhos de menu, itens do menu) são exceção e precisam
+   escapar dela — como vivem dentro do form, a regra abaixo os venceria por
+   especificidade (0,1,1 contra 0,1,0). Excluí-los aqui é mais honesto que
+   subir especificidade em cada um depois (F-0241). */
 .backlog-chat-proposal button,
-.backlog-chat-form button {
+.backlog-chat-form button:not(.backlog-chat-send):not(.chat-menu-trigger):not(.chat-menu-item) {
   align-self: flex-start;
   font: inherit;
   padding: 0.45rem 1.1rem;
@@ -508,7 +621,16 @@ h2 {
 .backlog-chat-form button:disabled { opacity: 0.5; cursor: default; }
 
 @media (max-width: 60rem) {
-  .backlog-layout { grid-template-columns: minmax(0, 1fr); }
+  /* Em uma coluna as duas regiões viram linhas empilhadas: esticar o grid faria
+     elas dividirem a altura e espremeria o chat. Aqui a página volta a rolar,
+     e o painel ganha altura própria (F-0241). */
+  .backlog-layout {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    flex: none;
+  }
+
+  .backlog-chat { height: 70dvh; }
 }
 
 /* ---- war room (T-0003) ---- */

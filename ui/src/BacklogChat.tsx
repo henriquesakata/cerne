@@ -59,6 +59,110 @@ export function parseProposal(reply: string): ParsedProposal | null {
   return { title, body, facet, components, capability }
 }
 
+// MenuSelect (F-0241): popup no lugar do <select> nativo, que não renderiza
+// marca de selecionado nem dígito de atalho. Reaproveita o padrão do .nav-more:
+// mousedown fora fecha, Escape fecha.
+//
+// Os dígitos capturam tecla APENAS com o menu aberto e focado — fechado, a
+// tecla vai para o compositor. Atalho que não funciona seria affordance falsa;
+// atalho global competiria com a digitação.
+function MenuSelect({
+  value,
+  options,
+  onSelect,
+  label,
+}: {
+  value: string
+  options: string[]
+  onSelect: (v: string) => void
+  label: string
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    listRef.current?.focus()
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  if (options.length === 0) return null
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      setOpen(false)
+      return
+    }
+    const n = Number(e.key)
+    if (Number.isInteger(n) && n >= 1 && n <= options.length) {
+      onSelect(options[n - 1])
+      setOpen(false)
+    }
+  }
+
+  return (
+    <span className="chat-menu" ref={wrapRef}>
+      <button
+        type="button"
+        className="chat-menu-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {value}
+      </button>
+      {open && (
+        <div
+          className="chat-menu-list"
+          role="menu"
+          tabIndex={-1}
+          ref={listRef}
+          onKeyDown={onKeyDown}
+        >
+          <p className="chat-menu-title">{label}</p>
+          {options.map((o, i) => (
+            <button
+              key={o}
+              type="button"
+              role="menuitemradio"
+              aria-checked={o === value}
+              className="chat-menu-item"
+              onClick={() => {
+                onSelect(o)
+                setOpen(false)
+              }}
+            >
+              <span className="chat-menu-item-name">{o}</span>
+              <span className="chat-menu-item-key" aria-hidden="true">
+                {o === value ? '✓' : i + 1}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+// Preferências de padrão (F-0241). Regex, não id literal: a lista vem do
+// servidor e varia por projeto — casar por nome sobrevive a versionamento
+// ("claude-opus-5" hoje, outro amanhã).
+const PREFERRED_MODEL = /opus/i
+const PREFERRED_EFFORT = /^high$/i
+
+// pickDefault escolhe da lista disponível: o preferido se existir, senão o
+// primeiro, senão vazio (lista vazia = servidor sem provider configurado).
+// Nunca inventa um valor que o servidor não ofereceu.
+export function pickDefault(options: string[], preferred: RegExp): string {
+  return options.find((o) => preferred.test(o)) ?? options[0] ?? ''
+}
+
 // Tolerância do glue-scroll (F-0239): "no fim" não pode exigir pixel exato —
 // zoom, altura fracionária e a última linha crescendo já tiram o scrollTop do
 // valor cheio, e aí a transcrição descolaria sozinha.
@@ -126,6 +230,11 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         setNeedsProvider(opts.mode === 'delegation')
         setModels(opts.models)
         setEfforts(opts.efforts)
+        // F-0241: a seleção deixa de admitir vazio. O padrão sai da lista que
+        // o servidor devolveu — id fixo quebraria um projeto cujo .cernerc não
+        // expõe o preferido. Só preenche o que a conversa ainda não escolheu.
+        setModel((m) => m || pickDefault(opts.models, PREFERRED_MODEL))
+        setEffort((e) => e || pickDefault(opts.efforts, PREFERRED_EFFORT))
       })
       .catch(() => {})
   }, [])
@@ -362,38 +471,35 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
             placeholder={t.backlogChat.placeholder}
             rows={1}
           />
-          <button type="submit" disabled={busy || input.trim() === ''}>
-            {t.backlogChat.send}
+          {/* F-0241: submit dentro do campo, no canto — o botão largo ao lado
+              gastava uma coluna do compositor. Ícone sem texto exige nome
+              acessível, daí o aria-label. */}
+          <button
+            type="submit"
+            className="backlog-chat-send"
+            aria-label={t.backlogChat.send}
+            title={t.backlogChat.send}
+            disabled={busy || input.trim() === ''}
+          >
+            <span aria-hidden="true">↵</span>
           </button>
         </div>
+        {/* F-0241: sem rótulo e sem opção vazia — o valor corrente já nomeia o
+            campo, e o padrão garante que nunca fica sem seleção. */}
         {(models.length > 0 || efforts.length > 0) && (
           <div className="backlog-chat-options">
-            {models.length > 0 && (
-              <label>
-                {t.backlogChat.modelLabel}{' '}
-                <select value={model} onChange={(e) => setModel(e.target.value)}>
-                  <option value="">—</option>
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {efforts.length > 0 && (
-              <label>
-                {t.backlogChat.effortLabel}{' '}
-                <select value={effort} onChange={(e) => setEffort(e.target.value)}>
-                  <option value="">—</option>
-                  {efforts.map((ef) => (
-                    <option key={ef} value={ef}>
-                      {ef}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <MenuSelect
+              value={model}
+              options={models}
+              onSelect={setModel}
+              label={t.backlogChat.modelLabel}
+            />
+            <MenuSelect
+              value={effort}
+              options={efforts}
+              onSelect={setEffort}
+              label={t.backlogChat.effortLabel}
+            />
           </div>
         )}
       </form>
