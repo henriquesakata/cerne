@@ -45,6 +45,34 @@ const isTerminal = (s: FeatureState) =>
 // Quantos cards de histórico cada grupo mostra antes de virar link (F-0236).
 export const HISTORY_CAP = 8
 
+// Coluna viva ordena por prioridade (o que fazer primeiro); coluna terminal
+// ordena por recência (o que foi entregue por último). Ordenar histórico por
+// prioridade fazia o corte mostrar as 8 mais ANTIGAS — F-0001, F-0002… — que é
+// o oposto do que a coluna deveria responder (F-0237).
+export function sortByRecency(fs: Feature[]): Feature[] {
+  return [...fs].sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0))
+}
+
+// rollUpEpicChildren: numa coluna terminal, uma filha cujo épico está na MESMA
+// coluna não aparece — o épico já a representa, e listar as duas conta a mesma
+// entrega duas vezes. Filha cujo épico está noutro estado continua visível:
+// escondê-la a apagaria do board (F-0237).
+export function rollUpEpicChildren(fs: Feature[]): {
+  kept: Feature[]
+  rolled: Map<string, number>
+} {
+  const here = new Set(fs.map((f) => f.id))
+  const rolled = new Map<string, number>()
+  const kept = fs.filter((f) => {
+    if (f.parent && here.has(f.parent)) {
+      rolled.set(f.parent, (rolled.get(f.parent) ?? 0) + 1)
+      return false
+    }
+    return true
+  })
+  return { kept, rolled }
+}
+
 // capHistory limita SÓ o histórico de uma lista já ordenada. Trabalho vivo
 // nunca é cortado: esconder um card que exige ação transformaria o corte num
 // bug. Preserva a ordem recebida — não reordena para caber.
@@ -325,7 +353,15 @@ function Columns({
             </h2>
             {fs.length === 0 && <p className="column-empty">—</p>}
             {(() => {
-              const { shown, hidden } = capHistory(sortByPriority(fs))
+              // Coluna terminal: filhas sobem para o épico e a ordem é por
+              // recência. Coluna viva: tudo aparece, ordenado por prioridade.
+              const terminal = isTerminal(s)
+              const { kept, rolled } = terminal
+                ? rollUpEpicChildren(fs)
+                : { kept: fs, rolled: new Map<string, number>() }
+              const { shown, hidden } = capHistory(
+                terminal ? sortByRecency(kept) : sortByPriority(kept),
+              )
               return (
                 <>
                   {shown.map((f) => (
@@ -336,6 +372,7 @@ function Columns({
                       isBehind={isBehind(f.id)}
                       pending={pendingClarify(f.id)}
                       activeWork={activeWorkFor(f.id)}
+                      rolledUp={rolled.get(f.id) ?? 0}
                     />
                   ))}
                   <MoreInHistory hidden={hidden} />
@@ -469,12 +506,14 @@ function Card({
   isBehind = false,
   pending = 0,
   activeWork = [],
+  rolledUp = 0,
 }: {
   feature: Feature
   isEpic: boolean
   isBehind?: boolean
   pending?: number
   activeWork?: { id: string; actor: string }[]
+  rolledUp?: number
 }) {
   const { t } = useT()
   // Read-only chips: the whole card is an <a>, so a Tag button can't live here
@@ -489,6 +528,11 @@ function Card({
             papel task deriva só do prefixo T-. */}
         {(isEpic || feature.id.startsWith('E-')) && (
           <span className="badge badge-epic">{t.kanban.epicBadge}</span>
+        )}
+        {rolledUp > 0 && (
+          <span className="badge badge-rolled" title={t.kanban.rolledUpTitle(rolledUp)}>
+            {t.kanban.rolledUp(rolledUp)}
+          </span>
         )}
         {feature.id.startsWith('T-') && (
           <span className="badge badge-task">{t.kanban.taskBadge}</span>
