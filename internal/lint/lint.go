@@ -45,6 +45,7 @@ const (
 	RuleParentTerminal     = "parent-terminal"
 	RuleEpicOpenChildren   = "epic-open-children"
 	RuleEpicBehindChildren = "epic-behind-children"
+	RuleEpicUnplanned      = "epic-unplanned"
 	RuleStaleCandidate     = "stale-candidate"
 	RuleStaleReady         = "stale-ready"
 	RuleStaleWork          = "stale-work"
@@ -58,7 +59,7 @@ const (
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -70,16 +71,17 @@ var ruleRank = map[string]int{
 	RuleParentTerminal:     6,
 	RuleEpicOpenChildren:   7,
 	RuleEpicBehindChildren: 8,
-	RuleStaleCandidate:     9,
-	RuleStaleReady:         10,
-	RuleStaleWork:          11,
-	RuleStaleNote:          12,
-	RuleIncompleteDoc:      13,
-	RuleUntaggedLive:       14,
-	RuleUnregisteredSource: 15,
-	RuleDriftSuspect:       16,
-	RuleOpenClarification:  17,
-	RuleCapabilityOrphan:   18,
+	RuleEpicUnplanned:      9,
+	RuleStaleCandidate:     10,
+	RuleStaleReady:         11,
+	RuleStaleWork:          12,
+	RuleStaleNote:          13,
+	RuleIncompleteDoc:      14,
+	RuleUntaggedLive:       15,
+	RuleUnregisteredSource: 16,
+	RuleDriftSuspect:       17,
+	RuleOpenClarification:  18,
+	RuleCapabilityOrphan:   19,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -227,6 +229,12 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, wikiSources...)
 
 	findings = append(findings, parentFindings(features)...)
+
+	unplanned, err := epicUnplannedFindings(repoDir, features)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, unplanned...)
 
 	stale, err := staleCandidateFindings(repoDir, features, time.Now())
 	if err != nil {
@@ -479,6 +487,55 @@ func parentFindings(features []store.Feature) []Finding {
 		}
 	}
 	return findings
+}
+
+// epicUnplannedFindings (F-0235) flags a live epic (candidate/approved/
+// in_development feature with at least one live child) whose plan.md is still
+// the unfilled scaffold — the mechanical backstop for N-0031 ("épico nasce
+// decomposto E planejado"). Unlike epic-behind-children, it does not require a
+// child to have started: a candidate epic decomposed but never planned is
+// already a finding. The two rules are not mutually exclusive by design (a
+// stub-planned epic with a child already in development gets both) — they
+// flag distinct, non-overlapping conditions.
+func epicUnplannedFindings(repoDir string, features []store.Feature) ([]Finding, error) {
+	byID := make(map[string]store.Feature, len(features))
+	for _, f := range features {
+		byID[f.ID] = f
+	}
+	isLive := func(s domain.FeatureState) bool {
+		return s == domain.StateCandidate || s == domain.StateApproved || s == domain.StateInDevelopment
+	}
+	var findings []Finding
+	for epicID, children := range store.ChildrenByParent(features) {
+		epic, ok := byID[epicID]
+		if !ok || !isLive(epic.State) {
+			continue
+		}
+		hasLiveChild := false
+		for _, c := range children {
+			if isLive(c.State) {
+				hasLiveChild = true
+				break
+			}
+		}
+		if !hasLiveChild {
+			continue
+		}
+		rel := "content/features/" + epicID + "/plan.md"
+		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if err == nil && doccheck.HasRealContent(data) {
+			continue // a real plan already exists
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleEpicUnplanned,
+			Entity: epicID,
+			Detail: fmt.Sprintf("epic %s has live children but no real plan.md yet — fill it before approve (see N-0031)", epicID),
+		})
+	}
+	return findings, nil
 }
 
 // buildNeedles collects every terminal entity scanned docs must not mention:
