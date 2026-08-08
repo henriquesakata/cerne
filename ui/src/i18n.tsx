@@ -188,6 +188,9 @@ const ptBR = {
     } satisfies Record<FeatureState, string>,
     noEpic: 'Sem épico',
     moreInHistory: (n: number) => `+${n} concluída(s) — ver em Gestão`,
+    rolledUp: (n: number) => `+${n}`,
+    rolledUpTitle: (n: number) =>
+      `${n} feature(s) deste épico concluída(s) — representadas aqui`,
     epicBadge: 'épico',
     taskBadge: 'task',
     childInDev: 'filho em dev',
@@ -800,6 +803,8 @@ const en: Messages = {
     },
     noEpic: 'No epic',
     moreInHistory: (n: number) => `+${n} closed — see in Manage`,
+    rolledUp: (n: number) => `+${n}`,
+    rolledUpTitle: (n: number) => `${n} feature(s) from this epic closed — represented here`,
     epicBadge: 'epic',
     taskBadge: 'task',
     childInDev: 'child in dev',
