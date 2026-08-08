@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"gitlab.com/rockt/cerne/internal/project"
 )
@@ -91,6 +93,7 @@ func NewAgentProvider(cfg project.LLMConfig, dir string) (Provider, error) {
 type messagesRequest struct {
 	Model     string           `json:"model"`
 	MaxTokens int              `json:"max_tokens"`
+	Stream    bool             `json:"stream,omitempty"`
 	Messages  []messagesMember `json:"messages"`
 }
 
@@ -113,28 +116,42 @@ type contentBlock struct {
 // the error, so a large HTML error page does not flood the message.
 const maxErrBodyBytes = 512
 
-// Complete performs one Messages API call and returns the concatenated text of
-// every "text"-type content block. Non-2xx responses become an error including
-// the status code and a truncated slice of the body.
-func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, error) {
-	reqBody, err := json.Marshal(messagesRequest{
-		Model:     p.model,
-		MaxTokens: p.maxTokens,
-		Messages:  []messagesMember{{Role: "user", Content: prompt}},
-	})
+// post sends one Messages API request and returns the response with a 2xx
+// status; any other status is turned into an error carrying the code and a
+// truncated slice of the body. The caller owns closing the body on success.
+func (p *httpProvider) post(ctx context.Context, body messagesRequest) (*http.Response, error) {
+	reqBody, err := json.Marshal(body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v1/messages", bytes.NewReader(reqBody))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", anthropicVersion)
 
 	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("Anthropic Messages API returned status %d: %s", resp.StatusCode, truncate(respBody, maxErrBodyBytes))
+	}
+	return resp, nil
+}
+
+// Complete performs one Messages API call and returns the concatenated text of
+// every "text"-type content block.
+func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, error) {
+	resp, err := p.post(ctx, messagesRequest{
+		Model:     p.model,
+		MaxTokens: p.maxTokens,
+		Messages:  []messagesMember{{Role: "user", Content: prompt}},
+	})
 	if err != nil {
 		return "", err
 	}
@@ -144,10 +161,6 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 	if err != nil {
 		return "", err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Anthropic Messages API returned status %d: %s", resp.StatusCode, truncate(respBody, maxErrBodyBytes))
-	}
-
 	var parsed messagesResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return "", fmt.Errorf("unreadable API response: %w", err)
@@ -157,6 +170,63 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 		if block.Type == "text" {
 			b.WriteString(block.Text)
 		}
+	}
+	return b.String(), nil
+}
+
+// sseEvent is the subset of a Messages API streaming event we read: text
+// deltas and the in-stream error event.
+type sseEvent struct {
+	Type  string `json:"type"`
+	Delta struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta"`
+	Error struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// Stream implements Streamer (F-0240): same call as Complete but with
+// stream:true, reading the SSE response and forwarding each text_delta to
+// onDelta. The return is the full concatenated text. An onDelta error aborts
+// the read and is returned as-is.
+func (p *httpProvider) Stream(ctx context.Context, prompt string, onDelta func(string) error) (string, error) {
+	resp, err := p.post(ctx, messagesRequest{
+		Model:     p.model,
+		MaxTokens: p.maxTokens,
+		Stream:    true,
+		Messages:  []messagesMember{{Role: "user", Content: prompt}},
+	})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var b bytes.Buffer
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		data, ok := strings.CutPrefix(scanner.Text(), "data: ")
+		if !ok {
+			continue
+		}
+		var ev sseEvent
+		if json.Unmarshal([]byte(data), &ev) != nil {
+			continue
+		}
+		switch {
+		case ev.Type == "error":
+			return b.String(), fmt.Errorf("Anthropic Messages API stream error: %s", ev.Error.Message)
+		case ev.Type == "content_block_delta" && ev.Delta.Type == "text_delta" && ev.Delta.Text != "":
+			b.WriteString(ev.Delta.Text)
+			if err := onDelta(ev.Delta.Text); err != nil {
+				return b.String(), err
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return b.String(), err
 	}
 	return b.String(), nil
 }

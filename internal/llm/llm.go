@@ -24,6 +24,14 @@ type Provider interface {
 	Complete(ctx context.Context, prompt string) (string, error)
 }
 
+// Streamer is the optional capability of completing in parts (F-0240): onDelta
+// receives each text chunk as it arrives; the return is still the full text.
+// A provider that does not implement it keeps serving through Complete —
+// callers discover the capability by type assertion.
+type Streamer interface {
+	Stream(ctx context.Context, prompt string, onDelta func(string) error) (string, error)
+}
+
 // ResolveMode maps a configured .cernerc [llm] mode to the effective mode,
 // defaulting an empty value to ModeDelegation.
 func ResolveMode(mode string) string {

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat from './BacklogChat'
 import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions } from './api'
 import { getConversation, writeChats, type Conversation } from './useBacklogChats'
 
-const postChat = vi.fn<(messages: unknown, override?: ChatOverride) => Promise<ChatAnswer>>()
+const streamChat = vi.fn<
+  (messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => Promise<ChatAnswer>
+>()
 const registerChatCandidate = vi.fn<
   (title: string, specBody: string, facets?: string[], components?: string[], capability?: string) => Promise<CreateOutcome>
 >()
@@ -13,7 +15,8 @@ const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
-  postChat: (messages: unknown, override?: ChatOverride) => postChat(messages, override),
+  streamChat: (messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) =>
+    streamChat(messages, override, onDelta),
   registerChatCandidate: (
     title: string,
     specBody: string,
@@ -30,7 +33,7 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   setApiProject('proj-x')
-  postChat.mockReset()
+  streamChat.mockReset()
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
   fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], efforts: [] })
@@ -69,7 +72,7 @@ const feature = (id: string): Feature => ({
 
 describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   it('envia a mensagem e mostra a resposta do agente', async () => {
-    postChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
+    streamChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), {
@@ -78,9 +81,10 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
     await waitFor(() => expect(screen.getByText('Em qual formato?')).toBeInTheDocument())
-    expect(postChat).toHaveBeenCalledWith(
+    expect(streamChat).toHaveBeenCalledWith(
       [{ role: 'user', content: 'Preciso exportar relatórios.' }],
       { model: undefined, effort: undefined },
+      expect.any(Function),
     )
   })
 
@@ -89,11 +93,11 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     renderChat()
 
     await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument())
-    expect(postChat).not.toHaveBeenCalled()
+    expect(streamChat).not.toHaveBeenCalled()
   })
 
   it('mostra desabilitado com orientação quando needs_provider no envio', async () => {
-    postChat.mockResolvedValue({ answered: false, needs_provider: true })
+    streamChat.mockResolvedValue({ answered: false, needs_provider: true })
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), {
@@ -107,7 +111,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   })
 
   it('sem bloco de proposta, não mostra botão de registrar', async () => {
-    postChat.mockResolvedValue({ answered: true, reply: 'Me conta mais sobre o formato.' })
+    streamChat.mockResolvedValue({ answered: true, reply: 'Me conta mais sobre o formato.' })
     renderChat()
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -123,7 +127,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       '# Exportar relatórios em CSV\n\n' +
       '## Problema\nFalta exportação.\n' +
       '```\n'
-    postChat.mockResolvedValue({ answered: true, reply: proposal })
+    streamChat.mockResolvedValue({ answered: true, reply: proposal })
     registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
     const onRegistered = vi.fn()
     renderChat({}, { onRegistered })
@@ -160,7 +164,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       'capability: C-0001\n\n' +
       '## Problema\nFalta exportação.\n' +
       '```\n'
-    postChat.mockResolvedValue({ answered: true, reply: proposal })
+    streamChat.mockResolvedValue({ answered: true, reply: proposal })
     registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
     renderChat()
 
@@ -193,7 +197,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   })
 
   it('F-0219: repassa toda mudança de transcript/modelo/esforço via onUpdate (quem persiste é o hook)', async () => {
-    postChat.mockResolvedValue({ answered: true, reply: 'Entendido.' })
+    streamChat.mockResolvedValue({ answered: true, reply: 'Entendido.' })
     const { onUpdate } = renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Preciso de X.' } })
@@ -210,46 +214,80 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     })
   })
 
-  it('critério 2: efeito de digitação completa eventualmente e um clique no histórico pula pro texto inteiro', async () => {
-    const fullReply = 'Uma resposta razoavelmente longa para exercitar o efeito de digitação aos poucos.'
-    postChat.mockResolvedValue({ answered: true, reply: fullReply })
-    const { container } = renderChat()
-
-    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
-    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
-
-    // A bolha do assistente aparece antes do texto completo (digitação em curso).
-    await waitFor(() => expect(container.querySelector('.backlog-chat-msg-assistant')).toBeInTheDocument())
-    expect(screen.queryByText(fullReply)).not.toBeInTheDocument()
-
-    // Clicar no histórico pula direto para o texto inteiro.
-    fireEvent.click(container.querySelector('.backlog-chat-history')!)
-    expect(screen.getByText(fullReply)).toBeInTheDocument()
-  })
-
-  it('critério 2: sem clique, o efeito de digitação converge pro texto completo', async () => {
-    const fullReply = 'Resposta curta.'
-    postChat.mockResolvedValue({ answered: true, reply: fullReply })
+  it('F-0240 critério 1: o texto parcial aparece na tela conforme os deltas chegam, antes do terminal', async () => {
+    let onDelta!: (d: string) => void
+    streamChat.mockImplementation((_m, _o, cb) => {
+      onDelta = cb
+      return new Promise(() => {}) // transmissão segue em voo
+    })
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
-    await waitFor(() => expect(screen.getByText(fullReply)).toBeInTheDocument())
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    act(() => onDelta('Começo da resposta'))
+    await waitFor(() => expect(screen.getByText('Começo da resposta')).toBeInTheDocument())
+
+    act(() => onDelta(' e o resto dela.'))
+    await waitFor(() => expect(screen.getByText('Começo da resposta e o resto dela.')).toBeInTheDocument())
+    // Ainda pendente: o indicador de processamento segue visível junto do parcial.
+    expect(screen.getByText(/processando/i)).toBeInTheDocument()
+  })
+
+  it('F-0240 critério 7: proposta transmitida em N pedaços só é parseada no fim, com metadados', async () => {
+    const proposal =
+      'Perfeito, aqui está a proposta:\n\n' +
+      '```cerne-proposta\n' +
+      '# Exportar relatórios em CSV\n' +
+      'facet: code\n' +
+      'components: chat, backlog\n' +
+      'capability: C-0001\n\n' +
+      '## Problema\nFalta exportação.\n' +
+      '```\n'
+    const chunks = [proposal.slice(0, 40), proposal.slice(40, 90), proposal.slice(90)]
+    let onDelta!: (d: string) => void
+    let resolve!: (v: ChatAnswer) => void
+    streamChat.mockImplementation((_m, _o, cb) => {
+      onDelta = cb
+      return new Promise((r) => (resolve = r))
+    })
+    renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+
+    act(() => onDelta(chunks[0]))
+    // Bloco incompleto: nada de botão de registrar durante a transmissão.
+    expect(screen.queryByRole('button', { name: /registrar candidata/i })).not.toBeInTheDocument()
+
+    act(() => {
+      onDelta(chunks[1])
+      onDelta(chunks[2])
+    })
+    act(() => resolve({ answered: true, reply: proposal }))
+
+    await screen.findByRole('button', { name: /registrar candidata/i })
+    expect(screen.getByDisplayValue('Exportar relatórios em CSV')).toBeInTheDocument()
+    expect(screen.getByText('code')).toBeInTheDocument()
+    expect(screen.getByText('chat')).toBeInTheDocument()
+    expect(screen.getByText('backlog')).toBeInTheDocument()
+    expect(screen.getByText('C-0001')).toBeInTheDocument()
   })
 
   it('critério 4: Enter envia, Shift+Enter quebra linha sem enviar', async () => {
-    postChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
     renderChat()
     const textarea = screen.getByPlaceholderText(/descreva/i)
 
     fireEvent.change(textarea, { target: { value: 'Linha 1' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
-    expect(postChat).not.toHaveBeenCalled()
+    expect(streamChat).not.toHaveBeenCalled()
 
     fireEvent.change(textarea, { target: { value: 'Linha 1\nLinha 2' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
-    await waitFor(() => expect(postChat).toHaveBeenCalled())
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
   })
 
   it('critério 5: seletor de modelo/esforço envia a escolha selecionada na chamada', async () => {
@@ -258,7 +296,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       models: ['claude-opus-5', 'claude-sonnet-5'],
       efforts: ['low', 'high'],
     })
-    postChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
     renderChat()
 
     await screen.findByText('claude-opus-5')
@@ -272,9 +310,10 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
     await waitFor(() =>
-      expect(postChat).toHaveBeenCalledWith(
+      expect(streamChat).toHaveBeenCalledWith(
         [{ role: 'user', content: 'Oi' }],
         { model: 'claude-opus-5', effort: 'high' },
+        expect.any(Function),
       ),
     )
   })
@@ -330,7 +369,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () => {
   it('critério 1: desmonta durante a requisição → a resposta é gravada e aparece ao remontar', async () => {
     let resolve!: (v: ChatAnswer) => void
-    postChat.mockReturnValue(new Promise((r) => (resolve = r)))
+    streamChat.mockReturnValue(new Promise((r) => (resolve = r)))
     const { unmount, conversation } = renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
@@ -345,7 +384,7 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
   })
 
   it('critério 2: remonta com a resposta ainda em voo → o indicador de processamento reaparece', async () => {
-    postChat.mockReturnValue(new Promise(() => {}))
+    streamChat.mockReturnValue(new Promise(() => {}))
     const { unmount, conversation } = renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
@@ -359,7 +398,7 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
   it('critério 3: o indicador mostra tempo decorrido e modelo/esforço, nunca texto estático', async () => {
     vi.useFakeTimers()
     try {
-      postChat.mockReturnValue(new Promise(() => {}))
+      streamChat.mockReturnValue(new Promise(() => {}))
       fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['medium'] })
       renderChat({ model: 'claude-opus-5', effort: 'medium' })
 
@@ -378,28 +417,28 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
   })
 
   it('critério 4: falha vira bolha de erro com reenviar; reenviar refaz a chamada com sucesso', async () => {
-    postChat.mockRejectedValueOnce(new Error('rede caiu'))
+    streamChat.mockRejectedValueOnce(new Error('rede caiu'))
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
     await screen.findByText('rede caiu')
 
-    postChat.mockResolvedValueOnce({ answered: true, reply: 'Tudo certo agora.' })
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Tudo certo agora.' })
     fireEvent.click(screen.getByRole('button', { name: /reenviar/i }))
 
     await waitFor(() => expect(screen.getByText('Tudo certo agora.')).toBeInTheDocument())
-    expect(postChat).toHaveBeenCalledTimes(2)
+    expect(streamChat).toHaveBeenCalledTimes(2)
   })
 
   it('critério 5: um segundo envio na mesma conversa é bloqueado enquanto a primeira segue pendente', async () => {
-    postChat.mockReturnValue(new Promise(() => {}))
+    streamChat.mockReturnValue(new Promise(() => {}))
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
     expect(screen.getByRole('button', { name: /enviar/i })).toBeDisabled()
-    expect(postChat).toHaveBeenCalledTimes(1)
+    expect(streamChat).toHaveBeenCalledTimes(1)
   })
 })

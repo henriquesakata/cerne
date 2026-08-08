@@ -1,4 +1,4 @@
-import { postChat, type ChatMsg, type ChatOverride } from './api'
+import { streamChat, type ChatMsg, type ChatOverride } from './api'
 import { getConversation, readChats, writeChats } from './useBacklogChats'
 
 // chatRequest (F-0230) é um singleton por conversa, fora do ciclo de vida do
@@ -53,13 +53,20 @@ function patchMessages(convId: string, messages: ChatMsg[]) {
 // send: ignora uma segunda chamada pra mesma conversa enquanto a primeira
 // segue pendente (critério 5 — invariante de envio único por conversa);
 // conversas diferentes têm entradas independentes no map, então não bloqueiam
-// entre si.
+// entre si. Com streaming (F-0240) cada delta acumula no parcial e vai pro
+// storage na hora — é assim que o texto sobrevive ao desmonte e aparece
+// incrementalmente; um erro no meio deixa o parcial gravado (critério 8).
 export function send(convId: string, messages: ChatMsg[], override: ChatOverride): void {
   if (status(convId).pending) return
   statuses.set(convId, { pending: true, startedAt: Date.now(), model: override.model ?? '', effort: override.effort ?? '' })
   outcomes.delete(convId)
   notify(convId)
-  postChat(messages, override)
+  let partial = ''
+  streamChat(messages, override, (delta) => {
+    partial += delta
+    patchMessages(convId, [...messages, { role: 'assistant', content: partial }])
+    notify(convId)
+  })
     .then((res) => {
       statuses.set(convId, IDLE)
       if (res.needs_provider) {

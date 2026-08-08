@@ -19,6 +19,11 @@ import (
 // proposing a new capability node in chatRegisterRequest.Capability.
 var capabilityIDPattern = regexp.MustCompile(`^C-\d+$`)
 
+// newAgentProvider is a test seam over llm.NewAgentProvider: tests swap it to
+// inject a provider without the Streamer capability (the F-0240 fallback path,
+// unreachable otherwise without shelling out to a claude binary).
+var newAgentProvider = llm.NewAgentProvider
+
 // chatMessage is one turn of the Backlog chat transcript (F-0210), as sent by
 // the browser — the server is stateless, so the whole transcript travels on
 // every call.
@@ -83,19 +88,63 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 
 	// F-0224: the chat provider runs claude-cli as a read-only agent in the
 	// project dir; the budget covers chained cerne queries, not just one shot.
-	prov, err := llm.NewAgentProvider(cfg.LLM, projDir)
+	prov, err := newAgentProvider(cfg.LLM, projDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
 	defer cancel()
-	reply, err := prov.Complete(ctx, app.BuildChatPrompt(sysPrompt, msgs))
+	prompt := app.BuildChatPrompt(sysPrompt, msgs)
+
+	// F-0240: a provider with the Streamer capability transmits the reply as
+	// NDJSON deltas; anyone else keeps the single-shot path below — whose body
+	// is byte-for-byte the streaming path's terminal event, so the client
+	// never needs to know which path ran.
+	if streamer, ok := prov.(llm.Streamer); ok {
+		if flusher, ok := w.(http.Flusher); ok {
+			streamChatReply(ctx, w, flusher, streamer, prompt)
+			return
+		}
+	}
+	reply, err := prov.Complete(ctx, prompt)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, chatResponse{Answered: true, Reply: reply})
+}
+
+// streamChatReply writes the chat reply as line-delimited JSON: one
+// {"delta":...} per chunk — each explicitly flushed, or net/http's buffering
+// would deliver everything at once and the streaming would be staged all over
+// again — then a terminal line: the plain chatResponse on success, or
+// {"error":...} when the stream broke after output already went out (the
+// partial the client holds stays valid; F-0240 criterion 8). An error before
+// any delta still becomes the plain 500 JSON of the single-shot path.
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	enc := json.NewEncoder(w)
+	wrote := false
+	reply, err := streamer.Stream(ctx, prompt, func(delta string) error {
+		wrote = true
+		if err := enc.Encode(map[string]string{"delta": delta}); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	})
+	if err != nil {
+		if !wrote {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		_ = enc.Encode(errorBody(err.Error()))
+		flusher.Flush()
+		return
+	}
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply})
+	flusher.Flush()
 }
 
 // chatRegisterRequest is the POST /api/chat/register body: the proposal the

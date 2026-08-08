@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +13,14 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// fakeChatProvider stands in for the LLM HTTP API, mirroring fakeDiagramProvider.
+// fakeChatProvider stands in for the LLM HTTP API. Since F-0240 the chat
+// provider streams, so the fake speaks SSE: the reply travels as two
+// content_block_delta events (forcing the incremental path in every test).
 func fakeChatProvider(t *testing.T, gotPrompt *string, replyText string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,10 +28,51 @@ func fakeChatProvider(t *testing.T, gotPrompt *string, replyText string) *httpte
 		if gotPrompt != nil {
 			*gotPrompt = string(raw)
 		}
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"`+replyText+`"}]}`)
+		w.Header().Set("Content-Type", "text/event-stream")
+		runes := []rune(replyText)
+		for _, chunk := range []string{string(runes[:len(runes)/2]), string(runes[len(runes)/2:])} {
+			if chunk == "" {
+				continue
+			}
+			data, _ := json.Marshal(map[string]any{
+				"type":  "content_block_delta",
+				"delta": map[string]string{"type": "text_delta", "text": chunk},
+			})
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// doChatStream posts to /api/chat and parses the NDJSON response (F-0240):
+// every line but the last must be a {"delta":...} event, returned in order;
+// the last line is decoded into terminal.
+func doChatStream(t *testing.T, h http.Handler, body string, terminal any) (deltas []string, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/chat status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatalf("empty chat response body")
+	}
+	for _, line := range lines[:len(lines)-1] {
+		var ev struct {
+			Delta *string `json:"delta"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil || ev.Delta == nil {
+			t.Fatalf("non-terminal line is not a delta event: %q (err=%v)", line, err)
+		}
+		deltas = append(deltas, *ev.Delta)
+	}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), terminal); err != nil {
+		t.Fatalf("terminal line %q: %v", lines[len(lines)-1], err)
+	}
+	return deltas, rec
 }
 
 func configureChatByoKey(t *testing.T, projDir, baseURL string) {
@@ -43,7 +88,9 @@ func configureChatByoKey(t *testing.T, projDir, baseURL string) {
 }
 
 // TestChatByoKey: criterion 3 — with a provider configured, POST /api/chat
-// calls it with the assembled system prompt + transcript and returns the reply.
+// calls it with the assembled system prompt + transcript and returns the
+// reply. Since F-0240 the reply streams: delta events first, then the same
+// terminal payload as before.
 func TestChatByoKey(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001
 
@@ -56,16 +103,21 @@ func TestChatByoKey(t *testing.T) {
 		NeedsProvider bool   `json:"needs_provider"`
 		Reply         string `json:"reply"`
 	}
-	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+	deltas, _ := doChatStream(t, New(repoDir, projDir, "proj-chat"),
 		`{"messages":[{"role":"user","content":"Preciso exportar relatórios."}]}`, &got)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
-	}
 	if !got.Answered || got.NeedsProvider {
 		t.Fatalf("answered=%v needs_provider=%v, want answered=true needs_provider=false", got.Answered, got.NeedsProvider)
 	}
 	if got.Reply != "Poderia detalhar o formato do relatório?" {
 		t.Fatalf("reply = %q", got.Reply)
+	}
+	// F-0240 criterion 1: the text traveled incrementally, and the deltas
+	// reassemble into the terminal reply.
+	if len(deltas) < 2 {
+		t.Fatalf("deltas = %d, want at least 2 (incremental delivery)", len(deltas))
+	}
+	if strings.Join(deltas, "") != got.Reply {
+		t.Fatalf("deltas joined = %q, want the terminal reply", strings.Join(deltas, ""))
 	}
 	if !strings.Contains(gotPrompt, "F-0001") {
 		t.Fatalf("prompt missing the project roster:\n%s", gotPrompt)
@@ -89,22 +141,23 @@ func TestChatModelOverride(t *testing.T) {
 	var got struct {
 		Answered bool `json:"answered"`
 	}
-	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+	_, _ = doChatStream(t, New(repoDir, projDir, "proj-chat"),
 		`{"messages":[{"role":"user","content":"Oi"}],"model":"claude-opus-5","effort":"high"}`, &got)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
-	}
 	if !got.Answered {
 		t.Fatalf("answered = %v, want true", got.Answered)
 	}
 	var sentToProvider struct {
-		Model string `json:"model"`
+		Model  string `json:"model"`
+		Stream bool   `json:"stream"`
 	}
 	if err := json.Unmarshal([]byte(gotPrompt), &sentToProvider); err != nil {
 		t.Fatalf("unmarshal provider request: %v", err)
 	}
 	if sentToProvider.Model != "claude-opus-5" {
 		t.Fatalf("provider request model = %q, want claude-opus-5", sentToProvider.Model)
+	}
+	if !sentToProvider.Stream {
+		t.Fatalf("provider request stream = false, want true (F-0240)")
 	}
 }
 
@@ -120,11 +173,8 @@ func TestChatNoModelOverrideUsesConfigDefault(t *testing.T) {
 	var got struct {
 		Answered bool `json:"answered"`
 	}
-	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+	_, _ = doChatStream(t, New(repoDir, projDir, "proj-chat"),
 		`{"messages":[{"role":"user","content":"Oi"}]}`, &got)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
-	}
 	var sentToProvider struct {
 		Model string `json:"model"`
 	}
@@ -159,6 +209,62 @@ func TestChatDelegation(t *testing.T) {
 	}
 }
 
+// TestChatNonStreamerFallback (F-0240 criterion 2): a provider without the
+// Streamer capability keeps the current single-shot path — one plain JSON
+// write, no delta events, same terminal payload.
+func TestChatNonStreamerFallback(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+
+	orig := newAgentProvider
+	newAgentProvider = func(project.LLMConfig, string) (llm.Provider, error) {
+		return &llm.Fake{Reply: "resposta inteira de uma vez"}, nil
+	}
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	var got struct {
+		Answered bool   `json:"answered"`
+		Reply    string `json:"reply"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"Oi"}]}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if !got.Answered || got.Reply != "resposta inteira de uma vez" {
+		t.Fatalf("answered=%v reply=%q, want the full reply in one shot", got.Answered, got.Reply)
+	}
+	if strings.Contains(rec.Body.String(), `"delta"`) {
+		t.Fatalf("fallback body must have no delta events: %s", rec.Body.String())
+	}
+}
+
+// TestChatStreamMidError (F-0240 criterion 8): the stream breaking after the
+// first delta keeps what was already sent and closes with an error terminal —
+// the partial is not discarded, the failure not silent.
+func TestChatStreamMidError(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"começo da resposta"}}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"type":"error","error":{"message":"overloaded"}}`+"\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	configureChatByoKey(t, projDir, srv.URL)
+
+	var terminal struct {
+		Error string `json:"error"`
+	}
+	deltas, _ := doChatStream(t, New(repoDir, projDir, "proj-chat"),
+		`{"messages":[{"role":"user","content":"Oi"}]}`, &terminal)
+	if len(deltas) != 1 || deltas[0] != "começo da resposta" {
+		t.Fatalf("deltas = %#v, want the partial delivered before the error", deltas)
+	}
+	if !strings.Contains(terminal.Error, "overloaded") {
+		t.Fatalf("terminal error = %q, want the provider's message", terminal.Error)
+	}
+}
+
 // TestChatEmptyMessages: an empty transcript is a 422, not a call to the model.
 func TestChatEmptyMessages(t *testing.T) {
 	repoDir, projDir := newBackend(t)
@@ -186,11 +292,8 @@ func TestChatNoConversationPersisted(t *testing.T) {
 	}
 
 	var got map[string]any
-	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+	_, _ = doChatStream(t, New(repoDir, projDir, "proj-chat"),
 		`{"messages":[{"role":"user","content":"Preciso de algo."}]}`, &got)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
-	}
 
 	head1, err := gitback.HeadSHA(origin)
 	if err != nil {
