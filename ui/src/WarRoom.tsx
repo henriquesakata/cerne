@@ -125,6 +125,7 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [closed, setClosed] = useState(false)
   const [minutes, setMinutes] = useState<Minutes | null>(null)
+  const [minutesNoteID, setMinutesNoteID] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -225,6 +226,27 @@ export function WarRoomDetail({ id }: { id: string }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // O vínculo com a ata registrada (F-0238) é metadado da sala, não um
+  // evento do transcript — busca uma vez quando a sala fecha (registro
+  // acontece fora da UI, via 'cerne room minutes register'; sem polling
+  // contínuo aqui, a sala já é lida em contexto).
+  useEffect(() => {
+    if (!closed) {
+      setMinutesNoteID(null)
+      return
+    }
+    let cancelled = false
+    fetchRooms()
+      .then((rooms) => {
+        if (cancelled) return
+        setMinutesNoteID(rooms.find((r) => r.id === id)?.minutes_note ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [closed, id])
 
   // Reload retoma a sessão guardada validando a capability no servidor
   // (F-0226 critério 9); token inválido volta ao formulário de join sem
@@ -542,6 +564,12 @@ export function WarRoomDetail({ id }: { id: string }) {
             <p>
               <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
             </p>
+            {minutesNoteID && (
+              <p>
+                <strong>{t.warRoom.minutesRegistered}</strong>{' '}
+                <a href={`#/n/${encodeURIComponent(minutesNoteID)}`}>{minutesNoteID}</a>
+              </p>
+            )}
           </div>
         )}
         <div className="backlog-chat-history">

@@ -281,6 +281,7 @@ const ptBR = {
     minutesOwners: 'Responsáveis (um por linha)',
     minutesNextSteps: 'Próximos passos (um por linha)',
     allowOpenItems: 'Permitir fechar com itens pendentes',
+    minutesRegistered: 'Ata registrada:',
   },
   palette: {
     placeholder: 'Buscar por código ou título…',
@@ -891,6 +892,7 @@ const en: Messages = {
     minutesOwners: 'Owners (one per line)',
     minutesNextSteps: 'Next steps (one per line)',
     allowOpenItems: 'Allow closing with pending items',
+    minutesRegistered: 'Minutes registered:',
   },
   palette: {
     placeholder: 'Search by id or title…',

@@ -75,6 +75,9 @@ beforeEach(() => {
     follow ? new Promise(() => {}) : Promise.resolve([]),
   )
   fetchRoomPending.mockResolvedValue([])
+  // WarRoomDetail busca fetchRooms() ao fechar (F-0238, vínculo minutes_note)
+  // — default vazio para não quebrar testes que não se importam com o link.
+  fetchRooms.mockResolvedValue([])
 })
 
 describe('WarRoom (T-0003)', () => {
@@ -339,5 +342,34 @@ describe('WarRoomDetail (T-0003)', () => {
     expect(history).not.toBeNull()
     // eslint-disable-next-line testing-library/no-node-access
     expect(minutesHeading.compareDocumentPosition(history!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  // F-0238: a sala fechada mostra o vínculo com a ata registrada.
+  const closeEventWithMinutes = {
+    seq: 2,
+    type: 'close' as const,
+    time: '2026-08-06T00:05:00Z',
+    minutes: { conclusion: 'reverter o deploy', rationale: 'mais rápido', discarded_options: [], owners: [], next_steps: [] },
+  }
+
+  it('sala fechada com ata registrada mostra o link para a nota (F-0238 critério 4)', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([{ seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }, closeEventWithMinutes]),
+    )
+    fetchRooms.mockResolvedValue([room({ id: 'R1', closed_at: '2026-08-06T00:05:00Z', minutes_note: 'N-0007' })])
+    render(<WarRoomDetail id="R1" />)
+
+    const link = await screen.findByRole('link', { name: 'N-0007' })
+    expect(link).toHaveAttribute('href', '#/n/N-0007')
+  })
+
+  it('sala fechada sem ata registrada não mostra o link', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([{ seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }, closeEventWithMinutes]),
+    )
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText('reverter o deploy')).toBeInTheDocument())
+    expect(screen.queryByText(/ata registrada/i)).not.toBeInTheDocument()
   })
 })
