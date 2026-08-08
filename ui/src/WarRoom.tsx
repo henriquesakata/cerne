@@ -19,6 +19,7 @@ import {
   type RoomSession,
 } from './api'
 import { useT } from './i18n'
+import { useLiveVersion } from './live'
 
 const NICK_KEY = 'warroom-nick'
 const BIO_KEY = 'warroom-bio'
@@ -54,12 +55,13 @@ export default function WarRoom() {
   const [topic, setTopic] = useState('')
   const [opening, setOpening] = useState(false)
   const { t } = useT()
+  const version = useLiveVersion()
 
   useEffect(() => {
     fetchRooms()
       .then((rs) => setRooms(rs))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [])
+  }, [version])
 
   const open = (e: FormEvent) => {
     e.preventDefault()
@@ -137,6 +139,7 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const { t } = useT()
+  const version = useLiveVersion()
 
   // Facilitação (F-0228): capability separada da sessão, guardada por sala,
   // nunca exibida no transcript. pendingTick força um refetch da fila
@@ -225,7 +228,7 @@ export function WarRoomDetail({ id }: { id: string }) {
       controller.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id, version])
 
   // O vínculo com a ata registrada (F-0238) é metadado da sala, não um
   // evento do transcript — busca uma vez quando a sala fecha (registro
@@ -246,7 +249,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-  }, [closed, id])
+  }, [closed, id, version])
 
   // Reload retoma a sessão guardada validando a capability no servidor
   // (F-0226 critério 9); token inválido volta ao formulário de join sem
@@ -266,14 +269,14 @@ export function WarRoomDetail({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, version])
 
   // Carrega a capability de facilitador guardada (se o navegador abriu a
   // sala, ou já assumiu/recebeu a facilitação antes) — F-0228 critério 1.
   useEffect(() => {
     setFacilitatorId(loadStoredFacilitator(id))
     setTransferredToken(null)
-  }, [id])
+  }, [id, version])
 
   // Fila de triagem: só busca quando há capability de facilitador válida e a
   // sala segue aberta; refaz quando um evento de facilitação chega.
@@ -291,7 +294,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-  }, [id, facilitatorId, closed, pendingTick])
+  }, [id, facilitatorId, closed, pendingTick, version])
 
   const joined = session !== null
 
