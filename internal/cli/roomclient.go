@@ -50,7 +50,7 @@ func newRoomClient(dir string, port int) (roomClient, error) {
 // thing to the caller: no usable `cerne ui` for this project. ctx lets a
 // `read --follow` loop (each call may block up to the server's long-poll
 // timeout) be cut short by Ctrl+C between iterations.
-func (c roomClient) do(ctx context.Context, method, path string, body, out any) error {
+func (c roomClient) do(ctx context.Context, method, path string, headers map[string]string, body, out any) error {
 	var reqBody *bytes.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -67,6 +67,9 @@ func (c roomClient) do(ctx context.Context, method, path string, body, out any) 
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -103,17 +106,25 @@ func (c roomClient) do(ctx context.Context, method, path string, body, out any) 
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func (c roomClient) open(ctx context.Context, topic string) (room.Room, error) {
-	var rm room.Room
-	err := c.do(ctx, http.MethodPost, "/rooms", map[string]string{"topic": topic}, &rm)
-	return rm, err
+// roomOpenResult mirrors the POST /rooms response (F-0228): the public room
+// snapshot plus the private facilitator capability, minted once for the
+// opener.
+type roomOpenResult struct {
+	Room          room.Room `json:"room"`
+	FacilitatorID string    `json:"facilitator_id"`
+}
+
+func (c roomClient) open(ctx context.Context, topic string) (roomOpenResult, error) {
+	var res roomOpenResult
+	err := c.do(ctx, http.MethodPost, "/rooms", nil, map[string]string{"topic": topic}, &res)
+	return res, err
 }
 
 func (c roomClient) list(ctx context.Context) ([]room.Room, error) {
 	var out struct {
 		Rooms []room.Room `json:"rooms"`
 	}
-	err := c.do(ctx, http.MethodGet, "/rooms", nil, &out)
+	err := c.do(ctx, http.MethodGet, "/rooms", nil, nil, &out)
 	return out.Rooms, err
 }
 
@@ -126,13 +137,13 @@ type roomJoinResult struct {
 
 func (c roomClient) join(ctx context.Context, id, nick, bio string) (roomJoinResult, error) {
 	var res roomJoinResult
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/join", map[string]string{"nick": nick, "bio": bio}, &res)
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/join", nil, map[string]string{"nick": nick, "bio": bio}, &res)
 	return res, err
 }
 
 func (c roomClient) say(ctx context.Context, id, sessionID, body string) (room.Message, error) {
 	var msg room.Message
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/messages", map[string]string{"session_id": sessionID, "body": body}, &msg)
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/messages", nil, map[string]string{"session_id": sessionID, "body": body}, &msg)
 	return msg, err
 }
 
@@ -144,12 +155,52 @@ func (c roomClient) read(ctx context.Context, id string, since int, follow bool)
 	var out struct {
 		Messages []room.Message `json:"messages"`
 	}
-	err := c.do(ctx, http.MethodGet, "/rooms/"+url.PathEscape(id)+"/messages"+q, nil, &out)
+	err := c.do(ctx, http.MethodGet, "/rooms/"+url.PathEscape(id)+"/messages"+q, nil, nil, &out)
 	return out.Messages, err
 }
 
-func (c roomClient) close(ctx context.Context, id string) (room.Room, error) {
+func (c roomClient) close(ctx context.Context, id, facilitatorID string, minutes room.Minutes, allowOpenItems bool) (room.Room, error) {
 	var rm room.Room
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", nil, &rm)
+	body := map[string]any{"facilitator_id": facilitatorID, "minutes": minutes, "allow_open_items": allowOpenItems}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", nil, body, &rm)
 	return rm, err
+}
+
+// handoffFacilitator rotates the room's facilitator capability (F-0228
+// criterion 1), returning the new one; current is invalidated in the same
+// step.
+func (c roomClient) handoffFacilitator(ctx context.Context, id, facilitatorID string) (string, error) {
+	var out struct {
+		FacilitatorID string `json:"facilitator_id"`
+	}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/facilitator/handoff", nil, map[string]string{"facilitator_id": facilitatorID}, &out)
+	return out.FacilitatorID, err
+}
+
+// createItem raises a proposal or decision-request item as sessionID's
+// participant (F-0228 criterion 2). kind is "proposal" or "decision_request".
+func (c roomClient) createItem(ctx context.Context, id, sessionID, kind, title, body string) (room.FacilitationItem, error) {
+	var item room.FacilitationItem
+	req := map[string]string{"session_id": sessionID, "kind": kind, "title": title, "body": body}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/items", nil, req, &item)
+	return item, err
+}
+
+// pending lists id's open facilitation items (F-0228 criterion 3).
+func (c roomClient) pending(ctx context.Context, id, facilitatorID string) ([]room.FacilitationItem, error) {
+	var out struct {
+		Items []room.FacilitationItem `json:"items"`
+	}
+	headers := map[string]string{"X-Room-Facilitator": facilitatorID}
+	err := c.do(ctx, http.MethodGet, "/rooms/"+url.PathEscape(id)+"/items/pending", headers, nil, &out)
+	return out.Items, err
+}
+
+// resolve resolves an open facilitation item; only the facilitator may
+// (F-0228 criterion 4).
+func (c roomClient) resolve(ctx context.Context, id, facilitatorID, itemID, result string) (room.FacilitationItem, error) {
+	var item room.FacilitationItem
+	req := map[string]string{"facilitator_id": facilitatorID, "result": result}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/items/"+url.PathEscape(itemID)+"/resolve", nil, req, &item)
+	return item, err
 }

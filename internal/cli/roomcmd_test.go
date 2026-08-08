@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -13,8 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/room"
 	"gitlab.com/rockt/cerne/internal/server"
 )
+
+// minimalMinutesJSON satisfies room close's required-field validation with
+// no substantive content — for tests that only care about close mechanics.
+const minimalMinutesJSON = `{"conclusion":"ok","rationale":"ok"}`
 
 // newRoomTestServer starts a server.NewUIMulti host whose only registered
 // project is pid, and writes a matching .cernerc (project_id = pid) under a
@@ -84,6 +90,28 @@ func joinRoomAs(t *testing.T, dirFlag []string, roomID, nick string, extra ...st
 	}
 	t.Fatalf("join output = %q, want a session: line", out)
 	return ""
+}
+
+// openRoomCLI opens a room via the CLI and returns its id and the
+// facilitator capability printed by `room open` (F-0228).
+func openRoomCLI(t *testing.T, dirFlag []string, topic string) (roomID, facilitator string) {
+	t.Helper()
+	out, err := runRoom(t, append([]string{"open", topic}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if tok, ok := strings.CutPrefix(line, "room "); ok {
+			roomID = strings.SplitN(tok, " ", 2)[0]
+		}
+		if tok, ok := strings.CutPrefix(line, "facilitator capability: "); ok {
+			facilitator = strings.TrimSpace(tok)
+		}
+	}
+	if roomID == "" || facilitator == "" {
+		t.Fatalf("open output = %q, want a room id and a facilitator capability line", out)
+	}
+	return roomID, facilitator
 }
 
 func TestRoomOpenPrintsEntryCommand(t *testing.T) {
@@ -229,7 +257,7 @@ func TestRoomReadOnceExitsOnFirstBatch(t *testing.T) {
 func TestRoomReadOnceOnClose(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-once-close")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
-	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
 
 	c, err := newRoomClient(dir, port)
 	if err != nil {
@@ -247,7 +275,7 @@ func TestRoomReadOnceOnClose(t *testing.T) {
 	}()
 
 	time.Sleep(200 * time.Millisecond)
-	if _, err := c.close(context.Background(), "R1"); err != nil {
+	if _, err := c.close(context.Background(), "R1", facilitator, room.Minutes{Conclusion: "ok", Rationale: "ok"}, false); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	<-done
@@ -283,9 +311,9 @@ func TestRoomOpenPrintsListenLine(t *testing.T) {
 func TestRoomClose(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-close")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
-	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
 
-	out, err := runRoom(t, append([]string{"close", "R1"}, dirFlag...)...)
+	out, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", minimalMinutesJSON}, dirFlag...)...)
 	if err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -412,6 +440,158 @@ func TestRoomListFormatsRooms(t *testing.T) {
 	}
 	if !strings.Contains(out, "R1") || !strings.Contains(out, "open") || !strings.Contains(out, "1 participant") || !strings.Contains(out, "topico um") {
 		t.Fatalf("list output = %q, want id/status/count/topic", out)
+	}
+}
+
+// --- F-0228: facilitator, items, minutes ---
+
+func TestRoomFacilitatorHandoffCmd(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-handoff")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+
+	out, err := runRoom(t, append([]string{"facilitator", "handoff", "R1", "--facilitator", facilitator}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("handoff: %v", err)
+	}
+	if !strings.Contains(out, "new facilitator capability: ") {
+		t.Fatalf("output = %q, want the new capability line", out)
+	}
+	if strings.Contains(out, facilitator) {
+		t.Fatalf("output = %q, leaks the old capability", out)
+	}
+
+	// the old capability no longer closes the room.
+	if _, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", minimalMinutesJSON}, dirFlag...)...); err == nil {
+		t.Fatal("close with rotated-out capability: want error, got nil")
+	}
+}
+
+func TestRoomProposeAndRequestDecisionCmd(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-propose")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	openRoomCLI(t, dirFlag, "topic")
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+
+	out, err := runRoom(t, append([]string{"propose", "R1", "--session", sess, "--title", "usar postgres", "--body", "menos manutenção"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if !strings.Contains(out, "created") {
+		t.Fatalf("propose output = %q, want confirmation", out)
+	}
+
+	out, err = runRoom(t, append([]string{"request-decision", "R1", "--session", sess, "--title", "qual banco?"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("request-decision: %v", err)
+	}
+	if !strings.Contains(out, "created") {
+		t.Fatalf("request-decision output = %q, want confirmation", out)
+	}
+}
+
+func TestRoomPendingAndResolveCmd(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-pending")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+	runRoom(t, append([]string{"propose", "R1", "--session", sess, "--title", "usar postgres", "--body", "menos manutenção"}, dirFlag...)...)
+
+	out, err := runRoom(t, append([]string{"pending", "R1", "--facilitator", facilitator}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("pending: %v", err)
+	}
+	if !strings.Contains(out, "usar postgres") || !strings.Contains(out, "ana") {
+		t.Fatalf("pending output = %q, want the open proposal listed", out)
+	}
+
+	// a regular session cannot resolve.
+	itemID := strings.Fields(out)[0]
+	if _, err := runRoom(t, append([]string{"resolve", "R1", itemID, "--facilitator", "deadbeefdeadbeefdeadbeefdeadbeef", "--result", "aceito"}, dirFlag...)...); err == nil {
+		t.Fatal("resolve with a bogus facilitator capability: want error, got nil")
+	}
+
+	out, err = runRoom(t, append([]string{"resolve", "R1", itemID, "--facilitator", facilitator, "--result", "aceito"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if !strings.Contains(out, "resolved") || !strings.Contains(out, "aceito") {
+		t.Fatalf("resolve output = %q", out)
+	}
+
+	out, err = runRoom(t, append([]string{"pending", "R1", "--facilitator", facilitator}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("pending after resolve: %v", err)
+	}
+	if !strings.Contains(out, "no pending items") {
+		t.Fatalf("pending after resolve = %q, want empty queue", out)
+	}
+}
+
+func TestRoomCloseBlocksOnOpenItemsAndListsThem(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-close-blocked")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+	runRoom(t, append([]string{"propose", "R1", "--session", sess, "--title", "usar postgres"}, dirFlag...)...)
+
+	out, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", minimalMinutesJSON}, dirFlag...)...)
+	if err == nil {
+		t.Fatal("close with an open item: want error, got nil")
+	}
+	if !strings.Contains(out, "usar postgres") {
+		t.Fatalf("close-refused output = %q, want the pending item listed", out)
+	}
+
+	// --allow-open-items forces it through.
+	_, err = runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", minimalMinutesJSON, "--allow-open-items"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("close --allow-open-items: %v", err)
+	}
+}
+
+func TestRoomCloseRejectsIncompleteMinutes(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-close-incomplete")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+
+	_, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", `{"conclusion":"","rationale":""}`}, dirFlag...)...)
+	if err == nil {
+		t.Fatal("close with incomplete minutes: want error, got nil")
+	}
+}
+
+func TestRoomMinutesTemplateCmd(t *testing.T) {
+	out, err := runRoom(t, "minutes", "template")
+	if err != nil {
+		t.Fatalf("minutes template: %v", err)
+	}
+	var mn room.Minutes
+	if err := json.Unmarshal([]byte(out), &mn); err != nil {
+		t.Fatalf("minutes template output %q is not valid JSON: %v", out, err)
+	}
+}
+
+func TestRoomMinutesShowMarkdownCmd(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-minutes-show")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+
+	if _, err := runRoom(t, append([]string{"minutes", "show", "R1"}, dirFlag...)...); err == nil {
+		t.Fatal("minutes show on an open room: want error, got nil")
+	}
+
+	closeBody := `{"conclusion":"reverter o deploy","rationale":"mais rapido que corrigir ao vivo"}`
+	if _, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", closeBody}, dirFlag...)...); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	out, err := runRoom(t, append([]string{"minutes", "show", "R1"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("minutes show: %v", err)
+	}
+	if !strings.Contains(out, "reverter o deploy") || !strings.Contains(out, "## Conclusão") {
+		t.Fatalf("minutes show output = %q, want the rendered markdown", out)
 	}
 }
 
