@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
+  fetchRoomPending,
   fetchRooms,
   getApiProject,
   joinRoom,
   postRoomClose,
+  postRoomFacilitatorHandoff,
+  postRoomItem,
   postRoomOpen,
+  postRoomResolveItem,
   readRoomMessages,
   resumeRoomSession,
   sayRoom,
+  type FacilitationItem,
+  type Minutes,
   type Room,
   type RoomMessage,
   type RoomSession,
@@ -22,6 +28,10 @@ const BIO_KEY = 'warroom-bio'
 // sessão atropelar a outra.
 const sessionKey = (roomId: string) => `warroom-session-${getApiProject()}-${roomId}`
 
+// Chave da capability de facilitador (F-0228), nunca guardada no transcript —
+// só localStorage, escopada como a sessão.
+const facilitatorKey = (roomId: string) => `warroom-facilitator-${getApiProject()}-${roomId}`
+
 function loadStoredSession(roomId: string): RoomSession | null {
   try {
     const raw = localStorage.getItem(sessionKey(roomId))
@@ -29,6 +39,10 @@ function loadStoredSession(roomId: string): RoomSession | null {
   } catch {
     return null
   }
+}
+
+function loadStoredFacilitator(roomId: string): string | null {
+  return localStorage.getItem(facilitatorKey(roomId))
 }
 
 // WarRoom (T-0003): lista de salas — critério 4 de [[F-0211]]. As salas em si
@@ -54,7 +68,8 @@ export default function WarRoom() {
     setOpening(true)
     setError(null)
     postRoomOpen(trimmed)
-      .then((r) => {
+      .then(({ room: r, facilitator_id: facilitatorId }) => {
+        localStorage.setItem(facilitatorKey(r.id), facilitatorId)
         window.location.hash = `#/rooms/${r.id}`
       })
       .catch((e: unknown) => {
@@ -109,6 +124,7 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [roster, setRoster] = useState<Roster>([])
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [closed, setClosed] = useState(false)
+  const [minutes, setMinutes] = useState<Minutes | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -118,9 +134,28 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [joining, setJoining] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [closing, setClosing] = useState(false)
   const [copied, setCopied] = useState(false)
   const { t } = useT()
+
+  // Facilitação (F-0228): capability separada da sessão, guardada por sala,
+  // nunca exibida no transcript. pendingTick força um refetch da fila
+  // quando um evento de facilitação chega pelo long-poll.
+  const [facilitatorId, setFacilitatorId] = useState<string | null>(null)
+  const [facilitatorInput, setFacilitatorInput] = useState('')
+  const [claiming, setClaiming] = useState(false)
+  const [transferring, setTransferring] = useState(false)
+  const [transferredToken, setTransferredToken] = useState<string | null>(null)
+  const [pending, setPending] = useState<FacilitationItem[]>([])
+  const [pendingTick, setPendingTick] = useState(0)
+  const [resolveDrafts, setResolveDrafts] = useState<Record<string, string>>({})
+  const [resolvingId, setResolvingId] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
+  const [allowOpenItems, setAllowOpenItems] = useState(false)
+  const [minutesConclusion, setMinutesConclusion] = useState('')
+  const [minutesRationale, setMinutesRationale] = useState('')
+  const [minutesDiscarded, setMinutesDiscarded] = useState('')
+  const [minutesOwners, setMinutesOwners] = useState('')
+  const [minutesNextSteps, setMinutesNextSteps] = useState('')
 
   const sinceRef = useRef(0)
 
@@ -137,10 +172,18 @@ export function WarRoomDetail({ id }: { id: string }) {
       }
       return next
     })
+    let sawFacilitationEvent = false
     for (const e of events) {
       if (e.type === 'open' && e.topic) setTopic(e.topic)
-      if (e.type === 'close') setClosed(true)
+      if (e.type === 'close') {
+        setClosed(true)
+        if (e.minutes) setMinutes(e.minutes)
+      }
+      if (e.type === 'proposal' || e.type === 'decision_request' || e.type === 'resolution') {
+        sawFacilitationEvent = true
+      }
     }
+    if (sawFacilitationEvent) setPendingTick((n) => n + 1)
   }
 
   useEffect(() => {
@@ -203,7 +246,89 @@ export function WarRoomDetail({ id }: { id: string }) {
     }
   }, [id])
 
+  // Carrega a capability de facilitador guardada (se o navegador abriu a
+  // sala, ou já assumiu/recebeu a facilitação antes) — F-0228 critério 1.
+  useEffect(() => {
+    setFacilitatorId(loadStoredFacilitator(id))
+    setTransferredToken(null)
+  }, [id])
+
+  // Fila de triagem: só busca quando há capability de facilitador válida e a
+  // sala segue aberta; refaz quando um evento de facilitação chega.
+  useEffect(() => {
+    if (!facilitatorId || closed) {
+      setPending([])
+      return
+    }
+    let cancelled = false
+    fetchRoomPending(id, facilitatorId)
+      .then((items) => {
+        if (!cancelled) setPending(items)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [id, facilitatorId, closed, pendingTick])
+
   const joined = session !== null
+
+  const claimFacilitator = (e: FormEvent) => {
+    e.preventDefault()
+    const token = facilitatorInput.trim()
+    if (token === '' || claiming) return
+    setClaiming(true)
+    setError(null)
+    postRoomFacilitatorHandoff(id, token)
+      .then((next) => {
+        localStorage.setItem(facilitatorKey(id), next)
+        setFacilitatorId(next)
+        setFacilitatorInput('')
+        setClaiming(false)
+      })
+      .catch((e: unknown) => {
+        setClaiming(false)
+        setError(e instanceof Error ? e.message : String(e))
+      })
+  }
+
+  const transferFacilitator = () => {
+    if (!facilitatorId || transferring) return
+    setTransferring(true)
+    setError(null)
+    postRoomFacilitatorHandoff(id, facilitatorId)
+      .then((next) => {
+        localStorage.removeItem(facilitatorKey(id))
+        setFacilitatorId(null)
+        setTransferredToken(next)
+        setTransferring(false)
+      })
+      .catch((e: unknown) => {
+        setTransferring(false)
+        setError(e instanceof Error ? e.message : String(e))
+      })
+  }
+
+  const resolveItem = (itemId: string) => {
+    if (!facilitatorId || resolvingId) return
+    const result = (resolveDrafts[itemId] ?? '').trim()
+    setResolvingId(itemId)
+    setError(null)
+    postRoomResolveItem(id, facilitatorId, itemId, result)
+      .then(() => {
+        setResolvingId(null)
+        setPending((prev) => prev.filter((it) => it.id !== itemId))
+        setResolveDrafts((prev) => {
+          const next = { ...prev }
+          delete next[itemId]
+          return next
+        })
+      })
+      .catch((e: unknown) => {
+        setResolvingId(null)
+        setError(e instanceof Error ? e.message : String(e))
+      })
+  }
 
   const doJoin = (e: FormEvent) => {
     e.preventDefault()
@@ -227,14 +352,31 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const entryCommand = `cerne room join ${id} --nick <nick> [--bio "…"]`
 
-  const doClose = () => {
-    if (closing || !window.confirm(t.warRoom.closeConfirm)) return
+  // splitLines converte um textarea de "um item por linha" na lista que a
+  // ata espera, descartando linhas em branco.
+  const splitLines = (s: string) =>
+    s
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '')
+
+  const doClose = (e: FormEvent) => {
+    e.preventDefault()
+    if (!facilitatorId || closing) return
     setClosing(true)
     setError(null)
-    postRoomClose(id)
-      .then(() => {
+    const minutesPayload: Minutes = {
+      conclusion: minutesConclusion.trim(),
+      rationale: minutesRationale.trim(),
+      discarded_options: splitLines(minutesDiscarded),
+      owners: splitLines(minutesOwners),
+      next_steps: splitLines(minutesNextSteps),
+    }
+    postRoomClose(id, facilitatorId, minutesPayload, allowOpenItems)
+      .then((r) => {
         setClosing(false)
         setClosed(true)
+        if (r.minutes) setMinutes(r.minutes)
       })
       .catch((e: unknown) => {
         setClosing(false)
@@ -288,10 +430,35 @@ export function WarRoomDetail({ id }: { id: string }) {
               </button>
             </p>
           )}
-          {!closed && (
-            <button type="button" onClick={doClose} disabled={closing}>
-              {closing ? t.warRoom.closing : t.warRoom.closeRoom}
-            </button>
+          {!closed && facilitatorId && !transferredToken && (
+            <p className="muted">
+              {t.warRoom.facilitatorYouAre}{' '}
+              <button type="button" onClick={transferFacilitator} disabled={transferring}>
+                {transferring ? t.warRoom.facilitatorTransferring : t.warRoom.facilitatorTransfer}
+              </button>
+            </p>
+          )}
+          {transferredToken && (
+            <p className="muted">
+              {t.warRoom.facilitatorNewCapability(transferredToken)}
+              <br />
+              {t.warRoom.facilitatorTransferHint}
+            </p>
+          )}
+          {!closed && !facilitatorId && (
+            <form className="backlog-chat-form" onSubmit={claimFacilitator}>
+              <label>
+                {t.warRoom.facilitatorClaimTitle}
+                <input
+                  value={facilitatorInput}
+                  onChange={(e) => setFacilitatorInput(e.target.value)}
+                  placeholder={t.warRoom.facilitatorClaimPlaceholder}
+                />
+              </label>
+              <button type="submit" disabled={claiming || facilitatorInput.trim() === ''}>
+                {claiming ? t.warRoom.facilitatorClaiming : t.warRoom.facilitatorClaim}
+              </button>
+            </form>
           )}
         </header>
         <h2>{t.warRoom.roster}</h2>
@@ -304,9 +471,79 @@ export function WarRoomDetail({ id }: { id: string }) {
             </li>
           ))}
         </ul>
+        {!closed && facilitatorId && (
+          <>
+            <h2>{t.warRoom.pendingTitle}</h2>
+            {pending.length === 0 && <p className="muted">{t.warRoom.pendingEmpty}</p>}
+            <ul className="room-roster">
+              {pending.map((it) => (
+                <li key={it.id}>
+                  <strong>{it.title}</strong> <span className="muted">({it.kind}, {it.author})</span>
+                  <p className="muted">{it.body}</p>
+                  <input
+                    value={resolveDrafts[it.id] ?? ''}
+                    onChange={(e) => setResolveDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                    placeholder={t.warRoom.resolvePlaceholder}
+                  />
+                  <button type="button" onClick={() => resolveItem(it.id)} disabled={resolvingId === it.id}>
+                    {resolvingId === it.id ? t.warRoom.resolving : t.warRoom.resolve}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <form className="backlog-chat-form" onSubmit={doClose}>
+              <h2>{t.warRoom.closeFormTitle}</h2>
+              <label>
+                {t.warRoom.minutesConclusion}
+                <input value={minutesConclusion} onChange={(e) => setMinutesConclusion(e.target.value)} />
+              </label>
+              <label>
+                {t.warRoom.minutesRationale}
+                <input value={minutesRationale} onChange={(e) => setMinutesRationale(e.target.value)} />
+              </label>
+              <label>
+                {t.warRoom.minutesDiscarded}
+                <textarea value={minutesDiscarded} onChange={(e) => setMinutesDiscarded(e.target.value)} rows={2} />
+              </label>
+              <label>
+                {t.warRoom.minutesOwners}
+                <textarea value={minutesOwners} onChange={(e) => setMinutesOwners(e.target.value)} rows={2} />
+              </label>
+              <label>
+                {t.warRoom.minutesNextSteps}
+                <textarea value={minutesNextSteps} onChange={(e) => setMinutesNextSteps(e.target.value)} rows={2} />
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={allowOpenItems}
+                  onChange={(e) => setAllowOpenItems(e.target.checked)}
+                />
+                {t.warRoom.allowOpenItems}
+              </label>
+              <button
+                type="submit"
+                disabled={closing || minutesConclusion.trim() === '' || minutesRationale.trim() === ''}
+              >
+                {closing ? t.warRoom.closing : t.warRoom.closeRoom}
+              </button>
+            </form>
+          </>
+        )}
       </div>
       <aside className="backlog-chat">
         <h2>{t.warRoom.title}</h2>
+        {closed && minutes && (
+          <div className="room-minutes">
+            <h2>{t.warRoom.minutesTitle}</h2>
+            <p>
+              <strong>{t.warRoom.minutesConclusion}:</strong> {minutes.conclusion}
+            </p>
+            <p>
+              <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
+            </p>
+          </div>
+        )}
         <div className="backlog-chat-history">
           {!ready && <p className="status">{t.common.loading}</p>}
           {ready && messages.length === 0 && <p className="muted">{t.warRoom.noMessages}</p>}
