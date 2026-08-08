@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/plantmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -231,6 +232,65 @@ func TestEpicBehindChildren(t *testing.T) {
 		if !behind[id] {
 			t.Fatalf("missing epic-behind finding for %s; got %v", id, behind)
 		}
+	}
+}
+
+// TestEpicUnplannedFinding (F-0235): a live epic with a live child but a
+// still-stub plan.md is flagged, regardless of whether any child has started —
+// unlike epic-behind-children, which needs a started child. A filled plan, or
+// no live children, stays clean.
+func TestEpicUnplannedFinding(t *testing.T) {
+	dir := t.TempDir()
+	features := []store.Feature{
+		// candidate epic, candidate child, plan still stub -> fires
+		{ID: "F-0001", Title: "Épico sem plano", State: domain.StateCandidate},
+		{ID: "F-0002", Title: "Filha candidata", Parent: "F-0001", State: domain.StateCandidate},
+		// approved epic, plan filled -> clean
+		{ID: "F-0003", Title: "Épico planejado", State: domain.StateApproved},
+		{ID: "F-0004", Title: "Filha candidata", Parent: "F-0003", State: domain.StateCandidate},
+		// candidate epic, no live children (only rejected) -> clean
+		{ID: "F-0005", Title: "Épico sem filho vivo", State: domain.StateCandidate},
+		{ID: "F-0006", Title: "Filha rejeitada", Parent: "F-0005", State: domain.StateRejected},
+		// terminal epic with stub plan -> clean (settled history, not linted)
+		{ID: "F-0007", Title: "Épico morto", State: domain.StateSuperseded},
+		{ID: "F-0008", Title: "Filha", Parent: "F-0007", State: domain.StateCandidate},
+	}
+	writeDoc(t, dir, "content/features/F-0001/plan.md", plantmpl.Stub("Épico sem plano"))
+	writeDoc(t, dir, "content/features/F-0003/plan.md",
+		"---\ncerne_id: F-0003\n---\n\n# Épico planejado\n\nPlano real o bastante para o doccheck contar.\n")
+	// F-0005, F-0007: no plan.md at all (missing counts as stub, same result).
+
+	got, err := epicUnplannedFindings(dir, features)
+	if err != nil {
+		t.Fatalf("epicUnplannedFindings: %v", err)
+	}
+	if len(got) != 1 || got[0].Rule != RuleEpicUnplanned || got[0].Entity != "F-0001" {
+		t.Fatalf("findings = %+v, want exactly one epic-unplanned for F-0001", got)
+	}
+}
+
+// TestEpicUnplannedNotOverlapEpicBehindChildren (F-0235 crit.4): an epic can
+// legitimately trip both rules at once (stub plan + a child already in dev) —
+// the two conditions are independent, neither rule ever substitutes for the
+// other's own fixtures.
+func TestEpicUnplannedNotOverlapEpicBehindChildren(t *testing.T) {
+	dir := t.TempDir()
+	features := []store.Feature{
+		{ID: "F-0001", Title: "Épico não iniciado, sem plano", State: domain.StateCandidate},
+		{ID: "F-0002", Title: "Filha em dev", Parent: "F-0001", State: domain.StateInDevelopment},
+	}
+	writeDoc(t, dir, "content/features/F-0001/plan.md", plantmpl.Stub("Épico não iniciado, sem plano"))
+
+	behind := parentFindings(features)
+	if len(behind) != 1 || behind[0].Rule != RuleEpicBehindChildren {
+		t.Fatalf("parentFindings = %+v, want one epic-behind-children", behind)
+	}
+	unplanned, err := epicUnplannedFindings(dir, features)
+	if err != nil {
+		t.Fatalf("epicUnplannedFindings: %v", err)
+	}
+	if len(unplanned) != 1 || unplanned[0].Rule != RuleEpicUnplanned {
+		t.Fatalf("epicUnplannedFindings = %+v, want one epic-unplanned (both rules legitimately fire together)", unplanned)
 	}
 }
 
