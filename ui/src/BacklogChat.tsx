@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type UIEvent,
+} from 'react'
 import { fetchLLMOptions, registerChatCandidate, type ChatMsg, type Feature } from './api'
 import * as chatRequest from './chatRequest'
 import Markdown from './Markdown'
@@ -58,6 +65,20 @@ export function parseProposal(reply: string): ParsedProposal | null {
 const TYPING_CHARS_PER_TICK = 3
 const TYPING_TICK_MS = 20
 
+// Tolerância do glue-scroll (F-0239): "no fim" não pode exigir pixel exato —
+// zoom, altura fracionária e a última linha crescendo já tiram o scrollTop do
+// valor cheio, e aí a transcrição descolaria sozinha.
+const GLUE_TOLERANCE_PX = 24
+
+// isAtBottom decide se a transcrição está grudada no fim. Puro: recebe as três
+// medidas, não o elemento, para ser testável sem DOM.
+export function isAtBottom(
+  m: { scrollHeight: number; scrollTop: number; clientHeight: number },
+  tolerance = GLUE_TOLERANCE_PX,
+): boolean {
+  return m.scrollHeight - m.scrollTop - m.clientHeight <= tolerance
+}
+
 // ELAPSED_TICK_MS (F-0230 critério 3): cadência do indicador "Processando…
 // <elapsed>" — só precisa granularidade de segundo, não de frame.
 const ELAPSED_TICK_MS = 1000
@@ -95,6 +116,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [typingLen, setTypingLen] = useState<number | null>(null)
   const [, forceTick] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const historyRef = useRef<HTMLDivElement>(null)
+  // Começa colado: uma conversa recém-aberta deve mostrar o fim, que é onde
+  // está a resposta mais recente.
+  const stuckRef = useRef(true)
   const { t } = useT()
 
   const requestStatus = chatRequest.status(conversation.id)
@@ -183,6 +208,22 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     if (typingLen !== null && last) setTypingLen(last.content.length)
   }
 
+  // Glue-scroll (F-0239): a transcrição só se cola ao fim se o leitor já
+  // estiver lá. Quem rolou para cima está lendo o histórico — arrastá-lo de
+  // volta a cada caractere que chega seria roubar o controle.
+  const onHistoryScroll = (e: UIEvent<HTMLDivElement>) => {
+    stuckRef.current = isAtBottom(e.currentTarget)
+  }
+
+  // useLayoutEffect, não useEffect: o ajuste acontece antes da pintura, então
+  // não há quadro intermediário com a barra fora do lugar. typingLen entra nas
+  // dependências para colar durante a digitação, não só a cada mensagem nova.
+  useLayoutEffect(() => {
+    const el = historyRef.current
+    if (!el || !stuckRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [messages, typingLen, busy])
+
   const autoExpand = () => {
     const el = textareaRef.current
     if (!el) return
@@ -261,7 +302,12 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       <div className="backlog-chat-toolbar">
         <h2>{t.backlogChat.title}</h2>
       </div>
-      <div className="backlog-chat-history" onClick={skipTyping}>
+      <div
+        className="backlog-chat-history"
+        ref={historyRef}
+        onScroll={onHistoryScroll}
+        onClick={skipTyping}
+      >
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
         {messages.map((m, i) => {
           const isTyping = typingLen !== null && i === messages.length - 1 && m.role === 'assistant'
