@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,12 @@ import (
 	"gitlab.com/rockt/cerne/internal/room"
 )
 
+// errRoomTransient marks a roomClient error as a connection-level failure
+// (server unreachable, timeout) rather than a definitive HTTP response
+// (401/404/409). `room watch` (F-0227) retries the former with backoff and
+// gives up immediately on the latter.
+var errRoomTransient = errors.New("transient room connection error")
+
 // roomClient is a thin HTTP client for the war room API (T-0001) exposed by
 // a running `cerne ui`. The pid is resolved locally from .cernerc
 // (resolvePaths, no network) — the room routes are chatty and don't warrant
@@ -21,6 +28,7 @@ import (
 type roomClient struct {
 	base string // e.g. http://127.0.0.1:7717/api/projects/<pid>
 	port int
+	pid  string // cfg.ProjectID — used by `room watch` (F-0227) to place its checkpoint under project.CacheDir
 }
 
 func newRoomClient(dir string, port int) (roomClient, error) {
@@ -41,6 +49,7 @@ func newRoomClient(dir string, port int) (roomClient, error) {
 	return roomClient{
 		base: fmt.Sprintf("http://127.0.0.1:%d/api/projects/%s", port, url.PathEscape(cfg.ProjectID)),
 		port: port,
+		pid:  cfg.ProjectID,
 	}, nil
 }
 
@@ -51,6 +60,14 @@ func newRoomClient(dir string, port int) (roomClient, error) {
 // `read --follow` loop (each call may block up to the server's long-poll
 // timeout) be cut short by Ctrl+C between iterations.
 func (c roomClient) do(ctx context.Context, method, path string, body, out any) error {
+	return c.doWithHeaders(ctx, method, path, nil, body, out)
+}
+
+// doWithHeaders is do plus extra request headers (e.g. X-Room-Session for a
+// session-authenticated read). A connection-level failure is wrapped with
+// errRoomTransient so callers like the F-0227 watch loop can tell it apart
+// from a definitive HTTP error response.
+func (c roomClient) doWithHeaders(ctx context.Context, method, path string, headers map[string]string, body, out any) error {
 	var reqBody *bytes.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -68,13 +85,16 @@ func (c roomClient) do(ctx context.Context, method, path string, body, out any) 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("no cerne ui answering for this project on port %d (start one with 'cerne ui'): %w", c.port, err)
+		return fmt.Errorf("%w: no cerne ui answering for this project on port %d (start one with 'cerne ui'): %v", errRoomTransient, c.port, err)
 	}
 	defer resp.Body.Close()
 
@@ -146,6 +166,36 @@ func (c roomClient) read(ctx context.Context, id string, since int, follow bool)
 	}
 	err := c.do(ctx, http.MethodGet, "/rooms/"+url.PathEscape(id)+"/messages"+q, nil, &out)
 	return out.Messages, err
+}
+
+// roomWatchEvent mirrors the server's session-authenticated event view
+// (roomEventView, internal/server/rooms.go): a transcript event plus whether
+// the reader's own session authored it.
+type roomWatchEvent struct {
+	room.Message
+	Own *bool `json:"own,omitempty"`
+}
+
+// readAsSession long-polls for events after since, authenticated as
+// sessionID so the server can mark each event's authorship (F-0226/F-0227).
+func (c roomClient) readAsSession(ctx context.Context, id string, since int, sessionID string) ([]roomWatchEvent, error) {
+	q := fmt.Sprintf("?since=%d&follow=1", since)
+	var out struct {
+		Messages []roomWatchEvent `json:"messages"`
+	}
+	headers := map[string]string{"X-Room-Session": sessionID}
+	err := c.doWithHeaders(ctx, http.MethodGet, "/rooms/"+url.PathEscape(id)+"/messages"+q, headers, nil, &out)
+	return out.Messages, err
+}
+
+// resume validates a session capability and returns its current view
+// (nick, last_seq) without emitting a join event — the F-0227 watch loop
+// uses it both to validate --session/CERNE_ROOM_SESSION up front and, when
+// no checkpoint exists yet, to seed the cursor at the room's current tail.
+func (c roomClient) resume(ctx context.Context, id, sessionID string) (room.Session, error) {
+	var sess room.Session
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/sessions/resume", map[string]string{"session_id": sessionID}, &sess)
+	return sess, err
 }
 
 func (c roomClient) close(ctx context.Context, id string) (room.Room, error) {

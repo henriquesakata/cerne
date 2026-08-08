@@ -9,7 +9,24 @@ import (
 	"os/signal"
 
 	"github.com/spf13/cobra"
+	"gitlab.com/rockt/cerne/internal/room"
 )
+
+// formatRoomEvent renders one transcript event the same way for `room read`
+// and `room watch` (F-0227): a said message, a join (with or without bio),
+// or any other typed system event (open/close).
+func formatRoomEvent(m room.Message) string {
+	switch {
+	case m.Type == "message":
+		return fmt.Sprintf("#%d [%s] %s", m.Seq, m.Nick, m.Body)
+	case m.Type == "join" && m.Bio != "":
+		return fmt.Sprintf("#%d [join: %s — %s]", m.Seq, m.Nick, m.Bio)
+	case m.Type == "join":
+		return fmt.Sprintf("#%d [join: %s]", m.Seq, m.Nick)
+	default:
+		return fmt.Sprintf("#%d [%s]", m.Seq, m.Type)
+	}
+}
 
 // roomFlags are the flags every room subcommand shares: --dir (project,
 // hidden like resolveProject's) and --port (the running `cerne ui`, same
@@ -29,6 +46,7 @@ func newRoomCmd() *cobra.Command {
 	cmd.AddCommand(newRoomJoinCmd())
 	cmd.AddCommand(newRoomSayCmd())
 	cmd.AddCommand(newRoomReadCmd())
+	cmd.AddCommand(newRoomWatchCmd())
 	cmd.AddCommand(newRoomCloseCmd())
 	cmd.AddCommand(newRoomListCmd())
 	return cmd
@@ -168,16 +186,7 @@ func roomReadLoop(ctx context.Context, out io.Writer, c roomClient, id string, s
 			return err
 		}
 		for _, m := range msgs {
-			switch {
-			case m.Type == "message":
-				fmt.Fprintf(out, "#%d [%s] %s\n", m.Seq, m.Nick, m.Body)
-			case m.Type == "join" && m.Bio != "":
-				fmt.Fprintf(out, "#%d [join: %s — %s]\n", m.Seq, m.Nick, m.Bio)
-			case m.Type == "join":
-				fmt.Fprintf(out, "#%d [join: %s]\n", m.Seq, m.Nick)
-			default:
-				fmt.Fprintf(out, "#%d [%s]\n", m.Seq, m.Type)
-			}
+			fmt.Fprintln(out, formatRoomEvent(m))
 			since = m.Seq
 		}
 		if once {
