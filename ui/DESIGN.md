@@ -299,6 +299,20 @@ stylesheet or in a component is a bug — it will break dark mode silently.
 **The No Brand Accent Rule.** There is no brand colour and none may be invented.
 A control that wants emphasis takes full ink, not a hue.
 
+**Full ink is for controls, not for prose.** Inversion works because a control is
+small: a button, an active nav link, a selected filter. Applied to a block of
+running text it stops reading as emphasis and becomes glare — in dark mode `ink`
+is #e8e4da, so an inverted paragraph is a near-white panel. A block of prose that
+needs to be set apart uses a recessed surface (`surface-sunk-deep`) and keeps its
+text in ink; position and tone carry the distinction. Recorded 2026-08-08
+(F-0241), after the chat's own message bubble was inverted and had to be undone.
+
+A practical consequence: a control living inside a container whose buttons are
+styled full ink must be **excluded at the source of that rule**, not patched
+afterwards with higher specificity. The chat composer's own controls hit exactly
+this — `.backlog-chat-form button` outranked their classes and repainted them
+full ink, reintroducing the glare that had just been removed from the bubble.
+
 ## Typography
 
 **Body Font:** system-ui (with -apple-system, 'Segoe UI', sans-serif)
