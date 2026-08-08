@@ -955,3 +955,98 @@ func TestCloseStillRejectsJoinAndSayReadStillWorks(t *testing.T) {
 		t.Fatalf("Read after close: %v", err)
 	}
 }
+
+// F-0238: the sala->nota link (`cerne room minutes register`).
+
+func TestSetMinutesNoteRequiresClosedRoom(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	if _, err := m.SetMinutesNote(r.ID, "N-0001", false); !errors.Is(err, ErrRoomOpen) {
+		t.Fatalf("err = %v, want ErrRoomOpen", err)
+	}
+}
+
+func TestSetMinutesNoteRejectsDuplicateUnlessForce(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	rm, err := m.SetMinutesNote(r.ID, "N-0001", false)
+	if err != nil {
+		t.Fatalf("first SetMinutesNote: %v", err)
+	}
+	if rm.MinutesNote != "N-0001" {
+		t.Fatalf("MinutesNote = %q, want N-0001", rm.MinutesNote)
+	}
+
+	rm, err = m.SetMinutesNote(r.ID, "N-0002", false)
+	if !errors.Is(err, ErrMinutesAlreadyLinked) {
+		t.Fatalf("err = %v, want ErrMinutesAlreadyLinked", err)
+	}
+	if rm.MinutesNote != "N-0001" {
+		t.Fatalf("MinutesNote on refusal = %q, want the existing N-0001", rm.MinutesNote)
+	}
+
+	rm, err = m.SetMinutesNote(r.ID, "N-0002", true)
+	if err != nil {
+		t.Fatalf("forced SetMinutesNote: %v", err)
+	}
+	if rm.MinutesNote != "N-0002" {
+		t.Fatalf("MinutesNote after force = %q, want N-0002", rm.MinutesNote)
+	}
+}
+
+func TestSetMinutesNoteUnknownRoom(t *testing.T) {
+	m := newManager(t)
+	if _, err := m.SetMinutesNote("R99", "N-0001", false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSetMinutesNoteSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m1.Open("topico")
+	if _, err := m1.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := m1.SetMinutesNote(r.ID, "N-0007", false); err != nil {
+		t.Fatalf("SetMinutesNote: %v", err)
+	}
+	// a forced re-registration must survive as the LAST record on replay.
+	if _, err := m1.SetMinutesNote(r.ID, "N-0008", true); err != nil {
+		t.Fatalf("SetMinutesNote force: %v", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	rooms := m2.List()
+	if len(rooms) != 1 || rooms[0].MinutesNote != "N-0008" {
+		t.Fatalf("rooms after restart = %+v, want MinutesNote = N-0008", rooms)
+	}
+}
+
+func TestRoomMessageCount(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	if r.MessageCount != 1 { // the open event itself
+		t.Fatalf("MessageCount after Open = %d, want 1", r.MessageCount)
+	}
+	sess := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Say(r.ID, sess.SessionID, "oi"); err != nil {
+		t.Fatalf("Say: %v", err)
+	}
+	closed, err := m.Close(r.ID, fac, minimalMinutes, false)
+	if err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if closed.MessageCount != 4 { // open, join, message, close
+		t.Fatalf("MessageCount = %d, want 4", closed.MessageCount)
+	}
+}

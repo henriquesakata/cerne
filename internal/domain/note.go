@@ -47,6 +47,11 @@ var ValidFacets = []string{"infra", "code", "data", "process", "auth"}
 // closed facet set (D-0002) stays untouched.
 const ConventionComponent = "convention"
 
+// AtaComponent is the reserved component slug that marks a note as the
+// governed projection of a war room's closing minutes (F-0238) — it rides
+// the open component axis, same as ConventionComponent.
+const AtaComponent = "ata"
+
 // ErrUnknownFacet is returned by NormalizeFacets for a value not in ValidFacets.
 var ErrUnknownFacet = errors.New("facet desconhecida")
 

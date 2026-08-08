@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -105,6 +106,8 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusForbidden, errorBody(err.Error()))
 	case errors.Is(err, room.ErrIncompleteMinutes):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	case errors.Is(err, room.ErrRoomOpen):
+		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	}
@@ -369,6 +372,43 @@ func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id strin
 				writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "pending": pending})
 				return
 			}
+		}
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rm)
+}
+
+type setMinutesNoteRequest struct {
+	NoteID string `json:"note_id"`
+	Force  bool   `json:"force"`
+}
+
+// handleRoomSetMinutesNote records the note a closed room's minutes were
+// registered as (F-0238 criteria 2-3): refuses an open room, and refuses to
+// overwrite an existing link unless Force — reporting the existing note id
+// either way, so the CLI can point the caller at it.
+func handleRoomSetMinutesNote(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	var req setMinutesNoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if req.NoteID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("note_id is required"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	rm, err := m.SetMinutesNote(id, req.NoteID, req.Force)
+	if err != nil {
+		if errors.Is(err, room.ErrMinutesAlreadyLinked) {
+			msg := fmt.Sprintf("room minutes are already registered as %s (pass force to re-register)", rm.MinutesNote)
+			writeJSON(w, http.StatusConflict, map[string]any{"error": msg, "minutes_note": rm.MinutesNote})
+			return
 		}
 		writeRoomErr(w, err)
 		return

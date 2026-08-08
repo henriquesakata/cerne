@@ -247,6 +247,17 @@ func (c roomClient) pending(ctx context.Context, id, facilitatorID string) ([]ro
 	return out.Items, err
 }
 
+// setMinutesNote records the room's closing minutes as registered under
+// noteID (F-0238): refuses an open room or an already-linked room unless
+// force, returning the current room either way so the caller can read
+// rm.MinutesNote on refusal.
+func (c roomClient) setMinutesNote(ctx context.Context, id, noteID string, force bool) (room.Room, error) {
+	var rm room.Room
+	body := map[string]any{"note_id": noteID, "force": force}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/minutes/note", body, &rm)
+	return rm, err
+}
+
 // resolve resolves an open facilitation item; only the facilitator may
 // (F-0228 criterion 4).
 func (c roomClient) resolve(ctx context.Context, id, facilitatorID, itemID, result string) (room.FacilitationItem, error) {

@@ -9,13 +9,16 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/room"
 	"gitlab.com/rockt/cerne/internal/server"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // minimalMinutesJSON satisfies room close's required-field validation with
@@ -61,6 +64,36 @@ func newRoomTestServer(t *testing.T, pid string) (dir string, port int) {
 		t.Fatalf("write .cernerc: %v", err)
 	}
 	return dir, port
+}
+
+// startRoomServerForPID starts a server.NewUIMulti host that serves room
+// routes for exactly pid (repoDir/projDir are never touched by room
+// handlers), for tests that pair it with a real project (setupProject) of
+// the same pid — e.g. `room minutes register` (F-0238), which needs both a
+// live room server AND a real backend for the note it creates.
+func startRoomServerForPID(t *testing.T, pid string) (port int) {
+	t.Helper()
+	resolve := func(d string) (string, string, string, string, error) {
+		return "", "", pid, "Test Project", nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	handler, err := server.NewUIMulti(ctx, resolve, 0, "seed")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ = strconv.Atoi(u.Port())
+	return port
 }
 
 func runRoom(t *testing.T, args ...string) (string, error) {
@@ -615,5 +648,102 @@ func TestRoomNoServerRunningIsClearError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cerne ui") {
 		t.Fatalf("error = %q, want it to mention 'cerne ui'", err.Error())
+	}
+}
+
+// --- F-0238: `room minutes register` — the sala->nota bridge ---
+
+func TestRoomMinutesRegister(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	port := startRoomServerForPID(t, "demo")
+	dirFlag := []string{"--dir", projDir, "--port", strconv.Itoa(port)}
+
+	roomID, fac := openRoomCLI(t, dirFlag, "como fechar o F-0238")
+	sess := joinRoomAs(t, dirFlag, roomID, "alice", "--bio", "facilitadora")
+	if _, err := runRoom(t, append([]string{"say", roomID, "vamos registrar a ata como nota", "--session", sess}, dirFlag...)...); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+
+	// criterion 2: an open room refuses with guidance to close first.
+	if _, err := runRoom(t, append([]string{"minutes", "register", roomID}, dirFlag...)...); err == nil {
+		t.Fatal("register on an open room: want an error")
+	} else if !strings.Contains(err.Error(), "room close") {
+		t.Fatalf("error = %v, want guidance pointing at 'room close'", err)
+	}
+
+	closeMinutes := `{"conclusion":"registrar atas como notas governadas","rationale":"governança e rastreabilidade sem tipo novo","owners":["alice"],"next_steps":["abrir F-0238"]}`
+	if _, err := runRoom(t, append([]string{"close", roomID, "--facilitator", fac, "--minutes", closeMinutes}, dirFlag...)...); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// criterion 5: close alone never creates a note.
+	if notes, err := store.LoadAllNotes(repoDir); err != nil {
+		t.Fatalf("LoadAllNotes: %v", err)
+	} else if len(notes) != 0 {
+		t.Fatalf("notes after close = %+v, want none — registration is explicit", notes)
+	}
+
+	if _, err := execCerne(t, "feature", "new", "Ponte ata-entidade", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+
+	// criterion 1: register creates the note with body/provenance/component/informs.
+	out, err := runRoom(t, append([]string{"minutes", "register", roomID, "--informs", "F-0001", "--facet", "process"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("register: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "N-0001") {
+		t.Fatalf("output = %q, want the created note id N-0001", out)
+	}
+	// criterion 8: the trace guidance (id-form wiki-link).
+	if !strings.Contains(out, "[[N-0001]]") {
+		t.Fatalf("output = %q, want the wiki-link tracing guidance", out)
+	}
+
+	n, err := store.LoadNote(repoDir, "N-0001")
+	if err != nil {
+		t.Fatalf("LoadNote: %v", err)
+	}
+	if !slices.Contains(n.Components, domain.AtaComponent) {
+		t.Fatalf("note components = %v, want %q", n.Components, domain.AtaComponent)
+	}
+	if !slices.Contains(n.Facets, "process") {
+		t.Fatalf("note facets = %v, want process", n.Facets)
+	}
+	if !slices.Contains(n.Informs, "F-0001") {
+		t.Fatalf("note informs = %v, want F-0001", n.Informs)
+	}
+	body, err := store.LoadNoteContent(repoDir, "N-0001")
+	if err != nil {
+		t.Fatalf("LoadNoteContent: %v", err)
+	}
+	// The transcript is out of scope (F-0238): only the structured minutes +
+	// provenance project into the note, never the raw said messages.
+	for _, want := range []string{"## Proveniência", "Sala: " + roomID, "alice", "facilitadora", "registrar atas como notas governadas"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("note body missing %q:\n%s", want, body)
+		}
+	}
+
+	// criterion 3: a duplicate refuses citing the existing note; --force re-registers.
+	_, err = runRoom(t, append([]string{"minutes", "register", roomID}, dirFlag...)...)
+	if err == nil || !strings.Contains(err.Error(), "N-0001") {
+		t.Fatalf("duplicate register err = %v, want it to cite N-0001", err)
+	}
+	out, err = runRoom(t, append([]string{"minutes", "register", roomID, "--force"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("forced register: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "N-0002") {
+		t.Fatalf("forced register output = %q, want a new note N-0002", out)
+	}
+
+	// criterion 6: `note list --component ata` filters both.
+	out, err = execCerne(t, "note", "list", "--component", "ata", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list: %v", err)
+	}
+	if !strings.Contains(out, "N-0001") || !strings.Contains(out, "N-0002") {
+		t.Fatalf("note list --component ata = %q, want both registered minutes", out)
 	}
 }
