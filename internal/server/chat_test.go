@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -592,5 +593,141 @@ func TestChatRegisterBadParent(t *testing.T) {
 	}
 	if !strings.Contains(got.Warning, "F-9999") {
 		t.Fatalf("warning = %q, want it to name the dropped parent", got.Warning)
+	}
+}
+
+// seedSpec writes a feature's spec.md straight into the backend clone and
+// commits it — the starting point of a refine conversation (F-0256).
+func seedSpec(t *testing.T, repoDir, id, body string) {
+	t.Helper()
+	path := filepath.Join(repoDir, "content", "features", id, "spec.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte("---\ncerne_id: "+id+"\n---\n\n"+body), 0o644); err != nil {
+		t.Fatalf("write spec %s: %v", id, err)
+	}
+	commitBackend(t, repoDir)
+}
+
+// TestChatRefineLoadsCurrentSpec (F-0256 criteria 1/6): a turn carrying
+// feature_id hands the agent the candidate's spec as it stands in the backend
+// — and rereads it on the next turn, so a spec that moved under a resumed
+// conversation is never answered from a stale snapshot.
+func TestChatRefineLoadsCurrentSpec(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001 as candidate
+	seedSpec(t, repoDir, "F-0001", "## Problema\n\nFalta exportação em CSV.\n")
+
+	var gotPrompt string
+	srv := fakeChatProvider(t, &gotPrompt, "ok")
+	configureChatByoKey(t, projDir, srv.URL)
+	h := New(repoDir, projDir, "proj-chat-refine")
+
+	var got struct {
+		Answered bool `json:"answered"`
+	}
+	_, _ = doChatStream(t, h, `{"messages":[{"role":"user","content":"Ajusta o escopo."}],"feature_id":"F-0001"}`, &got)
+	if !got.Answered {
+		t.Fatalf("answered = %v, want true", got.Answered)
+	}
+	for _, want := range []string{"F-0001", "Falta exportação em CSV"} {
+		if !strings.Contains(gotPrompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, gotPrompt)
+		}
+	}
+
+	// The spec advances between turns (another branch, the CLI, whatever).
+	seedSpec(t, repoDir, "F-0001", "## Problema\n\nExportar também em XLSX.\n")
+	_, _ = doChatStream(t, h, `{"messages":[{"role":"user","content":"E agora?"}],"feature_id":"F-0001"}`, &got)
+	if !strings.Contains(gotPrompt, "XLSX") || strings.Contains(gotPrompt, "Falta exportação em CSV") {
+		t.Fatalf("second turn did not reload the current spec:\n%s", gotPrompt)
+	}
+}
+
+// TestChatRefineRefusesNonCandidate (F-0256 criterion 5): past candidacy the
+// refusal is the server's, not the UI's — a direct API call gets 422 and the
+// provider is never even asked.
+func TestChatRefineRefusesNonCandidate(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	seedFeature(t, repoDir, "F-0002", "Aprovada", domain.StateApproved)
+	seedSpec(t, repoDir, "F-0002", "## Problema\n\nContrato aprovado.\n")
+
+	var gotPrompt string
+	srv := fakeChatProvider(t, &gotPrompt, "ok")
+	configureChatByoKey(t, projDir, srv.URL)
+
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-refine-bad"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"Muda a spec."}],"feature_id":"F-0002"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	if gotPrompt != "" {
+		t.Fatalf("provider was called for a refused refine:\n%s", gotPrompt)
+	}
+}
+
+// TestChatRegisterUpdate (F-0256 criteria 3/4): confirming a revision with
+// feature_id rewrites that candidate's spec — no new candidate, no state move.
+func TestChatRegisterUpdate(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	seedSpec(t, repoDir, "F-0001", "## Problema\n\nVersão antiga.\n")
+	head0, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA before: %v", err)
+	}
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-upd"), http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n"}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Feature.ID != "F-0001" || got.Feature.State != domain.StateCandidate {
+		t.Fatalf("feature = %+v, want F-0001 still candidate", got.Feature)
+	}
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if !strings.Contains(string(spec), "Versão nova.") || !strings.Contains(string(spec), "cerne_id: F-0001") {
+		t.Fatalf("spec.md = %q, want the new body with the cerne_id preserved", string(spec))
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllFeatures: %v", err)
+	}
+	if len(features) != 1 {
+		t.Fatalf("features = %d, want 1 (an update must not mint a candidate)", len(features))
+	}
+	if head1, _ := gitback.HeadSHA(origin); head1 == head0 {
+		t.Fatalf("origin HEAD did not advance after the spec update")
+	}
+}
+
+// TestChatRegisterUpdateRefusals (F-0256 criterion 5): an unknown id is 404, a
+// feature past candidacy is 422, and neither touches the backend.
+func TestChatRegisterUpdateRefusals(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	seedFeature(t, repoDir, "F-0002", "Aprovada", domain.StateApproved)
+	seedSpec(t, repoDir, "F-0002", "## Problema\n\nContrato aprovado.\n")
+	h := New(repoDir, projDir, "proj-chat-upd-bad")
+
+	var got map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-9999","title":"X","spec_body":"## Problema\n\nX.\n"}`, &got)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown id status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0002","title":"Aprovada","spec_body":"## Problema\n\nBurlado.\n"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("approved status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0002", "spec.md"))
+	if err != nil || !strings.Contains(string(spec), "Contrato aprovado.") {
+		t.Fatalf("spec.md changed on a refused update: %q (%v)", string(spec), err)
 	}
 }
