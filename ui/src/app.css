@@ -657,6 +657,22 @@ h2 {
 .room-badge-open { border-color: var(--accent); color: var(--accent); }
 .room-badge-closed { opacity: 0.6; }
 
+/* Teto para a ata (F-0243). Ela é irmã da transcrição num painel de altura
+   fixa e não tinha limite: uma ata longa crescia até 596px, espremia a
+   transcrição contra o piso de 8rem dela (128px) e fazia a página voltar a
+   rolar (720 -> 941px) — reintroduzindo a regressão que o F-0239/F-0241
+   eliminaram. Espaço fixo pertence ao que não muda; aqui era o contrário: a
+   conclusão, que é estável e já lida, tomava o espaço de quem cresce.
+
+   Proporcional e não absoluto porque o painel acompanha o viewport. Inerte no
+   caso comum: uma ata de 121px fica bem abaixo do teto, então sala normal não
+   muda. min-height: 0 é o que autoriza encolher dentro do flex. */
+.room-minutes {
+  max-height: 35%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .room-roster {
   list-style: none;
   margin: 0.5rem 0 0;
