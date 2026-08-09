@@ -150,6 +150,41 @@ function MenuSelect({
   )
 }
 
+// Marcador de lista no início de uma linha: numerada ("1. ", "2) ") ou com
+// bullet ("- ", "* "), preservando a indentação (F-0246).
+const LIST_MARKER = /^(\s*)(?:(\d+)([.)])|([-*]))(\s+)(.*)$/
+
+// continueList calcula o efeito de quebrar linha dentro de uma lista: continua
+// a numeração, repete o bullet, e ENCERRA a lista quando o item está vazio —
+// que é como todo editor se comporta e é a única saída sem apagar à mão.
+// Devolve null quando não há lista na linha do cursor; aí o chamador deixa o
+// Shift+Enter fazer o padrão do browser.
+export function continueList(
+  value: string,
+  caret: number,
+): { value: string; caret: number } | null {
+  const antes = value.slice(0, caret)
+  const linha = antes.slice(antes.lastIndexOf('\n') + 1)
+  const m = LIST_MARKER.exec(linha)
+  if (!m) return null
+
+  const [, indent, num, sep, bullet, espaco, conteudo] = m
+
+  // Item vazio: sai da lista removendo o marcador, em vez de gerar outro vazio.
+  if (conteudo.trim() === '') {
+    const inicioDaLinha = caret - linha.length
+    const novo = value.slice(0, inicioDaLinha) + indent + value.slice(caret)
+    return { value: novo, caret: inicioDaLinha + indent.length }
+  }
+
+  const marcador = num ? `${indent}${Number(num) + 1}${sep}${espaco}` : `${indent}${bullet}${espaco}`
+  const inserido = '\n' + marcador
+  return {
+    value: value.slice(0, caret) + inserido + value.slice(caret),
+    caret: caret + inserido.length,
+  }
+}
+
 // Preferências de padrão (F-0241). Regex, não id literal: a lista vem do
 // servidor e varia por projeto — casar por nome sobrevive a versionamento
 // ("claude-opus-5" hoje, outro amanhã).
@@ -349,6 +384,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     const next = [...messages, { role: 'user' as const, content }]
     setMessages(next)
     setInput('')
+    // F-0246: limpar o valor não desfaz a altura — o autoExpand deixou um
+    // style.height inline, e sem removê-lo o campo fica alto e vazio até o
+    // próximo caractere. Limpar o inline devolve a altura ao CSS (rows=1).
+    if (textareaRef.current) textareaRef.current.style.height = ''
     sendMessages(next)
   }
 
@@ -362,6 +401,23 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       submitMessage()
+      return
+    }
+    // F-0246: Shift+Enter dentro de uma lista continua a numeração/bullet.
+    // Aqui — e não no Enter — porque nesta tela é o Shift+Enter que quebra
+    // linha; o Enter envia.
+    if (e.key === 'Enter' && e.shiftKey) {
+      const el = e.currentTarget
+      const r = continueList(el.value, el.selectionStart ?? el.value.length)
+      if (!r) return // sem lista: deixa o browser inserir a quebra normal
+      e.preventDefault()
+      setInput(r.value)
+      // O caret precisa ser reposicionado depois que o React aplicar o valor;
+      // setar antes seria sobrescrito pelo re-render.
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = r.caret
+        autoExpand()
+      })
     }
   }
 

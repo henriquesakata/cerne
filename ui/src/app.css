@@ -401,6 +401,12 @@ h2 {
   border: 1px solid var(--border-card);
 }
 
+/* A mensagem do usuário é texto cru, não markdown: sem pre-wrap as quebras que
+   ele digitou somem e uma lista de 4 linhas vira parágrafo único. `pre-wrap`
+   preserva o \n e mantém a quebra automática de linha longa. Só na do usuário —
+   a do agente passa por <Markdown>, que já produz blocos (F-0246). */
+.backlog-chat-msg-user p { white-space: pre-wrap; }
+
 .backlog-chat-msg p { margin: 0; }
 
 .backlog-chat-progress {
