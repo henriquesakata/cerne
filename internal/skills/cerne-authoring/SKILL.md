@@ -55,6 +55,8 @@ Catch documentation debts **before** they churn the backend — same lint engine
 
 Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
 
+**Inspect the agent harness itself.** `cerne harness` (add `--json` for machine reading) reports the project's effective harness inventory, read-only: cerne-managed hooks and skills with drift against the running build (`divergent`/`missing` + the repair command, e.g. `cerne hook install`), MCP servers (secrets masked), marketplace plugins, context files and provider parity — each line with its origin layer, and items outside the repository flagged (another machine does not inherit them). Use it to answer "is this hook actually active here?" before debugging a hook that never fired.
+
 **Acknowledging an intentional historical mention.** Sometimes an authored doc *should* name a superseded entity — a spec/ADR/note explaining "antes usávamos D-0003 (substituída por D-0005), e o trade-off era…". That is history, not a debt, but `cerne lint` flags it as `ref-to-superseded` by default. To declare the mention intentional, append the marker on the **same line**: `<!-- lint:ok-superseded D-0003 -->` (comma-separate several ids: `<!-- lint:ok-superseded D-0003, D-0005 -->`). The rule then tolerates that line only — an unmarked mention of the same id on another line is still a debt. Use it sparingly, for genuine historical context; it is an explicit acknowledgment, not a blanket silence.
 
 ## Syncing when the backend may have advanced (parallel agents)

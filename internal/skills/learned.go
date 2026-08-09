@@ -32,11 +32,7 @@ type Learned struct {
 // outside the learned- prefix are never touched.
 func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 	skillsDir := filepath.Join(projDir, ".claude", "skills")
-	want := make(map[string]string, len(items)) // dir name -> content
-	for _, it := range items {
-		name := learnedPrefix + slug.Make(it.ID+" "+it.Title)
-		want[name] = renderLearned(name, it)
-	}
+	want := WantLearned(items)
 
 	results := make([]Result, 0, len(items))
 	names := make([]string, 0, len(want))
@@ -73,6 +69,21 @@ func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 	}
 	return results, nil
 }
+
+// WantLearned returns the target learned-* namespace for items — dir name to
+// rendered SKILL.md content, exactly what SyncLearned writes. The harness
+// inspection (F-0251) diffs the disk against this without writing.
+func WantLearned(items []Learned) map[string]string {
+	want := make(map[string]string, len(items))
+	for _, it := range items {
+		name := learnedPrefix + slug.Make(it.ID+" "+it.Title)
+		want[name] = renderLearned(name, it)
+	}
+	return want
+}
+
+// LearnedPrefix exposes the namespace prefix generated skills live under.
+const LearnedPrefix = learnedPrefix
 
 // renderLearned builds the generated SKILL.md: deterministic frontmatter (the
 // description is what makes the skill fire, so it carries the title, the first

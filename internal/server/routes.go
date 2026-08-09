@@ -47,6 +47,11 @@ func dataRoutes() []dataRoute {
 		{"GET", "/version", true, func(w http.ResponseWriter, _ *http.Request, _, _, _ string) {
 			handleVersion(w)
 		}},
+		// Harness inventory (F-0251): local-only — it reads the host's
+		// ~/.claude layer, which a remote `cerne serve` must never expose.
+		{"GET", "/harness", false, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
+			handleHarness(w, repoDir, projDir)
+		}},
 		{"GET", "/features/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleFeatureDetail(w, repoDir, r.PathValue("id"))
 		}},

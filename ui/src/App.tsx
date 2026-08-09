@@ -13,6 +13,7 @@ import Palette from './Palette'
 import Ask from './Ask'
 import Wiki, { WikiPageView } from './Wiki'
 import Lint from './Lint'
+import Harness from './Harness'
 import History from './History'
 import Manage from './Manage'
 import NewFeature from './NewFeature'
@@ -100,6 +101,7 @@ function Routed({ hash }: { hash: string }) {
   if (searchQuery) return <Search key={searchQuery[1]} initialQuery={decodeURIComponent(searchQuery[1])} />
   if (hash === '#/search') return <Search />
   if (hash === '#/lint') return <Lint />
+  if (hash === '#/harness') return <Harness />
   if (hash === '#/history') return <History />
   if (hash === '#/stats') return <StatsPage />
   if (hash === '#/activity') return <Activity />

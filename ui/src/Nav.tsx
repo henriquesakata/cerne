@@ -23,6 +23,7 @@ const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
   { href: '#/ask', key: 'ask' },
   { href: '#/search', key: 'search' },
   { href: '#/lint', key: 'lint' },
+  { href: '#/harness', key: 'harness' },
   { href: '#/history', key: 'history' },
   { href: '#/activity', key: 'activity' },
   { href: '#/stats', key: 'stats' },
@@ -47,6 +48,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/ask')) return '#/ask'
   if (hash.startsWith('#/search')) return '#/search'
   if (hash.startsWith('#/lint')) return '#/lint'
+  if (hash.startsWith('#/harness')) return '#/harness'
   if (hash.startsWith('#/history')) return '#/history'
   if (hash.startsWith('#/activity')) return '#/activity'
   if (hash.startsWith('#/stats')) return '#/stats'

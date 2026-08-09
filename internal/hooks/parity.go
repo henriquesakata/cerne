@@ -9,8 +9,10 @@ import "strings"
 // actually does. Research provenance: R-0035 (Codex), R-0036 (Gemini),
 // R-0037 (Cursor).
 
-// parityRow is one capability line: what each provider install delivers.
-type parityRow struct {
+// ParityRow is one capability line: what each provider install delivers.
+// Exported for the harness inventory (F-0251), which renders the same table —
+// no second source of truth.
+type ParityRow struct {
 	Capability string
 	Claude     string
 	Cursor     string
@@ -18,11 +20,43 @@ type parityRow struct {
 	Gemini     string
 }
 
+// For returns the row's value for one provider ("" for unknown).
+func (r ParityRow) For(p Provider) string {
+	switch p {
+	case ProviderClaude:
+		return r.Claude
+	case ProviderCursor:
+		return r.Cursor
+	case ProviderCodex:
+		return r.Codex
+	case ProviderGemini:
+		return r.Gemini
+	}
+	return ""
+}
+
+// Degraded reports whether the value marks a capability the provider surface
+// cannot host, with the reason after the marker.
+func (r ParityRow) Degraded(p Provider) (bool, string) {
+	v := r.For(p)
+	if strings.HasPrefix(v, degraded) {
+		return true, strings.TrimPrefix(strings.TrimPrefix(v, degraded), ": ")
+	}
+	return false, ""
+}
+
+// ParityRows returns the full F-0174 matrix, in table order.
+func ParityRows() []ParityRow {
+	out := make([]ParityRow, len(parityTable))
+	copy(out, parityTable)
+	return out
+}
+
 // degraded marks a capability the provider surface cannot host (or that
 // awaits live validation) — mirrored by a StatusSkipped result at install.
 const degraded = "degraded"
 
-var parityTable = []parityRow{
+var parityTable = []ParityRow{
 	{
 		Capability: "Static registration rules (floor)",
 		Claude:     "SessionStart script (cerne-register-reminder.sh)",

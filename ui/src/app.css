@@ -2361,3 +2361,57 @@ button.clarify-open:hover { filter: brightness(0.96); }
 /* O chip resolvido acionável ainda é um chip: o botão não deve trazer a caixa
    padrão de <button>. */
 button.clarify-chip { cursor: pointer; font: inherit; }
+
+/* ---- harness (F-0251) ---- */
+
+.harness-filters {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0.75rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.harness-filters label { cursor: pointer; }
+
+.harness-list { list-style: none; padding: 0; margin: 0; }
+
+.harness-row {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.harness-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.harness-row-detail {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+  color: var(--faint);
+}
+
+/* Estado colore o badge: verde = íntegro, vermelho = exige ação, neutro =
+   terceiro sem canônico. */
+.harness-state-ok, .harness-state-configured {
+  color: var(--green);
+  background: var(--green-bg);
+  border-color: var(--green-border);
+}
+.harness-state-divergent, .harness-state-missing, .harness-state-broken {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.harness-outside { color: var(--accent); border-color: var(--accent); }
+
+.harness-fix { margin-top: 0.35rem; max-width: 28rem; }
+.harness-fix pre {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+}

@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/skills"
-	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newSkillCmd() *cobra.Command {
@@ -37,10 +34,6 @@ func newSkillInstallCmd() *cobra.Command {
 	return cmd
 }
 
-// goldenPathComponent marks a note/runbook for materialization as a generated
-// agent skill.
-const goldenPathComponent = "golden-path"
-
 func newSkillSyncCmd() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
@@ -61,7 +54,7 @@ func runSkillSync(cmd *cobra.Command, dir string) error {
 	if err != nil {
 		return err
 	}
-	items, err := loadGoldenPaths(ctx.repoDir)
+	items, err := skills.LoadGoldenPaths(ctx.repoDir)
 	if err != nil {
 		return err
 	}
@@ -75,65 +68,6 @@ func runSkillSync(cmd *cobra.Command, dir string) error {
 	}
 	printSkillResults(cmd.OutOrStdout(), results)
 	return nil
-}
-
-// loadGoldenPaths collects the active notes and runbooks tagged golden-path,
-// with their bodies stripped of the entity frontmatter.
-func loadGoldenPaths(repoDir string) ([]skills.Learned, error) {
-	var items []skills.Learned
-	notes, err := store.LoadAllNotes(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	for _, n := range notes {
-		if n.State != domain.NoteActive || !hasGoldenPath(n.Components) {
-			continue
-		}
-		body, err := store.LoadNoteContent(repoDir, n.ID)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, skills.Learned{ID: n.ID, Title: n.Title, Body: stripEntityFrontmatter(body), Components: n.Components})
-	}
-	rbs, err := store.LoadAllRunbooks(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	for _, rb := range rbs {
-		if rb.State != domain.RunbookActive || !hasGoldenPath(rb.Components) {
-			continue
-		}
-		body, err := store.LoadRunbookContent(repoDir, rb.ID)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, skills.Learned{ID: rb.ID, Title: rb.Title, Body: stripEntityFrontmatter(body), Components: rb.Components})
-	}
-	return items, nil
-}
-
-func hasGoldenPath(components []string) bool {
-	for _, c := range components {
-		if c == goldenPathComponent {
-			return true
-		}
-	}
-	return false
-}
-
-// stripEntityFrontmatter drops a leading ----delimited block (the cerne_id
-// frontmatter of the stored document) so it doesn't collide with the generated
-// skill's own frontmatter.
-func stripEntityFrontmatter(body string) string {
-	if !strings.HasPrefix(body, "---\n") {
-		return body
-	}
-	rest := body[len("---\n"):]
-	end := strings.Index(rest, "\n---\n")
-	if end < 0 {
-		return body
-	}
-	return strings.TrimLeft(rest[end+len("\n---\n"):], "\n")
 }
 
 // skillStatusLabel maps an install outcome to its label.

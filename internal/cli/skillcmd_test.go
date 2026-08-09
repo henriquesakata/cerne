@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/skills"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -123,7 +124,7 @@ func TestLoadGoldenPathsIncludesRunbooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := loadGoldenPaths(repoDir)
+	items, err := skills.LoadGoldenPaths(repoDir)
 	if err != nil {
 		t.Fatalf("loadGoldenPaths: %v", err)
 	}
