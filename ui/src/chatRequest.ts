@@ -44,9 +44,15 @@ function notify(convId: string) {
   listeners.get(convId)?.forEach((cb) => cb())
 }
 
-function patchMessages(convId: string, messages: ChatMsg[]) {
+// patchMessages (F-0248) aplica `update` sobre o valor CORRENTE da conversa no
+// storage, lido no instante da escrita. Gravar um array capturado antes (o
+// snapshot preso no closure do envio) apagava em silêncio todo turno que
+// tivesse entrado depois da captura.
+function patchMessages(convId: string, update: (current: ChatMsg[]) => ChatMsg[]) {
   const idx = readChats()
-  const chats = idx.chats.map((c) => (c.id === convId ? { ...c, messages, updatedAt: Date.now() } : c))
+  const chats = idx.chats.map((c) =>
+    c.id === convId ? { ...c, messages: update(c.messages), updatedAt: Date.now() } : c,
+  )
   writeChats(chats, idx.activeId)
 }
 
@@ -60,12 +66,26 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
   if (status(convId).pending) return
   statuses.set(convId, { pending: true, startedAt: Date.now(), model: override.model ?? '', effort: override.effort ?? '' })
   outcomes.delete(convId)
-  patchMessages(convId, messages)
+  patchMessages(convId, () => messages)
   notify(convId)
   let partial = ''
+  // writeAssistant identifica a resposta em construção por papel e posição —
+  // acrescenta na primeira escrita, substitui nas seguintes. Índice derivado
+  // do snapshot é justamente o acoplamento que causava a perda (F-0248).
+  let appended = false
+  const writeAssistant = (content: string) => {
+    patchMessages(convId, (current) => {
+      const last = current[current.length - 1]
+      if (appended && last?.role === 'assistant') {
+        return [...current.slice(0, -1), { role: 'assistant', content }]
+      }
+      appended = true
+      return [...current, { role: 'assistant', content }]
+    })
+  }
   streamChat(messages, override, (delta) => {
     partial += delta
-    patchMessages(convId, [...messages, { role: 'assistant', content: partial }])
+    writeAssistant(partial)
     notify(convId)
   })
     .then((res) => {
@@ -73,7 +93,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
       if (res.needs_provider) {
         outcomes.set(convId, { kind: 'needs_provider' })
       } else {
-        patchMessages(convId, [...messages, { role: 'assistant', content: res.reply ?? '' }])
+        writeAssistant(res.reply ?? '')
         outcomes.set(convId, { kind: 'success' })
       }
       notify(convId)

@@ -146,3 +146,47 @@ describe('chatRequest (F-0240): streaming real de token', () => {
     expect(assistantOf('c7')).toEqual([{ role: 'assistant', content: 'meio da resposta' }])
   })
 })
+
+describe('chatRequest (F-0248): a escrita parte do storage corrente, não do snapshot do envio', () => {
+  it('critérios 1 e 2: turno que entra durante a requisição sobrevive ao parcial e à resposta final', async () => {
+    seedConversation('c9')
+    let onDelta!: (d: string) => void
+    let resolve!: (v: ChatAnswer) => void
+    streamChat.mockImplementation((_m, _o, cb) => {
+      onDelta = cb
+      return new Promise((r) => (resolve = r))
+    })
+
+    send('c9', [{ role: 'user', content: 'primeira' }], {})
+
+    // Outro escritor acrescenta turnos DEPOIS do snapshot capturado no envio —
+    // é o caso do defeito: a conversa avançou e o closure não sabe.
+    const idx = readChats()
+    writeChats(
+      idx.chats.map((c) =>
+        c.id === 'c9'
+          ? {
+              ...c,
+              messages: [
+                ...c.messages,
+                { role: 'assistant' as const, content: 'anterior' },
+                { role: 'user' as const, content: 'segunda' },
+              ],
+            }
+          : c,
+      ),
+      idx.activeId,
+    )
+
+    onDelta('parcial')
+    resolve({ answered: true, reply: 'resposta final' })
+    await vi.waitFor(() => expect(status('c9').pending).toBe(false))
+
+    expect(readChats().chats.find((c) => c.id === 'c9')?.messages).toEqual([
+      { role: 'user', content: 'primeira' },
+      { role: 'assistant', content: 'anterior' },
+      { role: 'user', content: 'segunda' },
+      { role: 'assistant', content: 'resposta final' },
+    ])
+  })
+})
