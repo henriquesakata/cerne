@@ -171,7 +171,9 @@ func parseHookWirings(raw []byte, origin string) ([]wiredHook, error) {
 func Inspect(opts Options) Inventory {
 	ls := readLayers(opts.ProjDir, opts.Home)
 	return Inventory{
-		Classes: []Class{},
-		Layers:  ls.layers,
+		Classes: []Class{
+			{Name: "hooks", Items: hookItems(opts, ls)},
+		},
+		Layers: ls.layers,
 	}
 }
