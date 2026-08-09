@@ -731,3 +731,94 @@ func TestChatRegisterUpdateRefusals(t *testing.T) {
 		t.Fatalf("spec.md changed on a refused update: %q (%v)", string(spec), err)
 	}
 }
+
+// TestChatNote (F-0249 criteria 3/7): confirming a proposed note writes it to
+// the backend as an active, durable note carrying the block's tags and the
+// informs backlink to the candidate the conversation produced.
+func TestChatNote(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Candidata da conversa", domain.StateCandidate)
+	commitBackend(t, repoDir)
+	head0, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA before: %v", err)
+	}
+
+	var got struct {
+		Note store.Note `json:"note"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-note"), http.MethodPost, "/api/chat/note",
+		`{"title":"Candidata é a proposta antes do aprove","body":"No vocabulário deste produto, candidata é a feature proposta e ainda não aprovada.","facets":["code"],"components":["backlog"],"informs":["F-0001"]}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Note.State != domain.NoteActive || !got.Note.Durable {
+		t.Fatalf("note = %+v, want active + durable", got.Note)
+	}
+	if len(got.Note.Facets) != 1 || got.Note.Facets[0] != "code" {
+		t.Fatalf("facets = %v, want [code]", got.Note.Facets)
+	}
+	if len(got.Note.Components) != 1 || got.Note.Components[0] != "backlog" {
+		t.Fatalf("components = %v, want [backlog]", got.Note.Components)
+	}
+	if len(got.Note.Informs) != 1 || got.Note.Informs[0] != "F-0001" {
+		t.Fatalf("informs = %v, want [F-0001]", got.Note.Informs)
+	}
+	body, err := os.ReadFile(filepath.Join(repoDir, "content", "notes", got.Note.ID+".md"))
+	if err != nil || !strings.Contains(string(body), "candidata é a feature proposta") {
+		t.Fatalf("note body not written: %q (%v)", string(body), err)
+	}
+	head1, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA after: %v", err)
+	}
+	if head1 == head0 {
+		t.Fatalf("origin HEAD did not advance after the note was created")
+	}
+}
+
+// TestChatNoteRequiresTags (F-0249 criterion 5): a block without facet or
+// without at least one component is refused with an explicit message and
+// writes nothing — an untagged note is born as lint debt (untagged-live).
+func TestChatNoteRequiresTags(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "proj-chat-note-tags")
+
+	for _, tc := range []struct{ name, payload, want string }{
+		{"no facet", `{"title":"T","body":"corpo real da nota","components":["backlog"]}`, "facet"},
+		{"no component", `{"title":"T","body":"corpo real da nota","facets":["code"]}`, "component"},
+		{"empty body", `{"title":"T","body":"  ","facets":["code"],"components":["backlog"]}`, "body"},
+		{"empty title", `{"title":" ","body":"corpo real da nota","facets":["code"],"components":["backlog"]}`, "title"},
+	} {
+		var got map[string]string
+		rec := doJSON(t, h, http.MethodPost, "/api/chat/note", tc.payload, &got)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("%s: status = %d, want 422; body: %s", tc.name, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(got["error"], tc.want) {
+			t.Fatalf("%s: error = %q, want mention of %q", tc.name, got["error"], tc.want)
+		}
+	}
+	notes, err := store.LoadAllNotes(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllNotes: %v", err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("refused proposals wrote %d note(s), want 0", len(notes))
+	}
+}
+
+// TestChatNoteUnknownInforms (F-0249): an informs target that does not exist
+// refuses instead of minting a note with a dangling backlink.
+func TestChatNoteUnknownInforms(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-note-informs"), http.MethodPost, "/api/chat/note",
+		`{"title":"T","body":"corpo real da nota","facets":["code"],"components":["backlog"],"informs":["F-9999"]}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	if notes, _ := store.LoadAllNotes(repoDir); len(notes) != 0 {
+		t.Fatalf("dangling informs wrote %d note(s), want 0", len(notes))
+	}
+}
