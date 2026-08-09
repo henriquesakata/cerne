@@ -253,6 +253,12 @@ const ptBR = {
     expand: 'Expandir',
     inPanel: (version: number) => `Proposta v${version} — no painel do rascunho.`,
   },
+  noteProposal: {
+    title: 'Nota proposta',
+    register: 'Registrar nota',
+    registering: 'Registrando…',
+    created: (id: string) => `Nota ${id} registrada.`,
+  },
   warRoom: {
     title: 'War Room',
     loadError: (e: string) => `Erro ao carregar as salas: ${e}`,
@@ -928,6 +934,12 @@ const en: Messages = {
     collapse: 'Collapse',
     expand: 'Expand',
     inPanel: (version: number) => `Proposal v${version} — in the draft panel.`,
+  },
+  noteProposal: {
+    title: 'Proposed note',
+    register: 'Register note',
+    registering: 'Registering…',
+    created: (id: string) => `Note ${id} registered.`,
   },
   warRoom: {
     title: 'War Room',

@@ -733,6 +733,26 @@ export async function registerChatCandidate(
   return { ok: true, feature: body.feature, warning: body.warning }
 }
 
+// registerChatNote (F-0249) grava a nota proposta pelo agente, só depois da
+// confirmação explícita do usuário — mesma forma do registro de candidata
+// (POST /api/chat/note → app.CreateNote, active + durable). O servidor recusa
+// sem facet/component: nota sem tag nasce como débito de lint.
+export async function registerChatNote(
+  title: string,
+  body: string,
+  facets: string[],
+  components: string[],
+  informs: string[] = [],
+): Promise<{ ok: true; note: Note } | { ok: false; error: string }> {
+  const r = await fetch(`${base()}/chat/note`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body, facets, components, informs }),
+  })
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true, note: ((await r.json()) as { note: Note }).note }
+}
+
 export type WikiPageRef = { name: string; rel: string }
 
 export async function fetchWikiIndex(): Promise<WikiPageRef[]> {

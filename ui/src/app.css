@@ -591,6 +591,24 @@ h2 {
 .diff-add { background: color-mix(in srgb, green 18%, transparent); }
 .diff-del { background: color-mix(in srgb, red 18%, transparent); text-decoration: line-through; }
 
+/* Card de nota proposta (F-0249): mesmo vocabulário visual do rascunho, mas
+   inline na transcrição — a nota é episódica e não tem revisões versionadas. */
+.note-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.note-proposal-head h4 { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.note-proposal-title { margin: 0; font-size: 0.95rem; }
+.note-proposal-created .status { margin: 0; }
+.note-proposal-register { align-self: flex-start; }
+
 /* Referência ao painel na transcrição (F-0255 critério 1). */
 .backlog-chat-proposal-ref {
   margin: 0.4rem 0 0;
