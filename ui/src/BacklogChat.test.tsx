@@ -128,7 +128,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     expect(screen.queryByRole('button', { name: /registrar candidata/i })).not.toBeInTheDocument()
   })
 
-  it('com bloco de proposta, mostra título/corpo editáveis e só registra ao confirmar', async () => {
+  it('com bloco de proposta, mostra o rascunho no painel e só registra ao confirmar', async () => {
     const proposal =
       'Perfeito, aqui está a proposta:\n\n' +
       '```cerne-proposta\n' +
@@ -147,7 +147,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     // Confirmation is explicit: registering must not have happened just from the reply arriving.
     expect(registerChatCandidate).not.toHaveBeenCalled()
 
-    expect(screen.getByDisplayValue('Exportar relatórios em CSV')).toBeInTheDocument()
+    expect(screen.getByText('Exportar relatórios em CSV')).toBeInTheDocument()
     fireEvent.click(registerButton)
 
     await waitFor(() =>
@@ -244,9 +244,12 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     await screen.findByRole('button', { name: /registrar candidata/i })
     streamChat.mockClear()
 
-    const spec = screen.getByDisplayValue(/Falta exportação/) as HTMLTextAreaElement
-    spec.focus()
-    spec.setSelectionRange(12, 30)
+    const spec = screen.getByText('Falta exportação.')
+    const range = document.createRange()
+    range.selectNodeContents(spec)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
     fireEvent.mouseUp(spec)
 
     fireEvent.change(screen.getByPlaceholderText(/ajustar/i), { target: { value: 'muito vago' } })
@@ -257,6 +260,69 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     // Critério 4: nada é enviado — o turno segue sendo o normal, quando o
     // usuário mandar.
     expect(streamChat).not.toHaveBeenCalled()
+  })
+
+  it('F-0255 critério 1: a transcrição referencia o painel em vez de repetir a spec', async () => {
+    const proposal =
+      'Perfeito, aqui está a proposta:\n\n' +
+      '```cerne-proposta\n' +
+      '# Exportar relatórios em CSV\n\n' +
+      '## Problema\nFalta exportação.\n' +
+      '```\n'
+    streamChat.mockResolvedValue({ answered: true, reply: proposal })
+    renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByRole('button', { name: /registrar candidata/i })
+
+    expect(screen.getByText('Perfeito, aqui está a proposta:')).toBeInTheDocument()
+    expect(screen.getByText(/no painel do rascunho/i)).toBeInTheDocument()
+    // A spec aparece uma única vez — no painel, não duplicada no scroll.
+    expect(screen.getAllByText('Falta exportação.')).toHaveLength(1)
+  })
+
+  it('F-0255 critérios 2/6: revisões saem do transcript — reabrir a conversa restaura v1 e v2', () => {
+    const rev = (title: string, body: string) =>
+      '```cerne-proposta\n' + `# ${title}\n\n` + `## Problema\n${body}\n` + '```\n'
+    renderChat({
+      messages: [
+        { role: 'user', content: 'Preciso exportar.' },
+        { role: 'assistant', content: rev('Exportar em CSV', 'Falta exportação.') },
+        { role: 'user', content: '> Falta exportação.\n\nexportação do quê?\n\n' },
+        { role: 'assistant', content: rev('Exportar relatórios em CSV', 'Falta exportar relatórios.') },
+      ],
+    })
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual(['v1', 'v2'])
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Exportar relatórios em CSV')).toBeInTheDocument()
+
+    fireEvent.click(tabs[0])
+    expect(screen.getByText('Exportar em CSV')).toBeInTheDocument()
+  })
+
+  it('F-0255 critério 4: registrar usa a versão exibida no painel', async () => {
+    const rev = (title: string) => '```cerne-proposta\n' + `# ${title}\n\n` + '## Problema\nX.\n' + '```\n'
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
+    renderChat({
+      messages: [
+        { role: 'assistant', content: rev('Título v1') },
+        { role: 'assistant', content: rev('Título v2') },
+      ],
+    })
+
+    fireEvent.click(screen.getAllByRole('tab')[0])
+    fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
+
+    await waitFor(() =>
+      expect(registerChatCandidate).toHaveBeenCalledWith('Título v1', expect.stringContaining('## Problema'), [], [], '', ''),
+    )
+    // Registrada: o painel some até o agente emitir a próxima revisão.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /registrar candidata/i })).not.toBeInTheDocument(),
+    )
   })
 
   it('F-0219: carrega o transcript/seleção da conversa recebida via prop', () => {
@@ -338,7 +404,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     act(() => resolve({ answered: true, reply: proposal }))
 
     await screen.findByRole('button', { name: /registrar candidata/i })
-    expect(screen.getByDisplayValue('Exportar relatórios em CSV')).toBeInTheDocument()
+    expect(screen.getByText('Exportar relatórios em CSV')).toBeInTheDocument()
     expect(screen.getByText('code')).toBeInTheDocument()
     expect(screen.getByText('chat')).toBeInTheDocument()
     expect(screen.getByText('backlog')).toBeInTheDocument()
