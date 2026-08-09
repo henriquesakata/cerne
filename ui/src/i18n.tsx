@@ -222,8 +222,6 @@ const ptBR = {
     retry: 'Reenviar',
     needsProvider:
       'Configure um provider de IA (claude-cli ou byo-key) em .cernerc — [llm] — para conversar com o agente.',
-    proposalTitle: 'Título',
-    proposalBody: 'Spec proposta',
     register: 'Registrar candidata',
     registering: 'Registrando…',
     newConversation: 'Nova conversa',
@@ -236,6 +234,20 @@ const ptBR = {
       `Excluir a conversa "${title}"? Essa ação não pode ser desfeita.`,
     confirmCapReached: (title: string, max: number) =>
       `Limite de ${max} conversas atingido — "${title}" será removida. Continuar?`,
+  },
+  quoteComment: {
+    title: 'Comentar trecho',
+    placeholder: 'O que ajustar neste trecho?',
+    confirm: 'Comentar',
+    cancel: 'Cancelar',
+  },
+  proposalDraft: {
+    title: 'Rascunho da proposta',
+    versions: 'Versões',
+    diff: (previous: number) => `Diff vs. v${previous}`,
+    collapse: 'Recolher',
+    expand: 'Expandir',
+    inPanel: (version: number) => `Proposta v${version} — no painel do rascunho.`,
   },
   warRoom: {
     title: 'War Room',
@@ -882,8 +894,6 @@ const en: Messages = {
     retry: 'Retry',
     needsProvider:
       'Configure an AI provider (claude-cli or byo-key) in .cernerc — [llm] — to talk to the agent.',
-    proposalTitle: 'Title',
-    proposalBody: 'Proposed spec',
     register: 'Register candidate',
     registering: 'Registering…',
     newConversation: 'New conversation',
@@ -896,6 +906,20 @@ const en: Messages = {
       `Delete the conversation "${title}"? This cannot be undone.`,
     confirmCapReached: (title: string, max: number) =>
       `${max}-conversation limit reached — "${title}" will be removed. Continue?`,
+  },
+  quoteComment: {
+    title: 'Comment on excerpt',
+    placeholder: 'What should change in this excerpt?',
+    confirm: 'Comment',
+    cancel: 'Cancel',
+  },
+  proposalDraft: {
+    title: 'Proposal draft',
+    versions: 'Versions',
+    diff: (previous: number) => `Diff vs. v${previous}`,
+    collapse: 'Collapse',
+    expand: 'Expand',
+    inPanel: (version: number) => `Proposal v${version} — in the draft panel.`,
   },
   warRoom: {
     title: 'War Room',

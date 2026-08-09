@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -9,6 +10,7 @@ import {
 import { fetchLLMOptions, registerChatCandidate, type ChatMsg, type Feature } from './api'
 import * as chatRequest from './chatRequest'
 import Markdown from './Markdown'
+import ProposalDraft from './ProposalDraft'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
 
@@ -20,7 +22,7 @@ const PROPOSAL_FENCE = 'cerne-proposta'
 // parent: (F-0254) metadata lines, and the rest is the spec body (same
 // contract as app.BuildChatSystemPrompt / internal/app/diagram.go's
 // extractFencedBlock).
-type ParsedProposal = {
+export type ParsedProposal = {
   title: string
   body: string
   facet: string
@@ -61,6 +63,22 @@ export function parseProposal(reply: string): ParsedProposal | null {
   }
   const body = lines.slice(i).join('\n').trim()
   return { title, body, facet, components, capability, parent }
+}
+
+// stripProposalFence remove o bloco cercado da mensagem, deixando só a prosa
+// em volta (F-0255 critério 1): a spec inteira vive no painel do rascunho, e
+// repeti-la no scroll enterraria a condução da conversa. Mensagem sem bloco
+// volta intacta.
+export function stripProposalFence(reply: string): string {
+  const open = reply.indexOf('```' + PROPOSAL_FENCE)
+  if (open < 0) return reply
+  const afterFence = reply.indexOf('\n', open)
+  if (afterFence < 0) return reply
+  const close = reply.indexOf('```', afterFence)
+  if (close < 0) return reply
+  const endOfClose = reply.indexOf('\n', close)
+  const after = endOfClose < 0 ? '' : reply.slice(endOfClose + 1)
+  return (reply.slice(0, open) + after).trim()
 }
 
 // MenuSelect (F-0241): popup no lugar do <select> nativo, que não renderiza
@@ -258,7 +276,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [error, setError] = useState<string | null>(null)
   const [failedMessages, setFailedMessages] = useState<ChatMsg[] | null>(null)
   const [needsProvider, setNeedsProvider] = useState(false)
-  const [proposal, setProposal] = useState<ParsedProposal | null>(null)
+  // F-0255: o rascunho não é estado próprio — as revisões saem do transcript
+  // (abaixo). O que se guarda é quantas revisões já foram registradas, para o
+  // painel sumir depois do registro e voltar quando o agente emitir a próxima.
+  const [registeredRevisions, setRegisteredRevisions] = useState(0)
   const [registering, setRegistering] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [efforts, setEfforts] = useState<string[]>([])
@@ -325,10 +346,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       setMessages(fresh.messages)
       setError(null)
       setFailedMessages(null)
-      const last = fresh.messages[fresh.messages.length - 1]
-      if (last?.role === 'assistant') {
-        setProposal(parseProposal(last.content))
-      }
     }
     reconcile()
     return chatRequest.subscribe(id, reconcile)
@@ -385,7 +402,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // vira "erro visível" se a requisição falhar; sucesso limpa em reconcile().
   const sendMessages = (next: ChatMsg[]) => {
     setError(null)
-    setProposal(null)
     setFailedMessages(next)
     chatRequest.send(conversation.id, next, { model: model || undefined, effort: effort || undefined })
   }
@@ -433,8 +449,38 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     }
   }
 
-  const confirmRegister = () => {
-    if (!proposal) return
+  // F-0255 critérios 1/2/6: as revisões do rascunho são DERIVADAS do
+  // transcript — toda resposta do agente que carrega um bloco cerne-proposta é
+  // uma versão, na ordem em que foi emitida. Nada novo a persistir: a conversa
+  // já é salva pela F-0219/F-0230, então voltar para a tela restaura as
+  // versões de graça.
+  const revisions = useMemo(() => {
+    const found: { version: number; msgIndex: number; proposal: ParsedProposal }[] = []
+    messages.forEach((m, i) => {
+      if (m.role !== 'assistant') return
+      const p = parseProposal(m.content)
+      if (p) found.push({ version: found.length + 1, msgIndex: i, proposal: p })
+    })
+    return found
+  }, [messages])
+
+  const versionByMessage = useMemo(
+    () => new Map(revisions.map((r) => [r.msgIndex, r.version])),
+    [revisions],
+  )
+
+  // F-0250 critérios 2/3: a citação é ANEXADA ao compositor, sem enviar —
+  // vários trechos acumulam na ordem em que foram comentados, e o usuário
+  // ainda escreve texto livre antes de mandar.
+  const appendQuote = (quote: string) => {
+    setInput((v) => v + quote)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      autoExpand()
+    })
+  }
+
+  const confirmRegister = (proposal: ParsedProposal) => {
     setRegistering(true)
     setError(null)
     registerChatCandidate(
@@ -453,7 +499,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         }
         // F-0254: parent inválido não falha o registro — só avisa.
         setError(res.warning ?? null)
-        setProposal(null)
+        setRegisteredRevisions(revisions.length)
         onRegistered?.(res.feature)
       })
       .catch((err: unknown) => {
@@ -476,13 +522,27 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       <div className="backlog-chat-toolbar">
         <h2>{t.backlogChat.title}</h2>
       </div>
+      <div className="backlog-chat-body">
+      <div className="backlog-chat-main">
       <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
-        {messages.map((m, i) => (
-          <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
-            {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : <p>{m.content}</p>}
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          const version = versionByMessage.get(i)
+          return (
+            <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
+              {m.role !== 'assistant' && <p>{m.content}</p>}
+              {/* F-0255 critério 1: a mensagem que traz proposta mostra só a
+                  condução em volta e uma referência ao painel — a spec inteira
+                  no scroll enterrava a conversa a cada revisão. */}
+              {m.role === 'assistant' && (
+                <>
+                  <Markdown>{version ? stripProposalFence(m.content) : m.content}</Markdown>
+                  {version && <p className="backlog-chat-proposal-ref">{t.proposalDraft.inPanel(version)}</p>}
+                </>
+              )}
+            </div>
+          )
+        })}
         {busy && (
           <p className="status backlog-chat-progress">
             <span className="backlog-chat-spinner" aria-hidden="true" />
@@ -490,43 +550,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           </p>
         )}
       </div>
-      {proposal && (
-        <div className="backlog-chat-proposal">
-          {(proposal.facet || proposal.components.length > 0 || proposal.capability) && (
-            <div className="backlog-chat-proposal-chips">
-              {proposal.facet && <span className="chip">{proposal.facet}</span>}
-              {proposal.components.map((c) => (
-                <span className="chip" key={c}>
-                  {c}
-                </span>
-              ))}
-              {proposal.capability && <span className="chip chip-capability">{proposal.capability}</span>}
-            </div>
-          )}
-          <label>
-            {t.backlogChat.proposalTitle}
-            <input
-              value={proposal.title}
-              onChange={(e) => setProposal({ ...proposal, title: e.target.value })}
-            />
-          </label>
-          <label>
-            {t.backlogChat.proposalBody}
-            <textarea
-              value={proposal.body}
-              onChange={(e) => setProposal({ ...proposal, body: e.target.value })}
-              rows={10}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={confirmRegister}
-            disabled={registering || proposal.title.trim() === ''}
-          >
-            {registering ? t.backlogChat.registering : t.backlogChat.register}
-          </button>
-        </div>
-      )}
       {error && (
         <p className="status error backlog-chat-error">
           {error}
@@ -588,6 +611,16 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           </div>
         )}
       </form>
+      </div>
+      {revisions.length > registeredRevisions && (
+        <ProposalDraft
+          revisions={revisions.map((r) => r.proposal)}
+          registering={registering}
+          onRegister={confirmRegister}
+          onQuote={appendQuote}
+        />
+      )}
+      </div>
     </aside>
   )
 }
