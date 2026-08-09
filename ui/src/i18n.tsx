@@ -169,6 +169,9 @@ const ptBR = {
     external: 'externa',
     noDoc: 'Sem documento de conteúdo.',
     ofTotal: (total: number) => ` de ${total}`,
+    copy: 'Copiar',
+    copied: 'Copiado!',
+    copyBlock: 'Copiar bloco de código',
   },
   kanban: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -788,6 +791,9 @@ const en: Messages = {
     external: 'external',
     noDoc: 'No content document.',
     ofTotal: (total: number) => ` of ${total}`,
+    copy: 'Copy',
+    copied: 'Copied!',
+    copyBlock: 'Copy code block',
   },
   kanban: {
     loadError: (e: string) => `Failed to load state: ${e}`,

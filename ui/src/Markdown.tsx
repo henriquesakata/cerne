@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState, type ComponentProps } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { markerSpans, parseClarification, type MarkerSpan } from './clarify'
@@ -260,6 +260,41 @@ function ClarifyChip({
   )
 }
 
+// CodeBlock (F-0247) envolve todo bloco cercado com um botão de copiar. O
+// texto sai do textContent do <pre> renderizado — é o conteúdo do <code>, já
+// sem a cerca e sem o rótulo de linguagem (critério 2), sem precisar recuperar
+// offsets da fonte. Botão sempre visível: afordância só no hover não existe
+// para teclado nem toque, e este bloco existe para ser copiado.
+function CodeBlock({ children, ...rest }: ComponentProps<'pre'>) {
+  const [copied, setCopied] = useState(false)
+  const ref = useRef<HTMLPreElement>(null)
+  const { t } = useT()
+
+  // O `?.` curto-circuita a cadeia inteira, então clipboard ausente (contexto
+  // inseguro) não lança; o catch cobre permissão negada. Em nenhum dos dois
+  // casos o estado de confirmação liga (critério 6).
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(ref.current?.textContent ?? '')
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {})
+  }
+
+  return (
+    <div className="code-block">
+      <pre ref={ref} {...rest}>
+        {children}
+      </pre>
+      <button type="button" className="code-copy" aria-label={t.common.copyBlock} onClick={copy}>
+        {copied ? t.common.copied : t.common.copy}
+      </button>
+    </div>
+  )
+}
+
 // Markdown renderiza o conteúdo dos docs (spec/plan/result, decisões e
 // referências). O plugin remark-gfm habilita o GitHub Flavored Markdown —
 // tabelas, listas de tarefas, ~~tachado~~ e autolinks — que os docs do cerne
@@ -281,6 +316,7 @@ export default function Markdown({
     <ReactMarkdown
       remarkPlugins={[remarkGfm, [remarkClarify, { base, source: stripped }]]}
       components={{
+        pre: CodeBlock,
         a: ({ href, children: label, ...rest }) => {
           if (href?.startsWith('#clarify:')) {
             const raw = Array.isArray(label) ? label.join('') : String(label ?? '')
