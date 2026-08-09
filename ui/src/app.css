@@ -255,6 +255,34 @@ h2 {
 /* A lista não estica: seu conteúdo termina onde termina. */
 .backlog-list-col { min-width: 0; align-self: start; }
 
+/* F-0256: o card mantém o link inteiro clicável; a ação de refino é um botão
+   discreto abaixo dele, fora do <a>. */
+.backlog-card { display: flex; flex-direction: column; gap: 0.25rem; }
+
+.backlog-card-refine {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.backlog-card-refine:hover { background: var(--surface-2); color: var(--fg); }
+.backlog-card-refine:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+
+/* Marca da conversa de refino: o chat está editando a spec de uma candidata. */
+.backlog-chat-refining {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
 /* F-0219: sidebar de conversas — <details> nativo cobre o colapsável. */
 .conversation-list {
   margin-top: 1.25rem;

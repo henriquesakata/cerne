@@ -40,6 +40,10 @@ type chatRequest struct {
 	Messages []chatMessage `json:"messages"`
 	Model    string        `json:"model,omitempty"`
 	Effort   string        `json:"effort,omitempty"`
+	// FeatureID (F-0256) turns the turn into a refine of that candidate: its
+	// current spec joins the system prompt. Read from the backend on every
+	// call, so a resumed conversation never answers from a stale snapshot.
+	FeatureID string `json:"feature_id,omitempty"`
 }
 
 // chatResponse mirrors askResponse/generateDiagramResponse: Answered is false
@@ -67,6 +71,18 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		return
 	}
 
+	// F-0256: the refine context is resolved before anything else — a feature
+	// past candidacy is refused here, whatever the provider situation, so the
+	// gate holds for a direct API call and not only for the UI's hidden button.
+	refine := ""
+	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
+		block, err := app.BuildRefineBlock(repoDir, fid)
+		if !writeRefineError(w, err) {
+			return
+		}
+		refine = block
+	}
+
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil || llm.ResolveMode(cfg.LLM.Mode) == llm.ModeDelegation {
 		writeChatLine(w, http.StatusOK, chatResponse{Answered: false, NeedsProvider: true})
@@ -81,6 +97,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	sysPrompt += refine
 	msgs := make([]app.ChatMessage, len(req.Messages))
 	for i, m := range req.Messages {
 		msgs[i] = app.ChatMessage{Role: m.Role, Content: m.Content}
@@ -198,6 +215,29 @@ type chatRegisterRequest struct {
 	// that doesn't exist or is closed must not cost the registration: the
 	// candidate is created without it and the response carries a warning.
 	Parent string `json:"parent,omitempty"`
+	// FeatureID (F-0256) switches the handler from create to update: the
+	// confirmed revision rewrites that candidate's spec instead of minting a
+	// new one. Tags/capability/parent are not re-applied — refining edits the
+	// document, nothing else.
+	FeatureID string `json:"feature_id,omitempty"`
+}
+
+// writeRefineError maps the refine path's refusals (F-0256) to a status and
+// reports whether the caller may continue: unknown id → 404, past candidacy →
+// 422 (the spec is a committed contract), anything else → 500. Shared by the
+// turn (handleChat) and the write (handleChatRegister) so both gate alike.
+func writeRefineError(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
+	case errors.Is(err, app.ErrNotCandidate):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+	default:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	}
+	return false
 }
 
 // chatRegisterResponse is the 201 payload: the created feature, plus a warning
@@ -221,6 +261,17 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	}
 	if strings.TrimSpace(req.SpecBody) == "" {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("spec_body must not be empty"))
+		return
+	}
+	// F-0256: update mode — the confirmed revision of an already-registered
+	// candidate. Same gate as the creation (an explicit click got here), same
+	// backend write path, but nothing is minted and no state moves.
+	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
+		f, err := app.UpdateCandidateSpec(repoDir, projDir, fid, req.SpecBody)
+		if !writeRefineError(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, chatRegisterResponse{Feature: f})
 		return
 	}
 	capability := strings.TrimSpace(req.Capability)

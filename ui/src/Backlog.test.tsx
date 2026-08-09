@@ -26,7 +26,15 @@ const state = (features: Feature[]): StateResponse => ({
 let payload: StateResponse = state([])
 const streamChat = vi.fn<(messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => Promise<ChatAnswer>>()
 const registerChatCandidate = vi.fn<
-  (title: string, specBody: string, facets?: string[], components?: string[]) => Promise<CreateOutcome>
+  (
+    title: string,
+    specBody: string,
+    facets?: string[],
+    components?: string[],
+    capability?: string,
+    parent?: string,
+    featureId?: string,
+  ) => Promise<CreateOutcome>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 
@@ -34,8 +42,15 @@ vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchState: vi.fn(async () => payload),
   streamChat: (messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => streamChat(messages, override, onDelta),
-  registerChatCandidate: (title: string, specBody: string, facets?: string[], components?: string[]) =>
-    registerChatCandidate(title, specBody, facets, components),
+  registerChatCandidate: (
+    title: string,
+    specBody: string,
+    facets?: string[],
+    components?: string[],
+    capability?: string,
+    parent?: string,
+    featureId?: string,
+  ) => registerChatCandidate(title, specBody, facets, components, capability, parent, featureId),
   fetchLLMOptions: () => fetchLLMOptions(),
 }))
 
@@ -132,5 +147,25 @@ describe('Backlog (F-0202)', () => {
     await waitFor(() =>
       expect(screen.getByText(/Preciso exportar relatórios em CSV.*→ F-0221/)).toBeInTheDocument(),
     )
+  })
+})
+
+// F-0256 critérios 1/5: o card de uma candidata abre uma conversa de refino;
+// o refino não existe para features fora de candidate (o Backlog só lista
+// candidatas, então o gate visual é a própria lista + o gate do servidor).
+describe('Backlog — refinar candidata no chat (F-0256)', () => {
+  it('o card oferece refinar no chat e a conversa nasce ligada ao id', async () => {
+    payload = state([feature('F-0001')])
+    render(<Backlog />)
+
+    const refine = await screen.findByRole('button', { name: /refinar no chat/i })
+    fireEvent.click(refine)
+
+    // A marca aparece no chat (a conversa ativa refina F-0001) e na lista de
+    // conversas — a mesma conversa, vista dos dois lados.
+    await waitFor(() =>
+      expect(document.querySelector('.backlog-chat-refining')).toHaveTextContent('Refinando F-0001'),
+    )
+    expect(screen.getAllByText(/refinando F-0001/i)).toHaveLength(2)
   })
 })

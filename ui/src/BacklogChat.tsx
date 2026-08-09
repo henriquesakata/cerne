@@ -29,9 +29,12 @@ export type ParsedProposal = {
   components: string[]
   capability: string
   parent: string
+  // feature (F-0256): a linha "feature: F-NNNN" marca o bloco como REVISÃO de
+  // uma candidata já registrada, e não como proposta de candidata nova.
+  feature: string
 }
 
-const METADATA_LINE = /^(facet|components|capability|parent):\s*(.*)$/i
+const METADATA_LINE = /^(facet|components|capability|parent|feature):\s*(.*)$/i
 
 export function parseProposal(reply: string): ParsedProposal | null {
   const open = reply.indexOf('```' + PROPOSAL_FENCE)
@@ -49,6 +52,7 @@ export function parseProposal(reply: string): ParsedProposal | null {
   let components: string[] = []
   let capability = ''
   let parent = ''
+  let feature = ''
   const lines = rest.split('\n')
   let i = 0
   while (i < lines.length) {
@@ -59,10 +63,11 @@ export function parseProposal(reply: string): ParsedProposal | null {
     else if (key.toLowerCase() === 'components') components = value.split(',').map((c) => c.trim()).filter(Boolean)
     else if (key.toLowerCase() === 'capability') capability = value.trim()
     else if (key.toLowerCase() === 'parent') parent = value.trim()
+    else if (key.toLowerCase() === 'feature') feature = value.trim()
     i++
   }
   const body = lines.slice(i).join('\n').trim()
-  return { title, body, facet, components, capability, parent }
+  return { title, body, facet, components, capability, parent, feature }
 }
 
 // stripProposalFence remove o bloco cercado da mensagem, deixando só a prosa
@@ -403,7 +408,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const sendMessages = (next: ChatMsg[]) => {
     setError(null)
     setFailedMessages(next)
-    chatRequest.send(conversation.id, next, { model: model || undefined, effort: effort || undefined })
+    chatRequest.send(conversation.id, next, {
+      model: model || undefined,
+      effort: effort || undefined,
+      // F-0256: o id vai a cada turno — é ele que faz o servidor recarregar a
+      // spec corrente, em vez de o cliente carregar um snapshot na abertura.
+      featureId: conversation.featureId || undefined,
+    })
   }
 
   const submitMessage = () => {
@@ -480,6 +491,12 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     })
   }
 
+  // F-0256: numa conversa de refino a confirmação ATUALIZA a candidata. O id
+  // autoritativo é o da conversa (foi o card que a abriu), não o que o agente
+  // escreveu no bloco — a linha "feature:" dele serve para marcar a revisão,
+  // não para escolher em qual entidade gravar.
+  const refineId = conversation.featureId ?? ''
+
   const confirmRegister = (proposal: ParsedProposal) => {
     setRegistering(true)
     setError(null)
@@ -490,6 +507,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       proposal.components,
       proposal.capability,
       proposal.parent,
+      refineId,
     )
       .then((res) => {
         setRegistering(false)
@@ -521,6 +539,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     <aside className="backlog-chat">
       <div className="backlog-chat-toolbar">
         <h2>{t.backlogChat.title}</h2>
+        {refineId && <span className="backlog-chat-refining">{t.backlogChat.refining(refineId)}</span>}
       </div>
       <div className="backlog-chat-body">
       <div className="backlog-chat-main">
@@ -616,6 +635,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         <ProposalDraft
           revisions={revisions.map((r) => r.proposal)}
           registering={registering}
+          refining={refineId !== ''}
           onRegister={confirmRegister}
           onQuote={appendQuote}
         />

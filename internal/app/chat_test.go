@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -281,5 +282,60 @@ func TestBuildChatSystemPromptQuotedRevision(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing the quoted-revision instruction %q:\n%s", want, prompt)
 		}
+	}
+}
+
+// TestBuildRefineBlock (F-0256 criteria 1/2): refining an existing candidate
+// hands the agent the id, the title and the spec as it is in the backend right
+// now, plus the instruction to re-emit the proposal as a revision of that id.
+func TestBuildRefineBlock(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Exportar relatórios", "", "", nil, nil,
+		"## Problema\n\nFalta exportação em CSV.", false, "", "")
+	if err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+
+	block, err := BuildRefineBlock(repoDir, f.ID)
+	if err != nil {
+		t.Fatalf("BuildRefineBlock: %v", err)
+	}
+	for _, want := range []string{f.ID, "Exportar relatórios", "Falta exportação em CSV", "cerne-proposta"} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("refine block missing %q:\n%s", want, block)
+		}
+	}
+
+	// Criterion 6: the block is rebuilt from the backend, so a spec that moved
+	// under the conversation is reflected on the next turn — no stale snapshot.
+	if _, err := UpdateCandidateSpec(repoDir, projDir, f.ID, "## Problema\n\nExportar também em XLSX.\n"); err != nil {
+		t.Fatalf("UpdateCandidateSpec: %v", err)
+	}
+	block2, err := BuildRefineBlock(repoDir, f.ID)
+	if err != nil {
+		t.Fatalf("BuildRefineBlock (2): %v", err)
+	}
+	if !strings.Contains(block2, "XLSX") || strings.Contains(block2, "Falta exportação em CSV") {
+		t.Fatalf("refine block did not reload the current spec:\n%s", block2)
+	}
+}
+
+// TestBuildRefineBlockNotCandidate (F-0256 criterion 5): past candidacy the
+// chat does not refine — the refusal lives in the core, not only in the UI.
+func TestBuildRefineBlockNotCandidate(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
+		"## Problema\n\nAprovada.", false, "", "")
+	if err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if _, err := BuildRefineBlock(repoDir, f.ID); !errors.Is(err, ErrNotCandidate) {
+		t.Fatalf("err = %v, want ErrNotCandidate", err)
+	}
+	if _, err := BuildRefineBlock(repoDir, "F-9999"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want store.ErrNotFound", err)
 	}
 }

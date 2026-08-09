@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -174,6 +176,53 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("Quando o turno do usuário trouxer citações (linhas iniciadas com \"> \") recortadas de uma proposta sua, trate-as como pedido de revisão daqueles trechos: localize cada trecho na sua proposta anterior e REEMITA o bloco ")
 	fmt.Fprintf(&b, "```%s INTEIRO já corrigido. ", chatProposalFence)
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n")
+	return b.String(), nil
+}
+
+// BuildRefineBlock is the extra context a refine conversation carries (F-0256):
+// the candidate's identity, its tags and the spec exactly as it stands in the
+// backend, plus the rules that make the re-emitted proposal a revision of that
+// id instead of a new candidate. It is rebuilt on every turn (the caller reads
+// from the store, never from a conversation snapshot), which is how a spec that
+// moved under a resumed conversation shows up on the next turn — criterion 6.
+// Refusals live here, not only in the UI: ErrNotCandidate past candidacy,
+// store.ErrNotFound for an unknown id.
+func BuildRefineBlock(repoDir, id string) (string, error) {
+	f, err := loadCandidate(repoDir, id)
+	if err != nil {
+		return "", err
+	}
+	spec, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nREFINO DE CANDIDATA JÁ REGISTRADA (%s)\n\n", f.ID)
+	b.WriteString("Esta conversa NÃO elabora uma feature nova: ela refina a candidata abaixo, que já está no board. ")
+	b.WriteString("Toda proposta sua aqui é uma revisão da spec dela.\n\n")
+	fmt.Fprintf(&b, "- id: %s\n", f.ID)
+	fmt.Fprintf(&b, "- título: %s (mantenha este título — renomear candidata não passa pelo chat)\n", f.Title)
+	fmt.Fprintf(&b, "- estado: %s\n", f.State)
+	if len(f.Facets) > 0 {
+		fmt.Fprintf(&b, "- facet: %s\n", strings.Join(f.Facets, ", "))
+	}
+	if len(f.Components) > 0 {
+		fmt.Fprintf(&b, "- components: %s\n", strings.Join(f.Components, ", "))
+	}
+	if f.Parent != "" {
+		fmt.Fprintf(&b, "- parent: %s\n", f.Parent)
+	}
+	b.WriteString("\nSpec atual no backend (é esta que você está revisando):\n\n")
+	b.WriteString("--- início da spec atual ---\n")
+	b.Write(spec)
+	b.WriteString("\n--- fim da spec atual ---\n\n")
+
+	b.WriteString("Regras do refino:\n")
+	fmt.Fprintf(&b, "- Ao propor uma mudança, reemita o bloco ```%s INTEIRO com a spec completa já revisada — a UI substitui o documento, não aplica patch.\n", chatProposalFence)
+	fmt.Fprintf(&b, "- Marque o bloco como revisão: inclua a linha \"feature: %s\" junto das demais linhas de metadado.\n", f.ID)
+	fmt.Fprintf(&b, "- A confirmação do usuário na UI grava a spec revisada em %s. O estado continua %s: refinar não aprova, não inicia e não renomeia nada.\n", f.ID, f.State)
+	b.WriteString("- Sem a confirmação explícita do usuário, nada é gravado — não afirme que gravou.\n")
 	return b.String(), nil
 }
 
