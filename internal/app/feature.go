@@ -22,6 +22,11 @@ import (
 // spec/plan/result lifecycle set.
 var ErrUnknownDoc = errors.New("documento de feature desconhecido")
 
+// ErrNotCandidate is returned by the Backlog chat's refine path (F-0256) for a
+// feature past candidacy: once approved, the spec is a committed contract and
+// changing it goes through the gated flow, not a chat confirmation.
+var ErrNotCandidate = errors.New("the feature is no longer a candidate")
+
 // ErrParentNotFound is returned when a feature's parent (epic) does not exist.
 var ErrParentNotFound = errors.New("parent feature (epic) not found")
 
@@ -502,6 +507,48 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		return nil // backend already had exactly this content
 	}
 	return err
+}
+
+// UpdateCandidateSpec rewrites a candidate's spec.md from the body the user
+// confirmed in the Backlog chat (F-0256), through the same gated write path as
+// the registration: cerne_id restamped by writeSpecBody, commit+push+snapshot
+// by MutateAndSnapshot. It is the ONLY chat-driven write to an existing entity,
+// and it deliberately touches nothing but the document — no state transition
+// (approve stays a human gate, F-0131), no retitle. Past candidacy it refuses
+// with ErrNotCandidate; the state is re-read inside the lock, so a concurrent
+// approve cannot be raced. Returns the feature as stored.
+func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, error) {
+	f, err := loadCandidate(repoDir, id)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		if _, err := loadCandidate(repoDir, id); err != nil {
+			return "", err
+		}
+		if err := writeSpecBody(repoDir, id, specBody); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: update %s/spec.md", id), nil
+	})
+	if err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
+// loadCandidate loads a feature and asserts it is still a candidate — the
+// precondition shared by the chat's refine turn (BuildRefineBlock) and its
+// write (UpdateCandidateSpec).
+func loadCandidate(repoDir, id string) (store.Feature, error) {
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	if f.State != domain.StateCandidate {
+		return store.Feature{}, fmt.Errorf("%w: %s is %s", ErrNotCandidate, id, f.State)
+	}
+	return f, nil
 }
 
 // writeSpecBody creates content/features/<id>/spec.md as cerne's stamped

@@ -887,3 +887,60 @@ func readFeatureDocFile(t *testing.T, repoDir, id, file string) string {
 	}
 	return string(data)
 }
+
+// TestUpdateCandidateSpec (F-0256 criteria 3/5): a revision confirmed in the
+// Backlog chat rewrites the candidate's spec through the same gated write path
+// as the registration — cerne_id frontmatter restamped, lifecycle state
+// untouched, one commit pushed.
+func TestUpdateCandidateSpec(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
+		"## Problema\n\nVersão antiga.", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	head0, _ := gitback.HeadSHA(origin)
+
+	f, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão nova.\n")
+	if err != nil {
+		t.Fatalf("UpdateCandidateSpec: %v", err)
+	}
+	if f.State != domain.StateCandidate || f.ID != "F-0001" {
+		t.Fatalf("feature = %+v, want F-0001 still candidate", f)
+	}
+	want := "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão nova.\n"
+	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != want {
+		t.Fatalf("spec.md = %q, want %q", got, want)
+	}
+	if head1, _ := gitback.HeadSHA(origin); head1 == head0 {
+		t.Fatalf("origin HEAD did not advance after the spec update")
+	}
+	stored, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil || stored.State != domain.StateCandidate {
+		t.Fatalf("stored = %+v, %v; want state untouched (candidate)", stored, err)
+	}
+}
+
+// TestUpdateCandidateSpecRefusals (F-0256 criterion 5): past candidacy the spec
+// is an approved contract — the chat write path refuses it, and nothing on disk
+// changes. An unknown id is store.ErrNotFound, like every other doc write.
+func TestUpdateCandidateSpecRefusals(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
+		"## Problema\n\nAprovada.", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
+
+	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
+		t.Fatalf("err = %v, want ErrNotCandidate", err)
+	}
+	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
+		t.Fatalf("spec.md changed on a refused update: %q", got)
+	}
+	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-9999", "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want store.ErrNotFound", err)
+	}
+}
