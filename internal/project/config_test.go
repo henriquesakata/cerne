@@ -660,3 +660,24 @@ func TestConfigGuardModeRoundtrip(t *testing.T) {
 		t.Fatal("guard.mode = warn: want non-fail mode after roundtrip")
 	}
 }
+
+// TestRetrievalBudgetOrDefault (F-0253 criterion 5): the chat's per-turn
+// injection budget defaults when unset and honours an explicit value —
+// including a negative one, which turns the injection off.
+func TestRetrievalBudgetOrDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"unset", 0, 6000},
+		{"configured", 1200, 1200},
+		{"disabled", -1, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := (AgentConfig{RetrievalBudget: tc.in}).RetrievalBudgetOrDefault(); got != tc.want {
+				t.Fatalf("RetrievalBudgetOrDefault() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

@@ -513,3 +513,40 @@ func TestChatClaudeCLIRoutesAgentProvider(t *testing.T) {
 		t.Fatalf("error %q does not name the claude binary (did the request route to the CLI provider?)", got.Error)
 	}
 }
+
+// TestChatInjectsProjectContext (F-0253, criteria 2 and 3): the turn's prompt
+// carries the backend context the server retrieved — here with a byo-key
+// provider, which has no tool access at all, proving the injection is
+// server-side and not the claude-cli consultation of F-0224.
+func TestChatInjectsProjectContext(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+	if err := store.SaveDecision(repoDir, store.Decision{
+		ID: "D-0001", Title: "Backend git é a fonte da verdade", State: domain.DecisionActive,
+	}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+
+	fake := &llm.Fake{Reply: "ok"}
+	orig := newAgentProvider
+	newAgentProvider = func(project.LLMConfig, string) (llm.Provider, error) { return fake, nil }
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	var got struct {
+		Answered bool `json:"answered"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"qual a fonte da verdade?"}]}`, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(fake.Prompts) != 1 {
+		t.Fatalf("provider calls = %d, want 1", len(fake.Prompts))
+	}
+	for _, want := range []string{"Contexto recuperado do projeto", "D-0001"} {
+		if !strings.Contains(fake.Prompts[0], want) {
+			t.Fatalf("prompt missing %q:\n%s", want, fake.Prompts[0])
+		}
+	}
+}

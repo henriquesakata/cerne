@@ -74,6 +74,22 @@ type AgentConfig struct {
 	Profile     string `toml:"profile,omitempty"`
 	ProfileFile string `toml:"profile_file,omitempty"`
 	ChatTimeout int    `toml:"chat_timeout,omitzero"` // F-0224: chat call budget in seconds; default 300 (agentic chains cost more than one-shot)
+	// RetrievalBudget caps, in characters, the backend context injected into
+	// each chat turn (F-0253). It lives here, next to chat_timeout, because
+	// [agent] is already the Backlog chat's config block.
+	RetrievalBudget int `toml:"retrieval_budget,omitzero"`
+}
+
+// RetrievalBudgetOrDefault returns the per-turn retrieval budget in
+// characters: the configured retrieval_budget, or 6000 when absent/zero —
+// roughly 1.5k tokens of grounding, small beside a chat prompt's ceiling.
+// A negative value turns the injection off (app.BuildTurnContext treats a
+// non-positive budget as disabled).
+func (a AgentConfig) RetrievalBudgetOrDefault() int {
+	if a.RetrievalBudget != 0 {
+		return a.RetrievalBudget
+	}
+	return 6000
 }
 
 // ChatTimeoutOrDefault returns the chat call budget: the configured

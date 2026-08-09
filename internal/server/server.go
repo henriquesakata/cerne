@@ -542,6 +542,25 @@ type searchResponse struct {
 	Results []searchHit `json:"results"`
 }
 
+// ensureIndex resolves the project's FTS index path and builds it on first
+// use. Offline by design: it reads the cached clone, never the remote —
+// 'cerne pull' is the sync point (mirrors searchcmd). Shared by search, ask
+// and the chat turn priming (F-0253).
+func ensureIndex(repoDir, projectID string) (string, error) {
+	dbPath, err := project.IndexPath(projectID)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+		if err := index.Rebuild(repoDir, dbPath); err != nil {
+			return "", err
+		}
+	} else if err != nil {
+		return "", err
+	}
+	return dbPath, nil
+}
+
 func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
@@ -554,19 +573,8 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 			limit = n
 		}
 	}
-	dbPath, err := project.IndexPath(projectID)
+	dbPath, err := ensureIndex(repoDir, projectID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
-	}
-	// Offline by design: build the index on first use from the cached clone,
-	// never the remote — 'cerne pull' is the sync point (mirrors searchcmd).
-	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
-		if err := index.Rebuild(repoDir, dbPath); err != nil {
-			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-			return
-		}
-	} else if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
@@ -632,19 +640,8 @@ func handleAsk(w http.ResponseWriter, r *http.Request, repoDir, projDir, project
 		writeJSON(w, http.StatusBadRequest, errorBody("provide the question (field query)"))
 		return
 	}
-	dbPath, err := project.IndexPath(projectID)
+	dbPath, err := ensureIndex(repoDir, projectID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
-	}
-	// Offline by design: build the index on first use from the cached clone
-	// (mirrors handleSearch); 'cerne pull' is the sync point.
-	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
-		if err := index.Rebuild(repoDir, dbPath); err != nil {
-			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-			return
-		}
-	} else if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
