@@ -189,7 +189,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 // pullSyncSkills runs the same reconcile as 'cerne skill sync' against the
 // clone the pull just refreshed, printing any change it made.
 func pullSyncSkills(cmd *cobra.Command, ctx projCtx) error {
-	items, err := loadGoldenPaths(ctx.repoDir)
+	items, err := skills.LoadGoldenPaths(ctx.repoDir)
 	if err != nil {
 		return err
 	}
