@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import BacklogChat from './BacklogChat'
-import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions } from './api'
+import BacklogChat, { parseNote } from './BacklogChat'
+import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
 const streamChat = vi.fn<
@@ -19,6 +19,15 @@ const registerChatCandidate = vi.fn<
     featureId?: string,
   ) => Promise<CreateOutcome>
 >()
+const registerChatNote = vi.fn<
+  (
+    title: string,
+    body: string,
+    facets: string[],
+    components: string[],
+    informs?: string[],
+  ) => Promise<{ ok: true; note: Note } | { ok: false; error: string }>
+>()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 
 vi.mock('./api', async (importOriginal) => ({
@@ -34,6 +43,8 @@ vi.mock('./api', async (importOriginal) => ({
     parent?: string,
     featureId?: string,
   ) => registerChatCandidate(title, specBody, facets, components, capability, parent, featureId),
+  registerChatNote: (title: string, body: string, facets: string[], components: string[], informs?: string[]) =>
+    registerChatNote(title, body, facets, components, informs),
   fetchLLMOptions: () => fetchLLMOptions(),
 }))
 
@@ -45,6 +56,7 @@ beforeEach(() => {
   setApiProject('proj-x')
   streamChat.mockReset()
   registerChatCandidate.mockReset()
+  registerChatNote.mockReset()
   fetchLLMOptions.mockReset()
   fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], efforts: [] })
   nextConvId += 1
@@ -693,5 +705,88 @@ describe('BacklogChat — refino de candidata (F-0256)', () => {
         '',
       ),
     )
+  })
+})
+
+// F-0249: o segundo bloco cercado da conversa — nota de conhecimento durável,
+// com o mesmo gate humano da candidata (o agente propõe, o clique grava).
+describe('BacklogChat — proposta de nota (F-0249)', () => {
+  const noteReply =
+    'Boa — isso é vocabulário do domínio, vale registrar:\n\n' +
+    '```cerne-nota\n' +
+    '# Candidata é a proposta antes do approve\n' +
+    'facet: code\n' +
+    'components: backlog, chat\n' +
+    'informs: F-0001\n\n' +
+    'Neste produto, candidata é a feature proposta e ainda não aprovada.\n' +
+    '```\n'
+
+  async function sendAndGetReply(reply: string) {
+    streamChat.mockResolvedValue({ answered: true, reply })
+    renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+  }
+
+  it('parseNote extrai título, corpo, facet, components e informs (critério 2)', () => {
+    const n = parseNote(noteReply)
+    expect(n).not.toBeNull()
+    expect(n!.title).toBe('Candidata é a proposta antes do approve')
+    expect(n!.facet).toBe('code')
+    expect(n!.components).toEqual(['backlog', 'chat'])
+    expect(n!.informs).toEqual(['F-0001'])
+    expect(n!.body).toBe('Neste produto, candidata é a feature proposta e ainda não aprovada.')
+  })
+
+  it('resposta sem bloco de nota não renderiza card (critério 4)', async () => {
+    await sendAndGetReply('Me conta mais sobre o formato.')
+    await waitFor(() => expect(screen.getByText('Me conta mais sobre o formato.')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /registrar nota/i })).not.toBeInTheDocument()
+    expect(registerChatNote).not.toHaveBeenCalled()
+  })
+
+  it('renderiza o card com chips e só grava ao confirmar (critérios 2/3/4)', async () => {
+    registerChatNote.mockResolvedValue({
+      ok: true,
+      note: {
+        id: 'N-0044',
+        title: 'Candidata é a proposta antes do approve',
+        state: 'active',
+        created_at: '2026-08-09T00:00:00Z',
+        updated_at: '2026-08-09T00:00:00Z',
+      },
+    })
+    await sendAndGetReply(noteReply)
+
+    const button = await screen.findByRole('button', { name: /registrar nota/i })
+    // O bloco cercado sai da transcrição — quem mostra o conteúdo é o card.
+    expect(screen.getByText('Candidata é a proposta antes do approve')).toBeInTheDocument()
+    expect(screen.getByText('backlog')).toBeInTheDocument()
+    expect(screen.getByText('F-0001')).toBeInTheDocument()
+    expect(screen.queryByText(/```/)).not.toBeInTheDocument()
+    expect(registerChatNote).not.toHaveBeenCalled()
+
+    fireEvent.click(button)
+    await waitFor(() => expect(registerChatNote).toHaveBeenCalledWith(
+      'Candidata é a proposta antes do approve',
+      'Neste produto, candidata é a feature proposta e ainda não aprovada.',
+      ['code'],
+      ['backlog', 'chat'],
+      ['F-0001'],
+    ))
+    // Critério 3: o id criado aparece na conversa.
+    await waitFor(() => expect(screen.getByText(/N-0044/)).toBeInTheDocument())
+  })
+
+  it('recusa do servidor por falta de tag vira erro visível (critério 5)', async () => {
+    registerChatNote.mockResolvedValue({
+      ok: false,
+      error: 'facet is required: an untagged note is born as lint debt (untagged-live)',
+    })
+    await sendAndGetReply(noteReply)
+
+    fireEvent.click(await screen.findByRole('button', { name: /registrar nota/i }))
+    await waitFor(() => expect(screen.getByText(/facet is required/)).toBeInTheDocument())
+    expect(screen.queryByText(/N-0044/)).not.toBeInTheDocument()
   })
 })

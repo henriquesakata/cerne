@@ -318,3 +318,53 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	}
 	writeJSON(w, http.StatusCreated, chatRegisterResponse{Feature: f, Warning: warning})
 }
+
+// chatNoteRequest is the POST /api/chat/note body (F-0249): the note the agent
+// proposed in a ```cerne-nota block and the user confirmed. Informs carries the
+// candidate the same conversation produced, when there was one — the trail
+// conversa → nota → feature.
+type chatNoteRequest struct {
+	Title      string   `json:"title"`
+	Body       string   `json:"body"`
+	Facets     []string `json:"facets"`
+	Components []string `json:"components"`
+	Informs    []string `json:"informs,omitempty"`
+}
+
+// handleChatNote registers the confirmed note proposal — the chat surface's
+// second write, with the same gate as handleChatRegister: the agent proposes,
+// the user clicks, the server writes (F-0224/F-0245 stay intact).
+//
+// Tags are required here and not only in the UI: a note born without facet or
+// component is lint debt on arrival (untagged-live, F-0097), and a direct API
+// call must not be able to mint one. The note is born durable — domain
+// vocabulary and rejected scope do not expire with a feature (F-0052).
+func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	var req chatNoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("title must not be empty"))
+		return
+	}
+	if strings.TrimSpace(req.Body) == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("body must not be empty"))
+		return
+	}
+	if len(req.Facets) == 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("facet is required: an untagged note is born as lint debt (untagged-live)"))
+		return
+	}
+	if len(req.Components) == 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("at least one component is required: an untagged note is born as lint debt (untagged-live)"))
+		return
+	}
+	n, err := app.CreateNote(repoDir, projDir, req.Title, req.Body, req.Informs, req.Facets, req.Components, true)
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]store.Note{"note": n})
+}

@@ -11,7 +11,7 @@ import (
 // mkTaggedNote: an active note with the given tags (helper for retag tests).
 func mkTaggedNote(t *testing.T, repoDir, projDir string, facets, components []string) store.Note {
 	t.Helper()
-	n, err := CreateNote(repoDir, projDir, "Nota", "corpo", nil, facets, components)
+	n, err := CreateNote(repoDir, projDir, "Nota", "corpo", nil, facets, components, false)
 	if err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestRetagNotePreservesDurableInforms(t *testing.T) {
 	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
-	n, err := CreateNote(repoDir, projDir, "Nota", "corpo", []string{"F-0001"}, nil, nil)
+	n, err := CreateNote(repoDir, projDir, "Nota", "corpo", []string{"F-0001"}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}

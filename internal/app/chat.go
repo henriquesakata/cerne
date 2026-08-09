@@ -175,9 +175,43 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	// patch parcial.
 	b.WriteString("Quando o turno do usuário trouxer citações (linhas iniciadas com \"> \") recortadas de uma proposta sua, trate-as como pedido de revisão daqueles trechos: localize cada trecho na sua proposta anterior e REEMITA o bloco ")
 	fmt.Fprintf(&b, "```%s INTEIRO já corrigido. ", chatProposalFence)
-	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n")
+	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
+	b.WriteString(chatNoteContract)
 	return b.String(), nil
 }
+
+// chatNoteFence is the second fenced block of the chat surface (F-0249):
+// durable knowledge proposed as a note. Same detection mechanism as
+// chatProposalFence — the UI parses both the same way.
+const chatNoteFence = "cerne-nota"
+
+// chatNoteContract teaches the note proposal: the trigger (criterion 1), the
+// block format, the duplicate check (criterion 6) and the informs backlink
+// (criterion 7). It closes with the invariant — the agent proposes, the user
+// confirms, the server writes — because a model that believes it wrote the
+// note will say so, and the user would trust a write that never happened.
+const chatNoteContract = `PROPOSTA DE NOTA (conhecimento durável)
+
+Quando a conversa ESTABELECER conhecimento durável do projeto, proponha registrá-lo como nota. Conta como durável: vocabulário do domínio que o usuário corrigiu ou definiu, escopo rejeitado e o porquê, regra de autoria acordada, motivo de uma decomposição. Também proponha quando o usuário pedir explicitamente ("registra isso", "não quero reexplicar").
+
+Não proponha a cada turno: a nota é episódica, nasce de conhecimento NOVO. Detalhe de uma feature específica vai na spec dela, não numa nota; procedimento operacional é runbook, não nota — e runbook não sai deste chat.
+
+Antes de propor, rode ` + "`cerne note list`" + ` (e ` + "`cerne note show <id>`" + ` quando o título for parecido): se já existe nota ativa equivalente, CITE o id dela em vez de propor outra.
+
+Para propor, termine sua resposta com um bloco cercado assim:
+
+` + "```" + chatNoteFence + `
+# <título curto e afirmativo: o que a nota estabelece>
+facet: <uma opção do conjunto fechado, obrigatória>
+components: <lista curta separada por vírgula, ao menos um — obrigatória>
+informs: <opcional: ids F-/D-/RB-/N- que esta nota informa; inclua a candidata que esta conversa gerou, quando houver>
+
+<o conhecimento em si, em 1-2 parágrafos: o fato e por que ele importa na próxima conversa>
+` + "```" + `
+
+Sem facet e sem ao menos um component o registro é RECUSADO pelo servidor — nota sem tag nasce como débito de lint.
+
+A nota só é gravada com a confirmação do usuário no card. Sem esse clique nada foi escrito: não diga que registrou, não invente o id.`
 
 // BuildRefineBlock is the extra context a refine conversation carries (F-0256):
 // the candidate's identity, its tags and the spec exactly as it stands in the

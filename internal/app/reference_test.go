@@ -104,7 +104,7 @@ func TestCreateExternalReferenceInformsRunbookNote(t *testing.T) {
 	if _, err := CreateRunbook(repoDir, projDir, "Deploy do serviço", "# Deploy\n\npassos"); err != nil {
 		t.Fatalf("CreateRunbook: %v", err)
 	}
-	if _, err := CreateNote(repoDir, projDir, "Gotcha do build", "corpo", nil, nil, nil); err != nil {
+	if _, err := CreateNote(repoDir, projDir, "Gotcha do build", "corpo", nil, nil, nil, false); err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}
 
@@ -140,7 +140,7 @@ func TestCreateNoteInformsRunbook(t *testing.T) {
 	if _, err := CreateRunbook(repoDir, projDir, "Recuperação", "# Recovery\n\npassos"); err != nil {
 		t.Fatalf("CreateRunbook: %v", err)
 	}
-	n, err := CreateNote(repoDir, projDir, "Nota operacional", "corpo", []string{"RB-0001"}, nil, nil)
+	n, err := CreateNote(repoDir, projDir, "Nota operacional", "corpo", []string{"RB-0001"}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateNote --informs RB-0001: %v", err)
 	}

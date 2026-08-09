@@ -271,7 +271,7 @@ func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component 
 	if err != nil {
 		return err
 	}
-	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component))
+	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), false)
 	if err != nil {
 		return err
 	}

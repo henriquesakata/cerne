@@ -339,3 +339,27 @@ func TestBuildRefineBlockNotCandidate(t *testing.T) {
 		t.Fatalf("err = %v, want store.ErrNotFound", err)
 	}
 }
+
+// TestBuildChatSystemPromptNoteContract (F-0249 criteria 1/6/7): the prompt
+// teaches the second fenced block — when to propose durable knowledge, the
+// duplicate check against the live notes, and the informs backlink that keeps
+// the conversa → nota → feature trail.
+func TestBuildChatSystemPromptNoteContract(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		"cerne-nota",  // the fence itself
+		"informs:",    // criterion 7: the backlink line
+		"note list",   // criterion 6: check before proposing
+		"vocabulário", // criterion 1: what counts as durable knowledge
+		"confirmação", // criterion 4: nothing is written without the click
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing the note-contract marker %q:\n%s", want, prompt)
+		}
+	}
+}

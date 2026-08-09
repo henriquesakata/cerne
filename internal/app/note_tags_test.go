@@ -13,7 +13,7 @@ import (
 func TestCreateNoteWithTags(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	n, err := CreateNote(repoDir, projDir, "Gitea install gotcha", "corpo real da nota", nil,
-		[]string{"Infra", "INFRA", "code"}, []string{"Gitea", "KPack"})
+		[]string{"Infra", "INFRA", "code"}, []string{"Gitea", "KPack"}, false)
 	if err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}
@@ -32,11 +32,34 @@ func TestCreateNoteWithTags(t *testing.T) {
 	}
 }
 
+// TestCreateNoteDurable (F-0249): a note born durable carries the flag from the
+// single create commit — the chat's proposals are vocabulary/rejected scope,
+// which do not expire with a feature, so lint's stale-note must skip them
+// without a second keep round-trip.
+func TestCreateNoteDurable(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	n, err := CreateNote(repoDir, projDir, "Vocabulário do domínio", "corpo real da nota", nil,
+		[]string{"code"}, []string{"backlog"}, true)
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	if !n.Durable {
+		t.Fatalf("returned note is not durable")
+	}
+	got, err := store.LoadNote(repoDir, n.ID)
+	if err != nil {
+		t.Fatalf("LoadNote: %v", err)
+	}
+	if !got.Durable {
+		t.Fatalf("persisted note is not durable")
+	}
+}
+
 // TestCreateNoteInvalidFacet: an unknown facet aborts with ErrUnknownFacet and
 // writes nothing (validated before any side effect).
 func TestCreateNoteInvalidFacet(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	_, err := CreateNote(repoDir, projDir, "T", "body", nil, []string{"prod"}, nil)
+	_, err := CreateNote(repoDir, projDir, "T", "body", nil, []string{"prod"}, nil, false)
 	if !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want errors.Is ErrUnknownFacet", err)
 	}

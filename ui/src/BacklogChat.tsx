@@ -7,14 +7,19 @@ import {
   type KeyboardEvent,
   type UIEvent,
 } from 'react'
-import { fetchLLMOptions, registerChatCandidate, type ChatMsg, type Feature } from './api'
+import { fetchLLMOptions, registerChatCandidate, registerChatNote, type ChatMsg, type Feature } from './api'
 import * as chatRequest from './chatRequest'
 import Markdown from './Markdown'
+import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
 
 const PROPOSAL_FENCE = 'cerne-proposta'
+// NOTE_FENCE (F-0249): o segundo bloco cercado da conversa — conhecimento
+// durável proposto para virar nota. Mesmo contrato do de candidata (título,
+// metadados, corpo), outro destino: o endpoint de nota, não o de candidata.
+const NOTE_FENCE = 'cerne-nota'
 
 // ParsedProposal is what the agent's reply carries when it is ready for
 // confirmation: a fenced ```cerne-proposta block whose first line is "#
@@ -32,12 +37,25 @@ export type ParsedProposal = {
   // feature (F-0256): a linha "feature: F-NNNN" marca o bloco como REVISÃO de
   // uma candidata já registrada, e não como proposta de candidata nova.
   feature: string
+  // informs (F-0249): usado só pelo bloco de nota — os ids que a nota informa,
+  // tipicamente a candidata que a mesma conversa gerou.
+  informs: string[]
 }
 
-const METADATA_LINE = /^(facet|components|capability|parent|feature):\s*(.*)$/i
+const METADATA_LINE = /^(facet|components|capability|parent|feature|informs):\s*(.*)$/i
+
+// parseNote (F-0249) extrai o bloco ```cerne-nota — mesmo formato do de
+// candidata, e por isso o mesmo parser: título, metadados, corpo.
+export function parseNote(reply: string): ParsedProposal | null {
+  return parseFenced(reply, NOTE_FENCE)
+}
 
 export function parseProposal(reply: string): ParsedProposal | null {
-  const open = reply.indexOf('```' + PROPOSAL_FENCE)
+  return parseFenced(reply, PROPOSAL_FENCE)
+}
+
+function parseFenced(reply: string, fence: string): ParsedProposal | null {
+  const open = reply.indexOf('```' + fence)
   if (open < 0) return null
   const afterFence = reply.indexOf('\n', open)
   if (afterFence < 0) return null
@@ -53,6 +71,7 @@ export function parseProposal(reply: string): ParsedProposal | null {
   let capability = ''
   let parent = ''
   let feature = ''
+  let informs: string[] = []
   const lines = rest.split('\n')
   let i = 0
   while (i < lines.length) {
@@ -64,18 +83,24 @@ export function parseProposal(reply: string): ParsedProposal | null {
     else if (key.toLowerCase() === 'capability') capability = value.trim()
     else if (key.toLowerCase() === 'parent') parent = value.trim()
     else if (key.toLowerCase() === 'feature') feature = value.trim()
+    else if (key.toLowerCase() === 'informs') informs = value.split(',').map((c) => c.trim()).filter(Boolean)
     i++
   }
   const body = lines.slice(i).join('\n').trim()
-  return { title, body, facet, components, capability, parent, feature }
+  return { title, body, facet, components, capability, parent, feature, informs }
 }
 
-// stripProposalFence remove o bloco cercado da mensagem, deixando só a prosa
+// stripProposalFence remove os blocos cercados da mensagem, deixando só a prosa
 // em volta (F-0255 critério 1): a spec inteira vive no painel do rascunho, e
-// repeti-la no scroll enterraria a condução da conversa. Mensagem sem bloco
-// volta intacta.
+// repeti-la no scroll enterraria a condução da conversa. O bloco de nota
+// (F-0249) sai pelo mesmo motivo — ele é renderizado como card. Mensagem sem
+// bloco volta intacta.
 export function stripProposalFence(reply: string): string {
-  const open = reply.indexOf('```' + PROPOSAL_FENCE)
+  return stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE)
+}
+
+function stripFence(reply: string, fence: string): string {
+  const open = reply.indexOf('```' + fence)
   if (open < 0) return reply
   const afterFence = reply.indexOf('\n', open)
   if (afterFence < 0) return reply
@@ -286,6 +311,12 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // painel sumir depois do registro e voltar quando o agente emitir a próxima.
   const [registeredRevisions, setRegisteredRevisions] = useState(0)
   const [registering, setRegistering] = useState(false)
+  // F-0249: qual nota já virou entidade, por índice da mensagem que a propôs —
+  // o card vira recibo com o id em vez de sumir, e um segundo clique não grava
+  // a mesma nota de novo. Efêmero de propósito: recarregar mostra o card outra
+  // vez, e a proteção real contra duplicata é o agente consultar note list.
+  const [createdNotes, setCreatedNotes] = useState<Record<number, string>>({})
+  const [registeringNote, setRegisteringNote] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [efforts, setEfforts] = useState<string[]>([])
   const [model, setModel] = useState(conversation.model)
@@ -526,6 +557,33 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       })
   }
 
+  // F-0249: a nota é gravada com as tags do bloco. O servidor recusa sem
+  // facet/component — a mensagem dele é o que aparece no erro, para o usuário
+  // saber pedir a correção ao agente em vez de tentar de novo igual.
+  const confirmNote = (msgIndex: number, note: ParsedProposal) => {
+    setRegisteringNote(true)
+    setError(null)
+    registerChatNote(
+      note.title,
+      note.body,
+      note.facet ? [note.facet] : [],
+      note.components,
+      note.informs,
+    )
+      .then((res) => {
+        setRegisteringNote(false)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
+        setCreatedNotes((m) => ({ ...m, [msgIndex]: res.note.id }))
+      })
+      .catch((err: unknown) => {
+        setRegisteringNote(false)
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
   if (needsProvider) {
     return (
       <aside className="backlog-chat">
@@ -547,6 +605,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
         {messages.map((m, i) => {
           const version = versionByMessage.get(i)
+          const note = m.role === 'assistant' ? parseNote(m.content) : null
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
               {m.role !== 'assistant' && <p>{m.content}</p>}
@@ -555,8 +614,19 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
                   no scroll enterrava a conversa a cada revisão. */}
               {m.role === 'assistant' && (
                 <>
-                  <Markdown>{version ? stripProposalFence(m.content) : m.content}</Markdown>
+                  <Markdown>{stripProposalFence(m.content)}</Markdown>
                   {version && <p className="backlog-chat-proposal-ref">{t.proposalDraft.inPanel(version)}</p>}
+                  {/* F-0249: o card da nota fica na mensagem que a propôs — é
+                      dali que ela nasceu, e a conversa segue por baixo. */}
+                  {note && (
+                    <NoteProposal
+                      note={note}
+                      registering={registeringNote}
+                      createdId={createdNotes[i]}
+                      onRegister={(n) => confirmNote(i, n)}
+                      onQuote={appendQuote}
+                    />
+                  )}
                 </>
               )}
             </div>

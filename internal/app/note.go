@@ -26,7 +26,12 @@ type NoteOutcome struct {
 // appends the note.created event, commits+pushes the backend and refreshes the
 // docs.lock snapshot in projDir. An empty body yields a scaffold that reads as a
 // stub (doccheck.HasRealContent false) until the author fills it.
-func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string) (store.Note, error) {
+//
+// durable (F-0249) marks the note as reviewed-durable at birth, so lint's
+// stale-note never flags it: knowledge that does not expire with a feature
+// (domain vocabulary, rejected scope) would otherwise need a second KeepNote —
+// a whole extra commit+push to set one bool.
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string, durable bool) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("the note title cannot be empty")
@@ -58,6 +63,7 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 			Informs:    cleaned,
 			Facets:     normFacets,
 			Components: normComponents,
+			Durable:    durable,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
