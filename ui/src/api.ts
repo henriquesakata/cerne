@@ -1069,3 +1069,35 @@ export async function readRoomMessages(
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { messages: RoomMessage[] }).messages
 }
+
+// --- Harness (F-0251) ---
+
+// HarnessItem é uma linha do inventário do harness efetivo: nome, camada de
+// origem, estado e comando de correção quando o cerne gerencia o artefato.
+export type HarnessItem = {
+  class: string
+  name: string
+  path: string
+  origin: string
+  state: string
+  detail?: string
+  fix?: string
+  outsideRepo: boolean
+}
+
+export type HarnessClass = { name: string; items: HarnessItem[] | null }
+
+export type HarnessLayer = { path: string; readable: boolean; error?: string }
+
+export type HarnessInventory = {
+  version: string
+  classes: HarnessClass[]
+  layers: HarnessLayer[]
+}
+
+// fetchHarness lê o inventário read-only do harness do projeto ativo.
+export async function fetchHarness(): Promise<HarnessInventory> {
+  const r = await fetch(`${base()}/harness`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as HarnessInventory
+}
