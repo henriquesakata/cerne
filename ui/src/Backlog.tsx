@@ -46,7 +46,7 @@ export default function Backlog() {
         {features && features.length > 0 && (
           <div className="epic-lane-cards">
             {sortByPriority(features).map((f) => (
-              <BacklogCard key={f.id} feature={f} />
+              <BacklogCard key={f.id} feature={f} onRefine={() => chats.refineFeature(f.id)} />
             ))}
           </div>
         )}
@@ -71,10 +71,16 @@ export default function Backlog() {
   )
 }
 
-function BacklogCard({ feature }: { feature: Feature }) {
+// BacklogCard (F-0256): a ação de refino fica FORA do <a> — botão aninhado em
+// link é inválido e o clique disputaria com a navegação. O Backlog só lista
+// candidatas, então a ação nunca aparece para uma feature aprovada; o gate de
+// verdade é o do servidor (422 pós-candidatura).
+function BacklogCard({ feature, onRefine }: { feature: Feature; onRefine: () => void }) {
+  const { t } = useT()
   const hasTags =
     (feature.facets?.length ?? 0) > 0 || (feature.components?.length ?? 0) > 0
   return (
+    <div className="backlog-card">
     <a className="card card-candidate" href={`#/f/${feature.id}`}>
       <span className="card-meta">
         <span className="card-id">{feature.id}</span>
@@ -94,5 +100,9 @@ function BacklogCard({ feature }: { feature: Feature }) {
         </span>
       )}
     </a>
+    <button type="button" className="backlog-card-refine" onClick={onRefine}>
+      {t.backlog.refineInChat}
+    </button>
+    </div>
   )
 }

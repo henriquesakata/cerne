@@ -28,11 +28,15 @@ function versionText(p: ParsedProposal): string {
 type Props = {
   revisions: ParsedProposal[]
   registering: boolean
+  // refining (F-0256): a conversa refina uma candidata já registrada — o botão
+  // atualiza a spec dela, não registra outra. Prometer "registrar candidata"
+  // aqui seria mentir sobre o que a confirmação faz.
+  refining?: boolean
   onRegister: (proposal: ParsedProposal) => void
   onQuote: (quote: string) => void
 }
 
-export default function ProposalDraft({ revisions, registering, onRegister, onQuote }: Props) {
+export default function ProposalDraft({ revisions, registering, refining = false, onRegister, onQuote }: Props) {
   const [selected, setSelected] = useState(revisions.length - 1)
   const [showDiff, setShowDiff] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -116,8 +120,11 @@ export default function ProposalDraft({ revisions, registering, onRegister, onQu
               </pre>
             ) : (
               <>
-                {(current.facet || current.components.length > 0 || current.capability) && (
+                {(current.facet || current.components.length > 0 || current.capability || current.feature) && (
                   <div className="backlog-chat-proposal-chips">
+                    {/* F-0256: a marca de revisão vem primeiro — é ela que diz
+                        que este rascunho substitui a spec de uma candidata. */}
+                    {current.feature && <span className="chip chip-revision">{current.feature}</span>}
                     {current.facet && <span className="chip">{current.facet}</span>}
                     {current.components.map((c) => (
                       <span className="chip" key={c}>
@@ -139,7 +146,13 @@ export default function ProposalDraft({ revisions, registering, onRegister, onQu
             onClick={() => onRegister(current)}
             disabled={registering || current.title.trim() === ''}
           >
-            {registering ? t.backlogChat.registering : t.backlogChat.register}
+            {refining
+              ? registering
+                ? t.backlogChat.updating
+                : t.backlogChat.update
+              : registering
+                ? t.backlogChat.registering
+                : t.backlogChat.register}
           </button>
         </>
       )}

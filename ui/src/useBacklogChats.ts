@@ -12,6 +12,10 @@ export type Conversation = {
   messages: ChatMsg[]
   model: string
   effort: string
+  // featureId (F-0256): quando presente, a conversa refina a spec DESSA
+  // candidata — o turno leva o id ao servidor e a confirmação atualiza o
+  // documento dela em vez de registrar uma candidata nova.
+  featureId?: string
 }
 
 const MAX_CONVERSATIONS = 50
@@ -112,6 +116,7 @@ export type UseBacklogChats = {
   deleteConversation: (id: string, confirmFn?: (message: string) => boolean) => void
   updateActive: (patch: { messages?: ChatMsg[]; model?: string; effort?: string }) => void
   appendRegisteredId: (featureId: string) => void
+  refineFeature: (featureId: string) => void
 }
 
 // useBacklogChats (F-0219) centraliza o modelo de dados da lista de conversas
@@ -209,11 +214,34 @@ export function useBacklogChats(): UseBacklogChats {
 
   // appendRegisteredId (critério 3): a conversa que gerou uma candidata vira
   // rastro da origem do card — sufixa " → F-XXXX" no título.
+  // F-0256: numa conversa de refino o vínculo já está no título e no
+  // featureId — sufixar de novo a cada atualização viraria "Refinando F-0010 →
+  // F-0010 → F-0010".
   const appendRegisteredId = (featureId: string) => {
     setChats((prev) =>
-      prev.map((c) => (c.id === activeId ? { ...c, title: `${c.title} → ${featureId}` } : c)),
+      prev.map((c) => (c.id === activeId && !c.featureId ? { ...c, title: `${c.title} → ${featureId}` } : c)),
     )
   }
 
-  return { chats, active, select, newConversation, deleteConversation, updateActive, appendRegisteredId }
+  // refineFeature (F-0256) abre a conversa de refino de uma candidata: reusa a
+  // que já existe para aquele id — retomar o refino é o caso comum, e uma
+  // conversa nova a cada clique jogaria fora o histórico do ajuste anterior.
+  // O contexto (a spec) vem do servidor a cada turno, então retomar nunca
+  // ressuscita um snapshot velho (critério 6).
+  const refineFeature = (featureId: string) => {
+    const existing = chats.find((c) => c.featureId === featureId)
+    if (existing) {
+      select(existing.id)
+      return
+    }
+    const fresh: Conversation = {
+      ...emptyConversation(),
+      title: t.backlogChat.refining(featureId),
+      featureId,
+    }
+    setChats((prev) => [fresh, ...prev])
+    setActiveId(fresh.id)
+  }
+
+  return { chats, active, select, newConversation, deleteConversation, updateActive, appendRegisteredId, refineFeature }
 }

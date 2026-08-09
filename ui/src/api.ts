@@ -639,7 +639,9 @@ export type ChatAnswer = {
 
 // ChatOverride (F-0218) carrega a escolha do seletor de modelo/esforço do
 // composer — opcional; omitida, o provider usa o default do .cernerc.
-export type ChatOverride = { model?: string; effort?: string }
+// featureId (F-0256) marca o turno como refino de uma candidata já
+// registrada: o servidor injeta a spec corrente dela no contexto do agente.
+export type ChatOverride = { model?: string; effort?: string; featureId?: string }
 
 // streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
 // case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
@@ -656,7 +658,12 @@ export async function streamChat(
   const r = await fetch(`${base()}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, model: override?.model, effort: override?.effort }),
+    body: JSON.stringify({
+      messages,
+      model: override?.model,
+      effort: override?.effort,
+      feature_id: override?.featureId,
+    }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   if (!r.body) return (await r.json()) as ChatAnswer
@@ -694,6 +701,9 @@ export async function streamChat(
 // registerChatCandidate registra a candidata proposta pelo agente, só depois
 // da confirmação explícita do usuário no chat — mesmo core do createFeature
 // com spec (POST /api/chat/register → app.CreateFeatureWithSpec).
+// F-0256: com featureId o mesmo endpoint vira atualização — grava a spec
+// revisada naquela candidata em vez de registrar uma nova (o servidor ignora
+// título e tags nesse modo: refinar edita o documento, nada mais).
 export async function registerChatCandidate(
   title: string,
   specBody: string,
@@ -701,11 +711,20 @@ export async function registerChatCandidate(
   components: string[] = [],
   capability = '',
   parent = '',
+  featureId = '',
 ): Promise<CreateOutcome & { warning?: string }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, spec_body: specBody, facets, components, capability, parent }),
+    body: JSON.stringify({
+      title,
+      spec_body: specBody,
+      facets,
+      components,
+      capability,
+      parent,
+      feature_id: featureId,
+    }),
   })
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   // F-0254: warning acompanha o 201 quando algo não-fatal foi descartado (um

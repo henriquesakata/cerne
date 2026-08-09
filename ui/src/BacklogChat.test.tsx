@@ -16,6 +16,7 @@ const registerChatCandidate = vi.fn<
     components?: string[],
     capability?: string,
     parent?: string,
+    featureId?: string,
   ) => Promise<CreateOutcome>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
@@ -31,7 +32,8 @@ vi.mock('./api', async (importOriginal) => ({
     components?: string[],
     capability?: string,
     parent?: string,
-  ) => registerChatCandidate(title, specBody, facets, components, capability, parent),
+    featureId?: string,
+  ) => registerChatCandidate(title, specBody, facets, components, capability, parent, featureId),
   fetchLLMOptions: () => fetchLLMOptions(),
 }))
 
@@ -158,6 +160,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         [],
         '',
         '',
+        '',
       ),
     )
     await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(feature('F-0099')))
@@ -196,6 +199,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         ['chat', 'backlog'],
         'C-0001',
         '',
+        '',
       ),
     )
   })
@@ -225,6 +229,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         [],
         '',
         'F-0252',
+        '',
       ),
     )
   })
@@ -317,7 +322,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
 
     await waitFor(() =>
-      expect(registerChatCandidate).toHaveBeenCalledWith('Título v1', expect.stringContaining('## Problema'), [], [], '', ''),
+      expect(registerChatCandidate).toHaveBeenCalledWith('Título v1', expect.stringContaining('## Problema'), [], [], '', '', ''),
     )
     // Registrada: o painel some até o agente emitir a próxima revisão.
     await waitFor(() =>
@@ -620,5 +625,73 @@ describe('BacklogChat (F-0248): sair da tela com resposta em voo', () => {
       { role: 'user', content: 'Preciso de X' },
       { role: 'assistant', content: 'resposta completa do agente' },
     ])
+  })
+})
+
+// F-0256: a conversa aberta pelo card de uma candidata refina a spec dela —
+// o turno leva o id (o servidor carrega a spec corrente) e a confirmação
+// atualiza aquela candidata em vez de registrar outra.
+describe('BacklogChat — refino de candidata (F-0256)', () => {
+  const proposal =
+    '```cerne-proposta\n' +
+    '# Exportar relatórios em CSV\n' +
+    'feature: F-0010\n\n' +
+    '## Problema\nFalta exportação.\n' +
+    '```\n'
+
+  it('critério 1: o turno de uma conversa de refino carrega o id da candidata', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    renderChat({ featureId: 'F-0010' })
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Ajusta o escopo.' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    await waitFor(() =>
+      expect(streamChat).toHaveBeenCalledWith(
+        [{ role: 'user', content: 'Ajusta o escopo.' }],
+        expect.objectContaining({ featureId: 'F-0010' }),
+        expect.any(Function),
+      ),
+    )
+  })
+
+  it('critérios 2/3/4: confirmar atualiza a candidata em vez de registrar uma nova', async () => {
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0010') })
+    renderChat({ featureId: 'F-0010', messages: [{ role: 'assistant', content: proposal }] })
+
+    // O painel anuncia que é revisão da candidata, e o botão não promete registro.
+    expect(screen.getByText('F-0010')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /registrar candidata/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /atualizar spec/i }))
+
+    await waitFor(() =>
+      expect(registerChatCandidate).toHaveBeenCalledWith(
+        'Exportar relatórios em CSV',
+        expect.stringContaining('## Problema'),
+        [],
+        [],
+        '',
+        '',
+        'F-0010',
+      ),
+    )
+  })
+
+  it('conversa comum segue registrando candidata nova (sem id)', async () => {
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
+    renderChat({ messages: [{ role: 'assistant', content: proposal }] })
+
+    fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
+    await waitFor(() =>
+      expect(registerChatCandidate).toHaveBeenCalledWith(
+        'Exportar relatórios em CSV',
+        expect.any(String),
+        [],
+        [],
+        '',
+        '',
+        '',
+      ),
+    )
   })
 })
