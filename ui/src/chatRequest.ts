@@ -60,6 +60,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
   if (status(convId).pending) return
   statuses.set(convId, { pending: true, startedAt: Date.now(), model: override.model ?? '', effort: override.effort ?? '' })
   outcomes.delete(convId)
+  patchMessages(convId, messages)
   notify(convId)
   let partial = ''
   streamChat(messages, override, (delta) => {
