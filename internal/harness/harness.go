@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gitlab.com/rockt/cerne/internal/version"
 )
 
 // Origins: where an item comes from. 3 of the 5 live outside the repository —
@@ -84,11 +86,13 @@ type wiredHook struct {
 	Origin  string
 }
 
-// layerSet is the resolved settings merge: every layer consulted plus the
-// union of hook wirings (Claude Code merges hooks arrays across files).
+// layerSet is the resolved settings merge: every layer consulted, the union
+// of hook wirings (Claude Code merges hooks arrays across files) and the
+// effective enabledPlugins map (later layers override earlier ones).
 type layerSet struct {
-	layers []Layer
-	hooks  []wiredHook
+	layers  []Layer
+	hooks   []wiredHook
+	plugins map[string]bool
 }
 
 // wiringFor reports the first wiring whose command mentions script.
@@ -117,20 +121,23 @@ func readLayers(projDir, home string) layerSet {
 		src{filepath.Join(projDir, ".claude", "settings.json"), OriginProject},
 		src{filepath.Join(projDir, ".claude", "settings.local.json"), OriginLocal},
 	)
-	var ls layerSet
+	ls := layerSet{plugins: map[string]bool{}}
 	for _, s := range srcs {
 		raw, err := os.ReadFile(s.path)
 		if err != nil {
 			ls.layers = append(ls.layers, Layer{Path: s.path, Readable: false, Error: readErrReason(err)})
 			continue
 		}
-		hooks, err := parseHookWirings(raw, s.origin)
+		hooks, plugins, err := parseSettings(raw, s.origin)
 		if err != nil {
 			ls.layers = append(ls.layers, Layer{Path: s.path, Readable: false, Error: err.Error()})
 			continue
 		}
 		ls.layers = append(ls.layers, Layer{Path: s.path, Readable: true})
 		ls.hooks = append(ls.hooks, hooks...)
+		for name, enabled := range plugins {
+			ls.plugins[name] = enabled
+		}
 	}
 	return ls
 }
@@ -142,9 +149,9 @@ func readErrReason(err error) string {
 	return err.Error()
 }
 
-// parseHookWirings extracts every {event, matcher, command} from a settings
-// document's hooks object.
-func parseHookWirings(raw []byte, origin string) ([]wiredHook, error) {
+// parseSettings extracts every hook wiring {event, matcher, command} and the
+// enabledPlugins map from one settings document.
+func parseSettings(raw []byte, origin string) ([]wiredHook, map[string]bool, error) {
 	var doc struct {
 		Hooks map[string][]struct {
 			Matcher string `json:"matcher"`
@@ -152,9 +159,10 @@ func parseHookWirings(raw []byte, origin string) ([]wiredHook, error) {
 				Command string `json:"command"`
 			} `json:"hooks"`
 		} `json:"hooks"`
+		EnabledPlugins map[string]bool `json:"enabledPlugins"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out []wiredHook
 	for event, entries := range doc.Hooks {
@@ -164,15 +172,26 @@ func parseHookWirings(raw []byte, origin string) ([]wiredHook, error) {
 			}
 		}
 	}
-	return out, nil
+	return out, doc.EnabledPlugins, nil
 }
 
 // Inspect builds the harness inventory for one project. Strictly read-only.
 func Inspect(opts Options) Inventory {
 	ls := readLayers(opts.ProjDir, opts.Home)
+	cerne := cerneItems(opts, &ls)
+	mcp := mcpItems(opts, &ls)
+	plugins := pluginItems(opts, &ls)
 	return Inventory{
+		Version: version.Short(),
 		Classes: []Class{
+			{Name: "cerne", Items: cerne},
 			{Name: "hooks", Items: hookItems(opts, ls)},
+			{Name: "skills", Items: skillItems(opts, ls)},
+			{Name: "plugins", Items: plugins},
+			{Name: "mcp", Items: mcp},
+			{Name: "config", Items: configItems(opts, ls)},
+			{Name: "context", Items: contextItems(opts)},
+			{Name: "providers", Items: providerItems(opts)},
 		},
 		Layers: ls.layers,
 	}
