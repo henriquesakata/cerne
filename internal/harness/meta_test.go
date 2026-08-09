@@ -46,6 +46,36 @@ func TestCerneClassWithoutCernerc(t *testing.T) {
 	}
 }
 
+func TestConfigOriginWithProjectNestedUnderHome(t *testing.T) {
+	home := t.TempDir()
+	proj := filepath.Join(home, "dev", "proj")
+	writeFile(t, filepath.Join(proj, ".claude", "settings.json"), settingsWiring("a.sh"))
+	writeFile(t, filepath.Join(proj, ".claude", "settings.local.json"), settingsWiring("b.sh"))
+	writeFile(t, filepath.Join(home, ".claude", "settings.json"), settingsWiring("c.sh"))
+
+	inv := Inspect(Options{ProjDir: proj, Home: home})
+	var got []string
+	for _, c := range inv.Classes {
+		if c.Name != "config" {
+			continue
+		}
+		for _, it := range c.Items {
+			if filepath.Base(it.Path) == "settings.json" || filepath.Base(it.Path) == "settings.local.json" {
+				got = append(got, it.Origin)
+			}
+		}
+	}
+	want := map[string]int{OriginUser: 1, OriginProject: 1, OriginLocal: 1}
+	for _, o := range got {
+		want[o]--
+	}
+	for o, n := range want {
+		if n != 0 {
+			t.Errorf("config origins wrong (project nested under home): got %v, missing/excess %s", got, o)
+		}
+	}
+}
+
 func TestContextFilesListed(t *testing.T) {
 	proj := t.TempDir()
 	home := t.TempDir()

@@ -114,6 +114,38 @@ func TestExternalBinaryBrokenAndConfigured(t *testing.T) {
 	}
 }
 
+func TestProjectScriptWiringNotDuplicated(t *testing.T) {
+	proj := t.TempDir()
+	writeFile(t, filepath.Join(proj, ".claude", "hooks", "meu-hook.sh"), "#!/bin/sh\nexit 0\n")
+	writeFile(t, filepath.Join(proj, ".claude", "settings.json"),
+		`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/meu-hook.sh\""}]}]}}`)
+
+	inv := Inspect(Options{ProjDir: proj})
+	var count int
+	for _, c := range inv.Classes {
+		if c.Name != "hooks" {
+			continue
+		}
+		for _, it := range c.Items {
+			if it.Name == "meu-hook.sh" {
+				count++
+			}
+		}
+	}
+	if count != 1 {
+		t.Errorf("project script wired + on disk listed %d times, want 1", count)
+	}
+
+	// Wiring to a project script NOT on disk must still surface, as broken.
+	writeFile(t, filepath.Join(proj, ".claude", "settings.json"),
+		`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/sumiu.sh\""}]}]}}`)
+	inv = Inspect(Options{ProjDir: proj})
+	it, ok := findItem(inv, "hooks", "sumiu.sh")
+	if !ok || it.State != StateBroken {
+		t.Errorf("wired but absent project script = %+v, want broken", it)
+	}
+}
+
 func TestUnmanagedHookScript(t *testing.T) {
 	proj := t.TempDir()
 	writeFile(t, filepath.Join(proj, ".claude", "hooks", "no-new-case-dir.sh"), "#!/bin/sh\nexit 0\n")

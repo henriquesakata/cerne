@@ -60,6 +60,13 @@ func hookItems(opts Options, ls layerSet) []Item {
 		if name == "" || seen[name] {
 			continue
 		}
+		// A healthy project script already has its own line from the disk
+		// scan above — a second "configured" line for the wiring is noise.
+		// A wiring pointing at a script that is NOT on disk stays: that is
+		// the broken half the screen exists to show.
+		if state == StateConfigured && projectScript(w.Command, opts.ProjDir) {
+			continue
+		}
 		seen[name] = true
 		items = append(items, Item{
 			Class:       "hooks",
@@ -127,6 +134,22 @@ func managedCapability(projDir string, a hooks.Asset, ls layerSet) Item {
 		it.Fix = fixHookInstall
 	}
 	return it
+}
+
+// projectScript reports whether a shell-wrapper hook command targets a script
+// inside the project tree.
+func projectScript(cmd, projDir string) bool {
+	fields := strings.Fields(cmd)
+	if len(fields) < 2 {
+		return false
+	}
+	exe := strings.Trim(fields[0], `"'`)
+	if exe != "bash" && exe != "sh" {
+		return false
+	}
+	target := strings.Trim(fields[1], `"'`)
+	target = strings.ReplaceAll(target, "$CLAUDE_PROJECT_DIR", projDir)
+	return strings.HasPrefix(target, projDir+string(os.PathSeparator))
 }
 
 // isManagedCommand reports whether a wiring command runs one of the managed

@@ -221,9 +221,14 @@ func configItems(opts Options, ls layerSet) []Item {
 		name := filepath.Base(l.Path)
 		origin := OriginProject
 		outside := false
+		// Project prefix wins over home prefix: a project checked out under
+		// the user's home is still the project.
+		inProject := strings.HasPrefix(l.Path, opts.ProjDir+string(filepath.Separator))
 		switch {
-		case strings.HasSuffix(name, ".local.json"):
+		case inProject && strings.HasSuffix(name, ".local.json"):
 			origin = OriginLocal
+		case inProject:
+			origin = OriginProject
 		case opts.Home != "" && strings.HasPrefix(l.Path, opts.Home+string(filepath.Separator)):
 			origin = OriginUser
 			outside = true
