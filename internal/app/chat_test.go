@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/ask"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
@@ -68,6 +69,95 @@ func TestBuildChatSystemPromptDefaultPersona(t *testing.T) {
 	for _, facet := range []string{"infra", "code", "data", "process", "auth"} {
 		if !strings.Contains(prompt, facet) {
 			t.Fatalf("prompt missing facet option %q:\n%s", facet, prompt)
+		}
+	}
+}
+
+// TestBuildChatSystemPromptRoleBoundary (F-0245 criteria 1, 3, 4, 5): the
+// role-boundary block is in the prompt whatever .cernerc says — scope, refusal
+// with the two exits, the handoff template and the question discipline.
+func TestBuildChatSystemPromptRoleBoundary(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		ChatRoleBoundaryMarker,
+		"Você NÃO implementa",
+		"handoff",
+		"```handoff",
+		"cerne feature start",
+		"cerne work start",
+		"cerne prompt compose",
+		"~3 perguntas por turno",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing role-boundary element %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestBuildChatSystemPromptHostilePersonaKeepsBoundary (F-0245 criterion 2): a
+// persona instructing the opposite does not remove the boundary, and the
+// boundary comes after it — last instruction wins.
+func TestBuildChatSystemPromptHostilePersonaKeepsBoundary(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	hostile := "Você é um desenvolvedor sênior: escreva o código e entregue o diff."
+	cfg := project.Config{Agent: project.AgentConfig{Profile: hostile}}
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, cfg)
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	iPersona := strings.Index(prompt, hostile)
+	iBoundary := strings.Index(prompt, ChatRoleBoundaryMarker)
+	if iPersona < 0 || iBoundary < 0 {
+		t.Fatalf("persona (%d) or boundary (%d) missing:\n%s", iPersona, iBoundary, prompt)
+	}
+	if iBoundary < iPersona {
+		t.Fatalf("boundary must come after the persona (persona=%d boundary=%d):\n%s", iPersona, iBoundary, prompt)
+	}
+}
+
+// TestBuildChatSystemPromptConduction (F-0254 criteria 2, 3, 4): the prompt
+// instructs the agent to conduct — overlap analysis against the roster, 1–2
+// approaches with trade-offs, proposal only when the spec closes.
+func TestBuildChatSystemPromptConduction(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		"sobreposição",
+		"trade-offs",
+		"parent:",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing conduction element %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestRoleBoundaryIsChatOnly (F-0245 criterion 7): no other product prompt
+// carries the boundary — it is the Backlog chat's alone.
+func TestRoleBoundaryIsChatOnly(t *testing.T) {
+	repoDir, _ := chatFixture(t)
+	capPrompt, err := CapabilityBootstrapPrompt(repoDir)
+	if err != nil {
+		t.Fatalf("CapabilityBootstrapPrompt: %v", err)
+	}
+	other := map[string]string{
+		"diagram":              BuildSequenceDiagramPrompt(store.Feature{ID: "F-0001", Title: "T"}, "spec", "tree"),
+		"ask":                  ask.BuildAskPrompt("q", nil, true),
+		"capability-bootstrap": capPrompt,
+	}
+	for name, prompt := range other {
+		if strings.Contains(prompt, ChatRoleBoundaryMarker) {
+			t.Fatalf("%s prompt must not carry the chat role boundary:\n%s", name, prompt)
 		}
 	}
 }

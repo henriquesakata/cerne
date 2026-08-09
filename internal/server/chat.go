@@ -194,6 +194,18 @@ type chatRegisterRequest struct {
 	// it doesn't match that shape, a title proposing a new node — created
 	// and linked after the candidate exists.
 	Capability string `json:"capability"`
+	// Parent (F-0254) is the optional epic the proposal decomposes. A parent
+	// that doesn't exist or is closed must not cost the registration: the
+	// candidate is created without it and the response carries a warning.
+	Parent string `json:"parent,omitempty"`
+}
+
+// chatRegisterResponse is the 201 payload: the created feature, plus a warning
+// when something non-fatal was dropped on the way in (F-0254: an invalid
+// parent).
+type chatRegisterResponse struct {
+	Feature store.Feature `json:"feature"`
+	Warning string        `json:"warning,omitempty"`
 }
 
 // handleChatRegister registers the confirmed proposal as a candidate — the
@@ -219,7 +231,16 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 			return
 		}
 	}
-	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", "", req.Facets, req.Components, req.SpecBody, false, "", "")
+	parent := strings.TrimSpace(req.Parent)
+	warning := ""
+	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", parent, req.Facets, req.Components, req.SpecBody, false, "", "")
+	// F-0254: a bad parent degrades to no parent instead of failing the
+	// registration — the refusal happens before anything is written, so the
+	// retry is clean. Only the parent errors qualify; everything else is fatal.
+	if parent != "" && (errors.Is(err, app.ErrParentNotFound) || errors.Is(err, app.ErrParentTerminal)) {
+		warning = fmt.Sprintf("registered without parent %s: %v", parent, err)
+		f, err = app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", "", req.Facets, req.Components, req.SpecBody, false, "", "")
+	}
 	if errors.Is(err, app.ErrSimilarExists) {
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 		return
@@ -244,5 +265,5 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 			return
 		}
 	}
-	writeJSON(w, http.StatusCreated, createFeatureResponse{Feature: f})
+	writeJSON(w, http.StatusCreated, chatRegisterResponse{Feature: f, Warning: warning})
 }

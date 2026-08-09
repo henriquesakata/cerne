@@ -16,18 +16,20 @@ const PROPOSAL_FENCE = 'cerne-proposta'
 
 // ParsedProposal is what the agent's reply carries when it is ready for
 // confirmation: a fenced ```cerne-proposta block whose first line is "#
-// <título>", optionally followed by facet:/components:/capability: metadata
-// lines (F-0223), and the rest is the spec body (same contract as
-// app.BuildChatSystemPrompt / internal/app/diagram.go's extractFencedBlock).
+// <título>", optionally followed by facet:/components:/capability: (F-0223) e
+// parent: (F-0254) metadata lines, and the rest is the spec body (same
+// contract as app.BuildChatSystemPrompt / internal/app/diagram.go's
+// extractFencedBlock).
 type ParsedProposal = {
   title: string
   body: string
   facet: string
   components: string[]
   capability: string
+  parent: string
 }
 
-const METADATA_LINE = /^(facet|components|capability):\s*(.*)$/i
+const METADATA_LINE = /^(facet|components|capability|parent):\s*(.*)$/i
 
 export function parseProposal(reply: string): ParsedProposal | null {
   const open = reply.indexOf('```' + PROPOSAL_FENCE)
@@ -44,6 +46,7 @@ export function parseProposal(reply: string): ParsedProposal | null {
   let facet = ''
   let components: string[] = []
   let capability = ''
+  let parent = ''
   const lines = rest.split('\n')
   let i = 0
   while (i < lines.length) {
@@ -53,10 +56,11 @@ export function parseProposal(reply: string): ParsedProposal | null {
     if (key.toLowerCase() === 'facet') facet = value.trim().toLowerCase()
     else if (key.toLowerCase() === 'components') components = value.split(',').map((c) => c.trim()).filter(Boolean)
     else if (key.toLowerCase() === 'capability') capability = value.trim()
+    else if (key.toLowerCase() === 'parent') parent = value.trim()
     i++
   }
   const body = lines.slice(i).join('\n').trim()
-  return { title, body, facet, components, capability }
+  return { title, body, facet, components, capability, parent }
 }
 
 // MenuSelect (F-0241): popup no lugar do <select> nativo, que não renderiza
@@ -439,6 +443,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       proposal.facet ? [proposal.facet] : [],
       proposal.components,
       proposal.capability,
+      proposal.parent,
     )
       .then((res) => {
         setRegistering(false)
@@ -446,6 +451,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           setError(res.error)
           return
         }
+        // F-0254: parent inválido não falha o registro — só avisa.
+        setError(res.warning ?? null)
         setProposal(null)
         onRegistered?.(res.feature)
       })

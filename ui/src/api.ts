@@ -700,14 +700,18 @@ export async function registerChatCandidate(
   facets: string[] = [],
   components: string[] = [],
   capability = '',
-): Promise<CreateOutcome> {
+  parent = '',
+): Promise<CreateOutcome & { warning?: string }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, spec_body: specBody, facets, components, capability }),
+    body: JSON.stringify({ title, spec_body: specBody, facets, components, capability, parent }),
   })
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
-  return { ok: true, feature: ((await r.json()) as { feature: Feature }).feature }
+  // F-0254: warning acompanha o 201 quando algo não-fatal foi descartado (um
+  // parent inexistente ou fechado) — a candidata foi registrada mesmo assim.
+  const body = (await r.json()) as { feature: Feature; warning?: string }
+  return { ok: true, feature: body.feature, warning: body.warning }
 }
 
 export type WikiPageRef = { name: string; rel: string }
