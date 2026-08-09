@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -21,11 +22,14 @@ import (
 // feature or an active work already carries a similar title.
 var ErrSimilarExists = errors.New("a similar registration already exists")
 
-// SimilarMatch names one existing entity a new title collided with.
+// SimilarMatch names one existing entity a new title collided with. Actor is
+// set for work matches only (F-0257): who is already on it decides whether the
+// refuse is "you already registered this" or "somebody else is implementing it".
 type SimilarMatch struct {
 	ID    string
 	State string
 	Title string
+	Actor string
 }
 
 // DupMatches partitions the collisions: Live refuses (candidate/approved/
@@ -114,7 +118,7 @@ func FindSimilar(repoDir, title string) (DupMatches, error) {
 	}
 	for _, w := range works {
 		if w.State == domain.WorkActive && similarTitles(title, w.Title) {
-			m.Live = append(m.Live, SimilarMatch{ID: w.ID, State: string(w.State), Title: w.Title})
+			m.Live = append(m.Live, SimilarMatch{ID: w.ID, State: string(w.State), Title: w.Title, Actor: w.Actor})
 		}
 	}
 	return m, nil
@@ -206,8 +210,29 @@ func guardRegistration(repoDir, title string, force bool) (hadLive bool, err err
 		return true, nil
 	}
 	var lines []string
+	mine := myActors()
+	var otherActor, workID string
 	for _, sm := range matches.Live {
 		lines = append(lines, fmt.Sprintf("  %s  [%s]  %s", sm.ID, sm.State, sm.Title))
+		if sm.Actor == "" || workID != "" {
+			continue // features carry no actor; keep the first work match
+		}
+		workID = sm.ID
+		if !slices.Contains(mine, sm.Actor) {
+			otherActor = sm.Actor
+		}
 	}
-	return false, fmt.Errorf("%w:\n%s\nproceed with --force if this is a distinct problem", ErrSimilarExists, strings.Join(lines, "\n"))
+	// F-0257 crit. 6: a match owned by somebody else is not "your own record" to
+	// adopt — say so, or the refuse gets read as a formality and the parallel
+	// implementation happens anyway (what F-0253 cost). Same-actor matches stay
+	// ambiguous (two sessions on one machine share <user>@<host>), so the line
+	// is conditional rather than an assertion.
+	tail := "proceed with --force if this is a distinct problem"
+	switch {
+	case otherActor != "":
+		tail = fmt.Sprintf("another agent (%s) is already on this — stop and confirm with them before implementing; do not adopt their registration as your own.\n%s", otherActor, tail)
+	case workID != "":
+		tail = fmt.Sprintf("if you did not open %s yourself, another session did — stop and confirm before implementing; adopting someone else's registration is how the same feature gets built twice.\n%s", workID, tail)
+	}
+	return false, fmt.Errorf("%w:\n%s\n%s", ErrSimilarExists, strings.Join(lines, "\n"), tail)
 }
