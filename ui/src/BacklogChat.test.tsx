@@ -9,7 +9,14 @@ const streamChat = vi.fn<
   (messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => Promise<ChatAnswer>
 >()
 const registerChatCandidate = vi.fn<
-  (title: string, specBody: string, facets?: string[], components?: string[], capability?: string) => Promise<CreateOutcome>
+  (
+    title: string,
+    specBody: string,
+    facets?: string[],
+    components?: string[],
+    capability?: string,
+    parent?: string,
+  ) => Promise<CreateOutcome>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 
@@ -23,7 +30,8 @@ vi.mock('./api', async (importOriginal) => ({
     facets?: string[],
     components?: string[],
     capability?: string,
-  ) => registerChatCandidate(title, specBody, facets, components, capability),
+    parent?: string,
+  ) => registerChatCandidate(title, specBody, facets, components, capability, parent),
   fetchLLMOptions: () => fetchLLMOptions(),
 }))
 
@@ -149,6 +157,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         [],
         [],
         '',
+        '',
       ),
     )
     await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(feature('F-0099')))
@@ -186,6 +195,36 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         ['code'],
         ['chat', 'backlog'],
         'C-0001',
+        '',
+      ),
+    )
+  })
+
+  it('F-0254: parent no bloco vai junto no registro', async () => {
+    const proposal =
+      'Proposta:\n\n' +
+      '```cerne-proposta\n' +
+      '# Exportar relatórios em CSV\n' +
+      'facet: code\n' +
+      'parent: F-0252\n\n' +
+      '## Problema\nFalta exportação.\n' +
+      '```\n'
+    streamChat.mockResolvedValue({ answered: true, reply: proposal })
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
+    renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /registrar candidata/i }))
+
+    await waitFor(() =>
+      expect(registerChatCandidate).toHaveBeenCalledWith(
+        'Exportar relatórios em CSV',
+        expect.stringContaining('## Problema'),
+        ['code'],
+        [],
+        '',
+        'F-0252',
       ),
     )
   })

@@ -550,3 +550,47 @@ func TestChatInjectsProjectContext(t *testing.T) {
 		}
 	}
 }
+
+// TestChatRegisterParent: F-0254 criterion 5 — a valid parent in the proposal
+// registers the candidate under that epic.
+func TestChatRegisterParent(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+		Warning string        `json:"warning"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-parent"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar\n\n## Problema\nFalta exportação.\n","parent":"F-0001"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Feature.Parent != "F-0001" {
+		t.Fatalf("parent = %q, want F-0001", got.Feature.Parent)
+	}
+	if got.Warning != "" {
+		t.Fatalf("unexpected warning: %q", got.Warning)
+	}
+}
+
+// TestChatRegisterBadParent: F-0254 criterion 5 — an unknown parent must not
+// cost the registration: the candidate lands without parent, plus a warning.
+func TestChatRegisterBadParent(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+
+	var got struct {
+		Feature store.Feature `json:"feature"`
+		Warning string        `json:"warning"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-parent-bad"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar\n\n## Problema\nFalta exportação.\n","parent":"F-9999"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Feature.Parent != "" {
+		t.Fatalf("parent = %q, want empty", got.Feature.Parent)
+	}
+	if !strings.Contains(got.Warning, "F-9999") {
+		t.Fatalf("warning = %q, want it to name the dropped parent", got.Warning)
+	}
+}
