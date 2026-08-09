@@ -341,7 +341,15 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // F-0219 critério 2: repassa toda mudança de transcript/seleção pro dono
   // da persistência (useBacklogChats) — a conversa sobrevive a navegar e
   // trocar de conversa porque ele já a salvou, não este componente.
+  // F-0248 critério 8: enquanto há requisição em voo, o chatRequest é o único
+  // escritor do transcript — ele grava cada delta direto no storage. Repassar
+  // a cópia local aqui (o que a chegada tardia das opções de modelo dispara ao
+  // remontar) sobrescrevia a resposta já gravada. Em voo propaga só a seleção.
   useEffect(() => {
+    if (chatRequest.status(conversation.id).pending) {
+      onUpdate({ model, effort })
+      return
+    }
     onUpdate({ messages, model, effort })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, model, effort])

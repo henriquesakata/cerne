@@ -157,3 +157,45 @@ describe('useBacklogChats (F-0219)', () => {
     expect(localStorage.getItem('cerne.chat.proj-x')).toBeNull()
   })
 })
+
+describe('useBacklogChats (F-0248): patch de model/effort não é escrita de transcript', () => {
+  it('critérios 8 e 9: mudar model/effort preserva messages e updatedAt, e a escrita do stream sobrevive', () => {
+    writeChats(
+      [{ id: 'c1', title: 'Oi', updatedAt: 100, messages: [{ role: 'user', content: 'Oi' }], model: '', effort: '' }],
+      'c1',
+    )
+    const { result } = renderHook(() => useBacklogChats())
+
+    // O chatRequest grava a resposta direto no storage enquanto o componente
+    // ainda guarda a cópia atrasada (é o que acontece ao voltar pra tela com
+    // uma resposta em voo).
+    writeChats(
+      [
+        {
+          id: 'c1',
+          title: 'Oi',
+          updatedAt: 200,
+          messages: [
+            { role: 'user', content: 'Oi' },
+            { role: 'assistant', content: 'resposta do stream' },
+          ],
+          model: '',
+          effort: '',
+        },
+      ],
+      'c1',
+    )
+
+    // fetchLLMOptions resolve depois do mount e dispara a seleção padrão.
+    act(() => result.current.updateActive({ model: 'claude-opus-5', effort: 'high' }))
+
+    const stored = getConversation('c1')!
+    expect(stored.messages).toEqual([
+      { role: 'user', content: 'Oi' },
+      { role: 'assistant', content: 'resposta do stream' },
+    ])
+    expect(stored.updatedAt).toBe(200)
+    expect(stored.model).toBe('claude-opus-5')
+    expect(stored.effort).toBe('high')
+  })
+})

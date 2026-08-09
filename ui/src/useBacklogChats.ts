@@ -134,11 +134,15 @@ export function useBacklogChats(): UseBacklogChats {
   // ainda guarda essa conversa desatualizada em memória. Escrever `chats` cru
   // apagaria essa resposta na próxima mudança de qualquer outra conversa —
   // por isso o merge prefere, por entrada, quem tem `updatedAt` mais recente.
+  // F-0248: `model`/`effort` são do componente (o chatRequest nunca os grava),
+  // então a entrada mais nova do storage traz o transcript, mas a seleção
+  // corrente continua sendo a local — senão trocar de modelo com uma resposta
+  // em voo nunca chegaria a persistir.
   useEffect(() => {
     const stored = readChats().chats
     const merged = chats.map((c) => {
       const fresher = stored.find((s) => s.id === c.id)
-      return fresher && fresher.updatedAt > c.updatedAt ? fresher : c
+      return fresher && fresher.updatedAt > c.updatedAt ? { ...fresher, model: c.model, effort: c.effort } : c
     })
     writeChats(merged, activeId)
   }, [chats, activeId])
@@ -183,17 +187,20 @@ export function useBacklogChats(): UseBacklogChats {
     if (id === activeId) setActiveId(next[0].id)
   }
 
+  // F-0248 critério 9: `updatedAt` é a idade do TRANSCRIPT, e o merge acima
+  // depende dele. Patch sem `messages` (trocar de modelo/esforço) não torna o
+  // transcript mais novo — renovar o carimbo fazia a cópia atrasada do
+  // componente vencer a escrita do stream e apagar a resposta.
   const updateActive = (patch: { messages?: ChatMsg[]; model?: string; effort?: string }) => {
     setChats((prev) =>
       prev.map((c) => {
         if (c.id !== activeId) return c
-        const messages = patch.messages ?? c.messages
+        const next = { ...c, model: patch.model ?? c.model, effort: patch.effort ?? c.effort }
+        if (!patch.messages) return next
         return {
-          ...c,
-          messages,
-          model: patch.model ?? c.model,
-          effort: patch.effort ?? c.effort,
-          title: c.title === '' ? deriveTitle(messages) : c.title,
+          ...next,
+          messages: patch.messages,
+          title: c.title === '' ? deriveTitle(patch.messages) : c.title,
           updatedAt: Date.now(),
         }
       }),

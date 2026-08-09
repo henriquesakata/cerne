@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import '@testing-library/jest-dom/vitest'
 import BacklogChat from './BacklogChat'
 import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions } from './api'
-import { getConversation, writeChats, type Conversation } from './useBacklogChats'
+import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
 const streamChat = vi.fn<
   (messages: unknown, override: ChatOverride | undefined, onDelta: (d: string) => void) => Promise<ChatAnswer>
@@ -440,5 +440,50 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
 
     expect(screen.getByRole('button', { name: /enviar/i })).toBeDisabled()
     expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Harness (F-0248): o defeito do caminho 2 só aparece com o dono real da
+// persistência no circuito — é a cópia em memória do componente devolvida ao
+// useBacklogChats que vencia a escrita do stream. Espelha o Backlog.tsx.
+function Harness() {
+  const chats = useBacklogChats()
+  return <BacklogChat key={chats.active.id} conversation={chats.active} onUpdate={chats.updateActive} />
+}
+
+describe('BacklogChat (F-0248): sair da tela com resposta em voo', () => {
+  it('critério 10: voltar depois da conclusão mostra a resposta completa', async () => {
+    let resolveStream!: (v: ChatAnswer) => void
+    let onDelta!: (d: string) => void
+    streamChat.mockImplementation((_m, _o, cb) => {
+      onDelta = cb
+      return new Promise((r) => (resolveStream = r))
+    })
+    let resolveOpts!: (v: LLMOptions) => void
+    fetchLLMOptions.mockImplementation(() => new Promise((r) => (resolveOpts = r)))
+
+    writeChats([{ id: 'c-nav', title: '', updatedAt: 0, messages: [], model: '', effort: '' }], 'c-nav')
+    const first = render(<Harness />)
+    await act(async () => resolveOpts({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['high'] }))
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Preciso de X' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    act(() => onDelta('começo'))
+
+    // Navega pra outra tela: o BacklogChat desmonta, o chatRequest segue vivo.
+    first.unmount()
+
+    // Volta antes de a resposta terminar; as opções de LLM resolvem DEPOIS do
+    // mount, que é a ordem real e o gatilho do onUpdate extra.
+    fetchLLMOptions.mockImplementation(() => new Promise((r) => (resolveOpts = r)))
+    render(<Harness />)
+    await act(async () => resolveStream({ answered: true, reply: 'resposta completa do agente' }))
+    await act(async () => resolveOpts({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['high'] }))
+
+    await waitFor(() => expect(screen.getByText('resposta completa do agente')).toBeInTheDocument())
+    expect(getConversation('c-nav')?.messages).toEqual([
+      { role: 'user', content: 'Preciso de X' },
+      { role: 'assistant', content: 'resposta completa do agente' },
+    ])
   })
 })
