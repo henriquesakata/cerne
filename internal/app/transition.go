@@ -32,6 +32,11 @@ type TransitionOutcome struct {
 	// result was scaffolded with the children roster. Empty for the common case
 	// and for every action other than complete. See scaffoldEpicCloseIfReady.
 	EpicReadyToClose string
+	// Warnings carries non-blocking advisories raised by the transition — today
+	// the parallel-implementation guard's ambiguous matches (F-0257): an active
+	// work of the same actor on this feature that no session binding can be
+	// attributed to. Printed by the caller; empty for the common case.
+	Warnings []string
 }
 
 // eventTypes maps each lifecycle action to the event type it appends.
@@ -52,8 +57,15 @@ var eventTypes = map[domain.Action]string{
 // carries the delivery links to persist alongside the transition; nil for
 // every other action and for a complete with no delivery.
 func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
+	return TransitionFeatureForce(repoDir, projDir, id, action, by, reason, d, false)
+}
+
+// TransitionFeatureForce is TransitionFeature with the conscious override of
+// the parallel-implementation guard (F-0257): force starts the feature even
+// when another session holds active work on it, stamping the event.
+func TransitionFeatureForce(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
 	op := telemetry.StartOp("backend")
-	out, err := TransitionFeatureOp(op, repoDir, projDir, id, action, by, reason, d)
+	out, err := TransitionFeatureOpForce(op, repoDir, projDir, id, action, by, reason, d, force)
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -66,6 +78,12 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 // caller's Op (F-0149): the server passes the request's Op so the transition's
 // lock_wait/fetch/push story correlates with the HTTP log line.
 func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
+	return TransitionFeatureOpForce(op, repoDir, projDir, id, action, by, reason, d, false)
+}
+
+// TransitionFeatureOpForce is TransitionFeatureOp carrying the F-0257 guard
+// override.
+func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
 	var out TransitionOutcome
 	var title string
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
@@ -96,6 +114,19 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 			if _, err := store.LoadFeature(repoDir, by); errors.Is(err, store.ErrNotFound) {
 				return "", fmt.Errorf("feature %s (--by) not found in backend", by)
 			} else if err != nil {
+				return "", err
+			}
+		}
+
+		// Parallel-implementation guard (F-0257): before the FSM and before any
+		// write, refuse a start that another session/actor is already on. Runs
+		// ahead of the auto-work open below, so a refused start never registers
+		// a second work (crit. 5).
+		var guardForced bool
+		var warnings []string
+		if action == domain.ActionStart {
+			guardForced, warnings, err = guardParallelStart(repoDir, projDir, id, force)
+			if err != nil {
 				return "", err
 			}
 		}
@@ -151,6 +182,14 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 			if d != nil && d.MRURL != "" {
 				payload["mr_url"] = d.MRURL
 			}
+		}
+		// The conscious override of the parallel guard is part of the record
+		// (F-0257 crit. 2), same shape as the duplicate guard's `guard: forced`.
+		if guardForced {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["guard"] = "forced"
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
 			return "", err
@@ -232,7 +271,7 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings}
 		return msg, nil
 	})
 	if err != nil {

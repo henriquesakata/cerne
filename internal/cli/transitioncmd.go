@@ -57,7 +57,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
 		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL (complete only)")
-		cmd.Flags().BoolVar(&force, "force", false, "approve even with open [ESCLARECER] clarifications in the spec (approve only)")
+		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
 		cmds = append(cmds, cmd)
 	}
 	return cmds
@@ -109,9 +109,14 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			return err
 		}
 	}
-	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, action, by, reason, delivery)
+	out, err := app.TransitionFeatureForce(ctx.repoDir, ctx.projDir, id, action, by, reason, delivery, force)
 	if err != nil {
 		return err
+	}
+	// Parallel-implementation guard advisories (F-0257 crit. 4): same actor, no
+	// session evidence — the start proceeds, the human gets told.
+	for _, w := range out.Warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 	// Starting a child pulls its ready ancestor epics into development too:
