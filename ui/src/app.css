@@ -833,6 +833,29 @@ h2 {
 
 .doc pre code { padding: 0; background: none; }
 
+/* Bloco cercado com botão de copiar (F-0247). O botão fica fora do fluxo do
+   texto, no canto com menos conteúdo, e o padding-right do <pre> reserva a
+   faixa dele — assim não cobre o código nem atrapalha o overflow-x. Cor
+   neutra: pela Signal Rule, cor nomeia estado ou severidade, e copiar não é
+   nenhum dos dois. */
+.code-block { position: relative; }
+.code-block > pre { padding-right: 5rem; }
+
+.code-copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.code-copy:hover { color: var(--fg); }
+
 /* prosa renderizada do markdown: títulos, listas, citações, links, tabelas.
    Sem isto, a regra global de h2 (rótulo cinza maiúsculo) vazaria para os
    títulos do doc, e tabelas/listas ficariam sem estilo. */
