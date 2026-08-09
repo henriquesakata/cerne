@@ -69,7 +69,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil || llm.ResolveMode(cfg.LLM.Mode) == llm.ModeDelegation {
-		writeJSON(w, http.StatusOK, chatResponse{Answered: false, NeedsProvider: true})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: false, NeedsProvider: true})
 		return
 	}
 	if req.Model != "" {
@@ -99,8 +99,9 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 
 	// F-0240: a provider with the Streamer capability transmits the reply as
 	// NDJSON deltas; anyone else keeps the single-shot path below — whose body
-	// is byte-for-byte the streaming path's terminal event, so the client
-	// never needs to know which path ran.
+	// is byte-for-byte the streaming path's terminal event (F-0244: a single
+	// compact JSON line, same as streamChatReply's terminal Encode), so the
+	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
 			streamChatReply(ctx, w, flusher, streamer, prompt)
@@ -112,7 +113,19 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, chatResponse{Answered: true, Reply: reply})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply})
+}
+
+// writeChatLine writes v as a single compact JSON line ("{...}\n") — the
+// NDJSON terminal-event shape the client's streamChat parser requires
+// (ui/src/api.ts) — for the non-streaming success paths of handleChat.
+// writeJSON's indented multi-line output broke JSON.parse on the first line
+// alone (F-0244); this is the fix, factored out so both success paths (and
+// the contract test) share one place.
+func writeChatLine(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // streamChatReply writes the chat reply as line-delimited JSON: one

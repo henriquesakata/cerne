@@ -54,7 +54,7 @@ describe('chatRequest (F-0230): singleton fora do React', () => {
     expect(status('c2').pending).toBe(true)
   })
 
-  it('critério 4: falha da requisição vira outcome de erro consumível, sem tocar no storage', async () => {
+  it('critério 4: falha da requisição vira outcome de erro consumível, preservando o turno do usuário no storage (F-0244)', async () => {
     seedConversation('c3')
     streamChat.mockRejectedValue(new Error('rede caiu'))
 
@@ -62,7 +62,16 @@ describe('chatRequest (F-0230): singleton fora do React', () => {
     await vi.waitFor(() => expect(status('c3').pending).toBe(false))
 
     expect(consumeOutcome('c3')).toEqual({ kind: 'error', message: 'rede caiu' })
-    expect(readChats().chats.find((c) => c.id === 'c3')?.messages).toEqual([])
+    expect(readChats().chats.find((c) => c.id === 'c3')?.messages).toEqual([{ role: 'user', content: 'Oi' }])
+  })
+
+  it('F-0244 critério 2: o turno do usuário é persistido antes de qualquer resolução de rede, mesmo pendente', () => {
+    seedConversation('c8')
+    streamChat.mockReturnValue(new Promise(() => {}))
+
+    send('c8', [{ role: 'user', content: 'pergunta' }], {})
+
+    expect(readChats().chats.find((c) => c.id === 'c8')?.messages).toEqual([{ role: 'user', content: 'pergunta' }])
   })
 
   it('consumeOutcome limpa o desfecho após a primeira leitura', async () => {

@@ -237,6 +237,17 @@ func TestChatNonStreamerFallback(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `"delta"`) {
 		t.Fatalf("fallback body must have no delta events: %s", rec.Body.String())
 	}
+
+	// F-0244: the client's streamChat (ui/src/api.ts) treats every
+	// non-streaming response as a one-line NDJSON stream — indented
+	// multi-line JSON here breaks JSON.parse on the first line alone.
+	body := strings.TrimRight(rec.Body.String(), "\n")
+	if strings.Contains(body, "\n") {
+		t.Fatalf("fallback body must be a single JSON line, got:\n%s", rec.Body.String())
+	}
+	if err := json.Unmarshal([]byte(body), &struct{}{}); err != nil {
+		t.Fatalf("fallback body line must parse standalone: %v; body: %s", err, body)
+	}
 }
 
 // TestChatStreamMidError (F-0240 criterion 8): the stream breaking after the
