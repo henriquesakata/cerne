@@ -23,7 +23,7 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 		doc    func(id string) string
 	}{
 		{"note", func(r, p string, i int) (string, error) {
-			n, err := CreateNote(r, p, fmt.Sprintf("Nota %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil)
+			n, err := CreateNote(r, p, fmt.Sprintf("Nota %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false)
 			return n.ID, err
 		}, func(id string) string { return "content/notes/" + id + ".md" }},
 		{"decision", func(r, p string, i int) (string, error) {
