@@ -18,6 +18,7 @@ function rev(patch: Partial<ParsedProposal> = {}): ParsedProposal {
     capability: '',
     parent: '',
     feature: '',
+    informs: [],
     ...patch,
   }
 }
