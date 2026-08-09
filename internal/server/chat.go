@@ -56,7 +56,7 @@ type chatResponse struct {
 // current .cernerc/backend on every call, then flattened with the transcript
 // into a single Provider.Complete call — nothing is written to the backend
 // here (criterion 6); only handleChatRegister does.
-func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 	var req chatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -84,6 +84,17 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 	msgs := make([]app.ChatMessage, len(req.Messages))
 	for i, m := range req.Messages {
 		msgs[i] = app.ChatMessage{Role: m.Role, Content: m.Content}
+	}
+	// F-0253: prime the turn server-side with the backend context relevant to
+	// the last user message — every provider gets it, tool-use or not. A
+	// broken index must not cost the turn, so retrieval failure only means no
+	// injected block (the error is the index's problem, surfaced by
+	// search/ask).
+	if dbPath, err := ensureIndex(repoDir, projectID); err == nil {
+		turnCtx, err := app.BuildTurnContext(repoDir, dbPath, lastUserMessage(msgs), cfg.Agent.RetrievalBudgetOrDefault())
+		if err == nil && turnCtx != "" {
+			sysPrompt += "\n" + turnCtx
+		}
 	}
 
 	// F-0224: the chat provider runs claude-cli as a read-only agent in the
@@ -114,6 +125,17 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir string)
 		return
 	}
 	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply})
+}
+
+// lastUserMessage is the retrieval query for the turn (F-0253): the message
+// just sent, not the whole transcript — earlier turns dilute the FTS signal.
+func lastUserMessage(msgs []app.ChatMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != "assistant" {
+			return msgs[i].Content
+		}
+	}
+	return ""
 }
 
 // writeChatLine writes v as a single compact JSON line ("{...}\n") — the
