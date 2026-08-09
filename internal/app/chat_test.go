@@ -265,3 +265,21 @@ func TestBuildChatSystemPromptLiveQuery(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildChatSystemPromptQuotedRevision (F-0250 criteria 4/7): a turn
+// carrying blockquote excerpts of the agent's own proposal is a revision
+// request — the whole fenced block is reissued corrected, never a prose
+// description or a partial patch.
+func TestBuildChatSystemPromptQuotedRevision(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{"citações", "> ", "REEMITA", "INTEIRO"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing the quoted-revision instruction %q:\n%s", want, prompt)
+		}
+	}
+}

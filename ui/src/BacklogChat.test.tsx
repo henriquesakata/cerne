@@ -229,6 +229,36 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     )
   })
 
+  it('F-0250 critérios 2/4: comentar trecho do card injeta citação no compositor sem enviar', async () => {
+    const proposal =
+      'Proposta:\n\n' +
+      '```cerne-proposta\n' +
+      '# Exportar relatórios em CSV\n\n' +
+      '## Problema\nFalta exportação.\n' +
+      '```\n'
+    streamChat.mockResolvedValue({ answered: true, reply: proposal })
+    renderChat()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByRole('button', { name: /registrar candidata/i })
+    streamChat.mockClear()
+
+    const spec = screen.getByDisplayValue(/Falta exportação/) as HTMLTextAreaElement
+    spec.focus()
+    spec.setSelectionRange(12, 30)
+    fireEvent.mouseUp(spec)
+
+    fireEvent.change(screen.getByPlaceholderText(/ajustar/i), { target: { value: 'muito vago' } })
+    fireEvent.click(screen.getByRole('button', { name: /^comentar$/i }))
+
+    const composer = screen.getByPlaceholderText(/descreva/i) as HTMLTextAreaElement
+    expect(composer.value).toBe('> Falta exportação.\n\nmuito vago\n\n')
+    // Critério 4: nada é enviado — o turno segue sendo o normal, quando o
+    // usuário mandar.
+    expect(streamChat).not.toHaveBeenCalled()
+  })
+
   it('F-0219: carrega o transcript/seleção da conversa recebida via prop', () => {
     renderChat({ messages: [{ role: 'user', content: 'Já dito antes' }], model: 'claude-opus-5' })
     expect(screen.getByText('Já dito antes')).toBeInTheDocument()

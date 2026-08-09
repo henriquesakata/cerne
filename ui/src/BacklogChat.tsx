@@ -9,6 +9,7 @@ import {
 import { fetchLLMOptions, registerChatCandidate, type ChatMsg, type Feature } from './api'
 import * as chatRequest from './chatRequest'
 import Markdown from './Markdown'
+import QuoteComment from './QuoteComment'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
 
@@ -433,6 +434,17 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     }
   }
 
+  // F-0250 critérios 2/3: a citação é ANEXADA ao compositor, sem enviar —
+  // vários trechos acumulam na ordem em que foram comentados, e o usuário
+  // ainda escreve texto livre antes de mandar.
+  const appendQuote = (quote: string) => {
+    setInput((v) => v + quote)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      autoExpand()
+    })
+  }
+
   const confirmRegister = () => {
     if (!proposal) return
     setRegistering(true)
@@ -491,7 +503,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         )}
       </div>
       {proposal && (
-        <div className="backlog-chat-proposal">
+        // F-0250: comentar trecho vira citação no compositor — o feedback
+        // volta ao agente pelo turno seguinte, sem canal novo.
+        <QuoteComment className="backlog-chat-proposal" onQuote={appendQuote}>
           {(proposal.facet || proposal.components.length > 0 || proposal.capability) && (
             <div className="backlog-chat-proposal-chips">
               {proposal.facet && <span className="chip">{proposal.facet}</span>}
@@ -525,7 +539,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           >
             {registering ? t.backlogChat.registering : t.backlogChat.register}
           </button>
-        </div>
+        </QuoteComment>
       )}
       {error && (
         <p className="status error backlog-chat-error">

@@ -237,6 +237,12 @@ const ptBR = {
     confirmCapReached: (title: string, max: number) =>
       `Limite de ${max} conversas atingido — "${title}" será removida. Continuar?`,
   },
+  quoteComment: {
+    title: 'Comentar trecho',
+    placeholder: 'O que ajustar neste trecho?',
+    confirm: 'Comentar',
+    cancel: 'Cancelar',
+  },
   warRoom: {
     title: 'War Room',
     loadError: (e: string) => `Erro ao carregar as salas: ${e}`,
@@ -896,6 +902,12 @@ const en: Messages = {
       `Delete the conversation "${title}"? This cannot be undone.`,
     confirmCapReached: (title: string, max: number) =>
       `${max}-conversation limit reached — "${title}" will be removed. Continue?`,
+  },
+  quoteComment: {
+    title: 'Comment on excerpt',
+    placeholder: 'What should change in this excerpt?',
+    confirm: 'Comment',
+    cancel: 'Cancel',
   },
   warRoom: {
     title: 'War Room',

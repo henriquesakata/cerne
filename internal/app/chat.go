@@ -165,7 +165,15 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
 	b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
 	b.WriteString("Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor. ")
-	b.WriteString("Fora desse bloco, converse normalmente — só o produza quando estiver pronto para o usuário confirmar o registro.\n")
+	b.WriteString("Fora desse bloco, converse normalmente — só o produza quando estiver pronto para o usuário confirmar o registro.\n\n")
+	// F-0250 critérios 4/7: o feedback por trecho volta como turno normal —
+	// citações em blockquote recortadas da SUA proposta anterior. Não há
+	// protocolo novo; o que muda é o que fazer com elas: reemitir o bloco
+	// inteiro corrigido, porque a UI deriva o card do bloco e não sabe aplicar
+	// patch parcial.
+	b.WriteString("Quando o turno do usuário trouxer citações (linhas iniciadas com \"> \") recortadas de uma proposta sua, trate-as como pedido de revisão daqueles trechos: localize cada trecho na sua proposta anterior e REEMITA o bloco ")
+	fmt.Fprintf(&b, "```%s INTEIRO já corrigido. ", chatProposalFence)
+	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n")
 	return b.String(), nil
 }
 
