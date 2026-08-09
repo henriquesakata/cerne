@@ -41,6 +41,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0)
   const [lastChange, setLastChange] = useState({ pid: '', seq: 0 })
   const [ready, setReady] = useState(false)
+  const [bootError, setBootError] = useState<string | null>(null)
   const { t } = useT()
 
   // activeRef espelha o pid ativo para uso síncrono fora do ciclo de render
@@ -66,6 +67,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     return list[0]?.pid ?? ''
   }
 
+  // reload nunca fica true em falha do bootstrap (F-0242 critério 6): pid
+  // vazio com ready=true liberava as telas para montar chamadas /projects//,
+  // 404 permanente. Sucesso com lista vazia é estado legítimo, não erro —
+  // ready=true renderiza a mensagem de zero-projetos em vez dos children.
   const reload = () =>
     fetchProjects()
       .then(({ projects, default: def }) => {
@@ -73,9 +78,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         apply(pick(projects, def))
         // Limpa badges de projetos que saíram do painel.
         setChanged((s) => new Set([...s].filter((p) => projects.some((x) => x.pid === p))))
+        setBootError(null)
         setReady(true)
       })
-      .catch(() => setReady(true))
+      .catch((e: unknown) => setBootError(e instanceof Error ? e.message : String(e)))
 
   useEffect(() => {
     void reload()
@@ -123,7 +129,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     window.location.hash = ''
   }
 
+  if (bootError) {
+    return (
+      <p className="status error">
+        {t.live.bootError(bootError)}{' '}
+        <button type="button" onClick={() => void reload()}>
+          {t.live.retry}
+        </button>
+      </p>
+    )
+  }
   if (!ready) return <p className="status">{t.live.loading}</p>
+  if (projects.length === 0) return <p className="status">{t.live.noProjects}</p>
 
   return (
     <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version, lastChange }}>

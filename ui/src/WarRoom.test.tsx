@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
-import type { FacilitationItem, Minutes, Room, RoomMessage, RoomSession } from './api'
+import { LiveProvider, useProjects } from './live'
+import { fetchProjects, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
 
 const fetchRooms = vi.fn<() => Promise<Room[]>>()
 const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<{ room: Room; session: RoomSession }>>()
@@ -33,6 +34,9 @@ vi.mock('./api', async (importOriginal) => ({
   fetchRoomPending: (id: string, facilitatorId: string) => fetchRoomPending(id, facilitatorId),
   postRoomResolveItem: (id: string, facilitatorId: string, itemId: string, result: string) =>
     postRoomResolveItem(id, facilitatorId, itemId, result),
+  fetchProjects: vi.fn(),
+  setApiProject: vi.fn(),
+  subscribeLive: vi.fn(() => () => {}),
 }))
 
 const room = (over: Partial<Room> = {}): Room => ({
@@ -78,6 +82,7 @@ beforeEach(() => {
   // WarRoomDetail busca fetchRooms() ao fechar (F-0238, vínculo minutes_note)
   // — default vazio para não quebrar testes que não se importam com o link.
   fetchRooms.mockResolvedValue([])
+  vi.mocked(fetchProjects).mockReset()
 })
 
 describe('WarRoom (T-0003)', () => {
@@ -371,5 +376,40 @@ describe('WarRoomDetail (T-0003)', () => {
 
     await waitFor(() => expect(screen.getByText('reverter o deploy')).toBeInTheDocument())
     expect(screen.queryByText(/ata registrada/i)).not.toBeInTheDocument()
+  })
+
+  // F-0242: trocar de projeto deve re-buscar (critério 2) — antes, nenhum
+  // efeito de WarRoom.tsx dependia da versão ao vivo (useLiveVersion, mesmo
+  // mecanismo de Kanban.tsx), então a tela congelava mostrando dado velho.
+  describe('re-busca ao trocar de projeto (F-0242 critério 2)', () => {
+    const projects: ProjectInfo[] = [
+      { pid: 'p1', name: 'P1' },
+      { pid: 'p2', name: 'P2' },
+    ]
+
+    function Switcher() {
+      const { setActivePid } = useProjects()
+      return (
+        <button type="button" onClick={() => setActivePid('p2')}>
+          trocar projeto
+        </button>
+      )
+    }
+
+    it('bump de version dispara nova busca de salas', async () => {
+      vi.mocked(fetchProjects).mockResolvedValue({ projects, default: 'p1' })
+      fetchRooms.mockResolvedValue([])
+
+      render(
+        <LiveProvider>
+          <Switcher />
+          <WarRoom />
+        </LiveProvider>,
+      )
+
+      await waitFor(() => expect(fetchRooms).toHaveBeenCalledTimes(1))
+      fireEvent.click(screen.getByRole('button', { name: /trocar projeto/i }))
+      await waitFor(() => expect(fetchRooms).toHaveBeenCalledTimes(2))
+    })
   })
 })

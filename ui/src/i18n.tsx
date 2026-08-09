@@ -630,6 +630,9 @@ const ptBR = {
   live: {
     loading: 'Carregando…',
     useProjectsError: 'useProjects deve ser usado dentro de LiveProvider',
+    bootError: (e: string) => `Erro ao carregar projetos: ${e}`,
+    retry: 'Tentar de novo',
+    noProjects: 'Nenhum projeto registrado.',
   },
 }
 
@@ -1242,6 +1245,9 @@ const en: Messages = {
   live: {
     loading: 'Loading…',
     useProjectsError: 'useProjects must be used inside LiveProvider',
+    bootError: (e: string) => `Failed to load projects: ${e}`,
+    retry: 'Try again',
+    noProjects: 'No projects registered.',
   },
 }
 
