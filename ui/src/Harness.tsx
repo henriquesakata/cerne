@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { fetchHarness, type HarnessInventory, type HarnessItem } from './api'
+import {
+  fetchHarness,
+  type HarnessInventory,
+  type HarnessItem,
+  type HarnessProviderCoverage,
+} from './api'
 import { useLiveVersion } from './live'
 import { useT } from './i18n'
 
@@ -9,11 +14,15 @@ const CLASS_ORDER = ['cerne', 'hooks', 'skills', 'plugins', 'mcp', 'config', 'co
 // Estados que contam como problema para o filtro "só problemas".
 const PROBLEM_STATES = new Set(['divergent', 'missing', 'broken'])
 
+// Fornecedores conhecidos, na ordem do payload (F-0259).
+const PROVIDERS = ['claude', 'cursor', 'codex', 'gemini']
+
 export default function Harness() {
   const [inv, setInv] = useState<HarnessInventory | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [onlyProblems, setOnlyProblems] = useState(false)
   const [onlyOutside, setOnlyOutside] = useState(false)
+  const [provider, setProvider] = useState<string | null>(null)
   const version = useLiveVersion()
   const { t } = useT()
 
@@ -30,7 +39,9 @@ export default function Harness() {
   if (!inv) return <p className="status">{t.common.loading}</p>
 
   const keep = (it: HarnessItem) =>
-    (!onlyProblems || PROBLEM_STATES.has(it.state)) && (!onlyOutside || it.outsideRepo)
+    (!onlyProblems || PROBLEM_STATES.has(it.state)) &&
+    (!onlyOutside || it.outsideRepo) &&
+    (!provider || (it.consumers ?? []).includes(provider))
 
   const classes = [...inv.classes].sort(
     (a, b) => CLASS_ORDER.indexOf(a.name) - CLASS_ORDER.indexOf(b.name),
@@ -60,7 +71,30 @@ export default function Harness() {
           />{' '}
           {t.harness.onlyOutside}
         </label>
+        <span className="harness-provider-chips" role="group" aria-label={t.harness.providerFilter}>
+          {PROVIDERS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`harness-provider-chip${provider === p ? ' active' : ''}`}
+              aria-pressed={provider === p}
+              onClick={() => setProvider(provider === p ? null : p)}
+            >
+              {p}
+            </button>
+          ))}
+        </span>
       </div>
+      {(inv.coverage ?? []).length > 0 && (
+        <section className="entity-group harness-coverage">
+          <h2>{t.harness.coverageTitle}</h2>
+          <div className="harness-coverage-grid">
+            {(inv.coverage ?? []).map((c) => (
+              <CoverageCard key={c.provider} cov={c} />
+            ))}
+          </div>
+        </section>
+      )}
       {classes.map((c) => {
         const all = c.items ?? []
         if (all.length === 0) return null
@@ -97,6 +131,39 @@ export default function Harness() {
         </section>
       )}
     </main>
+  )
+}
+
+// CoverageCard: a fatia de um fornecedor no inventário — total consumível,
+// badge de não configurado e as lacunas (degraded/missing) expansíveis.
+function CoverageCard({ cov }: { cov: HarnessProviderCoverage }) {
+  const { t } = useT()
+  const gaps = cov.gaps ?? []
+  return (
+    <div className="harness-coverage-card">
+      <div className="harness-coverage-head">
+        <span className="entity-title">{cov.provider}</span>
+        {!cov.detected && <span className="tag harness-undetected">{t.harness.notDetected}</span>}
+      </div>
+      <div className="harness-coverage-total">{t.harness.artifactsCount(cov.total)}</div>
+      {gaps.length > 0 && (
+        <details>
+          <summary>{t.harness.gapsCount(gaps.length)}</summary>
+          <ul className="harness-gaps">
+            {gaps.map((g) => (
+              <li key={`${g.class}-${g.name}-${g.kind}`}>
+                <span className={`badge harness-state harness-state-${g.kind}`}>
+                  {t.harness.gapKindLabels[g.kind] ?? g.kind}
+                </span>{' '}
+                <span>{g.name}</span>
+                {g.detail && <span className="lint-detail"> — {g.detail}</span>}
+                {g.fix && <code className="harness-gap-fix">{g.fix}</code>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   )
 }
 

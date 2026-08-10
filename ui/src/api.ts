@@ -1126,16 +1126,35 @@ export type HarnessItem = {
   detail?: string
   fix?: string
   outsideRepo: boolean
+  consumers?: string[] | null
 }
 
 export type HarnessClass = { name: string; items: HarnessItem[] | null }
 
 export type HarnessLayer = { path: string; readable: boolean; error?: string }
 
+// HarnessGap é um artefato/capacidade que um fornecedor não recebe (F-0259):
+// degraded = a superfície não hospeda; missing = instalável, com o fix.
+export type HarnessGap = {
+  name: string
+  class: string
+  kind: string
+  detail?: string
+  fix?: string
+}
+
+export type HarnessProviderCoverage = {
+  provider: string
+  detected: boolean
+  total: number
+  gaps: HarnessGap[] | null
+}
+
 export type HarnessInventory = {
   version: string
   classes: HarnessClass[]
   layers: HarnessLayer[]
+  coverage?: HarnessProviderCoverage[] | null
 }
 
 // fetchHarness lê o inventário read-only do harness do projeto ativo.

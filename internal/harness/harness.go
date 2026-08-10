@@ -38,14 +38,15 @@ const (
 
 // Item is one line of the inventory.
 type Item struct {
-	Class       string `json:"class"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Origin      string `json:"origin"`
-	State       string `json:"state"`
-	Detail      string `json:"detail,omitempty"`
-	Fix         string `json:"fix,omitempty"`
-	OutsideRepo bool   `json:"outsideRepo"`
+	Class       string   `json:"class"`
+	Name        string   `json:"name"`
+	Path        string   `json:"path"`
+	Origin      string   `json:"origin"`
+	State       string   `json:"state"`
+	Detail      string   `json:"detail,omitempty"`
+	Fix         string   `json:"fix,omitempty"`
+	OutsideRepo bool     `json:"outsideRepo"`
+	Consumers   []string `json:"consumers"`
 }
 
 // Class groups the inventory items of one section of the screen.
@@ -65,9 +66,10 @@ type Layer struct {
 // Inventory is the full harness report — the /api/harness payload and the
 // `cerne harness --json` output.
 type Inventory struct {
-	Version string  `json:"version"`
-	Classes []Class `json:"classes"`
-	Layers  []Layer `json:"layers"`
+	Version  string             `json:"version"`
+	Classes  []Class            `json:"classes"`
+	Layers   []Layer            `json:"layers"`
+	Coverage []ProviderCoverage `json:"coverage"`
 }
 
 // Options parameterizes an inspection. Home is injectable so tests never read
@@ -181,18 +183,21 @@ func Inspect(opts Options) Inventory {
 	cerne := cerneItems(opts, &ls)
 	mcp := mcpItems(opts, &ls)
 	plugins := pluginItems(opts, &ls)
+	classes := []Class{
+		{Name: "cerne", Items: cerne},
+		{Name: "hooks", Items: hookItems(opts, ls)},
+		{Name: "skills", Items: skillItems(opts, ls)},
+		{Name: "plugins", Items: plugins},
+		{Name: "mcp", Items: mcp},
+		{Name: "config", Items: configItems(opts, ls)},
+		{Name: "context", Items: contextItems(opts)},
+		{Name: "providers", Items: providerItems(opts)},
+	}
+	annotateConsumers(classes)
 	return Inventory{
-		Version: version.Short(),
-		Classes: []Class{
-			{Name: "cerne", Items: cerne},
-			{Name: "hooks", Items: hookItems(opts, ls)},
-			{Name: "skills", Items: skillItems(opts, ls)},
-			{Name: "plugins", Items: plugins},
-			{Name: "mcp", Items: mcp},
-			{Name: "config", Items: configItems(opts, ls)},
-			{Name: "context", Items: contextItems(opts)},
-			{Name: "providers", Items: providerItems(opts)},
-		},
-		Layers: ls.layers,
+		Version:  version.Short(),
+		Classes:  classes,
+		Layers:   ls.layers,
+		Coverage: coverage(opts.ProjDir, classes),
 	}
 }
