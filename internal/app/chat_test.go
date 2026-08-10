@@ -153,6 +153,40 @@ func TestBuildChatSystemPromptHostilePersonaKeepsBoundary(t *testing.T) {
 	}
 }
 
+// TestBuildChatSystemPromptCommandBlock (F-0260 criteria 1, 3): the prompt must
+// teach the echo — the agent writes the commands it intends to run into a
+// ```cerne-comando block and stops there. Without the echo the user would be
+// confirming blind, and criterion 3's "proposta ≠ permissão" would be an empty
+// phrase. The four creatable entities are named because criterion 4 asks for
+// them; the lifecycle is named as refused so the model never tries a command
+// the allowlist would deny anyway.
+func TestBuildChatSystemPromptCommandBlock(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		ChatCommandMarker,
+		"```cerne-comando",
+		"cerne feature new",
+		"cerne note new",
+		"cerne reference new",
+		"cerne decision new",
+		"NÃO execute nada neste turno",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing write-contract element %q:\n%s", want, prompt)
+		}
+	}
+	// The contract comes after the role boundary: it is a narrow exception to
+	// "não escreve comando que altere arquivos", and the last instruction wins.
+	if strings.Index(prompt, ChatCommandMarker) < strings.Index(prompt, ChatRoleBoundaryMarker) {
+		t.Fatal("the write contract must come after the role boundary — it is an exception to it")
+	}
+}
+
 // TestBuildChatSystemPromptConduction (F-0254 criteria 2, 3, 4): the prompt
 // instructs the agent to conduct — overlap analysis against the roster, 1–2
 // approaches with trade-offs, proposal only when the spec closes.

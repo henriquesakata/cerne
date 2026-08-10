@@ -44,6 +44,12 @@ type chatRequest struct {
 	// current spec joins the system prompt. Read from the backend on every
 	// call, so a resumed conversation never answers from a stale snapshot.
 	FeatureID string `json:"feature_id,omitempty"`
+	// Confirm (F-0260) is the user's explicit go-ahead for the commands the
+	// agent echoed in the previous turn: only then does the provider get the
+	// write allowlist. It is per request on purpose — never remembered from an
+	// earlier turn, never inferred from the message text — so the zero value
+	// keeps the chat read-only (criterion 3: a proposal is not a permission).
+	Confirm bool `json:"confirm,omitempty"`
 }
 
 // chatResponse mirrors askResponse/generateDiagramResponse: Answered is false
@@ -114,9 +120,10 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 	}
 
-	// F-0224: the chat provider runs claude-cli as a read-only agent in the
-	// project dir; the budget covers chained cerne queries, not just one shot.
-	prov, err := newAgentProvider(cfg.LLM, projDir)
+	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
+	// the budget covers chained cerne queries, not just one shot. F-0260: the
+	// confirmed turn — and only it — also gets the cerne creation commands.
+	prov, err := newAgentProvider(cfg.LLM, projDir, req.Confirm)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

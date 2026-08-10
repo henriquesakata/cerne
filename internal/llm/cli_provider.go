@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -41,6 +42,26 @@ var AgentReadTools = []string{
 	"Bash(cerne note show:*)",
 	"Bash(cerne reference list:*)",
 	"Bash(cerne decision list:*)",
+}
+
+// AgentWriteTools is what a CONFIRMED turn adds on top of AgentReadTools
+// (F-0260): the creation subcommands of the four entities a business analysis
+// can legitimately produce. It is appended per request and never by default —
+// an unconfirmed turn sees the read boundary alone, so a proposal is not a
+// permission (criterion 3).
+//
+// Like the read list, this is the whole write-protection boundary, so it holds
+// two invariants (pinned by TestAgentWriteToolsExcludeLifecycle): every rule is
+// a `cerne <entity> new` creation, and no rule touches the lifecycle
+// (approve/accept/start/complete/reject/retire/push). Moving a feature's state
+// stays a human act — the agent gaining write tools must never become a bypass
+// of the human gates (F-0131). Creation is safe to delegate because it lands a
+// candidate, the one state that decides nothing.
+var AgentWriteTools = []string{
+	"Bash(cerne feature new:*)",
+	"Bash(cerne note new:*)",
+	"Bash(cerne reference new:*)",
+	"Bash(cerne decision new:*)",
 }
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized
@@ -87,8 +108,26 @@ func describeExit(name, state string, stdout, stderr []byte) string {
 // own explanation via describeExit; an exec error (e.g. executable not found)
 // is reported with an actionable message naming the binary.
 func execRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+	return execRunEnv(ctx, dir, name, args, stdin, nil)
+}
+
+// agentRun is the runner of the agentic provider (F-0260): same exec, plus the
+// CERNE_ACTOR=agent stamp the child inherits. Any cerne command the agent runs
+// is then attributed to an agent in the event log, and app.CheckHumanGate keeps
+// refusing approve/accept from it — the human gates (F-0131) are untouched by
+// the agent gaining write tools. os.Environ() comes first so the stamp wins
+// over an inherited value (exec keeps the last of a duplicated key).
+func agentRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent"))
+}
+
+// execRunEnv is execRun with an explicit child environment; nil means inherit
+// the server's own, which is what every non-agentic path wants (N-0011: an API
+// proxy configured in the shell must keep applying transparently).
+func execRunEnv(ctx context.Context, dir, name string, args []string, stdin string, env []string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

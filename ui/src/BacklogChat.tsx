@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { fetchLLMOptions, registerChatCandidate, registerChatNote, type ChatMsg, type Feature } from './api'
 import * as chatRequest from './chatRequest'
+import CommandProposal from './CommandProposal'
 import Markdown from './Markdown'
 import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
@@ -20,6 +21,11 @@ const PROPOSAL_FENCE = 'cerne-proposta'
 // durável proposto para virar nota. Mesmo contrato do de candidata (título,
 // metadados, corpo), outro destino: o endpoint de nota, não o de candidata.
 const NOTE_FENCE = 'cerne-nota'
+// COMMAND_FENCE (F-0260): o terceiro bloco — os comandos de escrita que o
+// agente pretende rodar, ecoados para o usuário conferir ANTES de autorizar.
+// Diferente dos outros dois, aqui a confirmação não grava nada por si: ela
+// devolve o turno ao agente, agora com as ferramentas de escrita liberadas.
+const COMMAND_FENCE = 'cerne-comando'
 
 // ParsedProposal is what the agent's reply carries when it is ready for
 // confirmation: a fenced ```cerne-proposta block whose first line is "#
@@ -56,6 +62,26 @@ export function parseNote(reply: string): ParsedProposal | null {
 
 export function parseProposal(reply: string): ParsedProposal | null {
   return parseFenced(reply, PROPOSAL_FENCE)
+}
+
+// parseCommands (F-0260) extrai o bloco ```cerne-comando como uma lista: uma
+// linha, um comando. Não reusa parseFenced porque aqui não há título nem
+// metadados — o conteúdo é literal e é exibido literal, que é o ponto do eco.
+// Bloco vazio devolve null: card sem comando nenhum seria um botão que autoriza
+// o nada.
+export function parseCommands(reply: string): string[] | null {
+  const open = reply.indexOf('```' + COMMAND_FENCE)
+  if (open < 0) return null
+  const afterFence = reply.indexOf('\n', open)
+  if (afterFence < 0) return null
+  const close = reply.indexOf('```', afterFence)
+  if (close < 0) return null
+  const commands = reply
+    .slice(afterFence + 1, close)
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  return commands.length > 0 ? commands : null
 }
 
 function parseFenced(reply: string, fence: string): ParsedProposal | null {
@@ -102,7 +128,7 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
 // (F-0249) sai pelo mesmo motivo — ele é renderizado como card. Mensagem sem
 // bloco volta intacta.
 export function stripProposalFence(reply: string): string {
-  return stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE)
+  return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
 }
 
 function stripFence(reply: string, fence: string): string {
@@ -442,7 +468,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
 
   // sendMessages guarda `next` como o candidato a reenvio (critério 4) — só
   // vira "erro visível" se a requisição falhar; sucesso limpa em reconcile().
-  const sendMessages = (next: ChatMsg[]) => {
+  const sendMessages = (next: ChatMsg[], confirm = false) => {
     setError(null)
     setFailedMessages(next)
     chatRequest.send(conversation.id, next, {
@@ -451,6 +477,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       // F-0256: o id vai a cada turno — é ele que faz o servidor recarregar a
       // spec corrente, em vez de o cliente carregar um snapshot na abertura.
       featureId: conversation.featureId || undefined,
+      // F-0260: só o turno nascido do clique em Executar carrega a permissão de
+      // escrita. O default é false, então digitar "confirmo" no compositor não
+      // autoriza nada — a autorização é o clique, não o texto.
+      confirm: confirm || undefined,
     })
   }
 
@@ -591,6 +621,18 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       })
   }
 
+  // F-0260: autorizar não grava nada aqui — devolve o turno ao agente com a
+  // permissão de escrita. A confirmação entra na transcrição como mensagem de
+  // usuário: é o registro de quem autorizou, e o agente precisa dela no prompt
+  // para saber que agora deve executar (o servidor libera a ferramenta, o turno
+  // diz o que fazer com ela).
+  const confirmCommands = () => {
+    if (busy) return
+    const next = [...messages, { role: 'user' as const, content: t.commandProposal.confirmed }]
+    setMessages(next)
+    sendMessages(next, true)
+  }
+
   if (needsProvider) {
     return (
       <aside className="backlog-chat">
@@ -613,6 +655,11 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         {messages.map((m, i) => {
           const version = versionByMessage.get(i)
           const note = m.role === 'assistant' ? parseNote(m.content) : null
+          // F-0260: o card de comandos só vale na ÚLTIMA mensagem. Um eco antigo
+          // reautorizado depois que a conversa andou rodaria comandos que já não
+          // são o que se quer — e criação não tem desfazer.
+          const commands =
+            m.role === 'assistant' && i === messages.length - 1 ? parseCommands(m.content) : null
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
               {m.role !== 'assistant' && <p>{m.content}</p>}
@@ -633,6 +680,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
                       onRegister={(n) => confirmNote(i, n)}
                       onQuote={appendQuote}
                     />
+                  )}
+                  {commands && (
+                    <CommandProposal commands={commands} busy={busy} onConfirm={confirmCommands} />
                   )}
                 </>
               )}

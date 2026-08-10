@@ -74,15 +74,24 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 }
 
 // NewAgentProvider builds the provider for the Backlog chat (F-0224). Only
-// claude-cli differs from NewProvider: the CLI runs as a read-only agent —
-// AgentReadTools allowlist, working directory = dir (the project root, so the
-// cerne commands hit the right backend). Every other mode delegates to
-// NewProvider unchanged: byo-key stays the static one-shot HTTP call (no tool
-// loop in v1, criterion 3) and delegation keeps its sentinel.
-func NewAgentProvider(cfg project.LLMConfig, dir string) (Provider, error) {
+// claude-cli differs from NewProvider: the CLI runs as an agent scoped by an
+// allowlist, working directory = dir (the project root, so the cerne commands
+// hit the right backend). Every other mode delegates to NewProvider unchanged:
+// byo-key stays the static one-shot HTTP call (no tool loop in v1, criterion 3)
+// and delegation keeps its sentinel.
+//
+// write (F-0260) is the caller's report that the USER confirmed this turn, and
+// it only widens the allowlist for that one call — the capability lives on the
+// request, never on the conversation. False is the default everywhere, so a
+// caller that forgets it gets the read-only agent.
+func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, error) {
 	cfg = cfg.WithDefaults()
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
-		return &cliProvider{bin: cfg.ClaudeBin, run: execRun, dir: dir, agentTools: AgentReadTools, deniedTools: AgentDeniedPaths}, nil
+		tools := AgentReadTools
+		if write {
+			tools = append(append([]string{}, AgentReadTools...), AgentWriteTools...)
+		}
+		return &cliProvider{bin: cfg.ClaudeBin, run: agentRun, dir: dir, agentTools: tools, deniedTools: AgentDeniedPaths}, nil
 	}
 	return NewProvider(cfg)
 }

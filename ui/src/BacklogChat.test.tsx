@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import BacklogChat, { parseNote } from './BacklogChat'
+import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
 import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
@@ -797,5 +797,62 @@ describe('BacklogChat — proposta de nota (F-0249)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /registrar nota/i }))
     await waitFor(() => expect(screen.getByText(/facet is required/)).toBeInTheDocument())
     expect(screen.queryByText(/N-0044/)).not.toBeInTheDocument()
+  })
+})
+
+// F-0260: o terceiro bloco cercado — os comandos que o agente pretende rodar,
+// ecoados para o usuário confirmar. O eco é o que torna a confirmação
+// informada; o clique é o que arma a escrita no servidor.
+describe('BacklogChat — confirmação de comandos (F-0260)', () => {
+  const commandReply =
+    'Posso registrar por aqui. Pretendo rodar:\n\n' +
+    '```cerne-comando\n' +
+    'cerne feature new "Exportar CSV" --context "Falta exportação" --facet code --component ui\n' +
+    'cerne note new "Exportação é sempre CSV" --facet process --component ui\n' +
+    '```\n'
+
+  async function sendAndGetReply(reply: string) {
+    streamChat.mockResolvedValue({ answered: true, reply })
+    renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Registra isso pra mim' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+  }
+
+  it('parseCommands extrai uma linha por comando (critério 1)', () => {
+    expect(parseCommands(commandReply)).toEqual([
+      'cerne feature new "Exportar CSV" --context "Falta exportação" --facet code --component ui',
+      'cerne note new "Exportação é sempre CSV" --facet process --component ui',
+    ])
+    expect(parseCommands('Sem bloco nenhum.')).toBeNull()
+  })
+
+  it('mostra os comandos e NÃO manda turno confirmado sem o clique (critério 3)', async () => {
+    await sendAndGetReply(commandReply)
+
+    await screen.findByRole('button', { name: /executar/i })
+    expect(screen.getByText(/cerne feature new "Exportar CSV"/)).toBeInTheDocument()
+    // O bloco cercado sai da transcrição — quem mostra é o card.
+    expect(screen.queryByText(/```/)).not.toBeInTheDocument()
+    // O único turno enviado é o do usuário, sem confirmação.
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(streamChat.mock.calls[0][1]?.confirm).toBeFalsy()
+  })
+
+  it('clicar em executar manda um turno com confirm (critérios 1/3)', async () => {
+    await sendAndGetReply(commandReply)
+
+    fireEvent.click(await screen.findByRole('button', { name: /executar/i }))
+
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const [messages, override] = streamChat.mock.calls[1]
+    expect(override?.confirm).toBe(true)
+    const sent = messages as { role: string; content: string }[]
+    expect(sent[sent.length - 1].role).toBe('user')
+  })
+
+  it('resposta sem bloco de comando não renderiza card', async () => {
+    await sendAndGetReply('Me conta mais sobre o formato.')
+    await waitFor(() => expect(screen.getByText('Me conta mais sobre o formato.')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /executar/i })).not.toBeInTheDocument()
   })
 })

@@ -609,6 +609,38 @@ h2 {
 .note-proposal-created .status { margin: 0; }
 .note-proposal-register { align-self: flex-start; }
 
+/* Card de comandos (F-0260): mesma moldura dos outros cards da conversa, mas
+   com borda de atenção — aqui o clique autoriza escrita, não só registra o que
+   o card já mostra. */
+.command-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.command-proposal-head h4 { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.command-proposal p { margin: 0; font-size: 0.8rem; }
+.command-proposal-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+/* Comando longo rola dentro do próprio item — a transcrição nunca rola lateral. */
+.command-proposal-list code {
+  display: block;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 0.8rem;
+}
+.command-proposal-run { align-self: flex-start; }
+
 /* Referência ao painel na transcrição (F-0255 critério 1). */
 .backlog-chat-proposal-ref {
   margin: 0.4rem 0 0;
