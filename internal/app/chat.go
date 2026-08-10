@@ -181,6 +181,8 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	fmt.Fprintf(&b, "```%s INTEIRO já corrigido. ", chatProposalFence)
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
 	b.WriteString(chatNoteContract)
+	b.WriteString("\n\n")
+	b.WriteString(chatCommandContract)
 	return b.String(), nil
 }
 
@@ -216,6 +218,42 @@ informs: <opcional: ids F-/D-/RB-/N- que esta nota informa; inclua a candidata q
 Sem facet e sem ao menos um component o registro é RECUSADO pelo servidor — nota sem tag nasce como débito de lint.
 
 A nota só é gravada com a confirmação do usuário no card. Sem esse clique nada foi escrito: não diga que registrou, não invente o id.`
+
+// chatCommandFence is the chat surface's third fenced block (F-0260): the
+// commands the agent intends to run, echoed for the user to confirm. Same
+// detection mechanism as the other two — the UI parses all three alike.
+const chatCommandFence = "cerne-comando"
+
+// ChatCommandMarker is the heading of the write contract. Exported for the same
+// reason as ChatRoleBoundaryMarker: the tests assert on the block's presence and
+// its position relative to the role boundary.
+const ChatCommandMarker = "ESCRITA NO CERNE (só sob confirmação)"
+
+// chatCommandContract is the narrow exception to the role boundary (F-0260):
+// the agent may run cerne's CREATION commands, and only after the user confirms
+// the echo. It is deliberately appended AFTER chatRoleBoundary — the boundary
+// forbids "comando que altere arquivos" in general, and the last instruction
+// wins, so the exception has to come later to be readable as an exception.
+//
+// The echo is what makes the confirmation informed; without it the user would
+// be authorizing an unseen command. The server enforces the same thing
+// independently (an unconfirmed turn never receives the write tools), so this
+// text is the ergonomics, not the security.
+const chatCommandContract = ChatCommandMarker + `
+
+O caminho normal de registro é o card: você propõe, o usuário clica. Quando o clique não servir — o usuário pede explicitamente que VOCÊ registre, ou o card falhou — você pode rodar os comandos de CRIAÇÃO do cerne, em dois turnos:
+
+1. Neste turno, ECOE o que pretende rodar num bloco cercado, uma linha por comando, e pare. NÃO execute nada neste turno, nem afirme que registrou.
+
+` + "```" + chatCommandFence + `
+cerne feature new "<título>" --context "<por quê>" --facet <facet> --component <comp>
+` + "```" + `
+
+2. Só depois que o usuário confirmar no card é que você recebe a permissão de executar — aí rode exatamente os comandos que ecoou e relate a saída real (o id que o cerne devolveu, não um id inventado).
+
+Comandos disponíveis: ` + "`cerne feature new`" + `, ` + "`cerne note new`" + `, ` + "`cerne reference new`" + `, ` + "`cerne decision new`" + `. Nada além disso: mover estado (approve, accept, start, complete, reject) é ato humano e será recusado — se o usuário pedir, explique e devolva o comando para ele rodar no terminal dele.
+
+Isto não afrouxa a FRONTEIRA DE PAPEL: você continua sem implementar nada. O que você ganha é registrar no cerne o que a conversa já concluiu.`
 
 // BuildRefineBlock is the extra context a refine conversation carries (F-0256):
 // the candidate's identity, its tags and the spec exactly as it stands in the
