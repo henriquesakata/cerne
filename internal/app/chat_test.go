@@ -74,6 +74,37 @@ func TestBuildChatSystemPromptDefaultPersona(t *testing.T) {
 	}
 }
 
+// TestBuildChatSystemPromptModules: a project that declares modules must teach
+// the agent the module: metadata line (with the closed set), and a project
+// without modules must not — otherwise the confirmed proposal arrives at the
+// creation core without the classification ValidateModule demands.
+func TestBuildChatSystemPromptModules(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	if strings.Contains(prompt, "module:") {
+		t.Fatalf("prompt teaches module: in a project without modules:\n%s", prompt)
+	}
+
+	if err := os.WriteFile(filepath.Join(repoDir, "project.json"),
+		[]byte(`{"name":"Demo","modules":["finance","commons"]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile project.json: %v", err)
+	}
+	prompt, err = BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	if !strings.Contains(prompt, "module:") {
+		t.Fatalf("prompt missing the module: metadata-line instruction:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "finance, commons") {
+		t.Fatalf("prompt missing the declared module set:\n%s", prompt)
+	}
+}
+
 // TestBuildChatSystemPromptRoleBoundary (F-0245 criteria 1, 3, 4, 5): the
 // role-boundary block is in the prompt whatever .cernerc says — scope, refusal
 // with the two exits, the handoff template and the question discipline.

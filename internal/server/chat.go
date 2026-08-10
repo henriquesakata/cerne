@@ -206,6 +206,10 @@ type chatRegisterRequest struct {
 	SpecBody   string   `json:"spec_body"`
 	Facets     []string `json:"facets"`
 	Components []string `json:"components"`
+	// Module classifies the candidate in projects that declare modules —
+	// there ValidateModule makes it mandatory (2+ modules), so the chat
+	// register must carry it or every confirmation click dies on the core.
+	Module string `json:"module,omitempty"`
 	// Capability (F-0223) is either an existing C-NNNN id (validated before
 	// the candidate is written — a bad id must not spend the write) or, when
 	// it doesn't match that shape, a title proposing a new node — created
@@ -283,14 +287,15 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 		}
 	}
 	parent := strings.TrimSpace(req.Parent)
+	module := strings.TrimSpace(req.Module)
 	warning := ""
-	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", parent, req.Facets, req.Components, req.SpecBody, false, "", "")
+	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, module, parent, req.Facets, req.Components, req.SpecBody, false, "", "")
 	// F-0254: a bad parent degrades to no parent instead of failing the
 	// registration — the refusal happens before anything is written, so the
 	// retry is clean. Only the parent errors qualify; everything else is fatal.
 	if parent != "" && (errors.Is(err, app.ErrParentNotFound) || errors.Is(err, app.ErrParentTerminal)) {
 		warning = fmt.Sprintf("registered without parent %s: %v", parent, err)
-		f, err = app.CreateFeatureWithSpec(repoDir, projDir, req.Title, "", "", req.Facets, req.Components, req.SpecBody, false, "", "")
+		f, err = app.CreateFeatureWithSpec(repoDir, projDir, req.Title, module, "", req.Facets, req.Components, req.SpecBody, false, "", "")
 	}
 	if errors.Is(err, app.ErrSimilarExists) {
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
