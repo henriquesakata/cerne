@@ -259,6 +259,14 @@ const ptBR = {
     registering: 'Registrando…',
     created: (id: string) => `Nota ${id} registrada.`,
   },
+  commandProposal: {
+    title: 'Comandos propostos',
+    hint: 'Confira antes de autorizar: o agente vai rodar exatamente estes comandos.',
+    run: 'Executar',
+    // confirmed é o turno que o clique manda ao agente — vira mensagem de
+    // usuário na transcrição, então fica na língua da conversa.
+    confirmed: 'Confirmado: execute os comandos que você propôs e me diga o resultado real (os ids que o cerne devolveu).',
+  },
   warRoom: {
     title: 'War Room',
     loadError: (e: string) => `Erro ao carregar as salas: ${e}`,
@@ -949,6 +957,12 @@ const en: Messages = {
     register: 'Register note',
     registering: 'Registering…',
     created: (id: string) => `Note ${id} registered.`,
+  },
+  commandProposal: {
+    title: 'Proposed commands',
+    hint: 'Check before authorizing: the agent will run exactly these commands.',
+    run: 'Run',
+    confirmed: 'Confirmed: run the commands you proposed and report the real outcome (the ids cerne returned).',
   },
   warRoom: {
     title: 'War Room',

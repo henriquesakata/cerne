@@ -641,7 +641,10 @@ export type ChatAnswer = {
 // composer — opcional; omitida, o provider usa o default do .cernerc.
 // featureId (F-0256) marca o turno como refino de uma candidata já
 // registrada: o servidor injeta a spec corrente dela no contexto do agente.
-export type ChatOverride = { model?: string; effort?: string; featureId?: string }
+// confirm (F-0260) é a confirmação explícita do usuário sobre os comandos que o
+// agente ecoou no turno anterior — só ela libera as ferramentas de escrita, e
+// só naquele turno. Nasce do clique no card, nunca do texto da mensagem.
+export type ChatOverride = { model?: string; effort?: string; featureId?: string; confirm?: boolean }
 
 // streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
 // case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
@@ -663,6 +666,7 @@ export async function streamChat(
       model: override?.model,
       effort: override?.effort,
       feature_id: override?.featureId,
+      confirm: override?.confirm,
     }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
