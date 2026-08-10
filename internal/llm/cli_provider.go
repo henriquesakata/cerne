@@ -19,13 +19,20 @@ const ModeClaudeCLI = "claude-cli"
 var ErrClaudeCLI = errors.New("claude-cli invocation failed")
 
 // AgentReadTools is the exact tool allowlist the agentic chat provider grants
-// the Claude Code CLI (F-0224 criterion 1): cerne's READ commands only. The
-// entries are Claude Code permission rules; note/reference/decision are
-// scoped to their read subcommands so the sibling write commands (note new,
-// decision new, reference new) stay outside the boundary. In headless mode
-// (-p) every tool not on this list is denied by the CLI itself — this list is
-// the whole write-protection boundary, so never add a mutating command here.
+// the Claude Code CLI: cerne's READ commands (F-0224 criterion 1) plus the
+// CLI's native read tools (F-0258 criterion 1), so the agent can ground a
+// proposal in real project files. Native tools are used instead of
+// Bash(grep:*)/Bash(cat:*) because a shell rule opens escape surface (pipes,
+// ';', command substitution); Read/Grep/Glob never pass through a shell. The
+// Bash entries are scoped to cerne's read subcommands so the sibling write
+// commands (note new, decision new, reference new) stay outside the boundary.
+// In headless mode (-p) every tool not on this list is denied by the CLI
+// itself — this list is the whole write-protection boundary, so never add a
+// mutating tool or a non-cerne Bash rule here.
 var AgentReadTools = []string{
+	"Read",
+	"Grep",
+	"Glob",
 	"Bash(cerne search:*)",
 	"Bash(cerne show:*)",
 	"Bash(cerne brief:*)",
@@ -34,6 +41,19 @@ var AgentReadTools = []string{
 	"Bash(cerne note show:*)",
 	"Bash(cerne reference list:*)",
 	"Bash(cerne decision list:*)",
+}
+
+// AgentDeniedPaths are the --disallowedTools rules that keep an authorized
+// Read away from secret files (F-0258 criterion 6). The positive allowlist
+// alone is not enough: Read reaches any file under the working dir. Fixed in
+// the binary on purpose — like the role boundary, a project must not be able
+// to switch it off via config.
+var AgentDeniedPaths = []string{
+	"Read(.env)",
+	"Read(.env.*)",
+	"Read(**/credentials*)",
+	"Read(**/*.pem)",
+	"Read(**/*.key)",
 }
 
 // runner abstracts running an external command in a working directory
@@ -93,10 +113,11 @@ func execRun(ctx context.Context, dir, name string, args []string, stdin string)
 // answering; nil agentTools is the original one-shot text generator, byte-for-
 // byte, used by ask/compile/diagram.
 type cliProvider struct {
-	bin        string
-	run        runner
-	dir        string   // working directory for the CLI (project root in agentic mode)
-	agentTools []string // Claude Code permission rules passed via --allowedTools; nil = one-shot
+	bin         string
+	run         runner
+	dir         string   // working directory for the CLI (project root in agentic mode)
+	agentTools  []string // Claude Code permission rules passed via --allowedTools; nil = one-shot
+	deniedTools []string // permission rules passed via --disallowedTools (secret-file denials, F-0258)
 }
 
 // isUnknownFlag reports whether err looks like the CLI rejecting a flag it
@@ -127,6 +148,9 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	agentic := len(p.agentTools) > 0
 	if agentic {
 		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
+		if len(p.deniedTools) > 0 {
+			args = append(args, "--disallowedTools", strings.Join(p.deniedTools, ","))
+		}
 	}
 	out, stderr, err := p.run(ctx, p.dir, p.bin, args, prompt)
 	if err != nil && agentic && isUnknownFlag(err) {

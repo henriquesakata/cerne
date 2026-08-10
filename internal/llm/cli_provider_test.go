@@ -249,7 +249,7 @@ func TestAgentProviderAllowlistFlags(t *testing.T) {
 		gotStdin = stdin
 		return "resposta com F-0132 citada", "", nil
 	}
-	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools, deniedTools: AgentDeniedPaths}
 
 	out, err := p.Complete(context.Background(), "qual a spec da F-0132?")
 	if err != nil {
@@ -264,11 +264,92 @@ func TestAgentProviderAllowlistFlags(t *testing.T) {
 	if gotStdin != "qual a spec da F-0132?" {
 		t.Fatalf("stdin = %q, want the prompt", gotStdin)
 	}
-	wantList := "Bash(cerne search:*),Bash(cerne show:*),Bash(cerne brief:*),Bash(cerne status:*)," +
+	wantList := "Read,Grep,Glob," +
+		"Bash(cerne search:*),Bash(cerne show:*),Bash(cerne brief:*),Bash(cerne status:*)," +
 		"Bash(cerne note list:*),Bash(cerne note show:*),Bash(cerne reference list:*),Bash(cerne decision list:*)"
-	want := []string{"-p", "--output-format", "text", "--allowedTools", wantList}
+	wantDenied := "Read(.env),Read(.env.*),Read(**/credentials*),Read(**/*.pem),Read(**/*.key)"
+	want := []string{"-p", "--output-format", "text", "--allowedTools", wantList, "--disallowedTools", wantDenied}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, want)
+	}
+}
+
+// TestAgentReadToolsIncludesNativeReaders (F-0258 criterion 1): the agentic
+// allowlist carries the CLI's native read tools so the chat agent can ground
+// a proposal in real project files, not just cerne entities.
+func TestAgentReadToolsIncludesNativeReaders(t *testing.T) {
+	for _, tool := range []string{"Read", "Grep", "Glob"} {
+		found := false
+		for _, rule := range AgentReadTools {
+			if rule == tool {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("AgentReadTools misses native reader %q: %v", tool, AgentReadTools)
+		}
+	}
+}
+
+// TestAgentReadToolsDeniesWrites (F-0258 criterion 3): no rule may authorize a
+// mutating native tool, and every Bash(...) rule must stay inside the closed
+// set of the 8 cerne read commands — the allowlist grows only by scoped
+// native readers, never by shell surface.
+func TestAgentReadToolsDeniesWrites(t *testing.T) {
+	cerneBashRules := map[string]bool{
+		"Bash(cerne search:*)":         true,
+		"Bash(cerne show:*)":           true,
+		"Bash(cerne brief:*)":          true,
+		"Bash(cerne status:*)":         true,
+		"Bash(cerne note list:*)":      true,
+		"Bash(cerne note show:*)":      true,
+		"Bash(cerne reference list:*)": true,
+		"Bash(cerne decision list:*)":  true,
+	}
+	for _, rule := range AgentReadTools {
+		for _, banned := range []string{"Write", "Edit", "NotebookEdit"} {
+			if strings.Contains(rule, banned) {
+				t.Fatalf("allowlist rule %q authorizes mutating tool %q", rule, banned)
+			}
+		}
+		if strings.HasPrefix(rule, "Bash(") && !cerneBashRules[rule] {
+			t.Fatalf("allowlist rule %q is a Bash rule outside the closed cerne read set", rule)
+		}
+	}
+}
+
+// TestCliProviderPassesDisallowedTools (F-0258 criterion 6): the secret-file
+// denials must travel as --disallowedTools — a positive allowlist alone lets
+// an authorized Read reach any file under the working dir.
+func TestCliProviderPassesDisallowedTools(t *testing.T) {
+	var gotArgs []string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		gotArgs = args
+		return "ok", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools, deniedTools: AgentDeniedPaths}
+	if _, err := p.Complete(context.Background(), "p"); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	joined := strings.Join(gotArgs, " ")
+	if !strings.Contains(joined, "--disallowedTools") {
+		t.Fatalf("args %v carry no --disallowedTools", gotArgs)
+	}
+	for _, denial := range []string{"Read(.env)", "Read(.env.*)", "Read(**/credentials*)", "Read(**/*.pem)", "Read(**/*.key)"} {
+		if !strings.Contains(joined, denial) {
+			t.Fatalf("args %v miss secret denial %q", gotArgs, denial)
+		}
+	}
+
+	// One-shot mode (ask/compile) stays flag-free: no allow, no deny.
+	gotArgs = nil
+	p = &cliProvider{bin: "claude", run: fake}
+	if _, err := p.Complete(context.Background(), "p"); err != nil {
+		t.Fatalf("Complete one-shot: %v", err)
+	}
+	if strings.Contains(strings.Join(gotArgs, " "), "--disallowedTools") {
+		t.Fatalf("one-shot args %v carry --disallowedTools", gotArgs)
 	}
 }
 
@@ -374,6 +455,9 @@ func TestNewAgentProviderModes(t *testing.T) {
 	}
 	if cp.bin != "claude" || cp.dir != "/proj" || !reflect.DeepEqual(cp.agentTools, AgentReadTools) {
 		t.Fatalf("agentic provider misconfigured: bin=%q dir=%q tools=%v", cp.bin, cp.dir, cp.agentTools)
+	}
+	if !reflect.DeepEqual(cp.deniedTools, AgentDeniedPaths) {
+		t.Fatalf("agentic provider deniedTools = %v, want AgentDeniedPaths (F-0258 criterion 6)", cp.deniedTools)
 	}
 
 	t.Setenv("TEST_CHAT_KEY", "k")
