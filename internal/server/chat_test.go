@@ -251,6 +251,46 @@ func TestChatNonStreamerFallback(t *testing.T) {
 	}
 }
 
+// TestChatConfirmArmsWriteTools (F-0260 criterion 3) is the whole gate: without
+// an explicit confirmation on the turn the server does not even hand the agent
+// the write tools, so "no write happened" is not a matter of the agent behaving
+// — the capability was never granted. The confirmed turn is the only one that
+// widens the allowlist, and it widens it for that call alone.
+func TestChatConfirmArmsWriteTools(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+
+	var gotWrite []bool
+	orig := newAgentProvider
+	newAgentProvider = func(_ project.LLMConfig, _ string, write bool) (llm.Provider, error) {
+		gotWrite = append(gotWrite, write)
+		return &llm.Fake{Reply: "ok"}, nil
+	}
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	h := New(repoDir, projDir, "proj-chat-confirm")
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"absent", `{"messages":[{"role":"user","content":"registra a candidata"}]}`, false},
+		{"explicitly false", `{"messages":[{"role":"user","content":"oi"}],"confirm":false}`, false},
+		{"confirmed", `{"messages":[{"role":"user","content":"confirmo"}],"confirm":true}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotWrite = nil
+			var got struct{}
+			if rec := doJSON(t, h, http.MethodPost, "/api/chat", tc.body, &got); rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+			}
+			if len(gotWrite) != 1 || gotWrite[0] != tc.want {
+				t.Fatalf("provider write = %v, want [%v]", gotWrite, tc.want)
+			}
+		})
+	}
+}
+
 // TestChatStreamMidError (F-0240 criterion 8): the stream breaking after the
 // first delta keeps what was already sent and closes with an error terminal —
 // the partial is not discarded, the failure not silent.
