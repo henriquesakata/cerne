@@ -66,9 +66,10 @@ type Layer struct {
 // Inventory is the full harness report — the /api/harness payload and the
 // `cerne harness --json` output.
 type Inventory struct {
-	Version string  `json:"version"`
-	Classes []Class `json:"classes"`
-	Layers  []Layer `json:"layers"`
+	Version  string             `json:"version"`
+	Classes  []Class            `json:"classes"`
+	Layers   []Layer            `json:"layers"`
+	Coverage []ProviderCoverage `json:"coverage"`
 }
 
 // Options parameterizes an inspection. Home is injectable so tests never read
@@ -194,8 +195,9 @@ func Inspect(opts Options) Inventory {
 	}
 	annotateConsumers(classes)
 	return Inventory{
-		Version: version.Short(),
-		Classes: classes,
-		Layers:  ls.layers,
+		Version:  version.Short(),
+		Classes:  classes,
+		Layers:   ls.layers,
+		Coverage: coverage(opts.ProjDir, classes),
 	}
 }
