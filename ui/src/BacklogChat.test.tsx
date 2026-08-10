@@ -14,6 +14,7 @@ const registerChatCandidate = vi.fn<
     specBody: string,
     facets?: string[],
     components?: string[],
+    module?: string,
     capability?: string,
     parent?: string,
     featureId?: string,
@@ -39,10 +40,11 @@ vi.mock('./api', async (importOriginal) => ({
     specBody: string,
     facets?: string[],
     components?: string[],
+    module?: string,
     capability?: string,
     parent?: string,
     featureId?: string,
-  ) => registerChatCandidate(title, specBody, facets, components, capability, parent, featureId),
+  ) => registerChatCandidate(title, specBody, facets, components, module, capability, parent, featureId),
   registerChatNote: (title: string, body: string, facets: string[], components: string[], informs?: string[]) =>
     registerChatNote(title, body, facets, components, informs),
   fetchLLMOptions: () => fetchLLMOptions(),
@@ -173,17 +175,19 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         '',
         '',
         '',
+        '',
       ),
     )
     await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(feature('F-0099')))
   })
 
-  it('F-0223: proposta com facet/components/capability mostra chips e registra as tags', async () => {
+  it('F-0223: proposta com facet/components/capability/module mostra chips e registra as tags', async () => {
     const proposal =
       'Perfeito, aqui está a proposta:\n\n' +
       '```cerne-proposta\n' +
       '# Exportar relatórios em CSV\n' +
       'facet: code\n' +
+      'module: commons\n' +
       'components: chat, backlog\n' +
       'capability: C-0001\n\n' +
       '## Problema\nFalta exportação.\n' +
@@ -197,6 +201,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 
     const registerButton = await screen.findByRole('button', { name: /registrar candidata/i })
     expect(screen.getByText('code')).toBeInTheDocument()
+    expect(screen.getByText('commons')).toBeInTheDocument()
     expect(screen.getByText('chat')).toBeInTheDocument()
     expect(screen.getByText('backlog')).toBeInTheDocument()
     expect(screen.getByText('C-0001')).toBeInTheDocument()
@@ -209,6 +214,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         expect.stringContaining('## Problema'),
         ['code'],
         ['chat', 'backlog'],
+        'commons',
         'C-0001',
         '',
         '',
@@ -239,6 +245,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
         expect.stringContaining('## Problema'),
         ['code'],
         [],
+        '',
         '',
         'F-0252',
         '',
@@ -334,7 +341,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
 
     await waitFor(() =>
-      expect(registerChatCandidate).toHaveBeenCalledWith('Título v1', expect.stringContaining('## Problema'), [], [], '', '', ''),
+      expect(registerChatCandidate).toHaveBeenCalledWith('Título v1', expect.stringContaining('## Problema'), [], [], '', '', '', ''),
     )
     // Registrada: o painel some até o agente emitir a próxima revisão.
     await waitFor(() =>
@@ -684,6 +691,7 @@ describe('BacklogChat — refino de candidata (F-0256)', () => {
         [],
         '',
         '',
+        '',
         'F-0010',
       ),
     )
@@ -700,6 +708,7 @@ describe('BacklogChat — refino de candidata (F-0256)', () => {
         expect.any(String),
         [],
         [],
+        '',
         '',
         '',
         '',

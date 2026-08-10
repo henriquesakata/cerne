@@ -449,6 +449,40 @@ func TestChatRegisterUnknownCapability(t *testing.T) {
 	}
 }
 
+// TestChatRegisterModule: in a project that declares 2+ modules, the register
+// must carry the proposal's module through to the creation core — without it
+// ValidateModule refuses and the confirmation click dies with "--module is
+// required" (the reported bug).
+func TestChatRegisterModule(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	if err := os.WriteFile(filepath.Join(repoDir, "project.json"),
+		[]byte(`{"name":"Projeto Demo","modules":["finance","commons"]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile project.json: %v", err)
+	}
+	commitBackend(t, repoDir)
+
+	// Without module the core refuses — the handler must surface that, not 500.
+	var refuse map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-mod"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# X\n\n## Problema\nY.\n"}`, &refuse)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status without module = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+
+	// With module the candidate is born classified.
+	var got struct {
+		Feature store.Feature `json:"feature"`
+	}
+	rec = doJSON(t, New(repoDir, projDir, "proj-chat-mod"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"# X\n\n## Problema\nY.\n","module":"commons"}`, &got)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status with module = %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Feature.Module != "commons" {
+		t.Fatalf("Module = %q, want %q", got.Feature.Module, "commons")
+	}
+}
+
 // TestChatRegisterNewCapability: a non-id capability string is treated as a
 // new node title, created and linked in the same act.
 func TestChatRegisterNewCapability(t *testing.T) {

@@ -92,6 +92,10 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	if err != nil {
 		return "", err
 	}
+	proj, err := store.LoadProject(repoDir)
+	if err != nil {
+		return "", err
+	}
 
 	var b strings.Builder
 	b.WriteString(persona)
@@ -152,6 +156,12 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	fmt.Fprintf(&b, "```%s\n", chatProposalFence)
 	b.WriteString("# <título curto da feature>\n")
 	b.WriteString("facet: <uma opção do conjunto fechado: " + strings.Join(domain.ValidFacets, ", ") + ">\n")
+	if len(proj.Modules) > 0 {
+		// A project with declared modules classifies every feature at birth
+		// (ValidateModule makes it mandatory with 2+): the agent must emit the
+		// line or the confirmed registration dies on the creation core.
+		b.WriteString("module: <obrigatória: um módulo do conjunto fechado: " + strings.Join(proj.Modules, ", ") + ">\n")
+	}
 	b.WriteString("components: <lista curta separada por vírgula>\n")
 	b.WriteString("capability: <um id C-NNNN da árvore acima, ou um título novo para propor um nó quando nenhuma servir>\n")
 	// F-0254 criterion 5: optional — an id that doesn't resolve (or points at a

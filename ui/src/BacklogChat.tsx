@@ -37,6 +37,10 @@ export type ParsedProposal = {
   title: string
   body: string
   facet: string
+  // module: obrigatório em projetos que declaram módulos (ValidateModule no
+  // servidor) — sem propagá-lo o clique de registro morre com "--module is
+  // required".
+  module: string
   components: string[]
   capability: string
   parent: string
@@ -48,7 +52,7 @@ export type ParsedProposal = {
   informs: string[]
 }
 
-const METADATA_LINE = /^(facet|components|capability|parent|feature|informs):\s*(.*)$/i
+const METADATA_LINE = /^(facet|module|components|capability|parent|feature|informs):\s*(.*)$/i
 
 // parseNote (F-0249) extrai o bloco ```cerne-nota — mesmo formato do de
 // candidata, e por isso o mesmo parser: título, metadados, corpo.
@@ -93,6 +97,7 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
   const rest = titleMatch ? titleMatch[2] : inner
 
   let facet = ''
+  let module = ''
   let components: string[] = []
   let capability = ''
   let parent = ''
@@ -105,6 +110,7 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
     if (!m) break
     const [, key, value] = m
     if (key.toLowerCase() === 'facet') facet = value.trim().toLowerCase()
+    else if (key.toLowerCase() === 'module') module = value.trim()
     else if (key.toLowerCase() === 'components') components = value.split(',').map((c) => c.trim()).filter(Boolean)
     else if (key.toLowerCase() === 'capability') capability = value.trim()
     else if (key.toLowerCase() === 'parent') parent = value.trim()
@@ -113,7 +119,7 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
     i++
   }
   const body = lines.slice(i).join('\n').trim()
-  return { title, body, facet, components, capability, parent, feature, informs }
+  return { title, body, facet, module, components, capability, parent, feature, informs }
 }
 
 // stripProposalFence remove os blocos cercados da mensagem, deixando só a prosa
@@ -566,6 +572,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       proposal.body,
       proposal.facet ? [proposal.facet] : [],
       proposal.components,
+      proposal.module,
       proposal.capability,
       proposal.parent,
       refineId,
