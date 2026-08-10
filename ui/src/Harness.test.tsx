@@ -17,6 +17,7 @@ const item = (over: Partial<HarnessItem>): HarnessItem => ({
   origin: 'project',
   state: 'ok',
   outsideRepo: false,
+  consumers: ['claude'],
   ...over,
 })
 
@@ -37,11 +38,34 @@ const inventory = (): HarnessInventory => ({
       ],
     },
     { name: 'skills', items: [item({ class: 'skills', name: 'graphify', origin: 'user', state: 'configured', outsideRepo: true })] },
+    {
+      name: 'context',
+      items: [
+        item({
+          class: 'context',
+          name: 'AGENTS.md',
+          path: 'AGENTS.md',
+          state: 'unmanaged',
+          consumers: ['codex', 'cursor'],
+        }),
+      ],
+    },
     { name: 'providers', items: null },
   ],
   layers: [
     { path: '/p/.claude/settings.json', readable: true },
     { path: '/p/.claude/settings.local.json', readable: false, error: 'invalid JSON' },
+  ],
+  coverage: [
+    { provider: 'claude', detected: true, total: 4, gaps: [{ name: 'AGENTS.md', class: 'context', kind: 'degraded', detail: 'bound to a surface claude does not read' }] },
+    { provider: 'cursor', detected: true, total: 1, gaps: null },
+    { provider: 'codex', detected: false, total: 1, gaps: null },
+    {
+      provider: 'gemini',
+      detected: false,
+      total: 0,
+      gaps: [{ name: 'Live board at session start', class: 'providers', kind: 'missing', fix: 'cerne hook install --provider gemini' }],
+    },
   ],
 })
 
@@ -95,5 +119,49 @@ describe('Harness', () => {
     render(<Harness />)
     await waitFor(() => expect(screen.getByText(/Camadas com problema/)).toBeInTheDocument())
     expect(screen.getByText('invalid JSON')).toBeInTheDocument()
+  })
+
+  // Uma linha do inventário (não confundir com o mesmo nome numa lacuna da
+  // cobertura, que também vive no DOM dentro do <details>).
+  const rows = (name: string) =>
+    screen
+      .queryAllByText(name)
+      .filter((el) => el.classList.contains('entity-title') && el.closest('.harness-row'))
+
+  // F-0259 C3: chip de fornecedor restringe as linhas ao que ele consome.
+  it('filtra por fornecedor', async () => {
+    api.fetchHarness.mockResolvedValue(inventory())
+    render(<Harness />)
+    await waitFor(() => expect(rows('cerne-work-gate.sh').length).toBe(1))
+    fireEvent.click(screen.getByRole('button', { name: 'cursor' }))
+    expect(rows('cerne-work-gate.sh').length).toBe(0)
+    expect(rows('AGENTS.md').length).toBe(1)
+    // Clicar de novo desliga o filtro.
+    fireEvent.click(screen.getByRole('button', { name: 'cursor' }))
+    expect(rows('cerne-work-gate.sh').length).toBe(1)
+  })
+
+  // F-0259 C3: o filtro de fornecedor compõe com "só problemas".
+  it('combina fornecedor com só problemas', async () => {
+    api.fetchHarness.mockResolvedValue(inventory())
+    render(<Harness />)
+    await waitFor(() => expect(rows('cerne-work-gate.sh').length).toBe(1))
+    fireEvent.click(screen.getByRole('button', { name: 'claude' }))
+    fireEvent.click(screen.getByLabelText(/Só problemas/))
+    expect(rows('cerne-work-gate.sh').length).toBe(0)
+    expect(rows('AGENTS.md').length).toBe(0)
+    expect(rows('cerne-work-bind.sh').length).toBe(1)
+  })
+
+  // F-0259 C5/C6: cobertura por fornecedor com totais, não configurado e lacunas.
+  it('mostra a cobertura por fornecedor com lacunas', async () => {
+    api.fetchHarness.mockResolvedValue(inventory())
+    render(<Harness />)
+    await waitFor(() => expect(screen.getByText('Cobertura por fornecedor')).toBeInTheDocument())
+    expect(screen.getByText('4 artefatos')).toBeInTheDocument()
+    expect(screen.getAllByText('não configurado').length).toBe(2)
+    fireEvent.click(screen.getAllByText('1 lacuna')[1])
+    expect(screen.getByText('cerne hook install --provider gemini')).toBeInTheDocument()
+    expect(screen.getByText('instalável')).toBeInTheDocument()
   })
 })
