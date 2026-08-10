@@ -120,12 +120,13 @@ export default function ProposalDraft({ revisions, registering, refining = false
               </pre>
             ) : (
               <>
-                {(current.facet || current.components.length > 0 || current.capability || current.feature) && (
+                {(current.facet || current.module || current.components.length > 0 || current.capability || current.feature) && (
                   <div className="backlog-chat-proposal-chips">
                     {/* F-0256: a marca de revisão vem primeiro — é ela que diz
                         que este rascunho substitui a spec de uma candidata. */}
                     {current.feature && <span className="chip chip-revision">{current.feature}</span>}
                     {current.facet && <span className="chip">{current.facet}</span>}
+                    {current.module && <span className="chip">{current.module}</span>}
                     {current.components.map((c) => (
                       <span className="chip" key={c}>
                         {c}

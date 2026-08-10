@@ -14,6 +14,7 @@ function rev(patch: Partial<ParsedProposal> = {}): ParsedProposal {
     title: 'Exportar relatórios em CSV',
     body: '## Problema\nFalta exportação.',
     facet: '',
+    module: '',
     components: [],
     capability: '',
     parent: '',
