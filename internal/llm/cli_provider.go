@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -87,8 +88,26 @@ func describeExit(name, state string, stdout, stderr []byte) string {
 // own explanation via describeExit; an exec error (e.g. executable not found)
 // is reported with an actionable message naming the binary.
 func execRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+	return execRunEnv(ctx, dir, name, args, stdin, nil)
+}
+
+// agentRun is the runner of the agentic provider (F-0260): same exec, plus the
+// CERNE_ACTOR=agent stamp the child inherits. Any cerne command the agent runs
+// is then attributed to an agent in the event log, and app.CheckHumanGate keeps
+// refusing approve/accept from it — the human gates (F-0131) are untouched by
+// the agent gaining write tools. os.Environ() comes first so the stamp wins
+// over an inherited value (exec keeps the last of a duplicated key).
+func agentRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
+	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent"))
+}
+
+// execRunEnv is execRun with an explicit child environment; nil means inherit
+// the server's own, which is what every non-agentic path wants (N-0011: an API
+// proxy configured in the shell must keep applying transparently).
+func execRunEnv(ctx context.Context, dir, name string, args []string, stdin string, env []string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

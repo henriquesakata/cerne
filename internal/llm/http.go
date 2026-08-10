@@ -82,7 +82,7 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 func NewAgentProvider(cfg project.LLMConfig, dir string) (Provider, error) {
 	cfg = cfg.WithDefaults()
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
-		return &cliProvider{bin: cfg.ClaudeBin, run: execRun, dir: dir, agentTools: AgentReadTools, deniedTools: AgentDeniedPaths}, nil
+		return &cliProvider{bin: cfg.ClaudeBin, run: agentRun, dir: dir, agentTools: AgentReadTools, deniedTools: AgentDeniedPaths}, nil
 	}
 	return NewProvider(cfg)
 }

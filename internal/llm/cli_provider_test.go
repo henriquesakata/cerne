@@ -473,3 +473,48 @@ func TestNewAgentProviderModes(t *testing.T) {
 		t.Fatalf("delegation err = %v, want ErrNoProviderForDelegation", err)
 	}
 }
+
+// TestAgentRunStampsActor (F-0260 criterion 2): whatever the agent writes must
+// be attributed to an agent, so app.CheckHumanGate keeps refusing approve/accept
+// from it. agentRun is the only place that stamp can come from, and the parent
+// environment must not be its source — proven with a REAL child process (the
+// fake-runner tests never execute it), like TestExecRunCapturesStdoutOnFailure.
+func TestAgentRunStampsActor(t *testing.T) {
+	if os.Getenv("GO_WANT_ACTOR_CHILD") == "1" {
+		fmt.Println("ACTOR:" + os.Getenv("CERNE_ACTOR"))
+		os.Exit(0)
+	}
+	t.Setenv("GO_WANT_ACTOR_CHILD", "1")
+	t.Setenv("CERNE_ACTOR", "")
+	out, _, err := agentRun(context.Background(), "", os.Args[0],
+		[]string{"-test.run=TestAgentRunStampsActor$"}, "")
+	if err != nil {
+		t.Fatalf("agentRun: %v", err)
+	}
+	if !strings.Contains(out, "ACTOR:agent") {
+		t.Fatalf("child CERNE_ACTOR from %q, want the agent stamp", out)
+	}
+}
+
+// TestAgentProviderUsesAgentRun pins the wiring: without it the stamp above
+// exists but never reaches the CLI, and criterion 2 fails silently. The one-shot
+// provider keeps plain execRun — ask/compile/diagram write nothing.
+func TestAgentProviderUsesAgentRun(t *testing.T) {
+	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj")
+	if err != nil {
+		t.Fatalf("NewAgentProvider: %v", err)
+	}
+	if got, want := runnerName(prov.(*cliProvider).run), runnerName(agentRun); got != want {
+		t.Fatalf("agentic runner = %v, want agentRun (F-0260 criterion 2)", got)
+	}
+	one, err := NewProvider(project.LLMConfig{Mode: "claude-cli"})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	if got, want := runnerName(one.(*cliProvider).run), runnerName(execRun); got != want {
+		t.Fatalf("one-shot runner = %v, want execRun (no actor stamp needed)", got)
+	}
+}
+
+// runnerName identifies a runner by code pointer — funcs are not comparable.
+func runnerName(r runner) uintptr { return reflect.ValueOf(r).Pointer() }
