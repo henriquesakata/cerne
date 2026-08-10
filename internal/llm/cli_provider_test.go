@@ -445,7 +445,7 @@ func TestAgentProviderLogsStderr(t *testing.T) {
 // (allowlist + dir + default bin); byo-key passes through to the same static
 // httpProvider (criterion 3); delegation keeps its sentinel.
 func TestNewAgentProviderModes(t *testing.T) {
-	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj")
+	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj", false)
 	if err != nil {
 		t.Fatalf("NewAgentProvider(claude-cli): %v", err)
 	}
@@ -461,7 +461,7 @@ func TestNewAgentProviderModes(t *testing.T) {
 	}
 
 	t.Setenv("TEST_CHAT_KEY", "k")
-	prov, err = NewAgentProvider(project.LLMConfig{Mode: "byo-key", KeyEnv: "TEST_CHAT_KEY"}, "/proj")
+	prov, err = NewAgentProvider(project.LLMConfig{Mode: "byo-key", KeyEnv: "TEST_CHAT_KEY"}, "/proj", false)
 	if err != nil {
 		t.Fatalf("NewAgentProvider(byo-key): %v", err)
 	}
@@ -469,7 +469,7 @@ func TestNewAgentProviderModes(t *testing.T) {
 		t.Fatalf("byo-key provider = %T, want *httpProvider (static, no tool loop)", prov)
 	}
 
-	if _, err := NewAgentProvider(project.LLMConfig{}, "/proj"); !errors.Is(err, ErrNoProviderForDelegation) {
+	if _, err := NewAgentProvider(project.LLMConfig{}, "/proj", false); !errors.Is(err, ErrNoProviderForDelegation) {
 		t.Fatalf("delegation err = %v, want ErrNoProviderForDelegation", err)
 	}
 }
@@ -500,7 +500,7 @@ func TestAgentRunStampsActor(t *testing.T) {
 // exists but never reaches the CLI, and criterion 2 fails silently. The one-shot
 // provider keeps plain execRun — ask/compile/diagram write nothing.
 func TestAgentProviderUsesAgentRun(t *testing.T) {
-	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj")
+	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj", false)
 	if err != nil {
 		t.Fatalf("NewAgentProvider: %v", err)
 	}
@@ -518,3 +518,47 @@ func TestAgentProviderUsesAgentRun(t *testing.T) {
 
 // runnerName identifies a runner by code pointer — funcs are not comparable.
 func runnerName(r runner) uintptr { return reflect.ValueOf(r).Pointer() }
+
+// TestAgentWriteToolsGatedByConfirm (F-0260 criterion 3): the write allowlist is
+// a per-turn capability, never a standing one. An unconfirmed turn must get the
+// read boundary of F-0224 byte for byte — proposta is not permissão.
+func TestAgentWriteToolsGatedByConfirm(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		write bool
+		want  []string
+	}{
+		{"unconfirmed", false, AgentReadTools},
+		{"confirmed", true, append(append([]string{}, AgentReadTools...), AgentWriteTools...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj", tc.write)
+			if err != nil {
+				t.Fatalf("NewAgentProvider: %v", err)
+			}
+			if got := prov.(*cliProvider).agentTools; !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("agentTools = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgentWriteToolsExcludeLifecycle (F-0260 criterion 2): the allowlist IS the
+// boundary, so the lifecycle commands are pinned outside it by name. A rule that
+// let the agent approve/accept/complete would turn the write capability into a
+// bypass of the human gates (F-0131) — exactly what the spec puts out of scope.
+func TestAgentWriteToolsExcludeLifecycle(t *testing.T) {
+	for _, rule := range AgentWriteTools {
+		if !strings.HasPrefix(rule, "Bash(cerne ") || !strings.HasSuffix(rule, " new:*)") {
+			t.Fatalf("write rule %q: only `cerne <entity> new` creations belong in the boundary", rule)
+		}
+		for _, banned := range []string{"approve", "accept", "start", "complete", "reject", "retire", "push", "errata"} {
+			if strings.Contains(rule, banned) {
+				t.Fatalf("write rule %q grants %q — lifecycle stays a human act (F-0131)", rule, banned)
+			}
+		}
+	}
+	if len(AgentWriteTools) == 0 {
+		t.Fatal("AgentWriteTools is empty — criterion 4 wants feature, note, reference and decision")
+	}
+}

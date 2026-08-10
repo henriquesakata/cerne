@@ -116,7 +116,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 
 	// F-0224: the chat provider runs claude-cli as a read-only agent in the
 	// project dir; the budget covers chained cerne queries, not just one shot.
-	prov, err := newAgentProvider(cfg.LLM, projDir)
+	prov, err := newAgentProvider(cfg.LLM, projDir, false)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

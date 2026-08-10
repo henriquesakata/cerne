@@ -44,6 +44,26 @@ var AgentReadTools = []string{
 	"Bash(cerne decision list:*)",
 }
 
+// AgentWriteTools is what a CONFIRMED turn adds on top of AgentReadTools
+// (F-0260): the creation subcommands of the four entities a business analysis
+// can legitimately produce. It is appended per request and never by default —
+// an unconfirmed turn sees the read boundary alone, so a proposal is not a
+// permission (criterion 3).
+//
+// Like the read list, this is the whole write-protection boundary, so it holds
+// two invariants (pinned by TestAgentWriteToolsExcludeLifecycle): every rule is
+// a `cerne <entity> new` creation, and no rule touches the lifecycle
+// (approve/accept/start/complete/reject/retire/push). Moving a feature's state
+// stays a human act — the agent gaining write tools must never become a bypass
+// of the human gates (F-0131). Creation is safe to delegate because it lands a
+// candidate, the one state that decides nothing.
+var AgentWriteTools = []string{
+	"Bash(cerne feature new:*)",
+	"Bash(cerne note new:*)",
+	"Bash(cerne reference new:*)",
+	"Bash(cerne decision new:*)",
+}
+
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized
 // Read away from secret files (F-0258 criterion 6). The positive allowlist
 // alone is not enough: Read reaches any file under the working dir. Fixed in

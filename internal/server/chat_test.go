@@ -218,7 +218,7 @@ func TestChatNonStreamerFallback(t *testing.T) {
 	configureChatByoKey(t, projDir, "http://unused.invalid")
 
 	orig := newAgentProvider
-	newAgentProvider = func(project.LLMConfig, string) (llm.Provider, error) {
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) {
 		return &llm.Fake{Reply: "resposta inteira de uma vez"}, nil
 	}
 	t.Cleanup(func() { newAgentProvider = orig })
@@ -531,7 +531,7 @@ func TestChatInjectsProjectContext(t *testing.T) {
 
 	fake := &llm.Fake{Reply: "ok"}
 	orig := newAgentProvider
-	newAgentProvider = func(project.LLMConfig, string) (llm.Provider, error) { return fake, nil }
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return fake, nil }
 	t.Cleanup(func() { newAgentProvider = orig })
 
 	var got struct {
