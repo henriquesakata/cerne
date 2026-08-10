@@ -128,7 +128,11 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 		b.WriteString("Você tem acesso de LEITURA ao cerne deste projeto via linha de comando. ")
 		b.WriteString("Comandos permitidos: cerne search \"<termos>\", cerne show <id> (qualquer F-/D-/R-/N-/RB-), cerne brief, cerne status, cerne note list, cerne note show <id>, cerne reference list, cerne decision list. ")
 		b.WriteString("Quando a resposta exigir detalhe além do roster acima — a spec de uma feature citada, uma decisão, uma nota, histórico — CONSULTE antes de responder, em vez de supor ou perguntar ao usuário o que o cerne responde. ")
-		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\"); se não consultou nada, não invente citações. ")
+		// F-0258: reading code to specify is not implementing — the role
+		// boundary below still forbids emitting code, diffs or step-by-step
+		// implementation plans.
+		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções Problema e Desenho em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
+		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\") e os arquivos que leu no formato caminho:linha (ex.: \"internal/app/chat.go:131\"); se não consultou nada, não invente citações. ")
 		b.WriteString("Comandos de escrita não estão disponíveis — o registro de candidata acontece só pela confirmação do usuário na UI.\n\n")
 	}
 
