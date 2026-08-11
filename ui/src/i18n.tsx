@@ -252,6 +252,7 @@ const ptBR = {
     collapse: 'Recolher',
     expand: 'Expandir',
     inPanel: (version: number) => `Proposta v${version} — no painel do rascunho.`,
+    stale: (latest: number) => `Versão antiga: só a v${latest} pode ser registrada.`,
   },
   noteProposal: {
     title: 'Nota proposta',
@@ -954,6 +955,7 @@ const en: Messages = {
     collapse: 'Collapse',
     expand: 'Expand',
     inPanel: (version: number) => `Proposal v${version} — in the draft panel.`,
+    stale: (latest: number) => `Older version: only v${latest} can be registered.`,
   },
   noteProposal: {
     title: 'Proposed note',

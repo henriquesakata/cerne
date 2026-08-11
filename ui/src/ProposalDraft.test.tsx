@@ -46,7 +46,6 @@ describe('ProposalDraft (F-0255)', () => {
     const tabs = screen.getAllByRole('tab')
     expect(tabs.map((t) => t.textContent)).toEqual(['v1', 'v2'])
     expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('Exportar relatórios em CSV e XLSX')).toBeInTheDocument()
 
     fireEvent.click(tabs[0])
     expect(screen.getByText('Exportar relatórios em CSV')).toBeInTheDocument()
@@ -65,8 +64,6 @@ describe('ProposalDraft (F-0255)', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /diff/i }))
-
     const removed = screen.getByText('Falta exportação.')
     const added = screen.getByText('Falta exportação em massa.')
     expect(removed).toHaveClass('diff-del')
@@ -79,16 +76,39 @@ describe('ProposalDraft (F-0255)', () => {
     expect(screen.queryByRole('button', { name: /diff/i })).not.toBeInTheDocument()
   })
 
-  it('critério 4: confirmar registra a versão EXIBIDA, não a última', () => {
+  it('revisão nova abre em diff; o texto completo fica no toggle', () => {
+    render(
+      <ProposalDraft
+        revisions={[rev(), rev({ body: '## Problema\nFalta exportação em massa.' })]}
+        registering={false}
+        onRegister={vi.fn()}
+        onQuote={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Falta exportação em massa.')).toHaveClass('diff-add')
+    fireEvent.click(screen.getByRole('button', { name: /diff/i }))
+    expect(screen.getByText(/Falta exportação em massa/)).not.toHaveClass('diff-add')
+  })
+
+  it('versão antiga não é registrável — só a corrente (supera o critério 4 da F-0255)', () => {
     const onRegister = vi.fn()
     const v1 = rev()
     const v2 = rev({ title: 'Exportar relatórios em CSV e XLSX' })
     render(<ProposalDraft revisions={[v1, v2]} registering={false} onRegister={onRegister} onQuote={vi.fn()} />)
 
-    fireEvent.click(screen.getAllByRole('tab')[0])
-    fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
+    const register = screen.getByRole('button', { name: /registrar candidata/i })
+    expect(register).toBeEnabled()
 
-    expect(onRegister).toHaveBeenCalledWith(v1)
+    fireEvent.click(screen.getAllByRole('tab')[0])
+    expect(screen.getByText(/só a v2 pode ser registrada/i)).toBeInTheDocument()
+    expect(register).toBeDisabled()
+    fireEvent.click(register)
+    expect(onRegister).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getAllByRole('tab')[1])
+    fireEvent.click(register)
+    expect(onRegister).toHaveBeenCalledWith(v2)
   })
 
   it('critério 5: seleção de trecho no painel vira citação no compositor', () => {

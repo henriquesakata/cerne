@@ -42,16 +42,23 @@ export default function ProposalDraft({ revisions, registering, refining = false
   const [collapsed, setCollapsed] = useState(false)
   const { t } = useT()
 
-  // Revisão nova chega selecionada: é ela que o usuário acabou de pedir. Sai
-  // do modo diff junto — o diff é uma leitura sobre o par anterior, não um
-  // estado permanente do painel.
+  // Revisão nova chega selecionada: é ela que o usuário acabou de pedir. E
+  // chega em DIFF quando há versão anterior — a spec repetida inteira a cada
+  // revisão obrigava a reler tudo pra achar o que mudou; o que interessa numa
+  // revisão é a mudança. O texto completo continua a um clique no toggle.
   useEffect(() => {
     setSelected(revisions.length - 1)
-    setShowDiff(false)
+    setShowDiff(revisions.length > 1)
   }, [revisions.length])
 
   const index = Math.min(Math.max(selected, 0), revisions.length - 1)
   const current = revisions[index]
+  // Versão antiga é histórico, não oferta: a conversa seguiu e o que veio
+  // depois a substituiu. Registrar dali gravaria uma spec que o próprio agente
+  // já corrigiu — as abas antigas servem pra ler e comparar, e a confirmação
+  // fica só na versão corrente. (Supera o critério 4 da F-0255, que registrava
+  // a versão exibida.)
+  const stale = index < revisions.length - 1
   const diff = useMemo(
     () => (index > 0 ? lineDiff(versionText(revisions[index - 1]), versionText(current)) : []),
     [revisions, index, current],
@@ -141,11 +148,12 @@ export default function ProposalDraft({ revisions, registering, refining = false
             )}
           </QuoteComment>
 
+          {stale && <p className="proposal-draft-stale">{t.proposalDraft.stale(revisions.length)}</p>}
           <button
             type="button"
             className="proposal-draft-register"
             onClick={() => onRegister(current)}
-            disabled={registering || current.title.trim() === ''}
+            disabled={registering || stale || current.title.trim() === ''}
           >
             {refining
               ? registering
