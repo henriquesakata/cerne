@@ -21,6 +21,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -245,6 +246,9 @@ type featureDetailResponse struct {
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
 	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
 	Errata      string            `json:"errata"`      // additive corrections (F-0163); "" when none
+	// SpecChangedAfterApproval is true when the spec was edited while approved,
+	// after the last approval (F-0262) — the page warns the approval is stale.
+	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
 }
 
 type featureDocs struct {
@@ -351,7 +355,16 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata})
+	specChanged := false
+	if f.State == domain.StateApproved {
+		events, err := store.ReadEvents(repoDir)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		specChanged = lint.SpecChangedAfterApproval(events, id)
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

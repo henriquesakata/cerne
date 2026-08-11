@@ -17,6 +17,7 @@ export type TransitionAction =
   | 'accept'
   | 'reject'
   | 'supersede'
+  | 'revert'
 
 export type Feature = {
   id: string
@@ -157,6 +158,9 @@ export type FeatureDetail = {
   informed_by: Reference[] // external sources that motivated this feature
   children: Feature[] // features that decompose this one (epic view)
   errata: string // correções aditivas (F-0163); "" quando não há
+  // spec editada em approved depois da última aprovação (F-0262): a aprovação
+  // não fala mais do texto atual.
+  spec_changed_after_approval: boolean
 }
 
 export type TransitionResult = {

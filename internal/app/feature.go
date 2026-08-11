@@ -491,14 +491,30 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		if _, err := store.LoadFeature(repoDir, id); err != nil {
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
 			return "", err
 		}
 		path := FeatureDocPath(repoDir, id, filename)
+		// The event below is itself a change, so the byte-identical no-op has to be
+		// detected here — captureChanges would always see the appended event.
+		if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
+			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return "", err
 		}
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return "", err
+		}
+		// The write is otherwise invisible to the rules — the backend commit is not
+		// queryable by lint (F-0262). state is the state at write time: that is what
+		// makes a post-approval spec edit distinguishable from any other edit.
+		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
+			"doc":   doc,
+			"state": string(f.State),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/%s", id, filename), nil

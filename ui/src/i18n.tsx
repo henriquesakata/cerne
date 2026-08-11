@@ -365,8 +365,11 @@ const ptBR = {
       accept: 'Aceitar',
       reject: 'Rejeitar',
       supersede: 'Substituir',
+      revert: 'Reverter',
     } satisfies Record<TransitionAction, string>,
     actions: 'Ações',
+    staleApproval:
+      'A spec mudou depois de aprovada: a aprovação está desatualizada. Reaprove ou reverta ao Backlog.',
     closed: 'Encerrada.',
     supersededByField: 'Substituída por (ID)',
     reasonRequired: 'Motivo (obrigatório)',
@@ -1063,8 +1066,11 @@ const en: Messages = {
       accept: 'Accept',
       reject: 'Reject',
       supersede: 'Supersede',
+      revert: 'Revert',
     },
     actions: 'Actions',
+    staleApproval:
+      'The spec changed after approval: the approval is out of date. Re-approve it or revert to the Backlog.',
     closed: 'Closed.',
     supersededByField: 'Superseded by (ID)',
     reasonRequired: 'Reason (required)',

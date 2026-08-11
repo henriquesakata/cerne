@@ -399,6 +399,7 @@ export default function FeaturePage({ id }: { id: string }) {
             <ActionsPanel
               id={f.id}
               state={f.state}
+              staleApproval={detail.spec_changed_after_approval}
               onDone={(r: TransitionResult) => {
                 setNotice(`${t.state[r.from]} → ${t.state[r.to]}`)
                 load()
@@ -709,6 +710,9 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   ],
   approved: [
     { action: 'start', form: 'none' },
+    // Revert é o desfazer deliberado da aprovação (F-0169): devolve ao Backlog
+    // com razão registrada.
+    { action: 'revert', form: 'reason' },
     { action: 'supersede', form: 'supersede' },
   ],
   in_development: [
@@ -728,10 +732,12 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
 function ActionsPanel({
   id,
   state,
+  staleApproval,
   onDone,
 }: {
   id: string
   state: FeatureState
+  staleApproval: boolean
   onDone: (r: TransitionResult) => void
 }) {
   const { t } = useT()
@@ -777,6 +783,7 @@ function ActionsPanel({
   return (
     <section className="actions">
       <h2>{t.feature.actions}</h2>
+      {staleApproval && <p className="form-error">{t.feature.staleApproval}</p>}
       <div className="action-buttons">
         {actions.map((a) => (
           <button
@@ -820,7 +827,8 @@ function ActionsPanel({
               rows={3}
             />
           </label>
-          <button type="submit" disabled={busy}>
+          {/* Razão é obrigatória no backend (422); bloquear aqui evita a ida perdida. */}
+          <button type="submit" disabled={busy || reason.trim() === ''}>
             {t.feature.confirmAction(t.feature.actionLabels[spec.action])}
           </button>
         </form>
