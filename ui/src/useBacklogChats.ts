@@ -217,9 +217,14 @@ export function useBacklogChats(): UseBacklogChats {
   // F-0256: numa conversa de refino o vínculo já está no título e no
   // featureId — sufixar de novo a cada atualização viraria "Refinando F-0010 →
   // F-0010 → F-0010".
+  // A conversa também passa a APONTAR pra candidata que acabou de nascer: sem
+  // isso, confirmar outra versão do rascunho na mesma conversa registrava uma
+  // candidata nova a cada clique em vez de atualizar a que já existe.
   const appendRegisteredId = (featureId: string) => {
     setChats((prev) =>
-      prev.map((c) => (c.id === activeId && !c.featureId ? { ...c, title: `${c.title} → ${featureId}` } : c)),
+      prev.map((c) =>
+        c.id === activeId && !c.featureId ? { ...c, title: `${c.title} → ${featureId}`, featureId } : c,
+      ),
     )
   }
 

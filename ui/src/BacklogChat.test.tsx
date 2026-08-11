@@ -327,7 +327,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     expect(screen.getByText('Exportar em CSV')).toBeInTheDocument()
   })
 
-  it('F-0255 critério 4: registrar usa a versão exibida no painel', async () => {
+  it('registrar usa a versão corrente; a antiga só é leitura (supera o critério 4 da F-0255)', async () => {
     const rev = (title: string) => '```cerne-proposta\n' + `# ${title}\n\n` + '## Problema\nX.\n' + '```\n'
     registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
     renderChat({
@@ -338,10 +338,13 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     })
 
     fireEvent.click(screen.getAllByRole('tab')[0])
+    expect(screen.getByRole('button', { name: /registrar candidata/i })).toBeDisabled()
+
+    fireEvent.click(screen.getAllByRole('tab')[1])
     fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
 
     await waitFor(() =>
-      expect(registerChatCandidate).toHaveBeenCalledWith('Título v1', expect.stringContaining('## Problema'), [], [], '', '', '', ''),
+      expect(registerChatCandidate).toHaveBeenCalledWith('Título v2', expect.stringContaining('## Problema'), [], [], '', '', '', ''),
     )
     // Registrada: o painel some até o agente emitir a próxima revisão.
     await waitFor(() =>

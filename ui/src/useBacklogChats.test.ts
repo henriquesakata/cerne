@@ -73,6 +73,19 @@ describe('useBacklogChats (F-0219)', () => {
     expect(result.current.active.title).toBe('Exportar CSV → F-0221')
   })
 
+  it('appendRegisteredId vincula a conversa à candidata: o próximo registro atualiza, não duplica', () => {
+    const { result } = renderHook(() => useBacklogChats())
+    act(() => {
+      result.current.updateActive({ messages: [{ role: 'user', content: 'Exportar CSV' }] })
+    })
+    act(() => result.current.appendRegisteredId('F-0221'))
+    expect(result.current.active.featureId).toBe('F-0221')
+
+    // segunda confirmação (outra versão do rascunho) não re-sufixa o título
+    act(() => result.current.appendRegisteredId('F-0221'))
+    expect(result.current.active.title).toBe('Exportar CSV → F-0221')
+  })
+
   it('critério 4: deleteConversation só remove após confirmação; troca a ativa se era a excluída', () => {
     const { result } = renderHook(() => useBacklogChats())
     const firstId = result.current.active.id
