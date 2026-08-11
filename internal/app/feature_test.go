@@ -451,6 +451,73 @@ func TestSaveFeatureDoc(t *testing.T) {
 	}
 }
 
+// TestSaveFeatureDocEmitsEvent pins the audit trail of F-0262: every effective
+// doc write appends feature.doc_edited carrying the document and the feature's
+// state at write time; a byte-identical rewrite appends nothing.
+func TestSaveFeatureDocEmitsEvent(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	spec := "---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", spec); err != nil {
+		t.Fatalf("SaveFeatureDoc: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", spec+"\nAjuste pós-aprovação.\n"); err != nil {
+		t.Fatalf("SaveFeatureDoc after approve: %v", err)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := evs[len(evs)-1]
+	if last.Type != "feature.doc_edited" || last.EntityID != "F-0001" ||
+		last.Payload["doc"] != "spec" || last.Payload["state"] != string(domain.StateApproved) {
+		t.Fatalf("last event = %+v, want feature.doc_edited{doc:spec,state:approved}", last)
+	}
+	// The first (candidate) write is recorded too, with its own state.
+	var candidateEdits int
+	for _, ev := range evs {
+		if ev.Type == "feature.doc_edited" && ev.Payload["state"] == string(domain.StateCandidate) {
+			candidateEdits++
+		}
+	}
+	if candidateEdits != 1 {
+		t.Fatalf("candidate doc_edited events = %d, want 1", candidateEdits)
+	}
+	// Byte-identical rewrite: no new event.
+	before := len(evs)
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", spec+"\nAjuste pós-aprovação.\n"); err != nil {
+		t.Fatalf("idempotent SaveFeatureDoc: %v", err)
+	}
+	evs, _ = store.ReadEvents(repoDir)
+	if len(evs) != before {
+		t.Fatalf("events = %d after byte-identical write, want %d", len(evs), before)
+	}
+}
+
+// TestUpdateCandidateSpecRefusesApproved pins F-0256's chat-surface gate, kept
+// deliberately asymmetric with the manual editor by F-0262's design decision.
+func TestUpdateCandidateSpecRefusesApproved(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec",
+		"---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"); err != nil {
+		t.Fatalf("SaveFeatureDoc: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "novo corpo"); !errors.Is(err, ErrNotCandidate) {
+		t.Fatalf("err = %v, want ErrNotCandidate", err)
+	}
+}
+
 func TestSaveFeatureDocErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
