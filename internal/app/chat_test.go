@@ -332,6 +332,48 @@ func TestBuildChatSystemPromptLiveQuery(t *testing.T) {
 	}
 }
 
+// TestChatSystemPromptDoesNotDenyWrite (F-0267): the read block used to close
+// with "Comandos de escrita não estão disponíveis" — true when F-0224 wrote it,
+// false since F-0260 gave the confirmed turn write tools and F-0265 added the
+// update verbs. Two contradictory sentences in one prompt is a text bug, not a
+// question of ordering: in real use the agent anchored on the denial and told
+// the user it could not update a spec, offering a handoff instead of echoing
+// `cerne feature spec`. The prompt must announce the write once, correctly.
+func TestChatSystemPromptDoesNotDenyWrite(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir,
+		project.Config{LLM: project.LLMConfig{Mode: "claude-cli"}})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, denial := range []string{
+		"Comandos de escrita não estão disponíveis",
+		"não estão disponíveis",
+	} {
+		if strings.Contains(prompt, denial) {
+			t.Fatalf("prompt denies the write capability with %q — the agent has it under confirmation:\n%s", denial, prompt)
+		}
+	}
+	// The read block points at the contract instead of denying (criterion 2),
+	// and the update verbs are named so "atualiza a spec da F-NNNN" routes to a
+	// verb rather than to a file edit + pull/push (criterion 3).
+	for _, want := range []string{
+		"sob confirmação",
+		"cerne feature spec",
+		"cerne feature retag",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	// Criterion 4: pull/push stay outside the agent's set, and the prompt says
+	// so — otherwise the model proposes the flow it cannot run.
+	if !strings.Contains(prompt, "cerne pull") || !strings.Contains(prompt, "cerne push") {
+		t.Fatalf("prompt must name cerne pull/push as NOT available to the agent:\n%s", prompt)
+	}
+}
+
 // TestChatSystemPromptAsksForFileCitations (F-0258 criteria 4 and 2): in
 // claude-cli mode the prompt says the agent may READ project code and must
 // cite consulted files as caminho:linha alongside the cerne ids; byo-key and

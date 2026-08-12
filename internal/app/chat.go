@@ -137,7 +137,12 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 		// implementation plans.
 		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções Problema e Desenho em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
 		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\") e os arquivos que leu no formato caminho:linha (ex.: \"internal/app/chat.go:131\"); se não consultou nada, não invente citações. ")
-		b.WriteString("Comandos de escrita não estão disponíveis — o registro de candidata acontece só pela confirmação do usuário na UI.\n\n")
+		// F-0267: this sentence used to deny writing outright — true under
+		// F-0224, false since F-0260/F-0265. The denial won over the contract
+		// at the end of the prompt (the agent answered "não consigo atualizar"
+		// while holding the verbs), so it now announces the capability and
+		// points at the contract instead of contradicting it.
+		b.WriteString("Escrever no cerne é possível, mas só sob confirmação do usuário: o caminho normal é o card de proposta, e o contrato dos comandos (criação e atualização) está no fim deste prompt.\n\n")
 	}
 
 	// F-0254: conduction, not interrogation — investigate the real problem,
@@ -271,6 +276,8 @@ cerne feature set F-NNNN --owner <quem> --priority <p0..p3>
 cerne feature reparent F-NNNN <F-PAI>
 cerne feature capability F-NNNN ...
 ` + "```" + `
+
+Atualizar é sempre por esses verbos: editar o arquivo da spec e rodar ` + "`cerne pull`" + `/` + "`cerne push`" + ` NÃO é o seu caminho — esses dois comandos não estão no seu conjunto, e propor esse fluxo devolve ao usuário um trabalho que o verbo resolve.
 
 Nada além disso: mover estado (approve, accept, start, complete, reject, revert) é ato humano e será recusado — se o usuário pedir, explique e devolva o comando para ele rodar no terminal dele. Se o id pedido não existir, diga qual id não foi encontrado e pare: não crie feature nova no lugar da atualização.
 
