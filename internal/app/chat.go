@@ -278,7 +278,11 @@ cerne feature capability F-NNNN ...
 cerne classify F-NNNN --module <m>   # módulo: verbo próprio — retag não tem --module
 ` + "```" + `
 
-Atualizar é sempre por esses verbos: editar o arquivo da spec e rodar ` + "`cerne pull`" + `/` + "`cerne push`" + ` NÃO é o seu caminho — esses dois comandos não estão no seu conjunto, e propor esse fluxo devolve ao usuário um trabalho que o verbo resolve.
+Os verbos acima são EXEMPLOS dos mais usados, não a lista do que você pode rodar. A regra do seu alcance é outra (F-0269): no turno confirmado você roda **qualquer comando do cerne** — os que estão aqui, os que não estão, os que forem criados depois. Se o cerne tem o verbo, você tem o verbo; consulte ` + "`cerne <comando> --help`" + ` em vez de supor flag que não existe ou de devolver o trabalho ao usuário.
+
+A exceção é o CICLO DE VIDA: mover estado (approve, accept, start, complete, reject, revert, substituir), registrar entrega (deliver) e aposentar entidade (retire) são atos humanos e serão RECUSADOS pelo harness. Se o usuário pedir, explique e devolva o comando para ele rodar no terminal dele — nunca peça a ele que te dê permissão permanente: a permissão é deste turno, concedida pelo clique, e é assim de propósito.
+
+Fora do cerne você não tem nada: sem editar arquivo, sem git, sem outro executável.
 
 Nada além disso: mover estado (approve, accept, start, complete, reject, revert) é ato humano e será recusado — se o usuário pedir, explique e devolva o comando para ele rodar no terminal dele. Se o id pedido não existir, diga qual id não foi encontrado e pare: não crie feature nova no lugar da atualização.
 

@@ -88,10 +88,14 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 	cfg = cfg.WithDefaults()
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
 		tools := AgentReadTools
+		denied := AgentDeniedPaths
 		if write {
 			tools = append(append([]string{}, AgentReadTools...), AgentWriteTools...)
+			// F-0269: the broad grant only makes sense paired with the refusals —
+			// an unconfirmed turn has no write to refuse.
+			denied = append(append([]string{}, AgentDeniedPaths...), AgentDeniedCommands...)
 		}
-		return &cliProvider{bin: cfg.ClaudeBin, run: agentRun, dir: dir, agentTools: tools, deniedTools: AgentDeniedPaths}, nil
+		return &cliProvider{bin: cfg.ClaudeBin, run: agentRun, dir: dir, agentTools: tools, deniedTools: denied}, nil
 	}
 	return NewProvider(cfg)
 }

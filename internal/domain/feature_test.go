@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -78,5 +79,27 @@ func TestTransitionUnknownState(t *testing.T) {
 	}
 	if errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("err = %v, must not be ErrInvalidTransition", err)
+	}
+}
+
+// TestFeatureActionsCoversFSM (F-0269): the enumerator is only useful if it is
+// complete — an action reachable in `transitions` but missing here would be a
+// lifecycle verb the agent's refusal list never learns about.
+func TestFeatureActionsCoversFSM(t *testing.T) {
+	got := FeatureActions()
+	for from, actions := range transitions {
+		for a := range actions {
+			if !slices.Contains(got, a) {
+				t.Fatalf("FeatureActions() misses %q (reachable from %s): %v", a, from, got)
+			}
+		}
+	}
+	if !slices.IsSorted(got) {
+		t.Fatalf("FeatureActions() = %v, want sorted", got)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i] == got[i-1] {
+			t.Fatalf("FeatureActions() has duplicate %q: %v", got[i], got)
+		}
 	}
 }

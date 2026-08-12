@@ -4,6 +4,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 type FeatureState string
@@ -65,6 +66,27 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 	StateDone:       {},
 	StateRejected:   {},
 	StateSuperseded: {},
+}
+
+// FeatureActions returns every action the lifecycle FSM accepts, sorted and
+// deduplicated. It exists so a caller can be exhaustive over the lifecycle
+// without restating it: the agent's write boundary (F-0269) derives its refusal
+// list from here, and its test fails the moment a new transition is added
+// without a matching refusal — the alternative, a hand-kept list, is exactly
+// what would silently hand the agent a human gate.
+func FeatureActions() []Action {
+	seen := map[Action]bool{}
+	for _, actions := range transitions {
+		for a := range actions {
+			seen[a] = true
+		}
+	}
+	out := make([]Action, 0, len(seen))
+	for a := range seen {
+		out = append(out, a)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // TitleEditable reports whether a feature's title may still be changed: true for
