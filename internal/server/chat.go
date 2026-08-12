@@ -259,6 +259,37 @@ type chatRegisterResponse struct {
 	Warning string        `json:"warning,omitempty"`
 }
 
+// dupMatch is one collision the duplicate guard refused on, as the UI needs
+// it (F-0264): the id is what the "update F-XXXX" action writes to, the state
+// is what decides whether the action is offered at all.
+type dupMatch struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
+	Title string `json:"title"`
+}
+
+// dupConflictBody turns the guard's refusal into the 409 payload: the message
+// without the --force tail (a CLI flag has no meaning in the UI, crit. 8) plus
+// the structured collisions.
+func dupConflictBody(err error) map[string]any {
+	body := map[string]any{"error": "a similar registration already exists"}
+	var dup *app.SimilarExistsError
+	if !errors.As(err, &dup) {
+		return body
+	}
+	matches := make([]dupMatch, 0, len(dup.Live))
+	var lines []string
+	for _, m := range dup.Live {
+		matches = append(matches, dupMatch{ID: m.ID, State: m.State, Title: m.Title})
+		lines = append(lines, fmt.Sprintf("%s [%s] %s", m.ID, m.State, m.Title))
+	}
+	body["matches"] = matches
+	if len(lines) > 0 {
+		body["error"] = fmt.Sprintf("a similar registration already exists: %s", strings.Join(lines, "; "))
+	}
+	return body
+}
+
 // handleChatRegister registers the confirmed proposal as a candidate — the
 // same core as POST /api/features --file (app.CreateFeatureWithSpec), so the
 // same duplicate-registration guard (F-0147) and module/facet validation
@@ -305,7 +336,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 		f, err = app.CreateFeatureWithSpec(repoDir, projDir, req.Title, module, "", req.Facets, req.Components, req.SpecBody, false, "", "")
 	}
 	if errors.Is(err, app.ErrSimilarExists) {
-		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+		writeJSON(w, http.StatusConflict, dupConflictBody(err))
 		return
 	}
 	if err != nil {

@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type UIEvent,
 } from 'react'
-import { fetchLLMOptions, registerChatCandidate, registerChatNote, type ChatMsg, type Feature } from './api'
+import { fetchLLMOptions, registerChatCandidate, registerChatNote, type ChatMsg, type DupMatch, type Feature } from './api'
 import * as chatRequest from './chatRequest'
 import CommandProposal from './CommandProposal'
 import Markdown from './Markdown'
@@ -343,6 +343,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // painel sumir depois do registro e voltar quando o agente emitir a próxima.
   const [registeredRevisions, setRegisteredRevisions] = useState(0)
   const [registering, setRegistering] = useState(false)
+  // F-0264: as candidatas que o guard de duplicidade apontou na última recusa.
+  // A conversa órfã se vincula a uma delas por clique — nunca por inferência
+  // (crit. 7): o guard casa por semelhança de título, não por identidade.
+  const [dupCandidates, setDupCandidates] = useState<DupMatch[]>([])
   // F-0249: qual nota já virou entidade, por índice da mensagem que a propôs —
   // o card vira recibo com o id em vez de sumir, e um segundo clique não grava
   // a mesma nota de novo. Efêmero de propósito: recarregar mostra o card outra
@@ -564,9 +568,12 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // não para escolher em qual entidade gravar.
   const refineId = conversation.featureId ?? ''
 
-  const confirmRegister = (proposal: ParsedProposal) => {
+  // linkTo (F-0264): grava a spec corrente na candidata escolhida no clique —
+  // mesmo caminho da F-0256 (UpdateCandidateSpec), sem cunhar nada.
+  const confirmRegister = (proposal: ParsedProposal, linkTo = '') => {
     setRegistering(true)
     setError(null)
+    setDupCandidates([])
     registerChatCandidate(
       proposal.title,
       proposal.body,
@@ -575,12 +582,15 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       proposal.module,
       proposal.capability,
       proposal.parent,
-      refineId,
+      linkTo || refineId,
     )
       .then((res) => {
         setRegistering(false)
         if (!res.ok) {
           setError(res.error)
+          // Só candidata: atualizar spec fora de candidate é decisão de outra
+          // superfície (F-0262), não do chat (crit. 5).
+          setDupCandidates((res.matches ?? []).filter((m) => m.state === 'candidate'))
           return
         }
         // F-0254: parent inválido não falha o registro — só avisa.
@@ -704,6 +714,23 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
               {t.backlogChat.retry}
             </button>
           )}
+          {/* F-0264: uma ação por candidata colidida. O clique É a escolha —
+              mesmo com uma só opção nada é gravado sem ele (crit. 6/7). */}
+          {dupCandidates.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className="backlog-chat-link-dup"
+              title={m.title}
+              disabled={registering || revisions.length === 0}
+              onClick={() => {
+                const current = revisions[revisions.length - 1]
+                if (current) confirmRegister(current.proposal, m.id)
+              }}
+            >
+              {t.backlogChat.linkExisting(m.id)}
+            </button>
+          ))}
         </p>
       )}
       <form

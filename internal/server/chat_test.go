@@ -566,6 +566,46 @@ func TestChatRegisterDuplicate(t *testing.T) {
 	}
 }
 
+// TestChatRegisterSimilarReturnsMatches (F-0264, crit. 1/5/8): the similarity
+// guard's 409 carries the collisions structured, so an orphan conversation can
+// offer "update F-XXXX" instead of dead-ending; the message drops the --force
+// tail (CLI chrome).
+func TestChatRegisterSimilarReturnsMatches(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state domain.FeatureState
+	}{
+		{"candidate", domain.StateCandidate},
+		{"approved", domain.StateApproved},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir, _ := newGitBackend(t)
+			seedFeature(t, repoDir, "F-0002", "Exportar relatórios em CSV", tc.state)
+			commitBackend(t, repoDir)
+
+			var got struct {
+				Error   string `json:"error"`
+				Matches []struct {
+					ID    string `json:"id"`
+					State string `json:"state"`
+					Title string `json:"title"`
+				} `json:"matches"`
+			}
+			rec := doJSON(t, New(repoDir, projDir, "proj-chat-sim"), http.MethodPost, "/api/chat/register",
+				`{"title":"Exportar relatórios em CSV agora","spec_body":"# X\n\nCorpo.\n"}`, &got)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+			}
+			if len(got.Matches) != 1 || got.Matches[0].ID != "F-0002" || got.Matches[0].State != string(tc.state) {
+				t.Fatalf("matches = %+v, want F-0002 [%s]", got.Matches, tc.state)
+			}
+			if strings.Contains(got.Error, "--force") {
+				t.Fatalf("error = %q, want no --force chrome", got.Error)
+			}
+		})
+	}
+}
+
 // TestChatClaudeCLIRoutesAgentProvider (F-0224): with mode=claude-cli the
 // handler builds the agentic provider — a claude_bin that cannot be started
 // surfaces as a 500 naming the binary, proving the request routed to the CLI
