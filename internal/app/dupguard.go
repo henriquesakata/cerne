@@ -234,5 +234,20 @@ func guardRegistration(repoDir, title string, force bool) (hadLive bool, err err
 	case workID != "":
 		tail = fmt.Sprintf("if you did not open %s yourself, another session did — stop and confirm before implementing; adopting someone else's registration is how the same feature gets built twice.\n%s", workID, tail)
 	}
-	return false, fmt.Errorf("%w:\n%s\n%s", ErrSimilarExists, strings.Join(lines, "\n"), tail)
+	return false, &SimilarExistsError{
+		Live: matches.Live,
+		msg:  fmt.Sprintf("%s:\n%s\n%s", ErrSimilarExists, strings.Join(lines, "\n"), tail),
+	}
 }
+
+// SimilarExistsError carries the collisions along with the refusal (F-0264):
+// the CLI only needs the message, but the chat surface has to act on the ids —
+// offering "update F-XXXX" instead of leaving the conversation stuck. Wraps
+// ErrSimilarExists, so every existing errors.Is check keeps working.
+type SimilarExistsError struct {
+	Live []SimilarMatch
+	msg  string
+}
+
+func (e *SimilarExistsError) Error() string { return e.msg }
+func (e *SimilarExistsError) Unwrap() error { return ErrSimilarExists }

@@ -720,6 +720,78 @@ describe('BacklogChat — refino de candidata (F-0256)', () => {
   })
 })
 
+// F-0264: a conversa órfã (sem featureId) que bate no guard de duplicidade
+// se vincula por clique à candidata que o próprio guard apontou.
+describe('BacklogChat — vínculo com a candidata colidida (F-0264)', () => {
+  const proposal =
+    '```cerne-proposta\n' +
+    '# Exportar relatórios em CSV\n\n' +
+    '## Problema\nFalta exportação.\n' +
+    '```\n'
+
+  const refused = (matches: { id: string; state: string; title: string }[]) => ({
+    ok: false as const,
+    error: 'a similar registration already exists',
+    matches,
+  })
+
+  it('critérios 2/3/4: 409 com uma candidata oferece a ação, e o clique grava nela', async () => {
+    registerChatCandidate.mockResolvedValueOnce(
+      refused([{ id: 'F-0011', state: 'candidate', title: 'Exportar relatórios' }]),
+    )
+    const onRegistered = vi.fn()
+    renderChat({ messages: [{ role: 'assistant', content: proposal }] }, { onRegistered })
+
+    fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
+    const link = await screen.findByRole('button', { name: /atualizar F-0011/i })
+    expect(registerChatCandidate).toHaveBeenCalledTimes(1) // crit. 7: nada gravado sem o clique
+
+    registerChatCandidate.mockResolvedValueOnce({ ok: true, feature: feature('F-0011') })
+    fireEvent.click(link)
+
+    await waitFor(() =>
+      expect(registerChatCandidate).toHaveBeenLastCalledWith(
+        'Exportar relatórios em CSV',
+        expect.stringContaining('## Problema'),
+        [],
+        [],
+        '',
+        '',
+        '',
+        'F-0011',
+      ),
+    )
+    // crit. 4: a conversa passa a apontar pra candidata (appendRegisteredId).
+    await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(feature('F-0011')))
+  })
+
+  it('critério 5: colisão fora de candidate não oferece a ação', async () => {
+    registerChatCandidate.mockResolvedValue(
+      refused([{ id: 'F-0011', state: 'approved', title: 'Exportar relatórios' }]),
+    )
+    renderChat({ messages: [{ role: 'assistant', content: proposal }] })
+
+    fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
+    await screen.findByText(/already exists/i)
+    expect(screen.queryByRole('button', { name: /atualizar F-0011/i })).not.toBeInTheDocument()
+  })
+
+  it('critérios 6/7: duas candidatas exigem escolha explícita', async () => {
+    registerChatCandidate.mockResolvedValue(
+      refused([
+        { id: 'F-0011', state: 'candidate', title: 'Exportar relatórios' },
+        { id: 'F-0012', state: 'candidate', title: 'Exportar relatórios em CSV' },
+      ]),
+    )
+    renderChat({ messages: [{ role: 'assistant', content: proposal }] })
+
+    fireEvent.click(screen.getByRole('button', { name: /registrar candidata/i }))
+    await screen.findByRole('button', { name: /atualizar F-0011/i })
+    expect(screen.getByRole('button', { name: /atualizar F-0012/i })).toBeInTheDocument()
+    expect(registerChatCandidate).toHaveBeenCalledTimes(1)
+  })
+})
+
 // F-0249: o segundo bloco cercado da conversa — nota de conhecimento durável,
 // com o mesmo gate humano da candidata (o agente propõe, o clique grava).
 describe('BacklogChat — proposta de nota (F-0249)', () => {

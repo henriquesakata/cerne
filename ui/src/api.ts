@@ -527,6 +527,9 @@ export async function fetchEventsFor(pid: string): Promise<LifecycleEvent[]> {
 
 // ---- autoria e gestão de features (case 0012) ----
 
+// DupMatch (F-0264): uma colisão apontada pelo guard de duplicidade (F-0147).
+export type DupMatch = { id: string; state: string; title: string }
+
 export type CreateOutcome =
   | { ok: true; feature: Feature }
   | { ok: false; error: string }
@@ -721,7 +724,7 @@ export async function registerChatCandidate(
   capability = '',
   parent = '',
   featureId = '',
-): Promise<CreateOutcome & { warning?: string }> {
+): Promise<CreateOutcome & { warning?: string; matches?: DupMatch[] }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -736,7 +739,13 @@ export async function registerChatCandidate(
       feature_id: featureId,
     }),
   })
-  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  if (!r.ok) {
+    // F-0264: o 409 do guard de duplicidade traz as colisões estruturadas — é
+    // o id delas que permite à conversa órfã se vincular à candidata existente
+    // em vez de ficar sem saída.
+    const body = (await r.json().catch(() => ({}))) as { error?: string; matches?: DupMatch[] }
+    return { ok: false, error: body.error ?? `HTTP ${r.status}`, matches: body.matches }
+  }
   // F-0254: warning acompanha o 201 quando algo não-fatal foi descartado (um
   // parent inexistente ou fechado) — a candidata foi registrada mesmo assim.
   const body = (await r.json()) as { feature: Feature; warning?: string }
