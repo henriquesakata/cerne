@@ -754,7 +754,7 @@ func TestLintEndpointClean(t *testing.T) {
 		}
 	}
 	writeDoc(t, repoDir, "F-0001", "spec.md",
-		"---\ncerne_id: F-0001\n---\n\n# Feature A\n\n## Problema\n\nReal.\n\n## Objetivo e critérios de aceitação\n\n1. Critério.\n\n## Decisões do design\n\nN/A\n\n## Desenho\n\nReal.\n\n## Verificação\n\nReal.\n\n## Fora de escopo\n\nN/A\n")
+		"---\ncerne_id: F-0001\n---\n\n# Feature A\n\n## Problema\n\nReal.\n\n## Objetivo e critérios de aceitação\n\n1. Critério.\n\n## Decisões do design\n\nN/A\n\n## Desenho\n\nReal.\n\n## Verificação\n\nReal.\n\n## Execução recomendada (agente)\n\nReal.\n\n## Fora de escopo\n\nN/A\n")
 
 	var got struct {
 		Findings []struct {

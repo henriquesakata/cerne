@@ -17,6 +17,7 @@ func TestSectionsCanonical(t *testing.T) {
 		"Decisões do design",
 		"Desenho",
 		"Verificação",
+		"Execução recomendada (agente)",
 		"Fora de escopo",
 	}
 	if !reflect.DeepEqual(spectmpl.Sections, want) {
@@ -68,9 +69,12 @@ func TestBodyHasCapabilityLevelGuidance(t *testing.T) {
 	}
 }
 
-// TestBodyHasAgentExecutionSection pins F-0207 criterion 1: "Execução
-// recomendada (agente)" sits between Verificação and Fora de escopo, outside
-// Sections (F-0207 fork: Body-only, so incomplete-doc never requires it).
+// TestBodyHasAgentExecutionSection pins F-0207 criterion 1 ("Execução
+// recomendada (agente)" sits between Verificação and Fora de escopo) plus the
+// F-0266 reversal: the section is now IN Sections too, so incomplete-doc
+// charges it. F-0207 had kept it Body-only to spare pre-template specs; that
+// motive died once the rule started scanning live features only — history is
+// never checked.
 func TestBodyHasAgentExecutionSection(t *testing.T) {
 	verificacao := strings.Index(spectmpl.Body, "## Verificação")
 	agente := strings.Index(spectmpl.Body, "## Execução recomendada (agente)")
@@ -81,10 +85,9 @@ func TestBodyHasAgentExecutionSection(t *testing.T) {
 	if !(verificacao < agente && agente < foraDeEscopo) {
 		t.Fatalf("agent-execution section out of place (verificacao=%d agente=%d foraDeEscopo=%d)", verificacao, agente, foraDeEscopo)
 	}
-	for _, s := range spectmpl.Sections {
-		if s == "Execução recomendada (agente)" {
-			t.Fatalf("Execução recomendada (agente) must stay out of Sections (F-0207)")
-		}
+	want := []string{"Verificação", "Execução recomendada (agente)", "Fora de escopo"}
+	if got := spectmpl.Sections[len(spectmpl.Sections)-3:]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Sections tail = %v, want %v (F-0266)", got, want)
 	}
 }
 

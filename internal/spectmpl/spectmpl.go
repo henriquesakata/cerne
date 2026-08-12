@@ -23,6 +23,7 @@ var Sections = []string{
 	"Decisões do design",
 	"Desenho",
 	"Verificação",
+	"Execução recomendada (agente)",
 	"Fora de escopo",
 }
 
