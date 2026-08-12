@@ -576,6 +576,9 @@ func TestAgentWriteToolsExcludeLifecycle(t *testing.T) {
 		"Bash(cerne feature set:*)",
 		"Bash(cerne feature reparent:*)",
 		"Bash(cerne feature capability:*)",
+		// F-0268: module is the same kind of field as the tags above — an index
+		// facet, not a lifecycle move — and it lives in its own verb.
+		"Bash(cerne classify:*)",
 	} {
 		if !slices.Contains(AgentWriteTools, want) {
 			t.Errorf("AgentWriteTools missing %q — F-0265 criterion 4 wants creation plus the state-preserving mutations", want)

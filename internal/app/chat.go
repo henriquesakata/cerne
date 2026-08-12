@@ -275,6 +275,7 @@ cerne feature retag F-NNNN --facet <f> --component <c>
 cerne feature set F-NNNN --owner <quem> --priority <p0..p3>
 cerne feature reparent F-NNNN <F-PAI>
 cerne feature capability F-NNNN ...
+cerne classify F-NNNN --module <m>   # módulo: verbo próprio — retag não tem --module
 ` + "```" + `
 
 Atualizar é sempre por esses verbos: editar o arquivo da spec e rodar ` + "`cerne pull`" + `/` + "`cerne push`" + ` NÃO é o seu caminho — esses dois comandos não estão no seu conjunto, e propor esse fluxo devolve ao usuário um trabalho que o verbo resolve.

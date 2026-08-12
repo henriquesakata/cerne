@@ -362,6 +362,11 @@ func TestChatSystemPromptDoesNotDenyWrite(t *testing.T) {
 		"sob confirmação",
 		"cerne feature spec",
 		"cerne feature retag",
+		// F-0268: module has its own verb, and the prompt says so — the agent
+		// guessed `retag --module` (a flag that does not exist) and handed the
+		// user a command the CLI would refuse.
+		"cerne classify",
+		"retag não",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
