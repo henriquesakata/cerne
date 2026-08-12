@@ -169,13 +169,9 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("parent: <opcional: id F-/E- do épico que esta feature decompõe; omita a linha quando não houver>\n\n")
 	b.WriteString("Escreva a spec COMPLETA em Markdown, com exatamente estas seções nesta ordem:\n")
 	for _, s := range spectmpl.Sections {
+		// F-0266: "Execução recomendada (agente)" now lives in spectmpl.Sections,
+		// so the list below already carries it (it used to be injected here).
 		b.WriteString("## " + s + "\n")
-		if s == "Verificação" {
-			// The chat always fills this section, unlike a plain spec draft
-			// (F-0207 keeps it out of spectmpl.Sections so stub-detection
-			// stays lenient) — the chat proposal has no later editing pass.
-			b.WriteString("## Execução recomendada (agente)\n")
-		}
 	}
 	b.WriteString("```\n\n")
 	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")

@@ -107,7 +107,7 @@ func TestLintFindings(t *testing.T) {
 			"  N-0001 — only informs concluded work (F-0005 implemented) — retire it or confirm it is still durable\n",
 		"INCOMPLETE-DOC (2)\n" +
 			"  content/decisions/D-0001.md — content/decisions/D-0001.md: missing template sections: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações\n" +
-			"  content/features/F-0003/spec.md — content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo\n",
+			"  content/features/F-0003/spec.md — content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo\n",
 		"UNREGISTERED-SOURCE (1)\n" +
 			"  content/features/F-0003/spec.md — external URL https://example.com cited without a registered reference — register it with 'cerne reference new … --informs F-0003' or remove the URL\n",
 		"Total: 10 problem(s).\n",

@@ -53,6 +53,7 @@ func TestIncompleteDocFindings(t *testing.T) {
 		{ID: "F-0003", Title: "C", State: domain.StateCandidate},
 		{ID: "F-0004", Title: "D", State: domain.StateSuperseded},
 		{ID: "F-0005", Title: "E", State: domain.StateInDevelopment},
+		{ID: "F-0006", Title: "F", State: domain.StateApproved},
 	}
 	for _, f := range features {
 		f.CreatedAt, f.UpdatedAt = now, now
@@ -74,6 +75,8 @@ func TestIncompleteDocFindings(t *testing.T) {
 	writeDoc(t, dir, "content/features/F-0004/spec.md", docWith(spectmpl.Sections, "Verificação", ""))
 	// F-0005: imported spec missing a section → grandfathered (no finding).
 	writeDoc(t, dir, "content/features/F-0005/spec.md", docWith(spectmpl.Sections, "Desenho", "imported_from: docs/x.md"))
+	// F-0006: live spec without the agent-execution section → finding (F-0266).
+	writeDoc(t, dir, "content/features/F-0006/spec.md", docWith(spectmpl.Sections, "Execução recomendada (agente)", ""))
 
 	decisions := []store.Decision{
 		{ID: "D-0001", Title: "Dec", State: domain.DecisionActive},
@@ -106,9 +109,9 @@ func TestIncompleteDocFindings(t *testing.T) {
 		t.Fatalf("incompleteDocFindings: %v", err)
 	}
 
-	// Exactly two: F-0001 plan + D-0001.
-	if len(got) != 2 {
-		t.Fatalf("got %d findings, want 2: %+v", len(got), got)
+	// Exactly three: F-0001 plan + D-0001 + F-0006 spec.
+	if len(got) != 3 {
+		t.Fatalf("got %d findings, want 3: %+v", len(got), got)
 	}
 	for _, f := range got {
 		if f.Rule != RuleIncompleteDoc {
@@ -120,5 +123,8 @@ func TestIncompleteDocFindings(t *testing.T) {
 	}
 	if findFinding(got, "content/decisions/D-0001.md", "Consequências") == nil {
 		t.Errorf("missing expected finding: D-0001 missing 'Consequências': %+v", got)
+	}
+	if findFinding(got, "content/features/F-0006/spec.md", "Execução recomendada (agente)") == nil {
+		t.Errorf("missing expected finding: F-0006 spec missing the agent-execution section: %+v", got)
 	}
 }

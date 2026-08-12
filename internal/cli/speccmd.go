@@ -139,10 +139,8 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString("\n---\n\n")
 	b.WriteString("Escreva uma spec COMPLETA e coerente para esta feature, em Markdown, com exatamente estas seções nesta ordem:\n")
 	for _, s := range spectmpl.Sections {
+		// F-0266: the agent-execution section is part of spectmpl.Sections now.
 		b.WriteString("## " + s + "\n")
-		if s == "Verificação" {
-			b.WriteString("## Execução recomendada (agente)\n")
-		}
 	}
 	b.WriteString("\nRegras de autoria:\n")
 	b.WriteString("- Abra pela Problema, ancorada em código real (arquivo.go:linha) quando possível; deixe a Verificação por último.\n")

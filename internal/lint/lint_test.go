@@ -415,7 +415,7 @@ func TestRunFindings(t *testing.T) {
 		{Rule: RuleIncompleteDoc, File: "content/decisions/D-0001.md",
 			Detail: "content/decisions/D-0001.md: missing template sections: Contexto, Decisão, Consequências, Alternativas consideradas, Implementação e relações"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0003/spec.md",
-			Detail: "content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
 		{Rule: RuleUnregisteredSource, Entity: "F-0003", File: "content/features/F-0003/spec.md",
 			Detail: "external URL https://example.com cited without a registered reference — register it with 'cerne reference new … --informs F-0003' or remove the URL"},
 	}
@@ -521,11 +521,11 @@ func TestRunImportedFromNeedles(t *testing.T) {
 		{Rule: RuleRefToSuperseded, Entity: "F-0092", File: "content/features/F-0092/spec.md",
 			Detail: `mentions case 0090 (F-0090 "Agente autônomo"), which is superseded — use F-0091`},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0091/spec.md",
-			Detail: "content/features/F-0091/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0091/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0092/spec.md",
-			Detail: "content/features/F-0092/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0092/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0093/spec.md",
-			Detail: "content/features/F-0093/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Fora de escopo"},
+			Detail: "content/features/F-0093/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
