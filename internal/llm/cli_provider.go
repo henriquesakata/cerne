@@ -71,6 +71,14 @@ var AgentWriteTools = []string{
 	"Bash(cerne feature set:*)",
 	"Bash(cerne feature reparent:*)",
 	"Bash(cerne feature capability:*)",
+	// F-0268: the module lives in its own verb (`cerne classify <id> --module`),
+	// so it was left outside by F-0265 — and the agent, finding no flag for it,
+	// invented `retag --module` and handed the user a command the CLI refuses.
+	// The prefix rule also covers the id-less backfill; that is a conscious
+	// widening (it only assigns modules, by the single-match heuristic, and
+	// still needs --yes to apply), decided in the F-0268 spec — do not "fix" it
+	// with a second guard layer that only the agent sees.
+	"Bash(cerne classify:*)",
 }
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized
