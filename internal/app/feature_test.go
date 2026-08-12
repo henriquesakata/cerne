@@ -985,6 +985,18 @@ func TestUpdateCandidateSpec(t *testing.T) {
 	if err != nil || stored.State != domain.StateCandidate {
 		t.Fatalf("stored = %+v, %v; want state untouched (candidate)", stored, err)
 	}
+	// F-0265 criterion 9: the write announces itself in the history, with the
+	// actor — the same trail the feature-page editor leaves (F-0262).
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	last := evs[len(evs)-1]
+	if last.Type != "feature.doc_edited" || last.EntityID != "F-0001" ||
+		last.Payload["doc"] != "spec" || last.Payload["state"] != string(domain.StateCandidate) ||
+		last.Actor == "" {
+		t.Fatalf("last event = %+v, want feature.doc_edited{doc:spec,state:candidate} with actor", last)
+	}
 }
 
 // TestUpdateCandidateSpecRefusals (F-0256 criterion 5): past candidacy the spec

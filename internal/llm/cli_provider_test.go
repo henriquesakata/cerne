@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -543,22 +544,41 @@ func TestAgentWriteToolsGatedByConfirm(t *testing.T) {
 	}
 }
 
-// TestAgentWriteToolsExcludeLifecycle (F-0260 criterion 2): the allowlist IS the
-// boundary, so the lifecycle commands are pinned outside it by name. A rule that
-// let the agent approve/accept/complete would turn the write capability into a
-// bypass of the human gates (F-0131) — exactly what the spec puts out of scope.
+// TestAgentWriteToolsExcludeLifecycle (F-0260 criterion 2, restated by F-0265
+// criterion 6): the allowlist IS the boundary, so the lifecycle commands are
+// pinned outside it by name. Since F-0265 the list also carries the state-
+// preserving feature mutations, so the invariant is no longer "every rule is a
+// `new`" — it is "no rule is a transition". A rule that let the agent
+// approve/accept/complete would turn the write capability into a bypass of the
+// human gates (F-0131) — exactly what the spec puts out of scope.
 func TestAgentWriteToolsExcludeLifecycle(t *testing.T) {
 	for _, rule := range AgentWriteTools {
-		if !strings.HasPrefix(rule, "Bash(cerne ") || !strings.HasSuffix(rule, " new:*)") {
-			t.Fatalf("write rule %q: only `cerne <entity> new` creations belong in the boundary", rule)
+		if !strings.HasPrefix(rule, "Bash(cerne ") || !strings.HasSuffix(rule, ":*)") {
+			t.Fatalf("write rule %q: only scoped `cerne` subcommands belong in the boundary", rule)
 		}
-		for _, banned := range []string{"approve", "accept", "start", "complete", "reject", "retire", "push", "errata"} {
+		for _, banned := range []string{
+			"approve", "accept", "start", "complete", "reject", "revert",
+			"substituir", "retire", "push", "errata",
+		} {
 			if strings.Contains(rule, banned) {
 				t.Fatalf("write rule %q grants %q — lifecycle stays a human act (F-0131)", rule, banned)
 			}
 		}
 	}
-	if len(AgentWriteTools) == 0 {
-		t.Fatal("AgentWriteTools is empty — criterion 4 wants feature, note, reference and decision")
+	for _, want := range []string{
+		"Bash(cerne feature new:*)",
+		"Bash(cerne note new:*)",
+		"Bash(cerne reference new:*)",
+		"Bash(cerne decision new:*)",
+		"Bash(cerne feature spec:*)",
+		"Bash(cerne feature rename:*)",
+		"Bash(cerne feature retag:*)",
+		"Bash(cerne feature set:*)",
+		"Bash(cerne feature reparent:*)",
+		"Bash(cerne feature capability:*)",
+	} {
+		if !slices.Contains(AgentWriteTools, want) {
+			t.Errorf("AgentWriteTools missing %q — F-0265 criterion 4 wants creation plus the state-preserving mutations", want)
+		}
 	}
 }

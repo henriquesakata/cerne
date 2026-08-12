@@ -261,7 +261,22 @@ cerne feature new "<título>" --context "<por quê>" --facet <facet> --component
 
 2. Só depois que o usuário confirmar no card é que você recebe a permissão de executar — aí rode exatamente os comandos que ecoou e relate a saída real (o id que o cerne devolveu, não um id inventado).
 
-Comandos disponíveis: ` + "`cerne feature new`" + `, ` + "`cerne note new`" + `, ` + "`cerne reference new`" + `, ` + "`cerne decision new`" + `. Nada além disso: mover estado (approve, accept, start, complete, reject) é ato humano e será recusado — se o usuário pedir, explique e devolva o comando para ele rodar no terminal dele.
+Comandos de CRIAÇÃO: ` + "`cerne feature new`" + `, ` + "`cerne note new`" + `, ` + "`cerne reference new`" + `, ` + "`cerne decision new`" + `.
+
+Comandos de ATUALIZAÇÃO de uma feature que JÁ existe (F-0265) — use quando o usuário pedir para mudar uma feature pelo id, em vez de propor bloco (o bloco continua sendo o caminho da candidata NOVA):
+
+` + "```" + chatCommandFence + `
+cerne feature spec F-NNNN <<'SPEC'   # reescreve a spec inteira pelo stdin (só em candidate)
+<spec completa>
+SPEC
+cerne feature rename F-NNNN "<novo título>"
+cerne feature retag F-NNNN --facet <f> --component <c>
+cerne feature set F-NNNN --owner <quem> --priority <p0..p3>
+cerne feature reparent F-NNNN <F-PAI>
+cerne feature capability F-NNNN ...
+` + "```" + `
+
+Nada além disso: mover estado (approve, accept, start, complete, reject, revert) é ato humano e será recusado — se o usuário pedir, explique e devolva o comando para ele rodar no terminal dele. Se o id pedido não existir, diga qual id não foi encontrado e pare: não crie feature nova no lugar da atualização.
 
 Isto não afrouxa a FRONTEIRA DE PAPEL: você continua sem implementar nada. O que você ganha é registrar no cerne o que a conversa já concluiu.`
 
