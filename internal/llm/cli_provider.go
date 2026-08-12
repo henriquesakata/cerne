@@ -46,22 +46,31 @@ var AgentReadTools = []string{
 
 // AgentWriteTools is what a CONFIRMED turn adds on top of AgentReadTools
 // (F-0260): the creation subcommands of the four entities a business analysis
-// can legitimately produce. It is appended per request and never by default —
-// an unconfirmed turn sees the read boundary alone, so a proposal is not a
-// permission (criterion 3).
+// can legitimately produce, plus the feature mutations that do not move state
+// (F-0265) — so "atualiza a spec/o título/a tag da F-XXXX" is answerable by the
+// agent that has the conversation's context, not handed back as chores. It is
+// appended per request and never by default — an unconfirmed turn sees the read
+// boundary alone, so a proposal is not a permission (criterion 3).
 //
 // Like the read list, this is the whole write-protection boundary, so it holds
-// two invariants (pinned by TestAgentWriteToolsExcludeLifecycle): every rule is
-// a `cerne <entity> new` creation, and no rule touches the lifecycle
-// (approve/accept/start/complete/reject/retire/push). Moving a feature's state
-// stays a human act — the agent gaining write tools must never become a bypass
-// of the human gates (F-0131). Creation is safe to delegate because it lands a
-// candidate, the one state that decides nothing.
+// one invariant (pinned by TestAgentWriteToolsExcludeLifecycle): no rule is a
+// lifecycle transition (approve/accept/start/complete/reject/revert/retire/
+// substituir/push). Moving a feature's state stays a human act — the agent
+// gaining write tools must never become a bypass of the human gates (F-0131).
+// Every rule here is safe to delegate because each command carries its own
+// guard: creation lands a candidate, the one state that decides nothing; spec
+// refuses past candidacy; rename/retag/reparent refuse terminal entities.
 var AgentWriteTools = []string{
 	"Bash(cerne feature new:*)",
 	"Bash(cerne note new:*)",
 	"Bash(cerne reference new:*)",
 	"Bash(cerne decision new:*)",
+	"Bash(cerne feature spec:*)",
+	"Bash(cerne feature rename:*)",
+	"Bash(cerne feature retag:*)",
+	"Bash(cerne feature set:*)",
+	"Bash(cerne feature reparent:*)",
+	"Bash(cerne feature capability:*)",
 }
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized

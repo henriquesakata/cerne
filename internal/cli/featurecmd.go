@@ -25,6 +25,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newFeatureReparentCmd(&dir))
 	cmd.AddCommand(newFeatureCapabilityCmd(&dir))
 	cmd.AddCommand(newFeatureRenameCmd(&dir))
+	cmd.AddCommand(newFeatureSpecCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
@@ -72,6 +73,46 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool, owner, priority string) error {
 	return runFeatureLikeNew(cmd, dir, title, module, parent, facet, component, file, context, force, owner, priority,
 		app.CreateFeatureWithSpec)
+}
+
+func newFeatureSpecCmd(dir *string) *cobra.Command {
+	var file string
+	cmd := &cobra.Command{
+		Use:   "spec <id>",
+		Short: "Rewrite a candidate's spec from a file or stdin",
+		Long: "Replaces the whole spec.md of a candidate — the same gated write the Backlog chat performs on " +
+			"confirmation (F-0256), now reachable from the CLI so an agent can update a feature it did not just create. " +
+			"Touches the document only: no state transition, no retitle. Past candidacy it is refused — an approved " +
+			"spec changes through the feature page, with the audit trail of F-0262.",
+		Example: "  cerne feature spec F-0001 --file spec.md\n" +
+			"  cat spec.md | cerne feature spec F-0001",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFeatureSpec(cmd, *dir, args[0], file)
+		},
+	}
+	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
+	return cmd
+}
+
+func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
+	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(body) == "" {
+		return fmt.Errorf("empty spec body: pass the full spec via --file <spec.md> or on stdin")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	f, err := app.UpdateCandidateSpec(ctx.repoDir, ctx.projDir, id, body)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	return nil
 }
 
 func newFeatureRetagCmd(dir *string) *cobra.Command {

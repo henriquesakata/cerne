@@ -539,10 +539,23 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, 
 		return store.Feature{}, err
 	}
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		if _, err := loadCandidate(repoDir, id); err != nil {
+		cur, err := loadCandidate(repoDir, id)
+		if err != nil {
 			return "", err
 		}
+		f = cur
 		if err := writeSpecBody(repoDir, id, specBody); err != nil {
+			return "", err
+		}
+		// Same trail as the feature-page editor (F-0262): the backend commit is not
+		// queryable by lint or by the entity history, so the write announces itself.
+		// It matters more here since F-0265 — the writer can be the agent, and the
+		// actor is what tells a spec the agent rewrote from one the human did.
+		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
+			"doc":   "spec",
+			"state": string(f.State),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/spec.md", id), nil

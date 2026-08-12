@@ -127,6 +127,7 @@ An **epic is just a feature that has children** — the role is inferred from th
 **Housekeeping on a feature/epic in place (no lifecycle change):**
 
 - `cerne feature rename F-NNNN "<new title>"` — allowed until development starts; frozen once implemented/terminal.
+- `cerne feature spec F-NNNN --file <spec.md>` (or piped stdin) — replaces the whole spec of a **candidate**, same gated write the Backlog chat performs on confirmation; no state change, no retitle. Refused past `candidate`: an approved spec changes on the feature page, with the audit trail of F-0262.
 - `cerne feature set F-NNNN --owner <name> --priority p1` — sets owner and/or priority in place (only the flag passed changes; empty string clears); doesn't touch state, module, tags, or docs.
 - `cerne feature revert F-NNNN --reason "…"` — undoes an approval, back to `candidate` (spec/plan stay intact).
 - `cerne feature deliver F-NNNN --commit <sha-or-url> --mr <url>` — records the delivery commit/MR post-hoc, after the MR merges.
