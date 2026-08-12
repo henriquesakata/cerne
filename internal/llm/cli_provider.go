@@ -45,40 +45,48 @@ var AgentReadTools = []string{
 }
 
 // AgentWriteTools is what a CONFIRMED turn adds on top of AgentReadTools
-// (F-0260): the creation subcommands of the four entities a business analysis
-// can legitimately produce, plus the feature mutations that do not move state
-// (F-0265) — so "atualiza a spec/o título/a tag da F-XXXX" is answerable by the
-// agent that has the conversation's context, not handed back as chores. It is
-// appended per request and never by default — an unconfirmed turn sees the read
-// boundary alone, so a proposal is not a permission (criterion 3).
+// (F-0260): the whole cerne binary (F-0269). It is appended per request and
+// never by default — an unconfirmed turn sees the read boundary alone, so a
+// proposal is not a permission.
 //
-// Like the read list, this is the whole write-protection boundary, so it holds
-// one invariant (pinned by TestAgentWriteToolsExcludeLifecycle): no rule is a
-// lifecycle transition (approve/accept/start/complete/reject/revert/retire/
-// substituir/push). Moving a feature's state stays a human act — the agent
-// gaining write tools must never become a bypass of the human gates (F-0131).
-// Every rule here is safe to delegate because each command carries its own
-// guard: creation lands a candidate, the one state that decides nothing; spec
-// refuses past candidacy; rename/retag/reparent refuse terminal entities.
-var AgentWriteTools = []string{
-	"Bash(cerne feature new:*)",
-	"Bash(cerne note new:*)",
-	"Bash(cerne reference new:*)",
-	"Bash(cerne decision new:*)",
-	"Bash(cerne feature spec:*)",
-	"Bash(cerne feature rename:*)",
-	"Bash(cerne feature retag:*)",
-	"Bash(cerne feature set:*)",
-	"Bash(cerne feature reparent:*)",
-	"Bash(cerne feature capability:*)",
-	// F-0268: the module lives in its own verb (`cerne classify <id> --module`),
-	// so it was left outside by F-0265 — and the agent, finding no flag for it,
-	// invented `retag --module` and handed the user a command the CLI refuses.
-	// The prefix rule also covers the id-less backfill; that is a conscious
-	// widening (it only assigns modules, by the single-match heuristic, and
-	// still needs --yes to apply), decided in the F-0268 spec — do not "fix" it
-	// with a second guard layer that only the agent sees.
-	"Bash(cerne classify:*)",
+// The boundary used to enumerate the safe verbs, and it was wrong three times
+// running: each verb it missed (the spec write, the module, the tags) cost a
+// round of the agent inventing a flag, the user filing a feature, and the list
+// growing by one. The dangerous set is the small, closed and stable one — the
+// lifecycle — so that is what AgentDeniedCommands names. Everything before the
+// approval is revisable, reversible and visible in the event log, which is why
+// the Backlog agent gets the same reach a human has at the terminal.
+//
+// Nothing outside the binary is granted: no Write, no git, no shell helper.
+var AgentWriteTools = []string{"Bash(cerne:*)"}
+
+// AgentDeniedCommands are the --disallowedTools rules that keep the broad grant
+// above away from the lifecycle (F-0269 criterion 2): the transitions of the
+// feature FSM, plus the verbs that succeed an approval (accept, deliver) and
+// the retirement of an entity. With a broad allowlist this list IS the gate, so
+// TestAgentDeniedCommandsCoverLifecycle checks it against domain.FeatureActions
+// rather than against a hand-kept copy — a transition added upstream without a
+// refusal here fails the suite instead of quietly reaching the agent.
+//
+// It is the FIRST layer, not the only one: these rules match by prefix, and a
+// prefix rule is brittle (command chaining, spacing). app.CheckHumanGate refuses
+// approve/accept/revert for CERNE_ACTOR=agent — the stamp agentRun puts on every
+// command the agent runs — so the human gates of F-0131 survive a harness rule
+// that fails to match. Fixed in the binary on purpose, like AgentDeniedPaths.
+var AgentDeniedCommands = []string{
+	"Bash(cerne feature approve:*)",
+	"Bash(cerne feature accept:*)",
+	"Bash(cerne feature start:*)",
+	"Bash(cerne feature complete:*)",
+	"Bash(cerne feature reject:*)",
+	"Bash(cerne feature revert:*)",
+	"Bash(cerne feature substituir:*)",
+	"Bash(cerne feature deliver:*)",
+	"Bash(cerne note retire:*)",
+	"Bash(cerne reference retire:*)",
+	"Bash(cerne decision retire:*)",
+	"Bash(cerne runbook retire:*)",
+	"Bash(cerne capability retire:*)",
 }
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized

@@ -7,10 +7,10 @@ import (
 	"log"
 	"os"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -544,44 +544,76 @@ func TestAgentWriteToolsGatedByConfirm(t *testing.T) {
 	}
 }
 
-// TestAgentWriteToolsExcludeLifecycle (F-0260 criterion 2, restated by F-0265
-// criterion 6): the allowlist IS the boundary, so the lifecycle commands are
-// pinned outside it by name. Since F-0265 the list also carries the state-
-// preserving feature mutations, so the invariant is no longer "every rule is a
-// `new`" — it is "no rule is a transition". A rule that let the agent
-// approve/accept/complete would turn the write capability into a bypass of the
-// human gates (F-0131) — exactly what the spec puts out of scope.
-func TestAgentWriteToolsExcludeLifecycle(t *testing.T) {
-	for _, rule := range AgentWriteTools {
-		if !strings.HasPrefix(rule, "Bash(cerne ") || !strings.HasSuffix(rule, ":*)") {
-			t.Fatalf("write rule %q: only scoped `cerne` subcommands belong in the boundary", rule)
+// TestAgentWriteToolsScope (F-0269 criteria 1, 6): the boundary inverts. Until
+// F-0268 the allowlist enumerated the safe verbs, and every verb it missed cost
+// a round of "the agent invents a flag, the user files a feature". Now the
+// allowlist is the whole binary and the refusal list carries the small, closed
+// set that must stay human. Nothing outside `cerne` is granted — no Write, no
+// git, no shell helper.
+func TestAgentWriteToolsScope(t *testing.T) {
+	want := []string{"Bash(cerne:*)"}
+	if !reflect.DeepEqual(AgentWriteTools, want) {
+		t.Fatalf("AgentWriteTools = %v, want %v — the boundary is the binary, not a verb list", AgentWriteTools, want)
+	}
+}
+
+// TestAgentDeniedCommandsCoverLifecycle (F-0269 criteria 2, 7): with a broad
+// allowlist, the refusal list IS the gate — so it is checked against the FSM
+// itself, not against a hand-kept copy of it. A transition added to
+// internal/domain without a refusal here fails this test instead of silently
+// handing the agent a human gate. `accept`, `deliver` and `retire` are named
+// separately: they succeed the approval without being FSM feature actions.
+func TestAgentDeniedCommandsCoverLifecycle(t *testing.T) {
+	// The CLI verb differs from the domain action only for supersede.
+	verbOf := map[domain.Action]string{domain.ActionSupersede: "substituir"}
+
+	for _, action := range domain.FeatureActions() {
+		verb, ok := verbOf[action]
+		if !ok {
+			verb = string(action)
 		}
-		for _, banned := range []string{
-			"approve", "accept", "start", "complete", "reject", "revert",
-			"substituir", "retire", "push", "errata",
-		} {
-			if strings.Contains(rule, banned) {
-				t.Fatalf("write rule %q grants %q — lifecycle stays a human act (F-0131)", rule, banned)
-			}
+		if !deniesVerb(AgentDeniedCommands, verb) {
+			t.Errorf("AgentDeniedCommands does not refuse %q (domain action %q) — lifecycle stays a human act (F-0131)", verb, action)
 		}
 	}
-	for _, want := range []string{
-		"Bash(cerne feature new:*)",
-		"Bash(cerne note new:*)",
-		"Bash(cerne reference new:*)",
-		"Bash(cerne decision new:*)",
-		"Bash(cerne feature spec:*)",
-		"Bash(cerne feature rename:*)",
-		"Bash(cerne feature retag:*)",
-		"Bash(cerne feature set:*)",
-		"Bash(cerne feature reparent:*)",
-		"Bash(cerne feature capability:*)",
-		// F-0268: module is the same kind of field as the tags above — an index
-		// facet, not a lifecycle move — and it lives in its own verb.
-		"Bash(cerne classify:*)",
-	} {
-		if !slices.Contains(AgentWriteTools, want) {
-			t.Errorf("AgentWriteTools missing %q — F-0265 criterion 4 wants creation plus the state-preserving mutations", want)
+	for _, verb := range []string{"accept", "deliver", "retire"} {
+		if !deniesVerb(AgentDeniedCommands, verb) {
+			t.Errorf("AgentDeniedCommands does not refuse %q — it succeeds the approval", verb)
 		}
+	}
+}
+
+// deniesVerb reports whether some refusal rule targets the given cerne verb.
+func deniesVerb(rules []string, verb string) bool {
+	for _, r := range rules {
+		if strings.Contains(r, " "+verb) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestAgentProviderDeniedTools (F-0269 criterion 2): the refusals reach the CLI
+// on a confirmed turn — the secret-file paths of F-0258 plus the lifecycle
+// commands. An unconfirmed turn has no write to refuse, so it carries the path
+// refusals alone.
+func TestAgentProviderDeniedTools(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		write bool
+		want  []string
+	}{
+		{"unconfirmed", false, AgentDeniedPaths},
+		{"confirmed", true, append(append([]string{}, AgentDeniedPaths...), AgentDeniedCommands...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj", tc.write)
+			if err != nil {
+				t.Fatalf("NewAgentProvider: %v", err)
+			}
+			if got := prov.(*cliProvider).deniedTools; !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("deniedTools = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

@@ -372,10 +372,37 @@ func TestChatSystemPromptDoesNotDenyWrite(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	// Criterion 4: pull/push stay outside the agent's set, and the prompt says
-	// so — otherwise the model proposes the flow it cannot run.
-	if !strings.Contains(prompt, "cerne pull") || !strings.Contains(prompt, "cerne push") {
-		t.Fatalf("prompt must name cerne pull/push as NOT available to the agent:\n%s", prompt)
+}
+
+// TestChatSystemPromptStatesScopeAsRule (F-0269 criterion 8): the contract must
+// describe the reach by RULE — any cerne command, lifecycle refused — instead of
+// reading as a closed list of verbs. The enumeration is what made the agent
+// treat an absent verb as "impossible" and invent a flag (or hand the chore
+// back to the user) three times running. It must also say that asking the user
+// for standing permission is the wrong move: the grant is per turn, by design.
+func TestChatSystemPromptStatesScopeAsRule(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir,
+		project.Config{LLM: project.LLMConfig{Mode: "claude-cli"}})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		"qualquer comando do cerne",
+		"EXEMPLOS",
+		"permissão permanente",
+		"Fora do cerne você não tem nada",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q — the scope must read as a rule, not a closed list:\n%s", want, prompt)
+		}
+	}
+	// The refused set is named so the agent explains instead of retrying.
+	for _, verb := range []string{"approve", "accept", "start", "complete", "reject", "revert", "deliver", "retire"} {
+		if !strings.Contains(prompt, verb) {
+			t.Fatalf("prompt does not name the refused verb %q:\n%s", verb, prompt)
+		}
 	}
 }
 
