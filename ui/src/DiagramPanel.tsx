@@ -40,6 +40,9 @@ export default function DiagramPanel({
     initialScene ?? (isNew ? {} : null),
   )
   const [msg, setMsg] = useState<Msg | null>(null)
+  // Mensagem crua da falha de carga; traduzida só no render, para o efeito
+  // de fetch não depender do dicionário i18n (F-0278).
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(initialScene != null)
   const [busy, setBusy] = useState(false)
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
@@ -60,12 +63,9 @@ export default function DiagramPanel({
         setScene(parsed)
       })
       .catch((e: unknown) =>
-        setMsg({
-          kind: 'err',
-          text: t.diagram.loadError(e instanceof Error ? e.message : String(e)),
-        }),
+        setLoadError(e instanceof Error ? e.message : String(e)),
       )
-  }, [featureId, name, isNew, initialScene, t])
+  }, [featureId, name, isNew, initialScene])
 
   const save = () => {
     const api = apiRef.current
@@ -107,7 +107,9 @@ export default function DiagramPanel({
           <button onClick={onClose}>{t.diagram.close}</button>
         </div>
       </header>
-      {scene === null ? (
+      {loadError !== null ? (
+        <p className="form-error">{t.diagram.loadError(loadError)}</p>
+      ) : scene === null ? (
         <p className="status">{t.diagram.loading}</p>
       ) : (
         <div className="diagram-canvas">
