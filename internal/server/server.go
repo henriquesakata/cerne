@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -738,11 +739,26 @@ func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, proj
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	switch f.State {
+	case domain.StateDone, domain.StateRejected, domain.StateSuperseded:
+		writeJSON(w, http.StatusConflict, errorBody("feature is terminal — nothing to diagram"))
+		return
+	}
 
-	// Current spec as context (absent file → empty), mirroring handleFeatureDetail.
+	// The current spec grounds the diagram; absent or scaffold-only means there
+	// is no context to draw from — refuse instead of inventing (mirrors
+	// handleRoast, and fires before the provider/mode question).
 	specBytes, err := os.ReadFile(app.FeatureDocPath(repoDir, id, "spec.md"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(w, http.StatusConflict, errorBody("feature has no spec to ground the diagram"))
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	if !doccheck.HasRealContent(specBytes) {
+		writeJSON(w, http.StatusConflict, errorBody("feature has no spec to ground the diagram"))
 		return
 	}
 
@@ -760,7 +776,12 @@ func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, proj
 	}
 	// Project structure grounds the diagram in real components (best-effort).
 	structure, _ := app.ProjectStructure(projDir)
-	body, err := prov.Complete(r.Context(), app.BuildSequenceDiagramPrompt(f, string(specBytes), structure))
+	// The provider call runs under the agent chat budget: r.Context() alone
+	// lives as long as the caller waits, so a hung provider would hang the
+	// request forever.
+	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
+	defer cancel()
+	body, err := prov.Complete(ctx, app.BuildSequenceDiagramPrompt(f, string(specBytes), structure))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

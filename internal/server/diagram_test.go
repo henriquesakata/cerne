@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -106,6 +107,7 @@ func TestGenerateDiagramByoKey(t *testing.T) {
 func TestGenerateDiagramDelegation(t *testing.T) {
 	repoDir, projDir := newBackend(t) // no .cernerc → LoadConfig fails → delegation
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Fluxo de login."))
 
 	var got struct {
 		Generated     bool   `json:"generated"`
@@ -144,10 +146,107 @@ func TestGenerateDiagramUnknownFeature(t *testing.T) {
 	}
 }
 
+// TestGenerateDiagramTerminalFeature: a terminal feature (done/rejected/
+// superseded) has nothing left to draft — 409, before any provider concern
+// (mirrors handleRoast).
+func TestGenerateDiagramTerminalFeature(t *testing.T) {
+	for _, state := range []domain.FeatureState{domain.StateDone, domain.StateRejected, domain.StateSuperseded} {
+		t.Run(string(state), func(t *testing.T) {
+			repoDir, projDir := newBackend(t)
+			seedFeature(t, repoDir, "F-0002", "Feature B", state)
+			writeDoc(t, repoDir, "F-0002", "spec.md", realDoc("F-0002", "Conteúdo real."))
+
+			var got map[string]string
+			rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost,
+				"/api/features/F-0002/diagram", `{}`, &got)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+			}
+			if got["error"] == "" {
+				t.Fatalf("body = %v, want an error message", got)
+			}
+		})
+	}
+}
+
+// TestGenerateDiagramNoSpec: an absent spec.md is a 409 — there is no context
+// to ground a diagram in. The check fires before the provider/mode question:
+// a delegation setup must not get needs_provider for a spec-less feature.
+func TestGenerateDiagramNoSpec(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost,
+		"/api/features/F-0001/diagram", `{}`, &got)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestGenerateDiagramStubSpec: a scaffold-only spec (headings plus guidance
+// comments, no real content) counts as absent — 409, nothing to ground on.
+func TestGenerateDiagramStubSpec(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md",
+		"---\ncerne_id: F-0001\n---\n\n# Objetivo\n\n<!-- descreva o objetivo -->\n")
+
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost,
+		"/api/features/F-0001/diagram", `{}`, &got)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestGenerateDiagramTimeout: the provider call runs under the configured
+// agent chat budget (cfg.Agent.ChatTimeoutOrDefault), not only r.Context() —
+// a provider slower than the budget is cut off instead of hanging the request.
+func TestGenerateDiagramTimeout(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Fluxo de login."))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done(): // cut by the caller's budget — the fix
+			return
+		case <-time.After(3 * time.Second): // no budget: reply late, endpoint 200s
+		}
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"sequenceDiagram\n  A->>B: hi"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	t.Setenv("TEST_DIAGRAM_KEY", "sk-x")
+	if err := project.SaveConfig(projDir, project.Config{
+		ProjectID: "proj-diagram",
+		Backend:   "unused",
+		LLM:       project.LLMConfig{Mode: "byo-key", BaseURL: srv.URL, KeyEnv: "TEST_DIAGRAM_KEY"},
+		Agent:     project.AgentConfig{ChatTimeout: 1},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	start := time.Now()
+	var got map[string]string
+	rec := doJSON(t, New(repoDir, projDir, "proj-diagram"), http.MethodPost,
+		"/api/features/F-0001/diagram", `{}`, &got)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (budget exceeded); body: %s", rec.Code, rec.Body.String())
+	}
+	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+		t.Fatalf("request took %v — the configured 1s budget did not cut the provider call", elapsed)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "artifacts", "F-0001", "sequence.mmd")); err == nil {
+		t.Fatalf("timed-out call must not write the artifact")
+	}
+}
+
 // TestGenerateDiagramNonSequence: when the model returns text that is not a
 // Mermaid sequence diagram, the endpoint is a 422 and writes nothing.
 func TestGenerateDiagramNonSequence(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Fluxo de login."))
 	srv := fakeDiagramProvider(t, nil, `flowchart TD\n  A-->B`)
 	configureByoKey(t, projDir, srv.URL)
 
