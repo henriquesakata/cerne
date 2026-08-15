@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -56,6 +57,40 @@ func TestBuildSpecDraftPrompt(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "mesmo agente") {
 		t.Fatalf("prompt missing same-agent-grouping guidance:\n%s", prompt)
+	}
+}
+
+// TestBuildSpecDraftPromptIncludesGauntletContract asserts the spec draft
+// prompt carries the Gauntlet protocol block (F-0270's marker + the three
+// literal Verificação forms), so a spec authored via CLI gets the same
+// quality-bar contract as one elaborated through the Backlog chat (F-0273).
+func TestBuildSpecDraftPromptIncludesGauntletContract(t *testing.T) {
+	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
+	prompt := BuildSpecDraftPrompt(f, "")
+	for _, want := range []string{
+		app.ChatGauntletMarker,
+		"Barra:",
+		"Método:",
+		"Saída:",
+		"não aplicável",
+		"dispensada por decisão humana",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing Gauntlet contract piece %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestSpecDraftPromptGauntletSharesSourceWithChat pins the single-source
+// requirement (F-0273 criterion 2): the Gauntlet block embedded in the spec
+// draft prompt must be byte-identical to app.GauntletContract — the same
+// constant the Backlog chat prompt uses — never a parallel copy that could
+// drift silently.
+func TestSpecDraftPromptGauntletSharesSourceWithChat(t *testing.T) {
+	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
+	prompt := BuildSpecDraftPrompt(f, "")
+	if !strings.Contains(prompt, app.GauntletContract) {
+		t.Fatalf("prompt does not contain app.GauntletContract verbatim:\n%s", prompt)
 	}
 }
 
