@@ -29,7 +29,7 @@ func SpecChangedAfterApproval(events []domain.Event, id string) bool {
 			editedAt = e
 		}
 	}
-	if editedAt.At.IsZero() {
+	if editedAt.At.IsZero() || approvedAt.At.IsZero() {
 		return false
 	}
 	return editedAt.At.After(approvedAt.At)
