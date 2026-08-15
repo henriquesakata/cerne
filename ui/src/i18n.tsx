@@ -366,6 +366,13 @@ const ptBR = {
     roastEmpty:
       'Nenhum roast ainda. Três críticos de contexto fresco (ambiguidade, escopo, risco) atacam a spec antes do gate de aprovação; o roast nunca aprova nem reprova.',
     roastSpecChanged: 'Spec mudou depois desta rodada',
+    planRoast: 'Roast do plano',
+    planRoastRun: 'Rodar roast do plano',
+    planRoastRunning: 'Roast do plano em andamento… (3 críticos em paralelo)',
+    planRoastEmpty:
+      'Nenhum roast do plano ainda. Três críticos de contexto fresco julgam o plano CONTRA a spec (conformidade por critério, sequência e dependências, riscos e rollback).',
+    planRoastNeedsPlan: 'Disponível quando o plano tiver conteúdo real.',
+    planRoastChanged: 'Plano mudou depois desta rodada',
     roastClose: 'Fechar',
     roastLoading: 'Carregando…',
     actionLabels: {
@@ -1077,6 +1084,13 @@ const en: Messages = {
     roastEmpty:
       'No roast yet. Three fresh-context critics (ambiguity, scope, risk) attack the spec before the approval gate; the roast never approves or rejects.',
     roastSpecChanged: 'Spec changed after this round',
+    planRoast: 'Plan roast',
+    planRoastRun: 'Run plan roast',
+    planRoastRunning: 'Plan roast running… (3 critics in parallel)',
+    planRoastEmpty:
+      'No plan roast yet. Three fresh-context critics judge the plan AGAINST the spec (per-criterion conformity, sequence and dependencies, risks and rollback).',
+    planRoastNeedsPlan: 'Available once the plan has real content.',
+    planRoastChanged: 'Plan changed after this round',
     roastClose: 'Close',
     roastLoading: 'Loading…',
     actionLabels: {

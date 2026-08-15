@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
 import type { Feature, FeatureDetail, FeatureState, LLMMode } from './api'
-import { fetchArtifactText, generateDiagram, postTransition, roastSpec } from './api'
+import { fetchArtifactText, generateDiagram, postTransition, roastPlan, roastSpec } from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
   feature: {
@@ -23,6 +23,7 @@ const detail = (state: FeatureState): FeatureDetail => ({
   errata: '',
   spec_changed_after_approval: false,
   roast_rounds: [],
+  plan_roast_rounds: [],
 })
 
 let payload: FeatureDetail = detail('candidate')
@@ -36,6 +37,12 @@ vi.mock('./api', async (importOriginal) => ({
   postTransition: vi.fn(async () => ({
     ok: true as const,
     data: { id: 'F-0221', from: 'approved', to: 'candidate' },
+  })),
+  roastPlan: vi.fn(async () => ({
+    ok: true as const,
+    generated: true as const,
+    partial: false,
+    report: '# Roast do plano',
   })),
   roastSpec: vi.fn(async () => ({
     ok: true as const,
@@ -149,8 +156,8 @@ describe('FeaturePage roast section (F-0271/F-0277)', () => {
     payload = {
       ...detail('candidate'),
       roast_rounds: [
-        { name: 'roast-2.md', at: '2026-02-01T00:00:00Z', spec_changed: false },
-        { name: 'roast-1.md', at: '2026-01-01T00:00:00Z', spec_changed: true },
+        { name: 'roast-2.md', at: '2026-02-01T00:00:00Z', spec_changed: false, plan_changed: false },
+        { name: 'roast-1.md', at: '2026-01-01T00:00:00Z', spec_changed: true, plan_changed: false },
       ],
     }
     const { container } = render(<FeaturePage id="F-0221" />)
@@ -168,7 +175,7 @@ describe('FeaturePage roast section (F-0271/F-0277)', () => {
   it('clique na rodada abre modal com o markdown; Esc fecha (critério 2)', async () => {
     payload = {
       ...detail('candidate'),
-      roast_rounds: [{ name: 'roast-2.md', at: '2026-02-01T00:00:00Z', spec_changed: false }],
+      roast_rounds: [{ name: 'roast-2.md', at: '2026-02-01T00:00:00Z', spec_changed: false, plan_changed: false }],
     }
     render(<FeaturePage id="F-0221" />)
     const item = await screen.findByTitle('roast-2.md')
@@ -182,6 +189,69 @@ describe('FeaturePage roast section (F-0271/F-0277)', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() =>
       expect(screen.queryByText(/\[alta\] achado/)).not.toBeInTheDocument(),
+    )
+  })
+})
+
+// F-0275: roast do plano — botão próprio (só com plano real), lista de
+// rodadas separada da spec, e badge quando spec OU plano mudaram depois.
+describe('FeaturePage plan roast (F-0275)', () => {
+  it('sem plano real: botão do roast do plano fica desabilitado', async () => {
+    payload = { ...detail('approved'), docs_real: { spec: true, plan: false, result: false } }
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() =>
+      expect(screen.getByText('Rodar roast do plano')).toBeDisabled(),
+    )
+  })
+
+  it('com plano real: o botão dispara roastPlan', async () => {
+    payload = { ...detail('in_development'), docs_real: { spec: true, plan: true, result: false } }
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() =>
+      expect(screen.getByText('Rodar roast do plano')).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByText('Rodar roast do plano'))
+    await waitFor(() => expect(vi.mocked(roastPlan)).toHaveBeenCalledWith('F-0221'))
+  })
+
+  it('rodadas do plano listam separadas das da spec, com badge por documento', async () => {
+    payload = {
+      ...detail('in_development'),
+      docs_real: { spec: true, plan: true, result: false },
+      plan_roast_rounds: [
+        {
+          name: 'plan-roast-20260815T120000.000000000Z.md',
+          at: '2026-08-15T12:00:00Z',
+          spec_changed: true,
+          plan_changed: false,
+        },
+      ],
+    }
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() =>
+      expect(screen.getByText(/Nenhum roast do plano ainda/i)).not.toBeInTheDocument(),
+    ).catch(() => {})
+    expect(screen.getByTitle('plan-roast-20260815T120000.000000000Z.md')).toBeInTheDocument()
+    expect(screen.getByText('Spec mudou depois desta rodada')).toBeInTheDocument()
+    expect(screen.queryByText('Plano mudou depois desta rodada')).not.toBeInTheDocument()
+  })
+
+  it('plano mudou depois da rodada: badge própria', async () => {
+    payload = {
+      ...detail('in_development'),
+      docs_real: { spec: true, plan: true, result: false },
+      plan_roast_rounds: [
+        {
+          name: 'plan-roast-20260815T120000.000000000Z.md',
+          at: '2026-08-15T12:00:00Z',
+          spec_changed: false,
+          plan_changed: true,
+        },
+      ],
+    }
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() =>
+      expect(screen.getByText('Plano mudou depois desta rodada')).toBeInTheDocument(),
     )
   })
 })
