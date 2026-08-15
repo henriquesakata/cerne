@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import DiagramPanel from './DiagramPanel'
 import { I18nProvider, useT } from './i18n'
@@ -75,6 +75,28 @@ describe('DiagramPanel', () => {
     expect(
       screen.queryByText('Erro ao carregar o diagrama: boom'),
     ).not.toBeInTheDocument()
+  })
+
+  it('fetch antigo rejeitando tarde não cobre o canvas do diagrama novo', async () => {
+    let rejectOld!: (e: Error) => void
+    vi.mocked(fetchArtifactJSON).mockReturnValueOnce(
+      new Promise<string>((_, reject) => {
+        rejectOld = reject
+      }),
+    )
+    const { rerender } = renderPanel() // fetch do diagrama antigo fica pendente
+    vi.mocked(fetchArtifactJSON).mockResolvedValueOnce(
+      JSON.stringify({ elements: [], appState: {} }),
+    )
+    rerender(panel('outro.excalidraw')) // diagrama novo carrega com sucesso
+    expect(await screen.findByTestId('excalidraw')).toBeInTheDocument()
+    await act(async () => {
+      rejectOld(new Error('tarde'))
+    })
+    expect(
+      screen.queryByText('Erro ao carregar o diagrama: tarde'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('excalidraw')).toBeInTheDocument()
   })
 
   it('não re-busca o artefato ao trocar o idioma', async () => {

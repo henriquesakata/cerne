@@ -56,8 +56,12 @@ export default function DiagramPanel({
     // Re-execução (ex.: name mudou com o componente montado): erro anterior
     // não pode bloquear o resultado da nova carga.
     setLoadError(null)
+    // Um fetch antigo que termine depois do atual (ou após desmontar) não
+    // pode sobrescrever o estado: o cleanup o marca como obsoleto.
+    let stale = false
     fetchArtifactJSON(featureId, name)
       .then((text) => {
+        if (stale) return
         const parsed = JSON.parse(text) as ExcalidrawInitialDataState
         if (parsed.appState && 'collaborators' in parsed.appState) {
           // collaborators serializado (objeto) quebra o restore (espera Map).
@@ -65,9 +69,13 @@ export default function DiagramPanel({
         }
         setScene(parsed)
       })
-      .catch((e: unknown) =>
-        setLoadError(e instanceof Error ? e.message : String(e)),
-      )
+      .catch((e: unknown) => {
+        if (stale) return
+        setLoadError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      stale = true
+    }
   }, [featureId, name, isNew, initialScene])
 
   const save = () => {
