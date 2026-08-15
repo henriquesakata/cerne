@@ -58,10 +58,11 @@ const (
 	RuleCapabilityOrphan   = "capability-orphan"
 
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
+	RuleResultMissingEvidence    = "result-missing-evidence"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan, RuleSpecChangedAfterApproval}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -86,6 +87,7 @@ var ruleRank = map[string]int{
 	RuleCapabilityOrphan:   19,
 
 	RuleSpecChangedAfterApproval: 20,
+	RuleResultMissingEvidence:    21,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -271,6 +273,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		return nil, err
 	}
 	findings = append(findings, specChangedFindings(features, events)...)
+	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
 
 	Sort(findings)
 	return findings, nil

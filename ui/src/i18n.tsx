@@ -359,6 +359,12 @@ const ptBR = {
     diagramNamePlaceholder: 'nome-do-diagrama',
     create: 'Criar',
     newDiagram: 'Novo diagrama',
+    roast: 'Roast da spec',
+    roastRun: 'Rodar roast',
+    roastRunning: 'Roast em andamento… (3 críticos em paralelo)',
+    roastPartial: 'Rodada parcial: pelo menos um crítico não concluiu.',
+    roastEmpty:
+      'Nenhum roast ainda. Três críticos de contexto fresco (ambiguidade, escopo, risco) atacam a spec antes do gate de aprovação; o roast nunca aprova nem reprova.',
     actionLabels: {
       approve: 'Aprovar',
       start: 'Iniciar',
@@ -1061,6 +1067,12 @@ const en: Messages = {
     diagramNamePlaceholder: 'diagram-name',
     create: 'Create',
     newDiagram: 'New diagram',
+    roast: 'Spec roast',
+    roastRun: 'Run roast',
+    roastRunning: 'Roast running… (3 critics in parallel)',
+    roastPartial: 'Partial round: at least one critic did not finish.',
+    roastEmpty:
+      'No roast yet. Three fresh-context critics (ambiguity, scope, risk) attack the spec before the approval gate; the roast never approves or rejects.',
     actionLabels: {
       approve: 'Approve',
       start: 'Start',

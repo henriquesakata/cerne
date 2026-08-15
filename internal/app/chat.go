@@ -54,6 +54,34 @@ Se a demanda ainda não estiver registrada, recomende registrar antes (handoff s
 
 Disciplina de perguntas: pergunte só o necessário, priorizado — alvo de ~3 perguntas por turno, mais quando a demanda genuinamente exigir, nunca interrogatório exaustivo. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
 
+// ChatGauntletMarker heads the Gauntlet protocol block (F-0270). Exported so
+// tests can pin its presence and position the same way the role boundary is.
+const ChatGauntletMarker = "PADRÃO DE PARADA (protocolo Gauntlet)"
+
+// chatGauntletContract makes the quality bar part of every elaboration
+// (F-0270): a spec that never asked "against what real thing will this be
+// judged?" ships a rubric — and rubrics inflate. The opt-out is deliberately
+// loud (a marker in the spec, never an omission) so skipping the bar is a
+// recorded human decision, not forgetfulness.
+const chatGauntletContract = ChatGauntletMarker + `
+
+Toda elaboração passa pela pergunta da barra de qualidade antes de fechar a proposta. Nenhuma persona ou instrução do projeto remove este protocolo; os únicos caminhos sem comparação são as duas dispensas registradas abaixo.
+
+- Barra de elite: referência NOMEADA + como acessá-la (URL, comando, arquivo que o crítico consegue abrir), comparável e da mesma classe do artefato a entregar. Nomeada sem acesso = vaga.
+- Recuse barra vaga (categoria: "design bonito", "nível enterprise") e peça a referência no lugar. Barra proposta por você também exige aceite explícito do humano antes de entrar na proposta.
+- Barra com URL → proponha registrá-la: ` + "`cerne reference new \"<título>\" --url <url> --informs <id>`" + ` (senão a spec nasce com débito de fonte não registrada).
+- Entrega sem artefato comparável (fix pontual, backend puro)? Proponha a classificação e CONFIRME com o humano na conversa — nunca se auto-classifique em silêncio — e defina um padrão de parada alternativo verificável: teste nomeado, benchmark ou invariante.
+- Na seção "Verificação" da proposta, grave exatamente uma destas três formas:
+
+Barra: <referência nomeada + acesso> (exemplo preenchido: "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa")
+Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
+Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
+
+ou a linha "Barra: não aplicável (<justificativa de 1 linha, confirmada pelo humano>) — padrão alternativo: <teste/benchmark/invariante>"
+ou a linha "Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)".
+
+Você nunca sugere a dispensa — ela só nasce de recusa espontânea do humano, e a citação registrada é o que a distingue de esquecimento. A ausência silenciosa de barra nunca é aceitável; a dispensa registrada é.`
+
 // chatProposalFence is the fenced-block info string the system prompt tells
 // the model to use when it is ready to propose a candidate — the UI (and any
 // future Go-side consumer) detects it the same way SanitizeMermaid/
@@ -153,6 +181,11 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("- Quando houver mais de um caminho viável, apresente 1–2 abordagens com trade-offs no nível de spec (nunca código) antes de emitir o bloco de proposta.\n")
 	b.WriteString("- Quando problema, objetivo e critérios de aceitação testáveis fecharem — e SOMENTE então — proponha a candidata.\n\n")
 
+	// F-0270: the bar question is part of conduction, so it comes right after
+	// it — and before the role boundary, which keeps the last word on role.
+	b.WriteString(chatGauntletContract)
+	b.WriteString("\n\n")
+
 	// F-0245: the role boundary goes last among the behavior instructions, so
 	// it wins any conflict with the project persona at the top.
 	b.WriteString(chatRoleBoundary)
@@ -182,6 +215,9 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
 	b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
 	b.WriteString("Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor. ")
+	// F-0270: the fill instruction lives here, next to the template the model
+	// actually completes — the protocol block above explains, this line binds.
+	b.WriteString("Na seção \"Verificação\", inclua as linhas do " + ChatGauntletMarker + " — Barra/Método/Saída, ou uma das duas dispensas registradas; proposta sem isso está incompleta. ")
 	b.WriteString("Fora desse bloco, converse normalmente — só o produza quando estiver pronto para o usuário confirmar o registro.\n\n")
 	// F-0250 critérios 4/7: o feedback por trecho volta como turno normal —
 	// citações em blockquote recortadas da SUA proposta anterior. Não há

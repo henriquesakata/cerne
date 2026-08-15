@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
 import type { Feature, FeatureDetail, FeatureState } from './api'
-import { postTransition } from './api'
+import { postTransition, roastSpec } from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
   feature: {
@@ -33,6 +33,12 @@ vi.mock('./api', async (importOriginal) => ({
   postTransition: vi.fn(async () => ({
     ok: true as const,
     data: { id: 'F-0221', from: 'approved', to: 'candidate' },
+  })),
+  roastSpec: vi.fn(async () => ({
+    ok: true as const,
+    generated: true as const,
+    partial: false,
+    report: '# Roast da spec',
   })),
 }))
 
@@ -116,5 +122,28 @@ describe('FeaturePage revert action (F-0262)', () => {
     render(<FeaturePage id="F-0221" />)
     await waitFor(() => expect(screen.getByText('Reverter')).toBeInTheDocument())
     expect(screen.queryByText(/aprovação está desatualizada/i)).not.toBeInTheDocument()
+  })
+})
+
+// F-0271: seção do roast — relatório persistido renderizado; botão dispara o
+// endpoint; sem relatório, texto explicativo (o roast nunca aprova/reprova).
+describe('FeaturePage roast section (F-0271)', () => {
+  it('sem roast: mostra explicação e o botão dispara roastSpec', async () => {
+    payload = detail('candidate')
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() =>
+      expect(screen.getByText(/Nenhum roast ainda/i)).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByText('Rodar roast'))
+    await waitFor(() => expect(vi.mocked(roastSpec)).toHaveBeenCalledWith('F-0221'))
+  })
+
+  it('com roast persistido: renderiza o relatório', async () => {
+    payload = { ...detail('candidate'), roast_report: '# Roast da spec\n\n- [alta] achado' }
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() =>
+      expect(screen.getByText(/\[alta\] achado/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Nenhum roast ainda/i)).not.toBeInTheDocument()
   })
 })

@@ -32,6 +32,47 @@ func chatFixture(t *testing.T) (repoDir, projDir string) {
 	return repoDir, projDir
 }
 
+// TestBuildChatSystemPromptGauntlet pins F-0270: the analyst's prompt carries
+// the Gauntlet protocol — demand a named/fetchable/comparable quality bar,
+// refuse vague bars, materialize bar + blind comparison + exit condition in
+// the proposal's Verificação, register external bars as references, and record
+// an explicit human opt-out instead of silently omitting the bar.
+func TestBuildChatSystemPromptGauntlet(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{})
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	for _, want := range []string{
+		ChatGauntletMarker,
+		"nomeada",           // bar must be a named real thing
+		"barra vaga",        // vague bar is refused
+		"comparação cega",   // blind side-by-side is the method
+		"vencer ou empatar", // exit = win/tie, never a fixed round count
+		"cerne reference new",
+		"Barra: dispensada por decisão humana", // the opt-out marker (F-0270 criterion 1)
+		"nunca sugere a dispensa",              // opt-out is human-initiated, never agent-solicited
+		"modo spec do Kiro",                    // one filled-in positive example anchors the format
+		"Barra: não aplicável",                 // the confirmed-classification marker (criterion 4)
+		"CONFIRME com o humano",                // self-classification is never silent
+		"padrão de parada alternativo",         // no comparable artifact → alternative stop standard
+		"proposta sem isso está incompleta",    // the binding line next to the proposal template
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing gauntlet instruction %q:\n%s", want, prompt)
+		}
+	}
+	// The protocol governs elaboration: it must come after the conduction block
+	// and before the role boundary, which stays last-word on role conflicts.
+	gauntlet := strings.Index(prompt, ChatGauntletMarker)
+	boundary := strings.Index(prompt, ChatRoleBoundaryMarker)
+	conduction := strings.Index(prompt, "Conduza a elaboração")
+	if !(conduction < gauntlet && gauntlet < boundary) {
+		t.Fatalf("gauntlet block out of order: conduction=%d gauntlet=%d boundary=%d", conduction, gauntlet, boundary)
+	}
+}
+
 // TestBuildChatSystemPromptDefaultPersona: no [agent] block → the default
 // neutral persona is used, and the roster + capability tree + canonical
 // sections still show up (criterion 2).

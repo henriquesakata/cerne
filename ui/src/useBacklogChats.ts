@@ -75,6 +75,20 @@ export function getConversation(id: string): Conversation | undefined {
   return readChats().chats.find((c) => c.id === id)
 }
 
+// appendAssistantToFeatureChat (F-0271): entrega uma mensagem do assistente na
+// conversa vinculada à candidata (ex.: o relatório do roast), direto no
+// storage — mesmo caminho fora-do-React que o chatRequest singleton usa.
+// Sem conversa vinculada → no-op (o relatório continua na página da feature).
+export function appendAssistantToFeatureChat(featureId: string, content: string): boolean {
+  const { chats, activeId } = readChats()
+  const c = chats.find((c) => c.featureId === featureId)
+  if (!c) return false
+  c.messages = [...c.messages, { role: 'assistant', content }]
+  c.updatedAt = Date.now()
+  writeChats(chats, activeId)
+  return true
+}
+
 // loadStored lê a lista nova; na ausência dela, migra a chave única da F-0218
 // (se houver) como a primeira entrada, e remove a chave antiga — upgrade
 // transparente, sem perda (decisão da spec).
