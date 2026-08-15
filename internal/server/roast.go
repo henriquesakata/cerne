@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -72,17 +73,34 @@ func handleRoast(w http.ResponseWriter, r *http.Request, repoDir, projDir, id st
 		return
 	}
 	md := app.FormatRoastReport(rep)
-	if err := app.SaveArtifact(repoDir, projDir, id, "roast.md", []byte(md)); err != nil {
+	// One artifact per round (F-0277): the nanosecond stamp keeps names unique
+	// and lexically sortable; earlier rounds survive as history.
+	name := "roast-" + rep.At.Format("20060102T150405.000000000Z") + ".md"
+	if err := app.SaveArtifact(repoDir, projDir, id, name, []byte(md)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, roastResponse{Generated: true, Partial: rep.Partial, Report: md})
 }
 
-// roastReportFor reads the persisted roast artifact for the detail payload
-// (absent file → empty string, same contract as the lifecycle docs).
+// roastReportFor reads the most recent persisted roast round for the detail
+// payload (none → empty string, same contract as the lifecycle docs). The
+// nanosecond stamp in the filename makes lexical order chronological; the
+// legacy single roast.md counts as the oldest round.
 func roastReportFor(repoDir, id string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(repoDir, "content", "artifacts", id, "roast.md"))
+	dir := filepath.Join(repoDir, "content", "artifacts", id)
+	rounds, err := filepath.Glob(filepath.Join(dir, "roast-*.md"))
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(rounds)
+	name := ""
+	if len(rounds) > 0 {
+		name = rounds[len(rounds)-1]
+	} else {
+		name = filepath.Join(dir, "roast.md")
+	}
+	data, err := os.ReadFile(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
 	}

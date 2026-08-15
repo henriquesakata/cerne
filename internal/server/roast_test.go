@@ -46,8 +46,13 @@ func TestRoastByoKey(t *testing.T) {
 		t.Fatalf("report missing findings:\n%s", got.Report)
 	}
 
-	// persisted next to the candidate, in the backend content tree
-	data, err := os.ReadFile(filepath.Join(repoDir, "content", "artifacts", "F-0001", "roast.md"))
+	// persisted next to the candidate, in the backend content tree — one
+	// artifact per round (F-0277)
+	files, err := filepath.Glob(filepath.Join(repoDir, "content", "artifacts", "F-0001", "roast-*.md"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("persisted roast rounds = %v (err=%v), want 1", files, err)
+	}
+	data, err := os.ReadFile(files[0])
 	if err != nil {
 		t.Fatalf("persisted roast: %v", err)
 	}
@@ -65,6 +70,43 @@ func TestRoastByoKey(t *testing.T) {
 	}
 	if !strings.Contains(detail.RoastReport, "[alta]") {
 		t.Fatalf("detail roast_report missing findings:\n%s", detail.RoastReport)
+	}
+}
+
+// TestRoastRoundsPersistSeparately pins F-0277 criterion 3: each run persists
+// its own roast-<stamp>.md artifact — a second round never overwrites the
+// first, so the history of rounds survives.
+func TestRoastRoundsPersistSeparately(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "corpo"))
+	// Committed: the first round's snapshot reconcile would sweep an
+	// uncommitted spec away before the second round reads it.
+	commitBackend(t, repoDir)
+
+	var gotPrompt string
+	srv := fakeDiagramProvider(t, &gotPrompt, `- [alta] achado — trecho: \"corpo\"`)
+	configureByoKey(t, projDir, srv.URL)
+
+	for i := 0; i < 2; i++ {
+		var got struct {
+			Generated bool `json:"generated"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, "proj-diagram"), http.MethodPost,
+			"/api/features/F-0001/roast", `{}`, &got)
+		if rec.Code != http.StatusOK || !got.Generated {
+			t.Fatalf("run %d: status=%d generated=%v body=%s", i, rec.Code, got.Generated, rec.Body.String())
+		}
+	}
+
+	files, err := filepath.Glob(filepath.Join(repoDir, "content", "artifacts", "F-0001", "roast-*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("roast-*.md count = %d (%v), want 2 — a round must not overwrite the previous one", len(files), files)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "artifacts", "F-0001", "roast.md")); !os.IsNotExist(err) {
+		t.Fatalf("bare roast.md must no longer be written (err=%v)", err)
 	}
 }
 
