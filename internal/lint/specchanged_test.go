@@ -70,6 +70,11 @@ func TestSpecChangedAfterApproval(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name:   "edição em approved sem nenhum evento de aprovação não conta",
+			events: []domain.Event{specEdit("F-0001", "approved", 20)},
+			want:   false,
+		},
 		{name: "sem eventos", events: nil, want: false},
 	}
 	for _, tc := range cases {
