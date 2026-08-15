@@ -1,11 +1,15 @@
 package server
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -83,29 +87,59 @@ func handleRoast(w http.ResponseWriter, r *http.Request, repoDir, projDir, id st
 	writeJSON(w, http.StatusOK, roastResponse{Generated: true, Partial: rep.Partial, Report: md})
 }
 
-// roastReportFor reads the most recent persisted roast round for the detail
-// payload (none → empty string, same contract as the lifecycle docs). The
-// nanosecond stamp in the filename makes lexical order chronological; the
-// legacy single roast.md counts as the oldest round.
-func roastReportFor(repoDir, id string) (string, error) {
+// roastRound is one persisted roast report in the detail payload (F-0277):
+// At comes from the report's own stamp (nil for a stampless legacy file) and
+// SpecChanged flags a round whose stamped spec sha no longer matches the
+// current spec — computed here so the UI never hashes.
+type roastRound struct {
+	Name        string     `json:"name"`
+	At          *time.Time `json:"at"`
+	SpecChanged bool       `json:"spec_changed"`
+}
+
+// roastStampRe matches the stamp FormatRoastReport writes into every report:
+// "Rodada: <RFC3339> · spec sha256:<8 hex>". Reading contract only — the
+// writer lives in internal/app (F-0271).
+var roastStampRe = regexp.MustCompile(`Rodada: (\S+) · spec sha256:([0-9a-f]{8})`)
+
+// roastRounds lists every persisted roast round for the detail payload,
+// newest first (stampless rounds last), including the legacy single roast.md.
+func roastRounds(repoDir, id, spec string) ([]roastRound, error) {
 	dir := filepath.Join(repoDir, "content", "artifacts", id)
-	rounds, err := filepath.Glob(filepath.Join(dir, "roast-*.md"))
+	names, err := filepath.Glob(filepath.Join(dir, "roast-*.md"))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	sort.Strings(rounds)
-	name := ""
-	if len(rounds) > 0 {
-		name = rounds[len(rounds)-1]
-	} else {
-		name = filepath.Join(dir, "roast.md")
+	if _, err := os.Stat(filepath.Join(dir, "roast.md")); err == nil {
+		names = append(names, filepath.Join(dir, "roast.md"))
 	}
-	data, err := os.ReadFile(name)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+	curSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(spec)))[:8]
+	rounds := []roastRound{}
+	for _, name := range names {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return nil, err
+		}
+		r := roastRound{Name: filepath.Base(name)}
+		if m := roastStampRe.FindSubmatch(data); m != nil {
+			if at, err := time.Parse(time.RFC3339, string(m[1])); err == nil {
+				r.At = &at
+			}
+			r.SpecChanged = string(m[2]) != curSHA
+		}
+		rounds = append(rounds, r)
 	}
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	sort.SliceStable(rounds, func(i, j int) bool {
+		a, b := rounds[i].At, rounds[j].At
+		switch {
+		case a == nil:
+			return false
+		case b == nil:
+			return true
+		case !a.Equal(*b):
+			return a.After(*b)
+		}
+		return rounds[i].Name > rounds[j].Name
+	})
+	return rounds, nil
 }

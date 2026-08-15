@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +20,9 @@ import (
 func TestRoastByoKey(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t) // seeds F-0001
 	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "## Objetivo e critérios de aceitação\n\n1. QUANDO x O SISTEMA DEVE y."))
+	// Committed so the artifact save's snapshot reconcile keeps the spec —
+	// the detail assertions below compare the round's stamp against it.
+	commitBackend(t, repoDir)
 
 	var gotPrompt string
 	srv := fakeDiagramProvider(t, &gotPrompt, `- [alta] critério vago — trecho: \"QUANDO x\"`)
@@ -60,16 +65,85 @@ func TestRoastByoKey(t *testing.T) {
 		t.Fatalf("persisted roast content:\n%s", data)
 	}
 
-	// the feature page reads it back from the detail payload
+	// the feature page reads the round back from the detail payload (F-0277
+	// criteria 1/4): listed, stamped, and not marked stale — the spec is
+	// exactly what this round judged
 	var detail struct {
-		RoastReport string `json:"roast_report"`
+		RoastRounds []roastRoundJSON `json:"roast_rounds"`
 	}
 	rec = doJSON(t, New(repoDir, projDir, "proj-diagram"), http.MethodGet, "/api/features/F-0001", "", &detail)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("detail status = %d", rec.Code)
 	}
-	if !strings.Contains(detail.RoastReport, "[alta]") {
-		t.Fatalf("detail roast_report missing findings:\n%s", detail.RoastReport)
+	if len(detail.RoastRounds) != 1 {
+		t.Fatalf("roast_rounds = %v, want 1 round", detail.RoastRounds)
+	}
+	round := detail.RoastRounds[0]
+	if round.Name != filepath.Base(files[0]) || round.At == nil || round.SpecChanged {
+		t.Fatalf("round = %+v, want name=%s, stamped at, spec_changed=false", round, filepath.Base(files[0]))
+	}
+}
+
+type roastRoundJSON struct {
+	Name        string  `json:"name"`
+	At          *string `json:"at"`
+	SpecChanged bool    `json:"spec_changed"`
+}
+
+// TestRoastRoundsSpecChanged pins F-0277 criteria 1/4: the detail payload
+// lists every persisted round newest-first, flags a round whose stamped spec
+// sha no longer matches the current spec, tolerates a stampless legacy
+// roast.md (no timestamp, never flagged), and yields [] with no rounds.
+func TestRoastRoundsSpecChanged(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	spec := realDoc("F-0001", "corpo")
+	writeDoc(t, repoDir, "F-0001", "spec.md", spec)
+
+	srvNew := New(repoDir, projDir, "proj-x")
+	var detail struct {
+		RoastRounds []roastRoundJSON `json:"roast_rounds"`
+	}
+	rec := doJSON(t, srvNew, http.MethodGet, "/api/features/F-0001", "", &detail)
+	if rec.Code != http.StatusOK || detail.RoastRounds == nil || len(detail.RoastRounds) != 0 {
+		t.Fatalf("no rounds: status=%d rounds=%v, want empty non-null list", rec.Code, detail.RoastRounds)
+	}
+
+	curSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(spec)))[:8]
+	dir := filepath.Join(repoDir, "content", "artifacts", "F-0001")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// older round, judged a different spec → stale
+	write("roast-20260101T000000.000000000Z.md",
+		"# Roast\n\nRodada: 2026-01-01T00:00:00Z · spec sha256:deadbeef — se a spec mudou depois disso, os trechos citados podem não existir mais.\n\nachados\n")
+	// newest round, judged the current spec → fresh
+	write("roast-20260201T000000.000000000Z.md",
+		"# Roast\n\nRodada: 2026-02-01T00:00:00Z · spec sha256:"+curSHA+" — se a spec mudou depois disso, os trechos citados podem não existir mais.\n\nachados\n")
+	// legacy single-file report without a stamp: still a round, never flagged
+	write("roast.md", "# Roast\n\nachados antigos\n")
+
+	rec = doJSON(t, srvNew, http.MethodGet, "/api/features/F-0001", "", &detail)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d", rec.Code)
+	}
+	if len(detail.RoastRounds) != 3 {
+		t.Fatalf("roast_rounds = %+v, want 3", detail.RoastRounds)
+	}
+	r0, r1, r2 := detail.RoastRounds[0], detail.RoastRounds[1], detail.RoastRounds[2]
+	if r0.Name != "roast-20260201T000000.000000000Z.md" || r0.At == nil || r0.SpecChanged {
+		t.Fatalf("newest round = %+v, want fresh round first", r0)
+	}
+	if r1.Name != "roast-20260101T000000.000000000Z.md" || r1.At == nil || !r1.SpecChanged {
+		t.Fatalf("older round = %+v, want spec_changed=true", r1)
+	}
+	if r2.Name != "roast.md" || r2.At != nil || r2.SpecChanged {
+		t.Fatalf("legacy round = %+v, want stampless last, never flagged", r2)
 	}
 }
 
