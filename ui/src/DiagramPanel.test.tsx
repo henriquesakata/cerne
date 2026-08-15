@@ -22,19 +22,23 @@ function LangSwitcher() {
   return <button onClick={() => setLang('en')}>trocar-idioma</button>
 }
 
-function renderPanel() {
-  return render(
+function panel(name: string) {
+  return (
     <I18nProvider>
       <LangSwitcher />
       <DiagramPanel
         featureId="F-0001"
-        name="fluxo.excalidraw"
+        name={name}
         isNew={false}
         onClose={() => {}}
         onSaved={() => {}}
       />
-    </I18nProvider>,
+    </I18nProvider>
   )
+}
+
+function renderPanel() {
+  return render(panel('fluxo.excalidraw'))
 }
 
 describe('DiagramPanel', () => {
@@ -53,8 +57,24 @@ describe('DiagramPanel', () => {
     renderPanel()
     const err = await screen.findByText('Erro ao carregar o diagrama: boom')
     // O erro de carga pertence ao corpo do painel, não à toolbar de save.
+    expect(err.closest('.diagram-panel')).not.toBeNull()
     expect(err.closest('.diagram-controls')).toBeNull()
     expect(screen.queryByText('Carregando diagrama…')).not.toBeInTheDocument()
+  })
+
+  it('limpa o erro antigo quando outro diagrama carrega com sucesso', async () => {
+    vi.mocked(fetchArtifactJSON).mockRejectedValueOnce(new Error('boom'))
+    const { rerender } = renderPanel()
+    await screen.findByText('Erro ao carregar o diagrama: boom')
+    vi.mocked(fetchArtifactJSON).mockResolvedValueOnce(
+      JSON.stringify({ elements: [], appState: {} }),
+    )
+    // Mesmo componente montado (sem key no call site), name novo re-dispara o efeito.
+    rerender(panel('outro.excalidraw'))
+    expect(await screen.findByTestId('excalidraw')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Erro ao carregar o diagrama: boom'),
+    ).not.toBeInTheDocument()
   })
 
   it('não re-busca o artefato ao trocar o idioma', async () => {

@@ -53,6 +53,9 @@ export default function DiagramPanel({
   useEffect(() => {
     // Cena nova vazia ou já fornecida (conversão): nada a buscar.
     if (isNew || initialScene != null) return
+    // Re-execução (ex.: name mudou com o componente montado): erro anterior
+    // não pode bloquear o resultado da nova carga.
+    setLoadError(null)
     fetchArtifactJSON(featureId, name)
       .then((text) => {
         const parsed = JSON.parse(text) as ExcalidrawInitialDataState
