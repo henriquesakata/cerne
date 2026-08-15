@@ -405,6 +405,11 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 		if de.IsDir() || strings.HasPrefix(de.Name(), ".") {
 			continue
 		}
+		// Roast reports share the artifacts dir but are rounds, not diagrams
+		// (F-0277) — the detail serves them via roast_rounds instead.
+		if de.Name() == "roast.md" || strings.HasPrefix(de.Name(), "roast-") {
+			continue
+		}
 		artifacts = append(artifacts, artifact{
 			Name: de.Name(),
 			Path: "content/artifacts/" + id + "/" + de.Name(),

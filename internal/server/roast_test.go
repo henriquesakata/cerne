@@ -184,6 +184,35 @@ func TestRoastRoundsPersistSeparately(t *testing.T) {
 	}
 }
 
+// TestArtifactsExcludeRoastReports pins F-0277 criterion 5: roast reports
+// live in the artifacts dir but are rounds, not diagrams — the detail's
+// artifacts list (the Diagrams section) must not show them.
+func TestArtifactsExcludeRoastReports(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	dir := filepath.Join(repoDir, "content", "artifacts", "F-0001")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"roast.md", "roast-20260101T000000.000000000Z.md", "fluxo.excalidraw"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var detail struct {
+		Artifacts []struct {
+			Name string `json:"name"`
+		} `json:"artifacts"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-x"), http.MethodGet, "/api/features/F-0001", "", &detail)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d", rec.Code)
+	}
+	if len(detail.Artifacts) != 1 || detail.Artifacts[0].Name != "fluxo.excalidraw" {
+		t.Fatalf("artifacts = %+v, want only fluxo.excalidraw", detail.Artifacts)
+	}
+}
+
 // TestRoastNeedsProvider: delegation mode has no server-side model — the
 // endpoint signals needs_provider and writes nothing.
 func TestRoastNeedsProvider(t *testing.T) {
