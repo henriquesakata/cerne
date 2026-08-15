@@ -22,14 +22,14 @@ function LangSwitcher() {
   return <button onClick={() => setLang('en')}>trocar-idioma</button>
 }
 
-function panel(name: string) {
+function panel(name: string, isNew = false) {
   return (
     <I18nProvider>
       <LangSwitcher />
       <DiagramPanel
         featureId="F-0001"
         name={name}
-        isNew={false}
+        isNew={isNew}
         onClose={() => {}}
         onSaved={() => {}}
       />
@@ -75,6 +75,20 @@ describe('DiagramPanel', () => {
     expect(
       screen.queryByText('Erro ao carregar o diagrama: boom'),
     ).not.toBeInTheDocument()
+  })
+
+  it('erro antigo não persiste ao trocar para diagrama novo (isNew)', async () => {
+    vi.mocked(fetchArtifactJSON).mockRejectedValueOnce(new Error('boom'))
+    const { rerender } = renderPanel()
+    await screen.findByText('Erro ao carregar o diagrama: boom')
+    // Mesmo componente montado (sem key), painel passa a "novo diagrama":
+    // o efeito faz early-return e não pode deixar o erro velho preso.
+    rerender(panel('novo.excalidraw', true))
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Erro ao carregar o diagrama: boom'),
+      ).not.toBeInTheDocument(),
+    )
   })
 
   it('fetch antigo rejeitando tarde não cobre o canvas do diagrama novo', async () => {

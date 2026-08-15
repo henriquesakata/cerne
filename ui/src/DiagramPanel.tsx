@@ -51,11 +51,11 @@ export default function DiagramPanel({
   const { t, lang } = useT()
 
   useEffect(() => {
+    // Re-execução do efeito (componente permanece montado quando o painel
+    // troca de diagrama): erro de carga anterior nunca fica preso no corpo.
+    setLoadError(null)
     // Cena nova vazia ou já fornecida (conversão): nada a buscar.
     if (isNew || initialScene != null) return
-    // Re-execução (ex.: name mudou com o componente montado): erro anterior
-    // não pode bloquear o resultado da nova carga.
-    setLoadError(null)
     // Um fetch antigo que termine depois do atual (ou após desmontar) não
     // pode sobrescrever o estado: o cleanup o marca como obsoleto.
     let stale = false
