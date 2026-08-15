@@ -254,6 +254,9 @@ type featureDetailResponse struct {
 	// F-0277), newest first; empty when no roast ran yet. The report body is
 	// fetched per round via GET /artifacts/{id}/{name}.
 	RoastRounds []roastRound `json:"roast_rounds"`
+	// PlanRoastRounds is the same list for the plan critiques (F-0275), kept
+	// separate so a plan round never reads as a spec round.
+	PlanRoastRounds []roastRound `json:"plan_roast_rounds"`
 }
 
 type featureDocs struct {
@@ -369,12 +372,17 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		}
 		specChanged = lint.SpecChangedAfterApproval(events, id)
 	}
+	planRounds, err := planRoastRounds(repoDir, id, docs.Spec, docs.Plan)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
 	rounds, err := roastRounds(repoDir, id, docs.Spec)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds, PlanRoastRounds: planRounds})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

@@ -132,7 +132,7 @@ func TestRunRoastPartial(t *testing.T) {
 // TestFormatRoastReport: the persisted markdown carries every persona section
 // and marks the partial one instead of hiding it.
 func TestFormatRoastReport(t *testing.T) {
-	rep := RoastReport{FeatureID: "F-0001", Title: "Login social", At: time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC), SpecSHA: "ab12cd34"}
+	rep := RoastReport{FeatureID: "F-0001", Title: "Login social", At: time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC), Fingerprints: []RoastFingerprint{{Label: "spec", SHA: "ab12cd34"}}}
 	rep.Results = []RoastResult{
 		{Persona: RoastPersonas[0], Output: "- [alta] a — trecho: \"x\""},
 		{Persona: RoastPersonas[1], Err: "context deadline exceeded"},

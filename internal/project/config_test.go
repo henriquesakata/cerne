@@ -681,3 +681,23 @@ func TestRetrievalBudgetOrDefault(t *testing.T) {
 		})
 	}
 }
+
+// TestAgentPlanRoastTimeout pins F-0275 criterion 3: the plan roast gets its
+// own per-critic budget, at least twice the spec roast's, because two
+// documents double the input — a configured value below that floor is raised
+// to it rather than silently starving the round.
+func TestAgentPlanRoastTimeout(t *testing.T) {
+	if got, want := (AgentConfig{}).PlanRoastTimeoutOrDefault(), 600*time.Second; got != want {
+		t.Errorf("default PlanRoastTimeout = %v, want %v (2x the chat budget)", got, want)
+	}
+	if got, want := (AgentConfig{ChatTimeout: 45}).PlanRoastTimeoutOrDefault(), 90*time.Second; got != want {
+		t.Errorf("PlanRoastTimeout with chat_timeout=45 = %v, want %v", got, want)
+	}
+	if got, want := (AgentConfig{PlanRoastTimeout: 900}).PlanRoastTimeoutOrDefault(), 900*time.Second; got != want {
+		t.Errorf("configured PlanRoastTimeout = %v, want %v", got, want)
+	}
+	// Below the floor: 100s configured against a 300s chat budget is raised.
+	if got, want := (AgentConfig{PlanRoastTimeout: 100}).PlanRoastTimeoutOrDefault(), 600*time.Second; got != want {
+		t.Errorf("PlanRoastTimeout below the 2x floor = %v, want %v", got, want)
+	}
+}
