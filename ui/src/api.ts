@@ -161,9 +161,19 @@ export type FeatureDetail = {
   // spec editada em approved depois da última aprovação (F-0262): a aprovação
   // não fala mais do texto atual.
   spec_changed_after_approval: boolean
-  // relatório persistido do roast adversarial da spec (F-0271); ausente
-  // enquanto nenhum roast rodou.
-  roast_report?: string
+  // rodadas persistidas do roast adversarial da spec (F-0271/F-0277), mais
+  // recente primeiro; o corpo de cada rodada é buscado sob demanda via
+  // fetchArtifactText ao abrir o modal de leitura.
+  roast_rounds: RoastRound[]
+}
+
+// RoastRound (F-0277): uma rodada persistida do roast. `at` vem do carimbo do
+// relatório (null num roast.md legado sem carimbo); `spec_changed` é calculado
+// no servidor — a spec atual não é mais a que esta rodada julgou.
+export type RoastRound = {
+  name: string
+  at: string | null
+  spec_changed: boolean
 }
 
 export type TransitionResult = {

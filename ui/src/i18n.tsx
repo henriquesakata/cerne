@@ -365,6 +365,9 @@ const ptBR = {
     roastPartial: 'Rodada parcial: pelo menos um crítico não concluiu.',
     roastEmpty:
       'Nenhum roast ainda. Três críticos de contexto fresco (ambiguidade, escopo, risco) atacam a spec antes do gate de aprovação; o roast nunca aprova nem reprova.',
+    roastSpecChanged: 'Spec mudou depois desta rodada',
+    roastClose: 'Fechar',
+    roastLoading: 'Carregando…',
     actionLabels: {
       approve: 'Aprovar',
       start: 'Iniciar',
@@ -1073,6 +1076,9 @@ const en: Messages = {
     roastPartial: 'Partial round: at least one critic did not finish.',
     roastEmpty:
       'No roast yet. Three fresh-context critics (ambiguity, scope, risk) attack the spec before the approval gate; the roast never approves or rejects.',
+    roastSpecChanged: 'Spec changed after this round',
+    roastClose: 'Close',
+    roastLoading: 'Loading…',
     actionLabels: {
       approve: 'Approve',
       start: 'Start',
