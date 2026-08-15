@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
-import type { Feature, FeatureDetail, FeatureState } from './api'
-import { postTransition, roastSpec } from './api'
+import type { Feature, FeatureDetail, FeatureState, LLMMode } from './api'
+import { generateDiagram, postTransition, roastSpec } from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
   feature: {
@@ -25,11 +25,13 @@ const detail = (state: FeatureState): FeatureDetail => ({
 })
 
 let payload: FeatureDetail = detail('candidate')
+let llmMode: LLMMode = 'byo-key'
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchFeature: vi.fn(async () => payload),
-  fetchLLMMode: vi.fn(async () => 'off'),
+  fetchLLMMode: vi.fn(async () => llmMode),
+  generateDiagram: vi.fn(async () => ({ ok: false as const, error: 'boom' })),
   postTransition: vi.fn(async () => ({
     ok: true as const,
     data: { id: 'F-0221', from: 'approved', to: 'candidate' },
@@ -48,7 +50,9 @@ vi.mock('./live', () => ({
 
 beforeEach(() => {
   cleanup()
+  llmMode = 'byo-key'
   vi.mocked(postTransition).mockClear()
+  vi.mocked(generateDiagram).mockClear()
 })
 
 // F-0221: link "voltar" contextual — candidate vive no Backlog, demais
@@ -145,5 +149,33 @@ describe('FeaturePage roast section (F-0271)', () => {
       expect(screen.getByText(/\[alta\] achado/)).toBeInTheDocument(),
     )
     expect(screen.queryByText(/Nenhum roast ainda/i)).not.toBeInTheDocument()
+  })
+})
+
+// DiagramsSection: o botão "Gerar com IA" dispara generateDiagram; em
+// delegação (modo do agente, sem provider no servidor) fica desabilitado.
+describe('FeaturePage diagrams section', () => {
+  it('botão Gerar com IA chama generateDiagram', async () => {
+    payload = detail('candidate')
+    render(<FeaturePage id="F-0221" />)
+    const btn = await screen.findByText('Gerar com IA')
+    expect(btn).toBeEnabled()
+
+    fireEvent.click(btn)
+    await waitFor(() =>
+      expect(generateDiagram).toHaveBeenCalledWith('F-0221'),
+    )
+    // O erro devolvido pelo mock aparece; nada abre sem diagrama gerado.
+    await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
+  })
+
+  it('delegação desabilita o botão de gerar', async () => {
+    llmMode = 'delegation'
+    payload = detail('candidate')
+    render(<FeaturePage id="F-0221" />)
+    const btn = await screen.findByText('Gerar com IA')
+    await waitFor(() => expect(btn).toBeDisabled())
+    fireEvent.click(btn)
+    expect(generateDiagram).not.toHaveBeenCalled()
   })
 })
