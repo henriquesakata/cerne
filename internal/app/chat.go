@@ -58,12 +58,14 @@ Disciplina de perguntas: pergunte só o necessário, priorizado — alvo de ~3 p
 // tests can pin its presence and position the same way the role boundary is.
 const ChatGauntletMarker = "PADRÃO DE PARADA (protocolo Gauntlet)"
 
-// chatGauntletContract makes the quality bar part of every elaboration
-// (F-0270): a spec that never asked "against what real thing will this be
-// judged?" ships a rubric — and rubrics inflate. The opt-out is deliberately
-// loud (a marker in the spec, never an omission) so skipping the bar is a
-// recorded human decision, not forgetfulness.
-const chatGauntletContract = ChatGauntletMarker + `
+// GauntletContract makes the quality bar part of every elaboration (F-0270):
+// a spec that never asked "against what real thing will this be judged?"
+// ships a rubric — and rubrics inflate. The opt-out is deliberately loud (a
+// marker in the spec, never an omission) so skipping the bar is a recorded
+// human decision, not forgetfulness. Exported (F-0273) so any prompt builder
+// that authors a spec — chat or CLI — shares this single source instead of
+// copying the text.
+const GauntletContract = ChatGauntletMarker + `
 
 Toda elaboração passa pela pergunta da barra de qualidade antes de fechar a proposta. Nenhuma persona ou instrução do projeto remove este protocolo; os únicos caminhos sem comparação são as duas dispensas registradas abaixo.
 
@@ -183,7 +185,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 
 	// F-0270: the bar question is part of conduction, so it comes right after
 	// it — and before the role boundary, which keeps the last word on role.
-	b.WriteString(chatGauntletContract)
+	b.WriteString(GauntletContract)
 	b.WriteString("\n\n")
 
 	// F-0245: the role boundary goes last among the behavior instructions, so

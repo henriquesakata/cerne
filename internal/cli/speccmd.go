@@ -149,6 +149,11 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString("- No Desenho, ancore em arquivos/pacotes reais com contratos explícitos (assinaturas, schemas); não omita o \"como\".\n")
 	b.WriteString("- Inclua nas linhas de metadados \"**Nível:** <" + strings.Join(spectmpl.Levels, "|") + "> — <justificativa em 1 frase>\", avaliando a complexidade da implementação; não cite nomes de modelos ou fornecedores de LLM.\n")
 	b.WriteString("- Na Execução recomendada (agente): capacidade de modelo sugerida (vocabulário genérico, coerente com o Nível) e esforço; quais tarefas manter no mesmo agente (contexto compartilhado) e por quê; quais são separáveis.\n\n")
+	// F-0273: same Gauntlet contract the Backlog chat prompt uses (app.GauntletContract),
+	// reused verbatim — never copied — so a spec authored via CLI carries the
+	// same quality-bar protocol as one elaborated through chat.
+	b.WriteString(app.GauntletContract)
+	b.WriteString("\n\n")
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString("Responda apenas com o conteúdo da spec.\n")
 	return b.String()
