@@ -406,8 +406,10 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 			continue
 		}
 		// Roast reports share the artifacts dir but are rounds, not diagrams
-		// (F-0277) — the detail serves them via roast_rounds instead.
-		if de.Name() == "roast.md" || strings.HasPrefix(de.Name(), "roast-") {
+		// (F-0277) — the detail serves them via roast_rounds instead. Only
+		// markdown is a report: a user diagram slugged "roast-…" (.excalidraw/
+		// .mmd) stays listed.
+		if isRoastReport(de.Name()) {
 			continue
 		}
 		artifacts = append(artifacts, artifact{

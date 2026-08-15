@@ -153,13 +153,15 @@ describe('FeaturePage roast section (F-0271/F-0277)', () => {
         { name: 'roast-1.md', at: '2026-01-01T00:00:00Z', spec_changed: true },
       ],
     }
-    render(<FeaturePage id="F-0221" />)
+    const { container } = render(<FeaturePage id="F-0221" />)
     await waitFor(() => expect(screen.getByTitle('roast-2.md')).toBeInTheDocument())
     expect(screen.getByTitle('roast-1.md')).toBeInTheDocument()
     // badge só na rodada cuja spec mudou (critério 4)
     expect(screen.getAllByText('Spec mudou depois desta rodada')).toHaveLength(1)
-    // o relatório não é mais renderizado inline na lateral (critério 1)
-    expect(screen.queryByText(/\[alta\] achado/)).not.toBeInTheDocument()
+    // critério 1: a lateral não renderiza nenhum corpo de relatório — nem o
+    // markdown (article.doc) nem o modal existem antes do clique
+    expect(container.querySelector('.artifacts article.doc')).toBeNull()
+    expect(container.querySelector('.roast-overlay')).toBeNull()
     expect(screen.queryByText(/Nenhum roast ainda/i)).not.toBeInTheDocument()
   })
 

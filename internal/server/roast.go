@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
@@ -102,6 +103,14 @@ type roastRound struct {
 // writer lives in internal/app (F-0271).
 var roastStampRe = regexp.MustCompile(`Rodada: (\S+) · spec sha256:([0-9a-f]{8})`)
 
+// isRoastReport tells a persisted roast round apart from any other artifact
+// sharing the dir: the bare legacy roast.md or a stamped roast-*.md. Markdown
+// only — a user diagram slugged "roast-…" is not a report.
+func isRoastReport(name string) bool {
+	return name == "roast.md" ||
+		(strings.HasPrefix(name, "roast-") && strings.HasSuffix(name, ".md"))
+}
+
 // roastRounds lists every persisted roast round for the detail payload,
 // newest first (stampless rounds last), including the legacy single roast.md.
 func roastRounds(repoDir, id, spec string) ([]roastRound, error) {
@@ -110,15 +119,15 @@ func roastRounds(repoDir, id, spec string) ([]roastRound, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(filepath.Join(dir, "roast.md")); err == nil {
-		names = append(names, filepath.Join(dir, "roast.md"))
-	}
+	names = append(names, filepath.Join(dir, "roast.md"))
 	curSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(spec)))[:8]
 	rounds := []roastRound{}
 	for _, name := range names {
 		data, err := os.ReadFile(name)
 		if err != nil {
-			return nil, err
+			// A single unreadable round (swept by a concurrent pull, a stray
+			// directory, permissions) must not 500 the whole feature page.
+			continue
 		}
 		r := roastRound{Name: filepath.Base(name)}
 		if m := roastStampRe.FindSubmatch(data); m != nil {
@@ -132,6 +141,8 @@ func roastRounds(repoDir, id, spec string) ([]roastRound, error) {
 	sort.SliceStable(rounds, func(i, j int) bool {
 		a, b := rounds[i].At, rounds[j].At
 		switch {
+		case a == nil && b == nil:
+			return rounds[i].Name > rounds[j].Name
 		case a == nil:
 			return false
 		case b == nil:

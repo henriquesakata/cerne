@@ -193,7 +193,9 @@ func TestArtifactsExcludeRoastReports(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"roast.md", "roast-20260101T000000.000000000Z.md", "fluxo.excalidraw"} {
+	// roast-findings.excalidraw: a user diagram whose slug happens to start
+	// with "roast-" — a report filter keyed on prefix alone would hide it.
+	for _, name := range []string{"roast.md", "roast-20260101T000000.000000000Z.md", "fluxo.excalidraw", "roast-findings.excalidraw"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -208,8 +210,39 @@ func TestArtifactsExcludeRoastReports(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("detail status = %d", rec.Code)
 	}
-	if len(detail.Artifacts) != 1 || detail.Artifacts[0].Name != "fluxo.excalidraw" {
-		t.Fatalf("artifacts = %+v, want only fluxo.excalidraw", detail.Artifacts)
+	names := []string{}
+	for _, a := range detail.Artifacts {
+		names = append(names, a.Name)
+	}
+	if len(names) != 2 || names[0] != "fluxo.excalidraw" || names[1] != "roast-findings.excalidraw" {
+		t.Fatalf("artifacts = %v, want [fluxo.excalidraw roast-findings.excalidraw]", names)
+	}
+}
+
+// TestRoastRoundUnreadableTolerated: one unreadable round (here a directory
+// matching the round glob) must not 500 the whole feature page; readable
+// rounds still list, and two stampless rounds order newest-name first.
+func TestRoastRoundUnreadableTolerated(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	dir := filepath.Join(repoDir, "content", "artifacts", "F-0001")
+	if err := os.MkdirAll(filepath.Join(dir, "roast-20260101T000000.000000000Z.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"roast-a.md", "roast-b.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("sem carimbo"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var detail struct {
+		RoastRounds []roastRoundJSON `json:"roast_rounds"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-x"), http.MethodGet, "/api/features/F-0001", "", &detail)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want 200 despite the unreadable round", rec.Code)
+	}
+	if len(detail.RoastRounds) != 2 || detail.RoastRounds[0].Name != "roast-b.md" || detail.RoastRounds[1].Name != "roast-a.md" {
+		t.Fatalf("roast_rounds = %+v, want [roast-b.md roast-a.md]", detail.RoastRounds)
 	}
 }
 

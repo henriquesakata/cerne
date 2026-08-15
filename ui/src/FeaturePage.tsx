@@ -837,17 +837,21 @@ function RoastModal({
   }, [onClose])
 
   return (
-    <div className="roast-overlay" onClick={onClose}>
+    // mousedown, não click: soltar uma seleção de texto sobre o backdrop
+    // dispararia click no ancestral e fecharia o modal no meio da leitura.
+    <div className="roast-overlay" onMouseDown={onClose}>
       <div
         className="roast-modal"
         role="dialog"
         aria-modal="true"
         aria-label={name}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="roast-modal-head">
           <h3>{name}</h3>
-          <button onClick={onClose}>{t.feature.roastClose}</button>
+          <button autoFocus onClick={onClose}>
+            {t.feature.roastClose}
+          </button>
         </header>
         {error ? (
           <p className="form-error">{error}</p>
