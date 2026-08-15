@@ -64,6 +64,9 @@ func dataRoutes() []dataRoute {
 		{"POST", "/features/{id}/diagram", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleGenerateDiagram(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
+		{"POST", "/features/{id}/roast", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleRoast(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
 		{"PUT", "/features/{id}/docs/{doc}", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 		}},

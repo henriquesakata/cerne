@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
 import { correctMarker, countOpen, resolveMarker } from './clarify'
+import { appendAssistantToFeatureChat } from './useBacklogChats'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
 import Tag from './Tag'
@@ -13,6 +14,7 @@ import {
   generateDiagram,
   postTransition,
   renameFeature,
+  roastSpec,
   saveFeatureDoc,
   setFeatureParent,
   type Feature,
@@ -413,6 +415,12 @@ export default function FeaturePage({ id }: { id: string }) {
               onOpen={(d) => setDiagram(d)}
               onRefresh={load}
             />
+            <RoastSection
+              featureId={f.id}
+              report={detail.roast_report}
+              llmMode={llmMode}
+              onRefresh={load}
+            />
           </aside>
         </div>
       )}
@@ -691,6 +699,76 @@ function DiagramsSection({
           <button onClick={() => setNaming(true)}>{t.feature.newDiagram}</button>
         )}
       </div>
+    </section>
+  )
+}
+
+// RoastSection (F-0271): dispara o roast adversarial da spec (3 críticos de
+// contexto fresco no servidor) e mostra o relatório persistido junto à
+// candidata. O roast nunca aprova nem reprova — os achados alimentam o gate
+// humano de aprovação.
+function RoastSection({
+  featureId,
+  report,
+  llmMode,
+  onRefresh,
+}: {
+  featureId: string
+  report?: string
+  llmMode: LLMMode | null
+  onRefresh: () => void
+}) {
+  const { t } = useT()
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [partial, setPartial] = useState(false)
+
+  const run = () => {
+    setRunning(true)
+    setError(null)
+    setPartial(false)
+    roastSpec(featureId)
+      .then((res) => {
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
+        if (!res.generated) {
+          setError(t.feature.generateNeedsMode)
+          return
+        }
+        setPartial(res.partial)
+        // F-0271 critério 2: o relatório também chega como mensagem na
+        // conversa vinculada à candidata (no-op quando não há conversa).
+        appendAssistantToFeatureChat(featureId, res.report)
+        onRefresh()
+      })
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => setRunning(false))
+  }
+
+  const delegated = llmMode === 'delegation'
+  return (
+    <section className="artifacts">
+      <h2>{t.feature.roast}</h2>
+      {error && <p className="form-error">{error}</p>}
+      {partial && <p className="muted">{t.feature.roastPartial}</p>}
+      {report ? (
+        <article className="doc">
+          <Markdown>{report}</Markdown>
+        </article>
+      ) : (
+        <p className="muted">{t.feature.roastEmpty}</p>
+      )}
+      <button
+        onClick={run}
+        disabled={running || delegated}
+        title={delegated ? t.feature.generateDisabledTitle : undefined}
+      >
+        {running ? t.feature.roastRunning : t.feature.roastRun}
+      </button>
     </section>
   )
 }

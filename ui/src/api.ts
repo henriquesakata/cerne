@@ -161,6 +161,9 @@ export type FeatureDetail = {
   // spec editada em approved depois da última aprovação (F-0262): a aprovação
   // não fala mais do texto atual.
   spec_changed_after_approval: boolean
+  // relatório persistido do roast adversarial da spec (F-0271); ausente
+  // enquanto nenhum roast rodou.
+  roast_report?: string
 }
 
 export type TransitionResult = {
@@ -342,6 +345,31 @@ export type GenerateDiagramResult =
   | { ok: false; error: string }
   | { ok: true; generated: false }
   | { ok: true; generated: true; name: string; mermaid: string }
+
+// RoastResult (F-0271): sucesso traz o relatório markdown persistido (partial
+// marca rodada com crítico falho); generated=false sinaliza modo delegação.
+export type RoastResult =
+  | { ok: false; error: string }
+  | { ok: true; generated: false }
+  | { ok: true; generated: true; partial: boolean; report: string }
+
+// roastSpec dispara o roast adversarial da spec: 3 personas de contexto
+// fresco em paralelo no servidor; o relatório é persistido junto à candidata.
+export async function roastSpec(featureId: string): Promise<RoastResult> {
+  const r = await fetch(
+    `${base()}/features/${encodeURIComponent(featureId)}/roast`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+  )
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  const data = (await r.json()) as {
+    generated: boolean
+    needs_provider?: boolean
+    partial?: boolean
+    report?: string
+  }
+  if (!data.generated) return { ok: true, generated: false }
+  return { ok: true, generated: true, partial: !!data.partial, report: data.report ?? '' }
+}
 
 // generateDiagram pede à IA um diagrama de sequência (Mermaid) para a feature.
 // O servidor salva o <name>.mmd (commit+push) e devolve o texto; em delegação

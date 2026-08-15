@@ -249,6 +249,9 @@ type featureDetailResponse struct {
 	// SpecChangedAfterApproval is true when the spec was edited while approved,
 	// after the last approval (F-0262) — the page warns the approval is stale.
 	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
+	// RoastReport is the persisted adversarial spec critique (F-0271); ""
+	// when no roast ran yet.
+	RoastReport string `json:"roast_report,omitempty"`
 }
 
 type featureDocs struct {
@@ -364,7 +367,12 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		}
 		specChanged = lint.SpecChangedAfterApproval(events, id)
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged})
+	roast, err := roastReportFor(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastReport: roast})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
