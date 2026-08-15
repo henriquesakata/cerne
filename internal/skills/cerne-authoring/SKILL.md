@@ -113,6 +113,44 @@ cerne scaffolds `result.md` from a canonical template when you **start** a featu
 
 **Ordering is deliberate** (primacy/recency): Resultado and Aceitação lead — the outcome and its proof — and the softer learnings sit last. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Definition of Done, show-evidence-not-assertion, binary acceptance verification, Keep a Changelog) is registered in the backend as external references.
 
+## The Gauntlet protocol: deliver against a real bar
+
+A delivery with no bar is scored against a rubric, and the agent that built the thing also wrote the rubric — so it always passes. The Gauntlet replaces self-scoring with a comparison against something real that already exists. It spans three phases: the spec names the bar, the implementation runs the loop, the result proves it ran. cerne holds both ends — the Backlog analyst refuses to close a proposal without a bar, and `cerne lint` charges the per-criterion evidence in `result.md`.
+
+### Spec — name the bar, or record why there is none
+
+A bar is a named reference plus how to reach it (URL, command, a file a critic can open), of the same class as what you are delivering: a prompt block is judged against another prompt block, a lint rule against another lint rule of the same package, an endpoint against another endpoint. Named without access is vague, and so is a category ("design bonito", "nível enterprise") — a critic must be able to open the thing. The bar is what you have to beat, so one picked because it is easy to beat is not a bar; pick the best comparable artifact that already exists, preferably in this same repo. A bar that is an external URL gets registered (`cerne reference new "<título>" --url <url> --informs F-NNNN`), or the spec is born with an `unregistered-source` debt.
+
+The spec's **Verificação** section then carries exactly one of three literal forms — pt-BR, because they are written inside the spec:
+
+```
+Barra: <referência nomeada + acesso>
+Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
+Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
+```
+
+— or the single line `Barra: não aplicável (<justificativa de 1 linha, confirmada pelo humano>) — padrão alternativo: <teste/benchmark/invariante>` when the delivery has no comparable artifact (a point fix, pure backend with nothing observable): you propose that classification and a human confirms it, never a silent self-classification — or the single line `Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`, which exists only when a human refuses the bar on their own. You never suggest the exemption, and the quoted words are what distinguishes it from forgetting. A silent absence of a bar is never acceptable; a recorded exemption is.
+
+### Implementation — builders, then a critic, then a judge
+
+When the spec carries a bar, the plan's tasks are only the first of three roles. Keeping the roles in separate agents *is* the protocol — one agent playing two of them collapses it back into self-scoring:
+
+- **Builders** implement the plan TDD (red test → minimal green → commit), one concern per commit.
+- **A fresh-context critic** attacks the finished diff. The critic is never the builder and never inherits the build conversation: an agent that wrote the thing rationalizes it, and one that merely watched it being written adopts its framing. Give it fresh context — the artifact and nothing else — and delimit that artifact explicitly in the prompt (`=== DIFF (início) === … === DIFF (fim) ===`). Without the fence, your own instructions read as part of what is being judged and the critic reviews your prompt instead of your work. Demand the exact excerpt behind each finding; a finding with no excerpt is unverifiable.
+- **A judge** compares your artifact against the bar, blind: the two are labelled A/B, with no authorship and no hint of which is the reference, and the question is which one does the job better (name the job — "which text instructs an implementing agent better", "which rule is more robust"). A judge that knows which one is yours is a reviewer, not a judge.
+
+Every finding the critic returns gets an explicit disposition, on the record: **corrected**, **refuted with evidence** (the existing code already handles it — name the `file:line`), or **accepted as a documented limit** (it becomes a declared debt or a follow-up feature). "Considered" is not a disposition; a finding that quietly disappears is a defect you chose to ship.
+
+The blind judge decides the exit, and use a new judge every round: a judge that already ruled on your artifact defends its own verdict instead of re-reading it. **Exit: win or tie.** A defeat produces corrections and another round — never a fixed number of rounds, and never a quiet swap for an easier bar (changing the bar is a spec change, not a round). The only way to stop while losing is an explicit human decision, recorded. In the rounds that shaped this protocol, F-0270 shipped on round three after two defeats, while F-0271 and F-0272 won on the first — the count is an outcome, never a budget.
+
+Expect the judge to find real holes in the bar itself; it happened in all three of those rounds. Route them as a separate improvement (a new feature, or a note) — never fix the bar inside the delivery being judged.
+
+### Closing — the result carries the proof
+
+`result.md` maps each numbered spec criterion to its evidence, and must cite the number in words — `critério N` — because that literal citation is exactly what `cerne lint` looks for: the `result-missing-evidence` rule flags an implemented feature whose result never mentions a criterion the spec numbered. Evidence is a test name, a `file:line`, a number; "atendido" on its own is an assertion, not evidence.
+
+Record the loop itself in the result, under its own heading: the bar, each round's verdict with a short quote from the judge, what the critic found and how each finding was disposed of. Defeats stay in the record — a loop written up with no defeats and no quoted verdict reads as a loop that never ran.
+
 ## Epics (large work, decomposed)
 
 An **epic is just a feature that has children** — the role is inferred from the parent link, there is no separate entity, so the epic gets the full feature lifecycle/spec/plan/result for free. Use one when a body of work is too large for a single spec and naturally splits into sub-features.
