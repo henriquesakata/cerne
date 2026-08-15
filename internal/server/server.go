@@ -250,9 +250,10 @@ type featureDetailResponse struct {
 	// SpecChangedAfterApproval is true when the spec was edited while approved,
 	// after the last approval (F-0262) — the page warns the approval is stale.
 	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
-	// RoastReport is the persisted adversarial spec critique (F-0271); ""
-	// when no roast ran yet.
-	RoastReport string `json:"roast_report,omitempty"`
+	// RoastRounds lists the persisted adversarial spec critiques (F-0271/
+	// F-0277), newest first; empty when no roast ran yet. The report body is
+	// fetched per round via GET /artifacts/{id}/{name}.
+	RoastRounds []roastRound `json:"roast_rounds"`
 }
 
 type featureDocs struct {
@@ -368,12 +369,12 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		}
 		specChanged = lint.SpecChangedAfterApproval(events, id)
 	}
-	roast, err := roastReportFor(repoDir, id)
+	rounds, err := roastRounds(repoDir, id, docs.Spec)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastReport: roast})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -402,6 +403,13 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 	}
 	for _, de := range dirEntries {
 		if de.IsDir() || strings.HasPrefix(de.Name(), ".") {
+			continue
+		}
+		// Roast reports share the artifacts dir but are rounds, not diagrams
+		// (F-0277) — the detail serves them via roast_rounds instead. Only
+		// markdown is a report: a user diagram slugged "roast-…" (.excalidraw/
+		// .mmd) stays listed.
+		if isRoastReport(de.Name()) {
 			continue
 		}
 		artifacts = append(artifacts, artifact{

@@ -1,10 +1,16 @@
 package server
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -72,22 +78,79 @@ func handleRoast(w http.ResponseWriter, r *http.Request, repoDir, projDir, id st
 		return
 	}
 	md := app.FormatRoastReport(rep)
-	if err := app.SaveArtifact(repoDir, projDir, id, "roast.md", []byte(md)); err != nil {
+	// One artifact per round (F-0277): the nanosecond stamp keeps names unique
+	// and lexically sortable; earlier rounds survive as history.
+	name := "roast-" + rep.At.Format("20060102T150405.000000000Z") + ".md"
+	if err := app.SaveArtifact(repoDir, projDir, id, name, []byte(md)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, roastResponse{Generated: true, Partial: rep.Partial, Report: md})
 }
 
-// roastReportFor reads the persisted roast artifact for the detail payload
-// (absent file → empty string, same contract as the lifecycle docs).
-func roastReportFor(repoDir, id string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(repoDir, "content", "artifacts", id, "roast.md"))
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
+// roastRound is one persisted roast report in the detail payload (F-0277):
+// At comes from the report's own stamp (nil for a stampless legacy file) and
+// SpecChanged flags a round whose stamped spec sha no longer matches the
+// current spec — computed here so the UI never hashes.
+type roastRound struct {
+	Name        string     `json:"name"`
+	At          *time.Time `json:"at"`
+	SpecChanged bool       `json:"spec_changed"`
+}
+
+// roastStampRe matches the stamp FormatRoastReport writes into every report:
+// "Rodada: <RFC3339> · spec sha256:<8 hex>". Reading contract only — the
+// writer lives in internal/app (F-0271).
+var roastStampRe = regexp.MustCompile(`Rodada: (\S+) · spec sha256:([0-9a-f]{8})`)
+
+// isRoastReport tells a persisted roast round apart from any other artifact
+// sharing the dir: the bare legacy roast.md or a stamped roast-*.md. Markdown
+// only — a user diagram slugged "roast-…" is not a report.
+func isRoastReport(name string) bool {
+	return name == "roast.md" ||
+		(strings.HasPrefix(name, "roast-") && strings.HasSuffix(name, ".md"))
+}
+
+// roastRounds lists every persisted roast round for the detail payload,
+// newest first (stampless rounds last), including the legacy single roast.md.
+func roastRounds(repoDir, id, spec string) ([]roastRound, error) {
+	dir := filepath.Join(repoDir, "content", "artifacts", id)
+	names, err := filepath.Glob(filepath.Join(dir, "roast-*.md"))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(data), nil
+	names = append(names, filepath.Join(dir, "roast.md"))
+	curSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(spec)))[:8]
+	rounds := []roastRound{}
+	for _, name := range names {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			// A single unreadable round (swept by a concurrent pull, a stray
+			// directory, permissions) must not 500 the whole feature page.
+			continue
+		}
+		r := roastRound{Name: filepath.Base(name)}
+		if m := roastStampRe.FindSubmatch(data); m != nil {
+			if at, err := time.Parse(time.RFC3339, string(m[1])); err == nil {
+				r.At = &at
+			}
+			r.SpecChanged = string(m[2]) != curSHA
+		}
+		rounds = append(rounds, r)
+	}
+	sort.SliceStable(rounds, func(i, j int) bool {
+		a, b := rounds[i].At, rounds[j].At
+		switch {
+		case a == nil && b == nil:
+			return rounds[i].Name > rounds[j].Name
+		case a == nil:
+			return false
+		case b == nil:
+			return true
+		case !a.Equal(*b):
+			return a.After(*b)
+		}
+		return rounds[i].Name > rounds[j].Name
+	})
+	return rounds, nil
 }
