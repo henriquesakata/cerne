@@ -76,7 +76,12 @@ Invariantes estruturais entram como asserção direta e mensurável. -->
 schemas, endpoints, eventos). Inclua o HOW — não o omita. -->
 
 ## Verificação
-<!-- Plano de testes (TDD), 1:1 com os critérios de aceitação. -->
+<!-- Plano de testes (TDD), 1:1 com os critérios de aceitação. Padrão de parada (Gauntlet),
+uma das três formas: Barra (referência nomeada + acesso) + Método (comparação cega, crítico
+fresco) + Saída (vencer/empatar; parar perdendo só por encerramento humano); "Barra: não
+aplicável (<justificativa confirmada>) — padrão alternativo: <teste/benchmark/invariante>";
+ou "Barra: dispensada por decisão humana". -->
+
 
 ## Execução recomendada (agente)
 <!-- Capacidade de modelo sugerida (vocabulário genérico, coerente com a linha **Nível:**) e esforço.
