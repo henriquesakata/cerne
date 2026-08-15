@@ -147,3 +147,24 @@ func TestStubForEpicWithChildrenReadsAsStub(t *testing.T) {
 		t.Fatalf("epic plan scaffold must still read as a stub:\n%s", doc)
 	}
 }
+
+// TestBodyCarriesGauntletExit pins F-0275 criterion 6: the plan scaffold asks
+// for the Gauntlet exit — inherit the spec's bar, or say in one line why the
+// loop does not apply — as METADATA guidance, never as a canonical section.
+// Adding it to Sections would make every existing plan incomplete-doc, which
+// is the enforcement the criterion explicitly excludes.
+func TestBodyCarriesGauntletExit(t *testing.T) {
+	for _, want := range []string{"Saída (Gauntlet)", "herde a barra da spec", "não se aplica"} {
+		if !strings.Contains(plantmpl.Body, want) {
+			t.Errorf("plan template missing %q", want)
+		}
+	}
+	for _, s := range plantmpl.Sections {
+		if strings.Contains(s, "Gauntlet") {
+			t.Fatalf("Gauntlet must stay out of Sections (it would become a lint gate): %v", plantmpl.Sections)
+		}
+	}
+	if len(plantmpl.Sections) != 6 {
+		t.Fatalf("Sections = %d, want the 6 canonical plan sections unchanged: %v", len(plantmpl.Sections), plantmpl.Sections)
+	}
+}

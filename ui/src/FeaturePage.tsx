@@ -14,6 +14,7 @@ import {
   generateDiagram,
   postTransition,
   renameFeature,
+  roastPlan,
   roastSpec,
   saveFeatureDoc,
   setFeatureParent,
@@ -419,6 +420,8 @@ export default function FeaturePage({ id }: { id: string }) {
             <RoastSection
               featureId={f.id}
               rounds={detail.roast_rounds}
+              planRounds={detail.plan_roast_rounds}
+              planReal={!!detail.docs_real?.plan}
               llmMode={llmMode}
               onRefresh={load}
             />
@@ -713,11 +716,15 @@ function DiagramsSection({
 function RoastSection({
   featureId,
   rounds,
+  planRounds,
+  planReal,
   llmMode,
   onRefresh,
 }: {
   featureId: string
   rounds: RoastRound[]
+  planRounds: RoastRound[]
+  planReal: boolean
   llmMode: LLMMode | null
   onRefresh: () => void
 }) {
@@ -726,6 +733,35 @@ function RoastSection({
   const [error, setError] = useState<string | null>(null)
   const [partial, setPartial] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
+  // F-0275: estado próprio do roast do plano — compartilhar error/partial com
+  // o da spec acende o aviso no painel errado.
+  const [planRunning, setPlanRunning] = useState(false)
+  const [planError, setPlanError] = useState<string | null>(null)
+  const [planPartial, setPlanPartial] = useState(false)
+
+  const runPlan = () => {
+    setPlanRunning(true)
+    setPlanError(null)
+    setPlanPartial(false)
+    roastPlan(featureId)
+      .then((res) => {
+        if (!res.ok) {
+          setPlanError(res.error)
+          return
+        }
+        if (!res.generated) {
+          setPlanError(t.feature.generateNeedsMode)
+          return
+        }
+        setPlanPartial(res.partial)
+        appendAssistantToFeatureChat(featureId, res.report)
+        onRefresh()
+      })
+      .catch((e: unknown) =>
+        setPlanError(e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => setPlanRunning(false))
+  }
 
   const run = () => {
     setRunning(true)
@@ -790,6 +826,51 @@ function RoastSection({
         title={delegated ? t.feature.generateDisabledTitle : undefined}
       >
         {running ? t.feature.roastRunning : t.feature.roastRun}
+      </button>
+
+      <h2>{t.feature.planRoast}</h2>
+      {planError && <p className="form-error">{planError}</p>}
+      {planPartial && <p className="muted">{t.feature.roastPartial}</p>}
+      {planRounds.length > 0 ? (
+        <ul>
+          {planRounds.map((r) => (
+            <li key={r.name}>
+              <button
+                className="diagram-link"
+                title={r.name}
+                onClick={() => setOpen(r.name)}
+              >
+                {r.at
+                  ? new Date(r.at).toLocaleString(lang, {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })
+                  : r.name}
+              </button>
+              {r.spec_changed && (
+                <span className="roast-stale">{t.feature.roastSpecChanged}</span>
+              )}
+              {r.plan_changed && (
+                <span className="roast-stale">{t.feature.planRoastChanged}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">{t.feature.planRoastEmpty}</p>
+      )}
+      <button
+        onClick={runPlan}
+        disabled={planRunning || delegated || !planReal}
+        title={
+          delegated
+            ? t.feature.generateDisabledTitle
+            : !planReal
+              ? t.feature.planRoastNeedsPlan
+              : undefined
+        }
+      >
+        {planRunning ? t.feature.planRoastRunning : t.feature.planRoastRun}
       </button>
       {open && (
         <RoastModal
