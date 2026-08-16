@@ -2689,3 +2689,58 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   font-size: 0.82rem;
 }
 .harness-gap-fix { margin-left: 0.4rem; font-size: 0.78rem; }
+
+/* F-0277 — roast: a lateral lista rodadas; a leitura acontece num modal em
+   largura de leitura (o relatório não cabe na coluna estreita). Mesmo z-index
+   da palette para cobrir o Nav. */
+.roast-stale {
+  margin-left: 0.4rem;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.5rem;
+  background: var(--yellow-bg, rgba(214, 158, 46, 0.15));
+  border: 1px solid var(--yellow-border, rgba(214, 158, 46, 0.4));
+  color: var(--fg);
+  white-space: nowrap;
+}
+.roast-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(31, 36, 33, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4vh 1rem;
+}
+.roast-modal {
+  width: min(46rem, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgba(31, 36, 33, 0.18);
+  overflow: hidden;
+}
+.roast-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.roast-modal-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roast-modal > .doc,
+.roast-modal > p {
+  padding: 0.4rem 1.25rem 1rem;
+  overflow-y: auto;
+}

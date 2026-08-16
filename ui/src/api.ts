@@ -161,9 +161,26 @@ export type FeatureDetail = {
   // spec editada em approved depois da última aprovação (F-0262): a aprovação
   // não fala mais do texto atual.
   spec_changed_after_approval: boolean
-  // relatório persistido do roast adversarial da spec (F-0271); ausente
-  // enquanto nenhum roast rodou.
-  roast_report?: string
+  // rodadas persistidas do roast adversarial da spec (F-0271/F-0277), mais
+  // recente primeiro; o corpo de cada rodada é buscado sob demanda via
+  // fetchArtifactText ao abrir o modal de leitura.
+  roast_rounds: RoastRound[]
+  // rodadas do roast do PLANO (F-0275), lista própria sob o mesmo modelo —
+  // uma rodada de plano nunca se confunde com uma de spec.
+  plan_roast_rounds: RoastRound[]
+}
+
+// RoastRound (F-0277): uma rodada persistida do roast. `at` vem do carimbo do
+// relatório (null num roast.md legado sem carimbo); `spec_changed` é calculado
+// no servidor — a spec atual não é mais a que esta rodada julgou.
+export type RoastRound = {
+  name: string
+  at: string | null
+  spec_changed: boolean
+  // rodada de plano (F-0275): o plano se julga CONTRA a spec, então tanto a
+  // spec quanto o plano mudarem invalidam os vereditos. Sempre false numa
+  // rodada de spec, cujo relatório não carimba plano.
+  plan_changed: boolean
 }
 
 export type TransitionResult = {
@@ -356,9 +373,24 @@ export type RoastResult =
 // roastSpec dispara o roast adversarial da spec: 3 personas de contexto
 // fresco em paralelo no servidor; o relatório é persistido junto à candidata.
 export async function roastSpec(featureId: string): Promise<RoastResult> {
+  return runRoast(featureId, 'spec')
+}
+
+// roastPlan (F-0275) dispara o roast do plano: mesmas mecânicas, personas
+// próprias, e os críticos recebem spec E plano (o plano se julga contra a
+// spec). A rodada é persistida sob o prefixo plan-roast-, ao lado das da spec.
+export async function roastPlan(featureId: string): Promise<RoastResult> {
+  return runRoast(featureId, 'plan')
+}
+
+async function runRoast(featureId: string, doc: 'spec' | 'plan'): Promise<RoastResult> {
   const r = await fetch(
     `${base()}/features/${encodeURIComponent(featureId)}/roast`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doc }),
+    },
   )
   if (!r.ok) return { ok: false, error: await errorMessage(r) }
   const data = (await r.json()) as {

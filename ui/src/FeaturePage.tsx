@@ -14,6 +14,7 @@ import {
   generateDiagram,
   postTransition,
   renameFeature,
+  roastPlan,
   roastSpec,
   saveFeatureDoc,
   setFeatureParent,
@@ -21,6 +22,7 @@ import {
   type FeatureDetail,
   type FeatureState,
   type LLMMode,
+  type RoastRound,
   type TransitionAction,
   type TransitionResult,
 } from './api'
@@ -417,7 +419,9 @@ export default function FeaturePage({ id }: { id: string }) {
             />
             <RoastSection
               featureId={f.id}
-              report={detail.roast_report}
+              rounds={detail.roast_rounds}
+              planRounds={detail.plan_roast_rounds}
+              planReal={!!detail.docs_real?.plan}
               llmMode={llmMode}
               onRefresh={load}
             />
@@ -703,25 +707,61 @@ function DiagramsSection({
   )
 }
 
-// RoastSection (F-0271): dispara o roast adversarial da spec (3 críticos de
-// contexto fresco no servidor) e mostra o relatório persistido junto à
-// candidata. O roast nunca aprova nem reprova — os achados alimentam o gate
+// RoastSection (F-0271/F-0277): dispara o roast adversarial da spec (3
+// críticos de contexto fresco no servidor) e lista as rodadas persistidas —
+// nunca o relatório inteiro na lateral estreita. Cada rodada abre num modal
+// de leitura; a badge marca rodadas cuja spec mudou depois (calculado no
+// servidor). O roast nunca aprova nem reprova — os achados alimentam o gate
 // humano de aprovação.
 function RoastSection({
   featureId,
-  report,
+  rounds,
+  planRounds,
+  planReal,
   llmMode,
   onRefresh,
 }: {
   featureId: string
-  report?: string
+  rounds: RoastRound[]
+  planRounds: RoastRound[]
+  planReal: boolean
   llmMode: LLMMode | null
   onRefresh: () => void
 }) {
-  const { t } = useT()
+  const { t, lang } = useT()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [partial, setPartial] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
+  // F-0275: estado próprio do roast do plano — compartilhar error/partial com
+  // o da spec acende o aviso no painel errado.
+  const [planRunning, setPlanRunning] = useState(false)
+  const [planError, setPlanError] = useState<string | null>(null)
+  const [planPartial, setPlanPartial] = useState(false)
+
+  const runPlan = () => {
+    setPlanRunning(true)
+    setPlanError(null)
+    setPlanPartial(false)
+    roastPlan(featureId)
+      .then((res) => {
+        if (!res.ok) {
+          setPlanError(res.error)
+          return
+        }
+        if (!res.generated) {
+          setPlanError(t.feature.generateNeedsMode)
+          return
+        }
+        setPlanPartial(res.partial)
+        appendAssistantToFeatureChat(featureId, res.report)
+        onRefresh()
+      })
+      .catch((e: unknown) =>
+        setPlanError(e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => setPlanRunning(false))
+  }
 
   const run = () => {
     setRunning(true)
@@ -755,10 +795,28 @@ function RoastSection({
       <h2>{t.feature.roast}</h2>
       {error && <p className="form-error">{error}</p>}
       {partial && <p className="muted">{t.feature.roastPartial}</p>}
-      {report ? (
-        <article className="doc">
-          <Markdown>{report}</Markdown>
-        </article>
+      {rounds.length > 0 ? (
+        <ul>
+          {rounds.map((r) => (
+            <li key={r.name}>
+              <button
+                className="diagram-link"
+                title={r.name}
+                onClick={() => setOpen(r.name)}
+              >
+                {r.at
+                  ? new Date(r.at).toLocaleString(lang, {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })
+                  : r.name}
+              </button>
+              {r.spec_changed && (
+                <span className="roast-stale">{t.feature.roastSpecChanged}</span>
+              )}
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className="muted">{t.feature.roastEmpty}</p>
       )}
@@ -769,7 +827,124 @@ function RoastSection({
       >
         {running ? t.feature.roastRunning : t.feature.roastRun}
       </button>
+
+      <h2>{t.feature.planRoast}</h2>
+      {planError && <p className="form-error">{planError}</p>}
+      {planPartial && <p className="muted">{t.feature.roastPartial}</p>}
+      {planRounds.length > 0 ? (
+        <ul>
+          {planRounds.map((r) => (
+            <li key={r.name}>
+              <button
+                className="diagram-link"
+                title={r.name}
+                onClick={() => setOpen(r.name)}
+              >
+                {r.at
+                  ? new Date(r.at).toLocaleString(lang, {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })
+                  : r.name}
+              </button>
+              {r.spec_changed && (
+                <span className="roast-stale">{t.feature.roastSpecChanged}</span>
+              )}
+              {r.plan_changed && (
+                <span className="roast-stale">{t.feature.planRoastChanged}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">{t.feature.planRoastEmpty}</p>
+      )}
+      <button
+        onClick={runPlan}
+        disabled={planRunning || delegated || !planReal}
+        title={
+          delegated
+            ? t.feature.generateDisabledTitle
+            : !planReal
+              ? t.feature.planRoastNeedsPlan
+              : undefined
+        }
+      >
+        {planRunning ? t.feature.planRoastRunning : t.feature.planRoastRun}
+      </button>
+      {open && (
+        <RoastModal
+          featureId={featureId}
+          name={open}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </section>
+  )
+}
+
+// RoastModal (F-0277): overlay de leitura de uma rodada — o corpo é buscado
+// sob demanda (a lateral só carrega a lista) e renderizado como markdown em
+// largura de leitura. Fecha por botão, Esc ou clique no backdrop.
+function RoastModal({
+  featureId,
+  name,
+  onClose,
+}: {
+  featureId: string
+  name: string
+  onClose: () => void
+}) {
+  const { t } = useT()
+  const [content, setContent] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setContent(null)
+    setError(null)
+    fetchArtifactText(featureId, name)
+      .then(setContent)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : String(e)),
+      )
+  }, [featureId, name])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    // mousedown, não click: soltar uma seleção de texto sobre o backdrop
+    // dispararia click no ancestral e fecharia o modal no meio da leitura.
+    <div className="roast-overlay" onMouseDown={onClose}>
+      <div
+        className="roast-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={name}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <header className="roast-modal-head">
+          <h3>{name}</h3>
+          <button autoFocus onClick={onClose}>
+            {t.feature.roastClose}
+          </button>
+        </header>
+        {error ? (
+          <p className="form-error">{error}</p>
+        ) : content === null ? (
+          <p className="muted">{t.feature.roastLoading}</p>
+        ) : (
+          <article className="doc">
+            <Markdown>{content}</Markdown>
+          </article>
+        )}
+      </div>
+    </div>
   )
 }
 

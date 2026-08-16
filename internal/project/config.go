@@ -78,6 +78,11 @@ type AgentConfig struct {
 	// each chat turn (F-0253). It lives here, next to chat_timeout, because
 	// [agent] is already the Backlog chat's config block.
 	RetrievalBudget int `toml:"retrieval_budget,omitzero"`
+	// PlanRoastTimeout is the per-critic budget of the plan roast in seconds
+	// (F-0275): spec + plan double the input, so the spec roast's budget does
+	// not carry over. Twice ChatTimeoutOrDefault is both the default AND the
+	// floor — configuring less than that is raised, per the spec's ">= 2x".
+	PlanRoastTimeout int `toml:"plan_roast_timeout,omitzero"`
 }
 
 // RetrievalBudgetOrDefault returns the per-turn retrieval budget in
@@ -100,6 +105,18 @@ func (a AgentConfig) ChatTimeoutOrDefault() time.Duration {
 		return time.Duration(a.ChatTimeout) * time.Second
 	}
 	return 300 * time.Second
+}
+
+// PlanRoastTimeoutOrDefault returns the plan roast's per-critic budget
+// (F-0275 criterion 3). Two documents double a critic's input, so the floor
+// is twice the spec roast's budget: a configured value below it is raised
+// rather than silently starving every round into a partial report.
+func (a AgentConfig) PlanRoastTimeoutOrDefault() time.Duration {
+	floor := 2 * a.ChatTimeoutOrDefault()
+	if d := time.Duration(a.PlanRoastTimeout) * time.Second; d > floor {
+		return d
+	}
+	return floor
 }
 
 // Resolve returns the persona text: ProfileFile's content (read relative to

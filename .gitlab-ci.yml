@@ -71,6 +71,12 @@ docs-lock:immutable:
 # The only writer of the committed documentation snapshot pin. The resource
 # group serializes pipelines, and the checkout refresh makes an older pipeline
 # pin the latest main instead of racing from its original detached SHA.
+#
+# `cerne lock pin` clones the cerne-docs backend over SSH, so the job needs a
+# credential the runner image lacks: CERNE_DOCS_DEPLOY_KEY, a protected
+# *file-type* CI/CD variable holding an unencrypted ed25519 private key whose
+# public half is a read-only deploy key on rockt/cerne-docs. Without it the
+# job skips with a message instead of failing every main pipeline.
 docs-lock:pin:
   stage: pin
   rules:
@@ -79,6 +85,15 @@ docs-lock:pin:
   script:
     - |
       set -eu
+      if [ -z "${CERNE_DOCS_DEPLOY_KEY:-}" ]; then
+        echo "skipping docs.lock pin: CERNE_DOCS_DEPLOY_KEY is not set."
+        echo "Provision a read-only deploy key for git@gitlab.com:rockt/cerne-docs.git and add its"
+        echo "private half as a protected file-type CI/CD variable named CERNE_DOCS_DEPLOY_KEY."
+        exit 0
+      fi
+      mkdir -p ~/.ssh && chmod 700 ~/.ssh
+      install -m 600 "$CERNE_DOCS_DEPLOY_KEY" ~/.ssh/id_ed25519
+      echo 'gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf' >> ~/.ssh/known_hosts
       git fetch origin "$CI_DEFAULT_BRANCH"
       git checkout -B "$CI_DEFAULT_BRANCH" "origin/$CI_DEFAULT_BRANCH"
       go run ./cmd/cerne lock pin
