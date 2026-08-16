@@ -40,6 +40,9 @@ export default function DiagramPanel({
     initialScene ?? (isNew ? {} : null),
   )
   const [msg, setMsg] = useState<Msg | null>(null)
+  // Mensagem crua da falha de carga; traduzida só no render, para o efeito
+  // de fetch não depender do dicionário i18n (F-0278).
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(initialScene != null)
   const [busy, setBusy] = useState(false)
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null)
@@ -48,10 +51,17 @@ export default function DiagramPanel({
   const { t, lang } = useT()
 
   useEffect(() => {
+    // Re-execução do efeito (componente permanece montado quando o painel
+    // troca de diagrama): erro de carga anterior nunca fica preso no corpo.
+    setLoadError(null)
     // Cena nova vazia ou já fornecida (conversão): nada a buscar.
     if (isNew || initialScene != null) return
+    // Um fetch antigo que termine depois do atual (ou após desmontar) não
+    // pode sobrescrever o estado: o cleanup o marca como obsoleto.
+    let stale = false
     fetchArtifactJSON(featureId, name)
       .then((text) => {
+        if (stale) return
         const parsed = JSON.parse(text) as ExcalidrawInitialDataState
         if (parsed.appState && 'collaborators' in parsed.appState) {
           // collaborators serializado (objeto) quebra o restore (espera Map).
@@ -59,13 +69,14 @@ export default function DiagramPanel({
         }
         setScene(parsed)
       })
-      .catch((e: unknown) =>
-        setMsg({
-          kind: 'err',
-          text: t.diagram.loadError(e instanceof Error ? e.message : String(e)),
-        }),
-      )
-  }, [featureId, name, isNew, initialScene, t])
+      .catch((e: unknown) => {
+        if (stale) return
+        setLoadError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      stale = true
+    }
+  }, [featureId, name, isNew, initialScene])
 
   const save = () => {
     const api = apiRef.current
@@ -107,7 +118,9 @@ export default function DiagramPanel({
           <button onClick={onClose}>{t.diagram.close}</button>
         </div>
       </header>
-      {scene === null ? (
+      {loadError !== null ? (
+        <p className="form-error">{t.diagram.loadError(loadError)}</p>
+      ) : scene === null ? (
         <p className="status">{t.diagram.loading}</p>
       ) : (
         <div className="diagram-canvas">
