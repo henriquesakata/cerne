@@ -47,6 +47,18 @@ func TestCerneAuthoringDocumentsGauntlet(t *testing.T) {
 	// is exactly what the result-missing-evidence lint rule charges.
 	contains("crit1c", "critério N")
 	contains("crit1c", "result-missing-evidence")
+
+	// F-0276: bar and artifact are extracted in the form the consumer sees
+	// (rendered runtime value, served page, command output), never cut from
+	// the source — the assembly layer resolves away in the product — and a
+	// form finding is verified against the runtime before it becomes a
+	// correction, a debt or a feature.
+	contains("F-0276/1", "the rendered runtime value")
+	contains("F-0276/1", "never as a cut from the source")
+	contains("F-0276/1", "resolves away in the product")
+	contains("F-0276/2", "by the same consumer path")
+	contains("F-0276/2", "assembly residue")
+	contains("F-0276/2", "verify it against the runtime")
 }
 
 // TestCerneAuthoringDocumentsGauntletFieldRules pins F-0274 (crit. 2): the
