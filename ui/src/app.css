@@ -972,7 +972,11 @@ h2 {
 
 /* ---- página da feature ---- */
 
-.feature { max-width: 70rem; margin: 0 auto; padding: 1.5rem; }
+/* width + box-sizing são obrigatórios, não decorativos: como filho flex do
+   #root, a margem auto no eixo transversal desliga o stretch e a largura vira
+   fit-content — uma aba vazia (result/plan sem conteúdo) encolhia a página
+   inteira e a recentralizava. */
+.feature { width: 100%; max-width: 70rem; margin: 0 auto; padding: 1.5rem; box-sizing: border-box; }
 .back { display: inline-block; margin-bottom: 0.75rem; color: var(--muted); text-decoration: none; }
 .back:hover { text-decoration: underline; }
 .feature-id { font-family: ui-monospace, monospace; color: var(--muted); }
@@ -1903,7 +1907,9 @@ h2 {
 
 /* ---- páginas de leitura (decisions, references, search, lint, history) ---- */
 
-.page { max-width: 70rem; margin: 0 auto; padding: 1.5rem; }
+/* mesma armadilha do .feature: sem width/box-sizing a página encolhe para o
+   conteúdo quando ele é curto (lista vazia). */
+.page { width: 100%; max-width: 70rem; margin: 0 auto; padding: 1.5rem; box-sizing: border-box; }
 .page .counts { margin: 0.25rem 0 0; }
 .entity-group { margin-top: 1.25rem; }
 .entity-list { list-style: none; margin: 0; padding: 0; }
