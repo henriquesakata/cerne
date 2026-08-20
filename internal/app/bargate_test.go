@@ -33,9 +33,10 @@ func TestCheckSpecBar(t *testing.T) {
 		{"empty bar refuses", "# t\n\nBarra:\n", true, "sem valor"},
 		{"nao aplicavel without parens refuses", "# t\n\nBarra: não aplicável\n", true, "justificativa"},
 		{"dispensada without quote refuses", "# t\n\nBarra: dispensada por decisão humana\n", true, "citação"},
-		{"bar only inside guide comment refuses", "# t\n\n## Verificação\n<!-- uma das três formas: \"Barra: não\naplicável (<justificativa>)\" ou \"Barra: dispensada por decisão humana\". -->\n", true, "Barra:"},
+		{"bar only inside guide comment refuses", "# t\n\n## Problema\n\nProblema real descrito aqui.\n\n## Verificação\n<!-- uma das três formas: \"Barra: não\naplicável (<justificativa>)\" ou \"Barra: dispensada por decisão humana\". -->\n", true, "Barra:"},
 		{"bar inside code fence passes", "# t\n\n## Verificação\n\n```\nBarra: lint:i18n-baseline do CI (F-0484)\nMétodo: comparação cega\n```\n", false, ""},
 		{"unaccented nao aplicavel without parens refuses", "# t\n\nBarra: nao aplicavel\n", true, "justificativa"},
+		{"stub spec passes (document gate's refusal, not this one's)", "# t\n\n## Verificação\n<!-- guia do template -->\n", false, ""},
 		{"malformed first bar does not veto a valid later one", "# t\n\nBarra:\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", false, ""},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) \u2014 padra\u0303o alternativo: invariante\n", false, ""},
 	}

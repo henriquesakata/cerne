@@ -49,7 +49,8 @@ func TestCompileResolvesSupersessionThenLintClean(t *testing.T) {
 	feat := filepath.Join(docs, "current", "features", "F-0001-boletos")
 	mustCerne(t, "pull", "--dir", proj)
 	writeDoc(t, filepath.Join(feat, "spec.md"), "F-0001",
-		"# Boletos\n\nO fluxo segue a decisão base D-0001 do projeto.\n\n## Critérios\n\n- Gera boleto.\n")
+		"# Boletos\n\nO fluxo segue a decisão base D-0001 do projeto.\n\n## Critérios\n\n- Gera boleto.\n\n"+
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
 	mustCerne(t, "push", "--dir", proj)
 	mustCerne(t, "feature", "approve", "F-0001", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)

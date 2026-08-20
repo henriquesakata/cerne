@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gitlab.com/rockt/cerne/internal/doccheck"
 )
 
 // ErrSpecMissingBar is the sentinel for an approve attempted over a spec that
@@ -45,6 +47,11 @@ func CheckSpecBar(repoDir, id string) error {
 	}
 	if err != nil {
 		return err
+	}
+	// A stub spec is the document gate's refusal ("fill in the spec"), not this
+	// one's — the bar error only makes sense over a spec someone actually wrote.
+	if !doccheck.HasRealContent(data) {
+		return nil
 	}
 	body := htmlCommentRe.ReplaceAllString(string(data), "")
 	matches := barLineRe.FindAllStringSubmatch(body, -1)

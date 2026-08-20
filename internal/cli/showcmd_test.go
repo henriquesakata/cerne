@@ -26,10 +26,14 @@ func TestShowFeature(t *testing.T) {
 }
 
 func TestShowEpicAndTask(t *testing.T) {
-	projDir, _, _ := setupProject(t)
+	projDir, _, repoDir := setupProject(t)
 	if _, err := execCerne(t, "epic", "new", "Épico teste", "--context", "ctx de teste", "--dir", projDir); err != nil {
 		t.Fatalf("epic new: %v", err)
 	}
+	// The approve bar gate (F-0545) also covers epic specs; the creation-seeded
+	// spec has no bar, so give the epic a real one.
+	writeDoc(t, repoDir, "E-0001", "spec.md", realDoc("E-0001", "PRD real do épico."))
+	commitBackend(t, repoDir)
 	if _, err := execCerne(t, "feature", "approve", "E-0001", "--dir", projDir); err != nil {
 		t.Fatalf("feature approve E-0001: %v", err)
 	}
