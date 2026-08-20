@@ -59,10 +59,11 @@ const (
 
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
 	RuleResultMissingEvidence    = "result-missing-evidence"
+	RuleResultMissingGauntlet    = "result-missing-gauntlet"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -88,6 +89,7 @@ var ruleRank = map[string]int{
 
 	RuleSpecChangedAfterApproval: 20,
 	RuleResultMissingEvidence:    21,
+	RuleResultMissingGauntlet:    22,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -274,6 +276,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	}
 	findings = append(findings, specChangedFindings(features, events)...)
 	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
+	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
 
 	Sort(findings)
 	return findings, nil
