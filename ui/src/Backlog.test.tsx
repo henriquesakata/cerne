@@ -65,6 +65,21 @@ beforeEach(() => {
 })
 
 describe('Backlog (F-0202)', () => {
+  it('mostra o badge de esclarecimentos pendentes na candidata (F-0195)', async () => {
+    payload = { ...state([feature('F-0556'), feature('F-0557')]), open_clarifications: { 'F-0557': 2 } }
+    render(<Backlog />)
+    const badge = await screen.findByTitle('2 esclarecimento(s) aguardando sua resposta')
+    expect(badge).toHaveTextContent('2')
+    // Sem pendência não vira badge fantasma.
+    expect(screen.queryByTitle(/1 esclarecimento/)).toBeNull()
+  })
+
+  it('renderiza os cards sem o campo open_clarifications', async () => {
+    payload = state([feature('F-0001')])
+    render(<Backlog />)
+    expect(await screen.findByText('Feature F-0001')).toBeInTheDocument()
+  })
+
   it('lista só features candidate, com link para a feature', async () => {
     payload = state([
       feature('F-0001'),

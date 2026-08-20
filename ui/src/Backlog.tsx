@@ -18,6 +18,9 @@ import { useT } from './i18n'
 // remonta o chat e reseta seu estado efêmero de graça.
 export default function Backlog() {
   const [features, setFeatures] = useState<Feature[] | null>(null)
+  // F-0195: contagem de [ESCLARECER] abertos, mesma fonte do kanban. Servidor
+  // antigo não manda o campo — ausência é "sem pendência", nunca erro.
+  const [openClarifications, setOpenClarifications] = useState<Record<string, number>>({})
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const version = useLiveVersion()
@@ -28,6 +31,7 @@ export default function Backlog() {
     fetchState()
       .then((s) => {
         setFeatures(s.features.filter((f) => f.state === 'candidate'))
+        setOpenClarifications(s.open_clarifications ?? {})
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -46,7 +50,12 @@ export default function Backlog() {
         {features && features.length > 0 && (
           <div className="epic-lane-cards">
             {sortByPriority(features).map((f) => (
-              <BacklogCard key={f.id} feature={f} onRefine={() => chats.refineFeature(f.id)} />
+              <BacklogCard
+                key={f.id}
+                feature={f}
+                pending={openClarifications[f.id] ?? 0}
+                onRefine={() => chats.refineFeature(f.id)}
+              />
             ))}
           </div>
         )}
@@ -75,7 +84,15 @@ export default function Backlog() {
 // link é inválido e o clique disputaria com a navegação. O Backlog só lista
 // candidatas, então a ação nunca aparece para uma feature aprovada; o gate de
 // verdade é o do servidor (422 pós-candidatura).
-function BacklogCard({ feature, onRefine }: { feature: Feature; onRefine: () => void }) {
+function BacklogCard({
+  feature,
+  pending,
+  onRefine,
+}: {
+  feature: Feature
+  pending: number
+  onRefine: () => void
+}) {
   const { t } = useT()
   const hasTags =
     (feature.facets?.length ?? 0) > 0 || (feature.components?.length ?? 0) > 0
@@ -84,6 +101,11 @@ function BacklogCard({ feature, onRefine }: { feature: Feature; onRefine: () => 
     <a className="card card-candidate" href={`#/f/${feature.id}`}>
       <span className="card-meta">
         <span className="card-id">{feature.id}</span>
+        {pending > 0 && (
+          <span className="badge badge-clarify" title={t.kanban.pendingClarifyTitle(pending)}>
+            {t.kanban.pendingClarify(pending)}
+          </span>
+        )}
         {feature.module && <span className="badge">{feature.module}</span>}
         {feature.priority && <span className="badge badge-priority">{feature.priority}</span>}
       </span>
