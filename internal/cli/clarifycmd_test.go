@@ -14,7 +14,8 @@ import (
 func clarifySpecBody() string {
 	return "# Feature\n\n## Problema\n\nContexto real.\n\n" +
 		"[ESCLARECER: sincrona ou assincrona? | sincrona | assincrona]\n\n" +
-		"[CLARIFY: which format?]\n"
+		"[CLARIFY: which format?]\n\n" +
+		"## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
 }
 
 func readBackendSpec(t *testing.T, repoDir string) string {
@@ -109,10 +110,10 @@ func TestClarifyAnswerUsageErrors(t *testing.T) {
 	before := readBackendSpec(t, repoDir)
 
 	cases := [][]string{
-		{"clarify", "answer", "F-0001", "1", "--dir", projDir},                                    // neither flag
-		{"clarify", "answer", "F-0001", "1", "--answer", "x", "--pick", "1", "--dir", projDir},    // both flags
-		{"clarify", "answer", "F-0001", "1", "--pick", "9", "--dir", projDir},                     // pick out of range
-		{"clarify", "answer", "F-0001", "2", "--pick", "1", "--dir", projDir},                     // pick without options
+		{"clarify", "answer", "F-0001", "1", "--dir", projDir},                                 // neither flag
+		{"clarify", "answer", "F-0001", "1", "--answer", "x", "--pick", "1", "--dir", projDir}, // both flags
+		{"clarify", "answer", "F-0001", "1", "--pick", "9", "--dir", projDir},                  // pick out of range
+		{"clarify", "answer", "F-0001", "2", "--pick", "1", "--dir", projDir},                  // pick without options
 	}
 	for _, args := range cases {
 		if out, err := execCerne(t, args...); err == nil {

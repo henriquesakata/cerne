@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -48,7 +49,10 @@ func commitBackend(t *testing.T, repoDir string) {
 }
 
 func realDoc(id, body string) string {
-	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n"
+	// The Verificação/Barra tail satisfies the approve bar gate and the
+	// Gauntlet tail the result-missing-gauntlet lint rule (F-0545), for every
+	// fixture doc; sections a doc kind does not need are carried harmlessly.
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
 }
 
 func TestTransitionFullLifecycle(t *testing.T) {
@@ -491,5 +495,36 @@ func TestTransitionMissingFeature(t *testing.T) {
 	_, err := execCerne(t, "feature", "approve", "F-9999", "--dir", projDir)
 	if err == nil || !strings.Contains(err.Error(), "F-9999") {
 		t.Fatalf("approve missing feature err = %v, want error naming F-9999", err)
+	}
+}
+
+// F-0545 crit. 1 wiring: the approve command itself refuses a real spec that
+// names no Gauntlet bar, and teaches the accepted forms. Unit coverage of the
+// forms lives in app/bargate_test.go — this pins the CLI call site.
+func TestApproveRefusesSpecWithoutBar(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature sem barra", 1)
+
+	spec := "---\ncerne_id: " + id + "\n---\n\n# Título\n\n## Problema\n\nProblema real descrito aqui.\n\n## Verificação\n\nSó testes unitários.\n"
+	writeDoc(t, repoDir, id, "spec.md", spec)
+	commitBackend(t, repoDir)
+
+	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err == nil {
+		t.Fatalf("approve without bar succeeded\noutput: %s", out)
+	}
+	if !errors.Is(err, app.ErrSpecMissingBar) {
+		t.Fatalf("err = %v, want ErrSpecMissingBar", err)
+	}
+	if !strings.Contains(err.Error(), "dispensada por decisão humana") {
+		t.Fatalf("refusal does not teach the accepted forms: %v", err)
+	}
+	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateCandidate {
+		t.Fatalf("state after refusal = %s, want candidate", f.State)
+	}
+
+	// --force does not cross this gate (unlike the clarification gate).
+	if _, err := execCerne(t, "feature", "approve", id, "--force", "--dir", projDir); !errors.Is(err, app.ErrSpecMissingBar) {
+		t.Fatalf("--force crossed the bar gate: %v", err)
 	}
 }

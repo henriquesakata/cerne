@@ -33,7 +33,8 @@ func TestApproveRefusesOpenClarifications(t *testing.T) {
 
 	newFeatureWithSpec(t, projDir, "Com pergunta aberta",
 		"# Com pergunta aberta\n\n## Problema\n\nContexto real.\n\n"+
-			"[ESCLARECER: qual formato usar?]\n\n[ESCLARECER: onde persistir? | doc | sidecar]\n")
+			"[ESCLARECER: qual formato usar?]\n\n[ESCLARECER: onde persistir? | doc | sidecar]\n\n"+
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
 
 	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
 	if err == nil {
@@ -78,7 +79,8 @@ func TestApproveRefusesOpenClarificationsEnglish(t *testing.T) {
 
 	newFeatureWithSpec(t, projDir, "English spec",
 		"# English spec\n\n## Problema\n\nReal context in English.\n\n"+
-			"[CLARIFY: which storage backend?]\n")
+			"[CLARIFY: which storage backend?]\n\n"+
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
 
 	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
 	if err == nil {
@@ -106,7 +108,8 @@ func TestApprovePassesResolvedClarifications(t *testing.T) {
 
 	newFeatureWithSpec(t, projDir, "Só resolvidas",
 		"# Só resolvidas\n\n## Problema\n\nContexto real.\n\n"+
-			"[ESCLARECIDO: qual formato usar? → pipe inline]\n")
+			"[ESCLARECIDO: qual formato usar? → pipe inline]\n\n"+
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
 
 	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
 	if err != nil {

@@ -128,7 +128,8 @@ func TestGoldenPath(t *testing.T) {
 	}
 	realSpec := frontmatter +
 		"\n# Carrinho persistente\n\nO carrinho sobrevive a refresh e novo login.\n\n" +
-		"## Critérios de aceite\n\n- Itens persistem por 30 dias.\n"
+		"## Critérios de aceite\n\n- Itens persistem por 30 dias.\n\n" +
+		"## Verificação\n\nBarra: carrinho do satélite de referência — apps/finance/web\n"
 	if err := os.WriteFile(specPath, []byte(realSpec), 0o644); err != nil {
 		t.Fatalf("write real spec: %v", err)
 	}
