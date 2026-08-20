@@ -12,7 +12,7 @@ import (
 )
 
 // specBody is the revised spec used across the feature-spec tests.
-const specBody = "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão revisada pelo agente.\n"
+const specBody = "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão revisada pelo agente.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
 
 // pipeStdinBody feeds body to readOptionalBody as if it had been piped in —
 // the path the Backlog agent actually uses (it has no Write tool, so the spec
@@ -108,6 +108,10 @@ func TestFeatureSpecRefusals(t *testing.T) {
 	})
 
 	t.Run("not candidate", func(t *testing.T) {
+		// The creation-seeded spec has no Gauntlet bar; give it one so the
+		// approve below exercises ErrNotCandidate, not the bar gate (F-0545).
+		writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Spec aprovável."))
+		commitBackend(t, repoDir)
 		if out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir); err != nil {
 			t.Fatalf("approve: %v\noutput: %s", err, out)
 		}

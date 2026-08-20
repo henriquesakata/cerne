@@ -26,7 +26,8 @@ func TestResultGauntletFindings(t *testing.T) {
 	}{
 		{"verdict recorded is clean", domain.StateImplemented, after, recorded, ""},
 		{"exemption recorded is clean", domain.StateImplemented, after, exempt, ""},
-		{"nfd verdict is clean", domain.StateDone, after, "## Gauntlet\nBarra: x\nRodada 1 — vitória: “citação”\n", ""},
+		{"nfd verdict is clean", domain.StateDone, after, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vito\u0301ria: \u201ccita\u00e7a\u0303o\u201d\n", ""},
+		{"quote on another line does not vouch", domain.StateImplemented, after, "## Gauntlet\nBarra: \"refer\u00eancia\"\nRodada 1 \u2014 vit\u00f3ria\n", "sem veredito citado"},
 		{"no section flags", domain.StateImplemented, after, "## Resultado\n\nfeito\n", "sem seção"},
 		{"section without cited verdict flags", domain.StateImplemented, after, emptySection, "sem veredito citado"},
 		{"verdict without quote flags", domain.StateImplemented, after, "## Gauntlet\nBarra: x\nRodada 1 — vitória\n", "sem veredito citado"},

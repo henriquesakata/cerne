@@ -17,14 +17,14 @@ import (
 var ErrSpecMissingBar = errors.New("spec sem barra do Gauntlet")
 
 // The three literal forms a spec may carry (cerne-authoring skill, F-0270).
-// Accent alternations tolerate NFC and NFD (darwin paste), mirroring the
-// lint-side mention matching.
+// Accent alternations tolerate NFC, NFD (darwin paste) and the bare unaccented
+// spelling, mirroring the lint-side mention matching.
 var (
-	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
-	barLineRe     = regexp.MustCompile(`(?m)^\s*Barra:\s*(.*)$`)
-	naoAplicavelRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303})o\s+aplic(?:á|a\x{0301})vel\s*\(\s*[^)]+\)`)
-	dispensadaRe   = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303})o\s+humana\s*\(\s*[^)]+\)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303})o\s+aplic(?:á|a\x{0301})vel`)
+	htmlCommentRe        = regexp.MustCompile(`(?s)<!--.*?-->`)
+	barLineRe            = regexp.MustCompile(`(?m)^\s*Barra:\s*(.*)$`)
+	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel\s*\(\s*[^)]+\)`)
+	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*[^)]+\)`)
+	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel`)
 	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
 )
 
@@ -47,18 +47,30 @@ func CheckSpecBar(repoDir, id string) error {
 		return err
 	}
 	body := htmlCommentRe.ReplaceAllString(string(data), "")
-	m := barLineRe.FindStringSubmatch(body)
-	if m == nil {
+	matches := barLineRe.FindAllStringSubmatch(body, -1)
+	if len(matches) == 0 {
 		return fmt.Errorf("%w — nenhuma linha \"Barra:\" encontrada; %s", ErrSpecMissingBar, barForms)
 	}
-	value := strings.TrimSpace(m[1])
-	switch {
-	case value == "":
-		return fmt.Errorf("%w — \"Barra:\" sem valor; %s", ErrSpecMissingBar, barForms)
-	case naoAplicavelPrefixRe.MatchString(value) && !naoAplicavelRe.MatchString(value):
-		return fmt.Errorf("%w — \"Barra: não aplicável\" exige justificativa entre parênteses, confirmada pelo humano; %s", ErrSpecMissingBar, barForms)
-	case dispensadaPrefixRe.MatchString(value) && !dispensadaRe.MatchString(value):
-		return fmt.Errorf("%w — \"Barra: dispensada por decisão humana\" exige a citação da fala entre parênteses; %s", ErrSpecMissingBar, barForms)
+	// Any valid line satisfies the gate — a malformed leftover (e.g. template
+	// residue) must not veto a valid bar written further down. When none is
+	// valid, the first failure is the one reported, with its teaching message.
+	var firstInvalid error
+	for _, m := range matches {
+		value := strings.TrimSpace(m[1])
+		var err error
+		switch {
+		case value == "":
+			err = fmt.Errorf("%w — \"Barra:\" sem valor; %s", ErrSpecMissingBar, barForms)
+		case naoAplicavelPrefixRe.MatchString(value) && !naoAplicavelRe.MatchString(value):
+			err = fmt.Errorf("%w — \"Barra: não aplicável\" exige justificativa entre parênteses, confirmada pelo humano; %s", ErrSpecMissingBar, barForms)
+		case dispensadaPrefixRe.MatchString(value) && !dispensadaRe.MatchString(value):
+			err = fmt.Errorf("%w — \"Barra: dispensada por decisão humana\" exige a citação da fala entre parênteses; %s", ErrSpecMissingBar, barForms)
+		default:
+			return nil
+		}
+		if firstInvalid == nil {
+			firstInvalid = err
+		}
 	}
-	return nil
+	return firstInvalid
 }

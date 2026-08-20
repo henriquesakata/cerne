@@ -32,7 +32,8 @@ func TestRetireThenLintFlagsAlias(t *testing.T) {
 		t.Fatalf("glob materialized spec: matches=%v err=%v", matches, err)
 	}
 	realSpec := "---\ncerne_id: F-0001\n---\n\n# Relatórios financeiros\n\n" +
-		"O relatório consolida o módulo de boletos com o restante.\n"
+		"O relatório consolida o módulo de boletos com o restante.\n\n" +
+		"## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
 	if err := os.WriteFile(matches[0], []byte(realSpec), 0o644); err != nil {
 		t.Fatalf("write real spec: %v", err)
 	}

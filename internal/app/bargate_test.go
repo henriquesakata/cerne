@@ -35,7 +35,9 @@ func TestCheckSpecBar(t *testing.T) {
 		{"dispensada without quote refuses", "# t\n\nBarra: dispensada por decisão humana\n", true, "citação"},
 		{"bar only inside guide comment refuses", "# t\n\n## Verificação\n<!-- uma das três formas: \"Barra: não\naplicável (<justificativa>)\" ou \"Barra: dispensada por decisão humana\". -->\n", true, "Barra:"},
 		{"bar inside code fence passes", "# t\n\n## Verificação\n\n```\nBarra: lint:i18n-baseline do CI (F-0484)\nMétodo: comparação cega\n```\n", false, ""},
-				{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) \u2014 padra\u0303o alternativo: invariante\n", false, ""},
+		{"unaccented nao aplicavel without parens refuses", "# t\n\nBarra: nao aplicavel\n", true, "justificativa"},
+		{"malformed first bar does not veto a valid later one", "# t\n\nBarra:\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", false, ""},
+		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) \u2014 padra\u0303o alternativo: invariante\n", false, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

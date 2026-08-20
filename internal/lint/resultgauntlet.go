@@ -19,12 +19,12 @@ var resultGauntletSince = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 
 var (
 	gauntletHeadingRe = regexp.MustCompile(`(?m)^\s*##\s+Gauntlet\s*$`)
-	nextHeadingRe     = regexp.MustCompile(`(?m)^##\s`)
+	nextHeadingRe     = regexp.MustCompile(`(?m)^\s*##\s`)
 	// A cited verdict: vitória/derrota/empate (NFC or NFD accents), which the
 	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
 	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
 	// Recorded exemptions count as a complete record: no rounds exist to cite.
-	exemptionRe = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303})o\s+aplic(?:á|a\x{0301})vel|dispensada\s+por\s+decis(?:ã|a\x{0303})o\s+humana)\s*\(`)
+	exemptionRe = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)\s*\(`)
 )
 
 // gauntletSection returns the body of the "## Gauntlet" section, and whether
@@ -42,12 +42,19 @@ func gauntletSection(result []byte) (string, bool) {
 }
 
 // gauntletRecorded reports whether the section carries at least one cited
-// verdict (the quoted judge line) or a recorded exemption.
+// verdict — the verdict word and the quote on the same line, so a stray quote
+// elsewhere in the section cannot vouch for an unquoted verdict — or a
+// recorded exemption.
 func gauntletRecorded(section string) bool {
 	if exemptionRe.MatchString(section) {
 		return true
 	}
-	return verdictRe.MatchString(section) && strings.ContainsAny(section, `"“”`)
+	for _, line := range strings.Split(section, "\n") {
+		if verdictRe.MatchString(line) && strings.ContainsAny(line, `"“”`) {
+			return true
+		}
+	}
+	return false
 }
 
 // resultGauntletFindings flags implemented/done features (completed after the
