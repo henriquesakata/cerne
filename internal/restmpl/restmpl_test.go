@@ -81,3 +81,16 @@ func TestStubReadsAsStub(t *testing.T) {
 		t.Fatalf("a scaffolded result stub must read as a stub (gate must stay closed):\n%s", doc)
 	}
 }
+
+// TestStubCarimboAgente pins the agent stamp (F-0279): the METADADOS block asks
+// the author to record which model implemented the feature and at what reasoning
+// effort — self-declared, since no harness exposes it. A concrete model id is
+// wanted here (history), unlike the spec's generic Nível.
+func TestStubCarimboAgente(t *testing.T) {
+	s := restmpl.Stub("Conciliação bancária")
+	for _, want := range []string{"Agente:", "·", "esforço", "humano", "desconhecido"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("Stub must carry the agent stamp guidance %q:\n%s", want, s)
+		}
+	}
+}
