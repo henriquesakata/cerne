@@ -47,6 +47,13 @@ func TestBuildResultDraftPrompt(t *testing.T) {
 			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
 		}
 	}
+	// F-0279: the drafting agent stamps which model and effort implemented the
+	// feature, and writes "desconhecido" instead of guessing.
+	for _, want := range []string{"**Agente:**", "esforço", "desconhecido"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing the agent stamp rule %q:\n%s", want, prompt)
+		}
+	}
 }
 
 // TestResultDraftByoKeyWritesAndCommits drives `cerne result draft` in byo-key
