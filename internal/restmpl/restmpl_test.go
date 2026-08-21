@@ -88,7 +88,7 @@ func TestStubReadsAsStub(t *testing.T) {
 // wanted here (history), unlike the spec's generic Nível.
 func TestStubCarimboAgente(t *testing.T) {
 	s := restmpl.Stub("Conciliação bancária")
-	for _, want := range []string{"Agente:", "·", "esforço", "humano", "desconhecido"} {
+	for _, want := range []string{"**Agente:**", "·", "esforço", "humano", "desconhecido"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("Stub must carry the agent stamp guidance %q:\n%s", want, s)
 		}

@@ -37,13 +37,12 @@ número de testes, arquivo:linha, saída de comando — não afirmação ("pront
 incerteza com [ESCLARECER: pergunta específica]. Dimensione pelo trabalho: entrega pequena tem seções curtas
 — não infle. É o portão de cerne feature complete. -->
 
-<!-- METADADOS (preencha como linhas **Spec:** / **Data:**):
+<!-- METADADOS (preencha como linhas **Spec:** / **Data:** / **Agente:**):
 Spec: link para a spec que esta entrega fecha (../<id>/spec.md) — a fonte dos critérios.
 Data: AAAA-MM-DD — quando entregou.
 Agente: quem implementou, autodeclarado — "<id do modelo> · esforço <nível>" (ex.: "claude-opus-5 ·
-esforço high"); "humano" quando não houve agente; "desconhecido" no campo que você não souber, nunca um
-palpite. É registro histórico: nome concreto de modelo é desejado aqui, ao contrário do Nível: da spec,
-que é prescritivo e genérico. -->
+esforço high"); "humano" quando não houve agente; "desconhecido" no campo que não souber, nunca palpite.
+Aqui o nome concreto do modelo é desejado: registro histórico do que rodou, não prescrição. -->
 
 ## Resultado
 <!-- Em 1-2 frases: o que foi entregue e o estado (entregue / parcial). O resultado de cima, antes do detalhe. -->
