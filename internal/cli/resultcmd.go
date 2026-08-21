@@ -145,7 +145,7 @@ func BuildResultDraftPrompt(f store.Feature, specContent, planContent, currentCo
 	b.WriteString("- Mostre evidência, não afirmação. Débitos e itens adiados viram follow-ups concretos (feature/caso novo), não TODO órfão.\n")
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- Dimensione pelo trabalho: entrega pequena tem seções curtas; \"N/A\" onde não se aplica. Não infle.\n")
-	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o modelo e o esforço com que VOCÊ está rodando (ou \"**Agente:** humano\"); escreva \"desconhecido\" no campo que não souber, nunca um palpite.\n\n")
+	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o modelo e o esforço com que VOCÊ está rodando — o nível na escala do seu harness (ex.: low/medium/high) — ou \"**Agente:** humano\"; escreva \"desconhecido\" no campo que não souber, nunca um palpite.\n\n")
 	b.WriteString("Use a spec, o plano e o título acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString("Responda apenas com o conteúdo do resultado.\n")
 	return b.String()

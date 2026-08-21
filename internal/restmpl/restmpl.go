@@ -40,9 +40,10 @@ incerteza com [ESCLARECER: pergunta específica]. Dimensione pelo trabalho: entr
 <!-- METADADOS (preencha como linhas **Spec:** / **Data:** / **Agente:**):
 Spec: link para a spec que esta entrega fecha (../<id>/spec.md) — a fonte dos critérios.
 Data: AAAA-MM-DD — quando entregou.
-Agente: quem implementou, autodeclarado — "<id do modelo> · esforço <nível>" (ex.: "claude-opus-5 ·
-esforço high"); "humano" quando não houve agente; "desconhecido" no campo que não souber, nunca palpite.
-Aqui o nome concreto do modelo é desejado: registro histórico do que rodou, não prescrição. -->
+Agente: quem implementou, autodeclarado — "<id do modelo> · esforço <nível na escala do seu harness,
+ex.: low/medium/high>" (ex.: "claude-opus-5 · esforço high"); "humano" quando não houve agente;
+"desconhecido" no campo que não souber, nunca palpite. Aqui o nome concreto do modelo é desejado:
+registro histórico do que rodou, não prescrição. -->
 
 ## Resultado
 <!-- Em 1-2 frases: o que foi entregue e o estado (entregue / parcial). O resultado de cima, antes do detalhe. -->
