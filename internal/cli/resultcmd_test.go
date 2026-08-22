@@ -49,7 +49,7 @@ func TestBuildResultDraftPrompt(t *testing.T) {
 	}
 	// F-0279: the drafting agent stamps which model and effort implemented the
 	// feature, and writes "desconhecido" instead of guessing.
-	for _, want := range []string{"**Agente:**", "esforço", "desconhecido"} {
+	for _, want := range []string{"**Agente:**", "·", "esforço", "humano", "desconhecido"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing the agent stamp rule %q:\n%s", want, prompt)
 		}

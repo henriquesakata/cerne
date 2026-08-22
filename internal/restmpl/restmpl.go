@@ -41,9 +41,9 @@ incerteza com [ESCLARECER: pergunta específica]. Dimensione pelo trabalho: entr
 Spec: link para a spec que esta entrega fecha (../<id>/spec.md) — a fonte dos critérios.
 Data: AAAA-MM-DD — quando entregou.
 Agente: quem implementou, autodeclarado — "<id do modelo> · esforço <nível na escala do seu harness,
-ex.: low/medium/high>" (ex.: "claude-opus-5 · esforço high"); "humano" quando não houve agente;
-"desconhecido" no campo que não souber, nunca palpite. Aqui o nome concreto do modelo é desejado:
-registro histórico do que rodou, não prescrição. -->
+ex.: low/medium/high>"; ex.: "claude-opus-5 · esforço high". Sem agente: "humano". Não sabe um dos
+dois? marque só ele ("claude-opus-5 · esforço desconhecido") — nunca palpite. É registro histórico:
+o id concreto do modelo que rodou, não uma categoria genérica. -->
 
 ## Resultado
 <!-- Em 1-2 frases: o que foi entregue e o estado (entregue / parcial). O resultado de cima, antes do detalhe. -->
