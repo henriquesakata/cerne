@@ -215,6 +215,14 @@ func TestServeExposesOnlyRemoteSubset(t *testing.T) {
 	if rec := doMP(t, h, http.MethodGet, "/api/projects/proj-a/graph", "", mpSecret, nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("non-remote route /graph on serve: status %d, want 404", rec.Code)
 	}
+	// Write route the Studio host consumes (F-0281). An unknown feature is a
+	// 404 from the handler, same status as an unmounted route — only the
+	// error message ("feature not found" vs "route not found") separates them.
+	var body map[string]string
+	rec := doMP(t, h, http.MethodPost, "/api/projects/proj-a/features/F-9999/transition", `{"action":"approve"}`, mpSecret, &body)
+	if body["error"] != "feature not found" {
+		t.Fatalf("remote route /features/{id}/transition: status %d body %q, want the handler's JSON error", rec.Code, rec.Body.String())
+	}
 }
 
 // TestMultiProjectUnknownProject: an unregistered project is a 404.

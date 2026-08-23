@@ -28,8 +28,10 @@ type dataRoute struct {
 	handler scopedHandler
 }
 
-// dataRoutes returns the full data API. The remote flag preserves the exact set
-// that `cerne serve` exposed before this table existed.
+// dataRoutes returns the full data API. The remote flag started as the exact
+// set `cerne serve` exposed before this table existed; a route joins it when a
+// host actually consumes it, one feature at a time (F-0281 added the write
+// routes the Studio host calls: chat, chat/register, chat/note, transition).
 func dataRoutes() []dataRoute {
 	return []dataRoute{
 		{"GET", "/state", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
@@ -58,7 +60,7 @@ func dataRoutes() []dataRoute {
 		{"POST", "/features", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleCreateFeature(w, r, repoDir, projDir)
 		}},
-		{"POST", "/features/{id}/transition", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+		{"POST", "/features/{id}/transition", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleTransition(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
 		{"POST", "/features/{id}/diagram", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
@@ -112,13 +114,13 @@ func dataRoutes() []dataRoute {
 		{"POST", "/ask", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 			handleAsk(w, r, repoDir, projDir, projectID)
 		}},
-		{"POST", "/chat", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
+		{"POST", "/chat", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 			handleChat(w, r, repoDir, projDir, projectID)
 		}},
-		{"POST", "/chat/register", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+		{"POST", "/chat/register", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleChatRegister(w, r, repoDir, projDir)
 		}},
-		{"POST", "/chat/note", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+		{"POST", "/chat/note", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleChatNote(w, r, repoDir, projDir)
 		}},
 		{"GET", "/config/llm", true, func(w http.ResponseWriter, _ *http.Request, _, projDir, _ string) {
