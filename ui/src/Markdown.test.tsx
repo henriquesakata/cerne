@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Markdown from './Markdown'
+import { markerSpans, resolveMarker } from './clarify'
 
 const BLOCO = ['Antes do bloco.', '', '```js', 'const a = 1', 'console.log(a)', '```', '', 'Depois.'].join('\n')
 
@@ -71,5 +72,82 @@ describe('Markdown (F-0247): botão de copiar no bloco cercado', () => {
   it('não acrescenta botão a código inline', () => {
     render(<Markdown>{'Um `trecho` inline.'}</Markdown>)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+// F-0282: o marcador dentro de célula de tabela. O pipe cru é separador de
+// CÉLULA, então o marcador com opções tem de ser escrito com `\|` — a forma
+// escapada mantém a célula inteira e separa as opções do mesmo jeito.
+const tabela = (celula: string) =>
+  ['| Fork | Razão |', '| --- | --- |', `| ${celula} | porque sim |`].join('\n')
+
+describe('Markdown (F-0282): chip de esclarecimento em célula de tabela', () => {
+  it('critério 1: marcador sem opções na célula vira chip respondível', () => {
+    render(<Markdown onAnswer={() => {}}>{tabela('[ESCLARECER: qual formato?]')}</Markdown>)
+    expect(screen.getByRole('button', { name: /qual formato\?/ })).toBeInTheDocument()
+  })
+
+  it('critério 1: marcador com opções escapadas na célula vira chip com as opções no popover', () => {
+    render(
+      <Markdown onAnswer={() => {}}>{tabela('[ESCLARECER: qual formato? \\| tabela \\| lista]')}</Markdown>,
+    )
+    const chip = screen.getByRole('button', { name: /qual formato\?/ })
+    expect(chip).toBeInTheDocument()
+    // O rótulo é a pergunta já sem as barras invertidas do escape.
+    expect(chip).toHaveTextContent('? qual formato?')
+    fireEvent.click(chip)
+    expect(screen.getByRole('button', { name: 'tabela' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'lista' })).toBeInTheDocument()
+  })
+
+  it('critério 1: marcador resolvido na célula vira chip verde com a trilha', () => {
+    const { container } = render(<Markdown>{tabela('[ESCLARECIDO: qual formato? → tabela]')}</Markdown>)
+    expect(container.querySelector('.clarify-resolved')).toHaveTextContent('qual formato? → tabela')
+  })
+
+  it('critério 2: todo marcador contado pelo badge é um chip renderizado, dentro da tabela', () => {
+    const md = [
+      tabela('[ESCLARECER: com opções? \\| a \\| b]'),
+      '',
+      'Em prosa: [ESCLARECER: sem tabela? | a | b] e [ESCLARECIDO: outra? → ok].',
+    ].join('\n')
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    expect(container.querySelectorAll('.clarify-chip')).toHaveLength(markerSpans(md).length)
+  })
+
+  it('critério 3: responder pelo chip reescreve a fonte sem quebrar a tabela', () => {
+    const md = tabela('[ESCLARECER: qual formato? \\| tabela \\| lista]')
+    const respostas: Array<[string, number, string]> = []
+    const { container, unmount } = render(
+      <Markdown onAnswer={(raw, offset, answer) => respostas.push([raw, offset, answer])}>{md}</Markdown>,
+    )
+    const celulasAntes = container.querySelectorAll('td').length
+    fireEvent.click(screen.getByRole('button', { name: /qual formato\?/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'tabela' }))
+    unmount()
+
+    expect(respostas).toHaveLength(1)
+    const [raw, offset, answer] = respostas[0]
+    const proximo = resolveMarker(md, raw, offset, answer)
+    expect(proximo).not.toBeNull()
+
+    const depois = render(<Markdown>{proximo as string}</Markdown>)
+    expect(depois.container.querySelectorAll('td')).toHaveLength(celulasAntes)
+    expect(depois.container.querySelector('.clarify-resolved')).toHaveTextContent(
+      'qual formato? → tabela',
+    )
+  })
+
+  it('critério 3: resposta livre com pipe não vira separador de célula', () => {
+    const md = tabela('[ESCLARECER: qual formato?]')
+    const span = markerSpans(md)[0]
+    const proximo = resolveMarker(md, span.raw, span.offset, 'tabela | lista') as string
+    expect(proximo).toContain('[ESCLARECIDO: qual formato? → tabela \\| lista]')
+
+    const { container } = render(<Markdown>{proximo}</Markdown>)
+    expect(container.querySelectorAll('td')).toHaveLength(2)
+    expect(container.querySelector('.clarify-resolved')).toHaveTextContent(
+      'qual formato? → tabela | lista',
+    )
   })
 })
