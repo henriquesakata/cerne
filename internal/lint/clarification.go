@@ -11,8 +11,13 @@ import (
 // (F-0282). It runs inside the scanned-docs loop, so terminal entities are
 // excluded by construction — scannedDocs only yields live ones. Resolved
 // [ESCLARECIDO] markers are the answered trail and stay silent for the first
-// rule; the second one covers them too, because a sliced cell breaks the
-// resolved chip just the same.
+// rule; the second one covers them too, because a sliced cell costs the
+// resolved chip the same neighbouring text.
+//
+// The second rule reports a style debt, not a broken page: the render rebuilds
+// the row around the chip, so the marker is answerable either way. What the
+// escape buys is the row staying as authored — no cell absorbed into the chip
+// label, no column count shifting under the reader.
 func clarificationFindings(d scannedDoc, text string) []Finding {
 	var findings []Finding
 	for _, c := range clarify.Parse(text) {
@@ -33,7 +38,7 @@ func clarificationFindings(d scannedDoc, text string) []Finding {
 				Rule:   RuleClarifyUnescapedPipe,
 				Entity: d.entity,
 				File:   d.rel,
-				Detail: `marker sliced by a table cell separator, so no answer chip renders — escape its pipes as \|: ` + c.Raw,
+				Detail: `marker sliced by a table cell separator: the row has to be rebuilt around the chip, and the text of every cell the marker covers is absorbed into its label — escape its pipes as \|: ` + c.Raw,
 			})
 		}
 	}
