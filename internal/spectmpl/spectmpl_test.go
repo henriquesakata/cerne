@@ -151,3 +151,52 @@ func TestStubWithContextEmptyDegradesToStub(t *testing.T) {
 		t.Fatal("empty context should degrade to the plain Stub")
 	}
 }
+
+// TestBodyDropsStatusField pins F-0280 criterion 1: the METADADOS block no
+// longer asks for a **Status:** line — lifecycle state is data on the card
+// (cerne status), and duplicating it in prose is the "documentation that lies"
+// problem the founding spec exists to kill.
+func TestBodyDropsStatusField(t *testing.T) {
+	if strings.Contains(spectmpl.Body, "Status:") {
+		t.Fatalf("Body must not ask for a Status: metadata line:\n%s", spectmpl.Body)
+	}
+	if !strings.Contains(spectmpl.Body, "cerne status") {
+		t.Fatalf("Body should point the reader at the state as data (cerne status):\n%s", spectmpl.Body)
+	}
+}
+
+// TestBodyHasOrigemExample pins F-0280 criterion 2: the Origem: guidance ships a
+// literal filled line, quoted, in the shape the author copies — the field the
+// blind judges called the weakest for having categories but no form. The example
+// is exported so the draft prompt derives from it instead of restating it.
+func TestBodyHasOrigemExample(t *testing.T) {
+	if !strings.HasPrefix(spectmpl.OrigemExample, `"`) || !strings.HasSuffix(spectmpl.OrigemExample, `"`) {
+		t.Fatalf("OrigemExample must be a quoted literal line, got %q", spectmpl.OrigemExample)
+	}
+	// Anchored on the guidance lines (line starts), not the header that
+	// enumerates the fields — the header names them all before any guidance.
+	origem := strings.Index(spectmpl.Body, "\nOrigem:")
+	nivel := strings.Index(spectmpl.Body, "\nNível:")
+	example := strings.Index(spectmpl.Body, spectmpl.OrigemExample)
+	if origem < 0 || example < 0 {
+		t.Fatalf("Body missing the Origem: guidance or its example:\n%s", spectmpl.Body)
+	}
+	if !(origem < example && example < nivel) {
+		t.Fatalf("the Origem example must sit inside the Origem guidance (origem=%d example=%d nivel=%d)", origem, example, nivel)
+	}
+}
+
+// TestBodyHasUnknownFieldRule pins F-0280 criterion 3: the METADADOS block tells
+// the author what to write when a value is not known, and forbids guessing —
+// the same "desconhecido" the result template already uses (restmpl), so the two
+// halves of the family speak one vocabulary.
+func TestBodyHasUnknownFieldRule(t *testing.T) {
+	if spectmpl.UnknownMarker != "desconhecido" {
+		t.Fatalf("UnknownMarker = %q, want the restmpl vocabulary %q", spectmpl.UnknownMarker, "desconhecido")
+	}
+	for _, want := range []string{spectmpl.UnknownMarker, "palpite"} {
+		if !strings.Contains(spectmpl.Body, want) {
+			t.Fatalf("Body missing the unknown-field rule token %q:\n%s", want, spectmpl.Body)
+		}
+	}
+}

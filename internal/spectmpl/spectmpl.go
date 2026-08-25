@@ -41,6 +41,19 @@ const AmbiguityMarker = "[ESCLARECER:"
 // draft prompt so the two never drift.
 var Levels = []string{"leve", "padrão", "avançado"}
 
+// OrigemExample is the literal filled **Origem:** line the METADADOS guidance
+// shows as the shape to copy (F-0280): the field had three categories and no
+// form, which the blind judges of F-0279 called its weakest point. Exported so
+// the spec-draft prompt cites the same example instead of restating it.
+const OrigemExample = `"Relato de agente: cerne push falha em worktree paralelo (sessão 2026-05-14)"`
+
+// UnknownMarker is what an author writes in a METADADOS field whose value they
+// do not know — never a guess. Same word the result template uses (restmpl), so
+// both halves of the template family speak one vocabulary. The **Status:** field
+// is gone for the opposite reason: lifecycle state is data on the card
+// (cerne status), and a second copy in prose is documentation that lies.
+const UnknownMarker = "desconhecido"
+
 // Body is the spec template skeleton: the canonical section headings in order,
 // each with inline authoring guidance as HTML comments. It carries no
 // frontmatter and no title heading — callers prepend those. doccheck treats
@@ -51,13 +64,16 @@ const Body = `<!-- COMO USAR: preencha cada seção e remova estas linhas-guia. 
 incerteza com [ESCLARECER: pergunta específica] e não prossiga adivinhando. Antes de
 cerne feature approve: nenhum [ESCLARECER] restante; critérios testáveis; nada ambíguo. -->
 
-<!-- METADADOS (preencha como linhas **Status:** / **Tipo:** / **Origem:** / **Nível:**):
-Status: Rascunho (AAAA-MM-DD) — spec para revisão.
+<!-- METADADOS (preencha como linhas **Tipo:** / **Origem:** / **Nível:**):
 Tipo: Novo recurso | Corretivo | Refactor — o caráter da mudança em uma linha.
-Origem: o que disparou (relato de agente, dor recorrente, decisão do usuário + data).
+Origem: o que disparou (relato de agente, dor recorrente, decisão do usuário), com quem/onde e
+a data; ex.: "Relato de agente: cerne push falha em worktree paralelo (sessão 2026-05-14)".
 Nível: leve | padrão | avançado — capacidade de modelo sugerida para implementar + 1 frase
 de porquê (leve = mecânica, padrão existente, 1 pacote; padrão = multi-arquivo com testes;
-avançado = design novo / cross-cutting). Genérico — nunca nome de modelo/vendor. -->
+avançado = design novo / cross-cutting). Genérico — nunca nome de modelo/vendor.
+Campo que você não sabe: escreva "desconhecido" nele — nunca palpite; sabe só parte, escreva a parte
+e "desconhecido" no resto (ex.: "Relato de agente: … (sessão desconhecida)"). Tipo e Nível são fechados
+— escolha um dos valores. Estado do ciclo de vida não entra aqui: é dado do card (cerne status). -->
 
 ## Problema
 <!-- O que falta ou quebra HOJE, ancorado em código real (arquivo.go:linha). Por que agora;
