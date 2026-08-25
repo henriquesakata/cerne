@@ -55,7 +55,11 @@ const (
 	RuleUnregisteredSource = "unregistered-source"
 	RuleDriftSuspect       = "drift-suspect"
 	RuleOpenClarification  = "open-clarification"
-	RuleCapabilityOrphan   = "capability-orphan"
+	// RuleClarifyUnescapedPipe: a marker whose pipes are unescaped inside a
+	// GFM table row — the cell separator slices it and the answer chip never
+	// renders (F-0282).
+	RuleClarifyUnescapedPipe = "clarify-unescaped-pipe"
+	RuleCapabilityOrphan     = "capability-orphan"
 
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
 	RuleResultMissingEvidence    = "result-missing-evidence"
@@ -63,7 +67,7 @@ const (
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -85,11 +89,13 @@ var ruleRank = map[string]int{
 	RuleUnregisteredSource: 16,
 	RuleDriftSuspect:       17,
 	RuleOpenClarification:  18,
-	RuleCapabilityOrphan:   19,
 
-	RuleSpecChangedAfterApproval: 20,
-	RuleResultMissingEvidence:    21,
-	RuleResultMissingGauntlet:    22,
+	RuleClarifyUnescapedPipe: 19,
+	RuleCapabilityOrphan:     20,
+
+	RuleSpecChangedAfterApproval: 21,
+	RuleResultMissingEvidence:    22,
+	RuleResultMissingGauntlet:    23,
 }
 
 // Finding is one lint problem detected in the backend.

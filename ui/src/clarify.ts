@@ -50,6 +50,32 @@ const COMMENT_RE = /<!--[\s\S]*?(-->|$)/g
 const FENCED_RE = /^```[^\n]*\n[\s\S]*?^```/gm
 const INLINE_CODE_RE = /`[^`\n]+`/g
 
+// Dentro de uma tabela GFM um pipe cru é separador de CÉLULA: o parser fatia
+// um marcador com opções em várias células antes de qualquer lógica de chip,
+// e sobra texto cru na célula, sem como responder (F-0282). A saída é o escape
+// do próprio markdown — numa tabela os pipes de opção do marcador são escritos
+// `\|`, o que mantém a célula inteira. Logo a forma escapada separa opções
+// exatamente como a crua, e a barra invertida cai na leitura.
+//
+// Na forma RESOLVIDA não há opções — o corpo é partido só pela seta — então ali
+// `\|` é pipe literal: o parse desescapa e resolveMarker/correctMarker escapam
+// na escrita, que é o que impede uma resposta digitada com pipe de corromper a
+// tabela em que vive. Espelho de unescapeSeparator/unescapeResolved/escapePipe
+// no Go.
+
+// unescapeSeparator devolve o separador escapado a pipe simples, e para aí: é
+// tudo de que a forma ABERTA precisa, porque nada escreve escape num marcador
+// aberto. Ler barra dupla como escape aqui reescreveria em silêncio prosa já
+// autorada (um caminho do Windows, um regex), sem ganho nenhum.
+const unescapeSeparator = (s: string) => s.replaceAll('\\|', '|')
+
+// Na forma resolvida a barra escapa a si mesma além do pipe, numa passada só:
+// sem isso, uma resposta digitada como barra invertida seguida de pipe seria
+// gravada com a barra escapando a barra, e o GFM leria o pipe seguinte como
+// separador de célula — a corrupção que o escape existe para impedir.
+const unescapeResolved = (s: string) => s.replace(/\\([\\|])/g, '$1')
+const escapePipe = (s: string) => s.replace(/[\\|]/g, (c) => '\\' + c)
+
 // parseClarification decompõe um marcador cru; null quando não é marcador.
 export function parseClarification(raw: string): ClarifyInfo | null {
   const m = new RegExp(CLARIFY_RE.source).exec(raw)
@@ -60,9 +86,9 @@ export function parseClarification(raw: string): ClarifyInfo | null {
     // correção anexada com a mesma seta (F-0197). Sem seta alguma, o corpo
     // inteiro é a única resposta — a forma legada.
     const arrow = body.indexOf('→')
-    const question = arrow >= 0 ? body.slice(0, arrow).trim() : ''
+    const question = arrow >= 0 ? unescapeResolved(body.slice(0, arrow).trim()) : ''
     const rest = arrow >= 0 ? body.slice(arrow + 1) : body
-    const answers = rest.split('→').map((s) => s.trim())
+    const answers = rest.split('→').map((s) => unescapeResolved(s.trim()))
     return {
       question,
       options: [],
@@ -71,7 +97,7 @@ export function parseClarification(raw: string): ClarifyInfo | null {
       answer: answers[answers.length - 1],
     }
   }
-  const parts = body.split('|')
+  const parts = unescapeSeparator(body).split('|')
   return {
     question: parts[0].trim(),
     options: parts
@@ -140,8 +166,8 @@ export function resolveMarker(
   const vocab = VOCABS.find((v) => v.open === word)
   if (!vocab) return null
   const resolved = info.question
-    ? `[${vocab.resolved}: ${info.question} → ${answer}]`
-    : `[${vocab.resolved}: ${answer}]`
+    ? `[${vocab.resolved}: ${escapePipe(info.question)} → ${escapePipe(answer)}]`
+    : `[${vocab.resolved}: ${escapePipe(answer)}]`
   return content.slice(0, offset) + resolved + content.slice(offset + raw.length)
 }
 
@@ -162,11 +188,11 @@ export function correctMarker(
   if (!info || !info.resolved) return null
   const word = new RegExp(CLARIFY_RE.source).exec(raw)?.[1]
   if (!word || !RESOLVED_WORDS.has(word)) return null
-  const trail = [...info.answers, answer].join(' → ')
+  const trail = [...info.answers, answer].map(escapePipe).join(' → ')
   // Sem pergunta, a trilha ainda precisa da seta inicial: sem ela, a primeira
   // resposta seria reparseada como pergunta.
   const corrected = info.question
-    ? `[${word}: ${info.question} → ${trail}]`
+    ? `[${word}: ${escapePipe(info.question)} → ${trail}]`
     : `[${word}: → ${trail}]`
   return content.slice(0, offset) + corrected + content.slice(offset + raw.length)
 }

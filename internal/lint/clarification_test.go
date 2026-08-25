@@ -129,3 +129,90 @@ func TestOpenClarificationRunScopesToLiveEntities(t *testing.T) {
 		t.Errorf("Detail = %q, want the question text", got[0].Detail)
 	}
 }
+
+// TestClarificationUnescapedPipeInTable pins the F-0282 rule: inside a GFM
+// table row an unescaped pipe is a cell separator, so a marker carrying one is
+// sliced across cells and its answer chip never renders — the badge counts a
+// question the page cannot answer. The same marker in prose is the current,
+// working syntax and stays silent.
+func TestClarificationUnescapedPipeInTable(t *testing.T) {
+	d := scannedDoc{entity: "F-0001", rel: "content/features/F-0001/spec.md"}
+	const header = "| Fork | Razão |\n| --- | --- |\n"
+
+	tests := []struct {
+		name string
+		text string
+		want int // findings of RuleClarifyUnescapedPipe
+	}{
+		{
+			name: "raw option pipes in a table cell",
+			text: header + "| [ESCLARECER: qual formato? | tabela | lista] | pq |\n",
+			want: 1,
+		},
+		{
+			name: "escaped option pipes in a table cell are fine",
+			text: header + "| [ESCLARECER: qual formato? \\| tabela \\| lista] | pq |\n",
+			want: 0,
+		},
+		{
+			name: "raw option pipes in prose are the current syntax",
+			text: "Texto [ESCLARECER: qual formato? | tabela | lista] fim.\n",
+			want: 0,
+		},
+		{
+			name: "marker without pipes in a table cell is fine",
+			text: header + "| [ESCLARECER: qual formato?] | pq |\n",
+			want: 0,
+		},
+		{
+			// A doubled backslash escapes itself, so the pipe after it still
+			// separates cells — a "strip the escaped pipes" pass would miss it.
+			name: "a doubled backslash does not shield the pipe that follows",
+			text: header + "| [ESCLARECIDO: qual? → a\\\\|b] | pq |\n",
+			want: 1,
+		},
+		{
+			name: "resolved marker with a raw pipe in a table cell",
+			text: header + "| [ESCLARECIDO: qual? → tabela | lista] | pq |\n",
+			want: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []Finding
+			for _, f := range clarificationFindings(d, tt.text) {
+				if f.Rule == RuleClarifyUnescapedPipe {
+					got = append(got, f)
+				}
+			}
+			if len(got) != tt.want {
+				t.Fatalf("clarify-unescaped-pipe findings = %d, want %d: %+v", len(got), tt.want, got)
+			}
+			for _, f := range got {
+				if f.Entity != "F-0001" || f.File != d.rel {
+					t.Errorf("Entity/File = %q/%q, want F-0001/%s", f.Entity, f.File, d.rel)
+				}
+				if !strings.Contains(f.Detail, `\|`) {
+					t.Errorf("Detail = %q, want it to name the escape", f.Detail)
+				}
+			}
+		})
+	}
+}
+
+// TestClarifyUnescapedPipe_InRuleOrderAndRank pins the rule's registration:
+// without it the finding would never reach the report.
+func TestClarifyUnescapedPipe_InRuleOrderAndRank(t *testing.T) {
+	var found bool
+	for _, r := range RuleOrder {
+		if r == RuleClarifyUnescapedPipe {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("RuleClarifyUnescapedPipe ausente de RuleOrder")
+	}
+	if _, ok := ruleRank[RuleClarifyUnescapedPipe]; !ok {
+		t.Fatalf("RuleClarifyUnescapedPipe ausente de ruleRank")
+	}
+}
