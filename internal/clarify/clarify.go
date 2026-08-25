@@ -11,6 +11,9 @@
 //	[ESCLARECER]                              open, no question
 //	[ESCLARECER: question]                    open
 //	[ESCLARECER: question | option | option]  open, with proposed options
+//	[ESCLARECER: question \| option]          the same inside a GFM table cell,
+//	                                          where a bare pipe would split the
+//	                                          cell before the marker is seen
 //	[«ESCLARECER»: question]                  open (legacy guillemet form)
 //	[ESCLARECIDO: question → answer]          resolved (written by the UI)
 //	[CLARIFY: question] / [CLARIFIED: q → a]  the same, en vocabulary
@@ -86,6 +89,25 @@ var (
 	inlineCodeRe = regexp.MustCompile("`[^`\n]+`")
 )
 
+// Inside a GFM table an unescaped pipe is a cell separator: the parser slices
+// a marker with options across several cells before any chip logic sees it,
+// leaving raw text in the cell with no way to answer it (F-0282). The fix is
+// markdown's own backslash escape — inside a table the marker's option pipes
+// are written `\|`, which keeps the cell whole. So the escaped form separates
+// options exactly like the bare one, and the backslash is dropped on read.
+//
+// In the RESOLVED form there are no options — the body splits on the arrow
+// alone — so there `\|` is a literal pipe: Parse unescapes it, and Resolve and
+// Correct escape on write, which is what keeps an answer typed with a pipe
+// from corrupting the table it lives in.
+//
+// ponytail: a backslash escaping a backslash right before a pipe (`\\|`) is
+// outside the model — it reads as an escaped pipe. No authored doc needs it;
+// upgrade to a scanner that tracks backslash runs if one ever does.
+func unescapePipe(s string) string { return strings.ReplaceAll(s, `\|`, "|") }
+
+func escapePipe(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
+
 // citationRanges returns the [start, end) intervals of every citation context
 // in content, in no particular order.
 func citationRanges(content string) [][]int {
@@ -133,15 +155,15 @@ func Parse(content string) []Clarification {
 			// of one, which is why no legacy document needs migrating.
 			rest := body
 			if q, a, ok := strings.Cut(body, "→"); ok {
-				c.Question = strings.TrimSpace(q)
+				c.Question = unescapePipe(strings.TrimSpace(q))
 				rest = a
 			}
 			for _, s := range strings.Split(rest, "→") {
-				c.Answers = append(c.Answers, strings.TrimSpace(s))
+				c.Answers = append(c.Answers, unescapePipe(strings.TrimSpace(s)))
 			}
 			c.Answer = c.Answers[len(c.Answers)-1]
 		} else {
-			parts := strings.Split(body, "|")
+			parts := strings.Split(unescapePipe(body), "|")
 			c.Question = strings.TrimSpace(parts[0])
 			for _, p := range parts[1:] {
 				if opt := strings.TrimSpace(p); opt != "" {
@@ -174,9 +196,9 @@ func Resolve(c Clarification, answer string) (string, bool) {
 			continue
 		}
 		if c.Question != "" {
-			return "[" + v.Resolved + ": " + c.Question + " → " + answer + "]", true
+			return "[" + v.Resolved + ": " + escapePipe(c.Question) + " → " + escapePipe(answer) + "]", true
 		}
-		return "[" + v.Resolved + ": " + answer + "]", true
+		return "[" + v.Resolved + ": " + escapePipe(answer) + "]", true
 	}
 	return "", false
 }
@@ -200,9 +222,13 @@ func Correct(c Clarification, answer string) (string, bool) {
 	if !resolvedWords[word] {
 		return "", false
 	}
-	trail := strings.Join(append(append([]string{}, c.Answers...), answer), " → ")
+	escaped := make([]string, 0, len(c.Answers)+1)
+	for _, a := range append(append([]string{}, c.Answers...), answer) {
+		escaped = append(escaped, escapePipe(a))
+	}
+	trail := strings.Join(escaped, " → ")
 	if c.Question != "" {
-		return "[" + word + ": " + c.Question + " → " + trail + "]", true
+		return "[" + word + ": " + escapePipe(c.Question) + " → " + trail + "]", true
 	}
 	// No question: the trail still needs its leading arrow, otherwise
 	// [CLARIFIED: a1 → a2] would reparse as question "a1" with answer "a2".

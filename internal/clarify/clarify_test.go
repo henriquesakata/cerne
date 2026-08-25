@@ -264,6 +264,11 @@ func TestParseCorpus(t *testing.T) {
 				Offset   int    `json:"offset"`
 				Resolved bool   `json:"resolved"`
 			} `json:"spans"`
+			// Optional (F-0282): when present, both parsers must also agree on
+			// the parsed question and options of the FIRST span — the escaped
+			// pipe form is only locked by comparing what was read, not spans.
+			Question *string   `json:"question"`
+			Options  *[]string `json:"options"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &corpus); err != nil {
@@ -283,6 +288,12 @@ func TestParseCorpus(t *testing.T) {
 					t.Errorf("[%d] = {%q %d %v}, want {%q %d %v}",
 						i, got[i].Raw, got[i].Offset, got[i].Resolved, want.Raw, want.Offset, want.Resolved)
 				}
+			}
+			if c.Question != nil && got[0].Question != *c.Question {
+				t.Errorf("Question = %q, want %q", got[0].Question, *c.Question)
+			}
+			if c.Options != nil && strings.Join(got[0].Options, "‖") != strings.Join(*c.Options, "‖") {
+				t.Errorf("Options = %v, want %v", got[0].Options, *c.Options)
 			}
 		})
 	}

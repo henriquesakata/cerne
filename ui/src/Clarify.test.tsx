@@ -85,16 +85,28 @@ describe('clarify helpers', () => {
         name: string
         content: string
         spans: { raw: string; offset: number; resolved: boolean }[]
+        question?: string
+        options?: string[]
       }[]
     }
     expect(corpus.cases.length).toBeGreaterThan(0)
     for (const c of corpus.cases) {
-      const got = markerSpans(c.content).map((s) => ({
+      const spans = markerSpans(c.content)
+      const got = spans.map((s) => ({
         raw: s.raw,
         offset: s.offset,
         resolved: s.resolved,
       }))
       expect(got, c.name).toEqual(c.spans)
+      // Opcional (F-0282): quando o caso declara pergunta/opções, os dois
+      // parsers têm de concordar sobre o que LERAM — é onde a forma com pipe
+      // escapado fica travada, já que os spans não a distinguem.
+      if (c.question !== undefined) {
+        expect(parseClarification(spans[0].raw)?.question, c.name).toBe(c.question)
+      }
+      if (c.options !== undefined) {
+        expect(parseClarification(spans[0].raw)?.options, c.name).toEqual(c.options)
+      }
     }
   })
 
