@@ -58,7 +58,18 @@ function ownedBy(node: MdNode, span: MarkerSpan): boolean {
 // chip — caso patológico (o "]" que fecha o marcador caindo dentro de código
 // inline ou de um link), decidido na spec da F-0181 em favor de manter chip e
 // contador sempre de acordo.
-function spliceSpans(children: MdNode[], spans: MarkerSpan[], base: number): MdNode[] {
+// mdUnescape desfaz os escapes de barra invertida do markdown (barra seguida de
+// pontuação ASCII vira a pontuação). Sobra de texto recortada da FONTE precisa
+// dele: o valor do nó já vem desescapado pelo parser, e é justamente essa
+// diferença de comprimento que desalinhava o recorte antes (F-0282).
+const mdUnescape = (s: string) => s.replace(/\\([!-/:-@[-`{-~])/g, '$1')
+
+function spliceSpans(
+  children: MdNode[],
+  spans: MarkerSpan[],
+  base: number,
+  source: string,
+): MdNode[] {
   const segs: Seg[] = children.map((c) => ({ node: c, start: startOf(c), end: endOf(c) }))
   const out: MdNode[] = []
   let i = 0
@@ -80,7 +91,7 @@ function spliceSpans(children: MdNode[], spans: MarkerSpan[], base: number): MdN
       first.start !== undefined &&
       span.offset > first.start
     ) {
-      out.push({ type: 'text', value: first.node.value.slice(0, span.offset - first.start) })
+      out.push({ type: 'text', value: mdUnescape(source.slice(first.start, span.offset)) })
     }
     out.push({
       type: 'link',
@@ -103,7 +114,7 @@ function spliceSpans(children: MdNode[], spans: MarkerSpan[], base: number): MdN
         // Sobra do texto: vira o novo segmento corrente, para que um segundo
         // marcador no MESMO nó de texto ainda seja encontrado.
         segs[i] = {
-          node: { type: 'text', value: s.node.value.slice(end - s.start) },
+          node: { type: 'text', value: mdUnescape(source.slice(end, s.end)) },
           start: end,
           end: s.end,
         }
@@ -135,7 +146,7 @@ function remarkClarify(options: { base: number; source: string }) {
     for (const child of node.children) walk(child)
     const mine = spans.filter((s) => ownedBy(node, s))
     if (mine.length === 0) return
-    node.children = spliceSpans(node.children, mine, options.base)
+    node.children = spliceSpans(node.children, mine, options.base, options.source)
     // Numa tabela GFM o pipe cru é separador de CÉLULA: um marcador com opções
     // é fatiado em várias `tableCell` antes de qualquer lógica de chip, então
     // nenhuma célula o contém inteiro e o dono do span vira a `tableRow` — o nó

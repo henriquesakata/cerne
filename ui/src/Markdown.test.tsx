@@ -119,6 +119,45 @@ describe('Markdown (F-0282): chip de esclarecimento em célula de tabela', () =>
     ].join('\n')
     const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
     expect(container.querySelectorAll('.clarify-chip')).toHaveLength(markerSpans(md).length)
+    // O chip resolvido também carrega .clarify-chip — sem isto a contagem acima
+    // passaria por fora de um marcador inteiro.
+    expect(container.querySelectorAll('.clarify-resolved').length).toBeGreaterThan(0)
+    // Nenhuma linha perdeu ou ganhou célula: as duas tabelas têm 2 colunas.
+    for (const row of container.querySelectorAll('tbody tr')) {
+      expect(row.querySelectorAll('td')).toHaveLength(2)
+    }
+  })
+
+  it('critério 3: texto ao redor do marcador escapado sobrevive ao recorte', () => {
+    // O nó de texto já vem DESESCAPADO do parser, mais curto que a fonte: a
+    // sobra tem de ser recortada da fonte, senão as barras invertidas do escape
+    // comem o texto seguinte (` final` virava `inal`).
+    const md = tabela('custo [ESCLARECER: q? \\| a \\| b] final')
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    const celulas = Array.from(container.querySelectorAll('tbody td')).map((t) => t.textContent)
+    expect(celulas).toEqual(['custo ? q? final', 'porque sim'])
+  })
+
+  it('limite conhecido: com pipe CRU, o texto vizinho da célula é absorvido pelo chip', () => {
+    // Aqui as bordas do span são células inteiras, não nós de texto — a regra de
+    // borda da F-0181 (nó não-texto na borda é absorvido) vale igual em tabela.
+    // Pinado para que a perda seja uma decisão, não uma surpresa.
+    const md = tabela('custo [ESCLARECER: q? | a | b] final')
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    const celulas = Array.from(container.querySelectorAll('tbody td')).map((t) => t.textContent)
+    expect(celulas).toEqual(['? q?', 'porque sim'])
+  })
+
+  it('marcador não atravessa linhas, então o dono nunca é a própria tabela', () => {
+    // O corpo do marcador proíbe quebra de linha (CLARIFY_RE), e uma linha de
+    // tabela é uma linha de texto: um span não pode cobrir duas tableRow. É o
+    // que garante que reembrulhar só tableRow basta.
+    const md = ['| A | B |', '| --- | --- |', '| [ESCLARECER: um? | x] | y |', '| z | [ESCLARECER: dois? | w] |'].join('\n')
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    expect(container.querySelectorAll('.clarify-chip')).toHaveLength(markerSpans(md).length)
+    for (const row of container.querySelectorAll('tbody tr')) {
+      expect(row.querySelectorAll('td')).toHaveLength(2)
+    }
   })
 
   it('critério 1 e 2: marcador com pipe CRU na célula ainda vira chip, dentro de um <td>', () => {
