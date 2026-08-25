@@ -28,7 +28,7 @@ func clarificationFindings(d scannedDoc, text string) []Finding {
 				Detail: detail,
 			})
 		}
-		if inTableRow(text, c.Offset) && strings.Contains(unescapedPipes(c.Raw), "|") {
+		if inTableRow(text, c.Offset) && hasCellSeparator(c.Raw) {
 			findings = append(findings, Finding{
 				Rule:   RuleClarifyUnescapedPipe,
 				Entity: d.entity,
@@ -40,17 +40,32 @@ func clarificationFindings(d scannedDoc, text string) []Finding {
 	return findings
 }
 
-// unescapedPipes blanks out the escaped pipes so a plain Contains finds only
-// the ones GFM would read as cell separators.
-func unescapedPipes(s string) string { return strings.ReplaceAll(s, `\|`, "") }
+// hasCellSeparator reports whether s carries a pipe GFM would read as a cell
+// separator: one no backslash escape consumes. Scanning matters — a doubled
+// backslash escapes itself, so the pipe right after it still separates, and a
+// plain "strip the escaped pipes" pass would call that one escaped and miss it.
+func hasCellSeparator(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++ // the escape consumes the next byte, whatever it is
+			continue
+		}
+		if s[i] == '|' {
+			return true
+		}
+	}
+	return false
+}
 
 // inTableRow reports whether offset falls on a line that reads as a GFM table
 // row.
 //
 // ponytail: the heuristic is the leading pipe, which GFM makes optional but
-// every cerne doc template uses. A borderless table would go unflagged — a
-// missed warning, never a false one; upgrade to a real markdown parse if
-// borderless tables ever show up.
+// every cerne doc template uses. It neither requires the delimiter row above
+// nor looks through a blockquote, so a borderless table goes unflagged and a
+// prose line that happens to start with a pipe is flagged for nothing. Both
+// ends are cheap here — the finding only ever says "escape this pipe" — so the
+// upgrade to a real markdown parse waits for a doc that needs it.
 func inTableRow(content string, offset int) bool {
 	if offset < 0 || offset > len(content) {
 		return false

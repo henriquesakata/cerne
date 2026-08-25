@@ -165,6 +165,13 @@ func TestClarificationUnescapedPipeInTable(t *testing.T) {
 			want: 0,
 		},
 		{
+			// A doubled backslash escapes itself, so the pipe after it still
+			// separates cells — a "strip the escaped pipes" pass would miss it.
+			name: "a doubled backslash does not shield the pipe that follows",
+			text: header + "| [ESCLARECIDO: qual? → a\\\\|b] | pq |\n",
+			want: 1,
+		},
+		{
 			name: "resolved marker with a raw pipe in a table cell",
 			text: header + "| [ESCLARECIDO: qual? → tabela | lista] | pq |\n",
 			want: 1,
