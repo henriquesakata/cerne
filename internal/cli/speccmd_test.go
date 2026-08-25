@@ -184,3 +184,28 @@ func TestSpecDraftUnknownFeature(t *testing.T) {
 		t.Fatalf("error %q does not name the missing feature", err)
 	}
 }
+
+// TestBuildSpecDraftPromptMetadataRules pins F-0280 criterion 4: the draft
+// prompt asks the model for the SAME three METADADOS rules the template teaches
+// — no **Status:** line, an Origem: in the shape of the shared example, and the
+// unknown-field escape hatch instead of a guess. The example and the marker come
+// from spectmpl, never restated here, so template and prompt cannot drift (the
+// drift between the two was the critic's finding in F-0279).
+func TestBuildSpecDraftPromptMetadataRules(t *testing.T) {
+	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
+	prompt := BuildSpecDraftPrompt(f, "")
+	if strings.Contains(prompt, "**Status:**") {
+		t.Fatalf("prompt must not ask for a **Status:** metadata line:\n%s", prompt)
+	}
+	for _, want := range []string{
+		"cerne status",
+		"**Origem:**",
+		spectmpl.OrigemExample,
+		spectmpl.UnknownMarker,
+		"palpite",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing METADADOS rule %q:\n%s", want, prompt)
+		}
+	}
+}

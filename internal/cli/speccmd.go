@@ -148,6 +148,9 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- No Desenho, ancore em arquivos/pacotes reais com contratos explícitos (assinaturas, schemas); não omita o \"como\".\n")
 	b.WriteString("- Inclua nas linhas de metadados \"**Nível:** <" + strings.Join(spectmpl.Levels, "|") + "> — <justificativa em 1 frase>\", avaliando a complexidade da implementação; não cite nomes de modelos ou fornecedores de LLM.\n")
+	b.WriteString("- Não inclua linha de metadado de estado (Rascunho, Done, …): o ciclo de vida é dado do card (cerne status), nunca prosa que envelhece.\n")
+	b.WriteString("- Inclua \"**Origem:** <o que disparou, com quem/onde e a data>\", no formato do exemplo: " + spectmpl.OrigemExample + ".\n")
+	b.WriteString("- Campo de metadado cujo valor você não sabe: escreva \"" + spectmpl.UnknownMarker + "\" nele — nunca palpite; sabendo só parte, escreva a parte e \"" + spectmpl.UnknownMarker + "\" no resto. Tipo e Nível são vocabulários fechados: escolha um dos valores.\n")
 	b.WriteString("- Na Execução recomendada (agente): capacidade de modelo sugerida (vocabulário genérico, coerente com o Nível) e esforço; quais tarefas manter no mesmo agente (contexto compartilhado) e por quê; quais são separáveis.\n\n")
 	// F-0273: same Gauntlet contract the Backlog chat prompt uses (app.GauntletContract),
 	// reused verbatim — never copied — so a spec authored via CLI carries the
