@@ -11,9 +11,14 @@
 //	[ESCLARECER]                              open, no question
 //	[ESCLARECER: question]                    open
 //	[ESCLARECER: question | option | option]  open, with proposed options
-//	[ESCLARECER: question \| option]          the same inside a GFM table cell,
-//	                                          where a bare pipe would split the
-//	                                          cell before the marker is seen
+//	[ESCLARECER: question \| option]          the same: an escaped pipe separates
+//	                                          options exactly like a bare one,
+//	                                          everywhere — the escape exists so a
+//	                                          marker inside a GFM table cell is
+//	                                          not split by the cell separator.
+//	                                          A LITERAL pipe in an open marker is
+//	                                          therefore not expressible; only the
+//	                                          resolved form carries one.
 //	[«ESCLARECER»: question]                  open (legacy guillemet form)
 //	[ESCLARECIDO: question → answer]          resolved (written by the UI)
 //	[CLARIFY: question] / [CLARIFIED: q → a]  the same, en vocabulary
@@ -97,16 +102,39 @@ var (
 // options exactly like the bare one, and the backslash is dropped on read.
 //
 // In the RESOLVED form there are no options — the body splits on the arrow
-// alone — so there `\|` is a literal pipe: Parse unescapes it, and Resolve and
-// Correct escape on write, which is what keeps an answer typed with a pipe
-// from corrupting the table it lives in.
+// alone — so there `\|` is a literal pipe and `\\` a literal backslash: Parse
+// unescapes both, and Resolve and Correct escape on write, which is what keeps
+// an answer typed with a pipe (or with a backslash before one) from corrupting
+// the table it lives in.
 //
-// ponytail: a backslash escaping a backslash right before a pipe (`\\|`) is
-// outside the model — it reads as an escaped pipe. No authored doc needs it;
-// upgrade to a scanner that tracks backslash runs if one ever does.
-func unescapePipe(s string) string { return strings.ReplaceAll(s, `\|`, "|") }
+// The open form keeps the cheap reading — unescape, then split on every pipe —
+// so a backslash immediately before a separator there degrades to a stray
+// backslash in the question. That input is already a broken table cell, which
+// the clarify-unescaped-pipe lint rule reports.
+func unescapePipe(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) && (s[i+1] == '|' || s[i+1] == '\\') {
+			b.WriteByte(s[i+1])
+			i++
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
 
-func escapePipe(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
+// The backslash escapes itself as well as the pipe, in one pass: without that,
+// an answer typed as a backslash followed by a pipe would be written with the
+// backslash escaping the backslash, and GFM would read the pipe that follows as
+// a cell separator — the very corruption the escape exists to prevent.
+var pipeEscaper = strings.NewReplacer(`\`, `\\`, "|", `\|`)
+
+func escapePipe(s string) string { return pipeEscaper.Replace(s) }
 
 // citationRanges returns the [start, end) intervals of every citation context
 // in content, in no particular order.

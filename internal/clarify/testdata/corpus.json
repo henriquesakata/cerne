@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared marker corpus, read by internal/clarify (Go) and ui/src/Clarify.test.tsx (TS). The two parsers are deliberately duplicated (F-0175); this corpus is the lock that keeps them in step (F-0182). Every case lists ALL markers Parse/markerSpans must return, with exact raw+offset+resolved. offsets are BYTE offsets in Go and UTF-16 code-unit offsets in TS — keep marker bodies ASCII below so both agree. Cases may also carry question/options: when present, both parsers must agree on the marker's parsed question and options (F-0282, criterion 4) — that is where the escaped-pipe form is locked.",
+  "_comment": "Shared marker corpus, read by internal/clarify (Go) and ui/src/Clarify.test.tsx (TS). The two parsers are deliberately duplicated (F-0175); this corpus is the lock that keeps them in step (F-0182). Every case lists ALL markers Parse/markerSpans must return, with exact raw+offset+resolved. offsets are BYTE offsets in Go and UTF-16 code-unit offsets in TS — keep marker bodies ASCII below so both agree. Cases may also carry question/options/answers: when present, both parsers must agree on the marker's parsed question, options and answer trail (F-0282, criterion 4) — that is where the escaped-pipe form is locked.",
   "cases": [
     {
       "name": "pt open with question",
@@ -205,7 +205,25 @@
         }
       ],
       "question": "qual?",
-      "options": []
+      "options": [],
+      "answers": [
+        "a | b"
+      ]
+    },
+    {
+      "name": "pt resolved round-trips a backslash before the pipe",
+      "content": "x [ESCLARECIDO: qual? → a\\\\\\|b] y",
+      "spans": [
+        {
+          "raw": "[ESCLARECIDO: qual? → a\\\\\\|b]",
+          "offset": 2,
+          "resolved": true
+        }
+      ],
+      "question": "qual?",
+      "answers": [
+        "a\\|b"
+      ]
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",
@@ -281,6 +299,14 @@
       "offset": 33,
       "answer": "a | b",
       "want": "| Fork | Razao |\n| --- | --- |\n| [ESCLARECIDO: A? → a \\| b] | pq |"
+    },
+    {
+      "name": "a backslash before the pipe is escaped too, or the cell still splits",
+      "content": "| Fork | Razao |\n| --- | --- |\n| [ESCLARECER: A? \\| sim \\| nao] | pq |",
+      "raw": "[ESCLARECER: A? \\| sim \\| nao]",
+      "offset": 33,
+      "answer": "a\\|b",
+      "want": "| Fork | Razao |\n| --- | --- |\n| [ESCLARECIDO: A? → a\\\\\\|b] | pq |"
     }
   ],
   "_correct_comment": "Correction parity (F-0197): each case rewrites ONE anchored RESOLVED marker, appending the new answer to its trail instead of replacing it. Go replays via clarify.Correct + manual splice (TestCorrectCorpus); TS replays via correctMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch, or a still-open marker — correcting an open marker is answering it). Anchor offsets stay BEFORE any arrow: the arrow is 3 bytes in Go and 1 code unit in TS, so a later offset would not agree on both sides.",

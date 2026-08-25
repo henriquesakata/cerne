@@ -269,6 +269,7 @@ func TestParseCorpus(t *testing.T) {
 			// pipe form is only locked by comparing what was read, not spans.
 			Question *string   `json:"question"`
 			Options  *[]string `json:"options"`
+			Answers  *[]string `json:"answers"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &corpus); err != nil {
@@ -289,11 +290,24 @@ func TestParseCorpus(t *testing.T) {
 						i, got[i].Raw, got[i].Offset, got[i].Resolved, want.Raw, want.Offset, want.Resolved)
 				}
 			}
+			if c.Question == nil && c.Options == nil && c.Answers == nil {
+				return
+			}
+			if len(got) == 0 {
+				t.Fatalf("case declares parsed fields but Parse() returned no marker")
+			}
 			if c.Question != nil && got[0].Question != *c.Question {
 				t.Errorf("Question = %q, want %q", got[0].Question, *c.Question)
 			}
-			if c.Options != nil && strings.Join(got[0].Options, "‖") != strings.Join(*c.Options, "‖") {
-				t.Errorf("Options = %v, want %v", got[0].Options, *c.Options)
+			// len is compared first so a nil slice and an empty one cannot pass
+			// for each other through the joined form.
+			if c.Options != nil && (len(got[0].Options) != len(*c.Options) ||
+				strings.Join(got[0].Options, "‖") != strings.Join(*c.Options, "‖")) {
+				t.Errorf("Options = %#v, want %#v", got[0].Options, *c.Options)
+			}
+			if c.Answers != nil && (len(got[0].Answers) != len(*c.Answers) ||
+				strings.Join(got[0].Answers, "‖") != strings.Join(*c.Answers, "‖")) {
+				t.Errorf("Answers = %#v, want %#v", got[0].Answers, *c.Answers)
 			}
 		})
 	}

@@ -61,8 +61,12 @@ const INLINE_CODE_RE = /`[^`\n]+`/g
 // `\|` é pipe literal: o parse desescapa e resolveMarker/correctMarker escapam
 // na escrita, que é o que impede uma resposta digitada com pipe de corromper a
 // tabela em que vive. Espelho de unescapePipe/escapePipe no Go.
-const unescapePipe = (s: string) => s.replaceAll('\\|', '|')
-const escapePipe = (s: string) => s.replaceAll('|', '\\|')
+// A barra invertida escapa a si mesma além do pipe, numa passada só: sem isso,
+// uma resposta digitada como barra invertida seguida de pipe seria gravada com
+// a barra escapando a barra, e o GFM leria o pipe seguinte como separador de
+// célula — exatamente a corrupção que o escape existe para impedir.
+const unescapePipe = (s: string) => s.replace(/\\([\\|])/g, '$1')
+const escapePipe = (s: string) => s.replace(/[\\|]/g, (c) => '\\' + c)
 
 // parseClarification decompõe um marcador cru; null quando não é marcador.
 export function parseClarification(raw: string): ClarifyInfo | null {

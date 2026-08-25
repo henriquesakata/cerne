@@ -87,6 +87,7 @@ describe('clarify helpers', () => {
         spans: { raw: string; offset: number; resolved: boolean }[]
         question?: string
         options?: string[]
+        answers?: string[]
       }[]
     }
     expect(corpus.cases.length).toBeGreaterThan(0)
@@ -101,12 +102,14 @@ describe('clarify helpers', () => {
       // Opcional (F-0282): quando o caso declara pergunta/opções, os dois
       // parsers têm de concordar sobre o que LERAM — é onde a forma com pipe
       // escapado fica travada, já que os spans não a distinguem.
-      if (c.question !== undefined) {
-        expect(parseClarification(spans[0].raw)?.question, c.name).toBe(c.question)
-      }
-      if (c.options !== undefined) {
-        expect(parseClarification(spans[0].raw)?.options, c.name).toEqual(c.options)
-      }
+      if (c.question === undefined && c.options === undefined && c.answers === undefined) continue
+      expect(spans.length, `${c.name}: caso declara campos lidos mas não há marcador`).toBeGreaterThan(0)
+      const info = parseClarification(spans[0].raw)
+      if (c.question !== undefined) expect(info?.question, c.name).toBe(c.question)
+      if (c.options !== undefined) expect(info?.options, c.name).toEqual(c.options)
+      // A resposta é o único lugar onde a barra escapada é pipe LITERAL — sem
+      // esta asserção o caso resolvido passaria idêntico sem o desescape.
+      if (c.answers !== undefined) expect(info?.answers, c.name).toEqual(c.answers)
     }
   })
 
