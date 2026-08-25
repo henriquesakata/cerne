@@ -107,11 +107,16 @@ var (
 // an answer typed with a pipe (or with a backslash before one) from corrupting
 // the table it lives in.
 //
-// The open form keeps the cheap reading — unescape, then split on every pipe —
-// so a backslash immediately before a separator there degrades to a stray
-// backslash in the question. That input is already a broken table cell, which
-// the clarify-unescaped-pipe lint rule reports.
-func unescapePipe(s string) string {
+// unescapeSeparator turns the escaped separator back into a plain pipe, and
+// stops there: it is all the OPEN form needs, because nothing ever writes an
+// escape into an open marker. Reading a doubled backslash as an escape here
+// would silently rewrite prose that was already authored — a Windows path, a
+// regex — for no gain.
+func unescapeSeparator(s string) string { return strings.ReplaceAll(s, `\|`, "|") }
+
+// unescapeResolved reads the RESOLVED form, which Resolve and Correct wrote:
+// there the backslash escapes itself as well as the pipe, so both come back.
+func unescapeResolved(s string) string {
 	if !strings.Contains(s, `\`) {
 		return s
 	}
@@ -183,15 +188,15 @@ func Parse(content string) []Clarification {
 			// of one, which is why no legacy document needs migrating.
 			rest := body
 			if q, a, ok := strings.Cut(body, "→"); ok {
-				c.Question = unescapePipe(strings.TrimSpace(q))
+				c.Question = unescapeResolved(strings.TrimSpace(q))
 				rest = a
 			}
 			for _, s := range strings.Split(rest, "→") {
-				c.Answers = append(c.Answers, unescapePipe(strings.TrimSpace(s)))
+				c.Answers = append(c.Answers, unescapeResolved(strings.TrimSpace(s)))
 			}
 			c.Answer = c.Answers[len(c.Answers)-1]
 		} else {
-			parts := strings.Split(unescapePipe(body), "|")
+			parts := strings.Split(unescapeSeparator(body), "|")
 			c.Question = strings.TrimSpace(parts[0])
 			for _, p := range parts[1:] {
 				if opt := strings.TrimSpace(p); opt != "" {

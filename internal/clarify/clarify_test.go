@@ -299,8 +299,10 @@ func TestParseCorpus(t *testing.T) {
 			if c.Question != nil && got[0].Question != *c.Question {
 				t.Errorf("Question = %q, want %q", got[0].Question, *c.Question)
 			}
-			// len is compared first so a nil slice and an empty one cannot pass
-			// for each other through the joined form.
+			// len is compared first because the joined form alone cannot tell an
+			// empty slice from a one-element slice holding "". A nil slice and an
+			// empty one still compare equal, which is right: the two sides mean
+			// the same thing (Go returns nil where the browser returns []).
 			if c.Options != nil && (len(got[0].Options) != len(*c.Options) ||
 				strings.Join(got[0].Options, "‖") != strings.Join(*c.Options, "‖")) {
 				t.Errorf("Options = %#v, want %#v", got[0].Options, *c.Options)
