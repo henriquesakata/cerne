@@ -134,7 +134,22 @@ function remarkClarify(options: { base: number; source: string }) {
     if (!node.children || node.children.length === 0) return
     for (const child of node.children) walk(child)
     const mine = spans.filter((s) => ownedBy(node, s))
-    if (mine.length > 0) node.children = spliceSpans(node.children, mine, options.base)
+    if (mine.length === 0) return
+    node.children = spliceSpans(node.children, mine, options.base)
+    // Numa tabela GFM o pipe cru é separador de CÉLULA: um marcador com opções
+    // é fatiado em várias `tableCell` antes de qualquer lógica de chip, então
+    // nenhuma célula o contém inteiro e o dono do span vira a `tableRow` — o nó
+    // de link sairia como filho direto dela, estrutura que não é tabela, e o
+    // chip não renderizava (F-0282). Reembrulhar o que não é célula devolve a
+    // linha à forma válida: o chip renderiza dentro de um <td>, e responder
+    // reescreve a fonte para a forma resolvida, que ocupa uma célula só. O
+    // texto das células que o marcador cobre vive no rótulo do chip — é a mesma
+    // regra de borda da F-0181 (nó não-texto na borda é absorvido pelo chip).
+    if (node.type === 'tableRow') {
+      node.children = node.children.map((c) =>
+        c.type === 'tableCell' ? c : { type: 'tableCell', children: [c] },
+      )
+    }
   }
   return (tree: MdNode) => {
     if (spans.length > 0) walk(tree)

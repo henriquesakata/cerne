@@ -109,10 +109,47 @@ describe('Markdown (F-0282): chip de esclarecimento em célula de tabela', () =>
     const md = [
       tabela('[ESCLARECER: com opções? \\| a \\| b]'),
       '',
+      // O pipe CRU na célula é o caso que quebrava: o parser GFM fatia o
+      // marcador em várias células antes de qualquer lógica de chip. Contado
+      // pelo badge, tem de virar chip também — senão a paridade é só do
+      // caminho já conforme.
+      tabela('[ESCLARECER: pipe cru? | a | b]'),
+      '',
       'Em prosa: [ESCLARECER: sem tabela? | a | b] e [ESCLARECIDO: outra? → ok].',
     ].join('\n')
     const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
     expect(container.querySelectorAll('.clarify-chip')).toHaveLength(markerSpans(md).length)
+  })
+
+  it('critério 1 e 2: marcador com pipe CRU na célula ainda vira chip, dentro de um <td>', () => {
+    const md = tabela('[ESCLARECER: pipe cru? | a | b]')
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    const chip = screen.getByRole('button', { name: /pipe cru\?/ })
+    expect(chip).toBeInTheDocument()
+    // O chip vive dentro de uma célula — linha de tabela válida, não filho solto.
+    expect(chip.closest('td')).not.toBeNull()
+    // O popover ainda oferece as opções que o marcador propôs.
+    fireEvent.click(chip)
+    expect(screen.getByRole('button', { name: 'a' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'b' })).toBeInTheDocument()
+  })
+
+  it('critério 3: responder um marcador com pipe cru devolve a linha à forma válida', () => {
+    const md = tabela('[ESCLARECER: pipe cru? | a | b]')
+    const respostas: Array<[string, number, string]> = []
+    const { unmount } = render(
+      <Markdown onAnswer={(raw, offset, answer) => respostas.push([raw, offset, answer])}>{md}</Markdown>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /pipe cru\?/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'a' }))
+    unmount()
+
+    const [raw, offset, answer] = respostas[0]
+    const proximo = resolveMarker(md, raw, offset, answer) as string
+    const depois = render(<Markdown>{proximo}</Markdown>)
+    // A forma resolvida não tem pipe, então a linha volta a ter 2 células.
+    expect(depois.container.querySelectorAll('td')).toHaveLength(2)
+    expect(depois.container.querySelector('.clarify-resolved')).toHaveTextContent('pipe cru? → a')
   })
 
   it('critério 3: responder pelo chip reescreve a fonte sem quebrar a tabela', () => {
