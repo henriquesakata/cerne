@@ -277,13 +277,16 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	//    shadow the key-file fallback: go-git would offer no key and the server
 	//    would reject the handshake with "[none publickey]". On any dial error we
 	//    also fall through to key files.
+	var agentErr error
 	if agentHasIdentities() {
-		if auth, err := agentDial(user); err == nil {
+		auth, err := agentDial(user)
+		if err == nil {
 			if err := pinKnownHosts(auth, addr); err != nil {
 				return nil, err
 			}
 			return auth, nil
 		}
+		agentErr = err // kept: when nothing works, this is often the real story
 	}
 
 	// 2. Key files under the .ssh dir.
@@ -291,6 +294,7 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not locate the .ssh directory: %w", err)
 	}
+	var keyErrs []string
 	for _, name := range sshKeyFiles {
 		path := filepath.Join(dir, name)
 		if _, statErr := os.Stat(path); statErr != nil {
@@ -298,9 +302,11 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 		}
 		auth, keyErr := ssh.NewPublicKeysFromFile(user, path, "")
 		if keyErr != nil {
-			return nil, fmt.Errorf(
-				"key %s is passphrase-protected — start ssh-agent and run 'ssh-add': %w",
-				path, keyErr)
+			// Do NOT stop here: the probe order is a preference, not a
+			// commitment. One unreadable id_ed25519 used to veto a perfectly
+			// good id_rsa sitting right next to it.
+			keyErrs = append(keyErrs, name+" "+keyFileReason(path, keyErr))
+			continue
 		}
 		if err := pinKnownHosts(auth, addr); err != nil {
 			return nil, err
@@ -308,9 +314,54 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 		return auth, nil
 	}
 
-	return nil, fmt.Errorf(
-		"no usable SSH key in %s (looked for id_ed25519, id_rsa, id_ecdsa) — "+
-			"configure a key or start ssh-agent", dir)
+	return nil, noUsableKeyError(dir, keyErrs, agentErr)
+}
+
+// keyFileReason names what is actually wrong with a key file. Every failure
+// used to be reported as "passphrase-protected", which sends whoever hits a
+// corrupt file or a permission problem chasing `ssh-add` instead of the cause.
+//
+// "Is it encrypted?" is answered by the FILE, not by the error text: go-git
+// reports an encrypted key as "bcrypt_pbkdf: empty password", not as
+// *ssh.PassphraseMissingError, so classifying on the returned error would
+// silently never match — trading one wrong diagnosis for another, which is the
+// failure mode this whole change exists to remove.
+func keyFileReason(path string, err error) string {
+	switch {
+	case isPassphraseProtected(path):
+		return "is passphrase-protected — start ssh-agent and run 'ssh-add'"
+	case errors.Is(err, os.ErrPermission):
+		return "is not readable — check its permissions"
+	default:
+		return "is unusable: " + err.Error()
+	}
+}
+
+// isPassphraseProtected asks x/crypto's own parser, the authority on the
+// format, instead of pattern-matching somebody's error string.
+func isPassphraseProtected(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var missing *gossh.PassphraseMissingError
+	_, parseErr := gossh.ParseRawPrivateKey(data)
+	return errors.As(parseErr, &missing)
+}
+
+// noUsableKeyError explains everything that was tried. The agent's own failure
+// belongs here: reporting only the key files sends the user to the wrong half
+// of the problem when the agent is what broke.
+func noUsableKeyError(dir string, keyErrs []string, agentErr error) error {
+	msg := fmt.Sprintf("no usable SSH key in %s (looked for %s)",
+		dir, strings.Join(sshKeyFiles, ", "))
+	if len(keyErrs) > 0 {
+		msg += ": " + strings.Join(keyErrs, "; ")
+	}
+	if agentErr != nil {
+		msg += fmt.Sprintf("; the SSH agent also failed: %v", agentErr)
+	}
+	return errors.New(msg + " — configure a key or start ssh-agent")
 }
 
 // pinKnownHosts configures host-key verification on auth using the user's

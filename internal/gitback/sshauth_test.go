@@ -173,3 +173,97 @@ func TestSSHAuthNonSSHURL(t *testing.T) {
 		}
 	}
 }
+
+// A first key that cannot be read must not veto the ones after it: the probe
+// order is id_ed25519, id_rsa, id_ecdsa, and aborting on the first failure means
+// a stray unreadable file disables a perfectly good key.
+func TestSSHAuthBadFirstKeyFallsThroughToNext(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), []byte("isto nao e uma chave\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	writeKeyFile(t, dir, "id_rsa")
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
+
+	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err != nil {
+		t.Fatalf("sshAuthFor = %v, want it to fall through to id_rsa", err)
+	}
+	if auth == nil {
+		t.Fatal("auth is nil")
+	}
+}
+
+// And the diagnosis must match the cause: a corrupt key is not a
+// passphrase-protected one, and telling the user to run ssh-add sends them
+// after the wrong problem.
+func TestSSHAuthCorruptKeyIsNotReportedAsPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), []byte("isto nao e uma chave\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
+
+	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err == nil {
+		t.Fatal("err is nil, want a failure")
+	}
+	if strings.Contains(err.Error(), "passphrase") {
+		t.Fatalf("err = %v, want it not to blame a passphrase for a corrupt key", err)
+	}
+}
+
+// When nothing works, the agent's own failure is part of the story: reporting
+// only "no usable SSH key" sends the user to the key files when the agent was
+// the thing that broke.
+func TestSSHAuthReportsAgentFailure(t *testing.T) {
+	dir := t.TempDir() // no key files at all
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities; agentDial = realAgentDial })
+	agentHasIdentities = func() bool { return true }
+	agentDial = func(string) (transport.AuthMethod, error) {
+		return nil, errors.New("agente recusou a conexao (teste)")
+	}
+
+	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err == nil {
+		t.Fatal("err is nil, want a failure")
+	}
+	if !strings.Contains(err.Error(), "agente recusou a conexao") {
+		t.Fatalf("err = %v, want it to carry the agent's own failure", err)
+	}
+}
+
+// The other half of the classification: a key that IS passphrase-protected must
+// still get the ssh-add hint. Without this, an errors.As that silently never
+// matches would trade one wrong diagnosis for another — the exact failure mode
+// this feature exists to remove.
+func TestSSHAuthPassphraseKeyKeepsTheSSHAddHint(t *testing.T) {
+	dir := t.TempDir()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	block, err := gossh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("segredo"))
+	if err != nil {
+		t.Fatalf("MarshalPrivateKeyWithPassphrase: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
+
+	_, err = sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err == nil {
+		t.Fatal("err is nil, want a failure")
+	}
+	if !strings.Contains(err.Error(), "ssh-add") {
+		t.Fatalf("err = %v, want the ssh-add hint for a passphrase-protected key", err)
+	}
+}
