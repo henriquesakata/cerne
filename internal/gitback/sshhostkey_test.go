@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -273,8 +274,9 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 }
 
 // x/crypto rejects the WHOLE known_hosts on one malformed line, where ssh skips
-// that line and carries on. Taking every push and clone down for every host
-// because of one truncated append is not an option.
+// that line and carries on. Returning nil here would NOT soften that — go-git
+// re-reads the same file through the same parser — so the contract is a clear,
+// actionable error instead of a fallback that only pretends to be one.
 func TestKnownHostsPinSurvivesACorruptLine(t *testing.T) {
 	kh := filepath.Join(t.TempDir(), "known_hosts")
 	good := knownHostsWith(t, kh, "example.test") // writes a valid entry
@@ -285,12 +287,43 @@ func TestKnownHostsPinSurvivesACorruptLine(t *testing.T) {
 	if err := os.WriteFile(kh, append([]byte("isto nao e uma entrada valida\n"), body...), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	cb, algos, err := knownHostsPin(kh, "example.test:22")
-	if err != nil {
-		t.Fatalf("knownHostsPin on a dirty file = %v, want no error", err)
+	_, _, err = knownHostsPin(kh, "example.test:22")
+	if err == nil {
+		t.Fatalf("knownHostsPin on a dirty file = nil, want an error naming the file")
 	}
-	// Degrading to "no pin" is acceptable; failing the whole operation is not.
-	if cb != nil && !containsStr(algos, good) {
-		t.Fatalf("algos = %v, want either no pin at all or the valid entry %q", algos, good)
+	// The message has to be actionable: go-git re-reads the same file through
+	// the same parser, so there is no silent recovery to offer — only a clear
+	// account of what to fix.
+	if !strings.Contains(err.Error(), kh) {
+		t.Fatalf("err = %v, want it to name %q", err, kh)
+	}
+	_ = good
+}
+
+// A "@cert-authority" host records the CA by its PLAIN key type, never by a
+// "-cert-v01@openssh.com" name — so pinning only the plain types would exclude
+// exactly what a certificate-presenting server negotiates, breaking hosts that
+// worked before any pin existed. Without certAlgoFor this test fails.
+func TestKnownHostsPinOffersCertificateVariants(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	ca, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	line := "@cert-authority example.test " + string(gossh.MarshalAuthorizedKey(ca))
+	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, algos, err := knownHostsPin(kh, "example.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	if !containsStr(algos, gossh.CertAlgoED25519v01) {
+		t.Fatalf("algos = %v, want it to contain %q for a @cert-authority host",
+			algos, gossh.CertAlgoED25519v01)
 	}
 }

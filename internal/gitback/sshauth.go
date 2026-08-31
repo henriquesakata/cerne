@@ -187,13 +187,21 @@ func sshHostPort(u string) string {
 // (the Debian/Ubuntu default), the "[host]:port" spelling, wildcards — and a
 // hand-rolled matcher silently handled NONE of them.
 //
-// Two degradations return (nil, nil, nil), meaning "cannot pin, let go-git
-// decide", and both are deliberate:
-//   - the file is absent: first connection to an unknown host must still work;
-//   - the file does not parse: x/crypto rejects the WHOLE file on one malformed
-//     line, where ssh itself skips that line and carries on. Failing here would
-//     take every push and clone down, for every host, because of one truncated
-//     append — cerne must not be the thing that breaks that.
+// An ABSENT file returns (nil, nil, nil): nothing to pin with. That is not the
+// same as "the operation proceeds" — go-git then builds its own known_hosts
+// callback (auth_method.go: SetHostKeyCallbackAndAlgorithms falls back to
+// NewKnownHostsCallback) and fails on a missing file by itself. Leaving the
+// decision there is deliberate; pretending to soften it would be a lie, and an
+// earlier version of this comment told exactly that lie.
+//
+// An UNPARSEABLE file is reported, loudly, with the path in the message.
+// x/crypto rejects the whole file on one malformed line where ssh skips the
+// line and carries on, so this IS harsher than ssh — but "return nil and let
+// go-git decide" would not soften anything either: go-git re-reads the same
+// file through the same parser and dies the same way. A no-op dressed as a
+// fallback is worse than a clear error, so the error names the file and says
+// what to do with it. Filtering the bad lines before handing the file over is
+// the real fix, and a follow-up.
 func knownHostsPin(path, addr string) (gossh.HostKeyCallback, []string, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
@@ -203,7 +211,9 @@ func knownHostsPin(path, addr string) (gossh.HostKeyCallback, []string, error) {
 	}
 	cb, err := knownhosts.New(path)
 	if err != nil {
-		return nil, nil, nil // unparseable: see the doc above
+		return nil, nil, fmt.Errorf(
+			"%s has a line this parser rejects, and every SSH operation reads it "+
+				"(ssh itself would skip that line): %w", path, err)
 	}
 	probe, err := throwawayHostKey()
 	if err != nil {
@@ -463,7 +473,10 @@ func noUsableKeyError(dir string, keyErrs []string, agentErr error) error {
 // don't break first-connection-to-unknown-host).
 func pinKnownHosts(auth transport.AuthMethod, addr string) error {
 	if addr == "" {
-		return nil
+		// Only reachable if sshHostPort failed on a url isSSHURL accepted — our
+		// bug, not the user's. Returning nil here would quietly skip the pin,
+		// which is the very failure shape this feature removes.
+		return fmt.Errorf("cannot pin host key algorithms: no host in the remote url")
 	}
 	helper := hostKeyHelperOf(auth)
 	if helper == nil {
