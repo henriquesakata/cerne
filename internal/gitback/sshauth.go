@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -48,6 +49,9 @@ func realAgentDial(user string) (transport.AuthMethod, error) {
 // `ssh-add`, where plain ssh/git still work by reading the key file directly.
 var agentHasIdentities = defaultAgentHasIdentities
 
+// agentProbeTimeout bounds both the dial and the reply of the agent probe.
+const agentProbeTimeout = 3 * time.Second
+
 func defaultAgentHasIdentities() bool {
 	// On Windows the agent is Pageant / the OpenSSH named pipe, not a unix
 	// socket we can List() this way; agentDial errors cleanly if it is absent,
@@ -59,11 +63,19 @@ func defaultAgentHasIdentities() bool {
 	if sock == "" {
 		return true // cannot probe: let agentDial decide (unchanged behavior)
 	}
-	conn, err := net.Dial("unix", sock)
+	// Bounded on both halves. A stale socket inherited from a dead session
+	// accepts the connection and then never answers, and this probe runs on
+	// every SSH operation: without a deadline it is the one place in the
+	// package that can hang the CLI forever. A local agent answers in
+	// microseconds, so the budget is generous by orders of magnitude.
+	conn, err := net.DialTimeout("unix", sock, agentProbeTimeout)
 	if err != nil {
 		return false // agent unreachable → fall back to key files
 	}
 	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(agentProbeTimeout)); err != nil {
+		return false
+	}
 	keys, err := agent.NewClient(conn).List()
 	if err != nil {
 		return false

@@ -5,10 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 
@@ -265,5 +268,46 @@ func TestSSHAuthPassphraseKeyKeepsTheSSHAddHint(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ssh-add") {
 		t.Fatalf("err = %v, want the ssh-add hint for a passphrase-protected key", err)
+	}
+}
+
+// An agent socket that accepts and then goes silent (a stale one inherited from
+// a dead session) used to hang the CLI forever: the probe had no deadline
+// anywhere. This is the only unbounded wait in the package.
+func TestAgentHasIdentitiesDoesNotHangOnDeadAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the unix-socket probe is not the Windows path")
+	}
+	// Short base dir: a unix socket path is capped near 104 bytes, and
+	// t.TempDir() embeds the test name.
+	dir, err := os.MkdirTemp("/tmp", "cerne-agent")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var held []net.Conn
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			held = append(held, c) // accepted, never answered
+		}
+	}()
+	t.Setenv("SSH_AUTH_SOCK", sock)
+
+	done := make(chan bool, 1)
+	go func() { done <- agentHasIdentities() }()
+	select {
+	case <-done: // any answer is fine; not answering is the bug
+	case <-time.After(20 * time.Second):
+		t.Fatal("agentHasIdentities hung on an agent that never replies")
 	}
 }
