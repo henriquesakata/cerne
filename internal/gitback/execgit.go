@@ -16,6 +16,7 @@ package gitback
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -41,8 +42,41 @@ var gitBin = sync.OnceValue(func() string {
 	if err != nil {
 		return ""
 	}
-	return unshimmed(p)
+	p = unshimmed(p)
+	if p == "" || !gitVersionOK(p) {
+		return ""
+	}
+	return p
 })
+
+// minGitMajor/minGitMinor is the floor the flags here require: `status
+// --no-renames` landed in git 2.18. Below it every call would die on "unknown
+// option", and there is no per-call fallback to go-git — so the check happens
+// once, at resolution. It doubles as proof that the binary RUNS: presence on
+// PATH is not capability, and a broken or ancient install must degrade to the
+// go-git path, never to a broken command.
+const (
+	minGitMajor = 2
+	minGitMinor = 18
+)
+
+func gitVersionOK(path string) bool {
+	cmd := exec.Command(path, "--version")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	fields := strings.Fields(string(out)) // "git version 2.39.5 (Apple Git-154)"
+	if len(fields) < 3 {
+		return false
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(fields[2], "%d.%d", &major, &minor); err != nil {
+		return false
+	}
+	return major > minGitMajor || (major == minGitMajor && minor >= minGitMinor)
+}
 
 // macOS ships /usr/bin/git as a stub that re-resolves the active developer
 // directory on every invocation: measured 118ms per spawn against 37ms for the
@@ -115,13 +149,27 @@ func sshMuxEnv(workdir string) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return ""
 	}
+	// MkdirAll applies the mode only to directories it CREATES: an already
+	// existing, group/world-writable one would void the privacy this whole move
+	// was for, so it is verified rather than assumed.
+	if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm()&0o077 != 0 {
+		return ""
+	}
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(url))
 	path := filepath.Join(dir, fmt.Sprintf("%016x", h.Sum64()))
 	if len(path)+18 > 104 {
 		return ""
 	}
-	return "ssh -o ControlMaster=auto -o ControlPath=" + path + " -o ControlPersist=60s"
+	// git runs GIT_SSH_COMMAND through the SHELL, and ssh expands % tokens
+	// inside ControlPath. Quoting handles a space; a quote, a percent or a
+	// backslash in the cache path cannot be made safe here, and getting it
+	// wrong breaks every push with no fallback — so those turn multiplexing
+	// off instead.
+	if strings.ContainsAny(path, `'"%\`) {
+		return ""
+	}
+	return "ssh -o ControlMaster=auto -o 'ControlPath=" + path + "' -o ControlPersist=60s"
 }
 
 // netFastPath reports whether the network ops (push, fetch) may use the git
@@ -152,10 +200,11 @@ func gitRunNet(workdir, name string, args ...string) error {
 // exit becomes an error carrying stderr (git's own message is the useful one).
 //
 // Known limit: the local operations carry no deadline of their own, matching
-// the go-git path, which has none either. They are cheap and CPU-bound, and
-// every mutation already runs inside the backend advisory lock that serializes
-// cerne processes — so the realistic stall is an index.lock left by a crash,
-// which git reports and exits on rather than waiting.
+// the go-git path, which has none either. Most stalls are ruled out by
+// construction — GIT_TERMINAL_PROMPT=0 kills the prompts, --no-gpg-sign keeps
+// pinentry out, and a stale index.lock makes git exit rather than wait — but
+// the list is not closed (a wedged core.fsmonitor, an askpass helper), so this
+// is a documented limit, not a proof.
 func gitRun(workdir string, args ...string) (string, error) {
 	cmd := newGitCmd(context.Background(), workdir, args...)
 	if err := finishGitCmd(cmd, args); err != nil {
@@ -237,15 +286,25 @@ func finishGitCmd(cmd *exec.Cmd, args []string) error {
 	if err == nil {
 		return nil
 	}
+	// A grandchild that inherited the pipes — git's credential-cache daemon, or
+	// the ControlPersist master this very package starts — can hold them open
+	// past WaitDelay, and Run() then reports ErrWaitDelay even though git itself
+	// exited 0. Reading that as failure would turn a push that LANDED into a
+	// retry over an advanced remote: the exit status is the truth here.
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return nil
+	}
 	// git reports some refusals on stdout ("nothing to commit"), so the error
-	// carries both streams — callers classify by substring.
+	// carries both streams. Joined with a NEWLINE, never "; ": rejectedAsStale
+	// reads this output line by line, and an inline joiner would weld stderr
+	// onto the front of the '!' line and hide it.
 	var parts []string
 	for _, w := range []any{cmd.Stderr, cmd.Stdout} {
 		if t := strings.TrimSpace(builderText(w)); t != "" {
 			parts = append(parts, t)
 		}
 	}
-	msg := strings.Join(parts, "; ")
+	msg := strings.Join(parts, "\n")
 	if msg == "" {
 		msg = err.Error()
 	}
@@ -334,21 +393,42 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 	if len(paths) == 0 {
 		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
 	}
-	args := append([]string{"add", "--all", "--"}, paths...)
+	args := append([]string{"add", "--all", "--"}, literalPathspecs(paths)...)
 	if _, err := gitRun(workdir, args...); err != nil {
 		return "", err
 	}
+	// Whether there is anything to commit is answered by an EXIT CODE, not by
+	// git's prose: `diff --cached --quiet` exits 0 when the staged set is empty.
+	// The substring check below stays only as a backstop — a wording drift
+	// between git versions would otherwise turn a real failure into a silent
+	// "nothing to commit", and that is the one misreading with no symptom.
+	diffArgs := append([]string{"diff", "--cached", "--quiet", "--"}, literalPathspecs(paths)...)
+	if _, err := gitRun(workdir, diffArgs...); err == nil {
+		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
+	}
 	args = []string{
 		"-c", "user.name=cerne", "-c", "user.email=cerne@local",
-		"commit", "--only", "--no-verify", "-m", msg, "--",
+		"commit", "--only", "--no-verify", "--no-gpg-sign", "-m", msg, "--",
 	}
-	if _, err := gitRun(workdir, append(args, paths...)...); err != nil {
+	if _, err := gitRun(workdir, append(args, literalPathspecs(paths)...)...); err != nil {
 		if strings.Contains(err.Error(), "nothing to commit") || strings.Contains(err.Error(), "no changes added") {
 			return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
 		}
 		return "", err
 	}
 	return gitRun(workdir, "rev-parse", "HEAD")
+}
+
+// literalPathspecs stops git from reading a path as a glob. `--` ends OPTIONS;
+// it does not disable pathspec magic, so a file literally named "a[1].md" or
+// "v*.md" would match something else — or nothing — where go-git's Add is
+// always literal. Divergence in what gets committed is the worst possible kind.
+func literalPathspecs(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = ":(literal)" + p
+	}
+	return out
 }
 
 // execResetHard is ResetHard via the git binary: restore tracked files to sha
@@ -359,11 +439,30 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 // touched — the clone is cerne's own cache, and a leftover untracked file from
 // a crashed process must not ride along into the next commit.
 func execResetHard(workdir, sha string) error {
+	// The sha reaches here from docs.lock / the snapshot sidecar — files a user
+	// (or a merge driver) can write. A value starting with "-" would be parsed
+	// as an option, so it is validated as a hex object name before it becomes
+	// an argument.
+	if !isHexSHA(sha) {
+		return fmt.Errorf("reset %s: %q is not a commit sha", workdir, sha)
+	}
 	if _, err := gitRun(workdir, "reset", "--hard", sha); err != nil {
 		return err
 	}
 	_, err := gitRun(workdir, "clean", "-fdq")
 	return err
+}
+
+func isHexSHA(s string) bool {
+	if len(s) < 7 || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // execFetch is Fetch via the git binary.

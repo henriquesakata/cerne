@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 // The native-git fast path is only safe if it is indistinguishable from the
@@ -218,6 +220,9 @@ func TestResetHardBackendsAgree(t *testing.T) {
 // path on every Linux host, CI included — with every other test still green,
 // because they would all just run go-git twice.
 func TestGitBinNotDisabledWhereGitIsReal(t *testing.T) {
+	if os.Getenv("CERNE_NO_GIT_BIN") != "" {
+		t.Skip("fast path deliberately disabled for this run")
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on PATH")
 	}
@@ -252,5 +257,73 @@ func TestCommitPathsEmptyPathsCommitsNothing(t *testing.T) {
 	}
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("worktree changed: before=%+v after=%+v", before, after)
+	}
+}
+
+// A grandchild holding the inherited pipes past WaitDelay makes Run() report
+// ErrWaitDelay even when the command itself exited 0 — git's credential-cache
+// daemon and the ControlPersist master this package starts both do exactly
+// that. Reading it as failure would turn a push that landed into a retry.
+func TestFinishGitCmdSucceedsDespiteWaitDelay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no /bin/sh")
+	}
+	cmd := exec.Command("/bin/sh", "-c", "sleep 3 & exit 0")
+	cmd.Stdout, cmd.Stderr = &strings.Builder{}, &strings.Builder{}
+	cmd.WaitDelay = 100 * time.Millisecond
+	start := time.Now()
+	if err := finishGitCmd(cmd, []string{"probe"}); err != nil {
+		t.Fatalf("finishGitCmd = %v, want nil (the command exited 0)", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("waited %v — WaitDelay did not cut the inherited pipe short", elapsed)
+	}
+}
+
+func TestResetHardRejectsNonSHA(t *testing.T) {
+	requireGitBin(t)
+	// docs.lock is a writable file and a merge-driver target: a value starting
+	// with "-" must never reach git as an argument.
+	err := ResetHard(dirtyRepo(t), "--hard=/etc/passwd")
+	if err == nil || !strings.Contains(err.Error(), "not a commit sha") {
+		t.Fatalf("ResetHard(non-sha) = %v, want a rejection", err)
+	}
+}
+
+// `--` ends options but leaves pathspec magic on, so a file whose NAME contains
+// glob metacharacters must still be committed literally, exactly as go-git does.
+func TestCommitPathsGlobNameBackendsAgree(t *testing.T) {
+	requireGitBin(t)
+	const glob, decoy = "a[1].md", "a1.md"
+	seed := func() string {
+		t.Helper()
+		dir := initRepoWith(t, map[string]string{glob: "antes\n", decoy: "isca\n"})
+		writeFile(t, dir, glob, "depois\n")
+		writeFile(t, dir, decoy, "isca mexida\n")
+		return dir
+	}
+	commit := func(dir string) []Change {
+		t.Helper()
+		if _, err := CommitPaths(dir, []string{glob}, "probe"); err != nil {
+			t.Fatalf("CommitPaths: %v", err)
+		}
+		left, err := WorktreeChanges(dir)
+		if err != nil {
+			t.Fatalf("WorktreeChanges: %v", err)
+		}
+		return left
+	}
+	execLeft := commit(seed())
+	dir := seed()
+	withoutGitBin(t)
+	gogitLeft := commit(dir)
+	// The decoy must survive uncommitted in BOTH backends: committing it would
+	// mean the glob name was expanded.
+	want := []Change{{Path: decoy}}
+	if !reflect.DeepEqual(gogitLeft, want) {
+		t.Fatalf("go-git left = %+v, want %+v", gogitLeft, want)
+	}
+	if !reflect.DeepEqual(execLeft, gogitLeft) {
+		t.Fatalf("exec left = %+v, want %+v", execLeft, gogitLeft)
 	}
 }
