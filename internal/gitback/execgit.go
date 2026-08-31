@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -45,6 +46,14 @@ var gitBin = sync.OnceValue(func() string {
 // binary it forwards to. A mutation spawns git a handful of times, so going
 // straight to the real one is worth the two Stat calls. Not via `xcrun -f git`
 // — that is a ~200ms subprocess of its own, and this is a one-shot CLI.
+//
+// The stub is also why LookPath alone cannot answer "is git available here":
+// /usr/bin/git exists on every Mac, including one with no Command Line Tools,
+// where running it aborts or pops the install dialog and blocks. So when the
+// stub is all there is, this reports NO binary and the caller keeps the go-git
+// path — a machine that worked before this fast path existed must keep working.
+// A developer directory in a non-default location degrades the same way: no
+// fast path, same behavior as before, never a broken command.
 func unshimmed(path string) string {
 	if path != "/usr/bin/git" {
 		return path
@@ -57,25 +66,37 @@ func unshimmed(path string) string {
 			return c
 		}
 	}
-	return path
+	return ""
 }
 
 // sshMuxEnv is the GIT_SSH_COMMAND that reuses one SSH connection across cerne
 // processes. The handshake to the backend host costs ~1.2s and every command
 // pays it twice (SafePull's fetch, then the push); an agent session fires those
-// in bursts, so multiplexing collapses the repeats to ~0.1s. Empty (no
-// override) when the user already set GIT_SSH_COMMAND, or when the socket path
-// would not fit the ~104-byte sun_path limit — ssh errors out on a long
-// ControlPath instead of falling back, so the guard is not optional, and the
-// budget must include the ~17-byte random suffix ssh appends while the master
-// is being created.
+// in bursts, so multiplexing collapses the repeats to ~0.1s.
+//
+// The socket lives under the user's cache directory, never the shared temp dir:
+// a predictable name in a world-writable /tmp lets another local user pre-create
+// the path and either deny the connection or interpose their own master. It is
+// empty (no override) when the user already set GIT_SSH_COMMAND, when the cache
+// directory is unusable, or when the path would not fit the ~104-byte sun_path
+// limit — ssh ERRORS OUT on a long ControlPath instead of falling back, so the
+// guard is not optional, and the budget must include the ~17-byte random suffix
+// ssh appends while the master is being created.
 func sshMuxEnv(workdir string) string {
 	if os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("CERNE_NO_SSH_MUX") != "" {
 		return ""
 	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(cache, "cerne", "ssh")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(workdir))
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("cerne-ssh-%08x", h.Sum32()))
+	path := filepath.Join(dir, fmt.Sprintf("%08x", h.Sum32()))
 	if len(path)+18 > 104 {
 		return ""
 	}
@@ -113,17 +134,54 @@ func gitRun(workdir string, args ...string) (string, error) {
 	if err := finishGitCmd(cmd, args); err != nil {
 		return "", err
 	}
-	return strings.TrimRight(cmd.Stdout.(*strings.Builder).String(), "\n"), nil
+	return strings.TrimRight(builderText(cmd.Stdout), "\n"), nil
 }
 
 func newGitCmd(ctx context.Context, workdir string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, gitBin(), args...)
+	// safe.directory: git >=2.35.2 refuses a repository owned by another user
+	// (a clone mounted into a container, CI running as root). go-git never
+	// checked ownership, and this clone is a cache directory cerne created for
+	// itself — refusing it here would be a regression, not a defense.
+	cmd := exec.CommandContext(ctx, gitBin(), append([]string{"-c", "safe.directory=*"}, args...)...)
 	cmd.Dir = workdir
-	// Never let git ask for input (a credential or passphrase prompt would hang
-	// a CLI that has no terminal attached).
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(scrubbedEnv(),
+		// Never let git ask for input (a credential or passphrase prompt would
+		// hang a CLI with no terminal attached).
+		"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0",
+		// git translates its messages, and this package classifies control flow
+		// on them ("nothing to commit" -> ErrNothingToCommit, "[rejected]" ->
+		// non-fast-forward). Under a localized environment those substrings stop
+		// matching and the misclassification is SILENT, so the C locale is part
+		// of the contract, not tidiness.
+		"LC_ALL=C", "LANGUAGE=", "LANG=C")
 	cmd.Stdout, cmd.Stderr = &strings.Builder{}, &strings.Builder{}
 	return cmd
+}
+
+// repoScopedEnv are the git variables that rebind a git process to ANOTHER
+// repository. cerne runs inside git (the `cerne lock merge` driver wired via
+// .gitattributes, and the hooks), and there these point at the user's project:
+// a child `git commit` in the backend clone would then write the outer repo's
+// index. go-git never read them, so inheriting them would be a silent
+// divergence between the two backends — the worst kind.
+var repoScopedEnv = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_NAMESPACE", "GIT_PREFIX", "GIT_INDEX_VERSION",
+}
+
+// scrubbedEnv is the parent environment minus repoScopedEnv.
+func scrubbedEnv() []string {
+	env := os.Environ()
+	out := env[:0:0]
+	for _, kv := range env {
+		eq := strings.IndexByte(kv, '=')
+		if eq > 0 && slices.Contains(repoScopedEnv, kv[:eq]) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 func finishGitCmd(cmd *exec.Cmd, args []string) error {
@@ -135,10 +193,8 @@ func finishGitCmd(cmd *exec.Cmd, args []string) error {
 	// carries both streams — callers classify by substring.
 	var parts []string
 	for _, w := range []any{cmd.Stderr, cmd.Stdout} {
-		if b, ok := w.(*strings.Builder); ok {
-			if t := strings.TrimSpace(b.String()); t != "" {
-				parts = append(parts, t)
-			}
+		if t := strings.TrimSpace(builderText(w)); t != "" {
+			parts = append(parts, t)
 		}
 	}
 	msg := strings.Join(parts, "; ")
@@ -146,6 +202,16 @@ func finishGitCmd(cmd *exec.Cmd, args []string) error {
 		msg = err.Error()
 	}
 	return fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+}
+
+// builderText reads back a stream newGitCmd installed, "" for anything else —
+// the assertion is checked because a panic here would turn a git hiccup into a
+// crash of the whole command.
+func builderText(w any) string {
+	if b, ok := w.(*strings.Builder); ok {
+		return b.String()
+	}
+	return ""
 }
 
 // execPushRefspec pushes one refspec with the git binary. A rejection (the

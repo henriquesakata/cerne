@@ -39,6 +39,78 @@ func dirtyRepo(t *testing.T) string {
 	return dir
 }
 
+// hostileRepo is dirtyRepo's nastier sibling: the shapes that actually break a
+// porcelain parser — a name with an accent (git quotes it octally unless -z), a
+// name with a space, an untracked file nested in a NEW directory (plain
+// --porcelain collapses that to "dir/" and lists nothing inside), and an
+// ignored file (neither backend may ever report it).
+func hostileRepo(t *testing.T) string {
+	t.Helper()
+	dir := initRepoWith(t, map[string]string{
+		".gitignore":      "ignored/\n*.tmp\n",
+		"ação usuário.md": "antes\n",
+	})
+	writeFile(t, dir, "ação usuário.md", "depois\n")
+	for _, rel := range []string{"nova pasta/aninhado.md", "ignored/nope.md"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, rel)), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		writeFile(t, dir, rel, "x\n")
+	}
+	writeFile(t, dir, "scratch.tmp", "x\n")
+	return dir
+}
+
+func TestWorktreeChangesHostileNamesBackendsAgree(t *testing.T) {
+	requireGitBin(t)
+	exec, err := WorktreeChanges(hostileRepo(t))
+	if err != nil {
+		t.Fatalf("exec WorktreeChanges: %v", err)
+	}
+	dir := hostileRepo(t)
+	withoutGitBin(t)
+	gogit, err := WorktreeChanges(dir)
+	if err != nil {
+		t.Fatalf("go-git WorktreeChanges: %v", err)
+	}
+	want := []Change{{Path: "ação usuário.md"}, {Path: "nova pasta/aninhado.md"}}
+	if !reflect.DeepEqual(gogit, want) {
+		t.Fatalf("go-git changes = %+v, want %+v", gogit, want)
+	}
+	if !reflect.DeepEqual(exec, gogit) {
+		t.Fatalf("exec changes = %+v, want %+v", exec, gogit)
+	}
+}
+
+func TestCommitPathsHostileNamesBackendsAgree(t *testing.T) {
+	requireGitBin(t)
+	paths := []string{"ação usuário.md", "nova pasta/aninhado.md"}
+	commit := func(dir string) string {
+		t.Helper()
+		if _, err := CommitPaths(dir, paths, "probe"); err != nil {
+			t.Fatalf("CommitPaths: %v", err)
+		}
+		blob, ok, err := FileBlobAt(dir, headOf(t, dir), "nova pasta/aninhado.md")
+		if err != nil || !ok {
+			t.Fatalf("nested path not committed: ok=%v err=%v", ok, err)
+		}
+		left, err := WorktreeChanges(dir)
+		if err != nil {
+			t.Fatalf("WorktreeChanges: %v", err)
+		}
+		if len(left) != 0 {
+			t.Fatalf("worktree not clean after commit: %+v", left)
+		}
+		return string(blob)
+	}
+	execBlob := commit(hostileRepo(t))
+	dir := hostileRepo(t)
+	withoutGitBin(t)
+	if gogitBlob := commit(dir); gogitBlob != execBlob {
+		t.Fatalf("committed blob: exec=%q go-git=%q", execBlob, gogitBlob)
+	}
+}
+
 func TestWorktreeChangesBackendsAgree(t *testing.T) {
 	requireGitBin(t)
 	exec, err := WorktreeChanges(dirtyRepo(t))
