@@ -120,6 +120,53 @@ func sshHost(u string) string {
 	return rest
 }
 
+// sshHostPort is sshHost plus the port, in the "host:port" form the known_hosts
+// callback is addressed by. Defaults to :22. Returns "" for non-SSH urls.
+//
+// It exists because sshHost deliberately drops the port, and without it an
+// entry recorded as "[host]:2222" can never be matched: the callback would be
+// asked about the wrong address. In scp-like remotes ("user@host:something")
+// the segment after the colon is a PATH, so it counts as a port only when it is
+// purely numeric — "git@host:rockt/x.git" is host gitlab-style, not port
+// "rockt/x.git".
+func sshHostPort(u string) string {
+	host := sshHost(u)
+	if host == "" {
+		return ""
+	}
+	port := "22"
+	if strings.HasPrefix(u, "ssh://") {
+		if parsed, err := url.Parse(u); err == nil && parsed.Port() != "" {
+			port = parsed.Port()
+		}
+		return net.JoinHostPort(host, port)
+	}
+	if at := strings.Index(u, "@"); at >= 0 {
+		rest := u[at+1:]
+		if colon := strings.Index(rest, ":"); colon >= 0 {
+			if tail := rest[colon+1:]; isNumericPort(tail) {
+				port = tail
+			} else if slash := strings.Index(tail, "/"); slash > 0 && isNumericPort(tail[:slash]) {
+				// "host:2222/path" — the scp-like spelling of an explicit port.
+				port = tail[:slash]
+			}
+		}
+	}
+	return net.JoinHostPort(host, port)
+}
+
+func isNumericPort(s string) bool {
+	if s == "" || len(s) > 5 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // hostKeyAlgorithms returns the host key algorithms (e.g. "ssh-ed25519",
 // "ssh-rsa", "ecdsa-sha2-nistp256") present in the known_hosts file at path for
 // the given addr ("host" or "host:port"). It is used to pin

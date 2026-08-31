@@ -33,6 +33,31 @@ func TestSSHHost(t *testing.T) {
 	}
 }
 
+// sshHostPort must keep the port: the known_hosts callback is addressed by
+// "host:port", and an entry written as "[host]:2222" can only match if the real
+// port survives. In scp-like remotes the segment after ":" is a PATH unless it
+// is purely numeric, so both readings are pinned here.
+func TestSSHHostPort(t *testing.T) {
+	cases := []struct {
+		url  string
+		want string
+	}{
+		{"git@gitlab.com:rockt/x.git", "gitlab.com:22"},
+		{"ssh://git@h.example:2222/x", "h.example:2222"},
+		{"ssh://git@h.example/x", "h.example:22"},
+		{"deploy@host:p", "host:22"},
+		{"git@host:2222/x.git", "host:2222"},
+		{"/tmp/x", ""},
+		{"https://h/x", ""},
+		{`C:\local\path`, ""},
+	}
+	for _, c := range cases {
+		if got := sshHostPort(c.url); got != c.want {
+			t.Errorf("sshHostPort(%q) = %q, want %q", c.url, got, c.want)
+		}
+	}
+}
+
 // writeKnownHostsLine builds a known_hosts file at path with a single entry for
 // host using a freshly generated ed25519 public key, and returns its algorithm.
 func writeKnownHostsLine(t *testing.T, path, host string) {
