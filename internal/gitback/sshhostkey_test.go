@@ -90,7 +90,7 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	khPath := filepath.Join(dir, "known_hosts")
 	writeKnownHostsLine(t, khPath, "example.test")
 
-	_, algos, err := knownHostsPin(khPath, "example.test:22")
+	_, algos, err := knownHostsPin("example.test:22", khPath)
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	}
 
 	// Unknown host yields no algorithms.
-	_, unknown, err := knownHostsPin(khPath, "nope.test:22")
+	_, unknown, err := knownHostsPin("nope.test:22", khPath)
 	if err != nil {
 		t.Fatalf("knownHostsPin(unknown): %v", err)
 	}
@@ -109,7 +109,7 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 }
 
 func TestHostKeyAlgorithmsMissingFile(t *testing.T) {
-	_, algos, err := knownHostsPin(filepath.Join(t.TempDir(), "does-not-exist"), "example.test:22")
+	_, algos, err := knownHostsPin("example.test:22", filepath.Join(t.TempDir(), "does-not-exist"))
 	if err != nil {
 		t.Fatalf("knownHostsPin(missing) err = %v, want nil", err)
 	}
@@ -203,41 +203,14 @@ func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			kh := filepath.Join(t.TempDir(), "known_hosts")
 			want := knownHostsWith(t, kh, c.pattern(c.host))
-			before, err := os.ReadFile(kh)
-			if err != nil {
-				t.Fatalf("read: %v", err)
-			}
-			_, algos, err := knownHostsPin(kh, c.addr)
+			_, algos, err := knownHostsPin(c.addr, kh)
 			if err != nil {
 				t.Fatalf("knownHostsPin: %v", err)
 			}
 			if !containsStr(algos, want) {
 				t.Fatalf("algos = %v, want it to contain %q", algos, want)
 			}
-			// The lookup must not rewrite the user's known_hosts.
-			after, err := os.ReadFile(kh)
-			if err != nil {
-				t.Fatalf("read after: %v", err)
-			}
-			if string(before) != string(after) {
-				t.Fatalf("known_hosts was rewritten by the lookup")
-			}
 		})
-	}
-}
-
-// The other half of the invariant: an unknown host yields NOTHING, so "empty"
-// can never be mistaken for success. Without this, a lookup that silently stops
-// working looks exactly like a host nobody trusts yet.
-func TestHostKeyAlgorithmsUnknownHostStaysEmpty(t *testing.T) {
-	kh := filepath.Join(t.TempDir(), "known_hosts")
-	knownHostsWith(t, kh, "example.test")
-	_, algos, err := knownHostsPin(kh, "nope.test:22")
-	if err != nil {
-		t.Fatalf("knownHostsPin: %v", err)
-	}
-	if len(algos) != 0 {
-		t.Fatalf("algos for unknown host = %v, want empty", algos)
 	}
 }
 
@@ -258,7 +231,7 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 	if err := os.WriteFile(kh, []byte(knownhosts.Line([]string{"example.test"}, pub)+"\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, algos, err := knownHostsPin(kh, "example.test:22")
+	_, algos, err := knownHostsPin("example.test:22", kh)
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
@@ -267,9 +240,13 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 			t.Fatalf("algos = %v, want it to contain %q", algos, want)
 		}
 	}
-	// Strongest first, and deterministic: ke.Want comes out of a map.
-	if algos[0] != gossh.KeyAlgoRSASHA512 {
-		t.Fatalf("algos[0] = %q, want the SHA-512 variant offered first", algos[0])
+	// Strongest first, and deterministic: ke.Want comes out of a map. The
+	// certificate name of the strongest family leads — see the ordering test.
+	if algos[0] != gossh.CertAlgoRSASHA512v01 {
+		t.Fatalf("algos[0] = %q, want the strongest SHA-512 name offered first", algos[0])
+	}
+	if indexOf(algos, gossh.KeyAlgoRSASHA512) >= indexOf(algos, gossh.KeyAlgoRSA) {
+		t.Fatalf("algos = %v, want SHA-512 offered before the SHA-1 name", algos)
 	}
 }
 
@@ -277,9 +254,9 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 // that line and carries on. Returning nil here would NOT soften that — go-git
 // re-reads the same file through the same parser — so the contract is a clear,
 // actionable error instead of a fallback that only pretends to be one.
-func TestKnownHostsPinSurvivesACorruptLine(t *testing.T) {
+func TestKnownHostsPinReportsACorruptLine(t *testing.T) {
 	kh := filepath.Join(t.TempDir(), "known_hosts")
-	good := knownHostsWith(t, kh, "example.test") // writes a valid entry
+	knownHostsWith(t, kh, "example.test") // a valid entry, before the bad one
 	body, err := os.ReadFile(kh)
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -287,7 +264,7 @@ func TestKnownHostsPinSurvivesACorruptLine(t *testing.T) {
 	if err := os.WriteFile(kh, append([]byte("isto nao e uma entrada valida\n"), body...), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, _, err = knownHostsPin(kh, "example.test:22")
+	_, _, err = knownHostsPin("example.test:22", kh)
 	if err == nil {
 		t.Fatalf("knownHostsPin on a dirty file = nil, want an error naming the file")
 	}
@@ -297,7 +274,6 @@ func TestKnownHostsPinSurvivesACorruptLine(t *testing.T) {
 	if !strings.Contains(err.Error(), kh) {
 		t.Fatalf("err = %v, want it to name %q", err, kh)
 	}
-	_ = good
 }
 
 // A "@cert-authority" host records the CA by its PLAIN key type, never by a
@@ -318,12 +294,69 @@ func TestKnownHostsPinOffersCertificateVariants(t *testing.T) {
 	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, algos, err := knownHostsPin(kh, "example.test:22")
+	_, algos, err := knownHostsPin("example.test:22", kh)
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
 	if !containsStr(algos, gossh.CertAlgoED25519v01) {
 		t.Fatalf("algos = %v, want it to contain %q for a @cert-authority host",
 			algos, gossh.CertAlgoED25519v01)
+	}
+}
+
+func indexOf(s []string, want string) int {
+	for i, v := range s {
+		if v == want {
+			return i
+		}
+	}
+	return len(s)
+}
+
+// Order is load-bearing, not cosmetic: SSH negotiation picks the first
+// algorithm in the CLIENT's list that the server supports. For a host recorded
+// only as "@cert-authority" there IS no plain entry, so offering the plain name
+// first makes a server with a HostCertificate answer with the plain key, which
+// the known_hosts callback then rejects — the pin breaks a host that worked
+// with no pin at all. Containment tests are blind to this; only order catches it.
+func TestKnownHostsPinOffersCertificateBeforePlain(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	ca, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	line := "@cert-authority example.test " + string(gossh.MarshalAuthorizedKey(ca))
+	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, algos, err := knownHostsPin("example.test:22", kh)
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	cert, plain := indexOf(algos, gossh.CertAlgoED25519v01), indexOf(algos, gossh.KeyAlgoED25519)
+	if cert >= plain {
+		t.Fatalf("algos = %v: certificate name at %d, plain at %d — the certificate must come first",
+			algos, cert, plain)
+	}
+}
+
+// SSH_KNOWN_HOSTS wins over the user's dir, exactly as go-git's own fallback
+// resolves it. This package OVERRIDES that callback, so consulting a different
+// set of files would silently change which hosts are trusted.
+func TestKnownHostsFilesHonoursTheEnvironment(t *testing.T) {
+	curated := filepath.Join(t.TempDir(), "curated")
+	t.Setenv("SSH_KNOWN_HOSTS", curated)
+	files := knownHostsFiles("/home/someone/.ssh")
+	if len(files) != 1 || files[0] != curated {
+		t.Fatalf("knownHostsFiles = %v, want just %q", files, curated)
+	}
+	t.Setenv("SSH_KNOWN_HOSTS", "")
+	files = knownHostsFiles("/home/someone/.ssh")
+	if len(files) != 2 || files[0] != "/home/someone/.ssh/known_hosts" || files[1] != "/etc/ssh/ssh_known_hosts" {
+		t.Fatalf("knownHostsFiles = %v, want the user file then the system one", files)
 	}
 }

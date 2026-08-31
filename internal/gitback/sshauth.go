@@ -202,18 +202,23 @@ func sshHostPort(u string) string {
 // fallback is worse than a clear error, so the error names the file and says
 // what to do with it. Filtering the bad lines before handing the file over is
 // the real fix, and a follow-up.
-func knownHostsPin(path, addr string) (gossh.HostKeyCallback, []string, error) {
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, nil
+func knownHostsPin(addr string, paths ...string) (gossh.HostKeyCallback, []string, error) {
+	var present []string
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			present = append(present, p)
+		} else if !os.IsNotExist(err) {
+			return nil, nil, err
 		}
-		return nil, nil, err
 	}
-	cb, err := knownhosts.New(path)
+	if len(present) == 0 {
+		return nil, nil, nil
+	}
+	cb, err := knownhosts.New(present...)
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"%s has a line this parser rejects, and every SSH operation reads it "+
-				"(ssh itself would skip that line): %w", path, err)
+				"(ssh itself would skip that line): %w", strings.Join(present, ", "), err)
 	}
 	probe, err := throwawayHostKey()
 	if err != nil {
@@ -228,7 +233,7 @@ func knownHostsPin(path, addr string) (gossh.HostKeyCallback, []string, error) {
 		// returned. (probeErr == nil is impossible: the probe key is random and
 		// cannot be the recorded one, but it is treated the same way.)
 		if probeErr != nil {
-			return nil, nil, fmt.Errorf("could not look up %s in known_hosts (%s): %w", addr, path, probeErr)
+			return nil, nil, fmt.Errorf("could not look up %s in known_hosts (%s): %w", addr, strings.Join(present, ", "), probeErr)
 		}
 		return cb, nil, nil
 	}
@@ -264,15 +269,25 @@ func pinnedAlgorithms(want []knownhosts.KnownKey) []string {
 	return append(algos, rest...)
 }
 
-// hostKeyPreference is the offer order, strongest first.
+// hostKeyPreference is the offer order, strongest first — and, within each
+// family, the CERTIFICATE variant before the plain one.
+//
+// That ordering is load-bearing, not cosmetic. SSH negotiation picks the first
+// algorithm in the CLIENT's list that the server supports. A host recorded only
+// as "@cert-authority" has no plain entry, so if the plain name were offered
+// first, a server holding a HostCertificate would answer with the plain key and
+// the known_hosts callback would reject it — the pin would break a host that
+// worked without any pin at all. x/crypto's own default and ssh both put the
+// certificate names first, and diverging from them is how a "fix" becomes an
+// outage.
 var hostKeyPreference = []string{
-	gossh.KeyAlgoED25519, gossh.CertAlgoED25519v01,
-	gossh.KeyAlgoECDSA521, gossh.CertAlgoECDSA521v01,
-	gossh.KeyAlgoECDSA384, gossh.CertAlgoECDSA384v01,
-	gossh.KeyAlgoECDSA256, gossh.CertAlgoECDSA256v01,
-	gossh.KeyAlgoRSASHA512, gossh.CertAlgoRSASHA512v01,
-	gossh.KeyAlgoRSASHA256, gossh.CertAlgoRSASHA256v01,
-	gossh.KeyAlgoRSA, gossh.CertAlgoRSAv01,
+	gossh.CertAlgoED25519v01, gossh.KeyAlgoED25519,
+	gossh.CertAlgoECDSA521v01, gossh.KeyAlgoECDSA521,
+	gossh.CertAlgoECDSA384v01, gossh.KeyAlgoECDSA384,
+	gossh.CertAlgoECDSA256v01, gossh.KeyAlgoECDSA256,
+	gossh.CertAlgoRSASHA512v01, gossh.KeyAlgoRSASHA512,
+	gossh.CertAlgoRSASHA256v01, gossh.KeyAlgoRSASHA256,
+	gossh.CertAlgoRSAv01, gossh.KeyAlgoRSA,
 }
 
 // certAlgoFor is the certificate counterpart of a plain host key algorithm.
@@ -372,6 +387,10 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	//    shadow the key-file fallback: go-git would offer no key and the server
 	//    would reject the handshake with "[none publickey]". On any dial error we
 	//    also fall through to key files.
+	// Both agent outcomes are recorded, because the DOMINANT failure is the probe
+	// saying no — an unreachable or keyless agent — and that path never reaches
+	// agentDial. Leaving agentErr nil there would make the final message blame
+	// the key files alone, which is what this used to do.
 	var agentErr error
 	if agentHasIdentities() {
 		auth, err := agentDial(user)
@@ -381,7 +400,9 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 			}
 			return auth, nil
 		}
-		agentErr = err // kept: when nothing works, this is often the real story
+		agentErr = err
+	} else {
+		agentErr = errors.New("the SSH agent was unreachable, empty, or did not answer in time")
 	}
 
 	// 2. Key files under the .ssh dir.
@@ -491,7 +512,7 @@ func pinKnownHosts(auth transport.AuthMethod, addr string) error {
 	if err != nil {
 		return fmt.Errorf("could not locate the .ssh directory: %w", err)
 	}
-	cb, algos, err := knownHostsPin(filepath.Join(dir, "known_hosts"), addr)
+	cb, algos, err := knownHostsPin(addr, knownHostsFiles(dir)...)
 	if err != nil {
 		return err
 	}
@@ -501,6 +522,18 @@ func pinKnownHosts(auth transport.AuthMethod, addr string) error {
 	helper.HostKeyCallback = cb
 	helper.HostKeyAlgorithms = algos
 	return nil
+}
+
+// knownHostsFiles mirrors how go-git resolves known_hosts, because this package
+// OVERRIDES go-git's callback: consulting a different set of files than the
+// fallback would have used silently changes which hosts are trusted. SSH_KNOWN_HOSTS
+// wins when set (a CI pointing at a curated file), otherwise the user's dir plus
+// the system-wide file. dir comes from sshDir(), so CERNE_SSH_DIR keeps working.
+func knownHostsFiles(dir string) []string {
+	if env := filepath.SplitList(os.Getenv("SSH_KNOWN_HOSTS")); len(env) > 0 {
+		return env
+	}
+	return []string{filepath.Join(dir, "known_hosts"), "/etc/ssh/ssh_known_hosts"}
 }
 
 // hostKeyHelperOf returns the embedded *HostKeyCallbackHelper of the go-git ssh
