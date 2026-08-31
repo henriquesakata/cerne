@@ -269,14 +269,18 @@ func sshDir() (string, error) {
 // http(s)); for ssh (git@host:..., ssh://...) it tries, in order:
 //  1. SSH agent (Pageant / Windows OpenSSH agent / SSH_AUTH_SOCK) — only if it
 //     holds at least one identity (see agentHasIdentities)
-//  2. key files under the user's .ssh dir: id_ed25519, id_rsa, id_ecdsa (first
-//     that exists), empty passphrase
+//  2. key files under the user's .ssh dir: id_ed25519, id_rsa, id_ecdsa, in
+//     that order and with an empty passphrase — a file that fails to load is
+//     reported and SKIPPED, never a veto on the ones after it
 //
 // Both auth paths get their host-key verification pinned to the algorithms
 // recorded in known_hosts (see pinKnownHosts), avoiding the go-git/x-crypto
 // "knownhosts: key mismatch" gotcha.
 //
-// Returns a descriptive pt-BR error if the url is SSH and no method works.
+// When the url is SSH and nothing works, the error names everything that was
+// tried — each key file with its own cause, plus the agent's failure when there
+// was one. Errors here are English, like the rest of the CLI surface (F-0124);
+// this comment used to promise pt-BR, which the code never emitted.
 func sshAuthFor(u string) (transport.AuthMethod, error) {
 	if !isSSHURL(u) {
 		return nil, nil
@@ -377,7 +381,9 @@ func noUsableKeyError(dir string, keyErrs []string, agentErr error) error {
 }
 
 // pinKnownHosts configures host-key verification on auth using the user's
-// known_hosts file. It sets HostKeyCallback (so go-git verifies against
+// known_hosts file. addr is "host:port" — the form the known_hosts callback is
+// addressed by, and the only form in which an entry recorded for a non-standard
+// port can match. It sets HostKeyCallback (so go-git verifies against
 // known_hosts) AND pins HostKeyAlgorithms to the key types recorded there, so
 // the server presents a key type we already trust — the fix for the
 // "knownhosts: key mismatch" handshake failure. Both *ssh.PublicKeys and
