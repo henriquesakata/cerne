@@ -200,9 +200,9 @@ func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
 		addr    string
 		host    string
 	}{
-		{"texto claro", func(h string) string { return h }, "example.test:22", "example.test"},
-		{"hasheado", knownhosts.HashHostname, "example.test:22", "example.test"},
-		{"porta nao padrao", func(h string) string { return "[" + h + "]:2222" }, "example.test:2222", "example.test"},
+		{"plaintext", func(h string) string { return h }, "example.test:22", "example.test"},
+		{"hashed", knownhosts.HashHostname, "example.test:22", "example.test"},
+		{"non-standard port", func(h string) string { return "[" + h + "]:2222" }, "example.test:2222", "example.test"},
 		{"wildcard", func(string) string { return "*.example.test" }, "git.example.test:22", "git.example.test"},
 	}
 	for _, c := range cases {

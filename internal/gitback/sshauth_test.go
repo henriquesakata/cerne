@@ -361,3 +361,51 @@ func TestSSHAuthKeyFailureReasonsAreDistinct(t *testing.T) {
 		t.Fatalf("corrupt key reason = %q, want it not to blame a passphrase", corrupt)
 	}
 }
+
+// When the probe says the agent is unusable, agentDial never runs — and that is
+// the DOMINANT failure, not the exception. Without this the "unreachable, empty
+// or did not answer" branch could be deleted and the suite would stay green.
+func TestSSHAuthReportsAnUnusableAgent(t *testing.T) {
+	dir := t.TempDir() // no key files
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities })
+	agentHasIdentities = func() bool { return false }
+
+	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err == nil {
+		t.Fatal("err is nil, want a failure")
+	}
+	// Not just "agent": the generic tail already says "start ssh-agent", so a
+	// substring that loose would pass with the branch deleted — which is the
+	// illusory coverage this test exists to avoid.
+	if !strings.Contains(err.Error(), "unreachable, empty, or did not answer") {
+		t.Fatalf("err = %v, want the reason the agent was skipped", err)
+	}
+}
+
+// The agent branch must be pinned too. It is the dominant path in production —
+// most people have an agent — and it had no test: deleting the pinKnownHosts
+// call from that branch left the suite green.
+func TestSSHAuthPinsTheAgentPathToo(t *testing.T) {
+	dir := t.TempDir()
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities; agentDial = realAgentDial })
+	agentHasIdentities = func() bool { return true }
+	agentDial = func(user string) (transport.AuthMethod, error) {
+		return &ssh.PublicKeysCallback{User: user}, nil
+	}
+
+	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	if err != nil {
+		t.Fatalf("sshAuthFor: %v", err)
+	}
+	cfg, err := auth.(*ssh.PublicKeysCallback).ClientConfig()
+	if err != nil {
+		t.Fatalf("ClientConfig: %v", err)
+	}
+	if len(cfg.HostKeyAlgorithms) == 0 {
+		t.Fatal("HostKeyAlgorithms is empty: the agent path was not pinned")
+	}
+}
