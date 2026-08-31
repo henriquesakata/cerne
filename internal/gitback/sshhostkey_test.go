@@ -3,11 +3,14 @@ package gitback
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -22,6 +25,7 @@ func TestSSHHost(t *testing.T) {
 		{"ssh://git@h.example:2222/x", "h.example"},
 		{"ssh://git@h.example/x", "h.example"},
 		{"deploy@host:p", "host"},
+		{"git@[::1]:rockt/x.git", "::1"},
 		{"/tmp/x", ""},
 		{"https://h/x", ""},
 		{`C:\local\path`, ""},
@@ -33,8 +37,37 @@ func TestSSHHost(t *testing.T) {
 	}
 }
 
+// sshHostPort must keep the port: the known_hosts callback is addressed by
+// "host:port", and an entry written as "[host]:2222" can only match if the real
+// port survives. In scp-like remotes the segment after ":" is a PATH unless it
+// is purely numeric, so both readings are pinned here.
+func TestSSHHostPort(t *testing.T) {
+	cases := []struct {
+		url  string
+		want string
+	}{
+		{"git@gitlab.com:rockt/x.git", "gitlab.com:22"},
+		{"ssh://git@h.example:2222/x", "h.example:2222"},
+		{"ssh://git@h.example/x", "h.example:22"},
+		{"deploy@host:p", "host:22"},
+		{"git@[::1]:rockt/x.git", "[::1]:22"},
+		{"ssh://git@[::1]:2222/x", "[::1]:2222"},
+		// A sintaxe scp-like não tem porta: em "git@host:2222/x.git" o
+		// "2222/x.git" é CAMINHO. Só ssh:// carrega porta.
+		{"git@host:2222/x.git", "host:22"},
+		{"/tmp/x", ""},
+		{"https://h/x", ""},
+		{`C:\local\path`, ""},
+	}
+	for _, c := range cases {
+		if got := sshHostPort(c.url); got != c.want {
+			t.Errorf("sshHostPort(%q) = %q, want %q", c.url, got, c.want)
+		}
+	}
+}
+
 // writeKnownHostsLine builds a known_hosts file at path with a single entry for
-// host using a freshly generated ed25519 public key, and returns its algorithm.
+// host, using a freshly generated ed25519 public key.
 func writeKnownHostsLine(t *testing.T, path, host string) {
 	t.Helper()
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
@@ -55,33 +88,40 @@ func writeKnownHostsLine(t *testing.T, path, host string) {
 func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	dir := t.TempDir()
 	khPath := filepath.Join(dir, "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", khPath)
 	writeKnownHostsLine(t, khPath, "example.test")
 
-	algos, err := hostKeyAlgorithms(khPath, "example.test:22")
+	_, algos, err := knownHostsPin("example.test:22")
 	if err != nil {
-		t.Fatalf("hostKeyAlgorithms: %v", err)
+		t.Fatalf("knownHostsPin: %v", err)
 	}
 	if !containsStr(algos, "ssh-ed25519") {
 		t.Fatalf("algos = %v, want it to contain ssh-ed25519", algos)
 	}
 
 	// Unknown host yields no algorithms.
-	unknown, err := hostKeyAlgorithms(khPath, "nope.test:22")
+	_, unknown, err := knownHostsPin("nope.test:22")
 	if err != nil {
-		t.Fatalf("hostKeyAlgorithms(unknown): %v", err)
+		t.Fatalf("knownHostsPin(unknown): %v", err)
 	}
 	if len(unknown) != 0 {
 		t.Fatalf("algos for unknown host = %v, want empty", unknown)
 	}
 }
 
-func TestHostKeyAlgorithmsMissingFile(t *testing.T) {
-	algos, err := hostKeyAlgorithms(filepath.Join(t.TempDir(), "does-not-exist"), "example.test:22")
-	if err != nil {
-		t.Fatalf("hostKeyAlgorithms(missing) err = %v, want nil", err)
+func TestKnownHostsPinReportsMissingFile(t *testing.T) {
+	// No known_hosts anywhere: go-git's own fallback fails the same way, so
+	// reporting it here just moves the same failure earlier and names it. An
+	// earlier comment in this package claimed the opposite ("don't break
+	// first-connection-to-unknown-host"); that was never true.
+	t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "does-not-exist"))
+	t.Setenv("CERNE_SSH_DIR", "") // a dev machine may export it
+	_, _, err := knownHostsPin("example.test:22")
+	if err == nil {
+		t.Fatal("knownHostsPin with no known_hosts = nil, want an actionable error")
 	}
-	if len(algos) != 0 {
-		t.Fatalf("algos = %v, want empty for missing file", algos)
+	if !strings.Contains(err.Error(), "known_hosts") {
+		t.Fatalf("err = %v, want it to name known_hosts", err)
 	}
 }
 
@@ -131,3 +171,252 @@ func containsStr(s []string, want string) bool {
 	}
 	return false
 }
+
+// knownHostsWith writes a known_hosts at path whose single entry uses pattern
+// verbatim as the host field (plaintext, hashed, "[host]:port" or wildcard) and
+// returns the algorithm of the key it recorded.
+func knownHostsWith(t *testing.T, path, pattern string) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	key, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(knownhosts.Line([]string{pattern}, key)+"\n"), 0o600); err != nil {
+		t.Fatalf("write known_hosts: %v", err)
+	}
+	return key.Type()
+}
+
+// The three shapes the hand-rolled matcher never handled. Each one is a real
+// known_hosts configuration: hashed is the Debian/Ubuntu default, "[host]:port"
+// is what ssh writes for a non-standard port, and a wildcard is ordinary.
+func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern func(host string) string
+		addr    string
+		host    string
+	}{
+		{"plaintext", func(h string) string { return h }, "example.test:22", "example.test"},
+		{"hashed", knownhosts.HashHostname, "example.test:22", "example.test"},
+		{"non-standard port", func(h string) string { return "[" + h + "]:2222" }, "example.test:2222", "example.test"},
+		{"wildcard", func(string) string { return "*.example.test" }, "git.example.test:22", "git.example.test"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			kh := filepath.Join(t.TempDir(), "known_hosts")
+			t.Setenv("SSH_KNOWN_HOSTS", kh)
+			t.Setenv("SSH_KNOWN_HOSTS", kh)
+			want := knownHostsWith(t, kh, c.pattern(c.host))
+			_, algos, err := knownHostsPin(c.addr)
+			if err != nil {
+				t.Fatalf("knownHostsPin: %v", err)
+			}
+			if !containsStr(algos, want) {
+				t.Fatalf("algos = %v, want it to contain %q", algos, want)
+			}
+		})
+	}
+}
+
+// An RSA host key is recorded as "ssh-rsa", which names SHA-1 signatures that
+// OpenSSH >= 8.8 refuses by default. Pinning only that would swap the "key
+// mismatch" this feature fixes for a fresh handshake failure against every
+// current server, so the SHA-2 names for the same key go in too.
+func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pub, err := gossh.NewPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
+	if err := os.WriteFile(kh, []byte(knownhosts.Line([]string{"example.test"}, pub)+"\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, algos, err := knownHostsPin("example.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	for _, want := range []string{gossh.KeyAlgoRSASHA512, gossh.KeyAlgoRSASHA256, gossh.KeyAlgoRSA} {
+		if !containsStr(algos, want) {
+			t.Fatalf("algos = %v, want it to contain %q", algos, want)
+		}
+	}
+	// Strongest first: the SHA-512 name leads, and the SHA-1 name ("ssh-rsa",
+	// which is what the file records) comes last.
+	if algos[0] != gossh.KeyAlgoRSASHA512 {
+		t.Fatalf("algos[0] = %q, want the SHA-512 name offered first", algos[0])
+	}
+	// And NO certificate name: this entry is a plain host key, not a CA. Adding
+	// one here is what broke certificate hosts in an earlier attempt, because a
+	// hand-rolled expansion cannot tell the two kinds of line apart.
+	if containsStr(algos, gossh.CertAlgoRSASHA512v01) {
+		t.Fatalf("algos = %v, want no certificate name for a plain entry", algos)
+	}
+	if indexOf(algos, gossh.KeyAlgoRSASHA512) >= indexOf(algos, gossh.KeyAlgoRSA) {
+		t.Fatalf("algos = %v, want SHA-512 offered before the SHA-1 name", algos)
+	}
+}
+
+// x/crypto rejects the WHOLE known_hosts on one malformed line, where ssh skips
+// that line and carries on. Returning nil here would NOT soften that — go-git
+// re-reads the same file through the same parser — so the contract is a clear,
+// actionable error instead of a fallback that only pretends to be one.
+func TestKnownHostsPinReportsACorruptLine(t *testing.T) {
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
+	knownHostsWith(t, kh, "example.test") // a valid entry, before the bad one
+	body, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if err := os.WriteFile(kh, append([]byte("isto nao e uma entrada valida\n"), body...), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _, err = knownHostsPin("example.test:22")
+	if err == nil {
+		t.Fatalf("knownHostsPin on a dirty file = nil, want an error naming the file")
+	}
+	// The message has to be actionable: go-git re-reads the same file through
+	// the same parser, so there is no silent recovery to offer — only a clear
+	// account of what to fix.
+	if !strings.Contains(err.Error(), kh) {
+		t.Fatalf("err = %v, want it to name %q", err, kh)
+	}
+}
+
+// A "@cert-authority" host records the CA by its PLAIN key type, never by a
+// "-cert-v01@openssh.com" name — so pinning only the plain types would exclude
+// exactly what a certificate-presenting server negotiates, breaking hosts that
+// worked before any pin existed. Without certAlgoFor this test fails.
+func TestKnownHostsPinOffersCertificateVariants(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	ca, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
+	line := "@cert-authority example.test " + string(gossh.MarshalAuthorizedKey(ca))
+	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, algos, err := knownHostsPin("example.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	if !containsStr(algos, gossh.CertAlgoED25519v01) {
+		t.Fatalf("algos = %v, want it to contain %q for a @cert-authority host",
+			algos, gossh.CertAlgoED25519v01)
+	}
+}
+
+func indexOf(s []string, want string) int {
+	for i, v := range s {
+		if v == want {
+			return i
+		}
+	}
+	return len(s)
+}
+
+// Order is load-bearing, not cosmetic: SSH negotiation picks the first
+// algorithm in the CLIENT's list that the server supports. For a host recorded
+// only as "@cert-authority" there IS no plain entry, so offering the plain name
+// first makes a server with a HostCertificate answer with the plain key, which
+// the known_hosts callback then rejects — the pin breaks a host that worked
+// with no pin at all. Containment tests are blind to this; only order catches it.
+func TestKnownHostsPinOffersCertificateBeforePlain(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	ca, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
+	line := "@cert-authority example.test " + string(gossh.MarshalAuthorizedKey(ca))
+	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, algos, err := knownHostsPin("example.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	// For a CA entry the certificate name is what gets offered — and the plain
+	// name must NOT be, or a server holding a HostCertificate could answer with
+	// a plain key that nothing in known_hosts authorises.
+	if !containsStr(algos, gossh.CertAlgoED25519v01) {
+		t.Fatalf("algos = %v, want the certificate name for a @cert-authority host", algos)
+	}
+	if containsStr(algos, gossh.KeyAlgoED25519) {
+		t.Fatalf("algos = %v, want no plain name for a @cert-authority host", algos)
+	}
+}
+
+// knownHostsKeyed writes a known_hosts with one entry for host and returns the
+// key recorded there, so a test can prove the callback accepts THAT key and
+// rejects another.
+func knownHostsKeyed(t *testing.T, path, host string) gossh.PublicKey {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	key, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(knownhosts.Line([]string{host}, key)+"\n"), 0o600); err != nil {
+		t.Fatalf("write known_hosts: %v", err)
+	}
+	return key
+}
+
+// The callback half was asserted only as "not nil", which is worth almost
+// nothing: swapping it for ssh.InsecureIgnoreHostKey — no host verification at
+// all — left the whole suite green. Verification is the point of this code, so
+// it gets tested as behaviour: the recorded key passes, another key does not.
+func TestKnownHostsPinCallbackActuallyVerifies(t *testing.T) {
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
+	t.Setenv("CERNE_SSH_DIR", "")
+	recorded := knownHostsKeyed(t, kh, "verify.test")
+
+	cb, _, err := knownHostsPin("verify.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	if err := cb("verify.test:22", probeAddrForTest{}, recorded); err != nil {
+		t.Fatalf("callback rejected the recorded key: %v", err)
+	}
+	otherPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	other, err := gossh.NewPublicKey(otherPub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	if err := cb("verify.test:22", probeAddrForTest{}, other); err == nil {
+		t.Fatal("callback accepted a key that is not in known_hosts — host verification is off")
+	}
+}
+
+type probeAddrForTest struct{}
+
+func (probeAddrForTest) Network() string { return "tcp" }
+func (probeAddrForTest) String() string  { return "1.2.3.4:22" }
