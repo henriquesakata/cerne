@@ -1,8 +1,10 @@
 package gitback
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -168,51 +171,50 @@ func isNumericPort(s string) bool {
 }
 
 // hostKeyAlgorithms returns the host key algorithms (e.g. "ssh-ed25519",
-// "ssh-rsa", "ecdsa-sha2-nistp256") present in the known_hosts file at path for
-// the given addr ("host" or "host:port"). It is used to pin
-// ssh.ClientConfig.HostKeyAlgorithms so the server presents a host key type we
-// already trust — avoiding the knownhosts "key mismatch" error that occurs when
-// go-git leaves the algorithm list unconstrained and the server offers a key
-// type (e.g. RSA) different from the one recorded in known_hosts (e.g. ed25519).
+// "ssh-rsa") recorded in the known_hosts file at path for addr ("host:port").
+// It is used to pin ssh.ClientConfig.HostKeyAlgorithms so the server presents a
+// host key type we already trust — avoiding the knownhosts "key mismatch" error
+// that occurs when go-git leaves the algorithm list unconstrained and the server
+// offers a key type (e.g. RSA) different from the one recorded (e.g. ed25519).
+//
+// The lookup is delegated to x/crypto/ssh/knownhosts rather than parsing the
+// file here. That library already understands every shape the file really comes
+// in — hashed entries (the Debian/Ubuntu default), the "[host]:port" spelling
+// ssh writes for a non-standard port, and wildcards — and a hand-rolled matcher
+// silently handled NONE of them: it compared a hashed entry against a freshly
+// salted hash of the host, which can never be equal, so the pin degraded to a
+// no-op exactly where the bug it fixes is most likely.
+//
+// The mechanism is the library's own: asking the callback about a throwaway key
+// yields a *knownhosts.KeyError whose Want lists the keys known for that host.
+// An unknown host yields an empty Want, so "no algorithms" keeps meaning
+// "nothing recorded" and never "the lookup quietly stopped working".
 //
 // A missing file is not an error (returns nil): we don't break
 // first-connection-to-unknown-host; go-git's default callback still applies.
 func hostKeyAlgorithms(path, addr string) ([]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
-
-	host := addr
-	if i := strings.LastIndex(addr, ":"); i >= 0 {
-		host = addr[:i]
+	cb, err := knownhosts.New(path)
+	if err != nil {
+		return nil, err
 	}
-	hashedHost := knownhosts.HashHostname(host)
-
+	probe, err := throwawayHostKey()
+	if err != nil {
+		return nil, err
+	}
+	var ke *knownhosts.KeyError
+	if !errors.As(cb(addr, probeAddr{}, probe), &ke) {
+		return nil, nil // no KeyError at all: nothing recorded to pin
+	}
 	var algos []string
 	seen := map[string]bool{}
-	rest := data
-	for {
-		_, hosts, pubKey, _, remaining, parseErr := gossh.ParseKnownHosts(rest)
-		if parseErr == io.EOF {
-			break
-		}
-		if parseErr != nil {
-			// Skip the offending entry and keep going where possible.
-			if len(remaining) == 0 || len(remaining) >= len(rest) {
-				break
-			}
-			rest = remaining
-			continue
-		}
-		rest = remaining
-		if !knownHostsMatch(hosts, host, hashedHost) {
-			continue
-		}
-		if alg := pubKey.Type(); alg != "" && !seen[alg] {
+	for _, want := range ke.Want {
+		if alg := want.Key.Type(); alg != "" && !seen[alg] {
 			seen[alg] = true
 			algos = append(algos, alg)
 		}
@@ -220,23 +222,23 @@ func hostKeyAlgorithms(path, addr string) ([]string, error) {
 	return algos, nil
 }
 
-// knownHostsMatch reports whether any of the host patterns from a known_hosts
-// entry matches host (plaintext compare) or its hashed form hashedHost.
-func knownHostsMatch(patterns []string, host, hashedHost string) bool {
-	for _, p := range patterns {
-		if p == host {
-			return true
-		}
-		if strings.HasPrefix(p, "|1|") && p == hashedHost {
-			return true
-		}
-		// Entries can carry a "[host]:port" form; strip brackets to compare.
-		if stripped := strings.TrimSuffix(strings.TrimPrefix(p, "["), "]"); stripped == host {
-			return true
-		}
+// throwawayHostKey is the key handed to the known_hosts callback purely to be
+// rejected, so the resulting KeyError carries what the file DOES know. Generated
+// once per process: it is never trusted, transmitted or stored.
+var throwawayHostKey = sync.OnceValues(func() (gossh.PublicKey, error) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
 	}
-	return false
-}
+	return gossh.NewPublicKey(pub)
+})
+
+// probeAddr stands in for the remote address the callback logs; the lookup never
+// connects to anything.
+type probeAddr struct{}
+
+func (probeAddr) Network() string { return "tcp" }
+func (probeAddr) String() string  { return "0.0.0.0:0" }
 
 // sshDir returns the directory probed for key files: $CERNE_SSH_DIR when set,
 // otherwise the user's ~/.ssh.
@@ -268,7 +270,7 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 		return nil, nil
 	}
 	user := sshUser(u)
-	host := sshHost(u)
+	addr := sshHostPort(u)
 
 	// 1. SSH agent — but only when it actually holds an identity. A reachable
 	//    yet keyless agent (the macOS launchd default until `ssh-add`) must not
@@ -277,7 +279,7 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 	//    also fall through to key files.
 	if agentHasIdentities() {
 		if auth, err := agentDial(user); err == nil {
-			if err := pinKnownHosts(auth, host); err != nil {
+			if err := pinKnownHosts(auth, addr); err != nil {
 				return nil, err
 			}
 			return auth, nil
@@ -300,7 +302,7 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 				"key %s is passphrase-protected — start ssh-agent and run 'ssh-add': %w",
 				path, keyErr)
 		}
-		if err := pinKnownHosts(auth, host); err != nil {
+		if err := pinKnownHosts(auth, addr); err != nil {
 			return nil, err
 		}
 		return auth, nil
@@ -321,8 +323,8 @@ func sshAuthFor(u string) (transport.AuthMethod, error) {
 //
 // If known_hosts is absent, auth is left untouched (go-git default behavior;
 // don't break first-connection-to-unknown-host).
-func pinKnownHosts(auth transport.AuthMethod, host string) error {
-	if host == "" {
+func pinKnownHosts(auth transport.AuthMethod, addr string) error {
+	if addr == "" {
 		return nil
 	}
 	helper := hostKeyHelperOf(auth)
@@ -343,7 +345,7 @@ func pinKnownHosts(auth transport.AuthMethod, host string) error {
 	if err != nil {
 		return fmt.Errorf("could not read known_hosts (%s): %w", khPath, err)
 	}
-	algos, err := hostKeyAlgorithms(khPath, host+":22")
+	algos, err := hostKeyAlgorithms(khPath, addr)
 	if err != nil {
 		return fmt.Errorf("could not read known_hosts (%s): %w", khPath, err)
 	}

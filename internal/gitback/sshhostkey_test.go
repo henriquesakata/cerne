@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -155,4 +156,80 @@ func containsStr(s []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// knownHostsWith writes a known_hosts at path whose single entry uses pattern
+// verbatim as the host field (plaintext, hashed, "[host]:port" or wildcard) and
+// returns the algorithm of the key recorded there.
+func knownHostsWith(t *testing.T, path, pattern string) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	key, err := gossh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(knownhosts.Line([]string{pattern}, key)+"\n"), 0o600); err != nil {
+		t.Fatalf("write known_hosts: %v", err)
+	}
+	return key.Type()
+}
+
+// The three shapes the hand-rolled matcher never handled. Each one is a real
+// known_hosts configuration: hashed is the Debian/Ubuntu default, "[host]:port"
+// is what ssh writes for a non-standard port, and a wildcard is ordinary.
+func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern func(host string) string
+		addr    string
+		host    string
+	}{
+		{"texto claro", func(h string) string { return h }, "example.test:22", "example.test"},
+		{"hasheado", knownhosts.HashHostname, "example.test:22", "example.test"},
+		{"porta nao padrao", func(h string) string { return "[" + h + "]:2222" }, "example.test:2222", "example.test"},
+		{"wildcard", func(string) string { return "*.example.test" }, "git.example.test:22", "git.example.test"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			kh := filepath.Join(t.TempDir(), "known_hosts")
+			want := knownHostsWith(t, kh, c.pattern(c.host))
+			before, err := os.ReadFile(kh)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			algos, err := hostKeyAlgorithms(kh, c.addr)
+			if err != nil {
+				t.Fatalf("hostKeyAlgorithms: %v", err)
+			}
+			if !containsStr(algos, want) {
+				t.Fatalf("algos = %v, want it to contain %q", algos, want)
+			}
+			// The lookup must not rewrite the user's known_hosts.
+			after, err := os.ReadFile(kh)
+			if err != nil {
+				t.Fatalf("read after: %v", err)
+			}
+			if string(before) != string(after) {
+				t.Fatalf("known_hosts was rewritten by the lookup")
+			}
+		})
+	}
+}
+
+// The other half of the invariant: an unknown host yields NOTHING, so "empty"
+// can never be mistaken for success. Without this, a lookup that silently stops
+// working looks exactly like a host nobody trusts yet.
+func TestHostKeyAlgorithmsUnknownHostStaysEmpty(t *testing.T) {
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	knownHostsWith(t, kh, "example.test")
+	algos, err := hostKeyAlgorithms(kh, "nope.test:22")
+	if err != nil {
+		t.Fatalf("hostKeyAlgorithms: %v", err)
+	}
+	if len(algos) != 0 {
+		t.Fatalf("algos for unknown host = %v, want empty", algos)
+	}
 }
