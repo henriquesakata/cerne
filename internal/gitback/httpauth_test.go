@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -114,6 +115,7 @@ func TestAuthForDispatch(t *testing.T) {
 	// SSH path: key-file fallback proves the ssh branch is reached.
 	dir := t.TempDir()
 	writeKeyFile(t, dir, "id_ed25519")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentDial = realAgentDial })
 	agentDial = func(string) (transport.AuthMethod, error) {

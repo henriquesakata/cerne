@@ -88,9 +88,10 @@ func writeKnownHostsLine(t *testing.T, path, host string) {
 func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	dir := t.TempDir()
 	khPath := filepath.Join(dir, "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", khPath)
 	writeKnownHostsLine(t, khPath, "example.test")
 
-	_, algos, err := knownHostsPin("example.test:22", khPath)
+	_, algos, err := knownHostsPin("example.test:22")
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	}
 
 	// Unknown host yields no algorithms.
-	_, unknown, err := knownHostsPin("nope.test:22", khPath)
+	_, unknown, err := knownHostsPin("nope.test:22")
 	if err != nil {
 		t.Fatalf("knownHostsPin(unknown): %v", err)
 	}
@@ -108,13 +109,18 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	}
 }
 
-func TestHostKeyAlgorithmsMissingFile(t *testing.T) {
-	_, algos, err := knownHostsPin("example.test:22", filepath.Join(t.TempDir(), "does-not-exist"))
-	if err != nil {
-		t.Fatalf("knownHostsPin(missing) err = %v, want nil", err)
+func TestKnownHostsPinReportsMissingFile(t *testing.T) {
+	// No known_hosts anywhere: go-git's own fallback fails the same way, so
+	// reporting it here just moves the same failure earlier and names it. An
+	// earlier comment in this package claimed the opposite ("don't break
+	// first-connection-to-unknown-host"); that was never true.
+	t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "does-not-exist"))
+	_, _, err := knownHostsPin("example.test:22")
+	if err == nil {
+		t.Fatal("knownHostsPin with no known_hosts = nil, want an actionable error")
 	}
-	if len(algos) != 0 {
-		t.Fatalf("algos = %v, want empty for missing file", algos)
+	if !strings.Contains(err.Error(), "known_hosts") {
+		t.Fatalf("err = %v, want it to name known_hosts", err)
 	}
 }
 
@@ -202,8 +208,10 @@ func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			kh := filepath.Join(t.TempDir(), "known_hosts")
+			t.Setenv("SSH_KNOWN_HOSTS", kh)
+			t.Setenv("SSH_KNOWN_HOSTS", kh)
 			want := knownHostsWith(t, kh, c.pattern(c.host))
-			_, algos, err := knownHostsPin(c.addr, kh)
+			_, algos, err := knownHostsPin(c.addr)
 			if err != nil {
 				t.Fatalf("knownHostsPin: %v", err)
 			}
@@ -228,10 +236,11 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 		t.Fatalf("NewPublicKey: %v", err)
 	}
 	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
 	if err := os.WriteFile(kh, []byte(knownhosts.Line([]string{"example.test"}, pub)+"\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, algos, err := knownHostsPin("example.test:22", kh)
+	_, algos, err := knownHostsPin("example.test:22")
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
@@ -242,8 +251,14 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 	}
 	// Strongest first, and deterministic: ke.Want comes out of a map. The
 	// certificate name of the strongest family leads — see the ordering test.
-	if algos[0] != gossh.CertAlgoRSASHA512v01 {
-		t.Fatalf("algos[0] = %q, want the strongest SHA-512 name offered first", algos[0])
+	if algos[0] != gossh.KeyAlgoRSASHA512 {
+		t.Fatalf("algos[0] = %q, want the SHA-512 name offered first", algos[0])
+	}
+	// And NO certificate name: this entry is a plain host key, not a CA. Adding
+	// one here is what broke certificate hosts in an earlier attempt, because a
+	// hand-rolled expansion cannot tell the two kinds of line apart.
+	if containsStr(algos, gossh.CertAlgoRSASHA512v01) {
+		t.Fatalf("algos = %v, want no certificate name for a plain entry", algos)
 	}
 	if indexOf(algos, gossh.KeyAlgoRSASHA512) >= indexOf(algos, gossh.KeyAlgoRSA) {
 		t.Fatalf("algos = %v, want SHA-512 offered before the SHA-1 name", algos)
@@ -256,6 +271,7 @@ func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
 // actionable error instead of a fallback that only pretends to be one.
 func TestKnownHostsPinReportsACorruptLine(t *testing.T) {
 	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
 	knownHostsWith(t, kh, "example.test") // a valid entry, before the bad one
 	body, err := os.ReadFile(kh)
 	if err != nil {
@@ -264,7 +280,7 @@ func TestKnownHostsPinReportsACorruptLine(t *testing.T) {
 	if err := os.WriteFile(kh, append([]byte("isto nao e uma entrada valida\n"), body...), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, _, err = knownHostsPin("example.test:22", kh)
+	_, _, err = knownHostsPin("example.test:22")
 	if err == nil {
 		t.Fatalf("knownHostsPin on a dirty file = nil, want an error naming the file")
 	}
@@ -290,11 +306,12 @@ func TestKnownHostsPinOffersCertificateVariants(t *testing.T) {
 		t.Fatalf("NewPublicKey: %v", err)
 	}
 	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
 	line := "@cert-authority example.test " + string(gossh.MarshalAuthorizedKey(ca))
 	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, algos, err := knownHostsPin("example.test:22", kh)
+	_, algos, err := knownHostsPin("example.test:22")
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
@@ -329,34 +346,22 @@ func TestKnownHostsPinOffersCertificateBeforePlain(t *testing.T) {
 		t.Fatalf("NewPublicKey: %v", err)
 	}
 	kh := filepath.Join(t.TempDir(), "known_hosts")
+	t.Setenv("SSH_KNOWN_HOSTS", kh)
 	line := "@cert-authority example.test " + string(gossh.MarshalAuthorizedKey(ca))
 	if err := os.WriteFile(kh, []byte(line), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, algos, err := knownHostsPin("example.test:22", kh)
+	_, algos, err := knownHostsPin("example.test:22")
 	if err != nil {
 		t.Fatalf("knownHostsPin: %v", err)
 	}
-	cert, plain := indexOf(algos, gossh.CertAlgoED25519v01), indexOf(algos, gossh.KeyAlgoED25519)
-	if cert >= plain {
-		t.Fatalf("algos = %v: certificate name at %d, plain at %d — the certificate must come first",
-			algos, cert, plain)
+	// For a CA entry the certificate name is what gets offered — and the plain
+	// name must NOT be, or a server holding a HostCertificate could answer with
+	// a plain key that nothing in known_hosts authorises.
+	if !containsStr(algos, gossh.CertAlgoED25519v01) {
+		t.Fatalf("algos = %v, want the certificate name for a @cert-authority host", algos)
 	}
-}
-
-// SSH_KNOWN_HOSTS wins over the user's dir, exactly as go-git's own fallback
-// resolves it. This package OVERRIDES that callback, so consulting a different
-// set of files would silently change which hosts are trusted.
-func TestKnownHostsFilesHonoursTheEnvironment(t *testing.T) {
-	curated := filepath.Join(t.TempDir(), "curated")
-	t.Setenv("SSH_KNOWN_HOSTS", curated)
-	files := knownHostsFiles("/home/someone/.ssh")
-	if len(files) != 1 || files[0] != curated {
-		t.Fatalf("knownHostsFiles = %v, want just %q", files, curated)
-	}
-	t.Setenv("SSH_KNOWN_HOSTS", "")
-	files = knownHostsFiles("/home/someone/.ssh")
-	if len(files) != 2 || files[0] != "/home/someone/.ssh/known_hosts" || files[1] != "/etc/ssh/ssh_known_hosts" {
-		t.Fatalf("knownHostsFiles = %v, want the user file then the system one", files)
+	if containsStr(algos, gossh.KeyAlgoED25519) {
+		t.Fatalf("algos = %v, want no plain name for a @cert-authority host", algos)
 	}
 }
