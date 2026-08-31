@@ -133,6 +133,9 @@ var commitPathsHookAfterAdd func()
 // sentinel, so the generic "cannot create empty commit" never escapes to a
 // caller after the guard.
 func CommitPaths(workdir string, paths []string, msg string) (string, error) {
+	if gitBin() != "" {
+		return execCommitPaths(workdir, paths, msg)
+	}
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return "", err
@@ -178,6 +181,9 @@ func CommitPaths(workdir string, paths []string, msg string) (string, error) {
 // non-fast-forward rejection (the remote advanced) is returned as-is so callers
 // can classify it with IsNonFastForward and retry.
 func Push(workdir string) error {
+	if netFastPath() {
+		return execPushRefspec(workdir, "refs/heads/main:refs/heads/main")
+	}
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return err
@@ -212,6 +218,9 @@ func Push(workdir string) error {
 // error; a non-fast-forward rejection is returned as-is so callers can
 // classify it with IsNonFastForward.
 func PushBranch(workdir, branch string) error {
+	if netFastPath() {
+		return execPushRefspec(workdir, fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch))
+	}
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return err
@@ -366,6 +375,9 @@ func FileBlobAt(workdir, sha, relPath string) ([]byte, bool, error) {
 // matches the tree exactly). The reconcile loop uses it to land the worktree on
 // the latest remote — fully clean — before re-applying the captured changes.
 func ResetHard(workdir, sha string) error {
+	if gitBin() != "" {
+		return execResetHard(workdir, sha)
+	}
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return err
@@ -388,6 +400,9 @@ type Change struct {
 // captures a caller's uncommitted mutation (entity JSON, appended events, doc
 // content) so the reconcile loop can re-apply it onto the latest remote.
 func WorktreeChanges(workdir string) ([]Change, error) {
+	if gitBin() != "" {
+		return execWorktreeChanges(workdir)
+	}
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return nil, err
