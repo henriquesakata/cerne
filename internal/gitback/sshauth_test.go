@@ -241,36 +241,6 @@ func TestSSHAuthReportsAgentFailure(t *testing.T) {
 	}
 }
 
-// The other half of the classification: a key that IS passphrase-protected must
-// still get the ssh-add hint. Without this, an errors.As that silently never
-// matches would trade one wrong diagnosis for another — the exact failure mode
-// this feature exists to remove.
-func TestSSHAuthPassphraseKeyKeepsTheSSHAddHint(t *testing.T) {
-	dir := t.TempDir()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey: %v", err)
-	}
-	block, err := gossh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("segredo"))
-	if err != nil {
-		t.Fatalf("MarshalPrivateKeyWithPassphrase: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), pem.EncodeToMemory(block), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	t.Setenv("CERNE_SSH_DIR", dir)
-	t.Cleanup(func() { agentDial = realAgentDial })
-	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
-
-	_, err = sshAuthFor("git@gitlab.com:rockt/x.git")
-	if err == nil {
-		t.Fatal("err is nil, want a failure")
-	}
-	if !strings.Contains(err.Error(), "ssh-add") {
-		t.Fatalf("err = %v, want the ssh-add hint for a passphrase-protected key", err)
-	}
-}
-
 // An agent socket that accepts and then goes silent (a stale one inherited from
 // a dead session) used to hang the CLI forever: the probe had no deadline
 // anywhere. This is the only unbounded wait in the package.
@@ -309,5 +279,76 @@ func TestAgentHasIdentitiesDoesNotHangOnDeadAgent(t *testing.T) {
 	case <-done: // any answer is fine; not answering is the bug
 	case <-time.After(20 * time.Second):
 		t.Fatal("agentHasIdentities hung on an agent that never replies")
+	}
+}
+
+// End-to-end proof that the port survives all the way to the pin. Without it,
+// reverting sshHostPort to sshHost would leave every other test green: the unit
+// test of the helper would still pass while the thing it exists for silently
+// stopped happening.
+func TestSSHAuthPinsWithTheRemotePort(t *testing.T) {
+	dir := t.TempDir()
+	writeKeyFile(t, dir, "id_ed25519")
+	knownHostsWith(t, filepath.Join(dir, "known_hosts"), "[example.test]:2222")
+	t.Setenv("CERNE_SSH_DIR", dir)
+	t.Cleanup(func() { agentDial = realAgentDial })
+	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
+
+	auth, err := sshAuthFor("ssh://git@example.test:2222/rockt/x.git")
+	if err != nil {
+		t.Fatalf("sshAuthFor: %v", err)
+	}
+	cfg, err := auth.(*ssh.PublicKeys).ClientConfig()
+	if err != nil {
+		t.Fatalf("ClientConfig: %v", err)
+	}
+	if len(cfg.HostKeyAlgorithms) == 0 {
+		t.Fatal("HostKeyAlgorithms is empty: the entry recorded for port 2222 was not found")
+	}
+}
+
+// Each unusable key must get its OWN reason. Asserting only that a
+// passphrase-protected key mentions ssh-add would pass against the old code
+// too — it called every failure passphrase-protected. What discriminates is
+// that the two causes produce DIFFERENT text.
+func TestSSHAuthKeyFailureReasonsAreDistinct(t *testing.T) {
+	reasonFor := func(t *testing.T, write func(path string)) string {
+		t.Helper()
+		dir := t.TempDir()
+		write(filepath.Join(dir, "id_ed25519"))
+		t.Setenv("CERNE_SSH_DIR", dir)
+		t.Cleanup(func() { agentDial = realAgentDial })
+		agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
+		_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+		if err == nil {
+			t.Fatal("err is nil, want a failure")
+		}
+		return err.Error()
+	}
+
+	corrupt := reasonFor(t, func(path string) {
+		if err := os.WriteFile(path, []byte("isto nao e uma chave\n"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	})
+	locked := reasonFor(t, func(path string) {
+		_, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("GenerateKey: %v", err)
+		}
+		block, err := gossh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("segredo"))
+		if err != nil {
+			t.Fatalf("MarshalPrivateKeyWithPassphrase: %v", err)
+		}
+		if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	})
+
+	if !strings.Contains(locked, "ssh-add") {
+		t.Fatalf("locked key reason = %q, want the ssh-add hint", locked)
+	}
+	if strings.Contains(corrupt, "ssh-add") || strings.Contains(corrupt, "passphrase") {
+		t.Fatalf("corrupt key reason = %q, want it not to blame a passphrase", corrupt)
 	}
 }

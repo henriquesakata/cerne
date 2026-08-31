@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -55,7 +56,8 @@ const agentProbeTimeout = 3 * time.Second
 func defaultAgentHasIdentities() bool {
 	// On Windows the agent is Pageant / the OpenSSH named pipe, not a unix
 	// socket we can List() this way; agentDial errors cleanly if it is absent,
-	// so preserve the historical "try the agent" behavior there.
+	// so preserve the historical "try the agent" behavior there — including its
+	// lack of a deadline (see the note in the unix path below).
 	if runtime.GOOS == "windows" {
 		return true
 	}
@@ -65,9 +67,15 @@ func defaultAgentHasIdentities() bool {
 	}
 	// Bounded on both halves. A stale socket inherited from a dead session
 	// accepts the connection and then never answers, and this probe runs on
-	// every SSH operation: without a deadline it is the one place in the
-	// package that can hang the CLI forever. A local agent answers in
-	// microseconds, so the budget is generous by orders of magnitude.
+	// every SSH operation. A local agent answers in microseconds, so the budget
+	// is generous by orders of magnitude.
+	//
+	// Known limit, and the reason this is not "the last unbounded wait": the two
+	// early returns above skip the probe entirely (Windows, and no
+	// SSH_AUTH_SOCK), and the ssh.NewSSHAgentAuth that then runs carries no
+	// deadline of its own. A wedged Pageant or named pipe can still hang there.
+	// Bounding it needs a wrapper around go-git's constructor — a separate
+	// change, not a silent claim of coverage here.
 	conn, err := net.DialTimeout("unix", sock, agentProbeTimeout)
 	if err != nil {
 		return false // agent unreachable → fall back to key files
@@ -129,6 +137,14 @@ func sshHost(u string) string {
 		return ""
 	}
 	rest := u[at+1:]
+	// A bracketed IPv6 literal carries colons of its own: the first one is
+	// INSIDE the brackets, so splitting on it yields "[" and a dead lookup.
+	if strings.HasPrefix(rest, "[") {
+		if end := strings.Index(rest, "]"); end > 0 {
+			return rest[1:end]
+		}
+		return ""
+	}
 	if colon := strings.Index(rest, ":"); colon >= 0 {
 		return rest[:colon]
 	}
@@ -136,14 +152,16 @@ func sshHost(u string) string {
 }
 
 // sshHostPort is sshHost plus the port, in the "host:port" form the known_hosts
-// callback is addressed by. Defaults to :22. Returns "" for non-SSH urls.
+// callback is addressed by. Returns "" for non-SSH urls.
 //
-// It exists because sshHost deliberately drops the port, and without it an
-// entry recorded as "[host]:2222" can never be matched: the callback would be
-// asked about the wrong address. In scp-like remotes ("user@host:something")
-// the segment after the colon is a PATH, so it counts as a port only when it is
-// purely numeric — "git@host:rockt/x.git" is host gitlab-style, not port
-// "rockt/x.git".
+// It exists because sshHost deliberately drops the port, and without it an entry
+// recorded as "[host]:2222" can never be matched: the callback would be asked
+// about the wrong address.
+//
+// Only ssh:// carries a port. The scp-like spelling has NONE — git reads
+// everything after the colon as a path, so "git@host:2222/x.git" is the path
+// "2222/x.git" on port 22, not port 2222. Guessing otherwise would address the
+// callback differently from the tool this package exists to speak for.
 func sshHostPort(u string) string {
 	host := sshHost(u)
 	if host == "" {
@@ -154,84 +172,135 @@ func sshHostPort(u string) string {
 		if parsed, err := url.Parse(u); err == nil && parsed.Port() != "" {
 			port = parsed.Port()
 		}
-		return net.JoinHostPort(host, port)
-	}
-	if at := strings.Index(u, "@"); at >= 0 {
-		rest := u[at+1:]
-		if colon := strings.Index(rest, ":"); colon >= 0 {
-			if tail := rest[colon+1:]; isNumericPort(tail) {
-				port = tail
-			} else if slash := strings.Index(tail, "/"); slash > 0 && isNumericPort(tail[:slash]) {
-				// "host:2222/path" — the scp-like spelling of an explicit port.
-				port = tail[:slash]
-			}
-		}
 	}
 	return net.JoinHostPort(host, port)
 }
 
-func isNumericPort(s string) bool {
-	if s == "" || len(s) > 5 {
-		return false
-	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// hostKeyAlgorithms returns the host key algorithms (e.g. "ssh-ed25519",
-// "ssh-rsa") recorded in the known_hosts file at path for addr ("host:port").
-// It is used to pin ssh.ClientConfig.HostKeyAlgorithms so the server presents a
-// host key type we already trust — avoiding the knownhosts "key mismatch" error
-// that occurs when go-git leaves the algorithm list unconstrained and the server
-// offers a key type (e.g. RSA) different from the one recorded (e.g. ed25519).
+// knownHostsPin reads the known_hosts file at path and returns both halves of
+// host-key verification for addr ("host:port"): the callback go-git checks
+// against, and the signature algorithms to pin so the server presents a key type
+// we already trust — the fix for the "knownhosts: key mismatch" handshake
+// failure. One parse serves both; they used to be read separately.
 //
-// The lookup is delegated to x/crypto/ssh/knownhosts rather than parsing the
-// file here. That library already understands every shape the file really comes
-// in — hashed entries (the Debian/Ubuntu default), the "[host]:port" spelling
-// ssh writes for a non-standard port, and wildcards — and a hand-rolled matcher
-// silently handled NONE of them: it compared a hashed entry against a freshly
-// salted hash of the host, which can never be equal, so the pin degraded to a
-// no-op exactly where the bug it fixes is most likely.
+// The lookup is delegated to x/crypto/ssh/knownhosts rather than parsed here.
+// That library understands every shape the file really comes in — hashed entries
+// (the Debian/Ubuntu default), the "[host]:port" spelling, wildcards — and a
+// hand-rolled matcher silently handled NONE of them.
 //
-// The mechanism is the library's own: asking the callback about a throwaway key
-// yields a *knownhosts.KeyError whose Want lists the keys known for that host.
-// An unknown host yields an empty Want, so "no algorithms" keeps meaning
-// "nothing recorded" and never "the lookup quietly stopped working".
-//
-// A missing file is not an error (returns nil): we don't break
-// first-connection-to-unknown-host; go-git's default callback still applies.
-func hostKeyAlgorithms(path, addr string) ([]string, error) {
+// Two degradations return (nil, nil, nil), meaning "cannot pin, let go-git
+// decide", and both are deliberate:
+//   - the file is absent: first connection to an unknown host must still work;
+//   - the file does not parse: x/crypto rejects the WHOLE file on one malformed
+//     line, where ssh itself skips that line and carries on. Failing here would
+//     take every push and clone down, for every host, because of one truncated
+//     append — cerne must not be the thing that breaks that.
+func knownHostsPin(path, addr string) (gossh.HostKeyCallback, []string, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	cb, err := knownhosts.New(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil // unparseable: see the doc above
 	}
 	probe, err := throwawayHostKey()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	probeErr := cb(addr, probeAddr{}, probe)
 	var ke *knownhosts.KeyError
-	if !errors.As(cb(addr, probeAddr{}, probe), &ke) {
-		return nil, nil // no KeyError at all: nothing recorded to pin
+	if !errors.As(probeErr, &ke) {
+		// NOT "nothing recorded": a plain error here means the lookup itself
+		// failed — a malformed addr, for instance. Swallowing it would rebuild
+		// the silent no-op this whole change exists to remove, so it is
+		// returned. (probeErr == nil is impossible: the probe key is random and
+		// cannot be the recorded one, but it is treated the same way.)
+		if probeErr != nil {
+			return nil, nil, fmt.Errorf("could not look up %s in known_hosts (%s): %w", addr, path, probeErr)
+		}
+		return cb, nil, nil
+	}
+	return cb, pinnedAlgorithms(ke.Want), nil
+}
+
+// pinnedAlgorithms turns the keys known for a host into the signature algorithms
+// the client may offer, in a fixed order.
+//
+// The order is fixed on purpose: ke.Want comes out of a map, so without this the
+// client's preference would differ between two runs of the same command.
+func pinnedAlgorithms(want []knownhosts.KnownKey) []string {
+	seen := map[string]bool{}
+	for _, k := range want {
+		for _, alg := range signatureAlgorithmsFor(k.Key.Type()) {
+			seen[alg] = true
+		}
 	}
 	var algos []string
-	seen := map[string]bool{}
-	for _, want := range ke.Want {
-		if alg := want.Key.Type(); alg != "" && !seen[alg] {
-			seen[alg] = true
+	for _, alg := range hostKeyPreference {
+		if seen[alg] {
+			seen[alg] = false
 			algos = append(algos, alg)
 		}
 	}
-	return algos, nil
+	var rest []string
+	for alg, still := range seen {
+		if still {
+			rest = append(rest, alg)
+		}
+	}
+	sort.Strings(rest) // anything unknown to the preference list, still ordered
+	return append(algos, rest...)
+}
+
+// hostKeyPreference is the offer order, strongest first.
+var hostKeyPreference = []string{
+	gossh.KeyAlgoED25519, gossh.CertAlgoED25519v01,
+	gossh.KeyAlgoECDSA521, gossh.CertAlgoECDSA521v01,
+	gossh.KeyAlgoECDSA384, gossh.CertAlgoECDSA384v01,
+	gossh.KeyAlgoECDSA256, gossh.CertAlgoECDSA256v01,
+	gossh.KeyAlgoRSASHA512, gossh.CertAlgoRSASHA512v01,
+	gossh.KeyAlgoRSASHA256, gossh.CertAlgoRSASHA256v01,
+	gossh.KeyAlgoRSA, gossh.CertAlgoRSAv01,
+}
+
+// certAlgoFor is the certificate counterpart of a plain host key algorithm.
+// known_hosts records a "@cert-authority" line by the CA's own key type, never
+// by a "-cert-v01@openssh.com" name — so pinning only the plain types would
+// exclude exactly what a certificate-presenting server negotiates, breaking
+// hosts that worked before the pin existed.
+var certAlgoFor = map[string]string{
+	gossh.KeyAlgoED25519:   gossh.CertAlgoED25519v01,
+	gossh.KeyAlgoECDSA256:  gossh.CertAlgoECDSA256v01,
+	gossh.KeyAlgoECDSA384:  gossh.CertAlgoECDSA384v01,
+	gossh.KeyAlgoECDSA521:  gossh.CertAlgoECDSA521v01,
+	gossh.KeyAlgoRSASHA512: gossh.CertAlgoRSASHA512v01,
+	gossh.KeyAlgoRSASHA256: gossh.CertAlgoRSASHA256v01,
+	gossh.KeyAlgoRSA:       gossh.CertAlgoRSAv01,
+}
+
+// signatureAlgorithmsFor expands a key type as RECORDED in known_hosts into the
+// signature algorithms a client may offer for it.
+//
+// One type makes this necessary. An RSA host key is recorded as "ssh-rsa", but
+// that name denotes SHA-1 signatures, which OpenSSH >= 8.8 refuses by default:
+// pinning it alone would trade the "key mismatch" this pinning exists to fix for
+// a fresh handshake failure against every current server — a regression dressed
+// as a fix. The SHA-2 variants sign the SAME key, so all three are offered.
+func signatureAlgorithmsFor(keyType string) []string {
+	var out []string
+	if keyType == gossh.KeyAlgoRSA {
+		out = []string{gossh.KeyAlgoRSASHA512, gossh.KeyAlgoRSASHA256, gossh.KeyAlgoRSA}
+	} else {
+		out = []string{keyType}
+	}
+	for _, alg := range append([]string{}, out...) {
+		if cert, ok := certAlgoFor[alg]; ok {
+			out = append(out, cert)
+		}
+	}
+	return out
 }
 
 // throwawayHostKey is the key handed to the known_hosts callback purely to be
@@ -398,27 +467,24 @@ func pinKnownHosts(auth transport.AuthMethod, addr string) error {
 	}
 	helper := hostKeyHelperOf(auth)
 	if helper == nil {
-		return nil
+		// Every auth this package builds carries the helper, so nil means the
+		// go-git types changed under us. Silently skipping the pin here is the
+		// exact shape of the bug this feature removes — a protection that stops
+		// working with nobody noticing — so it fails loudly instead.
+		return fmt.Errorf("cannot pin host key algorithms: unexpected SSH auth type %T", auth)
 	}
 
 	dir, err := sshDir()
 	if err != nil {
 		return fmt.Errorf("could not locate the .ssh directory: %w", err)
 	}
-	khPath := filepath.Join(dir, "known_hosts")
-	if _, statErr := os.Stat(khPath); statErr != nil {
-		return nil // no known_hosts: leave go-git defaults in place
-	}
-
-	cb, err := knownhosts.New(khPath)
+	cb, algos, err := knownHostsPin(filepath.Join(dir, "known_hosts"), addr)
 	if err != nil {
-		return fmt.Errorf("could not read known_hosts (%s): %w", khPath, err)
+		return err
 	}
-	algos, err := hostKeyAlgorithms(khPath, addr)
-	if err != nil {
-		return fmt.Errorf("could not read known_hosts (%s): %w", khPath, err)
+	if cb == nil {
+		return nil // nothing usable to pin with; go-git defaults stay
 	}
-
 	helper.HostKeyCallback = cb
 	helper.HostKeyAlgorithms = algos
 	return nil

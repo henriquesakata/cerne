@@ -3,6 +3,7 @@ package gitback
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,6 +24,7 @@ func TestSSHHost(t *testing.T) {
 		{"ssh://git@h.example:2222/x", "h.example"},
 		{"ssh://git@h.example/x", "h.example"},
 		{"deploy@host:p", "host"},
+		{"git@[::1]:rockt/x.git", "::1"},
 		{"/tmp/x", ""},
 		{"https://h/x", ""},
 		{`C:\local\path`, ""},
@@ -47,7 +49,11 @@ func TestSSHHostPort(t *testing.T) {
 		{"ssh://git@h.example:2222/x", "h.example:2222"},
 		{"ssh://git@h.example/x", "h.example:22"},
 		{"deploy@host:p", "host:22"},
-		{"git@host:2222/x.git", "host:2222"},
+		{"git@[::1]:rockt/x.git", "[::1]:22"},
+		{"ssh://git@[::1]:2222/x", "[::1]:2222"},
+		// A sintaxe scp-like não tem porta: em "git@host:2222/x.git" o
+		// "2222/x.git" é CAMINHO. Só ssh:// carrega porta.
+		{"git@host:2222/x.git", "host:22"},
 		{"/tmp/x", ""},
 		{"https://h/x", ""},
 		{`C:\local\path`, ""},
@@ -83,18 +89,18 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	khPath := filepath.Join(dir, "known_hosts")
 	writeKnownHostsLine(t, khPath, "example.test")
 
-	algos, err := hostKeyAlgorithms(khPath, "example.test:22")
+	_, algos, err := knownHostsPin(khPath, "example.test:22")
 	if err != nil {
-		t.Fatalf("hostKeyAlgorithms: %v", err)
+		t.Fatalf("knownHostsPin: %v", err)
 	}
 	if !containsStr(algos, "ssh-ed25519") {
 		t.Fatalf("algos = %v, want it to contain ssh-ed25519", algos)
 	}
 
 	// Unknown host yields no algorithms.
-	unknown, err := hostKeyAlgorithms(khPath, "nope.test:22")
+	_, unknown, err := knownHostsPin(khPath, "nope.test:22")
 	if err != nil {
-		t.Fatalf("hostKeyAlgorithms(unknown): %v", err)
+		t.Fatalf("knownHostsPin(unknown): %v", err)
 	}
 	if len(unknown) != 0 {
 		t.Fatalf("algos for unknown host = %v, want empty", unknown)
@@ -102,9 +108,9 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 }
 
 func TestHostKeyAlgorithmsMissingFile(t *testing.T) {
-	algos, err := hostKeyAlgorithms(filepath.Join(t.TempDir(), "does-not-exist"), "example.test:22")
+	_, algos, err := knownHostsPin(filepath.Join(t.TempDir(), "does-not-exist"), "example.test:22")
 	if err != nil {
-		t.Fatalf("hostKeyAlgorithms(missing) err = %v, want nil", err)
+		t.Fatalf("knownHostsPin(missing) err = %v, want nil", err)
 	}
 	if len(algos) != 0 {
 		t.Fatalf("algos = %v, want empty for missing file", algos)
@@ -200,9 +206,9 @@ func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
-			algos, err := hostKeyAlgorithms(kh, c.addr)
+			_, algos, err := knownHostsPin(kh, c.addr)
 			if err != nil {
-				t.Fatalf("hostKeyAlgorithms: %v", err)
+				t.Fatalf("knownHostsPin: %v", err)
 			}
 			if !containsStr(algos, want) {
 				t.Fatalf("algos = %v, want it to contain %q", algos, want)
@@ -225,11 +231,66 @@ func TestHostKeyAlgorithmsRealKnownHostsShapes(t *testing.T) {
 func TestHostKeyAlgorithmsUnknownHostStaysEmpty(t *testing.T) {
 	kh := filepath.Join(t.TempDir(), "known_hosts")
 	knownHostsWith(t, kh, "example.test")
-	algos, err := hostKeyAlgorithms(kh, "nope.test:22")
+	_, algos, err := knownHostsPin(kh, "nope.test:22")
 	if err != nil {
-		t.Fatalf("hostKeyAlgorithms: %v", err)
+		t.Fatalf("knownHostsPin: %v", err)
 	}
 	if len(algos) != 0 {
 		t.Fatalf("algos for unknown host = %v, want empty", algos)
+	}
+}
+
+// An RSA host key is recorded as "ssh-rsa", which names SHA-1 signatures that
+// OpenSSH >= 8.8 refuses by default. Pinning only that would swap the "key
+// mismatch" this feature fixes for a fresh handshake failure against every
+// current server, so the SHA-2 names for the same key go in too.
+func TestKnownHostsPinExpandsRSAToSHA2(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pub, err := gossh.NewPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	if err := os.WriteFile(kh, []byte(knownhosts.Line([]string{"example.test"}, pub)+"\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, algos, err := knownHostsPin(kh, "example.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin: %v", err)
+	}
+	for _, want := range []string{gossh.KeyAlgoRSASHA512, gossh.KeyAlgoRSASHA256, gossh.KeyAlgoRSA} {
+		if !containsStr(algos, want) {
+			t.Fatalf("algos = %v, want it to contain %q", algos, want)
+		}
+	}
+	// Strongest first, and deterministic: ke.Want comes out of a map.
+	if algos[0] != gossh.KeyAlgoRSASHA512 {
+		t.Fatalf("algos[0] = %q, want the SHA-512 variant offered first", algos[0])
+	}
+}
+
+// x/crypto rejects the WHOLE known_hosts on one malformed line, where ssh skips
+// that line and carries on. Taking every push and clone down for every host
+// because of one truncated append is not an option.
+func TestKnownHostsPinSurvivesACorruptLine(t *testing.T) {
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	good := knownHostsWith(t, kh, "example.test") // writes a valid entry
+	body, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if err := os.WriteFile(kh, append([]byte("isto nao e uma entrada valida\n"), body...), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cb, algos, err := knownHostsPin(kh, "example.test:22")
+	if err != nil {
+		t.Fatalf("knownHostsPin on a dirty file = %v, want no error", err)
+	}
+	// Degrading to "no pin" is acceptable; failing the whole operation is not.
+	if cb != nil && !containsStr(algos, good) {
+		t.Fatalf("algos = %v, want either no pin at all or the valid entry %q", algos, good)
 	}
 }
