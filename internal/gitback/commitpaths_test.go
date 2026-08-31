@@ -106,6 +106,20 @@ func TestCommitPathsNothingToCommit(t *testing.T) {
 // must be the ErrNothingToCommit sentinel — never go-git's generic error, and
 // never a commit containing the stranger.
 func TestCommitPathsRaceWindowStranger(t *testing.T) {
+	// Both backends: the fast path is the default, so pinning only the fallback
+	// would leave the F-0121 regression uncovered in every normal run.
+	t.Run("git-binary", func(t *testing.T) {
+		requireGitBin(t)
+		commitPathsRaceWindowStranger(t)
+	})
+	t.Run("go-git", func(t *testing.T) {
+		withoutGitBin(t)
+		commitPathsRaceWindowStranger(t)
+	})
+}
+
+func commitPathsRaceWindowStranger(t *testing.T) {
+	t.Helper()
 	dir := initRepoWith(t, map[string]string{"a.md": "x\n"})
 	before := headOf(t, dir)
 	commitPathsHookAfterAdd = func() {

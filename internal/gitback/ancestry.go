@@ -94,6 +94,9 @@ func AheadTouchesOnly(workdir, branch, path string) (bool, error) {
 // Fetch downloads new objects and updates remote-tracking refs from origin,
 // without touching the worktree or HEAD. Already up-to-date is not an error.
 func Fetch(workdir string) error {
+	if netFastPath() {
+		return execFetch(workdir)
+	}
 	repo, err := openRepo(workdir)
 	if err != nil {
 		return err

@@ -123,7 +123,21 @@ func TestCommitAllDoesNotPush(t *testing.T) {
 	}
 }
 
+// Both backends must classify a rejected push identically: the reconcile loop
+// reads IsNonFastForward to decide between "retry on the new head" and "fail".
 func TestPushNonFastForwardClassified(t *testing.T) {
+	t.Run("git-binary", func(t *testing.T) {
+		requireGitBin(t)
+		pushNonFastForward(t)
+	})
+	t.Run("go-git", func(t *testing.T) {
+		withoutGitBin(t)
+		pushNonFastForward(t)
+	})
+}
+
+func pushNonFastForward(t *testing.T) {
+	t.Helper()
 	origin, clone1, _ := fixture(t)
 	clone2 := filepath.Join(t.TempDir(), "clone2")
 	if err := Clone(origin, clone2); err != nil {
