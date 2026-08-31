@@ -26,7 +26,7 @@ func TestIsSSHURL(t *testing.T) {
 		url  string
 		want bool
 	}{
-		{"git@gitlab.com:rockt/x.git", true},
+		{"git@cerne.test:rockt/x.git", true},
 		{"ssh://git@h/x", true},
 		{`C:\local\path`, false},
 		{"C:/x", false},
@@ -61,7 +61,7 @@ func writeKeyFile(t *testing.T, dir, name string) {
 func TestSSHAuthKeyFileFallback(t *testing.T) {
 	dir := t.TempDir()
 	writeKeyFile(t, dir, "id_ed25519")
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	// Force the agent path to fail so the test exercises the key-file fallback
 	// regardless of whether a real agent is reachable on the host.
@@ -70,7 +70,7 @@ func TestSSHAuthKeyFileFallback(t *testing.T) {
 		return nil, errNoAgentForTest
 	}
 
-	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	auth, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err != nil {
 		t.Fatalf("sshAuthFor: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSSHAuthKeyFileFallback(t *testing.T) {
 func TestSSHAuthEmptyAgentFallsBackToKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	writeKeyFile(t, dir, "id_ed25519")
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 
 	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities })
@@ -116,7 +116,7 @@ func TestSSHAuthEmptyAgentFallsBackToKeyFile(t *testing.T) {
 		return nil, nil
 	}
 
-	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	auth, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err != nil {
 		t.Fatalf("sshAuthFor: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestSSHAuthEmptyAgentFallsBackToKeyFile(t *testing.T) {
 // key" error instead of the agent auth.
 func TestSSHAuthAgentWithIdentitiesUsed(t *testing.T) {
 	dir := t.TempDir() // no key files
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 
 	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities })
@@ -142,7 +142,7 @@ func TestSSHAuthAgentWithIdentitiesUsed(t *testing.T) {
 		return &ssh.PublicKeysCallback{User: user}, nil
 	}
 
-	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	auth, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err != nil {
 		t.Fatalf("sshAuthFor: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestSSHAuthAgentWithIdentitiesUsed(t *testing.T) {
 
 func TestSSHAuthNoKey(t *testing.T) {
 	dir := t.TempDir() // empty: no key files
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Cleanup(func() { agentDial = realAgentDial })
@@ -161,7 +161,7 @@ func TestSSHAuthNoKey(t *testing.T) {
 		return nil, errNoAgentForTest
 	}
 
-	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	_, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err == nil {
 		t.Fatal("sshAuthFor err = nil, want error mentioning the probed dir")
 	}
@@ -191,12 +191,12 @@ func TestSSHAuthBadFirstKeyFallsThroughToNext(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	writeKeyFile(t, dir, "id_rsa")
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentDial = realAgentDial })
 	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
 
-	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	auth, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err != nil {
 		t.Fatalf("sshAuthFor = %v, want it to fall through to id_rsa", err)
 	}
@@ -213,12 +213,12 @@ func TestSSHAuthCorruptKeyIsNotReportedAsPassphrase(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), []byte("isto nao e uma chave\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentDial = realAgentDial })
 	agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
 
-	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	_, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err == nil {
 		t.Fatal("err is nil, want a failure")
 	}
@@ -232,7 +232,7 @@ func TestSSHAuthCorruptKeyIsNotReportedAsPassphrase(t *testing.T) {
 // the thing that broke.
 func TestSSHAuthReportsAgentFailure(t *testing.T) {
 	dir := t.TempDir() // no key files at all
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities; agentDial = realAgentDial })
 	agentHasIdentities = func() bool { return true }
@@ -240,7 +240,7 @@ func TestSSHAuthReportsAgentFailure(t *testing.T) {
 		return nil, errors.New("agente recusou a conexao (teste)")
 	}
 
-	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	_, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err == nil {
 		t.Fatal("err is nil, want a failure")
 	}
@@ -328,7 +328,7 @@ func TestSSHAuthKeyFailureReasonsAreDistinct(t *testing.T) {
 		t.Setenv("CERNE_SSH_DIR", dir)
 		t.Cleanup(func() { agentDial = realAgentDial })
 		agentDial = func(string) (transport.AuthMethod, error) { return nil, errNoAgentForTest }
-		_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+		_, err := sshAuthFor("git@cerne.test:rockt/x.git")
 		if err == nil {
 			t.Fatal("err is nil, want a failure")
 		}
@@ -367,12 +367,12 @@ func TestSSHAuthKeyFailureReasonsAreDistinct(t *testing.T) {
 // or did not answer" branch could be deleted and the suite would stay green.
 func TestSSHAuthReportsAnUnusableAgent(t *testing.T) {
 	dir := t.TempDir() // no key files
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities })
 	agentHasIdentities = func() bool { return false }
 
-	_, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	_, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err == nil {
 		t.Fatal("err is nil, want a failure")
 	}
@@ -389,7 +389,7 @@ func TestSSHAuthReportsAnUnusableAgent(t *testing.T) {
 // call from that branch left the suite green.
 func TestSSHAuthPinsTheAgentPathToo(t *testing.T) {
 	dir := t.TempDir()
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentHasIdentities = defaultAgentHasIdentities; agentDial = realAgentDial })
 	agentHasIdentities = func() bool { return true }
@@ -397,7 +397,7 @@ func TestSSHAuthPinsTheAgentPathToo(t *testing.T) {
 		return &ssh.PublicKeysCallback{User: user}, nil
 	}
 
-	auth, err := sshAuthFor("git@gitlab.com:rockt/x.git")
+	auth, err := sshAuthFor("git@cerne.test:rockt/x.git")
 	if err != nil {
 		t.Fatalf("sshAuthFor: %v", err)
 	}

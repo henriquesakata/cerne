@@ -195,12 +195,16 @@ func sshHostPort(u string) string {
 // The library knows which line the key came from; this package never did.
 func knownHostsPin(addr string) (gossh.HostKeyCallback, []string, error) {
 	// CERNE_SSH_DIR exists to isolate the SSH material cerne uses, so it has to
-	// cover known_hosts too — isolating the keys but silently verifying hosts
-	// against the real ~/.ssh/known_hosts is the kind of half-measure an
-	// operator cannot see. Unset, go-git's own resolution applies unchanged.
+	// cover known_hosts too — isolating the keys while silently verifying hosts
+	// against the real ~/.ssh/known_hosts is a half-measure an operator cannot
+	// see. But it only REPLACES the user's default file: SSH_KNOWN_HOSTS still
+	// wins (it is the specific, standard override, and the error text from the
+	// library tells people to set it), and the system-wide file stays in the
+	// list, because a corporate image that trusts hosts only through
+	// /etc/ssh/ssh_known_hosts must keep working.
 	var files []string
-	if dir := os.Getenv("CERNE_SSH_DIR"); dir != "" {
-		files = append(files, filepath.Join(dir, "known_hosts"))
+	if dir := os.Getenv("CERNE_SSH_DIR"); dir != "" && os.Getenv("SSH_KNOWN_HOSTS") == "" {
+		files = append(files, filepath.Join(dir, "known_hosts"), systemKnownHosts)
 	}
 	db, err := ssh.NewKnownHostsDb(files...)
 	if err != nil {
@@ -383,17 +387,9 @@ func pinKnownHosts(auth transport.AuthMethod, addr string) error {
 	return nil
 }
 
-// knownHostsFiles mirrors how go-git resolves known_hosts, because this package
-// OVERRIDES go-git's callback: consulting a different set of files than the
-// fallback would have used silently changes which hosts are trusted. SSH_KNOWN_HOSTS
-// wins when set (a CI pointing at a curated file), otherwise the user's dir plus
-// the system-wide file. dir comes from sshDir(), so CERNE_SSH_DIR keeps working.
-func knownHostsFiles(dir string) []string {
-	if env := filepath.SplitList(os.Getenv("SSH_KNOWN_HOSTS")); len(env) > 0 {
-		return env
-	}
-	return []string{filepath.Join(dir, "known_hosts"), "/etc/ssh/ssh_known_hosts"}
-}
+// systemKnownHosts is the file OpenSSH reads as GlobalKnownHostsFile, and the
+// one go-git's own default list ends with.
+const systemKnownHosts = "/etc/ssh/ssh_known_hosts"
 
 // hostKeyHelperOf returns the embedded *HostKeyCallbackHelper of the go-git ssh
 // auth methods that carry one, or nil for other auth types.

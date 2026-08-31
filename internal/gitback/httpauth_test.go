@@ -97,7 +97,7 @@ func TestIsHTTPURL(t *testing.T) {
 	}{
 		{"https://git.rockt.com.br/rockt/nutriario-docs.git", true},
 		{"http://localhost:3000/x.git", true},
-		{"git@gitlab.com:rockt/x.git", false},
+		{"git@cerne.test:rockt/x.git", false},
 		{"ssh://git@h/x", false},
 		{`C:\local\path`, false},
 		{"/tmp/x", false},
@@ -115,7 +115,7 @@ func TestAuthForDispatch(t *testing.T) {
 	// SSH path: key-file fallback proves the ssh branch is reached.
 	dir := t.TempDir()
 	writeKeyFile(t, dir, "id_ed25519")
-	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "gitlab.com")
+	writeKnownHostsLine(t, filepath.Join(dir, "known_hosts"), "cerne.test")
 	t.Setenv("CERNE_SSH_DIR", dir)
 	t.Cleanup(func() { agentDial = realAgentDial })
 	agentDial = func(string) (transport.AuthMethod, error) {
@@ -123,7 +123,7 @@ func TestAuthForDispatch(t *testing.T) {
 	}
 	t.Setenv("CERNE_GIT_TOKEN", "tok123")
 
-	auth, err := authFor("git@gitlab.com:rockt/x.git")
+	auth, err := authFor("git@cerne.test:rockt/x.git")
 	if err != nil {
 		t.Fatalf("authFor(ssh): %v", err)
 	}
