@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -28,8 +29,10 @@ import (
 	"time"
 )
 
-// gitBin is the resolved path of the git binary, "" when unavailable. It is a
-// var so tests can force the go-git fallback.
+// gitBin is the resolved path of the git binary, "" when unavailable. Resolved
+// once per process, so CERNE_NO_GIT_BIN is read at first use and a later
+// t.Setenv cannot flip it — the tests that exercise both paths reassign this
+// var instead (withoutGitBin).
 var gitBin = sync.OnceValue(func() string {
 	if os.Getenv("CERNE_NO_GIT_BIN") != "" {
 		return ""
@@ -54,8 +57,13 @@ var gitBin = sync.OnceValue(func() string {
 // path — a machine that worked before this fast path existed must keep working.
 // A developer directory in a non-default location degrades the same way: no
 // fast path, same behavior as before, never a broken command.
+//
+// All of that is darwin-only, and the GOOS guard is load-bearing: on Linux
+// /usr/bin/git IS the real binary (Debian, Alpine, the CI image), so treating
+// that path as a stub would silently disable the fast path on every Linux host
+// — the exact machines this optimization matters most on.
 func unshimmed(path string) string {
-	if path != "/usr/bin/git" {
+	if runtime.GOOS != "darwin" || path != "/usr/bin/git" {
 		return path
 	}
 	for _, c := range []string{
@@ -83,7 +91,20 @@ func unshimmed(path string) string {
 // guard is not optional, and the budget must include the ~17-byte random suffix
 // ssh appends while the master is being created.
 func sshMuxEnv(workdir string) string {
-	if os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("CERNE_NO_SSH_MUX") != "" {
+	// Connection multiplexing is a unix-socket feature; on Windows the options
+	// are not supported and injecting GIT_SSH_COMMAND would also shadow a GIT_SSH
+	// the user configured. No mux there — the fast path itself still applies.
+	if runtime.GOOS == "windows" || os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("CERNE_NO_SSH_MUX") != "" {
+		return ""
+	}
+	// Keyed by the REMOTE, never by the local directory: a control socket is
+	// identified by user@host:port, so two clones of the same remote should
+	// share one master, and two clones of DIFFERENT remotes must never collide
+	// onto one — that collision would hand a connection to the wrong host, and
+	// ssh would not notice. An unreadable or non-SSH remote simply gets no
+	// multiplexing (GIT_SSH_COMMAND is inert for https anyway).
+	url, err := RemoteURL(workdir)
+	if err != nil || !strings.Contains(url, "@") || strings.HasPrefix(url, "http") {
 		return ""
 	}
 	cache, err := os.UserCacheDir()
@@ -94,9 +115,9 @@ func sshMuxEnv(workdir string) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return ""
 	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(workdir))
-	path := filepath.Join(dir, fmt.Sprintf("%08x", h.Sum32()))
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(url))
+	path := filepath.Join(dir, fmt.Sprintf("%016x", h.Sum64()))
 	if len(path)+18 > 104 {
 		return ""
 	}
@@ -129,6 +150,12 @@ func gitRunNet(workdir, name string, args ...string) error {
 
 // gitRun runs the git binary in workdir. Stdout comes back trimmed; a non-zero
 // exit becomes an error carrying stderr (git's own message is the useful one).
+//
+// Known limit: the local operations carry no deadline of their own, matching
+// the go-git path, which has none either. They are cheap and CPU-bound, and
+// every mutation already runs inside the backend advisory lock that serializes
+// cerne processes — so the realistic stall is an index.lock left by a crash,
+// which git reports and exits on rather than waiting.
 func gitRun(workdir string, args ...string) (string, error) {
 	cmd := newGitCmd(context.Background(), workdir, args...)
 	if err := finishGitCmd(cmd, args); err != nil {
@@ -168,7 +195,19 @@ var repoScopedEnv = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
 	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 	"GIT_NAMESPACE", "GIT_PREFIX", "GIT_INDEX_VERSION",
+	// git exports these to its children whenever it was itself invoked with
+	// -c: they carry arbitrary config, so GIT_CONFIG_KEY_0=core.worktree
+	// re-binds the repository through the door GIT_WORK_TREE just closed.
+	"GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+	// These outrank `-c user.name=cerne`, so an inherited value would sign the
+	// backend commit as the user — a visible divergence from the go-git path,
+	// which always writes the cerne signature.
+	"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
+	"GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE",
 }
+
+// repoScopedEnvPrefixes are the indexed companions of GIT_CONFIG_COUNT.
+var repoScopedEnvPrefixes = []string{"GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"}
 
 // scrubbedEnv is the parent environment minus repoScopedEnv.
 func scrubbedEnv() []string {
@@ -176,12 +215,21 @@ func scrubbedEnv() []string {
 	out := env[:0:0]
 	for _, kv := range env {
 		eq := strings.IndexByte(kv, '=')
-		if eq > 0 && slices.Contains(repoScopedEnv, kv[:eq]) {
+		if eq > 0 && (slices.Contains(repoScopedEnv, kv[:eq]) || hasAnyPrefix(kv[:eq], repoScopedEnvPrefixes)) {
 			continue
 		}
 		out = append(out, kv)
 	}
 	return out
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func finishGitCmd(cmd *exec.Cmd, args []string) error {
@@ -214,19 +262,49 @@ func builderText(w any) string {
 	return ""
 }
 
-// execPushRefspec pushes one refspec with the git binary. A rejection (the
-// remote advanced) is normalized to carry "non-fast-forward" so
-// IsNonFastForward classifies both backends identically.
+// execPushRefspec pushes one refspec with the git binary. A rejection because
+// the remote advanced is normalized to carry "non-fast-forward" so
+// IsNonFastForward classifies both backends identically — and the reconcile
+// loop retries on exactly that, so misreading it costs correctness, not looks.
+//
+// --porcelain is what makes the reading machine-oriented: git then prints one
+// line per ref with a leading status flag ('!' = rejected), instead of leaving
+// the caller to grep prose. Distinguishing WHY it was rejected still needs the
+// summary field, but a hook decline must not be retried like a stale base, so
+// the reasons are matched explicitly rather than "any rejection".
 func execPushRefspec(workdir, refspec string) error {
-	err := gitRunNet(workdir, "push", "push", remoteName, refspec)
+	err := gitRunNet(workdir, "push", "push", "--porcelain", remoteName, refspec)
 	if err == nil {
 		markSynced(workdir)
 		return nil
 	}
-	if s := err.Error(); strings.Contains(s, "[rejected]") && !strings.Contains(s, "non-fast-forward") {
+	if rejectedAsStale(err.Error()) && !strings.Contains(err.Error(), "non-fast-forward") {
 		return fmt.Errorf("non-fast-forward update: %w", err)
 	}
 	return err
+}
+
+// staleRejectReasons are git's summaries for "your base is behind" — the only
+// rejections the reconcile loop can fix by fetching and replaying. They stay
+// stable because newGitCmd pins the C locale.
+var staleRejectReasons = []string{"non-fast-forward", "fetch first", "stale info"}
+
+// rejectedAsStale reports whether the push output carries a rejected-ref line
+// ('!' flag, from --porcelain) whose reason is a stale base. Reason and flag
+// must be on the SAME line, so an unrelated mention elsewhere in the output
+// cannot promote some other rejection into a retry.
+func rejectedAsStale(out string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "!") {
+			continue
+		}
+		for _, reason := range staleRejectReasons {
+			if strings.Contains(line, reason) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // execWorktreeChanges is WorktreeChanges via `git status --porcelain`.
@@ -250,6 +328,12 @@ func execWorktreeChanges(workdir string) ([]Change, error) {
 // execCommitPaths is CommitPaths via the git binary: stage exactly paths, then
 // commit them. ErrNothingToCommit when staging produced no change.
 func execCommitPaths(workdir string, paths []string, msg string) (string, error) {
+	// Without a pathspec `git add --all --` stages the WHOLE tree and the
+	// commit below then fails, leaving a dirty index behind — where go-git
+	// would have touched nothing. Nothing to commit is the honest answer.
+	if len(paths) == 0 {
+		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
+	}
 	args := append([]string{"add", "--all", "--"}, paths...)
 	if _, err := gitRun(workdir, args...); err != nil {
 		return "", err
@@ -267,8 +351,13 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 	return gitRun(workdir, "rev-parse", "HEAD")
 }
 
-// execResetHard is ResetHard via the git binary: match the tree exactly, which
-// means dropping untracked files too (go-git's HardReset semantics).
+// execResetHard is ResetHard via the git binary: restore tracked files to sha
+// and drop untracked ones, matching go-git's HardReset. Deliberately NOT `-x`
+// and NOT `-ff`: ignored files and nested repositories survive, because the
+// reconcile loop wants a tree with no stray *tracked-class* content, not an
+// erased directory. The sweep is repo-wide, not limited to what the reset
+// touched — the clone is cerne's own cache, and a leftover untracked file from
+// a crashed process must not ride along into the next commit.
 func execResetHard(workdir, sha string) error {
 	if _, err := gitRun(workdir, "reset", "--hard", sha); err != nil {
 		return err

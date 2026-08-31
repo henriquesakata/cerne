@@ -3,8 +3,10 @@ package gitback
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -209,4 +211,46 @@ func TestResetHardBackendsAgree(t *testing.T) {
 	dir := dirtyRepo(t)
 	withoutGitBin(t)
 	assertClean(dir)
+}
+
+// The darwin stub rewrite must never fire anywhere else: on Linux the real git
+// IS /usr/bin/git, and treating it as a stub silently disables the whole fast
+// path on every Linux host, CI included — with every other test still green,
+// because they would all just run go-git twice.
+func TestGitBinNotDisabledWhereGitIsReal(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on PATH")
+	}
+	if runtime.GOOS == "darwin" {
+		// Only here may LookPath find a binary that is not usable (the stub of
+		// a Mac with no Command Line Tools), so "" is a legitimate answer.
+		t.Skip("darwin: /usr/bin/git may be a stub with nothing behind it")
+	}
+	if gitBin() == "" {
+		t.Fatal("git is on PATH but gitBin() is empty — the fast path is off and nothing else would notice")
+	}
+	if got := unshimmed("/usr/bin/git"); got != "/usr/bin/git" {
+		t.Fatalf("unshimmed(/usr/bin/git) = %q, want it untouched off darwin", got)
+	}
+}
+
+func TestCommitPathsEmptyPathsCommitsNothing(t *testing.T) {
+	requireGitBin(t)
+	// `git add --all --` with no pathspec stages the entire tree; the guard
+	// must refuse before that, leaving the worktree exactly as it was.
+	dir := dirtyRepo(t)
+	before, err := WorktreeChanges(dir)
+	if err != nil {
+		t.Fatalf("WorktreeChanges: %v", err)
+	}
+	if _, err := CommitPaths(dir, nil, "probe"); !errors.Is(err, ErrNothingToCommit) {
+		t.Fatalf("CommitPaths(nil) = %v, want ErrNothingToCommit", err)
+	}
+	after, err := WorktreeChanges(dir)
+	if err != nil {
+		t.Fatalf("WorktreeChanges: %v", err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("worktree changed: before=%+v after=%+v", before, after)
+	}
 }
