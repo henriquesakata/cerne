@@ -134,7 +134,14 @@ func sshMuxEnv(workdir string) string {
 	// Connection multiplexing is a unix-socket feature; on Windows the options
 	// are not supported and injecting GIT_SSH_COMMAND would also shadow a GIT_SSH
 	// the user configured. No mux there — the fast path itself still applies.
-	if runtime.GOOS == "windows" || os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("CERNE_NO_SSH_MUX") != "" {
+	// GIT_SSH_COMMAND outranks GIT_SSH and core.sshCommand, so injecting it
+	// would silently replace a wrapper the user configured (a bastion, a pinned
+	// identity) and turn every push into "Permission denied" with no fallback.
+	// Both env forms are checked; core.sshCommand is not visible without another
+	// spawn and stays a documented limit — CERNE_NO_SSH_MUX is the escape.
+	if runtime.GOOS == "windows" ||
+		os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("GIT_SSH") != "" ||
+		os.Getenv("CERNE_NO_SSH_MUX") != "" {
 		return ""
 	}
 	// Keyed by the REMOTE, never by the local directory: a control socket is
@@ -226,7 +233,14 @@ func newGitCmd(ctx context.Context, workdir string, args ...string) *exec.Cmd {
 	// (a clone mounted into a container, CI running as root). go-git never
 	// checked ownership, and this clone is a cache directory cerne created for
 	// itself — refusing it here would be a regression, not a defense.
-	cmd := exec.CommandContext(ctx, gitBin(), append([]string{"-c", "safe.directory=*"}, args...)...)
+	cmd := exec.CommandContext(ctx, gitBin(), append([]string{
+		"-c", "safe.directory=*",
+		// go-git applies no line-ending conversion, and Git for Windows ships
+		// core.autocrlf=true: the same worktree would produce a different blob
+		// depending on which backend ran. Turning it off is what makes the two
+		// byte-identical.
+		"-c", "core.autocrlf=false",
+	}, args...)...)
 	cmd.Dir = workdir
 	cmd.Env = append(scrubbedEnv(),
 		// Never let git ask for input (a credential or passphrase prompt would
@@ -252,6 +266,11 @@ var repoScopedEnv = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
 	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 	"GIT_NAMESPACE", "GIT_PREFIX", "GIT_INDEX_VERSION",
+	// These change how a pathspec is READ. With GIT_LITERAL_PATHSPECS=1 the
+	// ":(literal)" prefix below stops being magic and becomes part of the
+	// filename, so every add matches nothing and every commit fails.
+	"GIT_LITERAL_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS",
+	"GIT_GLOB_PATHSPECS",
 	// git exports these to its children whenever it was itself invoked with
 	// -c: they carry arbitrary config, so GIT_CONFIG_KEY_0=core.worktree
 	// re-binds the repository through the door GIT_WORK_TREE just closed.
@@ -354,7 +373,12 @@ func execPushRefspec(workdir, refspec string) error {
 		markSynced(workdir)
 		return nil
 	}
-	if rejectedAsStale(err.Error()) && !strings.Contains(err.Error(), "non-fast-forward") {
+	// No second substring test over the whole error: it embeds the arguments,
+	// so a branch NAMED "non-fast-forward" would classify every failure as a
+	// stale base and spin the reconcile retry. rejectedAsStale reads the
+	// porcelain lines alone; wrapping an already-matching message twice is
+	// harmless, misreading one is not.
+	if rejectedAsStale(err.Error()) {
 		return fmt.Errorf("non-fast-forward update: %w", err)
 	}
 	return err
@@ -410,7 +434,12 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 	if len(paths) == 0 {
 		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
 	}
-	args := append([]string{"add", "--all", "--"}, literalPathspecs(paths)...)
+	// -f because go-git's Add stages an explicitly named path even when
+	// .gitignore (or the user's global core.excludesFile) covers it, while git
+	// refuses. The paths here come from a worktree diff, so an ignored one is
+	// already unlikely — but "unlikely" is how environment-dependent
+	// divergences hide.
+	args := append([]string{"add", "--all", "-f", "--"}, literalPathspecs(paths)...)
 	if _, err := gitRun(workdir, args...); err != nil {
 		return "", err
 	}
@@ -437,8 +466,13 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 	// Commit the INDEX, not the worktree: `commit --only <paths>` would re-read
 	// the files from disk and discard what `add` just staged, so anything
 	// written in between would ride along — where the go-git path commits
-	// exactly the index it staged. The reset before this leaves the index at
-	// HEAD, so the staged set is precisely `paths`.
+	// exactly the index it staged.
+	//
+	// Both backends therefore share one invariant they do not enforce: whatever
+	// else sits in the index rides along. go-git's Worktree.Commit has always
+	// committed the whole index, and the reconcile loop's ResetHard is what
+	// makes the staged set precisely `paths`. Keeping the same exposure is the
+	// point — diverging here would be worse than the exposure itself.
 	args = []string{
 		"-c", "user.name=cerne", "-c", "user.email=cerne@local",
 		"commit", "--no-verify", "--no-gpg-sign", "-m", msg,

@@ -359,3 +359,60 @@ func TestIsHexSHAAcceptsBothCases(t *testing.T) {
 		}
 	}
 }
+
+// GIT_LITERAL_PATHSPECS in the environment would make ":(literal)" part of the
+// filename instead of magic, so every add matches nothing and every commit
+// fails. It is scrubbed; this pins that, along with the sibling flags.
+func TestCommitPathsSurvivesInheritedPathspecEnv(t *testing.T) {
+	requireGitBin(t)
+	for _, env := range []string{"GIT_LITERAL_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv(env, "1")
+			dir := dirtyRepo(t)
+			if _, err := CommitPaths(dir, []string{"edit.md", "added.md", "gone.md"}, "probe"); err != nil {
+				t.Fatalf("CommitPaths with %s set: %v", env, err)
+			}
+			left, err := WorktreeChanges(dir)
+			if err != nil {
+				t.Fatalf("WorktreeChanges: %v", err)
+			}
+			if len(left) != 0 {
+				t.Fatalf("worktree not clean: %+v", left)
+			}
+		})
+	}
+}
+
+// A repository configured the Windows way (core.autocrlf=true) must still
+// produce the same blob through either backend — git normalizes CRLF on add,
+// go-git never converts.
+func TestCommitPathsIgnoresAutocrlf(t *testing.T) {
+	requireGitBin(t)
+	blobOf := func(dir string) string {
+		t.Helper()
+		// Set through the binary directly: gitRun would be disabled in the
+		// go-git half of this very test.
+		real, err := exec.LookPath("git")
+		if err != nil {
+			t.Skip("no git on PATH")
+		}
+		if out, err := exec.Command(real, "-C", dir, "config", "core.autocrlf", "true").CombinedOutput(); err != nil {
+			t.Fatalf("config: %v %s", err, out)
+		}
+		writeFile(t, dir, "crlf.md", "linha um\r\nlinha dois\r\n")
+		if _, err := CommitPaths(dir, []string{"crlf.md"}, "probe"); err != nil {
+			t.Fatalf("CommitPaths: %v", err)
+		}
+		blob, ok, err := FileBlobAt(dir, headOf(t, dir), "crlf.md")
+		if err != nil || !ok {
+			t.Fatalf("FileBlobAt: ok=%v err=%v", ok, err)
+		}
+		return string(blob)
+	}
+	execBlob := blobOf(initRepoWith(t, map[string]string{"a.md": "a\n"}))
+	dir := initRepoWith(t, map[string]string{"a.md": "a\n"})
+	withoutGitBin(t)
+	if gogitBlob := blobOf(dir); gogitBlob != execBlob {
+		t.Fatalf("blob diverged under core.autocrlf: exec=%q go-git=%q", execBlob, gogitBlob)
+	}
+}
