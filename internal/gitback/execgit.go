@@ -61,7 +61,13 @@ const (
 )
 
 func gitVersionOK(path string) bool {
-	cmd := exec.Command(path, "--version")
+	// Bounded: this runs inside a sync.OnceValue, so a git that hangs (a
+	// corporate shim, a dead NFS mount) would hang every caller in the process
+	// forever. LookPath alone never executed anything; this does, so it pays
+	// for a deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "--version")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {
@@ -152,7 +158,9 @@ func sshMuxEnv(workdir string) string {
 	// MkdirAll applies the mode only to directories it CREATES: an already
 	// existing, group/world-writable one would void the privacy this whole move
 	// was for, so it is verified rather than assumed.
-	if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm()&0o077 != 0 {
+	// Lstat, not Stat: a symlink pointing at someone else's 0700 directory
+	// would satisfy a Stat-based check while defeating the privacy it is for.
+	if fi, err := os.Lstat(dir); err != nil || !fi.Mode().IsDir() || fi.Mode().Perm()&0o077 != 0 {
 		return ""
 	}
 	h := fnv.New64a()
@@ -286,11 +294,14 @@ func finishGitCmd(cmd *exec.Cmd, args []string) error {
 	if err == nil {
 		return nil
 	}
-	// A grandchild that inherited the pipes — git's credential-cache daemon, or
-	// the ControlPersist master this very package starts — can hold them open
-	// past WaitDelay, and Run() then reports ErrWaitDelay even though git itself
-	// exited 0. Reading that as failure would turn a push that LANDED into a
-	// retry over an advanced remote: the exit status is the truth here.
+	// A grandchild that inherited the pipes — git's credential-cache daemon is
+	// the real one — can hold them open past WaitDelay, and Run() then reports
+	// ErrWaitDelay even though git itself exited 0. Reading that as failure
+	// would turn a push that LANDED into a retry over an advanced remote: the
+	// exit status is the truth here. (The ControlPersist master started below
+	// is NOT such a case: OpenSSH detaches the persistent master's stdio, and
+	// the call that creates it was measured at 2.63s against 2.57s with no
+	// multiplexing at all — no WaitDelay tax.)
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
 		return nil
 	}
@@ -308,7 +319,13 @@ func finishGitCmd(cmd *exec.Cmd, args []string) error {
 	if msg == "" {
 		msg = err.Error()
 	}
-	return fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+	return fmt.Errorf("git %s: %s (%w)", strings.Join(args, " "), msg, err)
+}
+
+// exitedWith reports whether err is the git process exiting with code.
+func exitedWith(err error, code int) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee) && ee.ExitCode() == code
 }
 
 // builderText reads back a stream newGitCmd installed, "" for anything else —
@@ -397,6 +414,12 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 	if _, err := gitRun(workdir, args...); err != nil {
 		return "", err
 	}
+	// Same race-window seam as the go-git path (F-0121). Without this call the
+	// regression test that pins the window would silently cover only the
+	// fallback, since the fast path is the default.
+	if commitPathsHookAfterAdd != nil {
+		commitPathsHookAfterAdd()
+	}
 	// Whether there is anything to commit is answered by an EXIT CODE, not by
 	// git's prose: `diff --cached --quiet` exits 0 when the staged set is empty.
 	// The substring check below stays only as a backstop — a wording drift
@@ -405,18 +428,39 @@ func execCommitPaths(workdir string, paths []string, msg string) (string, error)
 	diffArgs := append([]string{"diff", "--cached", "--quiet", "--"}, literalPathspecs(paths)...)
 	if _, err := gitRun(workdir, diffArgs...); err == nil {
 		return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
+	} else if !exitedWith(err, 1) {
+		// Exit 1 is "there are staged changes". Anything else is diff itself
+		// failing, and reading that as "there is work" would push the failure
+		// one step down instead of reporting it.
+		return "", err
 	}
+	// Commit the INDEX, not the worktree: `commit --only <paths>` would re-read
+	// the files from disk and discard what `add` just staged, so anything
+	// written in between would ride along — where the go-git path commits
+	// exactly the index it staged. The reset before this leaves the index at
+	// HEAD, so the staged set is precisely `paths`.
 	args = []string{
 		"-c", "user.name=cerne", "-c", "user.email=cerne@local",
-		"commit", "--only", "--no-verify", "--no-gpg-sign", "-m", msg, "--",
+		"commit", "--no-verify", "--no-gpg-sign", "-m", msg,
 	}
-	if _, err := gitRun(workdir, append(args, literalPathspecs(paths)...)...); err != nil {
+	if _, err := gitRun(workdir, args...); err != nil {
 		if strings.Contains(err.Error(), "nothing to commit") || strings.Contains(err.Error(), "no changes added") {
 			return "", fmt.Errorf("%w: %s", ErrNothingToCommit, workdir)
 		}
 		return "", err
 	}
-	return gitRun(workdir, "rev-parse", "HEAD")
+	sha, err := gitRun(workdir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	// The commit landed, so a sha that does not look like one means the output
+	// never reached us (builderText answers "" for a stream it cannot read).
+	// Returning that silently would hand the caller an empty commit id for a
+	// commit that exists — the sort of thing that surfaces three layers away.
+	if !isHexSHA(sha) {
+		return "", fmt.Errorf("commit %s: git printed no usable sha (%q)", workdir, sha)
+	}
+	return sha, nil
 }
 
 // literalPathspecs stops git from reading a path as a glob. `--` ends OPTIONS;
@@ -458,7 +502,7 @@ func isHexSHA(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return false
 		}
 	}
@@ -467,7 +511,10 @@ func isHexSHA(s string) bool {
 
 // execFetch is Fetch via the git binary.
 func execFetch(workdir string) error {
-	if err := gitRunNet(workdir, "fetch", "fetch", "--prune", remoteName); err != nil {
+	// No --prune: go-git's FetchOptions leaves Prune false, and a stale
+	// remote-tracking ref surviving in one backend but not the other would make
+	// ref resolution depend on which path ran.
+	if err := gitRunNet(workdir, "fetch", "fetch", remoteName); err != nil {
 		return err
 	}
 	markSynced(workdir)

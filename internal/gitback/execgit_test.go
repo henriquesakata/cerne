@@ -327,3 +327,35 @@ func TestCommitPathsGlobNameBackendsAgree(t *testing.T) {
 		t.Fatalf("exec left = %+v, want %+v", execLeft, gogitLeft)
 	}
 }
+
+// sshMuxEnv never reaches a test that uses a local remote (no "@" in the URL),
+// so its guards are pinned directly: each one must degrade to "no multiplexing"
+// rather than to a GIT_SSH_COMMAND that breaks every push.
+func TestSSHMuxEnvGuards(t *testing.T) {
+	dir := initRepoWith(t, map[string]string{"a.md": "a\n"})
+	if got := sshMuxEnv(dir); got != "" {
+		t.Fatalf("sshMuxEnv on a repo with no remote = %q, want empty", got)
+	}
+	t.Setenv("CERNE_NO_SSH_MUX", "1")
+	if got := sshMuxEnv(dir); got != "" {
+		t.Fatalf("sshMuxEnv with the kill switch = %q, want empty", got)
+	}
+	t.Setenv("CERNE_NO_SSH_MUX", "")
+	t.Setenv("GIT_SSH_COMMAND", "ssh -i /custom/key")
+	if got := sshMuxEnv(dir); got != "" {
+		t.Fatalf("sshMuxEnv must not shadow the user's GIT_SSH_COMMAND, got %q", got)
+	}
+}
+
+func TestIsHexSHAAcceptsBothCases(t *testing.T) {
+	for _, ok := range []string{"0123456", "abcdef0123456789abcdef0123456789abcdef01", "ABCDEF0123456789ABCDEF0123456789ABCDEF01"} {
+		if !isHexSHA(ok) {
+			t.Fatalf("isHexSHA(%q) = false, want true", ok)
+		}
+	}
+	for _, bad := range []string{"", "abc", "--hard=/etc/passwd", "zzzzzzz", strings.Repeat("a", 65)} {
+		if isHexSHA(bad) {
+			t.Fatalf("isHexSHA(%q) = true, want false", bad)
+		}
+	}
+}
