@@ -20,6 +20,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/llm"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
@@ -69,7 +70,7 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 		if ingest {
 			return fmt.Errorf("--ingest is exclusive to delegation mode; in byo-key mode compilation is synchronous")
 		}
-		return compileSynchronous(cmd, ctx, pages, force)
+		return compileSynchronous(cmd, ctx, pages, scope, force)
 	}
 
 	// delegation (default): two-phase via prompt files for the host agent.
@@ -89,16 +90,62 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 // compileSynchronous is the byo-key path: it builds the configured Provider and,
 // for each dirty page, calls Complete with the deterministic page prompt, writes
 // the synthesized body with provenance frontmatter (same stamping as ingest),
-// and finally commits+pushes once when at least one page was written.
-func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, force bool) error {
+// and commits+pushes once per round when at least one page was written.
+//
+// It is single-flight (compile_on_push spawns one of these per push, so pushes
+// in quick succession would otherwise burn N concurrent LLM runs on the same
+// pages): a second process finds the lock held and returns instead of queueing.
+// That is safe because the holder LOOPS — each round re-reads the sources, so a
+// push that landed while it was synthesizing is absorbed by the round after,
+// which is exactly the "do it all at once" the queue would have bought. The
+// loop is naturally convergent (a compiled page is clean) and bounded anyway,
+// so a project being pushed to continuously cannot pin one process forever.
+func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, scope string, force bool) error {
 	out := cmd.OutOrStdout()
+	lock, ok := tryCompileLock(ctx.repoDir)
+	if !ok {
+		fmt.Fprintln(out, "Wiki compile already running — it will pick up these changes before finishing.")
+		return nil
+	}
+	defer lock.release()
 	if err := reportModulelessSkipped(cmd, ctx.repoDir); err != nil {
 		return err
 	}
-	done, err := compileDirtyPages(cmd.Context(), ctx, pages, force)
+
+	op := telemetry.StartOp("compile")
+	op.Project = ctx.cfg.ProjectID
+	start := time.Now()
+	var done []compile.Page
+	err := func() error {
+		for round := 0; round < maxCompileRounds; round++ {
+			if round > 0 {
+				// Re-read: sources changed under us while the LLM was running.
+				fresh, err := compile.Pages(ctx.repoDir)
+				if err != nil {
+					return err
+				}
+				pages = compilablePages(fresh, scope)
+			}
+			stop := op.Phase("compile")
+			batch, err := compileDirtyPages(cmd.Context(), ctx, pages, force && len(done) == 0, lock)
+			stop()
+			if err != nil {
+				return err
+			}
+			if len(batch) == 0 {
+				return nil
+			}
+			done = append(done, batch...)
+		}
+		return nil
+	}()
+	telemetry.Default.ObserveCompile(ctx.cfg.ProjectID, time.Since(start))
 	if err != nil {
+		op.End("error")
 		return err
 	}
+	op.End("ok")
+
 	if len(done) == 0 {
 		fmt.Fprintln(out, "Nothing to recompile.")
 		return nil
@@ -116,7 +163,7 @@ func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, f
 // pages — empty means nothing was dirty, so no provider is built and no LLM is
 // called. Shared by `cerne compile` (byo-key/claude-cli) and the compile_on_push
 // hook (F-0117).
-func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page, force bool) ([]compile.Page, error) {
+func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page, force bool, lock *compileLock) ([]compile.Page, error) {
 	dirty, err := compile.Dirty(ctx.repoDir, pages, force)
 	if err != nil {
 		return nil, err
@@ -142,6 +189,7 @@ func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page,
 			return nil, err
 		}
 		done = append(done, p)
+		lock.touch() // a whole run outlives compileStaleAfter; a single page must not
 	}
 	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
 		return nil, err

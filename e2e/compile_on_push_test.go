@@ -37,6 +37,9 @@ func compileOnPushProject(t *testing.T, srvURL string) (proj string) {
 	return proj
 }
 
+// TestCompileOnPushGoldenPath pins the async contract: the push hands the wiki
+// off to a detached `cerne compile` and returns without ever calling the LLM
+// itself, and that deferred compile really does have work waiting for it.
 func TestCompileOnPushGoldenPath(t *testing.T) {
 	var calls atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,49 +50,78 @@ func TestCompileOnPushGoldenPath(t *testing.T) {
 	defer srv.Close()
 	proj := compileOnPushProject(t, srv.URL)
 
-	// Push a real spec → the wiki project page turns dirty → the hook compiles it.
+	// Push a real spec → the wiki project page turns dirty → the hook spawns
+	// the compile instead of running it (crit. 1: the push never blocks on an LLM).
 	writeReal(t, featureDir(t, proj), "spec.md", "Motor")
 	out := mustCerne(t, "push", "--dir", proj)
-	if !strings.Contains(out, "Wiki recompiled:") {
-		t.Fatalf("push output missing wiki recompile notice:\n%s", out)
+	if !strings.Contains(out, "Wiki recompiling in background") {
+		t.Fatalf("push output missing the background notice:\n%s", out)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("push called the LLM inline: %d call(s)", calls.Load())
+	}
+
+	// The work the push deferred is real: running the compile compiles the page.
+	out = mustCerne(t, "compile", "--dir", proj)
+	if !strings.Contains(out, "Compiled 1 page(s)") {
+		t.Fatalf("deferred compile did nothing:\n%s", out)
 	}
 	if calls.Load() == 0 {
 		t.Fatalf("provider was never called")
 	}
-	// A second push with no source change sends nothing and costs zero LLM
-	// calls — compile.Dirty sees clean provenance stamps (crit. 2).
+
+	// A second compile with no source change costs zero LLM calls — compile.Dirty
+	// sees clean provenance stamps (crit. 2).
 	before := calls.Load()
-	out = mustCerne(t, "push", "--dir", proj)
-	if !strings.Contains(out, "Nothing to send.") {
-		t.Fatalf("second push should have nothing to send:\n%s", out)
+	out = mustCerne(t, "compile", "--dir", proj)
+	if !strings.Contains(out, "Nothing to recompile.") {
+		t.Fatalf("second compile should be a no-op:\n%s", out)
 	}
 	if calls.Load() != before {
-		t.Fatalf("provider called on a no-op push: %d → %d", before, calls.Load())
+		t.Fatalf("provider called on a no-op compile: %d → %d", before, calls.Load())
 	}
 
 	// --dry-run never triggers the hook (crit. 7).
 	writeReal(t, featureDir(t, proj), "plan.md", "Plano")
-	before = calls.Load()
-	_, _ = cerne(t, "push", "--dry-run", "--dir", proj)
-	if calls.Load() != before {
-		t.Fatalf("provider called on dry-run")
+	out, _ = cerne(t, "push", "--dry-run", "--dir", proj)
+	if strings.Contains(out, "Wiki recompiling in background") {
+		t.Fatalf("dry-run triggered the compile hook:\n%s", out)
 	}
 }
 
-func TestCompileOnPushFailureDoesNotFailPush(t *testing.T) {
+// TestCompileOnPushConcurrentIsCoalesced pins the anti-queue rule: a compile
+// started while another one holds the lock returns immediately instead of
+// stacking a second LLM run over the same pages.
+func TestCompileOnPushConcurrentIsCoalesced(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "boom", http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"content":[{"type":"text","text":"# Wiki"}]}`)
 	}))
 	defer srv.Close()
 	proj := compileOnPushProject(t, srv.URL)
-
 	writeReal(t, featureDir(t, proj), "spec.md", "Motor")
-	out, err := cerne(t, "push", "--dir", proj)
-	if err != nil {
-		t.Fatalf("push must succeed even when wiki compile fails: %v\n%s", err, out)
+	mustCerne(t, "push", "--dir", proj)
+
+	// Stand in for a live holder: the lock file another compile process left.
+	repos, err := filepath.Glob(filepath.Join(os.Getenv("CERNE_CACHE_DIR"), "*", "repo"))
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("locating the backend clone: %v %v", repos, err)
 	}
-	if !strings.Contains(out, "post-push wiki recompilation failed") {
-		t.Fatalf("missing non-fatal warning:\n%s", out)
+	lock := repos[0] + ".compile.lock"
+	if err := os.WriteFile(lock, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	out := mustCerne(t, "compile", "--dir", proj)
+	if !strings.Contains(out, "already running") {
+		t.Fatalf("contended compile should stand down, got:\n%s", out)
+	}
+
+	// Once the holder is gone, the same dirty page compiles normally.
+	if err := os.Remove(lock); err != nil {
+		t.Fatalf("remove lock: %v", err)
+	}
+	if out = mustCerne(t, "compile", "--dir", proj); !strings.Contains(out, "Compiled 1 page(s)") {
+		t.Fatalf("compile after release did nothing:\n%s", out)
 	}
 }
 
