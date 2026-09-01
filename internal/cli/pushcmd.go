@@ -11,16 +11,13 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/compile"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 func newPushCmd() *cobra.Command {
@@ -129,10 +126,18 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	return nil
 }
 
-// maybeCompileOnPush (F-0117) recompiles the dirty wiki pages right after a
-// successful push when the project opts in (compile_on_push = true). It is
-// strictly informational: any failure is a stderr warning and never fails the
-// push — the wiki is a derived projection, recoverable with `cerne compile`.
+// maybeCompileOnPush (F-0117) recompiles the dirty wiki pages after a
+// successful push when the project opts in (compile_on_push = true). It runs
+// DETACHED: one page is one LLM call and routinely takes minutes, so doing it
+// inline held `cerne push` — and whoever waited on it — for tens of minutes.
+// The push now spawns `cerne compile` and returns; the wiki is a derived
+// projection, so it may lag by seconds without anyone losing anything.
+//
+// Two pushes racing do not queue: the second compile finds the single-flight
+// lock held and exits, because the holder re-reads the dirty set before
+// releasing and absorbs that round too (compileSynchronous).
+//
+// Failures stay informational — a stderr warning, never a failed push.
 // Delegation mode has no callable provider, so the hook warns instead of
 // leaving surprise two-phase .pending files behind. `cerne sync` inherits the
 // hook through runPush.
@@ -144,28 +149,11 @@ func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning: compile_on_push requires a callable [llm] (claude-cli/byo-key) — run 'cerne compile' to recompile the wiki")
 		return
 	}
-	op := telemetry.StartOp("compile")
-	op.Project = ctx.cfg.ProjectID
-	start := time.Now()
-	pages, err := compile.Pages(ctx.repoDir)
-	if err == nil {
-		stop := op.Phase("compile")
-		done, cerr := compileDirtyPages(cmd.Context(), ctx, compilablePages(pages, ""), false)
-		stop()
-		err = cerr
-		if cerr == nil && len(done) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Wiki recompiled: %d page(s).\n", len(done))
-		}
+	if err := startBackgroundCompile(ctx); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not start the wiki recompilation (push OK) — run 'cerne compile': %v\n", err)
+		return
 	}
-	telemetry.Default.ObserveCompile(ctx.cfg.ProjectID, time.Since(start))
-	if err != nil {
-		op.End("error")
-	} else {
-		op.End("ok")
-	}
-	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: post-push wiki recompilation failed (push OK): %v\n", err)
-	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Wiki recompiling in background (log: %s).\n", compileLogPath(ctx.repoDir))
 }
 
 // reportPushConflicts prints each same-document conflict with its diff and a
