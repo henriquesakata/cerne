@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
+import { I18nProvider } from './i18n'
 import { LiveProvider, useProjects } from './live'
 import { fetchProjects, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
 
@@ -411,5 +413,311 @@ describe('WarRoomDetail (T-0003)', () => {
       fireEvent.click(screen.getByRole('button', { name: /trocar projeto/i }))
       await waitFor(() => expect(fetchRooms).toHaveBeenCalledTimes(2))
     })
+  })
+})
+
+// F-0292: a transcrição abre no fim e acompanha as mensagens novas enquanto o
+// leitor estiver lá — o mesmo glue-scroll do chat do Backlog (F-0239), ligado
+// aqui pela isAtBottom que já era exportada.
+describe('glue-scroll da transcrição (F-0292)', () => {
+  const CLIENT_HEIGHT = 400
+  const SCROLL_HEIGHT = 1000
+  // Fim exato: scrollHeight - scrollTop - clientHeight === 0.
+  const AT_BOTTOM = SCROLL_HEIGHT - CLIENT_HEIGHT
+
+  let restoreMetrics: (() => void) | null = null
+
+  // jsdom não faz layout: scrollHeight/clientHeight são sempre 0 e scrollTop é
+  // um acessor inerte, então sem stub o glue-scroll não é observável. Os stubs
+  // vão no protótipo, não no nó, porque o ajuste de montagem (critério 1) roda
+  // antes de o teste conseguir a referência do elemento.
+  beforeEach(() => {
+    const original = {
+      scrollHeight: Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight'),
+      clientHeight: Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight'),
+      scrollTop: Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop'),
+    }
+    Object.defineProperty(Element.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => SCROLL_HEIGHT,
+    })
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => CLIENT_HEIGHT,
+    })
+    // Data property: escrever em um nó cria a própria cópia, então scrollTop
+    // volta a ser legível — o acessor do jsdom descarta a escrita.
+    Object.defineProperty(Element.prototype, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    })
+    restoreMetrics = () => {
+      for (const [key, desc] of Object.entries(original)) {
+        if (desc) Object.defineProperty(Element.prototype, key, desc)
+      }
+    }
+  })
+
+  afterEach(() => {
+    restoreMetrics?.()
+    restoreMetrics = null
+  })
+
+  const openEvent: RoomMessage = {
+    seq: 1,
+    type: 'open',
+    topic: 'Fila serial',
+    time: '2026-08-06T00:00:00Z',
+  }
+
+  const msg = (seq: number, body: string): RoomMessage => ({
+    seq,
+    type: 'message',
+    nick: 'ana',
+    body,
+    time: '2026-08-06T00:00:00Z',
+  })
+
+  const history = () => {
+    const el = document.querySelector('.backlog-chat-history')
+    if (!el) throw new Error('transcrição não montou')
+    return el as HTMLDivElement
+  }
+
+  // Transcrição estática: a leitura inicial devolve os eventos, o long-poll
+  // trava (nenhuma mensagem nova durante o teste).
+  const staticTranscript = (initial: RoomMessage[]) =>
+    readRoomMessages.mockImplementation((_id, _since, follow) =>
+      follow ? new Promise<RoomMessage[]>(() => {}) : Promise.resolve(initial),
+    )
+
+  // Transcrição controlada: cada espera com follow=true fica na mão do teste,
+  // que decide quando (e com o quê) a mensagem seguinte chega.
+  function controllableTranscript(initial: RoomMessage[]) {
+    const box: { deliver: ((events: RoomMessage[]) => void) | null } = { deliver: null }
+    readRoomMessages.mockImplementation((_id, _since, follow) => {
+      if (!follow) return Promise.resolve(initial)
+      return new Promise<RoomMessage[]>((resolve) => {
+        box.deliver = resolve
+      })
+    })
+    return async (events: RoomMessage[]) => {
+      await waitFor(() => expect(box.deliver).not.toBeNull())
+      const deliver = box.deliver!
+      box.deliver = null
+      await act(async () => deliver(events))
+    }
+  }
+
+  it('abre a transcrição no fim (critério 1)', async () => {
+    staticTranscript([openEvent, msg(2, 'primeira'), msg(3, 'última')])
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText(/última/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('cola no fim quando chega mensagem nova e o leitor está no fim (critério 2)', async () => {
+    const deliver = controllableTranscript([openEvent, msg(2, 'primeira')])
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    history().scrollTop = 0
+    await deliver([msg(3, 'segunda')])
+
+    await waitFor(() => expect(screen.getByText(/segunda/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('preserva a posição quando o leitor rolou para cima (critério 3)', async () => {
+    const deliver = controllableTranscript([openEvent, msg(2, 'primeira')])
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    // 100px acima do fim: bem além da tolerância de 24px do isAtBottom.
+    history().scrollTop = AT_BOTTOM - 100
+    fireEvent.scroll(history())
+    await deliver([msg(3, 'segunda')])
+
+    await waitFor(() => expect(screen.getByText(/segunda/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(AT_BOTTOM - 100)
+  })
+
+  it('volta a colar quando o leitor retorna ao fim (critério 4)', async () => {
+    const deliver = controllableTranscript([openEvent, msg(2, 'primeira')])
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    history().scrollTop = AT_BOTTOM - 100
+    fireEvent.scroll(history())
+    await deliver([msg(3, 'segunda')])
+    await waitFor(() => expect(screen.getByText(/segunda/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(AT_BOTTOM - 100)
+
+    history().scrollTop = AT_BOTTOM
+    fireEvent.scroll(history())
+    await deliver([msg(4, 'terceira')])
+
+    await waitFor(() => expect(screen.getByText(/terceira/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('trocar de sala reposiciona no fim sem herdar o descolamento (critério 5)', async () => {
+    staticTranscript([openEvent, msg(2, 'primeira')])
+    const { rerender } = render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    history().scrollTop = 0
+    fireEvent.scroll(history())
+    expect(history().scrollTop).toBe(0)
+
+    staticTranscript([openEvent, msg(2, 'outra sala')])
+    rerender(<WarRoomDetail id="R2" />)
+
+    await waitFor(() => expect(screen.getByText(/outra sala/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('reusa a isAtBottom do Backlog, sem duplicar a tolerância (critério 6)', () => {
+    // vitest roda com cwd na raiz do pacote da UI.
+    const src = readFileSync('src/WarRoom.tsx', 'utf8')
+    expect(src).toMatch(/import \{ isAtBottom \} from '\.\/BacklogChat'/)
+    expect(src).not.toMatch(/TOLERANCE/)
+  })
+})
+
+// F-0291: o painel da ata mostrava 2 dos 6 campos da projeção canônica. A
+// referência é RenderMinutesMarkdown (internal/room/minutes.go) — a UI não
+// pode ficar mais pobre que a CLI sobre a mesma ata.
+describe('painel da ata (F-0291)', () => {
+  const fullMinutes: Minutes = {
+    conclusion: 'Reverter o deploy e investigar amanhã.',
+    rationale: 'O rollback é mais rápido que um fix ao vivo sob pressão.',
+    discarded_options: ['hotfix ao vivo', 'esperar até segunda'],
+    owners: ['alice'],
+    next_steps: ['abrir post-mortem', 'revisar alertas de canary'],
+    open_items: ['I3', 'I5'],
+  }
+
+  // A saída de RenderMinutesMarkdown para exatamente esta ata: o golden de
+  // internal/room/minutes_test.go (TestRenderMinutesMarkdownGolden) somado à
+  // seção de exceção de TestRenderMinutesMarkdownShowsOpenItemsException.
+  const CANONICAL_MARKDOWN =
+    '# Ata — R1 (deploy quebrado)\n\n' +
+    '## Conclusão\n\nReverter o deploy e investigar amanhã.\n\n' +
+    '## Justificativa\n\nO rollback é mais rápido que um fix ao vivo sob pressão.\n\n' +
+    '## Opções descartadas\n\n- hotfix ao vivo\n- esperar até segunda\n\n' +
+    '## Responsáveis\n\n- alice\n\n' +
+    '## Próximos passos\n\n- abrir post-mortem\n- revisar alertas de canary\n\n' +
+    '## Itens deixados em aberto (exceção registrada)\n\n- I3\n- I5\n\n'
+
+  const closedTranscript = (minutes: Minutes) =>
+    readRoomMessages.mockImplementation((_id, _since, follow) =>
+      follow
+        ? new Promise<RoomMessage[]>(() => {})
+        : Promise.resolve([
+            { seq: 1, type: 'open', topic: 'deploy quebrado', time: '2026-08-06T00:00:00Z' },
+            { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z', minutes },
+          ]),
+    )
+
+  const renderClosed = async (minutes: Minutes) => {
+    closedTranscript(minutes)
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(minutes.conclusion)).toBeInTheDocument())
+  }
+
+  const panelText = () => {
+    const panel = document.querySelector('.room-minutes')
+    if (!panel) throw new Error('painel da ata não montou')
+    return panel.textContent ?? ''
+  }
+
+  it('mostra as opções descartadas (critério 1)', async () => {
+    await renderClosed(fullMinutes)
+    expect(screen.getByText('Opções descartadas')).toBeInTheDocument()
+    expect(screen.getByText('hotfix ao vivo')).toBeInTheDocument()
+    expect(screen.getByText('esperar até segunda')).toBeInTheDocument()
+  })
+
+  it('mostra os responsáveis (critério 2)', async () => {
+    await renderClosed(fullMinutes)
+    expect(screen.getByText('Responsáveis')).toBeInTheDocument()
+    expect(screen.getByText('alice')).toBeInTheDocument()
+  })
+
+  it('mostra os próximos passos (critério 3)', async () => {
+    await renderClosed(fullMinutes)
+    expect(screen.getByText('Próximos passos')).toBeInTheDocument()
+    expect(screen.getByText('abrir post-mortem')).toBeInTheDocument()
+    expect(screen.getByText('revisar alertas de canary')).toBeInTheDocument()
+  })
+
+  it('destaca os itens em aberto como exceção registrada (critério 4)', async () => {
+    await renderClosed(fullMinutes)
+    expect(screen.getByText('Itens deixados em aberto (exceção registrada)')).toBeInTheDocument()
+    expect(screen.getByText('I3')).toBeInTheDocument()
+    expect(screen.getByText('I5')).toBeInTheDocument()
+    // Distinta das demais: só ela carrega a marca de exceção.
+    expect(document.querySelector('.room-minutes-open-items')).not.toBeNull()
+    expect(document.querySelectorAll('.room-minutes-open-items')).toHaveLength(1)
+  })
+
+  it('omite a seção inteira quando a lista está vazia, sem placeholder (critério 5)', async () => {
+    await renderClosed({
+      conclusion: 'Seguir com o deploy.',
+      rationale: 'Sem regressão medida.',
+      discarded_options: [],
+      owners: [],
+      next_steps: [],
+    })
+    expect(screen.queryByText('Opções descartadas')).toBeNull()
+    expect(screen.queryByText('Responsáveis')).toBeNull()
+    expect(screen.queryByText('Próximos passos')).toBeNull()
+    expect(screen.queryByText(/Itens deixados em aberto/)).toBeNull()
+    expect(panelText()).not.toMatch(/Nenhum/)
+  })
+
+  it('renderiza campo a campo o mesmo que a projeção canônica (critério 6)', async () => {
+    await renderClosed(fullMinutes)
+    const text = panelText()
+
+    const sections = [...CANONICAL_MARKDOWN.matchAll(/^## (.+)$/gm)].map((m) => m[1])
+    const items = [...CANONICAL_MARKDOWN.matchAll(/^- (.+)$/gm)].map((m) => m[1])
+    expect(sections).toHaveLength(6)
+    expect(items).toHaveLength(7)
+
+    for (const section of sections) expect(text).toContain(section)
+    for (const item of items) expect(text).toContain(item)
+    expect(text).toContain(fullMinutes.conclusion)
+    expect(text).toContain(fullMinutes.rationale)
+  })
+
+  it('tem os rótulos novos também em inglês (critério 7)', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    closedTranscript(fullMinutes)
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByText('Discarded options')).toBeInTheDocument())
+    expect(screen.getByText('Owners')).toBeInTheDocument()
+    expect(screen.getByText('Next steps')).toBeInTheDocument()
+    expect(screen.getByText('Items left open (recorded exception)')).toBeInTheDocument()
+  })
+
+  it('o painel tem moldura própria e preserva a contenção de altura (critério 8)', () => {
+    const css = readFileSync('src/app.css', 'utf8')
+    const block = /\.room-minutes \{[^}]*\}/.exec(css)?.[0] ?? ''
+    expect(block).toMatch(/border:/)
+    expect(block).toMatch(/background:/)
+    // A contenção do F-0243/F-0241 continua de pé.
+    expect(block).toMatch(/max-height: 35%/)
+    expect(block).toMatch(/min-height: 0/)
+    expect(block).toMatch(/overflow-y: auto/)
+    expect(css).toMatch(/\.room-minutes-open-items \{/)
   })
 })

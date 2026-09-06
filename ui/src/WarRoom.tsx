@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type UIEvent } from 'react'
+import { isAtBottom } from './BacklogChat'
 import {
   fetchRoomPending,
   fetchRooms,
@@ -163,6 +164,26 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const sinceRef = useRef(0)
 
+  // Glue-scroll (F-0292): a sala abre no fim e acompanha as mensagens que
+  // chegam pelo long-poll enquanto o leitor estiver lá; quem subiu está lendo
+  // o histórico e não pode ser arrastado de volta. A regra de "está no fim" é
+  // a isAtBottom do chat do Backlog (F-0239), não uma cópia dela.
+  const historyRef = useRef<HTMLDivElement>(null)
+  const stuckRef = useRef(true)
+
+  const onHistoryScroll = (e: UIEvent<HTMLDivElement>) => {
+    stuckRef.current = isAtBottom(e.currentTarget)
+  }
+
+  // useLayoutEffect, não useEffect: o ajuste acontece antes da pintura, então
+  // não há quadro intermediário com a barra fora do lugar (mesma razão
+  // registrada em BacklogChat.tsx).
+  useLayoutEffect(() => {
+    const el = historyRef.current
+    if (!el || !stuckRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [messages])
+
   const applyEvents = (events: RoomMessage[]) => {
     if (events.length === 0) return
     sinceRef.current = events[events.length - 1].seq
@@ -199,6 +220,9 @@ export function WarRoomDetail({ id }: { id: string }) {
     setMessages([])
     setClosed(false)
     setReady(false)
+    // Outra sala, outra transcrição: volta a colar no fim em vez de herdar o
+    // descolamento da anterior (F-0292 critério 5).
+    stuckRef.current = true
 
     async function loop() {
       try {
@@ -376,6 +400,26 @@ export function WarRoomDetail({ id }: { id: string }) {
   }
 
   const entryCommand = `cerne room join ${id} --nick <nick> [--bio "…"]`
+
+  // Paridade com RenderMinutesMarkdown (F-0291): o painel da ata mostra as
+  // mesmas seis seções da projeção canônica, não só conclusão e justificativa.
+  // Lista vazia some inteira — sem placeholder, como o renderizador faz com
+  // open_items. Os rótulos são de leitura, não os do formulário de encerramento.
+  const minutesSections: { label: string; items?: string[]; className?: string }[] = minutes
+    ? [
+        { label: t.warRoom.minutesDiscardedTitle, items: minutes.discarded_options },
+        { label: t.warRoom.minutesOwnersTitle, items: minutes.owners },
+        { label: t.warRoom.minutesNextStepsTitle, items: minutes.next_steps },
+        // open_items é a trilha de auditoria do fechamento forçado
+        // (--allow-open-items): registro de exceção, não item de rotina —
+        // marca própria para não se achatar com as demais listas.
+        {
+          label: t.warRoom.minutesOpenItemsTitle,
+          items: minutes.open_items,
+          className: 'room-minutes-open-items',
+        },
+      ]
+    : []
 
   // splitLines converte um textarea de "um item por linha" na lista que a
   // ata espera, descartando linhas em branco.
@@ -567,6 +611,18 @@ export function WarRoomDetail({ id }: { id: string }) {
             <p>
               <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
             </p>
+            {minutesSections
+              .filter((s) => s.items !== undefined && s.items.length > 0)
+              .map((s) => (
+                <section key={s.label} className={s.className}>
+                  <h3>{s.label}</h3>
+                  <ul className="room-minutes-list">
+                    {s.items?.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             {minutesNoteID && (
               <p>
                 <strong>{t.warRoom.minutesRegistered}</strong>{' '}
@@ -575,7 +631,7 @@ export function WarRoomDetail({ id }: { id: string }) {
             )}
           </div>
         )}
-        <div className="backlog-chat-history">
+        <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
           {!ready && <p className="status">{t.common.loading}</p>}
           {ready && messages.length === 0 && <p className="muted">{t.warRoom.noMessages}</p>}
           {messages.map((m) => (
