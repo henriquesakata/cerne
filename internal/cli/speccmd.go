@@ -146,6 +146,6 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString(app.GauntletContract)
 	b.WriteString("\n\n")
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
-	b.WriteString("Responda apenas com o conteúdo da spec.\n")
+	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()
 }

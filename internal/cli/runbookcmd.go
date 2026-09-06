@@ -346,6 +346,6 @@ func BuildRunbookDraftPrompt(rb store.Runbook, currentContent string) string {
 	b.WriteString("- Inclua Pré-requisitos (acessos/ferramentas/estado), Verificação (como confirmar sucesso) e Rollback e troubleshooting (como desfazer + a quem escalar).\n")
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- Dimensione pela tarefa: runbook simples tem seções curtas; \"N/A\" onde não se aplica. Não infle.\n\n")
-	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). Responda apenas com o conteúdo do runbook.\n")
+	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). " + app.DraftOutputContract + "\n")
 	return b.String()
 }

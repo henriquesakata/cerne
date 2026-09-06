@@ -133,6 +133,6 @@ func BuildResultDraftPrompt(f store.Feature, specContent, planContent, currentCo
 	b.WriteString("- Dimensione pelo trabalho: entrega pequena tem seções curtas; \"N/A\" onde não se aplica. Não infle.\n")
 	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o id CONCRETO do modelo e o esforço com que VOCÊ está rodando — o nível na escala do seu harness (ex.: low/medium/high) — ou \"**Agente:** humano\"; se não souber um dos dois, escreva \"desconhecido\" só nele (ex.: \"claude-opus-5 · esforço desconhecido\"), nunca um palpite nem uma categoria genérica.\n\n")
 	b.WriteString("Use a spec, o plano e o título acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
-	b.WriteString("Responda apenas com o conteúdo do resultado.\n")
+	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()
 }

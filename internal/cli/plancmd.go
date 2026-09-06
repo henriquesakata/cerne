@@ -161,6 +161,6 @@ func BuildPlanDraftPrompt(f store.Feature, specContent, currentContent string, c
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- A Definição de pronto é um checklist binário (ATENDIDO/PENDENTE) com evidência arquivo:linha: cada critério da spec com implementação e um teste que o prova.\n\n")
 	b.WriteString("Use o título, o módulo e a spec acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
-	b.WriteString("Responda apenas com o conteúdo do plano.\n")
+	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()
 }
