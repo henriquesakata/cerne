@@ -252,8 +252,27 @@ h2 {
   min-height: 0;
 }
 
-/* A lista não estica: seu conteúdo termina onde termina. */
-.backlog-list-col { min-width: 0; align-self: start; }
+/* A coluna estica e rola por dentro — a mesma contenção que o .backlog-chat
+   ganhou no F-0241, aplicada ao outro lado do grid (F-0293).
+
+   Era `align-self: start`, sob a premissa de que "a lista não estica: seu
+   conteúdo termina onde termina". Deixou de valer quando a coluna passou a
+   carregar a fila de triagem e o formulário de encerramento do facilitador:
+   medido numa sala aberta com 3 itens na fila (1440x900), a coluna dava 1404px
+   numa linha de grid de 853px — header 309 + roster 133 + fila 441 + form 453 —
+   e empurrava o documento para 1475px, 575px além do viewport.
+
+   `align-self: start` é o que precisa sair: com ele a coluna se dimensiona pelo
+   conteúdo e nunca fica menor que ele, então `overflow` sozinho não teria o que
+   rolar. `min-height: 0` é o que autoriza encolher abaixo do conteúdo — a mesma
+   peça que o F-0241 precisou. `auto` (não `scroll`) mantém a regra inerte
+   enquanto o conteúdo couber, que é o caso comum do Backlog. */
+.backlog-list-col {
+  min-width: 0;
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 /* F-0256: o card mantém o link inteiro clicável; a ação de refino é um botão
    discreto abaixo dele, fora do <a>. */
