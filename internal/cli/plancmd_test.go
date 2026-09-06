@@ -80,7 +80,8 @@ func TestPlanDraftByoKeyWritesAndCommits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		gotPrompt = string(raw)
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Estratégia\n\nMR único.\n\n## Sequência de tarefas\n\nTarefa 1: gerar boleto."}]}`)
+		// Long enough to clear app.ValidateDraftBody's floor (F-0290).
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Estratégia\n\nMR único, porque a mudança cabe em um pacote e não altera o schema do backend.\n\n## Sequência de tarefas\n\nTarefa 1: gerar boleto. Teste primeiro em internal/finance, depois a implementação mínima que o faz passar."}]}`)
 	}))
 	defer srv.Close()
 

@@ -69,7 +69,8 @@ func TestResultDraftByoKeyWritesAndCommits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		gotPrompt = string(raw)
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Resultado\n\nEntregue.\n\n## Aceitação\n\n1. ATENDIDO — TestX."}]}`)
+		// Long enough to clear app.ValidateDraftBody's floor (F-0290).
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Resultado\n\nEntregue. A emissão de boletos passou a rodar no fechamento, sem planilha intermediária.\n\n## Aceitação\n\n1. ATENDIDO — TestX prova a emissão para um pedido aprovado, com o boleto gravado no fechamento."}]}`)
 	}))
 	defer srv.Close()
 

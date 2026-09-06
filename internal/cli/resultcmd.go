@@ -3,8 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -81,7 +79,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := writeResultDraft(ctx.repoDir, id, body); err != nil {
+		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "result.md"), id, body); err != nil {
 			return "", err
 		}
 		return "cerne: draft result " + id, nil
@@ -91,18 +89,6 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	}
 	fmt.Fprintf(out, "%s's result drafted and pushed — run 'cerne pull' to review.\n", id)
 	return nil
-}
-
-// writeResultDraft writes content/features/<id>/result.md as cerne's stamped
-// cerne_id frontmatter followed by the model's trimmed body. cerne stamps the
-// frontmatter itself — the model is never trusted to emit cerne_id.
-func writeResultDraft(repoDir, id, body string) error {
-	path := filepath.Join(repoDir, "content", "features", id, "result.md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // BuildResultDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
@@ -147,6 +133,6 @@ func BuildResultDraftPrompt(f store.Feature, specContent, planContent, currentCo
 	b.WriteString("- Dimensione pelo trabalho: entrega pequena tem seções curtas; \"N/A\" onde não se aplica. Não infle.\n")
 	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o id CONCRETO do modelo e o esforço com que VOCÊ está rodando — o nível na escala do seu harness (ex.: low/medium/high) — ou \"**Agente:** humano\"; se não souber um dos dois, escreva \"desconhecido\" só nele (ex.: \"claude-opus-5 · esforço desconhecido\"), nunca um palpite nem uma categoria genérica.\n\n")
 	b.WriteString("Use a spec, o plano e o título acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
-	b.WriteString("Responda apenas com o conteúdo do resultado.\n")
+	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()
 }

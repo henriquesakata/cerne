@@ -78,7 +78,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := writeSpecDraft(ctx.repoDir, id, body); err != nil {
+		if err := app.WriteStampedDraft(specPath(ctx.repoDir, id), id, body); err != nil {
 			return "", err
 		}
 		return "cerne: draft spec " + id, nil
@@ -103,18 +103,6 @@ func readSpecCurrent(repoDir, id string) string {
 		return ""
 	}
 	return string(data)
-}
-
-// writeSpecDraft writes content/features/<id>/spec.md as cerne's stamped
-// cerne_id frontmatter followed by the model's trimmed body. cerne stamps the
-// frontmatter itself — the model is never trusted to emit cerne_id.
-func writeSpecDraft(repoDir, id, body string) error {
-	path := specPath(repoDir, id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // BuildSpecDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
@@ -158,6 +146,6 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString(app.GauntletContract)
 	b.WriteString("\n\n")
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
-	b.WriteString("Responda apenas com o conteúdo da spec.\n")
+	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()
 }

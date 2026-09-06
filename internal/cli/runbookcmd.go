@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -299,7 +298,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := writeRunbookDraft(ctx.repoDir, id, body); err != nil {
+		if err := app.WriteStampedDraft(app.RunbookDocPath(ctx.repoDir, id), id, body); err != nil {
 			return "", err
 		}
 		return "cerne: draft runbook " + id, nil
@@ -319,18 +318,6 @@ func readRunbookCurrent(repoDir, id string) string {
 		return ""
 	}
 	return string(data)
-}
-
-// writeRunbookDraft writes content/runbooks/<id>.md as cerne's stamped cerne_id
-// frontmatter followed by the model's trimmed body. cerne stamps the frontmatter
-// itself — the model is never trusted to emit cerne_id.
-func writeRunbookDraft(repoDir, id, body string) error {
-	path := app.RunbookDocPath(repoDir, id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // BuildRunbookDraftPrompt assembles the pt-BR prompt instructing the LLM to write
@@ -359,6 +346,6 @@ func BuildRunbookDraftPrompt(rb store.Runbook, currentContent string) string {
 	b.WriteString("- Inclua Pré-requisitos (acessos/ferramentas/estado), Verificação (como confirmar sucesso) e Rollback e troubleshooting (como desfazer + a quem escalar).\n")
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- Dimensione pela tarefa: runbook simples tem seções curtas; \"N/A\" onde não se aplica. Não infle.\n\n")
-	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). Responda apenas com o conteúdo do runbook.\n")
+	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). " + app.DraftOutputContract + "\n")
 	return b.String()
 }

@@ -107,7 +107,9 @@ func TestSpecDraftByoKeyWritesAndCommits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		gotPrompt = string(raw)
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Problema\n\nFalta gerar boletos.\n\n## Objetivo e critérios de sucesso\n\nGerar boletos válidos."}]}`)
+		// Long enough to clear app.ValidateDraftBody's floor (F-0290): a body
+		// the size of an agent preamble is refused, not stamped as the spec.
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Problema\n\nFalta gerar boletos. Hoje a cobrança sai por planilha e o time reconcilia à mão, o que já custou dois fechamentos atrasados.\n\n## Objetivo e critérios de sucesso\n\nGerar boletos válidos.\n\n1. QUANDO um pedido é aprovado O SISTEMA DEVE emitir o boleto correspondente."}]}`)
 	}))
 	defer srv.Close()
 

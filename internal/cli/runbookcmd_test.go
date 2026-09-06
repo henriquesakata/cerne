@@ -254,7 +254,8 @@ func TestRunbookDraftByoKeyWritesAndCommits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		gotPrompt = string(raw)
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Quando usar\n\nAo rotacionar.\n\n## Procedimento\n\n1. Gere a chave."}]}`)
+		// Long enough to clear app.ValidateDraftBody's floor (F-0290).
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Quando usar\n\nAo rotacionar a chave de assinatura, ou quando o alerta de expiração dispara com menos de sete dias de folga.\n\n## Procedimento\n\n1. Gere a chave. 2. Publique a chave pública. 3. Troque o segredo."}]}`)
 	}))
 	defer srv.Close()
 
