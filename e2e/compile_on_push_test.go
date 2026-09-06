@@ -45,7 +45,7 @@ func TestCompileOnPushGoldenPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"content":[{"type":"text","text":"# Wiki sintetizada\n\nPágina do projeto."}]}`)
+		fmt.Fprint(w, `{"content":[{"type":"text","text":"# Wiki sintetizada\n\nPágina do projeto. Visão geral do módulo sintetizada a partir das features vigentes; cada seção respeita o estado declarado da fonte e nada aqui é inferido além do que as specs afirmam."}]}`)
 	}))
 	defer srv.Close()
 	proj := compileOnPushProject(t, srv.URL)
@@ -95,7 +95,7 @@ func TestCompileOnPushGoldenPath(t *testing.T) {
 func TestCompileOnPushConcurrentIsCoalesced(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"content":[{"type":"text","text":"# Wiki"}]}`)
+		fmt.Fprint(w, `{"content":[{"type":"text","text":"# Wiki\n\nVisão geral do módulo sintetizada a partir das features vigentes; cada seção respeita o estado declarado da fonte e nada aqui é inferido além do que as specs afirmam. As partes se relacionam pela emissão do boleto e pela conciliação do pagamento."}]}`)
 	}))
 	defer srv.Close()
 	proj := compileOnPushProject(t, srv.URL)

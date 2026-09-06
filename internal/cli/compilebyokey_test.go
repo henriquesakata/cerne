@@ -14,6 +14,14 @@ import (
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
+// testWikiPageJSON is a fixture response shaped like a real compiled page — a
+// title followed by prose — so it clears the F-0287 page guard, which refuses a
+// body that does not look like one. Written JSON-escaped for the Messages API stub.
+const testWikiPageJSON = `# Finance\n\nSíntese byo-key da página. Visão geral do módulo ` +
+	`sintetizada a partir das features vigentes; cada seção respeita o estado declarado da ` +
+	`fonte e nada aqui é inferido além do que as specs afirmam. As partes se relacionam ` +
+	`pela emissão do boleto e pela conciliação do pagamento.`
+
 // enableByoKey rewrites the project's .cernerc to byo-key mode pointing base_url
 // at the given test server and key_env at keyEnv.
 func enableByoKey(t *testing.T, projDir, baseURL, keyEnv string) {
@@ -38,7 +46,7 @@ func TestCompileByoKeySynthesizesAndCommits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		gotPrompt = string(raw)
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"# Finance\n\nSíntese byo-key da página."}]}`)
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"`+testWikiPageJSON+`"}]}`)
 	}))
 	defer srv.Close()
 
@@ -110,7 +118,7 @@ func TestCompileSynchronousUnaffected(t *testing.T) {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"# Finance\n\nSíntese byo-key."}]}`)
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"`+testWikiPageJSON+`"}]}`)
 	}))
 	defer srv.Close()
 	t.Setenv("TEST_BYO_KEY", "sk-byo")
@@ -146,7 +154,7 @@ func TestCompileByoKeyNothingDirty(t *testing.T) {
 	var called bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"x"}]}`)
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"`+testWikiPageJSON+`"}]}`)
 	}))
 	defer srv.Close()
 	t.Setenv("TEST_BYO_KEY", "sk-byo")

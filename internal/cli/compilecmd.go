@@ -180,19 +180,32 @@ func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page,
 		return nil, err
 	}
 	var done []compile.Page
+	var rejected []string
 	for _, p := range dirty {
 		body, err := prov.Complete(goCtx, compile.BuildPagePrompt(p))
 		if err != nil {
 			return nil, fmt.Errorf("synthesizing page %s: %w", p.Name, err)
 		}
-		if err := writeStampedPage(ctx.repoDir, p, head, []byte(body)); err != nil {
+		err = writeStampedPage(ctx.repoDir, p, head, []byte(body))
+		// F-0287: a response that is not a page is left dirty, never stamped —
+		// but it does not cost the pages that did synthesize this round.
+		if errors.Is(err, compile.ErrNotAPage) {
+			rejected = append(rejected, err.Error())
+			continue
+		}
+		if err != nil {
 			return nil, err
 		}
 		done = append(done, p)
 		lock.touch() // a whole run outlives compileStaleAfter; a single page must not
 	}
-	if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
-		return nil, err
+	if len(done) > 0 {
+		if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
+			return nil, err
+		}
+	}
+	if len(rejected) > 0 {
+		return done, fmt.Errorf("%w (%s)", compile.ErrNotAPage, strings.Join(rejected, "; "))
 	}
 	return done, nil
 }
@@ -346,7 +359,12 @@ func ingestPending(cmd *cobra.Command, ctx projCtx, pages []compile.Page) error 
 			statuses = append(statuses, pageStatus{e.Page, "stale"})
 			continue
 		}
-		if err := writeStampedPage(ctx.repoDir, p, head, body); err != nil {
+		err = writeStampedPage(ctx.repoDir, p, head, body)
+		if errors.Is(err, compile.ErrNotAPage) {
+			statuses = append(statuses, pageStatus{e.Page, "rejected (" + err.Error() + ")"})
+			continue
+		}
+		if err != nil {
 			return err
 		}
 		done = append(done, p)
@@ -417,6 +435,9 @@ func readManifest(pendingRoot string) (compile.Manifest, error) {
 // Shared by the delegation ingest phase and the byo-key synchronous path so both
 // emit the exact same frontmatter format.
 func writeStampedPage(repoDir string, p compile.Page, head string, body []byte) error {
+	if err := compile.ValidatePageBody(body); err != nil {
+		return fmt.Errorf("page %s: %w", p.Name, err)
+	}
 	pagePath := filepath.Join(repoDir, "content", "wiki", filepath.FromSlash(p.Rel)+".md")
 	if err := os.MkdirAll(filepath.Dir(pagePath), 0o755); err != nil {
 		return err

@@ -42,7 +42,7 @@ func TestCompileDelegationFlow(t *testing.T) {
 		t.Fatalf("manifest entries = %+v, want one finance entry", m.Entries)
 	}
 	respPath := filepath.Join(projDir, filepath.FromSlash(m.Entries[0].ResponsePath))
-	agentBody := "---\nrun_id: " + m.Entries[0].RunID + "\n---\n# Finance\n\nGera boletos.\n"
+	agentBody := "---\nrun_id: " + m.Entries[0].RunID + "\n---\n# Finance\n\nGera boletos." + testPageProse
 	if err := os.WriteFile(respPath, []byte(agentBody), 0o644); err != nil {
 		t.Fatalf("agent write response: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestCompileForceRecompiles(t *testing.T) {
 	if _, err := execCerne(t, "compile", "--dir", projDir); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	fulfillPending(t, projDir, "# Finance\n\nv1.\n")
+	fulfillPending(t, projDir, "# Finance\n\nv1."+testPageProse)
 	if _, err := execCerne(t, "compile", "--ingest", "--dir", projDir); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -138,6 +138,13 @@ func TestCompileForceRecompiles(t *testing.T) {
 		t.Fatalf("--force should recompile, got:\n%s", out)
 	}
 }
+
+// testPageProse pads a fixture response so it clears the F-0287 page guard,
+// which refuses a body too short to be a synthesized page (the shape of the
+// agent reports that used to be stamped as one).
+const testPageProse = "\n\nVisão geral do módulo sintetizada a partir das features vigentes; cada " +
+	"seção respeita o estado declarado da fonte e nada aqui é inferido além do que as specs " +
+	"afirmam. As partes se relacionam pela emissão do boleto e pela conciliação do pagamento.\n"
 
 // readPendingManifest decodes .docs/wiki/.pending/manifest.json for a project.
 func readPendingManifest(t *testing.T, projDir string) compile.Manifest {
@@ -285,7 +292,7 @@ func TestCompileIngestPerPageStatus(t *testing.T) {
 		}
 		body := "---\nrun_id: rodada-velha\n---\n# " + e.Page + " velho\n"
 		if e.Page == "finance" {
-			body = "---\nrun_id: " + e.RunID + "\n---\n# Finance\n"
+			body = "---\nrun_id: " + e.RunID + "\n---\n# Finance" + testPageProse
 		}
 		if err := os.WriteFile(respPath, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -327,7 +334,7 @@ func TestCompileIngestIdempotent(t *testing.T) {
 	if out, err := execCerne(t, "compile", "--dir", projDir); err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
-	fulfillPending(t, projDir, "# Finance\n\nv1.\n")
+	fulfillPending(t, projDir, "# Finance\n\nv1."+testPageProse)
 	if out, err := execCerne(t, "compile", "--ingest", "--dir", projDir); err != nil {
 		t.Fatalf("first ingest: %v\n%s", err, out)
 	}
