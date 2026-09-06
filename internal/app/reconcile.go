@@ -166,12 +166,17 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 	var conflicts []Conflict
 	err := func() error {
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
+			elided := false
 			if attempt == 0 && gitback.SyncedWithin(repoDir, elisionWindow) {
 				// F-0156: this process talked to the remote moments ago (the
 				// server pulls every 15s), so attempt 0 plans against the
-				// tracking head it already has. If that turns out stale, the
-				// non-fast-forward retry below fetches and replans — the
-				// correction mechanism was always the retry, not this fetch.
+				// tracking head it already has. When that turns out stale, the
+				// correction is the non-fast-forward retry below, which fetches
+				// and replans — but it only fires on a push. The two exits that
+				// return WITHOUT pushing (nothing to apply, nothing to commit)
+				// are outside its reach and confirm the head themselves via
+				// confirmElidedHead (F-0285).
+				elided = true
 				op.Phase("fetch_skip")()
 			} else {
 				stop := op.Phase("fetch")
@@ -200,7 +205,19 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 			}
 			if len(apply) == 0 {
 				// Every change is already present remotely (or a no-op): realign
-				// the worktree and snapshot to theirs without pushing.
+				// the worktree and snapshot to theirs without pushing. Nothing
+				// is pushed here, so an elided plan gets its one confirmation
+				// now — otherwise the stale tracking SHA becomes the pin (F-0285).
+				if elided {
+					advanced, cErr := confirmElidedHead(op, repoDir, theirs)
+					if cErr != nil {
+						return cErr
+					}
+					if advanced {
+						op.AddRetry()
+						continue
+					}
+				}
 				if theirs != "" && theirs != base {
 					if err := gitback.ResetHard(repoDir, theirs); err != nil {
 						return err
@@ -232,6 +249,23 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 			sha, err := gitback.CommitPaths(repoDir, paths, msg)
 			stop()
 			if errors.Is(err, gitback.ErrNothingToCommit) {
+				// Same hazard as the empty plan above: this exit never pushes,
+				// so the retry cannot correct an elided head (F-0285).
+				if elided {
+					advanced, cErr := confirmElidedHead(op, repoDir, theirs)
+					if cErr != nil {
+						return cErr
+					}
+					if advanced {
+						op.AddRetry()
+						if base != "" {
+							if rErr := gitback.ResetHard(repoDir, base); rErr != nil {
+								return rErr
+							}
+						}
+						continue
+					}
+				}
 				head = theirs // merged content equals theirs byte-for-byte
 				return nil
 			}
@@ -264,6 +298,29 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 		return ErrTooConcurrent
 	}()
 	return head, conflicts, err
+}
+
+// confirmElidedHead re-fetches and reports whether the remote moved past
+// theirs. It backs the two reconcile exits that return a head without ever
+// pushing: their SHA comes from the tracking ref, and when attempt 0 elided
+// its fetch (F-0156) that ref may predate the real remote head — which would
+// then be written to .docs/.snapshot and docs.lock as the project's pin, with
+// no error and no retry to correct it (F-0285). An advance means the plan was
+// made against stale blobs, so the caller replans.
+func confirmElidedHead(op *telemetry.Op, repoDir, theirs string) (bool, error) {
+	stop := op.Phase("fetch_confirm")
+	err := gitback.Fetch(repoDir)
+	stop()
+	if err != nil {
+		return false, err
+	}
+	fresh, err := gitback.TrackingHeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) {
+		fresh = "" // empty remote: nothing advanced
+	} else if err != nil {
+		return false, err
+	}
+	return fresh != theirs, nil
 }
 
 // plan3Way decides, per change, what to apply given the base and remote (theirs)
