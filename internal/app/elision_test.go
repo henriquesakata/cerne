@@ -103,3 +103,83 @@ func TestNoElisionWithoutMark(t *testing.T) {
 		t.Fatalf("phases = %v, want a real fetch and no fetch_skip", ph)
 	}
 }
+
+// TestElisionConfirmsHeadOnNothingToApply pins F-0285 criterion 1: the
+// len(apply) == 0 exit never pushes, so the non-fast-forward retry cannot
+// correct a plan made against an elided (stale) tracking head. With the mark
+// fresh and the remote advanced, the snapshot must be the confirmed remote
+// head — never the stale one.
+func TestElisionConfirmsHeadOnNothingToApply(t *testing.T) {
+	widenElisionWindow(t)
+	origin, repoDir, projDir, base := reconcileFixture(t)
+	theirHead := advanceRemote(t, origin, "content/other.md", "deles\n")
+
+	// Byte-identical to base: plan3Way applies nothing.
+	changes := []FileChange{{Path: "content/features/F-0001/spec.md", Content: []byte("base spec\n")}}
+	head, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, "no-op", changes)
+	if err != nil {
+		t.Fatalf("ReconcileCommitPush: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("unexpected conflicts: %+v", conflicts)
+	}
+	if head == base {
+		t.Fatalf("head = base %q — the stale elided tracking head was written as the snapshot", base)
+	}
+	if head != theirHead {
+		t.Fatalf("head = %q, want confirmed remote head %q", head, theirHead)
+	}
+	if snap := loadSnapshot(t, projDir); snap != theirHead {
+		t.Fatalf("docs.lock snapshot = %q, want confirmed remote head %q", snap, theirHead)
+	}
+}
+
+// TestElisionConfirmsHeadOnNothingToCommit pins F-0285 criterion 2: same
+// hazard on the ErrNothingToCommit exit (merged content equals theirs
+// byte-for-byte), which also returns without ever pushing.
+func TestElisionConfirmsHeadOnNothingToCommit(t *testing.T) {
+	widenElisionWindow(t)
+	origin, repoDir, projDir, _ := reconcileFixture(t)
+	// An append-only log always enters `apply`, so the exit reached is the
+	// commit's ErrNothingToCommit rather than an empty plan.
+	writeBackendFile(t, repoDir, "events/log.ndjson", "{\"id\":\"a\"}\n")
+	base, err := gitback.CommitAndPush(repoDir, "seed events")
+	if err != nil {
+		t.Fatalf("seed events: %v", err)
+	}
+	theirHead := advanceRemote(t, origin, "content/other.md", "deles\n")
+
+	changes := []FileChange{{Path: "events/log.ndjson", Content: []byte("{\"id\":\"a\"}\n")}}
+	head, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, "re-push same events", changes)
+	if err != nil {
+		t.Fatalf("ReconcileCommitPush: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("unexpected conflicts: %+v", conflicts)
+	}
+	if head == base {
+		t.Fatalf("head = base %q — the stale elided tracking head was written as the snapshot", base)
+	}
+	if head != theirHead {
+		t.Fatalf("head = %q, want confirmed remote head %q", head, theirHead)
+	}
+	if snap := loadSnapshot(t, projDir); snap != theirHead {
+		t.Fatalf("docs.lock snapshot = %q, want confirmed remote head %q", snap, theirHead)
+	}
+}
+
+// TestNoElisionSkipsConfirmation pins F-0285 criterion 3: with no fresh mark
+// the plan already came from a real fetch, so the no-op exit must not pay a
+// second round trip.
+func TestNoElisionSkipsConfirmation(t *testing.T) {
+	origin, repoDir, projDir, _ := reconcileFixture(t)
+	// Our write is already present remotely: plan3Way applies nothing, the
+	// exit F-0285 guards.
+	advanceRemote(t, origin, "content/features/F-0001/spec.md", "shared\n")
+	gitback.ResetSyncMarks()
+	op := mutateSpec(t, repoDir, projDir, "shared\n")
+	ph := phaseSet(t, op)
+	if ph["fetch"] != 1 || ph["fetch_skip"] != 0 || ph["fetch_confirm"] != 0 {
+		t.Fatalf("phases = %v, want exactly one fetch and no elision/confirmation", ph)
+	}
+}
