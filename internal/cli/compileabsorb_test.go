@@ -74,6 +74,15 @@ func TestCompileAbsorbsSourceChangedMidRun(t *testing.T) {
 		t.Fatalf("provider called %d time(s), want 2 (one round + the absorbing round)", got)
 	}
 
+	// The summary counts DISTINCT pages, not synthesis calls: recompiling the
+	// same page in the absorbing round is the loop working, not two pages.
+	if !strings.Contains(out, "Compiled 1 page(s)") {
+		t.Fatalf("summary counted rounds instead of pages:\n%s", out)
+	}
+	if n := strings.Count(out, "content/wiki/modules/finance.md"); n != 1 {
+		t.Fatalf("page listed %d time(s) in the summary, want 1:\n%s", n, out)
+	}
+
 	// The page on disk is the SECOND round's — the one that saw the late edit.
 	page, err := os.ReadFile(pagePath)
 	if err != nil {
