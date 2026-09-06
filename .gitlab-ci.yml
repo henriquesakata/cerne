@@ -36,8 +36,11 @@ test:
     # the autocommit worker) lives in internal/app and flakes under runner
     # load — up to 3 attempts for that package alone while it is made
     # deterministic (tracked as its own task); everything else runs once.
-    - go test $(go list ./... | grep -v '/internal/app$') -count=1
-    - for i in 1 2 3; do go test ./internal/app -count=1 && break; [ $i -eq 3 ] && exit 1; done
+    # -timeout 30m matches the gate documented in CLAUDE.md (F-0289). Inert here
+    # — this job runs in ~4min — and that is the point: local and CI must not
+    # diverge on the timeout axis, or "the gate" means two different things.
+    - go test $(go list ./... | grep -v '/internal/app$') -count=1 -timeout 30m
+    - for i in 1 2 3; do go test ./internal/app -count=1 -timeout 30m && break; [ $i -eq 3 ] && exit 1; done
 
 # ui/dist is go:embed-ed into the binary, so the *committed* dist is what ships —
 # a change to ui/src that forgets to rebuild ui/dist serves a stale UI (F-0136).
