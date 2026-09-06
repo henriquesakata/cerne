@@ -217,9 +217,14 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 			if err != nil {
 				return false, err
 			}
-			// The fetch happened either way: the ref is now this operation's.
+			// The fetch happened either way: the ref is now this operation's,
+			// confirmed whether or not it moved. Recording that only on an
+			// advance would let a later planning round elide against a ref it
+			// then re-confirms — harmless today only because every caller
+			// returns immediately, which is a property of the callers, not of
+			// this gate.
 			headConfirmed = true
-			confirmed = advanced
+			confirmed = true
 			return advanced, nil
 		}
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
@@ -371,7 +376,13 @@ func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []File
 		}
 		return ErrTooConcurrent
 	}()
-	return head, conflicts, err
+	if err != nil {
+		// A failed reconcile has no head to record: returning one beside an
+		// error invites a caller that checks the value before the error to
+		// pin it.
+		return "", nil, err
+	}
+	return head, conflicts, nil
 }
 
 // unconfirmedHead is the backstop's predicate, kept separate so it is pinned
