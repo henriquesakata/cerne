@@ -32,7 +32,15 @@ go test ./internal/<pkg>/ -run TestX -v # focused
 cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (embedded). npm ci (not install) = exact lockfile → reproducible dist
 ```
 
-- **`-timeout 30m` on the full suite is required, not decorative (F-0289).** Go's default is 10 min **per package**, and `internal/cli` alone takes ~13.6 min on a dev MacBook (423 test funcs, each spawning real git through `setupProject`); the whole suite ~22 min. Without the flag the gate dies as `panic: test timed out` with a goroutine dump in `os/exec`/`gitback` that reads like a product deadlock — it is not. CI Linux does the same work in ~4 min, so the ceiling is a laptop fact and the flag is inert there. Baseline recorded so the next ceiling is recognizable: past ~20 min for `internal/cli`, revisit (the parked option is parallelizing `t.Setenv` away, weighed and deferred in F-0289).
+- **`-timeout 30m` on the full suite is required, not decorative (F-0289).** Go's default is 10 min **per package**, and the two heavy packages spawn real git per test (`internal/cli` has 423 test funcs, each building a project through `setupProject`). **The ceiling is crossed by concurrent load, not by the laptop alone** — measured on the same MacBook, same commit:
+
+  | package | machine idle | 2 parallel agents building |
+  |---|---|---|
+  | `internal/cli` | 367 s (6.1 min) | **865 s (14.4 min)** |
+  | `internal/app` | 299 s (5.0 min) | **727 s (12.1 min)** |
+  | whole suite | 384 s | 918 s |
+
+  Idle, both clear the 10 min default. Under the parallel-agent workflow this project actually uses, both blow it, and the gate dies as `panic: test timed out` with a goroutine dump in `os/exec`/`gitback` that reads like a product deadlock — it is not. CI Linux runs the suite in ~4 min, so the flag is inert there and costs nothing to keep identical. Revisit when `internal/cli` passes ~20 min under load; the parked option is parallelizing `t.Setenv` away, weighed and deferred in F-0289.
 - **`ui/dist` is `go:embed`-ed → the committed dist is what ships.** A UI change lands only if `ui/dist` is rebuilt *and* committed (F-0136 — F-0125/F-0126 shipped stale because only `ui/src` was merged). **Canonical build platform = CI Linux (`node:24`).** Do **not** commit a dist built on darwin/Windows — the vite output is not bit-identical across toolchains (hash-churn on locale chunks), so a foreign dist fails the drift gate. Build the baseline in a `node:24` Linux container (`docker run --platform linux/amd64 -v "$PWD":/app -w /app/ui node:24 sh -c "npm ci && npm run build"`) and commit that.
 - CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`, plus **`ui:dist-drift`** (`node:24`, on `ui/**` changes): rebuilds the UI and fails if the committed `ui/dist` differs from a fresh build — the guard against stale embedded UI.
 - **`-ldflags="-s -w"` on every binary build.** Linking the 48 MB binary (9.6 MB of it the embedded `ui/dist`) dominates the build: stripping the symbol table + DWARF takes the link from **11.1 s → 3.5 s** and the binary from **48 MB → 35 MB**, and `go build ./...` (what the pre-commit hook runs) from **17.4 s → 5.3 s**. Panic tracebacks stay symbolized — Go's runtime reads its own pclntab, not the symtab. The only loss is `delve`: drop the flags for a debugging build.
