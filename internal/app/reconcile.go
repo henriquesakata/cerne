@@ -74,6 +74,14 @@ func captureChanges(repoDir string) ([]FileChange, error) {
 
 // ErrTooConcurrent is the sentinel for a reconcile that kept losing the push
 // race past reconcileMaxAttempts.
+// ErrUnconfirmedHead is the sentinel for the backstop of F-0285: a reconcile
+// exit produced a head that was never seen on the remote during this
+// operation. It is unreachable through the exits that exist today — each
+// confirms its own head — and exists so that a NEW exit returning a head
+// without pushing fails loudly instead of quietly pinning a stale snapshot
+// into docs.lock, where only comparing two clones would ever reveal it.
+var ErrUnconfirmedHead = errors.New("reconcile: head was never confirmed against the remote")
+
 var ErrTooConcurrent = errors.New("backend too concurrent: could not sync after several attempts")
 
 // Reconcile retry tuning (tests lower these).
@@ -122,10 +130,8 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
 		// Start from a clean base tree: discards any uncommitted caller writes
 		// (already captured in `changes`) so the merge is fully deterministic.
-		if base != "" {
-			if err := gitback.ResetHard(repoDir, base); err != nil {
-				return err
-			}
+		if err := resetToBase(repoDir, base); err != nil {
+			return err
 		}
 		if mutate != nil {
 			if err := mutate(); err != nil {
@@ -164,106 +170,268 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 func reconcileLocked(op *telemetry.Op, repoDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
 	var head string
 	var conflicts []Conflict
-	err := func() error {
+	err := func() (retErr error) {
+		// Every failure below can return with the shared clone mutated — reset
+		// to theirs, merged changes written, even a commit made. The next
+		// holder of the backend lock inherits this worktree, so hand it back at
+		// base: the state each attempt of this loop already assumes, and the
+		// one the caller reset to before calling. A reset that itself fails is
+		// joined onto the original error, never swallowed (F-0285).
+		// headConfirmed answers, at the loop's single exit, the only question
+		// that matters for the pin: was this head seen on the remote during
+		// THIS operation? It is set where the answer is actually produced — a
+		// real fetch, a confirmation fetch, a successful push — never at the
+		// exits that consume it. That is the structural half of F-0285: the
+		// three exits that return a head without pushing confirm it
+		// themselves, but a fourth added later would inherit false here and
+		// fail loudly instead of silently pinning a stale snapshot.
+		headConfirmed := false
+		defer func() {
+			if retErr == nil {
+				retErr = unconfirmedHead(head, headConfirmed)
+			}
+			if retErr == nil {
+				return
+			}
+			if rErr := resetToBase(repoDir, base); rErr != nil {
+				retErr = errors.Join(retErr, rErr)
+			}
+		}()
+		// confirmed records that this operation already paid its one
+		// confirmation fetch, so the tracking ref is trustworthy from here on:
+		// a replan must not re-elide (it would plan against a ref it never
+		// checked) nor confirm again (the ref was just fetched).
+		confirmed := false
+		// mustReplan is the ONE gate every exit that returns a head WITHOUT
+		// pushing passes through, written once and closed over the loop's state:
+		// three copies of it is three chances to copy it subtly wrong, and a
+		// wrongly-copied confirmation is the one mistake the backstop above
+		// cannot catch — it would set headConfirmed just the same. True means
+		// the plan was made against a ref that has since moved and must be
+		// remade; false means theirs is confirmed and the exit may record it.
+		mustReplan := func(theirs string, elided bool) (bool, error) {
+			if !elided {
+				return false, nil
+			}
+			advanced, err := confirmElidedHead(op, repoDir, theirs)
+			if err != nil {
+				return false, err
+			}
+			// The fetch happened either way: the ref is now this operation's,
+			// confirmed whether or not it moved. Recording that only on an
+			// advance would let a later planning round elide against a ref it
+			// then re-confirms — harmless today only because every caller
+			// returns immediately, which is a property of the callers, not of
+			// this gate.
+			headConfirmed = true
+			confirmed = true
+			return advanced, nil
+		}
 		for attempt := 0; attempt < reconcileMaxAttempts; attempt++ {
-			if attempt == 0 && gitback.SyncedWithin(repoDir, elisionWindow) {
-				// F-0156: this process talked to the remote moments ago (the
-				// server pulls every 15s), so attempt 0 plans against the
-				// tracking head it already has. If that turns out stale, the
-				// non-fast-forward retry below fetches and replans — the
-				// correction mechanism was always the retry, not this fetch.
-				op.Phase("fetch_skip")()
-			} else {
-				stop := op.Phase("fetch")
-				err := gitback.Fetch(repoDir)
+			// A planning round is not a push attempt. An elided plan that turns
+			// out to be stale is re-made here, against the confirmed head,
+			// without consuming one of reconcileMaxAttempts — nothing was
+			// pushed, so there is no concurrency to back off from, and the
+			// confirmed flag caps this inner loop at one extra round (F-0285).
+		plan:
+			for {
+				elided := attempt == 0 && !confirmed && gitback.SyncedWithin(repoDir, elisionWindow)
+				// A real fetch below IS the confirmation; an elided one is not.
+				headConfirmed = !elided
+				if elided {
+					// F-0156: this process talked to the remote moments ago (the
+					// server pulls every 15s), so attempt 0 plans against the
+					// tracking head it already has. When that turns out stale, the
+					// correction is the non-fast-forward retry below, which fetches
+					// and replans — but it only fires on a push. All three exits
+					// that return WITHOUT pushing (a conflict, nothing to apply,
+					// nothing to commit) are outside its reach and confirm the head
+					// themselves via confirmElidedHead (F-0285).
+					op.Phase("fetch_skip")()
+				} else {
+					stop := op.Phase("fetch")
+					err := gitback.Fetch(repoDir)
+					stop()
+					if err != nil {
+						return err
+					}
+				}
+				theirs, err := gitback.TrackingHeadSHA(repoDir)
+				if errors.Is(err, gitback.ErrNoCommits) {
+					theirs = "" // empty remote: nothing to merge against
+				} else if err != nil {
+					return err
+				}
+
+				stop := op.Phase("merge")
+				apply, conf, err := plan3Way(repoDir, base, theirs, changes)
 				stop()
 				if err != nil {
 					return err
 				}
-			}
-			theirs, err := gitback.TrackingHeadSHA(repoDir)
-			if errors.Is(err, gitback.ErrNoCommits) {
-				theirs = "" // empty remote: nothing to merge against
-			} else if err != nil {
-				return err
-			}
+				if len(conf) > 0 {
+					// A conflict is reported to the caller and stashed as "the
+					// remote version": an elided, stale theirs would manufacture a
+					// conflict against content that no longer exists remotely, and
+					// nothing here pushes, so confirm before believing it (F-0285).
+					redo, cErr := mustReplan(theirs, elided)
+					if cErr != nil {
+						return cErr
+					}
+					if redo {
+						continue plan
+					}
+					conflicts = conf // non-destructive: tree is still at base
+					return nil
+				}
+				if len(apply) == 0 {
+					// Every change is already present remotely (or a no-op): realign
+					// the worktree and snapshot to theirs without pushing. Nothing
+					// is pushed here, so an elided plan gets its one confirmation
+					// now — otherwise the stale tracking SHA becomes the pin (F-0285).
+					redo, cErr := mustReplan(theirs, elided)
+					if cErr != nil {
+						return cErr
+					}
+					if redo {
+						continue plan
+					}
+					if theirs != "" && theirs != base {
+						if err := gitback.ResetHard(repoDir, theirs); err != nil {
+							return err
+						}
+					}
+					head = theirs
+					return nil
+				}
 
-			stop := op.Phase("merge")
-			apply, conf, err := plan3Way(repoDir, base, theirs, changes)
-			stop()
-			if err != nil {
-				return err
-			}
-			if len(conf) > 0 {
-				conflicts = conf // non-destructive: tree is still at base
-				return nil
-			}
-			if len(apply) == 0 {
-				// Every change is already present remotely (or a no-op): realign
-				// the worktree and snapshot to theirs without pushing.
-				if theirs != "" && theirs != base {
+				// Land on the latest remote, re-apply the merged changes, commit.
+				if theirs != "" {
 					if err := gitback.ResetHard(repoDir, theirs); err != nil {
 						return err
 					}
 				}
-				head = theirs
-				return nil
-			}
-
-			// Land on the latest remote, re-apply the merged changes, commit.
-			if theirs != "" {
-				if err := gitback.ResetHard(repoDir, theirs); err != nil {
+				if err := writeChanges(repoDir, apply); err != nil {
 					return err
 				}
-			}
-			if err := writeChanges(repoDir, apply); err != nil {
-				return err
-			}
-			if reconcileHookAfterWrite != nil {
-				reconcileHookAfterWrite()
-			}
-			// Commit exactly the applied paths: a concurrent process's writes in
-			// the shared worktree must never be swept into this commit (F-0121).
-			paths := make([]string, len(apply))
-			for i, ch := range apply {
-				paths[i] = ch.Path
-			}
-			stop = op.Phase("commit")
-			sha, err := gitback.CommitPaths(repoDir, paths, msg)
-			stop()
-			if errors.Is(err, gitback.ErrNothingToCommit) {
-				head = theirs // merged content equals theirs byte-for-byte
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			if reconcileHookBeforePush != nil {
-				reconcileHookBeforePush(attempt)
-			}
-			stop = op.Phase("push")
-			pushErr := gitback.Push(repoDir)
-			stop()
-			if gitback.IsNonFastForward(pushErr) {
-				// Remote advanced between fetch and push: rewind and retry.
-				op.AddRetry()
-				if base != "" {
-					if err := gitback.ResetHard(repoDir, base); err != nil {
+				if reconcileHookAfterWrite != nil {
+					reconcileHookAfterWrite()
+				}
+				// Commit exactly the applied paths: a concurrent process's writes in
+				// the shared worktree must never be swept into this commit (F-0121).
+				paths := make([]string, len(apply))
+				for i, ch := range apply {
+					paths[i] = ch.Path
+				}
+				stop = op.Phase("commit")
+				sha, err := gitback.CommitPaths(repoDir, paths, msg)
+				stop()
+				if errors.Is(err, gitback.ErrNothingToCommit) {
+					// Same hazard as the empty plan above: this exit never pushes,
+					// so the retry cannot correct an elided head (F-0285).
+					redo, cErr := mustReplan(theirs, elided)
+					if cErr != nil {
+						return cErr
+					}
+					if redo {
+						// Unlike the exits above, this one already reset to theirs and
+						// wrote the merged changes; the replan assumes a tree at base.
+						if rErr := resetToBase(repoDir, base); rErr != nil {
+							return rErr
+						}
+						continue plan
+					}
+					head = theirs // merged content equals theirs byte-for-byte
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if reconcileHookBeforePush != nil {
+					reconcileHookBeforePush(attempt)
+				}
+				stop = op.Phase("push")
+				pushErr := gitback.Push(repoDir)
+				stop()
+				if gitback.IsNonFastForward(pushErr) {
+					// Remote advanced between fetch and push: rewind and retry.
+					// break, not continue: this IS a push attempt and must consume
+					// one of reconcileMaxAttempts, unlike a confirmation replan.
+					op.AddRetry()
+					if err := resetToBase(repoDir, base); err != nil {
 						return err
 					}
+					time.Sleep(reconcileBackoff * time.Duration(attempt+1))
+					break plan
 				}
-				time.Sleep(reconcileBackoff * time.Duration(attempt+1))
-				continue
+				if pushErr != nil {
+					return pushErr
+				}
+				// The push is a remote round trip that the remote accepted:
+				// this sha is on origin by construction.
+				headConfirmed = true
+				head = sha
+				return nil
 			}
-			if pushErr != nil {
-				return pushErr
-			}
-			head = sha
-			return nil
 		}
 		return ErrTooConcurrent
 	}()
-	return head, conflicts, err
+	if err != nil {
+		// A failed reconcile has no head to record: returning one beside an
+		// error invites a caller that checks the value before the error to
+		// pin it.
+		return "", nil, err
+	}
+	return head, conflicts, nil
+}
+
+// unconfirmedHead is the backstop's predicate, kept separate so it is pinned
+// by a test rather than only by the exits that happen to exist. A head is
+// recordable only when this operation saw it on the remote; an empty head
+// records nothing and needs no confirmation.
+// resetToBase returns the shared worktree to the commit this operation was
+// planned against. An empty base is not a waiver but the absence of a target:
+// it means the backend had no commits when the caller started (a freshly
+// initialized backend), so there is no tree to restore and the caller's own
+// entry reset skipped it for the same reason. Anything written into such a
+// worktree is uncommitted and is discarded by the next operation's reset, or
+// swept into nothing — never into a commit, which only ever names paths from
+// the plan.
+func resetToBase(repoDir, base string) error {
+	if base == "" {
+		return nil
+	}
+	return gitback.ResetHard(repoDir, base)
+}
+
+func unconfirmedHead(head string, confirmed bool) error {
+	if head == "" || confirmed {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrUnconfirmedHead, head)
+}
+
+// confirmElidedHead re-fetches and reports whether the remote moved past
+// theirs. It backs the two reconcile exits that return a head without ever
+// pushing: their SHA comes from the tracking ref, and when attempt 0 elided
+// its fetch (F-0156) that ref may predate the real remote head — which would
+// then be written to .docs/.snapshot and docs.lock as the project's pin, with
+// no error and no retry to correct it (F-0285). An advance means the plan was
+// made against stale blobs, so the caller replans.
+func confirmElidedHead(op *telemetry.Op, repoDir, theirs string) (bool, error) {
+	stop := op.Phase("fetch_confirm")
+	err := gitback.Fetch(repoDir)
+	stop()
+	if err != nil {
+		return false, err
+	}
+	fresh, err := gitback.TrackingHeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) {
+		fresh = "" // empty remote: nothing advanced
+	} else if err != nil {
+		return false, err
+	}
+	return fresh != theirs, nil
 }
 
 // plan3Way decides, per change, what to apply given the base and remote (theirs)
