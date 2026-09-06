@@ -135,7 +135,7 @@ func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, s
 			if len(batch) == 0 {
 				return nil
 			}
-			done = append(done, batch...)
+			done = appendNewPages(done, batch)
 		}
 		return nil
 	}()
@@ -155,6 +155,25 @@ func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, s
 		fmt.Fprintf(out, "  content/wiki/%s.md\n", p.Rel)
 	}
 	return nil
+}
+
+// appendNewPages adds the pages of batch that are not reported yet. A page
+// recompiled by a later round is the absorb loop doing its job, not a second
+// page: the summary counts DISTINCT pages, not synthesis calls.
+func appendNewPages(done, batch []compile.Page) []compile.Page {
+	for _, p := range batch {
+		seen := false
+		for _, d := range done {
+			if d.Rel == p.Rel {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			done = append(done, p)
+		}
+	}
+	return done
 }
 
 // compileDirtyPages runs the one-phase synthesis over the dirty subset of pages:
