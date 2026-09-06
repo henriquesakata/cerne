@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type UIEvent } from 'react'
+import { isAtBottom } from './BacklogChat'
 import {
   fetchRoomPending,
   fetchRooms,
@@ -163,6 +164,26 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const sinceRef = useRef(0)
 
+  // Glue-scroll (F-0292): a sala abre no fim e acompanha as mensagens que
+  // chegam pelo long-poll enquanto o leitor estiver lá; quem subiu está lendo
+  // o histórico e não pode ser arrastado de volta. A regra de "está no fim" é
+  // a isAtBottom do chat do Backlog (F-0239), não uma cópia dela.
+  const historyRef = useRef<HTMLDivElement>(null)
+  const stuckRef = useRef(true)
+
+  const onHistoryScroll = (e: UIEvent<HTMLDivElement>) => {
+    stuckRef.current = isAtBottom(e.currentTarget)
+  }
+
+  // useLayoutEffect, não useEffect: o ajuste acontece antes da pintura, então
+  // não há quadro intermediário com a barra fora do lugar (mesma razão
+  // registrada em BacklogChat.tsx).
+  useLayoutEffect(() => {
+    const el = historyRef.current
+    if (!el || !stuckRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [messages])
+
   const applyEvents = (events: RoomMessage[]) => {
     if (events.length === 0) return
     sinceRef.current = events[events.length - 1].seq
@@ -199,6 +220,9 @@ export function WarRoomDetail({ id }: { id: string }) {
     setMessages([])
     setClosed(false)
     setReady(false)
+    // Outra sala, outra transcrição: volta a colar no fim em vez de herdar o
+    // descolamento da anterior (F-0292 critério 5).
+    stuckRef.current = true
 
     async function loop() {
       try {
@@ -575,7 +599,7 @@ export function WarRoomDetail({ id }: { id: string }) {
             )}
           </div>
         )}
-        <div className="backlog-chat-history">
+        <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
           {!ready && <p className="status">{t.common.loading}</p>}
           {ready && messages.length === 0 && <p className="muted">{t.warRoom.noMessages}</p>}
           {messages.map((m) => (

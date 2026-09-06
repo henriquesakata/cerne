@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import { LiveProvider, useProjects } from './live'
@@ -411,5 +412,176 @@ describe('WarRoomDetail (T-0003)', () => {
       fireEvent.click(screen.getByRole('button', { name: /trocar projeto/i }))
       await waitFor(() => expect(fetchRooms).toHaveBeenCalledTimes(2))
     })
+  })
+})
+
+// F-0292: a transcrição abre no fim e acompanha as mensagens novas enquanto o
+// leitor estiver lá — o mesmo glue-scroll do chat do Backlog (F-0239), ligado
+// aqui pela isAtBottom que já era exportada.
+describe('glue-scroll da transcrição (F-0292)', () => {
+  const CLIENT_HEIGHT = 400
+  const SCROLL_HEIGHT = 1000
+  // Fim exato: scrollHeight - scrollTop - clientHeight === 0.
+  const AT_BOTTOM = SCROLL_HEIGHT - CLIENT_HEIGHT
+
+  let restoreMetrics: (() => void) | null = null
+
+  // jsdom não faz layout: scrollHeight/clientHeight são sempre 0 e scrollTop é
+  // um acessor inerte, então sem stub o glue-scroll não é observável. Os stubs
+  // vão no protótipo, não no nó, porque o ajuste de montagem (critério 1) roda
+  // antes de o teste conseguir a referência do elemento.
+  beforeEach(() => {
+    const original = {
+      scrollHeight: Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight'),
+      clientHeight: Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight'),
+      scrollTop: Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop'),
+    }
+    Object.defineProperty(Element.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => SCROLL_HEIGHT,
+    })
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => CLIENT_HEIGHT,
+    })
+    // Data property: escrever em um nó cria a própria cópia, então scrollTop
+    // volta a ser legível — o acessor do jsdom descarta a escrita.
+    Object.defineProperty(Element.prototype, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    })
+    restoreMetrics = () => {
+      for (const [key, desc] of Object.entries(original)) {
+        if (desc) Object.defineProperty(Element.prototype, key, desc)
+      }
+    }
+  })
+
+  afterEach(() => {
+    restoreMetrics?.()
+    restoreMetrics = null
+  })
+
+  const openEvent: RoomMessage = {
+    seq: 1,
+    type: 'open',
+    topic: 'Fila serial',
+    time: '2026-08-06T00:00:00Z',
+  }
+
+  const msg = (seq: number, body: string): RoomMessage => ({
+    seq,
+    type: 'message',
+    nick: 'ana',
+    body,
+    time: '2026-08-06T00:00:00Z',
+  })
+
+  const history = () => {
+    const el = document.querySelector('.backlog-chat-history')
+    if (!el) throw new Error('transcrição não montou')
+    return el as HTMLDivElement
+  }
+
+  // Transcrição estática: a leitura inicial devolve os eventos, o long-poll
+  // trava (nenhuma mensagem nova durante o teste).
+  const staticTranscript = (initial: RoomMessage[]) =>
+    readRoomMessages.mockImplementation((_id, _since, follow) =>
+      follow ? new Promise<RoomMessage[]>(() => {}) : Promise.resolve(initial),
+    )
+
+  // Transcrição controlada: cada espera com follow=true fica na mão do teste,
+  // que decide quando (e com o quê) a mensagem seguinte chega.
+  function controllableTranscript(initial: RoomMessage[]) {
+    const box: { deliver: ((events: RoomMessage[]) => void) | null } = { deliver: null }
+    readRoomMessages.mockImplementation((_id, _since, follow) => {
+      if (!follow) return Promise.resolve(initial)
+      return new Promise<RoomMessage[]>((resolve) => {
+        box.deliver = resolve
+      })
+    })
+    return async (events: RoomMessage[]) => {
+      await waitFor(() => expect(box.deliver).not.toBeNull())
+      const deliver = box.deliver!
+      box.deliver = null
+      await act(async () => deliver(events))
+    }
+  }
+
+  it('abre a transcrição no fim (critério 1)', async () => {
+    staticTranscript([openEvent, msg(2, 'primeira'), msg(3, 'última')])
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText(/última/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('cola no fim quando chega mensagem nova e o leitor está no fim (critério 2)', async () => {
+    const deliver = controllableTranscript([openEvent, msg(2, 'primeira')])
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    history().scrollTop = 0
+    await deliver([msg(3, 'segunda')])
+
+    await waitFor(() => expect(screen.getByText(/segunda/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('preserva a posição quando o leitor rolou para cima (critério 3)', async () => {
+    const deliver = controllableTranscript([openEvent, msg(2, 'primeira')])
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    // 100px acima do fim: bem além da tolerância de 24px do isAtBottom.
+    history().scrollTop = AT_BOTTOM - 100
+    fireEvent.scroll(history())
+    await deliver([msg(3, 'segunda')])
+
+    await waitFor(() => expect(screen.getByText(/segunda/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(AT_BOTTOM - 100)
+  })
+
+  it('volta a colar quando o leitor retorna ao fim (critério 4)', async () => {
+    const deliver = controllableTranscript([openEvent, msg(2, 'primeira')])
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    history().scrollTop = AT_BOTTOM - 100
+    fireEvent.scroll(history())
+    await deliver([msg(3, 'segunda')])
+    await waitFor(() => expect(screen.getByText(/segunda/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(AT_BOTTOM - 100)
+
+    history().scrollTop = AT_BOTTOM
+    fireEvent.scroll(history())
+    await deliver([msg(4, 'terceira')])
+
+    await waitFor(() => expect(screen.getByText(/terceira/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('trocar de sala reposiciona no fim sem herdar o descolamento (critério 5)', async () => {
+    staticTranscript([openEvent, msg(2, 'primeira')])
+    const { rerender } = render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/primeira/)).toBeInTheDocument())
+
+    history().scrollTop = 0
+    fireEvent.scroll(history())
+    expect(history().scrollTop).toBe(0)
+
+    staticTranscript([openEvent, msg(2, 'outra sala')])
+    rerender(<WarRoomDetail id="R2" />)
+
+    await waitFor(() => expect(screen.getByText(/outra sala/)).toBeInTheDocument())
+    expect(history().scrollTop).toBe(SCROLL_HEIGHT)
+  })
+
+  it('reusa a isAtBottom do Backlog, sem duplicar a tolerância (critério 6)', () => {
+    // vitest roda com cwd na raiz do pacote da UI.
+    const src = readFileSync('src/WarRoom.tsx', 'utf8')
+    expect(src).toMatch(/import \{ isAtBottom \} from '\.\/BacklogChat'/)
+    expect(src).not.toMatch(/TOLERANCE/)
   })
 })
