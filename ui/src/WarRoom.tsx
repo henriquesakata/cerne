@@ -401,6 +401,26 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const entryCommand = `cerne room join ${id} --nick <nick> [--bio "…"]`
 
+  // Paridade com RenderMinutesMarkdown (F-0291): o painel da ata mostra as
+  // mesmas seis seções da projeção canônica, não só conclusão e justificativa.
+  // Lista vazia some inteira — sem placeholder, como o renderizador faz com
+  // open_items. Os rótulos são de leitura, não os do formulário de encerramento.
+  const minutesSections: { label: string; items?: string[]; className?: string }[] = minutes
+    ? [
+        { label: t.warRoom.minutesDiscardedTitle, items: minutes.discarded_options },
+        { label: t.warRoom.minutesOwnersTitle, items: minutes.owners },
+        { label: t.warRoom.minutesNextStepsTitle, items: minutes.next_steps },
+        // open_items é a trilha de auditoria do fechamento forçado
+        // (--allow-open-items): registro de exceção, não item de rotina —
+        // marca própria para não se achatar com as demais listas.
+        {
+          label: t.warRoom.minutesOpenItemsTitle,
+          items: minutes.open_items,
+          className: 'room-minutes-open-items',
+        },
+      ]
+    : []
+
   // splitLines converte um textarea de "um item por linha" na lista que a
   // ata espera, descartando linhas em branco.
   const splitLines = (s: string) =>
@@ -591,6 +611,18 @@ export function WarRoomDetail({ id }: { id: string }) {
             <p>
               <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
             </p>
+            {minutesSections
+              .filter((s) => s.items !== undefined && s.items.length > 0)
+              .map((s) => (
+                <section key={s.label} className={s.className}>
+                  <h3>{s.label}</h3>
+                  <ul className="room-minutes-list">
+                    {s.items?.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             {minutesNoteID && (
               <p>
                 <strong>{t.warRoom.minutesRegistered}</strong>{' '}

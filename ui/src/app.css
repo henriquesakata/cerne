@@ -894,11 +894,46 @@ h2 {
 
    Proporcional e não absoluto porque o painel acompanha o viewport. Inerte no
    caso comum: uma ata de 121px fica bem abaixo do teto, então sala normal não
-   muda. min-height: 0 é o que autoriza encolher dentro do flex. */
+   muda. min-height: 0 é o que autoriza encolher dentro do flex.
+
+   F-0291: a moldura (borda + superfície própria + padding) é o que faz o painel
+   ler como documento. Sem ela, encostado na transcrição dentro do mesmo
+   <aside class="backlog-chat">, a ata passava por cabeçalho do chat — o relato
+   de origem foi "só estou vendo o histórico". O teto e o min-height acima
+   continuam mandando: a moldura não pode devolver a regressão de altura. */
 .room-minutes {
   max-height: 35%;
   min-height: 0;
   overflow-y: auto;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0.6rem 0.8rem;
+}
+
+.room-minutes h3 {
+  margin: 0.7rem 0 0.25rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.room-minutes-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* open_items é a exceção que o --allow-open-items existe para registrar
+   (F-0291 critério 4): achatá-la com as outras listas apagaria justamente a
+   diferença. Barra de aviso, não mais uma lista. */
+.room-minutes-open-items {
+  border-left: 3px solid var(--danger);
+  padding-left: 0.6rem;
+  margin-top: 0.7rem;
 }
 
 .room-roster {

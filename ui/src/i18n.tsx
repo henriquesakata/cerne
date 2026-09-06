@@ -321,6 +321,13 @@ const ptBR = {
     minutesNextSteps: 'Próximos passos (um por linha)',
     allowOpenItems: 'Permitir fechar com itens pendentes',
     minutesRegistered: 'Ata registrada:',
+    // Rótulos de LEITURA da ata (F-0291): espelham os títulos de
+    // RenderMinutesMarkdown. Separados dos rótulos do formulário acima, que
+    // carregam a instrução de entrada ("uma por linha") e ficariam errados aqui.
+    minutesDiscardedTitle: 'Opções descartadas',
+    minutesOwnersTitle: 'Responsáveis',
+    minutesNextStepsTitle: 'Próximos passos',
+    minutesOpenItemsTitle: 'Itens deixados em aberto (exceção registrada)',
   },
   palette: {
     placeholder: 'Buscar por código ou título…',
@@ -1039,6 +1046,10 @@ const en: Messages = {
     minutesNextSteps: 'Next steps (one per line)',
     allowOpenItems: 'Allow closing with pending items',
     minutesRegistered: 'Minutes registered:',
+    minutesDiscardedTitle: 'Discarded options',
+    minutesOwnersTitle: 'Owners',
+    minutesNextStepsTitle: 'Next steps',
+    minutesOpenItemsTitle: 'Items left open (recorded exception)',
   },
   palette: {
     placeholder: 'Search by id or title…',
