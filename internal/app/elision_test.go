@@ -114,6 +114,9 @@ func TestElisionConfirmsHeadOnNothingToApply(t *testing.T) {
 	origin, repoDir, projDir, base := reconcileFixture(t)
 	theirHead := advanceRemote(t, origin, "content/other.md", "deles\n")
 
+	if !gitback.SyncedWithin(repoDir, elisionWindow) {
+		t.Fatal("no fresh sync mark: the elision under test never happened, so this test proves nothing")
+	}
 	// Byte-identical to base: plan3Way applies nothing.
 	changes := []FileChange{{Path: "content/features/F-0001/spec.md", Content: []byte("base spec\n")}}
 	head, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, "no-op", changes)
@@ -149,6 +152,9 @@ func TestElisionConfirmsHeadOnNothingToCommit(t *testing.T) {
 	}
 	theirHead := advanceRemote(t, origin, "content/other.md", "deles\n")
 
+	if !gitback.SyncedWithin(repoDir, elisionWindow) {
+		t.Fatal("no fresh sync mark: the elision under test never happened, so this test proves nothing")
+	}
 	changes := []FileChange{{Path: "events/log.ndjson", Content: []byte("{\"id\":\"a\"}\n")}}
 	head, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, "re-push same events", changes)
 	if err != nil {
@@ -175,11 +181,52 @@ func TestNoElisionSkipsConfirmation(t *testing.T) {
 	origin, repoDir, projDir, _ := reconcileFixture(t)
 	// Our write is already present remotely: plan3Way applies nothing, the
 	// exit F-0285 guards.
-	advanceRemote(t, origin, "content/features/F-0001/spec.md", "shared\n")
+	theirHead := advanceRemote(t, origin, "content/features/F-0001/spec.md", "shared\n")
 	gitback.ResetSyncMarks()
 	op := mutateSpec(t, repoDir, projDir, "shared\n")
 	ph := phaseSet(t, op)
 	if ph["fetch"] != 1 || ph["fetch_skip"] != 0 || ph["fetch_confirm"] != 0 {
 		t.Fatalf("phases = %v, want exactly one fetch and no elision/confirmation", ph)
+	}
+	// The exit reached is the guarded one, and its head is still recorded.
+	if snap := loadSnapshot(t, projDir); snap != theirHead {
+		t.Fatalf("docs.lock snapshot = %q, want the fetched remote head %q", snap, theirHead)
+	}
+}
+
+// TestElisionConfirmsHeadOnConflict pins the third exit that returns without
+// pushing (F-0285): a conflict is reported to the caller AND stashed as "the
+// remote version". Planned against an elided tracking head that is stale AND
+// already divergent, that is a conflict against content the remote no longer
+// has — a false conflict with a bogus stash. Here a peer then converged the
+// document to exactly our bytes, so the confirmed plan has nothing to report.
+func TestElisionConfirmsHeadOnConflict(t *testing.T) {
+	widenElisionWindow(t)
+	origin, repoDir, projDir, base := reconcileFixture(t)
+	// The remote diverges on OUR document, and we fetch it: the tracking ref
+	// now holds a version that conflicts with ours, and the mark is fresh.
+	advanceRemote(t, origin, "content/features/F-0001/spec.md", "deles\n")
+	if err := gitback.Fetch(repoDir); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	// Behind our back, a peer converges that document to what we are pushing.
+	theirHead := advanceRemote(t, origin, "content/features/F-0001/spec.md", "mine\n")
+	if !gitback.SyncedWithin(repoDir, elisionWindow) {
+		t.Fatal("no fresh sync mark: the elision under test never happened, so this test proves nothing")
+	}
+
+	changes := []FileChange{{Path: "content/features/F-0001/spec.md", Content: []byte("mine\n")}}
+	head, conflicts, err := ReconcileCommitPush(repoDir, projDir, base, "push spec", changes)
+	if err != nil {
+		t.Fatalf("ReconcileCommitPush: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("false conflict planned against a stale elided head: %+v", conflicts)
+	}
+	if head != theirHead {
+		t.Fatalf("head = %q, want confirmed remote head %q", head, theirHead)
+	}
+	if snap := loadSnapshot(t, projDir); snap != theirHead {
+		t.Fatalf("docs.lock snapshot = %q, want confirmed remote head %q", snap, theirHead)
 	}
 }
