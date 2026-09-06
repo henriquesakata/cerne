@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -288,7 +287,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := writeDecisionDraft(ctx.repoDir, id, body); err != nil {
+		if err := app.WriteStampedDraft(app.DecisionDocPath(ctx.repoDir, id), id, body); err != nil {
 			return "", err
 		}
 		return "cerne: draft decision " + id, nil
@@ -308,18 +307,6 @@ func readDecisionCurrent(repoDir, id string) string {
 		return ""
 	}
 	return string(data)
-}
-
-// writeDecisionDraft writes content/decisions/<id>.md as cerne's stamped cerne_id
-// frontmatter followed by the model's trimmed body. cerne stamps the frontmatter
-// itself — the model is never trusted to emit cerne_id.
-func writeDecisionDraft(repoDir, id, body string) error {
-	path := app.DecisionDocPath(repoDir, id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // BuildDecisionDraftPrompt assembles the pt-BR prompt instructing the LLM to write

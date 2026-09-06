@@ -232,7 +232,8 @@ func TestDecisionDraftByoKeyWritesAndCommits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		gotPrompt = string(raw)
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Contexto\n\nForças em tensão.\n\n## Decisão\n\nUsaremos Postgres."}]}`)
+		// Long enough to clear app.ValidateDraftBody's floor (F-0290).
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Contexto\n\nForças em tensão: o volume de escrita cresce, e o índice atual não sobrevive a uma segunda região.\n\n## Decisão\n\nUsaremos Postgres. A réplica de leitura fica por região, e a migração acontece em uma janela única."}]}`)
 	}))
 	defer srv.Close()
 

@@ -85,7 +85,7 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := writePlanDraft(ctx.repoDir, id, body); err != nil {
+		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "plan.md"), id, body); err != nil {
 			return "", err
 		}
 		return "cerne: draft plan " + id, nil
@@ -97,25 +97,18 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 	return nil
 }
 
+// featureDocPath is the backend path of one of a feature's lifecycle documents.
+func featureDocPath(repoDir, id, file string) string {
+	return filepath.Join(repoDir, "content", "features", id, file)
+}
+
 // readFeatureDoc returns content/features/<id>/<file>, or "" when it is missing.
 func readFeatureDoc(repoDir, id, file string) string {
-	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, file))
+	data, err := os.ReadFile(featureDocPath(repoDir, id, file))
 	if err != nil {
 		return ""
 	}
 	return string(data)
-}
-
-// writePlanDraft writes content/features/<id>/plan.md as cerne's stamped cerne_id
-// frontmatter followed by the model's trimmed body. cerne stamps the frontmatter
-// itself — the model is never trusted to emit cerne_id.
-func writePlanDraft(repoDir, id, body string) error {
-	path := filepath.Join(repoDir, "content", "features", id, "plan.md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // BuildPlanDraftPrompt assembles the pt-BR prompt instructing the LLM to write a

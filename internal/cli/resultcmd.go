@@ -3,8 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -81,7 +79,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := writeResultDraft(ctx.repoDir, id, body); err != nil {
+		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "result.md"), id, body); err != nil {
 			return "", err
 		}
 		return "cerne: draft result " + id, nil
@@ -91,18 +89,6 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	}
 	fmt.Fprintf(out, "%s's result drafted and pushed — run 'cerne pull' to review.\n", id)
 	return nil
-}
-
-// writeResultDraft writes content/features/<id>/result.md as cerne's stamped
-// cerne_id frontmatter followed by the model's trimmed body. cerne stamps the
-// frontmatter itself — the model is never trusted to emit cerne_id.
-func writeResultDraft(repoDir, id, body string) error {
-	path := filepath.Join(repoDir, "content", "features", id, "result.md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // BuildResultDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
