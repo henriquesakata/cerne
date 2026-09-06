@@ -32,7 +32,9 @@ func dirtySourceServer(t *testing.T, specPath string, dirtyUntil int64) (*httpte
 				writeErr.Store(err)
 			}
 		}
-		_, _ = fmt.Fprintf(w, `{"content":[{"type":"text","text":"# Finance\n\nrodada %d"}]}`, n)
+		// Long enough to clear compile.ValidatePageBody's floor (F-0287): a
+		// 19-character body is refused as "not a page", never stamped.
+		_, _ = fmt.Fprintf(w, `{"content":[{"type":"text","text":"# Finance\n\nrodada %d\n\nO módulo finance emite boletos a partir dos pedidos aprovados e reconcilia o retorno do banco. A página é sintetizada das specs vigentes do módulo, e reflete o estado corrente de cada uma delas."}]}`, n)
 	}))
 	return srv, &calls, &writeErr
 }
