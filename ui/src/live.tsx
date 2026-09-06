@@ -15,9 +15,15 @@ import {
 import { useT } from './i18n'
 
 // Multi-projeto + atualização ao vivo (casos 0031/0032). O painel serve N
-// projetos; este provider mantém a lista, o projeto ativo (global, em
-// localStorage e sincronizado entre abas), o conjunto de projetos com mudanças
-// pendentes (badge) e um contador de versão que as telas usam para re-buscar.
+// projetos; este provider mantém a lista, o projeto ativo, o conjunto de
+// projetos com mudanças pendentes (badge) e um contador de versão que as telas
+// usam para re-buscar.
+//
+// O projeto ativo é escopado por ABA (F-0288): sessionStorage guarda a escolha
+// desta aba (isolada, sobrevive a reload) e localStorage guarda apenas o
+// default de uma aba nova (última escolha vence). Antes a chave vivia só no
+// localStorage com um listener de `storage` sincronizando as abas — o que
+// tornava impossível acompanhar dois projetos em paralelo.
 
 const STORAGE_KEY = 'cerne.activePid'
 
@@ -61,8 +67,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const pick = (list: ProjectInfo[], def: string): string => {
     const has = (p: string) => list.some((x) => x.pid === p)
     if (activeRef.current && has(activeRef.current)) return activeRef.current
-    const saved = localStorage.getItem(STORAGE_KEY) ?? ''
-    if (saved && has(saved)) return saved
+    const mine = sessionStorage.getItem(STORAGE_KEY) ?? '' // escolha desta aba
+    if (mine && has(mine)) return mine
+    const last = localStorage.getItem(STORAGE_KEY) ?? '' // default de aba nova
+    if (last && has(last)) return last
     if (def && has(def)) return def
     return list[0]?.pid ?? ''
   }
@@ -100,26 +108,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Sincroniza o projeto ativo entre abas (outra aba gravou no localStorage).
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        setChanged((s) => {
-          const n = new Set(s)
-          n.delete(e.newValue!)
-          return n
-        })
-        apply(e.newValue)
-        window.location.hash = ''
-      }
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const setActivePid = (pid: string) => {
-    localStorage.setItem(STORAGE_KEY, pid)
+    sessionStorage.setItem(STORAGE_KEY, pid) // esta aba
+    localStorage.setItem(STORAGE_KEY, pid) // default da próxima aba
     setChanged((s) => {
       const n = new Set(s)
       n.delete(pid)

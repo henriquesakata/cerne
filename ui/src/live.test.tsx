@@ -5,8 +5,8 @@ import { LiveProvider, useProjects } from './live'
 import { fetchProjects } from './api'
 import type { ProjectInfo } from './api'
 
-// F-0209: trocar de projeto (seletor ou sincronização entre abas) sempre
-// aterrissa no dashboard — nenhuma rota de detalhe sobrevive à troca.
+// F-0209: trocar de projeto pelo seletor sempre aterrissa no dashboard —
+// nenhuma rota de detalhe sobrevive à troca.
 
 let mockProjects: ProjectInfo[] = [
   { pid: 'p1', name: 'P1' },
@@ -32,6 +32,7 @@ function Probe() {
 beforeEach(() => {
   cleanup()
   localStorage.clear()
+  sessionStorage.clear()
   window.location.hash = ''
   vi.mocked(fetchProjects).mockReset()
   vi.mocked(fetchProjects).mockImplementation(async () => ({ projects: mockProjects, default: 'p1' }))
@@ -48,22 +49,6 @@ describe('LiveProvider', () => {
     const btn = await screen.findByText('p1')
     await act(async () => {
       btn.click()
-    })
-    expect(window.location.hash).toBe('')
-  })
-
-  it('critério 2: troca via evento storage (outra aba) reseta o hash', async () => {
-    render(
-      <LiveProvider>
-        <Probe />
-      </LiveProvider>,
-    )
-    await screen.findByText('p1')
-    window.location.hash = '#/f/F-0001'
-    await act(async () => {
-      window.dispatchEvent(
-        new StorageEvent('storage', { key: 'cerne.activePid', newValue: 'p2' }),
-      )
     })
     expect(window.location.hash).toBe('')
   })
@@ -109,5 +94,72 @@ describe('LiveProvider — falha no bootstrap (F-0242 critério 6)', () => {
     )
     await waitFor(() => expect(screen.getByText(/nenhum projeto registrado/i)).toBeInTheDocument())
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+// F-0288: o projeto ativo é por ABA. sessionStorage guarda a escolha desta aba
+// (sobrevive a reload); localStorage guarda só o default de uma aba nova. Uma
+// aba trocando de projeto não pode arrastar as outras.
+describe('LiveProvider — projeto ativo por aba (F-0288)', () => {
+  it('critério 1: evento storage de outra aba não troca o projeto nem mexe no hash', async () => {
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    window.location.hash = '#/f/F-0001'
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'cerne.activePid', newValue: 'p2' }),
+      )
+    })
+    expect(screen.getByText('p1')).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/f/F-0001')
+  })
+
+  it('critério 2: sessionStorage vence localStorage no boot (reload mantém a aba)', async () => {
+    sessionStorage.setItem('cerne.activePid', 'p2')
+    localStorage.setItem('cerne.activePid', 'p1')
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    expect(await screen.findByText('p2')).toBeInTheDocument()
+  })
+
+  it('critério 3: sem sessionStorage, a aba nova herda a última escolha (localStorage)', async () => {
+    localStorage.setItem('cerne.activePid', 'p2')
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    expect(await screen.findByText('p2')).toBeInTheDocument()
+  })
+
+  it('setActivePid grava nas duas storages', async () => {
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    const btn = await screen.findByText('p1')
+    await act(async () => {
+      btn.click()
+    })
+    expect(sessionStorage.getItem('cerne.activePid')).toBe('p2')
+    expect(localStorage.getItem('cerne.activePid')).toBe('p2')
+  })
+
+  it('critério 5: pid salvo que sumiu da lista cai no default do servidor', async () => {
+    sessionStorage.setItem('cerne.activePid', 'p9')
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    expect(await screen.findByText('p1')).toBeInTheDocument()
   })
 })
