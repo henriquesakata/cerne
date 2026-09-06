@@ -1,6 +1,7 @@
 package compile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -377,6 +378,64 @@ func TestBuildPagePrompt(t *testing.T) {
 	for _, want := range []string{"finance", "F-0001", "approved", "Boletos", "Gera boletos"} {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// TestValidatePageBody is F-0287 criterion 3: the defense against the failure
+// mode that shipped. The agent wrote the page to a scratchpad file and answered
+// with a report about it; cerne stamped the report with provenance, committed
+// it, and the input-hash then called the page clean — the wiki was wrong and
+// nothing noticed. A response that does not look like a page must not be
+// accepted, whichever path produced it.
+func TestValidatePageBody(t *testing.T) {
+	// Verbatim from the F-0287 spec: what landed in content/wiki/project.md.
+	report := "Página escrita.\n\n**Arquivo:** `.../scratchpad/project.md`\n\n" +
+		"**Ações:**\n- Estados verificados via `cerne brief`\n- Página sintetizada\n"
+	// Shaped like the real backend pages (title first, then prose).
+	page := "# project\n\n" + strings.Repeat("Visão geral do estado corrente do projeto. ", 12)
+
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"agent report instead of the page", report, true},
+		{"empty", "", true},
+		{"whitespace only", "\n\n   \n", true},
+		{"prose before any title", "Segue a página do módulo.\n\n" + page, true},
+		{"title but no page under it", "# project\n\nPágina escrita em /tmp/project.md.\n", true},
+		{"a real page", page, false},
+		{"a real page the agent wrapped in frontmatter", "---\nrun_id: abc\n---\n\n" + page, false},
+		{"a real page under a deeper heading", "## Decisões\n\n" + page, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePageBody([]byte(tc.body))
+			if tc.wantErr {
+				if !errors.Is(err, ErrNotAPage) {
+					t.Fatalf("ValidatePageBody = %v, want errors.Is ErrNotAPage", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidatePageBody = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// TestBuildPagePromptDemandsPageOnStdout is F-0287 criterion 1: the synthesis
+// runs inside a Claude Code session, so the prompt must state the output
+// contract the ingest side then enforces — the page itself on stdout, starting
+// with a title, no files written and no report about what the agent did.
+func TestBuildPagePromptDemandsPageOnStdout(t *testing.T) {
+	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
+		{ID: "F-0001", Kind: "feature", State: "approved", Title: "Boletos", Content: "# Boletos\n"},
+	}}
+	prompt := BuildPagePrompt(p)
+	for _, want := range []string{"saída padrão", "# ", "Não escreva arquivos", "não relate"} {
+		if !contains(prompt, want) {
+			t.Fatalf("prompt missing the output contract %q:\n%s", want, prompt)
 		}
 	}
 }
