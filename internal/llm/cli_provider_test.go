@@ -16,8 +16,9 @@ import (
 
 // TestCLIProviderCompleteSuccess drives cliProvider with a fake runner: it
 // returns the runner's stdout (trimmed), the runner receives the exact argv the
-// Claude Code headless invocation needs — "-p --output-format text" with no
-// --bare and no --model — and the PROMPT travels on stdin, not argv.
+// Claude Code headless invocation needs — "-p --output-format text" plus the
+// one-shot isolation flags (F-0287), with no --bare and no --model — and the
+// PROMPT travels on stdin, not argv.
 func TestCLIProviderCompleteSuccess(t *testing.T) {
 	var gotName, gotStdin string
 	var gotArgs []string
@@ -39,7 +40,7 @@ func TestCLIProviderCompleteSuccess(t *testing.T) {
 	if gotName != "claude" {
 		t.Fatalf("runner name = %q, want claude", gotName)
 	}
-	want := []string{"-p", "--output-format", "text"}
+	want := append([]string{"-p", "--output-format", "text"}, oneShotIsolation...)
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, want)
 	}
@@ -615,5 +616,81 @@ func TestAgentProviderDeniedTools(t *testing.T) {
 				t.Fatalf("deniedTools = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCLIProviderOneShotIsolatesUserSession is F-0287 criterion 2: `claude -p`
+// boots a full Claude Code session in the cwd, so without isolation the wiki
+// synthesis inherits the user's CLAUDE.md, hooks, plugins and MCP servers — and
+// the tools that let it write the page to a scratchpad file and answer with a
+// report about it. The one-shot invocation must carry --safe-mode (customizations
+// off, auth untouched) and --tools "" (no tools at all).
+func TestCLIProviderOneShotIsolatesUserSession(t *testing.T) {
+	var gotArgs []string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		gotArgs = args
+		return "página", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake}
+
+	if _, err := p.Complete(context.Background(), "sintetize"); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	want := []string{"-p", "--output-format", "text", "--safe-mode", "--tools", ""}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("runner args = %v, want %v", gotArgs, want)
+	}
+}
+
+// TestAgentProviderKeepsUserSession is the other half of F-0287 criterion 2: the
+// isolation belongs to the one-shot generator alone. The Backlog agent (F-0224)
+// runs IN the project on purpose and its whole write-protection boundary is the
+// allowlist, so --safe-mode/--tools must never reach it.
+func TestAgentProviderKeepsUserSession(t *testing.T) {
+	var gotArgs []string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		gotArgs = args
+		return "resposta", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+
+	if _, err := p.Complete(context.Background(), "qual a spec da F-0132?"); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	for _, banned := range []string{"--safe-mode", "--tools"} {
+		for _, a := range gotArgs {
+			if a == banned {
+				t.Fatalf("agentic args %v must not contain %q (it would disable the agent's own tools)", gotArgs, banned)
+			}
+		}
+	}
+}
+
+// TestCLIProviderOneShotRetriesWithoutIsolationFlags covers a Claude Code too
+// old to know --safe-mode/--tools: the one-shot falls back to the bare headless
+// form instead of failing the synthesis, mirroring the agentic retry.
+func TestCLIProviderOneShotRetriesWithoutIsolationFlags(t *testing.T) {
+	var calls [][]string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		calls = append(calls, args)
+		if len(calls) == 1 {
+			return "", "", errors.New("error: unknown option '--safe-mode'")
+		}
+		return "página", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake}
+
+	out, err := p.Complete(context.Background(), "sintetize")
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if out != "página" {
+		t.Fatalf("Complete = %q, want the retry's output", out)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("runner called %d time(s), want 2 (attempt + bare retry)", len(calls))
+	}
+	if want := []string{"-p", "--output-format", "text"}; !reflect.DeepEqual(calls[1], want) {
+		t.Fatalf("retry args = %v, want %v", calls[1], want)
 	}
 }

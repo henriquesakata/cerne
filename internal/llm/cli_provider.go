@@ -184,6 +184,31 @@ type cliProvider struct {
 	deniedTools []string // permission rules passed via --disallowedTools (secret-file denials, F-0258)
 }
 
+// oneShotIsolation are the flags that turn `claude -p` back into what the
+// non-agentic callers (compile, ask, the draft builders) actually ask for: one
+// completion, from the prompt alone. Without them the CLI boots a full Claude
+// Code session in the cwd — inheriting the user's CLAUDE.md, hooks, plugins and
+// MCP servers, and holding the tools to act on them. F-0287 has the receipt: a
+// wiki page synthesis wrote the page to a scratchpad file and returned a report
+// about having done so, which cerne then stamped as the page.
+//
+//   - --safe-mode disables every customization (CLAUDE.md, hooks, plugins,
+//     skills, MCP, custom agents) while leaving auth, model and the built-in
+//     tools working. That last part is why it is used instead of --bare, which
+//     would also drop the OAuth subscription and demand ANTHROPIC_API_KEY.
+//   - --tools "" removes the built-in tools, so the synthesis cannot touch the
+//     filesystem at all. Every one-shot prompt is self-contained by
+//     construction, so there is nothing for a tool to fetch.
+//
+// Measured on claude 2.1.251 (macOS): a trivial prompt in a project directory
+// went from 33.0s to 8.0s. The cwd stays the project's: with CLAUDE.md
+// discovery off and no tools there is nothing left to inherit from it, and
+// moving it would drop the shell environment the project relies on (N-0011).
+//
+// This is deliberately NOT applied in agentic mode: the Backlog agent (F-0224)
+// runs in the project on purpose, and its tools ARE the feature.
+var oneShotIsolation = []string{"--safe-mode", "--tools", ""}
+
 // isUnknownFlag reports whether err looks like the CLI rejecting a flag it
 // does not know — an old Claude Code without --allowedTools. Covers the
 // cobra ("unknown flag") and commander ("unknown option") phrasings.
@@ -203,22 +228,26 @@ func isUnknownFlag(err error) bool {
 // unavailable on the plan). Any failure becomes an actionable ErrClaudeCLI.
 //
 // In agentic mode (agentTools set, F-0224) the allowlist travels as one
-// comma-joined --allowedTools argument; a CLI too old to know the flag gets
-// one retry in plain one-shot form. Whatever the CLI printed on stderr — the
-// stream where headless permission denials surface — is echoed to the server
-// log, so an attempt outside the allowlist is visible (criterion 4).
+// comma-joined --allowedTools argument; otherwise the call is isolated with
+// oneShotIsolation. Either way a CLI too old to know the flags gets one retry
+// in plain headless form. Whatever the CLI printed on stderr — the stream where
+// headless permission denials surface — is echoed to the server log, so an
+// attempt outside the allowlist is visible (criterion 4).
 func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, error) {
-	args := []string{"-p", "--output-format", "text"}
+	base := []string{"-p", "--output-format", "text"}
+	args := base
 	agentic := len(p.agentTools) > 0
 	if agentic {
 		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
 		if len(p.deniedTools) > 0 {
 			args = append(args, "--disallowedTools", strings.Join(p.deniedTools, ","))
 		}
+	} else {
+		args = append(args, oneShotIsolation...)
 	}
 	out, stderr, err := p.run(ctx, p.dir, p.bin, args, prompt)
-	if err != nil && agentic && isUnknownFlag(err) {
-		out, stderr, err = p.run(ctx, p.dir, p.bin, []string{"-p", "--output-format", "text"}, prompt)
+	if err != nil && isUnknownFlag(err) {
+		out, stderr, err = p.run(ctx, p.dir, p.bin, base, prompt)
 	}
 	if err != nil {
 		return "", fmt.Errorf("%w: failed to call Claude Code (claude -p): %w — check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"", ErrClaudeCLI, err)

@@ -240,12 +240,18 @@ func excerpt(content string) string {
 // BuildPagePrompt renders the deterministic synthesis prompt for a page: the
 // instruction plus every source with its state and a bounded excerpt of its
 // content. The text the LLM returns is the page body; cerne stamps the
-// provenance frontmatter on ingest.
+// provenance frontmatter on ingest. The instruction states the output contract
+// ValidatePageBody enforces on the way back in (F-0287).
 func BuildPagePrompt(p Page) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Sintetize a página de wiki \"%s\" do projeto a partir das fontes vigentes abaixo.\n", p.Name)
 	b.WriteString("Escreva markdown em pt-BR: visão geral + como as partes se relacionam hoje. ")
-	b.WriteString("Respeite o estado de cada fonte e não invente o que não está nas fontes.\n\n")
+	b.WriteString("Respeite o estado de cada fonte e não invente o que não está nas fontes.\n")
+	// F-0287: this prompt is answered by a Claude Code session, not by a bare
+	// completion endpoint. Say what the answer IS, or it may answer with a
+	// report about having produced it elsewhere.
+	b.WriteString("Devolva SOMENTE o markdown da página na saída padrão, começando por um título \"# \". ")
+	b.WriteString("Não escreva arquivos, não use ferramentas e não relate o que você fez.\n\n")
 	for _, s := range p.Sources {
 		content := s.Content
 		if s.promptContent != "" {
