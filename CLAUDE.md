@@ -27,11 +27,20 @@ cerne is the **guardian and source of truth** for this project's documentation. 
 
 ```bash
 go build -ldflags="-s -w" -o cerne.exe ./cmd/cerne # build the binary (UI is embedded via go:embed)
-go vet ./... && go test ./... -count=1 # full suite — currently 235 tests, must stay green
+go vet ./... && go test ./... -count=1 -timeout 30m # full suite — currently 1622 tests, must stay green
 go test ./internal/<pkg>/ -run TestX -v # focused
 cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (embedded). npm ci (not install) = exact lockfile → reproducible dist
 ```
 
+- **`-timeout 30m` on the full suite is required, not decorative (F-0289).** Go's default is 10 min **per package**, and the two heavy packages spawn real git per test (`internal/cli` has 423 test funcs, each building a project through `setupProject`). **The ceiling is crossed by concurrent load, not by the laptop alone** — measured on the same MacBook, same commit:
+
+  | package | machine idle | 2 parallel agents building |
+  |---|---|---|
+  | `internal/cli` | 367 s (6.1 min) | **865 s (14.4 min)** |
+  | `internal/app` | 299 s (5.0 min) | **727 s (12.1 min)** |
+  | whole suite | 384 s | 918 s |
+
+  Idle, both clear the 10 min default. Under the parallel-agent workflow this project actually uses, both blow it, and the gate dies as `panic: test timed out` with a goroutine dump in `os/exec`/`gitback` that reads like a product deadlock — it is not. CI Linux runs the suite in ~4 min, so the flag is inert there and costs nothing to keep identical. Revisit when `internal/cli` passes ~20 min under load; the parked option is parallelizing `t.Setenv` away, weighed and deferred in F-0289.
 - **`ui/dist` is `go:embed`-ed → the committed dist is what ships.** A UI change lands only if `ui/dist` is rebuilt *and* committed (F-0136 — F-0125/F-0126 shipped stale because only `ui/src` was merged). **Canonical build platform = CI Linux (`node:24`).** Do **not** commit a dist built on darwin/Windows — the vite output is not bit-identical across toolchains (hash-churn on locale chunks), so a foreign dist fails the drift gate. Build the baseline in a `node:24` Linux container (`docker run --platform linux/amd64 -v "$PWD":/app -w /app/ui node:24 sh -c "npm ci && npm run build"`) and commit that.
 - CI: `.gitlab-ci.yml` runs `go vet` + `go test` on `golang:1.26`, plus **`ui:dist-drift`** (`node:24`, on `ui/**` changes): rebuilds the UI and fails if the committed `ui/dist` differs from a fresh build — the guard against stale embedded UI.
 - **`-ldflags="-s -w"` on every binary build.** Linking the 48 MB binary (9.6 MB of it the embedded `ui/dist`) dominates the build: stripping the symbol table + DWARF takes the link from **11.1 s → 3.5 s** and the binary from **48 MB → 35 MB**, and `go build ./...` (what the pre-commit hook runs) from **17.4 s → 5.3 s**. Panic tracebacks stay symbolized — Go's runtime reads its own pclntab, not the symtab. The only loss is `delve`: drop the flags for a debugging build.
@@ -77,7 +86,7 @@ Distilled from usage-insights friction (2026-07). Concrete contracts for recurri
 
 - **Observer / memory sessions**: every turn emit **exactly one** correctly-tagged output (`observation` vs `summary`, as asked) — visible, never empty, no meta-commentary about the tag format. Skip a checkpoint when nothing new happened since the last summary (no near-duplicate progress dumps).
 - **Wiki / doc synthesis**: use the `/wiki-synth` skill — gather every cited cerne source, **verify each one's current state** via `cerne brief --json` / `cerne status --active` (never trust stale prose), then write **pt-BR** markdown to the session scratchpad. Split large `cerne ask` queries per-source to dodge the 30s timeout.
-- **Feature delivery gate**: before `cerne feature complete` or opening an MR, `go vet ./... && go test ./... -count=1` must be green; if `ui/**` changed, rebuild + commit `ui/dist` (F-0136). A `git commit` PreToolUse hook (`.claude/hooks/go-precommit-build.sh`) runs `go build ./...` as an early tripwire — `git commit --no-verify` bypasses it.
+- **Feature delivery gate**: before `cerne feature complete` or opening an MR, `go vet ./... && go test ./... -count=1 -timeout 30m` must be green (the flag is mandatory — see *Build / test / run*, F-0289); if `ui/**` changed, rebuild + commit `ui/dist` (F-0136). A `git commit` PreToolUse hook (`.claude/hooks/go-precommit-build.sh`) runs `go build ./...` as an early tripwire — `git commit --no-verify` bypasses it.
 
 ## Roadmap and open work
 
