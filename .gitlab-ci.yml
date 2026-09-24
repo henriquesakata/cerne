@@ -154,7 +154,7 @@ release:
   release:
     tag_name: '$CI_COMMIT_TAG'
     name: 'cerne $CI_COMMIT_TAG'
-    description: 'Binários cross-compilados (win/mac/linux, amd64+arm64) + SHA256SUMS no Package Registry.'
+    description: 'Binários cross-compilados (win/mac/linux, amd64+arm64) + SHA256SUMS no Package Registry. Como instalar: ${CI_PROJECT_URL}/-/blob/${CI_COMMIT_TAG}/INSTALL.md'
     assets:
       links:
         - name: 'cerne_${CI_COMMIT_TAG}_linux_amd64'
