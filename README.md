@@ -16,6 +16,10 @@ A união de três coisas que nenhuma ferramenta existente combina:
 2. **Materialização do vigente** — uma pasta `.docs/` gitignored no repo do usuário contendo *só* o estado atual + um `docs.lock` commitado amarrando código a docs (docs-as-code tem arquivos; não tem estado).
 3. **Camada compilada para agentes** — wiki de síntese + `CONTEXT.md` gerado, no espírito do [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) de Karpathy — mas com lint de obsolescência **determinístico**, porque o ciclo de vida é dado, não texto.
 
+## Instalar
+
+Binário único para macOS, Linux e Windows — veja [INSTALL.md](INSTALL.md).
+
 ## Estado
 
-Em especificação. Documento fundador: [docs/process/cases/0001_founding-spec/spec.md](docs/process/cases/0001_founding-spec/spec.md).
+Em uso diário (este repositório documenta a si mesmo com o cerne). Documento fundador: [docs/process/cases/0001_founding-spec/spec.md](docs/process/cases/0001_founding-spec/spec.md).
