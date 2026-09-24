@@ -62,7 +62,7 @@ Mesmo processo: substitua o executável antigo pelo novo.
 
 - **git** — recomendado. Sem ele o cerne funciona, mas bem mais devagar.
 - **Um repositório git vazio para ser o *backend*** — é onde a documentação mora (JSON + markdown + histórico de eventos). Crie um repo privado vazio no GitHub/GitLab. Autenticação:
-  - **SSH** (`git@github.com:voce/meu-projeto-docs.git`): usa suas chaves SSH. Confirme que `ssh -T git@github.com` funciona.
+  - **SSH** (`git@github.com:voce/meu-projeto-docs.git`): usa suas chaves SSH (`~/.ssh/id_ed25519`, `id_rsa` ou `id_ecdsa`). Confirme que `ssh -T git@github.com` funciona. Chave com senha: carregue antes no agente com `ssh-add`.
   - **HTTPS** (`https://…`): exporte um token em `CERNE_GIT_TOKEN` (e o usuário em `CERNE_GIT_USER`, se o host exigir).
   - **Só testando?** Uma pasta local serve: `git init --bare ~/meu-projeto-docs.git`.
 - **Claude Code** (opcional, recomendado) — o cerne foi feito para trabalhar junto com um agente de IA. O `init` já instala as skills e hooks que ensinam o agente a usar o cerne.
