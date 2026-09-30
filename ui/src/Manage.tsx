@@ -61,7 +61,10 @@ export default function Manage() {
     }
     return fetchState()
       .then((s) => {
-        if (fresh()) setFeatures(s.features)
+        if (!fresh()) return
+        // A newer snapshot supersedes an older failure, as it does older data.
+        setError(null)
+        setFeatures(s.features)
       })
       .catch((e: unknown) => {
         if (fresh()) setError(e instanceof Error ? e.message : String(e))

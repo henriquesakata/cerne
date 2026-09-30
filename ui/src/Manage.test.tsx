@@ -235,7 +235,20 @@ describe('Manage reload ordering (F-0298)', () => {
     const { reloadA, reloadB } = await approveBoth()
     await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
     await act(async () => reloadA.reject(new Error('stale reload failed')))
+    // Both rows free = both reloads settled, the rejection included.
+    await waitFor(() =>
+      screen.getAllByRole('button', { name: 'Iniciar' }).forEach((b) => expect(b).toBeEnabled()),
+    )
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2)
+  })
+
+  it('recovers from an older error when a newer reload succeeds after it', async () => {
+    render(<Manage />)
+    const { reloadA, reloadB } = await approveBoth()
+    await act(async () => reloadA.reject(new Error('transient 502')))
+    expect(await screen.findByText(/Erro ao carregar features/)).toBeInTheDocument()
+    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
+    expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
   })
 })
