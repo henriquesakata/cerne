@@ -2339,6 +2339,26 @@ h2 {
 .manage-close { font-size: 0.82rem; color: var(--faint); text-decoration: none; }
 .manage-close:hover { color: var(--muted); text-decoration: underline; }
 
+/* recusa de ação rápida (F-0296): acima da lista, sem substituí-la; pre-line
+   mantém as quebras da mensagem do gate (as três formas de "Barra:") */
+.manage-action-error {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+.manage-action-error .manage-action-error-msg { margin: 0.35rem 0 0.5rem; white-space: pre-line; }
+.manage-action-error button {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
 /* ---- grafo explicativo (case 0021) ---- */
 /* Full-bleed + altura dinâmica: #root é flex-column (100dvh), o grafo ocupa
    o resto da viewport — sem magic numbers, sobrevive à nav quebrando linha. */

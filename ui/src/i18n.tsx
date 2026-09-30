@@ -408,6 +408,7 @@ const ptBR = {
   },
   manage: {
     loadError: (e: string) => `Erro ao carregar features: ${e}`,
+    actionRefused: (id: string) => `${id}: ação recusada`,
     title: 'Gestão de features',
     newFeature: '+ Nova feature',
     all: 'Todas',
@@ -1130,6 +1131,7 @@ const en: Messages = {
   },
   manage: {
     loadError: (e: string) => `Failed to load features: ${e}`,
+    actionRefused: (id: string) => `${id}: action refused`,
     title: 'Feature management',
     newFeature: '+ New feature',
     all: 'All',
