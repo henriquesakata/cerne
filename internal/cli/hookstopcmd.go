@@ -87,9 +87,6 @@ func runHookStopCheck(cmd *cobra.Command) {
 	if prev, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(prev)) == id {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err == nil {
-		_ = os.WriteFile(marker, []byte(id+"\n"), 0o644)
-	}
 
 	var out stopContext
 	out.HookSpecificOutput.HookEventName = "Stop"
@@ -97,5 +94,10 @@ func runHookStopCheck(cmd *cobra.Command) {
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	if err := enc.Encode(out); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), err)
+		return
+	}
+	// Marked only once delivered: an undelivered reminder must not count.
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err == nil {
+		_ = os.WriteFile(marker, []byte(id+"\n"), 0o644)
 	}
 }

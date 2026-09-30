@@ -118,6 +118,14 @@ func TestHookStopCheckSilentWhenStopHookActive(t *testing.T) {
 	if strings.TrimSpace(out) != "" {
 		t.Fatalf("stop_hook_active: want silence, got:\n%s", out)
 	}
+	// The silenced continuation must not consume the session's one reminder.
+	out, err = execCerneStdin(t, stopPayload(t, "sess-loop", projDir), "hook", "stop-check")
+	if err != nil {
+		t.Fatalf("hook stop-check: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "W-0001") {
+		t.Fatalf("first real stop after stop_hook_active: want W-0001 reminder, got:\n%s", out)
+	}
 }
 
 // TestHookStopCheckRemindsOncePerBinding (F-0294 crit. 2-5): the reminder fires
