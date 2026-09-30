@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Manage from './Manage'
 import type { Feature, TransitionOutcome } from './api'
@@ -144,5 +144,17 @@ describe('Manage per-row busy (F-0297)', () => {
       features: [feature('F-0001', 'Sem barra'), feature('F-0002', 'Com barra')],
     } as Awaited<ReturnType<typeof fetchState>>)
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
+  })
+
+  it('sends one POST for two clicks landing in the same tick', async () => {
+    vi.mocked(postTransition).mockReturnValue(deferred<TransitionOutcome>().promise)
+    render(<Manage />)
+    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    // No render between the two: the state-based disabled flag has not landed.
+    act(() => {
+      a.click()
+      a.click()
+    })
+    expect(postTransition).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchState,
   postTransition,
@@ -41,6 +41,9 @@ export default function Manage() {
   // Rows with an action in flight, one id each (F-0297): a response frees only
   // its own row, never another one still waiting.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
+  // The same set, read synchronously: two clicks in one tick both see the
+  // pre-render state, so the guard cannot rely on `busy`.
+  const inFlight = useRef(new Set<string>())
   const { t } = useT()
 
   const load = () =>
@@ -59,14 +62,17 @@ export default function Manage() {
   const shown = filter === 'all' ? features : features.filter((f) => f.state === filter)
 
   const quick = (f: Feature, action: TransitionAction) => {
-    if (busy.has(f.id)) return
+    if (inFlight.current.has(f.id)) return
+    inFlight.current.add(f.id)
     setBusy((prev) => new Set(prev).add(f.id))
-    const release = () =>
+    const release = () => {
+      inFlight.current.delete(f.id)
       setBusy((prev) => {
         const next = new Set(prev)
         next.delete(f.id)
         return next
       })
+    }
     const refuse = (message: string) => setActionError({ id: f.id, message })
     // postTransition resolves {ok:false} for HTTP refusals but rejects on a
     // network failure: both must free the row and say why.
