@@ -25,8 +25,6 @@ const barRefusal = 'spec sem barra do Gauntlet — nenhuma linha "Barra:" encont
 
 beforeEach(() => {
   cleanup()
-  // Pin the UI language: the default follows the host locale.
-  localStorage.setItem('cerne-lang', 'pt-BR')
   vi.mocked(fetchState).mockReset()
   vi.mocked(postTransition).mockReset()
   vi.mocked(fetchState).mockResolvedValue({
@@ -34,8 +32,10 @@ beforeEach(() => {
   } as Awaited<ReturnType<typeof fetchState>>)
 })
 
-// F-0296: a refused quick action is not a load failure — the list stays, the
-// refusal names the feature and keeps the server's line breaks.
+// F-0296: a refused quick action is not a load failure — the list stays and
+// the refusal names the feature. Rendered without I18nProvider, so the
+// default (pt-BR) dictionary applies. jsdom loads no CSS: the line-break check
+// proves the message reaches the node intact, not how it wraps.
 describe('Manage quick-action refusal (F-0296)', () => {
   it('shows the refusal next to a list that stays on screen', async () => {
     vi.mocked(postTransition).mockResolvedValue({ ok: false, error: barRefusal })
@@ -48,6 +48,7 @@ describe('Manage quick-action refusal (F-0296)', () => {
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
     expect(screen.getByText('Sem barra')).toBeInTheDocument()
     expect(screen.getByText('Com barra')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
   })
 
   it('clears the refusal on dismiss and on the next successful action', async () => {
@@ -55,7 +56,7 @@ describe('Manage quick-action refusal (F-0296)', () => {
     render(<Manage />)
     const approve = await screen.findAllByRole('button', { name: 'Aprovar' })
     fireEvent.click(approve[0])
-    fireEvent.click(await screen.findByRole('button', { name: 'Fechar' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Dispensar aviso' }))
     expect(screen.queryByRole('alert')).toBeNull()
 
     fireEvent.click(approve[0])
@@ -65,7 +66,17 @@ describe('Manage quick-action refusal (F-0296)', () => {
       data: { id: 'F-0002', from: 'candidate', to: 'approved' },
     } as TransitionOutcome)
     fireEvent.click(approve[1])
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    // Settled, not just clicked: the success path reloads the list.
+    await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('reports a network failure and frees the row', async () => {
+    vi.mocked(postTransition).mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<Manage />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Aprovar' }))[0])
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch')
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
   })
 
   it('keeps the load-failure page for a real load error', async () => {

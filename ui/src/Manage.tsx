@@ -59,12 +59,17 @@ export default function Manage() {
 
   const quick = (f: Feature, action: TransitionAction) => {
     setBusy(f.id)
-    setActionError(null)
-    void postTransition(f.id, { action }).then((res) => {
-      setBusy(null)
-      if (res.ok) load()
-      else setActionError({ id: f.id, message: res.error })
-    })
+    const refuse = (message: string) => setActionError({ id: f.id, message })
+    // postTransition resolves {ok:false} for HTTP refusals but rejects on a
+    // network failure: both must free the row and say why.
+    void postTransition(f.id, { action })
+      .then((res) => {
+        if (!res.ok) return refuse(res.error)
+        setActionError(null)
+        load()
+      })
+      .catch((e: unknown) => refuse(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(null))
   }
 
   return (
@@ -96,7 +101,7 @@ export default function Manage() {
         <div className="manage-action-error" role="alert">
           <strong>{t.manage.actionRefused(actionError.id)}</strong>
           <p className="form-error manage-action-error-msg">{actionError.message}</p>
-          <button onClick={() => setActionError(null)}>{t.common.close}</button>
+          <button onClick={() => setActionError(null)}>{t.manage.dismissRefusal}</button>
         </div>
       )}
       <table className="manage-table">
