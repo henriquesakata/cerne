@@ -34,6 +34,9 @@ const QUICK_ADVANCE: Partial<
 export default function Manage() {
   const [features, setFeatures] = useState<Feature[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A refused quick action (gate, FSM) is not a load failure: it is shown
+  // above the list instead of replacing it (F-0296).
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null)
   const [filter, setFilter] = useState<FeatureState | 'all'>('all')
   const [busy, setBusy] = useState<string | null>(null)
   const { t } = useT()
@@ -56,11 +59,17 @@ export default function Manage() {
 
   const quick = (f: Feature, action: TransitionAction) => {
     setBusy(f.id)
-    void postTransition(f.id, { action }).then((res) => {
-      setBusy(null)
-      if (res.ok) load()
-      else setError(res.error)
-    })
+    const refuse = (message: string) => setActionError({ id: f.id, message })
+    // postTransition resolves {ok:false} for HTTP refusals but rejects on a
+    // network failure: both must free the row and say why.
+    void postTransition(f.id, { action })
+      .then((res) => {
+        if (!res.ok) return refuse(res.error)
+        setActionError(null)
+        load()
+      })
+      .catch((e: unknown) => refuse(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(null))
   }
 
   return (
@@ -88,6 +97,13 @@ export default function Manage() {
           </button>
         ))}
       </div>
+      {actionError && (
+        <div className="manage-action-error" role="alert">
+          <strong>{t.manage.actionRefused(actionError.id)}</strong>
+          <p className="form-error manage-action-error-msg">{actionError.message}</p>
+          <button onClick={() => setActionError(null)}>{t.manage.dismissRefusal}</button>
+        </div>
+      )}
       <table className="manage-table">
         <tbody>
           {shown.map((f) => {
