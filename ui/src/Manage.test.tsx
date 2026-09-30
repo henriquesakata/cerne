@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+import { StrictMode } from 'react'
 import Manage from './Manage'
 import type { Feature, TransitionOutcome } from './api'
 import { fetchState, postTransition } from './api'
@@ -89,10 +90,12 @@ describe('Manage quick-action refusal (F-0296)', () => {
 // Hand-resolved promise, to order responses (A before B, POST before reload).
 function deferred<T>() {
   let resolve!: (v: T) => void
-  const promise = new Promise<T>((r) => {
-    resolve = r
+  let reject!: (e: Error) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 const refused: TransitionOutcome = { ok: false, error: 'recusado' }
@@ -156,5 +159,83 @@ describe('Manage per-row busy (F-0297)', () => {
       a.click()
     })
     expect(postTransition).toHaveBeenCalledTimes(1)
+  })
+})
+
+type State = Awaited<ReturnType<typeof fetchState>>
+const snapshot = (a: Feature['state'], b: Feature['state']): State =>
+  ({
+    features: [
+      { ...feature('F-0001', 'Sem barra'), state: a },
+      { ...feature('F-0002', 'Com barra'), state: b },
+    ],
+  }) as State
+const ok: TransitionOutcome = {
+  ok: true,
+  data: { id: 'F-0001', from: 'candidate', to: 'approved' },
+} as TransitionOutcome
+
+// Approve both rows; each success fires its own reload, issued A then B.
+async function approveBoth() {
+  const reloadA = deferred<State>()
+  const reloadB = deferred<State>()
+  vi.mocked(postTransition).mockResolvedValue(ok)
+  vi.mocked(fetchState).mockReturnValueOnce(reloadA.promise).mockReturnValueOnce(reloadB.promise)
+  const [a, b] = await screen.findAllByRole('button', { name: 'Aprovar' })
+  fireEvent.click(a)
+  fireEvent.click(b)
+  await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(3))
+  return { reloadA, reloadB }
+}
+
+// F-0298: a reload older than the last applied one is dropped, data or error;
+// an older one landing first still applies.
+describe('Manage reload ordering (F-0298)', () => {
+  it('drops an older reload that lands after a newer one', async () => {
+    render(<Manage />)
+    const { reloadA, reloadB } = await approveBoth()
+    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
+    await act(async () => reloadA.resolve(snapshot('approved', 'candidate')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull()
+  })
+
+  it('still applies an older reload that lands first', async () => {
+    render(<Manage />)
+    const { reloadA, reloadB } = await approveBoth()
+    await act(async () => reloadA.resolve(snapshot('approved', 'candidate')))
+    expect(await screen.findAllByRole('button', { name: 'Iniciar' })).toHaveLength(1)
+    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
+  })
+
+  it('drops a slow initial load that lands after an action reload', async () => {
+    // StrictMode (as in main.tsx) runs the load effect twice: two initial loads.
+    const slowInitial = deferred<State>()
+    const reload = deferred<State>()
+    vi.mocked(fetchState)
+      .mockResolvedValueOnce(snapshot('candidate', 'candidate'))
+      .mockReturnValueOnce(slowInitial.promise)
+      .mockReturnValueOnce(reload.promise)
+    vi.mocked(postTransition).mockResolvedValue(ok)
+    render(
+      <StrictMode>
+        <Manage />
+      </StrictMode>,
+    )
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Aprovar' }))[0])
+    await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(3))
+    await act(async () => reload.resolve(snapshot('approved', 'candidate')))
+    await act(async () => slowInitial.resolve(snapshot('candidate', 'candidate')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(1))
+  })
+
+  it('ignores an error from a reload older than the one applied', async () => {
+    render(<Manage />)
+    const { reloadA, reloadB } = await approveBoth()
+    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
+    await act(async () => reloadA.reject(new Error('stale reload failed')))
+    expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2)
   })
 })
