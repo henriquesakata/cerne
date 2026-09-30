@@ -30,6 +30,9 @@ type hookInput struct {
 	ToolName     string          `json:"tool_name"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// StopHookActive is set on a Stop payload when the stop is itself the
+	// continuation of a Stop hook (F-0294).
+	StopHookActive bool `json:"stop_hook_active"`
 }
 
 func decodeHookInput(r io.Reader) (hookInput, error) {

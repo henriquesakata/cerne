@@ -2,6 +2,7 @@ package cli
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -95,5 +96,74 @@ func TestHookStopCheckSilence(t *testing.T) {
 		if strings.TrimSpace(out) != "" {
 			t.Fatalf("%s: want silence, got:\n%s", name, out)
 		}
+	}
+}
+
+// TestHookStopCheckSilentWhenStopHookActive (F-0294 crit. 1): a Stop that is
+// itself the continuation of a Stop hook carries stop_hook_active=true — the
+// check must stay silent even with a live binding, or the reminder loops.
+func TestHookStopCheckSilentWhenStopHookActive(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\noutput: %s", err, out)
+	}
+	if err := app.BindSession(filepath.Dir(repoDir), "sess-loop", "W-0001"); err != nil {
+		t.Fatalf("BindSession: %v", err)
+	}
+	stdin := `{"session_id":"sess-loop","cwd":` + strconv.Quote(projDir) + `,"stop_hook_active":true}`
+	out, err := execCerneStdin(t, stdin, "hook", "stop-check")
+	if err != nil {
+		t.Fatalf("hook stop-check: %v\noutput: %s", err, out)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("stop_hook_active: want silence, got:\n%s", out)
+	}
+}
+
+// TestHookStopCheckRemindsOncePerBinding (F-0294 crit. 2-5): the reminder fires
+// once per (session, binding) — repeated Stops stay silent, a new binding or a
+// different session is reminded again.
+func TestHookStopCheckRemindsOncePerBinding(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for _, title := range []string{"Investigar erro X", "Revisar deploy de sexta"} {
+		if out, err := execCerne(t, "work", "start", title, "--dir", projDir); err != nil {
+			t.Fatalf("work start %q: %v\noutput: %s", title, err, out)
+		}
+	}
+	cacheDir := filepath.Dir(repoDir)
+	bind := func(sess, id string) {
+		t.Helper()
+		if err := app.BindSession(cacheDir, sess, id); err != nil {
+			t.Fatalf("BindSession: %v", err)
+		}
+	}
+	stop := func(sess string) string {
+		t.Helper()
+		out, err := execCerneStdin(t, stopPayload(t, sess, projDir), "hook", "stop-check")
+		if err != nil {
+			t.Fatalf("hook stop-check: %v\noutput: %s", err, out)
+		}
+		return strings.TrimSpace(out)
+	}
+
+	bind("sess-a", "W-0001")
+	if out := stop("sess-a"); !strings.Contains(out, "W-0001") {
+		t.Fatalf("first stop: want W-0001 reminder, got:\n%s", out)
+	}
+	if out := stop("sess-a"); out != "" {
+		t.Fatalf("repeat stop: want silence, got:\n%s", out)
+	}
+
+	bind("sess-b", "W-0001")
+	if out := stop("sess-b"); !strings.Contains(out, "W-0001") {
+		t.Fatalf("other session: want W-0001 reminder, got:\n%s", out)
+	}
+
+	bind("sess-a", "W-0002")
+	if out := stop("sess-a"); !strings.Contains(out, "W-0002") {
+		t.Fatalf("rebound session: want W-0002 reminder, got:\n%s", out)
+	}
+	if out := stop("sess-a"); out != "" {
+		t.Fatalf("rebound repeat: want silence, got:\n%s", out)
 	}
 }
