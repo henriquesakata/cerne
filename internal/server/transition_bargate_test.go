@@ -23,7 +23,7 @@ func TestTransitionApproveRequiresBar(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{"barra do Gauntlet", "Barra: não aplicável", "Barra: dispensada por decisão humana"} {
+	for _, want := range []string{"barra do Gauntlet", "Barra: <referência nomeada", "Barra: não aplicável", "Barra: dispensada por decisão humana", "content/features/F-0001/spec.md", "cerne push"} {
 		if !strings.Contains(got["error"], want) {
 			t.Fatalf("error = %q, want it to contain %q", got["error"], want)
 		}
