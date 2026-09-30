@@ -13,9 +13,9 @@ import (
 )
 
 // ErrSpecMissingBar is the sentinel for an approve attempted over a spec that
-// names no Gauntlet bar (F-0545). Like the clarification gate (F-0175), it is
-// enforced at the CLI approve path and is deliberately NOT bypassed by --force:
-// a silent absence of a bar is the exact failure this gate exists to stop.
+// names no Gauntlet bar (F-0545). It is enforced in the shared transition core,
+// so CLI and UI approve alike (F-0295), and is deliberately NOT bypassed by
+// --force: a silent absence of a bar is the exact failure this gate exists to stop.
 var ErrSpecMissingBar = errors.New("spec sem barra do Gauntlet")
 
 // The three literal forms a spec may carry (cerne-authoring skill, F-0270).

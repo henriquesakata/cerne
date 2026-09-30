@@ -156,7 +156,7 @@ func TestPlanRoastNeedsRealPlan(t *testing.T) {
 	}
 
 	// Scaffold-only plan: doccheck says stub, so the target stays closed.
-	writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "## Estratégia\n<!-- guia -->\n\n## Sequência de tarefas\n<!-- guia -->"))
+	writeDoc(t, repoDir, "F-0001", "plan.md", "---\ncerne_id: F-0001\n---\n\n# Título\n\n## Estratégia\n<!-- guia -->\n\n## Sequência de tarefas\n<!-- guia -->\n")
 	rec = doJSON(t, New(repoDir, projDir, "proj-x"), http.MethodPost,
 		"/api/features/F-0001/roast", planRoastBody, &errBody)
 	if rec.Code != http.StatusConflict {

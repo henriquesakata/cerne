@@ -12,7 +12,11 @@ import (
 // development in the same commit. These tests pin every acceptance criterion of
 // the spec, tracked by number.
 
-const realDocBody = "---\ncerne_id: %s\n---\n\n# Doc real\n\nConteúdo real o bastante para o doccheck contar como preenchido.\n"
+const realDocBody = "---\ncerne_id: %s\n---\n\n# Doc real\n\nConteúdo real o bastante para o doccheck contar como preenchido.\n" + testBarTail
+
+// testBarTail satisfies the approve bar gate (F-0295: enforced in the
+// transition core) for fixtures that approve a real spec.
+const testBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
 
 // seedApproved creates a feature under parent (empty for none) and drives it to
 // approved with a real plan, so a start gate would open. It does not start it.

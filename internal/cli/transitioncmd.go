@@ -94,12 +94,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		if err := app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()); err != nil {
 			return err
 		}
-		// Gauntlet bar gate (F-0545 crit. 1): a spec with no named bar (or a
-		// recorded exemption) does not pass approve. Deliberately not behind
-		// --force — a silent absence of a bar is the failure being stopped.
-		if err := app.CheckSpecBar(ctx.repoDir, id); err != nil {
-			return err
-		}
+		// The Gauntlet bar gate is not here: it lives in the shared transition
+		// core so the UI enforces it too (F-0295), and --force never reaches it.
 		// Open [ESCLARECER] markers mean the spec still has questions for the
 		// human — the template's "none remaining before approve" rule as a gate,
 		// not prose (F-0175 crit. 7). Same CLI-side placement as the human gate:

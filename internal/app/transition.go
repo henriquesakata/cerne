@@ -142,6 +142,14 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		if err := domain.CheckGate(id, action, docs); err != nil {
 			return "", fmt.Errorf("%w — write content/features/%s/%s in the backend and run 'cerne push'", err, id, gateDocFilename(err))
 		}
+		// Gauntlet bar gate (F-0295): a property of the spec, not of who
+		// approves, so it lives here where CLI and UI share it — as a CLI-only
+		// check the UI approved specs with no bar.
+		if action == domain.ActionApprove {
+			if err := CheckSpecBar(repoDir, id); err != nil {
+				return "", err
+			}
+		}
 
 		oldState := f.State
 		f.State = newState
