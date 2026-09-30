@@ -459,7 +459,7 @@ func TestSaveFeatureDocEmitsEvent(t *testing.T) {
 	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
-	spec := "---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"
+	spec := "---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n" + testBarTail
 	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", spec); err != nil {
 		t.Fatalf("SaveFeatureDoc: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestUpdateCandidateSpecRefusesApproved(t *testing.T) {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec",
-		"---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"); err != nil {
+		"---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"+testBarTail); err != nil {
 		t.Fatalf("SaveFeatureDoc: %v", err)
 	}
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
@@ -1005,7 +1005,7 @@ func TestUpdateCandidateSpec(t *testing.T) {
 func TestUpdateCandidateSpecRefusals(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
-		"## Problema\n\nAprovada.", false, "", ""); err != nil {
+		"## Problema\n\nAprovada."+testBarTail, false, "", ""); err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {

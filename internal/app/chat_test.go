@@ -565,7 +565,7 @@ func TestBuildRefineBlock(t *testing.T) {
 func TestBuildRefineBlockNotCandidate(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	f, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
-		"## Problema\n\nAprovada.", false, "", "")
+		"## Problema\n\nAprovada."+testBarTail, false, "", "")
 	if err != nil {
 		t.Fatalf("CreateFeatureWithSpec: %v", err)
 	}

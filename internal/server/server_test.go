@@ -89,7 +89,9 @@ func writeDoc(t *testing.T, repoDir, id, filename, content string) {
 }
 
 func realDoc(id, body string) string {
-	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n"
+	// The Verificação/Barra tail satisfies the approve bar gate, which the
+	// transition core enforces for the UI path too (F-0295).
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
 }
 
 // writeContentDoc writes a decision/reference content doc at

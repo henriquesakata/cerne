@@ -156,6 +156,7 @@ func TestApproveScaffoldsPlanStub(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature A", 1)
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
 
 	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
 	if err != nil {
