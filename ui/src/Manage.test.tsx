@@ -85,3 +85,64 @@ describe('Manage quick-action refusal (F-0296)', () => {
     expect(await screen.findByText('Erro ao carregar features: backend offline')).toBeInTheDocument()
   })
 })
+
+// Hand-resolved promise, to order responses (A before B, POST before reload).
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+const refused: TransitionOutcome = { ok: false, error: 'recusado' }
+
+// F-0297: each row is busy only for its own in-flight action, and a
+// successful row stays busy until the list reload lands.
+describe('Manage per-row busy (F-0297)', () => {
+  it('keeps each row disabled while its own action is in flight', async () => {
+    const calls: ReturnType<typeof deferred<TransitionOutcome>>[] = []
+    vi.mocked(postTransition).mockImplementation(() => {
+      const d = deferred<TransitionOutcome>()
+      calls.push(d)
+      return d.promise
+    })
+    render(<Manage />)
+    const [a, b] = await screen.findAllByRole('button', { name: 'Aprovar' })
+
+    fireEvent.click(a)
+    fireEvent.click(b)
+    expect(a).toBeDisabled()
+    expect(b).toBeDisabled()
+
+    // A answers first: A frees, B (still in flight) does not.
+    calls[0].resolve(refused)
+    await waitFor(() => expect(a).toBeEnabled())
+    expect(b).toBeDisabled()
+
+    calls[1].resolve(refused)
+    await waitFor(() => expect(b).toBeEnabled())
+  })
+
+  it('frees a successful row only after the reload, with no second POST meanwhile', async () => {
+    vi.mocked(postTransition).mockResolvedValue({
+      ok: true,
+      data: { id: 'F-0001', from: 'candidate', to: 'approved' },
+    } as TransitionOutcome)
+    render(<Manage />)
+    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+
+    const reload = deferred<Awaited<ReturnType<typeof fetchState>>>()
+    vi.mocked(fetchState).mockReturnValueOnce(reload.promise)
+    fireEvent.click(a)
+    await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(2))
+    expect(a).toBeDisabled()
+    fireEvent.click(a)
+    expect(postTransition).toHaveBeenCalledTimes(1)
+
+    reload.resolve({
+      features: [feature('F-0001', 'Sem barra'), feature('F-0002', 'Com barra')],
+    } as Awaited<ReturnType<typeof fetchState>>)
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
+  })
+})

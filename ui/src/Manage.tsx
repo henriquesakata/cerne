@@ -38,16 +38,17 @@ export default function Manage() {
   // above the list instead of replacing it (F-0296).
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null)
   const [filter, setFilter] = useState<FeatureState | 'all'>('all')
-  const [busy, setBusy] = useState<string | null>(null)
+  // Rows with an action in flight, one id each (F-0297): a response frees only
+  // its own row, never another one still waiting.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
   const { t } = useT()
 
-  const load = () => {
+  const load = () =>
     fetchState()
       .then((s) => setFeatures(s.features))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }
   useEffect(() => {
-    load()
+    void load()
   }, [])
 
   if (error) return <p className="status error">{t.manage.loadError(error)}</p>
@@ -58,7 +59,14 @@ export default function Manage() {
   const shown = filter === 'all' ? features : features.filter((f) => f.state === filter)
 
   const quick = (f: Feature, action: TransitionAction) => {
-    setBusy(f.id)
+    if (busy.has(f.id)) return
+    setBusy((prev) => new Set(prev).add(f.id))
+    const release = () =>
+      setBusy((prev) => {
+        const next = new Set(prev)
+        next.delete(f.id)
+        return next
+      })
     const refuse = (message: string) => setActionError({ id: f.id, message })
     // postTransition resolves {ok:false} for HTTP refusals but rejects on a
     // network failure: both must free the row and say why.
@@ -66,10 +74,12 @@ export default function Manage() {
       .then((res) => {
         if (!res.ok) return refuse(res.error)
         setActionError(null)
-        load()
+        // Freed only once the reload lands: until then the row still shows the
+        // old state, and a second click would repeat the POST.
+        return load()
       })
       .catch((e: unknown) => refuse(e instanceof Error ? e.message : String(e)))
-      .finally(() => setBusy(null))
+      .finally(release)
   }
 
   return (
@@ -124,7 +134,7 @@ export default function Manage() {
                 <td className="manage-actions-cell">
                   <div className="manage-actions">
                     {adv && (
-                      <button disabled={busy === f.id} onClick={() => quick(f, adv.action)}>
+                      <button disabled={busy.has(f.id)} onClick={() => quick(f, adv.action)}>
                         {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete' | 'accept']}
                       </button>
                     )}
