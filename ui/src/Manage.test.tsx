@@ -303,4 +303,40 @@ describe('Manage load-failure recovery (F-0299)', () => {
     expect(await screen.findByText('Sem barra')).toBeInTheDocument()
     expect(fetchState).toHaveBeenCalledTimes(2)
   })
+
+  it('locks the retry while it runs and keeps the page when it fails again', async () => {
+    const second = deferred<State>()
+    vi.mocked(fetchState)
+      .mockRejectedValueOnce(new Error('backend offline'))
+      .mockReturnValueOnce(second.promise)
+    render(<Manage />)
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' })
+    fireEvent.click(retry)
+    expect(retry).toBeDisabled()
+    await act(async () => second.reject(new Error('still offline')))
+    expect(await screen.findByText('Erro ao carregar features: still offline')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+    expect(fetchState).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears the notice over a loaded list when the live version changes', async () => {
+    vi.mocked(postTransition).mockResolvedValue(ok)
+    const { rerender } = render(<Manage />)
+    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
+    fireEvent.click(a)
+    await screen.findByRole('status')
+
+    vi.mocked(fetchState).mockResolvedValueOnce(snapshot('approved', 'candidate'))
+    live.version = 1
+    rerender(<Manage />)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeInTheDocument()
+  })
+
+  it('shows the error page even when the failure carries no message', async () => {
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error(''))
+    render(<Manage />)
+    expect(await screen.findByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
+  })
 })

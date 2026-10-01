@@ -39,6 +39,7 @@ export default function Manage() {
   // above the list instead of replacing it (F-0296).
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null)
   const [filter, setFilter] = useState<FeatureState | 'all'>('all')
+  const [retrying, setRetrying] = useState(false)
   // Rows with an action in flight, one id each (F-0297): a response frees only
   // its own row, never another one still waiting.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
@@ -81,11 +82,19 @@ export default function Manage() {
   // A load failure never strands the screen (F-0299): with no list yet it is the
   // error page, with one it is a notice over the list; both offer a retry.
   const retry = (
-    <button type="button" onClick={() => void load()}>
+    <button
+      type="button"
+      disabled={retrying}
+      onClick={() => {
+        setRetrying(true)
+        void load().finally(() => setRetrying(false))
+      }}
+    >
       {t.manage.retry}
     </button>
   )
-  if (error && !features)
+  // `!== null`: a failure with an empty message is still a failure.
+  if (error !== null && !features)
     return (
       <p className="status error">
         {t.manage.loadError(error)} {retry}
@@ -149,7 +158,7 @@ export default function Manage() {
           </button>
         ))}
       </div>
-      {error && (
+      {error !== null && (
         <div className="manage-load-error" role="status">
           <p className="form-error">{t.manage.reloadError(error)}</p>
           {retry}
