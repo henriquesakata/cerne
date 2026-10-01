@@ -2339,9 +2339,10 @@ h2 {
 .manage-close { font-size: 0.82rem; color: var(--faint); text-decoration: none; }
 .manage-close:hover { color: var(--muted); text-decoration: underline; }
 
-/* recusa de ação rápida (F-0296): acima da lista, sem substituí-la; pre-wrap
-   mantém quebras e recuo da mensagem do gate (as três formas de "Barra:") */
-.manage-action-error {
+/* recusa de ação rápida (F-0296) e falha de recarga (F-0299): acima da lista,
+   sem substituí-la; pre-wrap mantém quebras e recuo da mensagem do gate */
+.manage-action-error,
+.manage-load-error {
   margin: 0 0 0.75rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--danger);
@@ -2349,7 +2350,9 @@ h2 {
   font-size: 0.85rem;
 }
 .manage-action-error .manage-action-error-msg { margin: 0.35rem 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.manage-action-error button {
+.manage-load-error .form-error { margin: 0 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.manage-action-error button,
+.manage-load-error button {
   font: inherit;
   font-size: 0.82rem;
   padding: 0.2rem 0.6rem;

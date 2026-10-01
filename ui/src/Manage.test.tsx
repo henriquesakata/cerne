@@ -16,6 +16,10 @@ const feature = (id: string, title: string): Feature =>
     updated_at: '2026-09-30T00:00:00Z',
   }) as Feature
 
+// Controllable live version (F-0299): the screen re-fetches when it changes.
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
+
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchState: vi.fn(),
@@ -26,6 +30,7 @@ const barRefusal = 'spec sem barra do Gauntlet — nenhuma linha "Barra:" encont
 
 beforeEach(() => {
   cleanup()
+  live.version = 0
   vi.mocked(fetchState).mockReset()
   vi.mocked(postTransition).mockReset()
   vi.mocked(fetchState).mockResolvedValue({
@@ -240,15 +245,62 @@ describe('Manage reload ordering (F-0298)', () => {
       screen.getAllByRole('button', { name: 'Iniciar' }).forEach((b) => expect(b).toBeEnabled()),
     )
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
+    expect(screen.queryByText(/Não foi possível atualizar a lista/)).toBeNull()
   })
 
   it('recovers from an older error when a newer reload succeeds after it', async () => {
     render(<Manage />)
     const { reloadA, reloadB } = await approveBoth()
     await act(async () => reloadA.reject(new Error('transient 502')))
-    expect(await screen.findByText(/Erro ao carregar features/)).toBeInTheDocument()
+    expect(await screen.findByText(/Não foi possível atualizar a lista/)).toBeInTheDocument()
     await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
+    expect(screen.queryByText(/Não foi possível atualizar a lista/)).toBeNull()
+  })
+})
+
+// F-0299: a load failure never strands the screen — with a list it is a notice
+// over the list, without one an error page; both offer a retry, and a live
+// version bump re-fetches like the other list screens.
+describe('Manage load-failure recovery (F-0299)', () => {
+  it('keeps the list and shows a retry notice when a reload fails', async () => {
+    vi.mocked(postTransition).mockResolvedValue(ok)
+    render(<Manage />)
+    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
+    fireEvent.click(a)
+
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível atualizar a lista: HTTP 502')
+    expect(screen.getByText('Sem barra')).toBeInTheDocument()
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
+
+    vi.mocked(fetchState).mockResolvedValueOnce(snapshot('approved', 'candidate'))
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeInTheDocument()
+  })
+
+  it('offers a retry on the error page when the first load fails', async () => {
+    vi.mocked(fetchState)
+      .mockRejectedValueOnce(new Error('backend offline'))
+      .mockResolvedValueOnce(snapshot('candidate', 'candidate'))
+    render(<Manage />)
+    expect(await screen.findByText('Erro ao carregar features: backend offline')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText('Sem barra')).toBeInTheDocument()
+    expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
+  })
+
+  it('re-fetches and leaves the error when the live version changes', async () => {
+    vi.mocked(fetchState)
+      .mockRejectedValueOnce(new Error('backend offline'))
+      .mockResolvedValueOnce(snapshot('candidate', 'candidate'))
+    const { rerender } = render(<Manage />)
+    expect(await screen.findByText(/Erro ao carregar features/)).toBeInTheDocument()
+    live.version = 1
+    rerender(<Manage />)
+    expect(await screen.findByText('Sem barra')).toBeInTheDocument()
+    expect(fetchState).toHaveBeenCalledTimes(2)
   })
 })
