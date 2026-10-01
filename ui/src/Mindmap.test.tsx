@@ -179,7 +179,7 @@ describe('Mindmap — falha de layout (F-0301)', () => {
     elk.fail = 'boom'
     render(<Mindmap />)
     expect(await screen.findByRole('status')).toHaveTextContent(layoutNotice)
-    expect(screen.queryByText(/Erro ao montar o mapa mental/)).toBeNull()
+    expect(screen.queryByText(/Erro ao carregar o mapa mental/)).toBeNull()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('3 features visíveis')
     expect(screen.getByRole('button', { name: 'Recolher tudo' })).toBeEnabled()
     expect(screen.getByText('Projetos no Studio').closest('a')).toHaveAttribute('href', '#/f/F-0001')
@@ -527,8 +527,20 @@ describe('Mindmap — falha de carga (F-0300)', () => {
     seedExpanded()
     vi.mocked(fetchState).mockRejectedValueOnce(new Error('offline'))
     render(<Mindmap />)
-    expect(await screen.findByText('Erro ao montar o mapa mental: offline')).toBeInTheDocument()
+    expect(await screen.findByText('Erro ao carregar o mapa mental: offline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     expect(await screen.findByText('Projetos no Studio')).toBeInTheDocument()
+  })
+
+  // F-0302: a carga que falha é "carregar", não "montar" — quem monta é o layout.
+  it('chama a falha de carga de carga também em inglês', async () => {
+    seedExpanded()
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('offline'))
+    render(
+      <I18nProvider>
+        <Mindmap />
+      </I18nProvider>,
+    )
+    expect(await screen.findByText('Failed to load the mindmap: offline')).toBeInTheDocument()
   })
 })

@@ -128,7 +128,7 @@ describe('Graph — falha de layout (F-0301)', () => {
     elk.fail = 'boom'
     render(<Graph />)
     expect(await screen.findByRole('status')).toHaveTextContent(layoutNotice)
-    expect(screen.queryByText(/Erro ao montar o grafo/)).toBeNull()
+    expect(screen.queryByText(/Erro ao carregar o grafo/)).toBeNull()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2 nós · 1/1 arestas')
     expect(screen.getByRole('button', { name: /informa/ })).toBeEnabled()
     expect(screen.getByText('Grafo de entidades')).toBeInTheDocument()
@@ -259,8 +259,19 @@ describe('Graph — falha de carga (F-0300)', () => {
   it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
     vi.mocked(fetchGraph).mockRejectedValueOnce(new Error('offline'))
     render(<Graph />)
-    expect(await screen.findByText('Erro ao montar o grafo: offline')).toBeInTheDocument()
+    expect(await screen.findByText('Erro ao carregar o grafo: offline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     expect(await screen.findByText('Grafo de entidades')).toBeInTheDocument()
+  })
+
+  // F-0302: a carga que falha é "carregar", não "montar" — quem monta é o layout.
+  it('chama a falha de carga de carga também em inglês', async () => {
+    vi.mocked(fetchGraph).mockRejectedValueOnce(new Error('offline'))
+    render(
+      <I18nProvider>
+        <Graph />
+      </I18nProvider>,
+    )
+    expect(await screen.findByText('Failed to load the graph: offline')).toBeInTheDocument()
   })
 })
