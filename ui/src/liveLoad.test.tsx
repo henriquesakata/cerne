@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
+import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 
 // Controllable live version: the hook re-fetches when it changes.
 const live = vi.hoisted(() => ({ version: 0 }))
@@ -254,5 +254,22 @@ describe('useLiveLoad (F-0300)', () => {
     expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
     await act(async () => pending.resolve('late'))
+  })
+})
+
+// F-0301: the notice without a LiveLoad behind it, for failures that are not
+// a load (a layout that could not be computed).
+describe('Notice (F-0301)', () => {
+  it('shows the message and retries on click', () => {
+    const onRetry = vi.fn()
+    render(<Notice message="layout falhou: boom" onRetry={onRetry} />)
+    expect(screen.getByRole('status')).toHaveTextContent('layout falhou: boom')
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('locks the retry while busy', () => {
+    render(<Notice message="x" onRetry={() => {}} busy />)
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeDisabled()
   })
 })
