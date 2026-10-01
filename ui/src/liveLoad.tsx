@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useT } from './i18n'
 import { useLiveVersion } from './live'
 
@@ -132,10 +132,15 @@ export function Notice({
   busy?: boolean
 }) {
   const { t } = useT()
+  // Two notices may be up at once, their retries named alike: each button is
+  // described by its own message.
+  const id = useId()
   return (
     <div className="load-notice" role="status">
-      <p className="form-error">{message}</p>
-      <button type="button" disabled={busy} onClick={onRetry}>
+      <p id={id} className="form-error">
+        {message}
+      </p>
+      <button type="button" aria-describedby={id} disabled={busy} onClick={onRetry}>
         {t.common.retry}
       </button>
     </div>

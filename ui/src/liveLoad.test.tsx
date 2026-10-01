@@ -268,6 +268,20 @@ describe('Notice (F-0301)', () => {
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
+  // Two notices can be on screen at once, each with a retry of the same name:
+  // the button is described by its own message so they can be told apart.
+  it('describes each retry by the failure it retries', () => {
+    render(
+      <>
+        <Notice message="a carga falhou" onRetry={() => {}} />
+        <Notice message="o layout falhou" onRetry={() => {}} />
+      </>,
+    )
+    const [load, layout] = screen.getAllByRole('button', { name: 'Tentar de novo' })
+    expect(load).toHaveAccessibleDescription('a carga falhou')
+    expect(layout).toHaveAccessibleDescription('o layout falhou')
+  })
+
   it('locks the retry while busy', () => {
     render(<Notice message="x" onRetry={() => {}} busy />)
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeDisabled()
