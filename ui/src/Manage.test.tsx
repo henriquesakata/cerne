@@ -312,10 +312,13 @@ describe('Manage load-failure recovery (F-0299)', () => {
     render(<Manage />)
     const retry = await screen.findByRole('button', { name: 'Tentar de novo' })
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    // Locked by aria-disabled, so it keeps the focus (F-0302).
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).not.toBeDisabled()
     await act(async () => second.reject(new Error('still offline')))
     expect(await screen.findByText('Erro ao carregar features: still offline')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+    expect(retry).not.toHaveAttribute('aria-disabled')
+    expect(retry).toHaveAccessibleName('Tentar de novo')
     expect(fetchState).toHaveBeenCalledTimes(2)
   })
 

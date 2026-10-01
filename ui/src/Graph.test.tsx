@@ -128,7 +128,7 @@ describe('Graph — falha de layout (F-0301)', () => {
     elk.fail = 'boom'
     render(<Graph />)
     expect(await screen.findByRole('status')).toHaveTextContent(layoutNotice)
-    expect(screen.queryByText(/Erro ao montar o grafo/)).toBeNull()
+    expect(screen.queryByText(/Erro ao carregar o grafo/)).toBeNull()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2 nós · 1/1 arestas')
     expect(screen.getByRole('button', { name: /informa/ })).toBeEnabled()
     expect(screen.getByText('Grafo de entidades')).toBeInTheDocument()
@@ -158,21 +158,32 @@ describe('Graph — falha de layout (F-0301)', () => {
     await screen.findByRole('status')
     const retry = screen.getByRole('button', { name: 'Tentar de novo' })
 
-    // Com o layout em voo o aviso continua e a nova tentativa fica travada.
+    // Com o layout em voo o aviso continua e a nova tentativa fica travada —
+    // sem perder o foco (F-0302): aria-disabled, não disabled.
+    retry.focus()
     let release = holdLayout()
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    // O jsdom mantém o foco num botão `disabled`: o que prova que o foco fica
+    // de verdade é a ausência do atributo, não o toHaveFocus sozinho.
+    expect(retry).not.toBeDisabled()
+    expect(retry).toHaveFocus()
+    expect(retry).toHaveAccessibleName('Tentando de novo…')
     expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
     release()
-    await waitFor(() => expect(retry).toBeEnabled())
+    await waitFor(() => expect(retry).not.toHaveAttribute('aria-disabled'))
+    expect(retry).toBeEnabled()
+    expect(retry).toHaveFocus()
     expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
 
     elk.fail = null
     release = holdLayout()
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
     release()
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    // O aviso sumiu com o foco no botão: o foco vai para a tela (F-0302).
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
     expect(pos('F-0001')).toEqual([500, 500])
     expect(pos('D-0001')).toEqual([510, 510])
   })
@@ -253,8 +264,24 @@ describe('Graph — falha de carga (F-0300)', () => {
   it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
     vi.mocked(fetchGraph).mockRejectedValueOnce(new Error('offline'))
     render(<Graph />)
-    expect(await screen.findByText('Erro ao montar o grafo: offline')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText('Erro ao carregar o grafo: offline')).toBeInTheDocument()
+    const retry = screen.getByRole('button', { name: 'Tentar de novo' })
+    retry.focus()
+    fireEvent.click(retry)
     expect(await screen.findByText('Grafo de entidades')).toBeInTheDocument()
+    // A página deu lugar à tela com o foco no botão: o foco vai para o <main>
+    // da tela de verdade, não só do componente de teste (F-0302).
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
+  })
+
+  // F-0302: a carga que falha é "carregar", não "montar" — quem monta é o layout.
+  it('chama a falha de carga de carga também em inglês', async () => {
+    vi.mocked(fetchGraph).mockRejectedValueOnce(new Error('offline'))
+    render(
+      <I18nProvider>
+        <Graph />
+      </I18nProvider>,
+    )
+    expect(await screen.findByText('Failed to load the graph: offline')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useT } from './i18n'
 import { useLiveVersion } from './live'
 
@@ -91,18 +91,10 @@ export function useLiveLoad<T>(
   }
 }
 
-function Retry<T>({ load }: { load: LiveLoad<T> }) {
-  const { t } = useT()
-  return (
-    <button type="button" disabled={load.retrying} onClick={load.retry}>
-      {t.common.retry}
-    </button>
-  )
-}
-
 // LoadPending is the whole-screen state while there is no content: the
 // failure with a retry, or "loading". `message` formats the screen's own
-// load-error text.
+// load-error text. The failure is the same Notice the content gets (F-0302),
+// so the page says as much to a screen reader, and keeps the focus the same way.
 export function LoadPending<T>({
   load,
   message,
@@ -113,15 +105,17 @@ export function LoadPending<T>({
   const { t } = useT()
   if (load.error === null) return <p className="status">{t.common.loading}</p>
   return (
-    <p className="status error">
-      {message(load.error)} <Retry load={load} />
-    </p>
+    <div className="status">
+      <Notice message={message(load.error)} onRetry={load.retry} busy={load.retrying} />
+    </div>
   )
 }
 
 // Notice sits over content that stays on screen after something failed: the
 // message and a retry, locked while `busy`. Not tied to a load (F-0301) — a
-// layout that could not be computed uses it too.
+// layout that could not be computed uses it too. The lock is aria-disabled,
+// not disabled (F-0302): a disabled button leaves the focus order, and the
+// keyboard user who just pressed it is thrown back to the top of the document.
 export function Notice({
   message,
   onRetry,
@@ -135,13 +129,47 @@ export function Notice({
   // Two notices may be up at once, their retries named alike: each button is
   // described by its own message.
   const id = useId()
+  // The notice goes away when the retry works. If its button had the focus
+  // (kept through the attempt by aria-disabled), the focus would fall to the
+  // document: hand it to the screen's <main> instead — the one around the
+  // notice, or the one that just replaced the failure page. Read in a layout
+  // cleanup, while the button is still in the document; focused after the
+  // commit, when the new <main> exists — and only if the focus did fall:
+  // content that focused something of its own keeps it. The <main> is
+  // focusable for this hand-off alone, not left behind as a click target.
+  const retry = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    const button = retry.current
+    return () => {
+      if (button === null || document.activeElement !== button) return
+      const around = button.closest('main')
+      queueMicrotask(() => {
+        const now = document.activeElement
+        if (now !== null && now !== document.body) return
+        const main = around?.isConnected ? around : document.querySelector('main')
+        if (main === null) return
+        main.tabIndex = -1
+        main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true })
+        main.focus({ preventScroll: true })
+      })
+    }
+  }, [])
   return (
     <div className="load-notice" role="status">
       <p id={id} className="form-error">
         {message}
       </p>
-      <button type="button" aria-describedby={id} disabled={busy} onClick={onRetry}>
-        {t.common.retry}
+      <button
+        ref={retry}
+        type="button"
+        aria-describedby={id}
+        aria-disabled={busy || undefined}
+        onClick={busy ? undefined : onRetry}
+      >
+        {/* The label changes inside the status region, so the wait is said,
+            not only dimmed — and so is its end, when the label comes back
+            over a failure that reads exactly like the previous one. */}
+        {busy ? t.common.retrying : t.common.retry}
       </button>
     </div>
   )

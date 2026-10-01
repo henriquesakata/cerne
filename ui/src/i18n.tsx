@@ -162,6 +162,7 @@ const ptBR = {
     cancel: 'Cancelar',
     close: 'Fechar',
     retry: 'Tentar de novo',
+    retrying: 'Tentando de novo…',
     reloadError: (e: string) => `Não foi possível atualizar: ${e}`,
     clear: 'Limpar',
     filters: 'Filtros',
@@ -574,7 +575,7 @@ const ptBR = {
   },
   graph: {
     loadingChunk: 'Carregando grafo…',
-    loadError: (e: string) => `Erro ao montar o grafo: ${e}`,
+    loadError: (e: string) => `Erro ao carregar o grafo: ${e}`,
     layoutError: (e: string) => `Não foi possível calcular o layout do grafo: ${e}`,
     title: 'Grafo',
     stats: (nodes: number, shown: number, total: number) =>
@@ -618,7 +619,7 @@ const ptBR = {
   },
   mindmap: {
     loadingChunk: 'Carregando mapa mental…',
-    loadError: (e: string) => `Erro ao montar o mapa mental: ${e}`,
+    loadError: (e: string) => `Erro ao carregar o mapa mental: ${e}`,
     layoutError: (e: string) => `Não foi possível calcular o layout do mapa mental: ${e}`,
     title: 'Mapa mental',
     stats: (n: number) => `${n} features visíveis`,
@@ -899,6 +900,7 @@ const en: Messages = {
     cancel: 'Cancel',
     close: 'Close',
     retry: 'Try again',
+    retrying: 'Trying again…',
     reloadError: (e: string) => `Could not refresh: ${e}`,
     clear: 'Clear',
     filters: 'Filters',
@@ -1303,7 +1305,7 @@ const en: Messages = {
   },
   graph: {
     loadingChunk: 'Loading graph…',
-    loadError: (e: string) => `Failed to build the graph: ${e}`,
+    loadError: (e: string) => `Failed to load the graph: ${e}`,
     layoutError: (e: string) => `Could not compute the graph layout: ${e}`,
     title: 'Graph',
     stats: (nodes: number, shown: number, total: number) =>
@@ -1347,7 +1349,7 @@ const en: Messages = {
   },
   mindmap: {
     loadingChunk: 'Loading mindmap…',
-    loadError: (e: string) => `Failed to build the mindmap: ${e}`,
+    loadError: (e: string) => `Failed to load the mindmap: ${e}`,
     layoutError: (e: string) => `Could not compute the mindmap layout: ${e}`,
     title: 'Mindmap',
     stats: (n: number) => `${n} features visible`,

@@ -33,11 +33,11 @@ function Probe({
   capture?.(load.reload)
   if (load.data === null) return <LoadPending load={load} message={(e) => `falhou: ${e}`} />
   return (
-    <div>
+    <main>
       <LoadNotice load={load} />
       <p data-testid="data">{load.data}</p>
       <button onClick={() => void load.reload()}>reload</button>
-    </div>
+    </main>
   )
 }
 
@@ -121,10 +121,26 @@ describe('useLiveLoad (F-0300)', () => {
     render(<Probe fetcher={fetcher} />)
     expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
     const retry = screen.getByRole('button', { name: 'Tentar de novo' })
+    retry.focus()
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    // jsdom keeps the focus on a button that becomes `disabled`: what proves
+    // the focus really stays is the attribute's absence, not toHaveFocus alone.
+    expect(retry).not.toBeDisabled()
+    expect(retry).toHaveFocus()
     await act(async () => second.resolve('v1'))
     expect(screen.getByTestId('data')).toHaveTextContent('v1')
+    // The page gave way to the content: the focus goes to its <main> (F-0302).
+    expect(screen.getByRole('main')).toHaveFocus()
+  })
+
+  // F-0302: the failure page says as much as the notice does.
+  it('renders the failure page as a status and describes its retry by the message', async () => {
+    render(<Probe fetcher={() => Promise.reject(new Error('offline'))} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('falhou: offline')
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toHaveAccessibleDescription(
+      'falhou: offline',
+    )
   })
 
   it('retries from the notice and clears it on success', async () => {
@@ -248,12 +264,105 @@ describe('useLiveLoad (F-0300)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
     const retry = (await screen.findByRole('status')).querySelector('button')!
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
     // Another subject fails while A's retry is still in flight: its own retry is free.
     rerender(<Probe fetcher={fetcher} dep="b" />)
     expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
     await act(async () => pending.resolve('late'))
+  })
+
+  // F-0302: the keyboard user who pressed "try again" stays on the button.
+  it('keeps the focus on the notice retry while it runs and when it fails again', async () => {
+    const third = deferred<string>()
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('v1')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockReturnValueOnce(third.promise)
+    render(<Probe fetcher={fetcher} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
+    const retry = (await screen.findByRole('status')).querySelector('button')!
+    retry.focus()
+    fireEvent.click(retry)
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).not.toHaveAttribute('disabled')
+    expect(retry).toHaveFocus()
+    // Locked: activating it again does not start another attempt.
+    fireEvent.click(retry)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    await act(async () => third.reject(new Error('HTTP 503')))
+    expect(screen.getByRole('status')).toHaveTextContent('HTTP 503')
+    expect(retry).toHaveFocus()
+    expect(retry).not.toHaveAttribute('aria-disabled')
+  })
+
+  // The retry worked and its notice is gone: the focus goes to the screen,
+  // not to the top of the document.
+  it('hands the focus to the screen when the retried notice goes away', async () => {
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('v1')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockResolvedValueOnce('v2')
+    render(<Probe fetcher={fetcher} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
+    const retry = (await screen.findByRole('status')).querySelector('button')!
+    retry.focus()
+    fireEvent.click(retry)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    const main = screen.getByRole('main')
+    await waitFor(() => expect(main).toHaveFocus())
+    expect(main).toHaveAttribute('tabindex', '-1')
+    // Focusable only for this hand-off: once the focus moves on, it is not
+    // left behind as a click target.
+    screen.getByRole('button', { name: 'reload' }).focus()
+    expect(main).not.toHaveAttribute('tabindex')
+  })
+
+  it('does not take the focus from what the new content focused itself', async () => {
+    const second = deferred<string>()
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockReturnValueOnce(second.promise)
+    function Screen() {
+      const load = useLiveLoad(fetcher)
+      if (load.data === null) return <LoadPending load={load} message={(e) => `falhou: ${e}`} />
+      return (
+        <main>
+          <input aria-label="campo" autoFocus />
+        </main>
+      )
+    }
+    render(<Screen />)
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' })
+    retry.focus()
+    fireEvent.click(retry)
+    await act(async () => second.resolve('v1'))
+    expect(screen.getByRole('textbox', { name: 'campo' })).toHaveFocus()
+    expect(screen.getByRole('main')).not.toHaveAttribute('tabindex')
+  })
+
+  it('leaves the focus alone when the notice goes away without it', async () => {
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('v1')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockResolvedValueOnce('v2')
+    render(<Probe fetcher={fetcher} />)
+    const reload = await screen.findByRole('button', { name: 'reload' })
+    fireEvent.click(reload)
+    await screen.findByRole('status')
+    // The user is on another control when a reload clears the notice.
+    reload.focus()
+    fireEvent.click(reload)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    await act(async () => {})
+    expect(reload).toHaveFocus()
+    expect(screen.getByRole('main')).not.toHaveAttribute('tabindex')
   })
 })
 
@@ -282,8 +391,28 @@ describe('Notice (F-0301)', () => {
     expect(layout).toHaveAccessibleDescription('o layout falhou')
   })
 
-  it('locks the retry while busy', () => {
-    render(<Notice message="x" onRetry={() => {}} busy />)
-    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeDisabled()
+  // Locked, not disabled (F-0302): a disabled button leaves the focus order
+  // and throws the keyboard user back to the top of the document.
+  it('locks the retry while busy without taking it out of the focus order', () => {
+    const onRetry = vi.fn()
+    render(<Notice message="x" onRetry={onRetry} busy />)
+    const retry = screen.getByRole('button')
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).not.toBeDisabled()
+    retry.focus()
+    expect(retry).toHaveFocus()
+    fireEvent.click(retry)
+    expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  // The wait is said, not only shown: the label changes inside the status
+  // region, so a screen reader hears the attempt start and, when the label
+  // comes back, end — even when it fails again with the very same message.
+  it('says the retry is running while busy, inside the status region', () => {
+    const { rerender } = render(<Notice message="x" onRetry={() => {}} busy />)
+    const retry = screen.getByRole('button', { name: 'Tentando de novo…' })
+    expect(screen.getByRole('status')).toContainElement(retry)
+    rerender(<Notice message="x" onRetry={() => {}} />)
+    expect(retry).toHaveAccessibleName('Tentar de novo')
   })
 })
