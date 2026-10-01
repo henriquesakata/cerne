@@ -135,6 +135,30 @@ export function mirrorX(x: number, rootX: number): number {
   return 2 * rootX - x
 }
 
+// fallbackPositions is the layout-free arrangement for when ELK fails
+// (F-0301): the root at the origin, one column (colW) per depth and one row
+// (rowH) per node in DFS order, each side of splitSides growing away from the
+// root. Not a pretty tree — a valid one: no two nodes share a position.
+export function fallbackPositions(
+  root: MindNode,
+  colW: number,
+  rowH: number,
+): Map<string, { x: number; y: number }> {
+  const pos = new Map([[root.id, { x: 0, y: 0 }]])
+  const place = (branches: MindNode[], dir: 1 | -1) => {
+    let row = 0
+    const walk = (n: MindNode, depth: number) => {
+      pos.set(n.id, { x: dir * depth * colW, y: row++ * rowH })
+      n.children.forEach((c) => walk(c, depth + 1))
+    }
+    branches.forEach((b) => walk(b, 1))
+  }
+  const { right, left } = splitSides(root)
+  place(right, 1)
+  place(left, -1)
+  return pos
+}
+
 // branchIds coleta todo nó que tem filhos (raiz fora), em ordem determinística
 // (F-0190) — o conjunto "tudo recolhido" que inicializa a aba e alimenta o
 // botão Recolher tudo. Calcule sobre a árvore SEM poda (collapsed vazio).

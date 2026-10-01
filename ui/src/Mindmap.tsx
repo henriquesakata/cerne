@@ -17,12 +17,13 @@ import {
   branchIds,
   buildCapabilityTree,
   buildMindmapTree,
+  fallbackPositions,
   mirrorX,
   splitSides,
   type MindNode,
 } from './mindmap-tree'
 import { useProjects } from './live'
-import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
+import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
 
@@ -40,6 +41,9 @@ const NODE_H = 56
 // (~28px) é curto demais para curvas bezier legíveis — as linhas colidem na
 // saída dos nós. 1.5 leva o gap a ~140px sem tocar o espaçamento vertical.
 const H_STRETCH = 1.5
+// mrtree spacing between nodes; the reserve arrangement reuses the pitch the
+// real layout ends up with (stretched horizontally, plain vertically).
+const NODE_GAP = 28
 
 // Cores por estado — os mesmos tokens dos chips do kanban (app.css).
 const STATE_COLOR: Record<FeatureState, string> = {
@@ -96,8 +100,10 @@ export default function Mindmap() {
   const load = useLiveLoad(fetchState)
   const data = load.data
   // An ELK layout failure is not a load failure: it keeps its own state and
-  // the whole-page error it always had. A fresh load clears it (see the effect).
+  // its own notice over a screen that stays usable (F-0301). Only a layout
+  // that succeeds clears it; bumping layoutAttempt runs the layout again.
   const [layoutError, setLayoutError] = useState<string | null>(null)
+  const [layoutAttempt, setLayoutAttempt] = useState(0)
   const [deliveredOnly, setDeliveredOnly] = useState(false)
   const [showTerminal, setShowTerminal] = useState(false)
   // null = ainda não inicializado — o default (tudo aberto vs módulos
@@ -179,7 +185,6 @@ export default function Mindmap() {
   // da raiz. Poda pequena = layout barato, mesmo num backend grande.
   useEffect(() => {
     if (!tree) return
-    setLayoutError(null)
     let cancelled = false
     const flat = flatten(tree.root)
     const { right, left } = splitSides(tree.root)
@@ -259,6 +264,27 @@ export default function Mindmap() {
           },
         } satisfies Node
       })
+    // The edges depend on the tree alone, not on the layout: both the laid-out
+    // and the reserve arrangement draw the same ones.
+    const mkEdges = (): Edge[] =>
+      flat
+        .filter((f) => f.parent != null)
+        .map((f, i) => {
+          const leftSide = sideOf.get(f.node.id) === 'left'
+          return {
+            id: `e${i}`,
+            source: f.parent!,
+            target: f.node.id,
+            sourceHandle: leftSide ? 'sl' : 'sr',
+            targetHandle: leftSide ? 'tr' : 'tl',
+            // Curva orgânica (bezier), como mindmaps reais — degraus
+            // ortogonais viram trilha de circuito numa árvore densa (F-0189).
+            type: 'default',
+            style: { stroke: 'var(--faint)', strokeWidth: 1.5, opacity: 0.8 },
+          } satisfies Edge
+        })
+    const refit = () =>
+      requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08 }))
 
     // layoutSide roda o ELK mrtree RIGHT numa cópia da raiz contendo só os
     // ramos daquele lado; devolve o mapa id → posição daquele passe.
@@ -270,7 +296,7 @@ export default function Mindmap() {
           layoutOptions: {
             'elk.algorithm': 'mrtree',
             'elk.direction': 'RIGHT',
-            'elk.spacing.nodeNode': '28',
+            'elk.spacing.nodeNode': String(NODE_GAP),
           },
           children: flatS.map(({ node: n }) => ({ id: n.id, width: NODE_W, height: NODE_H })),
           edges: flatS
@@ -304,37 +330,37 @@ export default function Mindmap() {
           pos.set(id, { x: anchor.x + (p.x - anchor.x) * H_STRETCH, y: p.y }),
         )
         setBaseNodes(mkNodes(pos))
-        setEdges(
-          flat
-            .filter((f) => f.parent != null)
-            .map((f, i) => {
-              const leftSide = sideOf.get(f.node.id) === 'left'
-              return {
-                id: `e${i}`,
-                source: f.parent!,
-                target: f.node.id,
-                sourceHandle: leftSide ? 'sl' : 'sr',
-                targetHandle: leftSide ? 'tr' : 'tl',
-                // Curva orgânica (bezier), como mindmaps reais — degraus
-                // ortogonais viram trilha de circuito numa árvore densa (F-0189).
-                type: 'default',
-                style: { stroke: 'var(--faint)', strokeWidth: 1.5, opacity: 0.8 },
-              } satisfies Edge
-            }),
-        )
+        setEdges(mkEdges())
+        setLayoutError(null)
         setLaying(false)
-        requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08 }))
+        refit()
       })
       .catch((e: unknown) => {
         if (cancelled) return
         setLayoutError(e instanceof Error ? e.message : String(e))
+        // No layout: the nodes stay where they were when the tree is the same
+        // one (a retry, a refresh that changed nothing). A different tree gets
+        // the whole reserve arrangement — mixing its positions with the ones
+        // ELK had computed would stack nodes on top of each other. Either way
+        // the map stays navigable even when retrying fails again.
+        setBaseNodes((prev) => {
+          const had = new Map(prev.map((n) => [n.id, n.position]))
+          const same = prev.length === flat.length && flat.every((f) => had.has(f.node.id))
+          return mkNodes(
+            same
+              ? had
+              : fallbackPositions(tree.root, (NODE_W + NODE_GAP) * H_STRETCH, NODE_H + NODE_GAP),
+          )
+        })
+        setEdges(mkEdges())
         setLaying(false)
+        refit()
       })
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree, t])
+  }, [tree, t, layoutAttempt])
 
   const featureByID = useMemo(() => {
     const m = new Map<string, Feature>()
@@ -343,7 +369,6 @@ export default function Mindmap() {
   }, [data])
   const selectedNode = selected ? (nodeIndex.current.get(selected) ?? null) : null
 
-  if (layoutError) return <p className="status error">{t.mindmap.loadError(layoutError)}</p>
   // While loading the screen keeps its own shell ("carregando" in the heading);
   // LoadPending is only the first-load failure page.
   if (!data && load.error !== null) return <LoadPending load={load} message={t.mindmap.loadError} />
@@ -351,6 +376,13 @@ export default function Mindmap() {
   return (
     <main className="page mindmap-page">
       <LoadNotice load={load} />
+      {layoutError !== null && (
+        <Notice
+          message={t.mindmap.layoutError(layoutError)}
+          onRetry={() => setLayoutAttempt((n) => n + 1)}
+          busy={laying}
+        />
+      )}
       <h1>
         {t.mindmap.title}{' '}
         <span className="graph-count">

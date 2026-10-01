@@ -26,6 +26,7 @@ vi.mock('@xyflow/react', () => ({
           key={n.id}
           data-node-id={n.id}
           data-x={n.position.x}
+          data-y={n.position.y}
           data-side={n.data.side}
           onClick={(e) => onNodeClick?.(e, n)}
         >
@@ -41,9 +42,13 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }))
 
+// ELK controlável (F-0301): `fail` faz o layout rejeitar com essa mensagem.
+const elk = vi.hoisted(() => ({ fail: null as string | null, calls: 0 }))
 vi.mock('elkjs/lib/elk.bundled.js', () => ({
   default: class ELKStub {
     layout(g: { children?: Array<{ id: string }> }) {
+      elk.calls++
+      if (elk.fail !== null) return Promise.reject(new Error(elk.fail))
       return Promise.resolve({
         children: (g.children ?? []).map((c, i) => ({ ...c, x: i * 10, y: i * 10 })),
       })
@@ -119,8 +124,100 @@ function seedExpanded() {
 beforeEach(() => {
   mockState = state
   live.version = 0
+  elk.fail = null
+  elk.calls = 0
   localStorage.clear()
   cleanup()
+})
+
+// F-0301: o ELK rejeitar não troca a página — a tela fica, com os nós numa
+// árvore de reserva, um aviso e a nova tentativa.
+describe('Mindmap — falha de layout (F-0301)', () => {
+  const layoutNotice = 'Não foi possível calcular o layout do mapa mental: boom'
+  const at = (id: string) => {
+    const el = document.querySelector(`[data-node-id="${CSS.escape(id)}"]`) as HTMLElement
+    return [Number(el.dataset.x), Number(el.dataset.y)]
+  }
+
+  it('mantém a tela, avisa que foi o layout e põe os nós na árvore de reserva', async () => {
+    seedExpanded()
+    elk.fail = 'boom'
+    render(<Mindmap />)
+    expect(await screen.findByRole('status')).toHaveTextContent(layoutNotice)
+    expect(screen.queryByText(/Erro ao montar o mapa mental/)).toBeNull()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('3 features visíveis')
+    expect(screen.getByRole('button', { name: 'Recolher tudo' })).toBeEnabled()
+    expect(screen.getByText('Projetos no Studio').closest('a')).toHaveAttribute('href', '#/f/F-0001')
+    // Coluna por profundidade (336 = passo horizontal do layout real), linha
+    // por nó (84); studio à direita, o balde sem módulo espelhado à esquerda.
+    expect(at('root')).toEqual([0, 0])
+    expect(at('module:studio')).toEqual([336, 0])
+    expect(at('F-0001')).toEqual([672, 84])
+    expect(at('F-0002')).toEqual([1008, 168])
+    expect(at('module:')).toEqual([-336, 0])
+    expect(at('F-0003')).toEqual([-672, 84])
+  })
+
+  it('tenta de novo: falha mantém o aviso, sucesso aplica o layout e o limpa', async () => {
+    seedExpanded()
+    elk.fail = 'boom'
+    render(<Mindmap />)
+    await screen.findByRole('status')
+    const retry = screen.getByRole('button', { name: 'Tentar de novo' })
+    const before = elk.calls
+
+    fireEvent.click(retry)
+    await waitFor(() => expect(elk.calls).toBeGreaterThan(before))
+    await waitFor(() => expect(retry).toBeEnabled())
+    expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
+
+    elk.fail = null
+    fireEvent.click(retry)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    // Posições do stub do ELK (i*10 por lado, esticadas 1.5× em x).
+    expect(at('module:studio')).toEqual([15, 10])
+    expect(at('module:')).toEqual([-15, 10])
+  })
+
+  it('mesma árvore mantém as posições; árvore diferente refaz a reserva inteira', async () => {
+    seedExpanded()
+    const { rerender } = render(<Mindmap />)
+    await waitFor(() => expect(at('F-0002')).toEqual([45, 30]))
+
+    elk.fail = 'boom'
+    mockState = { ...state }
+    live.version = 1
+    rerender(<Mindmap />)
+    expect(await screen.findByRole('status')).toHaveTextContent(layoutNotice)
+    expect(at('module:studio')).toEqual([15, 10])
+    expect(at('F-0002')).toEqual([45, 30])
+
+    // Os controles continuam vivos: recolher muda a árvore, e sem layout ela
+    // cai inteira na reserva (misturar com as posições do ELK sobreporia nós).
+    fireEvent.click(screen.getByLabelText('recolher F-0001'))
+    await waitFor(() => expect(screen.queryByText('Issues do projeto')).toBeNull())
+    // Pesos agora empatam (2 e 2): o desempate por id leva studio à esquerda.
+    expect(at('module:')).toEqual([336, 0])
+    expect(at('module:studio')).toEqual([-336, 0])
+    expect(at('F-0001')).toEqual([-672, 84])
+    expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
+  })
+
+  it('não esconde o aviso de falha de carga: os dois aparecem juntos', async () => {
+    seedExpanded()
+    elk.fail = 'boom'
+    const { rerender } = render(<Mindmap />)
+    await screen.findByRole('status')
+
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
+    live.version = 1
+    rerender(<Mindmap />)
+    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(2))
+    const [loadNotice, layout] = screen.getAllByRole('status')
+    expect(loadNotice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    expect(layout).toHaveTextContent(layoutNotice)
+    expect(screen.getByText('Projetos no Studio')).toBeInTheDocument()
+  })
 })
 
 describe('Mindmap por capacidade (F-0188)', () => {

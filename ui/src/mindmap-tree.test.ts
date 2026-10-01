@@ -3,6 +3,7 @@ import {
   branchIds,
   buildCapabilityTree,
   buildMindmapTree,
+  fallbackPositions,
   mirrorX,
   splitSides,
   type MindNode,
@@ -346,6 +347,35 @@ describe('buildMindmapTree', () => {
     const rightGap = rightChild - (rootX + W)
     const leftGap = rootX - (leftChild + W)
     expect(leftGap).toBe(rightGap)
+  })
+
+  // F-0301 crit. 3: the layout-free arrangement used when ELK fails — one
+  // column per depth, one row per node (DFS), each side growing away from the
+  // root, so no two nodes share a position.
+  it('arranges a fallback tree by depth on both sides of the root', () => {
+    const { root } = buildMindmapTree(
+      mkState(
+        [
+          mkFeature('F-0001', { module: 'alpha' }),
+          mkFeature('F-0002', { module: 'alpha', parent: 'F-0001' }),
+          mkFeature('F-0004', { module: 'alpha' }),
+          mkFeature('F-0003'),
+        ],
+        ['alpha'],
+      ),
+      DEFAULTS,
+    )
+    const pos = fallbackPositions(root, 100, 10)
+    expect(Object.fromEntries(pos)).toEqual({
+      root: { x: 0, y: 0 },
+      // alpha (weight 4) → right; the module-less bucket (weight 2) → left
+      'module:alpha': { x: 100, y: 0 },
+      'F-0001': { x: 200, y: 10 },
+      'F-0002': { x: 300, y: 20 },
+      'F-0004': { x: 200, y: 30 },
+      'module:': { x: -100, y: 0 },
+      'F-0003': { x: -200, y: 10 },
+    })
   })
 
   // Critério 6: determinismo — mesma entrada (em qualquer ordem), mesma árvore.
