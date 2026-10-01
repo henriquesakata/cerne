@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useT } from './i18n'
 import { useLiveVersion } from './live'
 
@@ -137,12 +137,33 @@ export function Notice({
   // Two notices may be up at once, their retries named alike: each button is
   // described by its own message.
   const id = useId()
+  // The notice goes away when the retry works. If its button had the focus
+  // (kept through the attempt by aria-disabled), the focus would fall to the
+  // document: hand it to the screen's <main> instead — the one around the
+  // notice, or the one that just replaced the failure page. Read in a layout
+  // cleanup, while the button is still in the document; focused after the
+  // commit, when the new <main> exists.
+  const retry = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    const button = retry.current
+    return () => {
+      if (button === null || document.activeElement !== button) return
+      const around = button.closest('main')
+      queueMicrotask(() => {
+        const main = around?.isConnected ? around : document.querySelector('main')
+        if (main === null) return
+        main.tabIndex = -1
+        main.focus()
+      })
+    }
+  }, [])
   return (
     <div className="load-notice" role="status">
       <p id={id} className="form-error">
         {message}
       </p>
       <button
+        ref={retry}
         type="button"
         aria-describedby={id}
         aria-disabled={busy || undefined}

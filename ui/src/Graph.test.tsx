@@ -177,6 +177,8 @@ describe('Graph — falha de layout (F-0301)', () => {
     expect(retry).toHaveAttribute('aria-disabled', 'true')
     release()
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    // O aviso sumiu com o foco no botão: o foco vai para a tela (F-0302).
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
     expect(pos('F-0001')).toEqual([500, 500])
     expect(pos('D-0001')).toEqual([510, 510])
   })

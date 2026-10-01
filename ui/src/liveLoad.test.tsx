@@ -33,11 +33,11 @@ function Probe({
   capture?.(load.reload)
   if (load.data === null) return <LoadPending load={load} message={(e) => `falhou: ${e}`} />
   return (
-    <div>
+    <main>
       <LoadNotice load={load} />
       <p data-testid="data">{load.data}</p>
       <button onClick={() => void load.reload()}>reload</button>
-    </div>
+    </main>
   )
 }
 
@@ -279,6 +279,44 @@ describe('useLiveLoad (F-0300)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('HTTP 503')
     expect(retry).toHaveFocus()
     expect(retry).not.toHaveAttribute('aria-disabled')
+  })
+
+  // The retry worked and its notice is gone: the focus goes to the screen,
+  // not to the top of the document.
+  it('hands the focus to the screen when the retried notice goes away', async () => {
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('v1')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockResolvedValueOnce('v2')
+    render(<Probe fetcher={fetcher} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
+    const retry = (await screen.findByRole('status')).querySelector('button')!
+    retry.focus()
+    fireEvent.click(retry)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    const main = screen.getByRole('main')
+    await waitFor(() => expect(main).toHaveFocus())
+    expect(main).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('leaves the focus alone when the notice goes away without it', async () => {
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('v1')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockResolvedValueOnce('v2')
+    render(<Probe fetcher={fetcher} />)
+    const reload = await screen.findByRole('button', { name: 'reload' })
+    fireEvent.click(reload)
+    await screen.findByRole('status')
+    // The user is on another control when a reload clears the notice.
+    reload.focus()
+    fireEvent.click(reload)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    await act(async () => {})
+    expect(reload).toHaveFocus()
+    expect(screen.getByRole('main')).not.toHaveAttribute('tabindex')
   })
 })
 

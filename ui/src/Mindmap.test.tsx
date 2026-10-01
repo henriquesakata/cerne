@@ -219,6 +219,8 @@ describe('Mindmap — falha de layout (F-0301)', () => {
     expect(retry).toHaveAttribute('aria-disabled', 'true')
     release()
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    // O aviso sumiu com o foco no botão: o foco vai para a tela (F-0302).
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
     // Posições do stub do ELK (i*10 por lado, esticadas 1.5× em x).
     expect(at('module:studio')).toEqual([15, 10])
     expect(at('module:')).toEqual([-15, 10])
