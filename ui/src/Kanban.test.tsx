@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Kanban from './Kanban'
 import type { Feature, StateResponse } from './api'
+import { fetchState } from './api'
 
 const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
   id,
@@ -40,12 +41,17 @@ vi.mock('./api', async (importOriginal) => ({
   fetchLint: vi.fn(async () => []),
 }))
 
+// Versão ao vivo controlável (F-0300): a tela re-busca quando ela muda.
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
+
 // cardOf localiza o card da feature pelo id exibido no topo dele.
 const cardOf = (id: string) => screen.getAllByText(id)[0].closest('a')
 
 beforeEach(() => {
   cleanup()
   payload = state()
+  live.version = 0
 })
 
 describe('Kanban — badge de esclarecimento pendente (F-0195)', () => {
@@ -210,5 +216,33 @@ describe('Kanban — chip de prioridade, handle do owner e ordenação (F-0204)'
     const column = cardOf('F-0002')?.closest('.column')
     const ids = Array.from(column?.querySelectorAll('.card-id') ?? []).map((el) => el.textContent)
     expect(ids).toEqual(['F-0002', 'F-0001', 'F-0003'])
+  })
+})
+
+// F-0300: uma atualização que falha não apaga o quadro — vira aviso com
+// "Tentar de novo"; sem quadro ainda, a página de erro oferece o mesmo botão.
+describe('Kanban — falha de carga (F-0300)', () => {
+  it('mantém o quadro e mostra o aviso quando a re-busca ao vivo falha', async () => {
+    const { rerender } = render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
+    live.version = 1
+    rerender(<Kanban />)
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    expect(cardOf('F-0001')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(cardOf('F-0001')).toBeInTheDocument()
+  })
+
+  it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('offline'))
+    render(<Kanban />)
+    expect(await screen.findByText('Erro ao carregar o estado: offline')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
   })
 })

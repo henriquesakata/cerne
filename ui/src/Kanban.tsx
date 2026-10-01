@@ -10,11 +10,11 @@ import {
   fetchState,
   type Feature,
   type FeatureState,
-  type StateResponse,
 } from './api'
 import Tag, { tagCounts } from './Tag'
 import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 // Rule name from the lint API contract (internal/lint: epic-behind-children):
@@ -112,8 +112,8 @@ function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
 }
 
 export default function Kanban() {
-  const [state, setState] = useState<StateResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(fetchState)
+  const state = load.data
   const [showClosed, setShowClosed] = useState(false)
   const [groupByEpic, setGroupByEpic] = useState(false)
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
@@ -126,14 +126,6 @@ export default function Kanban() {
   const { t } = useT()
 
   useEffect(() => {
-    fetchState()
-      .then((s) => {
-        setState(s)
-        setError(null)
-      })
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : String(e)),
-      )
     fetchLint()
       .then((findings) =>
         setBehind(
@@ -160,8 +152,7 @@ export default function Kanban() {
     [state],
   )
 
-  if (error) return <p className="status error">{t.kanban.loadError(error)}</p>
-  if (!state) return <p className="status">{t.common.loading}</p>
+  if (!state) return <LoadPending load={load} message={t.kanban.loadError} />
 
   // Map each epic (parent ID) to its children; a feature referenced as a parent
   // is an epic (the role is inferred from the link).
@@ -206,6 +197,7 @@ export default function Kanban() {
 
   return (
     <main className="kanban">
+      <LoadNotice load={load} />
       <header className="kanban-header">
         <h1>{state.project.name}</h1>
         <p className="counts">
