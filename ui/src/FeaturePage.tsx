@@ -26,7 +26,7 @@ import {
   type TransitionAction,
   type TransitionResult,
 } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT, type Lang } from './i18n'
 
 // Carregados sob demanda: os bundles do Excalidraw e do mermaid só chegam ao
@@ -216,8 +216,10 @@ export function DeliveryLinks({ feature }: { feature: Feature }) {
 }
 
 export default function FeaturePage({ id }: { id: string }) {
-  const [detail, setDetail] = useState<FeatureDetail | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // Carga compartilhada (F-0300): falha com a página já na tela vira aviso, não
+  // troca a página; o sujeito é o id, então outra feature nunca aparece sob este.
+  const live = useLiveLoad(() => fetchFeature(id), [id])
+  const detail = live.data
   const [tab, setTab] = useState<DocTab>('spec')
   const [notice, setNotice] = useState<string | null>(null)
   const [diagram, setDiagram] = useState<OpenDiagram | null>(null)
@@ -226,19 +228,12 @@ export default function FeaturePage({ id }: { id: string }) {
   const [convertError, setConvertError] = useState<string | null>(null)
   // Modo de IA do projeto (case 0019): habilita/desabilita "Gerar com IA".
   const [llmMode, setLlmMode] = useState<LLMMode | null>(null)
-  const version = useLiveVersion()
   const { t } = useT()
 
-  const load = useCallback(() => {
-    fetchFeature(id)
-      .then((d) => {
-        setDetail(d)
-        setError(null)
-      })
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : String(e)),
-      )
-  }, [id])
+  // Re-busca depois de uma edição (título, doc, transição, épico, diagrama).
+  const load = () => {
+    void live.reload()
+  }
 
   // editAsExcalidraw converte um diagrama Mermaid (já aberto no MermaidView) e
   // abre o editor com a cena resultante, salvando como <base>.excalidraw.
@@ -266,10 +261,6 @@ export default function FeaturePage({ id }: { id: string }) {
     [t],
   )
 
-  useEffect(() => {
-    load()
-  }, [load, version])
-
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {
     fetchLLMMode()
@@ -277,13 +268,13 @@ export default function FeaturePage({ id }: { id: string }) {
       .catch(() => setLlmMode(null))
   }, [])
 
-  if (error) return <p className="status error">{t.feature.loadError(error)}</p>
-  if (!detail) return <p className="status">{t.common.loading}</p>
+  if (!detail) return <LoadPending load={live} message={t.feature.loadError} />
 
   const f = detail.feature
 
   return (
     <main className="feature">
+      <LoadNotice load={live} />
       {f.state === 'candidate' ? (
         <a className="back" href="#/backlog">{t.feature.backToBacklog}</a>
       ) : (
