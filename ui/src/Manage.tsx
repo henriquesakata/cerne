@@ -7,6 +7,7 @@ import {
   type TransitionAction,
 } from './api'
 import { useT } from './i18n'
+import { useLiveVersion } from './live'
 
 const STATE_ORDER: FeatureState[] = [
   'candidate',
@@ -38,6 +39,7 @@ export default function Manage() {
   // above the list instead of replacing it (F-0296).
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null)
   const [filter, setFilter] = useState<FeatureState | 'all'>('all')
+  const [retrying, setRetrying] = useState(false)
   // Rows with an action in flight, one id each (F-0297): a response frees only
   // its own row, never another one still waiting.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
@@ -45,6 +47,7 @@ export default function Manage() {
   // pre-render state, so the guard cannot rely on `busy`.
   const inFlight = useRef(new Set<string>())
   const { t } = useT()
+  const version = useLiveVersion()
 
   // Reloads overlap (one per successful action, F-0297) and may land out of
   // order (F-0298): a response older than the last applied one is dropped, data
@@ -70,11 +73,33 @@ export default function Manage() {
         if (fresh()) setError(e instanceof Error ? e.message : String(e))
       })
   }
+  // Re-fetch when the backend advances, like the other list screens (F-0299):
+  // besides following other sessions, it is the screen's way out of an error.
   useEffect(() => {
     void load()
-  }, [])
+  }, [version])
 
-  if (error) return <p className="status error">{t.manage.loadError(error)}</p>
+  // A load failure never strands the screen (F-0299): with no list yet it is the
+  // error page, with one it is a notice over the list; both offer a retry.
+  const retry = (
+    <button
+      type="button"
+      disabled={retrying}
+      onClick={() => {
+        setRetrying(true)
+        void load().finally(() => setRetrying(false))
+      }}
+    >
+      {t.manage.retry}
+    </button>
+  )
+  // `!== null`: a failure with an empty message is still a failure.
+  if (error !== null && !features)
+    return (
+      <p className="status error">
+        {t.manage.loadError(error)} {retry}
+      </p>
+    )
   if (!features) return <p className="status">{t.common.loading}</p>
 
   const counts = new Map<FeatureState, number>()
@@ -133,6 +158,12 @@ export default function Manage() {
           </button>
         ))}
       </div>
+      {error !== null && (
+        <div className="manage-load-error" role="status">
+          <p className="form-error">{t.manage.reloadError(error)}</p>
+          {retry}
+        </div>
+      )}
       {actionError && (
         <div className="manage-action-error" role="alert">
           <strong>{t.manage.actionRefused(actionError.id)}</strong>
