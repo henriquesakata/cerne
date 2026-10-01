@@ -134,7 +134,9 @@ export function Notice({
   // document: hand it to the screen's <main> instead — the one around the
   // notice, or the one that just replaced the failure page. Read in a layout
   // cleanup, while the button is still in the document; focused after the
-  // commit, when the new <main> exists.
+  // commit, when the new <main> exists — and only if the focus did fall:
+  // content that focused something of its own keeps it. The <main> is
+  // focusable for this hand-off alone, not left behind as a click target.
   const retry = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => {
     const button = retry.current
@@ -142,10 +144,13 @@ export function Notice({
       if (button === null || document.activeElement !== button) return
       const around = button.closest('main')
       queueMicrotask(() => {
+        const now = document.activeElement
+        if (now !== null && now !== document.body) return
         const main = around?.isConnected ? around : document.querySelector('main')
         if (main === null) return
         main.tabIndex = -1
-        main.focus()
+        main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true })
+        main.focus({ preventScroll: true })
       })
     }
   }, [])

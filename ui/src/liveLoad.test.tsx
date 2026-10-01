@@ -313,6 +313,34 @@ describe('useLiveLoad (F-0300)', () => {
     const main = screen.getByRole('main')
     await waitFor(() => expect(main).toHaveFocus())
     expect(main).toHaveAttribute('tabindex', '-1')
+    // Focusable only for this hand-off: once the focus moves on, it is not
+    // left behind as a click target.
+    screen.getByRole('button', { name: 'reload' }).focus()
+    expect(main).not.toHaveAttribute('tabindex')
+  })
+
+  it('does not take the focus from what the new content focused itself', async () => {
+    const second = deferred<string>()
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockReturnValueOnce(second.promise)
+    function Screen() {
+      const load = useLiveLoad(fetcher)
+      if (load.data === null) return <LoadPending load={load} message={(e) => `falhou: ${e}`} />
+      return (
+        <main>
+          <input aria-label="campo" autoFocus />
+        </main>
+      )
+    }
+    render(<Screen />)
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' })
+    retry.focus()
+    fireEvent.click(retry)
+    await act(async () => second.resolve('v1'))
+    expect(screen.getByRole('textbox', { name: 'campo' })).toHaveFocus()
+    expect(screen.getByRole('main')).not.toHaveAttribute('tabindex')
   })
 
   it('leaves the focus alone when the notice goes away without it', async () => {

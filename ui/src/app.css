@@ -2364,8 +2364,9 @@ h2 {
 /* travado durante a tentativa (F-0302): aria-disabled mantém o foco no botão */
 .load-notice button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
 /* o <main> recebe o foco quando o aviso some depois da tentativa (F-0302):
-   foco programático num contêiner fora da ordem de tab, sem contorno */
-main:focus { outline: none; }
+   foco programático num contêiner fora da ordem de tab, sem contorno — só
+   enquanto dura essa entrega (o tabindex sai no blur) */
+main[tabindex="-1"]:focus { outline: none; }
 
 /* ---- grafo explicativo (case 0021) ---- */
 /* Full-bleed + altura dinâmica: #root é flex-column (100dvh), o grafo ocupa
