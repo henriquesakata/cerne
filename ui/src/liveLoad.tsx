@@ -91,18 +91,10 @@ export function useLiveLoad<T>(
   }
 }
 
-function Retry<T>({ load }: { load: LiveLoad<T> }) {
-  const { t } = useT()
-  return (
-    <button type="button" disabled={load.retrying} onClick={load.retry}>
-      {t.common.retry}
-    </button>
-  )
-}
-
 // LoadPending is the whole-screen state while there is no content: the
 // failure with a retry, or "loading". `message` formats the screen's own
-// load-error text.
+// load-error text. The failure is the same Notice the content gets (F-0302),
+// so the page says as much to a screen reader, and keeps the focus the same way.
 export function LoadPending<T>({
   load,
   message,
@@ -113,9 +105,9 @@ export function LoadPending<T>({
   const { t } = useT()
   if (load.error === null) return <p className="status">{t.common.loading}</p>
   return (
-    <p className="status error">
-      {message(load.error)} <Retry load={load} />
-    </p>
+    <div className="status">
+      <Notice message={message(load.error)} onRetry={load.retry} busy={load.retrying} />
+    </div>
   )
 }
 

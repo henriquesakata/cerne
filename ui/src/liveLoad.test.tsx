@@ -121,10 +121,23 @@ describe('useLiveLoad (F-0300)', () => {
     render(<Probe fetcher={fetcher} />)
     expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
     const retry = screen.getByRole('button', { name: 'Tentar de novo' })
+    retry.focus()
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).toHaveFocus()
     await act(async () => second.resolve('v1'))
     expect(screen.getByTestId('data')).toHaveTextContent('v1')
+    // The page gave way to the content: the focus goes to its <main> (F-0302).
+    expect(screen.getByRole('main')).toHaveFocus()
+  })
+
+  // F-0302: the failure page says as much as the notice does.
+  it('renders the failure page as a status and describes its retry by the message', async () => {
+    render(<Probe fetcher={() => Promise.reject(new Error('offline'))} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('falhou: offline')
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toHaveAccessibleDescription(
+      'falhou: offline',
+    )
   })
 
   it('retries from the notice and clears it on success', async () => {
@@ -252,7 +265,9 @@ describe('useLiveLoad (F-0300)', () => {
     // Another subject fails while A's retry is still in flight: its own retry is free.
     rerender(<Probe fetcher={fetcher} dep="b" />)
     expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
     await act(async () => pending.resolve('late'))
   })
 
