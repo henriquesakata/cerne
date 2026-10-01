@@ -28,11 +28,18 @@ const sameKey = (a: Key, b: Key) => a.length === b.length && a.every((v, i) => O
 // issued wins", which would freeze the screen while the latest is in flight
 // (F-0298). A value or failure belongs to the deps it was fetched for, so a
 // subject change (e.g. another id) hides the previous subject at once.
-export function useLiveLoad<T>(fetcher: () => Promise<T>, deps: Key = []): LiveLoad<T> {
+// `live: false` opts out of the live re-fetch for content the backend advance
+// does not change right away (the wiki, compiled afterwards).
+export function useLiveLoad<T>(
+  fetcher: () => Promise<T>,
+  deps: Key = [],
+  { live = true }: { live?: boolean } = {},
+): LiveLoad<T> {
   const [loaded, setLoaded] = useState<{ key: Key; data: T } | null>(null)
   const [failed, setFailed] = useState<{ key: Key; message: string } | null>(null)
   const [retrying, setRetrying] = useState(false)
-  const version = useLiveVersion()
+  const liveVersion = useLiveVersion()
+  const version = live ? liveVersion : 0
   const issued = useRef(0)
   const applied = useRef(0)
 

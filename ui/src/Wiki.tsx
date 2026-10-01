@@ -1,27 +1,23 @@
-import { useEffect, useState } from 'react'
 import Markdown from './Markdown'
-import { fetchWikiIndex, fetchWikiPage, type WikiPageRef, type WikiPage } from './api'
+import { fetchWikiIndex, fetchWikiPage } from './api'
 import { useT } from './i18n'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 export default function Wiki() {
-  const [pages, setPages] = useState<WikiPageRef[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // live: false — a wiki não re-buscava a cada avanço do backend e segue assim
+  // (F-0300, critério 6): o que ela ganha é o "Tentar de novo".
+  const load = useLiveLoad(fetchWikiIndex, [], { live: false })
+  const pages = load.data
   const { t } = useT()
 
-  useEffect(() => {
-    fetchWikiIndex()
-      .then(setPages)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [])
-
-  if (error) return <p className="status error">{t.wiki.loadError(error)}</p>
-  if (!pages) return <p className="status">{t.common.loading}</p>
+  if (!pages) return <LoadPending load={load} message={t.wiki.loadError} />
 
   const top = pages.filter((p) => !p.rel.startsWith('modules/'))
   const modules = pages.filter((p) => p.rel.startsWith('modules/'))
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.wiki.title}</h1>
       <p className="muted">
         {t.wiki.intro1}<code>cerne compile</code>{t.wiki.intro2}
@@ -68,21 +64,15 @@ export default function Wiki() {
 }
 
 export function WikiPageView({ rel }: { rel: string }) {
-  const [page, setPage] = useState<WikiPage | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(() => fetchWikiPage(rel), [rel], { live: false })
+  const page = load.data
   const { t } = useT()
 
-  useEffect(() => {
-    fetchWikiPage(rel)
-      .then(setPage)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [rel])
-
-  if (error) return <p className="status error">{t.wiki.loadPageError(error)}</p>
-  if (!page) return <p className="status">{t.common.loading}</p>
+  if (!page) return <LoadPending load={load} message={t.wiki.loadPageError} />
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <a className="back" href="#/wiki">{t.wiki.back}</a>
       <article className="doc">
         <Markdown>{page.body}</Markdown>

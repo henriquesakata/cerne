@@ -174,4 +174,17 @@ describe('useLiveLoad (F-0300)', () => {
     render(<Probe fetcher={() => Promise.reject(new Error(''))} />)
     expect(await screen.findByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
   })
+
+  it('does not re-fetch on a live bump when live is off', async () => {
+    const fetcher = vi.fn<() => Promise<string>>().mockResolvedValue('v1')
+    function Static() {
+      const load = useLiveLoad(fetcher, [], { live: false })
+      return <p data-testid="data">{load.data}</p>
+    }
+    const { rerender } = render(<Static />)
+    await waitFor(() => expect(screen.getByTestId('data')).toHaveTextContent('v1'))
+    live.version = 1
+    rerender(<Static />)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
 })
