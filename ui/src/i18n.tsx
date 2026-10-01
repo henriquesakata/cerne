@@ -575,6 +575,7 @@ const ptBR = {
   graph: {
     loadingChunk: 'Carregando grafo…',
     loadError: (e: string) => `Erro ao montar o grafo: ${e}`,
+    layoutError: (e: string) => `Não foi possível calcular o layout do grafo: ${e}`,
     title: 'Grafo',
     stats: (nodes: number, shown: number, total: number) =>
       `${nodes} nós · ${shown}/${total} arestas`,
@@ -1302,6 +1303,7 @@ const en: Messages = {
   graph: {
     loadingChunk: 'Loading graph…',
     loadError: (e: string) => `Failed to build the graph: ${e}`,
+    layoutError: (e: string) => `Could not compute the graph layout: ${e}`,
     title: 'Graph',
     stats: (nodes: number, shown: number, total: number) =>
       `${nodes} nodes · ${shown}/${total} edges`,

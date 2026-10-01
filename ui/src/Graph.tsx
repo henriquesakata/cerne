@@ -12,7 +12,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { fetchGraph, type GraphKind, type GraphEdgeType } from './api'
-import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
+import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
 
@@ -48,6 +48,18 @@ const EDGE_DASH: Record<GraphEdgeType, string | undefined> = {
   links: '2 4',
 }
 const TERMINAL = new Set(['superseded', 'rejected', 'obsolete'])
+const ROW_H = NODE_H + 28
+
+type Pos = { x: number; y: number }
+
+// gridPos is the layout-free arrangement: ids in a roughly square grid whose
+// first row sits at y0.
+function gridPos(ids: string[], y0 = 0): Map<string, Pos> {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(ids.length)))
+  return new Map(
+    ids.map((id, i) => [id, { x: (i % cols) * (NODE_W + 36), y: y0 + Math.floor(i / cols) * ROW_H }]),
+  )
+}
 
 // nodeHref maps a node to its read page; "" for historical (no own page).
 function nodeHref(kind: GraphKind, id: string): string {
@@ -74,8 +86,10 @@ export default function Graph() {
   const load = useLiveLoad(fetchGraph)
   const data = load.data
   // An ELK layout failure is not a load failure: it keeps its own state and
-  // the whole-page error it always had. A fresh load clears it (see the effect).
+  // its own notice over a screen that stays usable (F-0301). Only a layout
+  // that succeeds clears it; bumping layoutAttempt runs the layout again.
   const [layoutError, setLayoutError] = useState<string | null>(null)
+  const [layoutAttempt, setLayoutAttempt] = useState(0)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [laying, setLaying] = useState(false)
@@ -114,9 +128,8 @@ export default function Graph() {
   // arestas visíveis (evita pilha de nós e o custo do ELK num grafo grande).
   useEffect(() => {
     if (!data) return
-    setLayoutError(null)
     let cancelled = false
-    const mkNodes = (pos: Map<string, { x: number; y: number }>): Node[] =>
+    const mkNodes = (pos: Map<string, Pos>): Node[] =>
       data.nodes.map((n) => {
         const color = KIND_COLOR[n.kind]
         return {
@@ -153,14 +166,10 @@ export default function Graph() {
       requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08 }))
 
     if (visibleEdges.length === 0) {
-      const cols = Math.max(1, Math.ceil(Math.sqrt(data.nodes.length)))
-      const pos = new Map(
-        data.nodes.map((n, i) => [
-          n.id,
-          { x: (i % cols) * (NODE_W + 36), y: Math.floor(i / cols) * (NODE_H + 28) },
-        ]),
-      )
-      setBaseNodes(mkNodes(pos))
+      setBaseNodes(mkNodes(gridPos(data.nodes.map((n) => n.id))))
+      setLayoutError(null)
+      // A layout cancelled in flight never got to release this.
+      setLaying(false)
       refit()
       return
     }
@@ -192,18 +201,30 @@ export default function Graph() {
           (laid.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]),
         )
         setBaseNodes(mkNodes(pos))
+        setLayoutError(null)
         setLaying(false)
         refit()
       })
       .catch((e: unknown) => {
         if (cancelled) return
         setLayoutError(e instanceof Error ? e.message : String(e))
+        // No layout: every node stays where it was, and the ones never laid
+        // out (all of them, on a first layout) go in a grid below the rest —
+        // the screen stays navigable even when retrying fails again.
+        setBaseNodes((prev) => {
+          const pos = new Map(prev.map((n) => [n.id, n.position]))
+          const fresh = data.nodes.filter((n) => !pos.has(n.id)).map((n) => n.id)
+          const below = prev.reduce((y, n) => Math.max(y, n.position.y + ROW_H), 0)
+          gridPos(fresh, below).forEach((p, id) => pos.set(id, p))
+          return mkNodes(pos)
+        })
         setLaying(false)
+        refit()
       })
     return () => {
       cancelled = true
     }
-  }, [data, visibleEdges])
+  }, [data, visibleEdges, layoutAttempt])
 
   // Neighbours of the selected node, from ALL edges (so a node's connections
   // stay highlighted even when their edge type is hidden on the canvas).
@@ -289,7 +310,6 @@ export default function Graph() {
       }))
   }, [data, selected])
 
-  if (layoutError) return <p className="status error">{t.graph.loadError(layoutError)}</p>
   if (!data) return <LoadPending load={load} message={t.graph.loadError} />
 
   const toggleType = (et: GraphEdgeType) =>
@@ -303,6 +323,13 @@ export default function Graph() {
   return (
     <main className="page graph-page">
       <LoadNotice load={load} />
+      {layoutError !== null && (
+        <Notice
+          message={t.graph.layoutError(layoutError)}
+          onRetry={() => setLayoutAttempt((n) => n + 1)}
+          busy={laying}
+        />
+      )}
       <h1>
         {t.graph.title}{' '}
         <span className="graph-count">
