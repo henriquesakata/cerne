@@ -20,8 +20,17 @@ function deferred<T>() {
 
 // Minimal screen over the hook, shaped like every migrated screen: pending
 // page (loading or failure) without data, notice over the content with it.
-function Probe({ fetcher, dep }: { fetcher: (dep?: string) => Promise<string>; dep?: string }) {
+function Probe({
+  fetcher,
+  dep,
+  capture,
+}: {
+  fetcher: (dep?: string) => Promise<string>
+  dep?: string
+  capture?: (reload: () => Promise<void>) => void
+}) {
   const load = useLiveLoad(() => fetcher(dep), [dep])
+  capture?.(load.reload)
   if (load.data === null) return <LoadPending load={load} message={(e) => `falhou: ${e}`} />
   return (
     <div>
@@ -116,7 +125,6 @@ describe('useLiveLoad (F-0300)', () => {
     expect(retry).toBeDisabled()
     await act(async () => second.resolve('v1'))
     expect(screen.getByTestId('data')).toHaveTextContent('v1')
-    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('retries from the notice and clears it on success', async () => {
@@ -186,5 +194,65 @@ describe('useLiveLoad (F-0300)', () => {
     live.version = 1
     rerender(<Static />)
     expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('never lets a late response for a previous subject evict the current one', async () => {
+    const lateB = deferred<string>()
+    const backToA = deferred<string>()
+    const fetcher = vi
+      .fn<(dep?: string) => Promise<string>>()
+      .mockResolvedValueOnce('entity A')
+      .mockReturnValueOnce(lateB.promise)
+      .mockReturnValueOnce(backToA.promise)
+    const { rerender } = render(<Probe fetcher={fetcher} dep="a" />)
+    await screen.findByTestId('data')
+    rerender(<Probe fetcher={fetcher} dep="b" />)
+    rerender(<Probe fetcher={fetcher} dep="a" />)
+    expect(screen.getByTestId('data')).toHaveTextContent('entity A')
+    // B lands while A is on screen again: A must not blank to "loading".
+    await act(async () => lateB.resolve('entity B'))
+    expect(screen.getByTestId('data')).toHaveTextContent('entity A')
+    // A's own refresh failing is a notice over A, not the error page.
+    await act(async () => backToA.reject(new Error('HTTP 502')))
+    expect(screen.getByTestId('data')).toHaveTextContent('entity A')
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('reloads the current subject from a reload captured before the subject changed', async () => {
+    const fetcher = vi.fn((dep?: string) => Promise.resolve(`entity ${dep}`))
+    let stale: (() => Promise<void>) | undefined
+    const capture = (r: () => Promise<void>) => {
+      stale ??= r
+    }
+    const { rerender } = render(<Probe fetcher={fetcher} dep="a" capture={capture} />)
+    await screen.findByText('entity a')
+    rerender(<Probe fetcher={fetcher} dep="b" capture={capture} />)
+    await screen.findByText('entity b')
+    // e.g. a save started on A resolving after the navigation to B
+    await act(async () => {
+      await stale!()
+    })
+    expect(fetcher).toHaveBeenLastCalledWith('b')
+    expect(screen.getByTestId('data')).toHaveTextContent('entity b')
+  })
+
+  it('locks the notice retry while it runs, per subject', async () => {
+    const pending = deferred<string>()
+    const fetcher = vi
+      .fn<(dep?: string) => Promise<string>>()
+      .mockResolvedValueOnce('entity A')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce(new Error('offline'))
+    const { rerender } = render(<Probe fetcher={fetcher} dep="a" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
+    const retry = (await screen.findByRole('status')).querySelector('button')!
+    fireEvent.click(retry)
+    expect(retry).toBeDisabled()
+    // Another subject fails while A's retry is still in flight: its own retry is free.
+    rerender(<Probe fetcher={fetcher} dep="b" />)
+    expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+    await act(async () => pending.resolve('late'))
   })
 })

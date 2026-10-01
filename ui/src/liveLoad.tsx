@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from './i18n'
 import { useLiveVersion } from './live'
 
@@ -37,17 +37,24 @@ export function useLiveLoad<T>(
 ): LiveLoad<T> {
   const [loaded, setLoaded] = useState<{ key: Key; data: T } | null>(null)
   const [failed, setFailed] = useState<{ key: Key; message: string } | null>(null)
-  const [retrying, setRetrying] = useState(false)
+  const [retryingFor, setRetryingFor] = useState<Key | null>(null)
   const liveVersion = useLiveVersion()
   const version = live ? liveVersion : 0
   const issued = useRef(0)
   const applied = useRef(0)
+  // The fetcher and subject of the latest render, read when a load is issued
+  // and again when its response lands. A reload captured by an older render
+  // (a save resolving after the user moved to another id) therefore reloads
+  // the CURRENT subject, and a response for a subject no longer on screen is
+  // dropped instead of evicting the one that is.
+  const latest = useRef({ fetcher, deps })
+  latest.current = { fetcher, deps }
 
-  const reload = () => {
+  const reload = useCallback(() => {
     const seq = ++issued.current
-    const key = deps
+    const { fetcher, deps: key } = latest.current
     const fresh = () => {
-      if (seq < applied.current) return false
+      if (!sameKey(key, latest.current.deps) || seq < applied.current) return false
       applied.current = seq
       return true
     }
@@ -61,7 +68,13 @@ export function useLiveLoad<T>(
       .catch((e: unknown) => {
         if (fresh()) setFailed({ key, message: e instanceof Error ? e.message : String(e) })
       })
-  }
+  }, [])
+
+  const retry = useCallback(() => {
+    const key = latest.current.deps
+    setRetryingFor(key)
+    void reload().finally(() => setRetryingFor((k) => (k === key ? null : k)))
+  }, [reload])
 
   useEffect(() => {
     void reload()
@@ -72,11 +85,9 @@ export function useLiveLoad<T>(
     data: loaded && sameKey(loaded.key, deps) ? loaded.data : null,
     error: failed && sameKey(failed.key, deps) ? failed.message : null,
     reload,
-    retry: () => {
-      setRetrying(true)
-      void reload().finally(() => setRetrying(false))
-    },
-    retrying,
+    retry,
+    // The lock belongs to the subject that was retried, not to whatever is shown.
+    retrying: retryingFor !== null && sameKey(retryingFor, deps),
   }
 }
 
