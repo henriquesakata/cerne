@@ -248,12 +248,37 @@ describe('useLiveLoad (F-0300)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
     const retry = (await screen.findByRole('status')).querySelector('button')!
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
     // Another subject fails while A's retry is still in flight: its own retry is free.
     rerender(<Probe fetcher={fetcher} dep="b" />)
     expect(await screen.findByText('falhou: offline')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
     await act(async () => pending.resolve('late'))
+  })
+
+  // F-0302: the keyboard user who pressed "try again" stays on the button.
+  it('keeps the focus on the notice retry while it runs and when it fails again', async () => {
+    const third = deferred<string>()
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('v1')
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockReturnValueOnce(third.promise)
+    render(<Probe fetcher={fetcher} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'reload' }))
+    const retry = (await screen.findByRole('status')).querySelector('button')!
+    retry.focus()
+    fireEvent.click(retry)
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).not.toHaveAttribute('disabled')
+    expect(retry).toHaveFocus()
+    // Locked: activating it again does not start another attempt.
+    fireEvent.click(retry)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    await act(async () => third.reject(new Error('HTTP 503')))
+    expect(screen.getByRole('status')).toHaveTextContent('HTTP 503')
+    expect(retry).toHaveFocus()
+    expect(retry).not.toHaveAttribute('aria-disabled')
   })
 })
 
@@ -282,8 +307,16 @@ describe('Notice (F-0301)', () => {
     expect(layout).toHaveAccessibleDescription('o layout falhou')
   })
 
-  it('locks the retry while busy', () => {
-    render(<Notice message="x" onRetry={() => {}} busy />)
-    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeDisabled()
+  // Locked, not disabled (F-0302): a disabled button leaves the focus order
+  // and throws the keyboard user back to the top of the document.
+  it('locks the retry while busy without taking it out of the focus order', () => {
+    const onRetry = vi.fn()
+    render(<Notice message="x" onRetry={onRetry} busy />)
+    const retry = screen.getByRole('button', { name: 'Tentar de novo' })
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    retry.focus()
+    expect(retry).toHaveFocus()
+    fireEvent.click(retry)
+    expect(onRetry).not.toHaveBeenCalled()
   })
 })

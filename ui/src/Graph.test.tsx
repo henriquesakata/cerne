@@ -158,19 +158,23 @@ describe('Graph — falha de layout (F-0301)', () => {
     await screen.findByRole('status')
     const retry = screen.getByRole('button', { name: 'Tentar de novo' })
 
-    // Com o layout em voo o aviso continua e a nova tentativa fica travada.
+    // Com o layout em voo o aviso continua e a nova tentativa fica travada —
+    // sem perder o foco (F-0302): aria-disabled, não disabled.
+    retry.focus()
     let release = holdLayout()
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).toHaveFocus()
     expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
     release()
-    await waitFor(() => expect(retry).toBeEnabled())
+    await waitFor(() => expect(retry).not.toHaveAttribute('aria-disabled'))
+    expect(retry).toHaveFocus()
     expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
 
     elk.fail = null
     release = holdLayout()
     fireEvent.click(retry)
-    expect(retry).toBeDisabled()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
     release()
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
     expect(pos('F-0001')).toEqual([500, 500])

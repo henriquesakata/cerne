@@ -2361,6 +2361,8 @@ h2 {
   background: var(--surface);
   cursor: pointer;
 }
+/* travado durante a tentativa (F-0302): aria-disabled mantém o foco no botão */
+.load-notice button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
 
 /* ---- grafo explicativo (case 0021) ---- */
 /* Full-bleed + altura dinâmica: #root é flex-column (100dvh), o grafo ocupa

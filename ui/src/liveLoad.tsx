@@ -121,7 +121,9 @@ export function LoadPending<T>({
 
 // Notice sits over content that stays on screen after something failed: the
 // message and a retry, locked while `busy`. Not tied to a load (F-0301) — a
-// layout that could not be computed uses it too.
+// layout that could not be computed uses it too. The lock is aria-disabled,
+// not disabled (F-0302): a disabled button leaves the focus order, and the
+// keyboard user who just pressed it is thrown back to the top of the document.
 export function Notice({
   message,
   onRetry,
@@ -140,7 +142,12 @@ export function Notice({
       <p id={id} className="form-error">
         {message}
       </p>
-      <button type="button" aria-describedby={id} disabled={busy} onClick={onRetry}>
+      <button
+        type="button"
+        aria-describedby={id}
+        aria-disabled={busy || undefined}
+        onClick={busy ? undefined : onRetry}
+      >
         {t.common.retry}
       </button>
     </div>
