@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import Mindmap from './Mindmap'
 import { fetchState, type StateResponse } from './api'
+import { I18nProvider } from './i18n'
 
 // React Flow e ELK são canvas/worker pesados — mockados. O stub de ReactFlow
 // renderiza o label JSX de cada nó, o suficiente para asserções de DOM reais
@@ -11,6 +12,7 @@ import { fetchState, type StateResponse } from './api'
 vi.mock('@xyflow/react', () => ({
   ReactFlow: ({
     nodes,
+    onInit,
     onNodeClick,
   }: {
     nodes: Array<{
@@ -18,23 +20,27 @@ vi.mock('@xyflow/react', () => ({
       position: { x: number; y: number }
       data: { label: ReactNode; side?: string }
     }>
+    onInit?: (inst: unknown) => void
     onNodeClick?: (e: unknown, n: unknown) => void
-  }) => (
-    <div data-testid="rf-canvas">
-      {nodes.map((n) => (
-        <div
-          key={n.id}
-          data-node-id={n.id}
-          data-x={n.position.x}
-          data-y={n.position.y}
-          data-side={n.data.side}
-          onClick={(e) => onNodeClick?.(e, n)}
-        >
-          {n.data.label}
-        </div>
-      ))}
-    </div>
-  ),
+  }) => {
+    onInit?.(flow)
+    return (
+      <div data-testid="rf-canvas">
+        {nodes.map((n) => (
+          <div
+            key={n.id}
+            data-node-id={n.id}
+            data-x={n.position.x}
+            data-y={n.position.y}
+            data-side={n.data.side}
+            onClick={(e) => onNodeClick?.(e, n)}
+          >
+            {n.data.label}
+          </div>
+        ))}
+      </div>
+    )
+  },
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
@@ -42,19 +48,46 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }))
 
-// ELK controlável (F-0301): `fail` faz o layout rejeitar com essa mensagem.
-const elk = vi.hoisted(() => ({ fail: null as string | null, calls: 0 }))
+// A instância do React Flow que a tela recebe no onInit: fitView é o reencaixe
+// da viewport, espiado para provar quando ela é (e não é) mexida.
+const flow = vi.hoisted(() => ({ fitView: vi.fn() }))
+
+// ELK controlável (F-0301): `fail` faz o layout rejeitar com essa mensagem e
+// `gate` segura a resposta até o teste liberar (layout em voo).
+const elk = vi.hoisted(() => ({
+  fail: null as string | null,
+  gate: null as Promise<void> | null,
+  calls: 0,
+}))
 vi.mock('elkjs/lib/elk.bundled.js', () => ({
   default: class ELKStub {
     layout(g: { children?: Array<{ id: string }> }) {
       elk.calls++
-      if (elk.fail !== null) return Promise.reject(new Error(elk.fail))
-      return Promise.resolve({
-        children: (g.children ?? []).map((c, i) => ({ ...c, x: i * 10, y: i * 10 })),
-      })
+      const settle = () =>
+        elk.fail !== null
+          ? Promise.reject(new Error(elk.fail))
+          : Promise.resolve({
+              children: (g.children ?? []).map((c, i) => ({ ...c, x: i * 10, y: i * 10 })),
+            })
+      return elk.gate ? elk.gate.then(settle) : settle()
     }
   },
 }))
+
+// Segura o próximo layout; devolve a função que o libera.
+function holdLayout(): () => void {
+  let open!: () => void
+  elk.gate = new Promise<void>((r) => {
+    open = r
+  })
+  return () => {
+    elk.gate = null
+    open()
+  }
+}
+
+// Um frame: o reencaixe da viewport roda num requestAnimationFrame.
+const frame = () => new Promise((r) => setTimeout(r, 40))
 
 // hub em miniatura: módulo studio com épico+filho entregues, e uma feature
 // sem módulo em desenvolvimento (para o filtro "só entregues").
@@ -125,7 +158,9 @@ beforeEach(() => {
   mockState = state
   live.version = 0
   elk.fail = null
+  elk.gate = null
   elk.calls = 0
+  flow.fitView.mockClear()
   localStorage.clear()
   cleanup()
 })
@@ -164,19 +199,78 @@ describe('Mindmap — falha de layout (F-0301)', () => {
     render(<Mindmap />)
     await screen.findByRole('status')
     const retry = screen.getByRole('button', { name: 'Tentar de novo' })
-    const before = elk.calls
 
+    // Com o layout em voo o aviso continua e a nova tentativa fica travada.
+    let release = holdLayout()
     fireEvent.click(retry)
-    await waitFor(() => expect(elk.calls).toBeGreaterThan(before))
+    expect(retry).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
+    release()
     await waitFor(() => expect(retry).toBeEnabled())
     expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
 
     elk.fail = null
+    release = holdLayout()
     fireEvent.click(retry)
+    expect(retry).toBeDisabled()
+    release()
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
     // Posições do stub do ELK (i*10 por lado, esticadas 1.5× em x).
     expect(at('module:studio')).toEqual([15, 10])
     expect(at('module:')).toEqual([-15, 10])
+  })
+
+  it('diz que foi o layout também em inglês', async () => {
+    seedExpanded()
+    elk.fail = 'boom'
+    // jsdom não é pt: o provider real cai no dicionário en.
+    render(
+      <I18nProvider>
+        <Mindmap />
+      </I18nProvider>,
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Could not compute the mindmap layout: boom',
+    )
+  })
+
+  it('uma nova tentativa que falha sem mover nó algum não mexe na viewport', async () => {
+    seedExpanded()
+    elk.fail = 'boom'
+    render(<Mindmap />)
+    await screen.findByRole('status')
+    await frame()
+    // A árvore de reserva foi posta agora: a viewport se encaixa nela.
+    expect(flow.fitView).toHaveBeenCalled()
+    flow.fitView.mockClear()
+
+    const calls = elk.calls
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(elk.calls).toBeGreaterThan(calls))
+    await frame()
+    expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
+    expect(flow.fitView).not.toHaveBeenCalled()
+  })
+
+  // Mesmos ids, árvore diferente: F-0002 sai de baixo do épico. Manter as
+  // posições antigas deixaria o nó na coluna do pai que ele já não tem.
+  it('mesmos nós com outro pai não contam como a mesma árvore', async () => {
+    seedExpanded()
+    const { rerender } = render(<Mindmap />)
+    await waitFor(() => expect(at('F-0002')).toEqual([45, 30]))
+
+    elk.fail = 'boom'
+    mockState = {
+      ...state,
+      features: state.features.map((f) => (f.id === 'F-0002' ? { ...f, parent: undefined } : f)),
+    }
+    live.version = 1
+    rerender(<Mindmap />)
+    expect(await screen.findByRole('status')).toHaveTextContent(layoutNotice)
+    // Reserva inteira: F-0001 e F-0002 agora irmãos, na mesma coluna.
+    expect(at('module:studio')).toEqual([336, 0])
+    expect(at('F-0001')).toEqual([672, 84])
+    expect(at('F-0002')).toEqual([672, 168])
   })
 
   it('mesma árvore mantém as posições; árvore diferente refaz a reserva inteira', async () => {

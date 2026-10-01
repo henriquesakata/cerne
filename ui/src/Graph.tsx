@@ -91,6 +91,9 @@ export default function Graph() {
   const [layoutError, setLayoutError] = useState<string | null>(null)
   const [layoutAttempt, setLayoutAttempt] = useState(0)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
+  // The nodes on screen, for the layout effect to read when a layout fails.
+  const onScreen = useRef(baseNodes)
+  onScreen.current = baseNodes
   const [selected, setSelected] = useState<string | null>(null)
   const [laying, setLaying] = useState(false)
   // Arestas ocultas no canvas. links começam ocultas: num backend maduro são
@@ -211,15 +214,16 @@ export default function Graph() {
         // No layout: every node stays where it was, and the ones never laid
         // out (all of them, on a first layout) go in a grid below the rest —
         // the screen stays navigable even when retrying fails again.
-        setBaseNodes((prev) => {
-          const pos = new Map(prev.map((n) => [n.id, n.position]))
-          const fresh = data.nodes.filter((n) => !pos.has(n.id)).map((n) => n.id)
-          const below = prev.reduce((y, n) => Math.max(y, n.position.y + ROW_H), 0)
-          gridPos(fresh, below).forEach((p, id) => pos.set(id, p))
-          return mkNodes(pos)
-        })
+        const prev = onScreen.current
+        const pos = new Map(prev.map((n) => [n.id, n.position]))
+        const fresh = data.nodes.filter((n) => !pos.has(n.id)).map((n) => n.id)
+        const below = prev.reduce((y, n) => Math.max(y, n.position.y + ROW_H), 0)
+        gridPos(fresh, below).forEach((p, id) => pos.set(id, p))
+        setBaseNodes(mkNodes(pos))
         setLaying(false)
-        refit()
+        // Nothing placed, nothing to fit: a retry that fails again leaves the
+        // user's zoom and pan alone.
+        if (fresh.length > 0) refit()
       })
     return () => {
       cancelled = true

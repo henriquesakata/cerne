@@ -4,43 +4,88 @@ import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import Graph from './Graph'
 import { fetchGraph, type Graph as GraphData } from './api'
+import { I18nProvider } from './i18n'
 
 // React Flow e ELK são canvas/worker pesados — mockados como no Mindmap.test:
 // o stub de ReactFlow renderiza o label JSX de cada nó e expõe a posição.
 vi.mock('@xyflow/react', () => ({
   ReactFlow: ({
     nodes,
+    onInit,
+    onNodeClick,
   }: {
     nodes: Array<{ id: string; position: { x: number; y: number }; data: { label: ReactNode } }>
-  }) => (
-    <div data-testid="rf-canvas">
-      {nodes.map((n) => (
-        <div key={n.id} data-node-id={n.id} data-x={n.position.x} data-y={n.position.y}>
-          {n.data.label}
-        </div>
-      ))}
-    </div>
-  ),
+    onInit?: (inst: unknown) => void
+    onNodeClick?: (e: unknown, n: unknown) => void
+  }) => {
+    onInit?.(flow)
+    return (
+      <div data-testid="rf-canvas">
+        {nodes.map((n) => (
+          <div
+            key={n.id}
+            data-node-id={n.id}
+            data-x={n.position.x}
+            data-y={n.position.y}
+            onClick={(e) => onNodeClick?.(e, n)}
+          >
+            {n.data.label}
+          </div>
+        ))}
+      </div>
+    )
+  },
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
   MarkerType: { ArrowClosed: 'arrowclosed' },
 }))
 
-// ELK controlável (F-0301): `fail` faz o layout rejeitar com essa mensagem.
+// A instância do React Flow que a tela recebe no onInit: fitView é o reencaixe
+// da viewport, espiado para provar quando ela é (e não é) mexida.
+const flow = vi.hoisted(() => ({ fitView: vi.fn(), setCenter: vi.fn() }))
+
+// ELK controlável (F-0301): `fail` faz o layout rejeitar com essa mensagem e
+// `gate` segura a resposta até o teste liberar (layout em voo).
 // As posições do stub (500+) não se confundem com as da grade de reserva (0+).
-const elk = vi.hoisted(() => ({ fail: null as string | null, calls: 0 }))
+const elk = vi.hoisted(() => ({
+  fail: null as string | null,
+  gate: null as Promise<void> | null,
+  calls: 0,
+}))
 vi.mock('elkjs/lib/elk.bundled.js', () => ({
   default: class ELKStub {
     layout(g: { children?: Array<{ id: string }> }) {
       elk.calls++
-      if (elk.fail !== null) return Promise.reject(new Error(elk.fail))
-      return Promise.resolve({
-        children: (g.children ?? []).map((c, i) => ({ ...c, x: 500 + i * 10, y: 500 + i * 10 })),
-      })
+      const settle = () =>
+        elk.fail !== null
+          ? Promise.reject(new Error(elk.fail))
+          : Promise.resolve({
+              children: (g.children ?? []).map((c, i) => ({
+                ...c,
+                x: 500 + i * 10,
+                y: 500 + i * 10,
+              })),
+            })
+      return elk.gate ? elk.gate.then(settle) : settle()
     }
   },
 }))
+
+// Segura o próximo layout; devolve a função que o libera.
+function holdLayout(): () => void {
+  let open!: () => void
+  elk.gate = new Promise<void>((r) => {
+    open = r
+  })
+  return () => {
+    elk.gate = null
+    open()
+  }
+}
+
+// Um frame: o reencaixe da viewport roda num requestAnimationFrame.
+const frame = () => new Promise((r) => setTimeout(r, 40))
 
 const pos = (id: string) => {
   const el = document.querySelector(`[data-node-id="${id}"]`)!
@@ -68,7 +113,10 @@ beforeEach(() => {
   cleanup()
   live.version = 0
   elk.fail = null
+  elk.gate = null
   elk.calls = 0
+  flow.fitView.mockClear()
+  localStorage.clear()
 })
 
 // F-0301: o ELK rejeitar não troca a página — a tela fica, com os nós num
@@ -86,6 +134,22 @@ describe('Graph — falha de layout (F-0301)', () => {
     expect(screen.getByText('Grafo de entidades')).toBeInTheDocument()
     expect(pos('F-0001')).toEqual([0, 0])
     expect(pos('D-0001')).toEqual([220, 0])
+    // Os nós da grade continuam clicáveis: o clique abre o painel do nó.
+    fireEvent.click(screen.getByText('Grafo de entidades'))
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('F-0001')
+  })
+
+  it('diz que foi o layout também em inglês', async () => {
+    elk.fail = 'boom'
+    // jsdom não é pt: o provider real cai no dicionário en.
+    render(
+      <I18nProvider>
+        <Graph />
+      </I18nProvider>,
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Could not compute the graph layout: boom',
+    )
   })
 
   it('tenta de novo: falha mantém o aviso, sucesso aplica o layout e o limpa', async () => {
@@ -94,16 +158,40 @@ describe('Graph — falha de layout (F-0301)', () => {
     await screen.findByRole('status')
     const retry = screen.getByRole('button', { name: 'Tentar de novo' })
 
+    // Com o layout em voo o aviso continua e a nova tentativa fica travada.
+    let release = holdLayout()
     fireEvent.click(retry)
-    await waitFor(() => expect(elk.calls).toBe(2))
+    expect(retry).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
+    release()
     await waitFor(() => expect(retry).toBeEnabled())
     expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
 
     elk.fail = null
+    release = holdLayout()
     fireEvent.click(retry)
+    expect(retry).toBeDisabled()
+    release()
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
     expect(pos('F-0001')).toEqual([500, 500])
     expect(pos('D-0001')).toEqual([510, 510])
+  })
+
+  it('uma nova tentativa que falha sem mover nó algum não mexe na viewport', async () => {
+    elk.fail = 'boom'
+    render(<Graph />)
+    await screen.findByRole('status')
+    await frame()
+    // A grade de reserva foi posta agora: a viewport se encaixa nela.
+    expect(flow.fitView).toHaveBeenCalled()
+    flow.fitView.mockClear()
+
+    const calls = elk.calls
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(elk.calls).toBeGreaterThan(calls))
+    await frame()
+    expect(screen.getByRole('status')).toHaveTextContent(layoutNotice)
+    expect(flow.fitView).not.toHaveBeenCalled()
   })
 
   it('mantém os nós onde estavam; o que nunca teve posição entra abaixo', async () => {

@@ -115,6 +115,9 @@ export default function Mindmap() {
   // Nó de capacidade selecionado — abre o painel com as features linkadas.
   const [selected, setSelected] = useState<string | null>(null)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
+  // The nodes on screen, for the layout effect to read when a layout fails.
+  const onScreen = useRef(baseNodes)
+  onScreen.current = baseNodes
   const [edges, setEdges] = useState<Edge[]>([])
   const [laying, setLaying] = useState(false)
   const rf = useRef<ReactFlowInstance | null>(null)
@@ -240,14 +243,14 @@ export default function Mindmap() {
 
     nodeIndex.current = new Map(flat.map((f) => [f.node.id, f.node]))
     const mkNodes = (pos: Map<string, { x: number; y: number }>): Node[] =>
-      flat.map(({ node: n }) => {
+      flat.map(({ node: n, parent }) => {
         const color =
           n.kind === 'feature' && n.state ? STATE_COLOR[n.state] : 'var(--teal)'
         return {
           id: n.id,
           type: 'mind',
           position: pos.get(n.id) ?? { x: 0, y: 0 },
-          data: { label: mkLabel(n), side: sideOf.get(n.id) },
+          data: { label: mkLabel(n), side: sideOf.get(n.id), parent },
           style: {
             width: NODE_W,
             height: NODE_H,
@@ -339,22 +342,31 @@ export default function Mindmap() {
         if (cancelled) return
         setLayoutError(e instanceof Error ? e.message : String(e))
         // No layout: the nodes stay where they were when the tree is the same
-        // one (a retry, a refresh that changed nothing). A different tree gets
-        // the whole reserve arrangement — mixing its positions with the ones
-        // ELK had computed would stack nodes on top of each other. Either way
-        // the map stays navigable even when retrying fails again.
-        setBaseNodes((prev) => {
-          const had = new Map(prev.map((n) => [n.id, n.position]))
-          const same = prev.length === flat.length && flat.every((f) => had.has(f.node.id))
-          return mkNodes(
+        // one (a retry, a refresh that changed nothing) — same nodes, each
+        // under the same parent on the same side. A different tree gets the
+        // whole reserve arrangement: mixing its positions with the ones ELK
+        // had computed would stack nodes, or leave one in the column of a
+        // parent it no longer has. Either way the map stays navigable even
+        // when retrying fails again.
+        const prev = new Map(onScreen.current.map((n) => [n.id, n]))
+        const same =
+          prev.size === flat.length &&
+          flat.every(({ node, parent }) => {
+            const was = prev.get(node.id)
+            return was?.data.parent === parent && was.data.side === sideOf.get(node.id)
+          })
+        setBaseNodes(
+          mkNodes(
             same
-              ? had
+              ? new Map([...prev].map(([id, n]) => [id, n.position]))
               : fallbackPositions(tree.root, (NODE_W + NODE_GAP) * H_STRETCH, NODE_H + NODE_GAP),
-          )
-        })
+          ),
+        )
         setEdges(mkEdges())
         setLaying(false)
-        refit()
+        // Nothing moved, nothing to fit: a retry that fails again leaves the
+        // user's zoom and pan alone.
+        if (!same) refit()
       })
     return () => {
       cancelled = true
