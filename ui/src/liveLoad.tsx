@@ -161,7 +161,10 @@ export function Notice({
         aria-disabled={busy || undefined}
         onClick={busy ? undefined : onRetry}
       >
-        {t.common.retry}
+        {/* The label changes inside the status region, so the wait is said,
+            not only dimmed — and so is its end, when the label comes back
+            over a failure that reads exactly like the previous one. */}
+        {busy ? t.common.retrying : t.common.retry}
       </button>
     </div>
   )

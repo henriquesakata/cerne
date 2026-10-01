@@ -365,11 +365,22 @@ describe('Notice (F-0301)', () => {
   it('locks the retry while busy without taking it out of the focus order', () => {
     const onRetry = vi.fn()
     render(<Notice message="x" onRetry={onRetry} busy />)
-    const retry = screen.getByRole('button', { name: 'Tentar de novo' })
+    const retry = screen.getByRole('button')
     expect(retry).toHaveAttribute('aria-disabled', 'true')
     retry.focus()
     expect(retry).toHaveFocus()
     fireEvent.click(retry)
     expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  // The wait is said, not only shown: the label changes inside the status
+  // region, so a screen reader hears the attempt start and, when the label
+  // comes back, end — even when it fails again with the very same message.
+  it('says the retry is running while busy, inside the status region', () => {
+    const { rerender } = render(<Notice message="x" onRetry={() => {}} busy />)
+    const retry = screen.getByRole('button', { name: 'Tentando de novo…' })
+    expect(screen.getByRole('status')).toContainElement(retry)
+    rerender(<Notice message="x" onRetry={() => {}} />)
+    expect(retry).toHaveAccessibleName('Tentar de novo')
   })
 })
