@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   fetchState,
   postTransition,
@@ -7,7 +7,7 @@ import {
   type TransitionAction,
 } from './api'
 import { useT } from './i18n'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 const STATE_ORDER: FeatureState[] = [
   'candidate',
@@ -33,13 +33,15 @@ const QUICK_ADVANCE: Partial<
 }
 
 export default function Manage() {
-  const [features, setFeatures] = useState<Feature[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // Loading, response ordering, retry and live re-fetch live in the shared
+  // hook (F-0300), extracted from this screen (F-0298/F-0299).
+  const live = useLiveLoad(fetchState)
+  const features = live.data?.features ?? null
+  const load = live.reload
   // A refused quick action (gate, FSM) is not a load failure: it is shown
   // above the list instead of replacing it (F-0296).
   const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null)
   const [filter, setFilter] = useState<FeatureState | 'all'>('all')
-  const [retrying, setRetrying] = useState(false)
   // Rows with an action in flight, one id each (F-0297): a response frees only
   // its own row, never another one still waiting.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
@@ -47,60 +49,8 @@ export default function Manage() {
   // pre-render state, so the guard cannot rely on `busy`.
   const inFlight = useRef(new Set<string>())
   const { t } = useT()
-  const version = useLiveVersion()
 
-  // Reloads overlap (one per successful action, F-0297) and may land out of
-  // order (F-0298): a response older than the last applied one is dropped, data
-  // or error. Not "only the latest issued wins" — that would freeze the list
-  // while the latest is in flight and free rows over a stale snapshot.
-  const issued = useRef(0)
-  const applied = useRef(0)
-  const load = () => {
-    const seq = ++issued.current
-    const fresh = () => {
-      if (seq < applied.current) return false
-      applied.current = seq
-      return true
-    }
-    return fetchState()
-      .then((s) => {
-        if (!fresh()) return
-        // A newer snapshot supersedes an older failure, as it does older data.
-        setError(null)
-        setFeatures(s.features)
-      })
-      .catch((e: unknown) => {
-        if (fresh()) setError(e instanceof Error ? e.message : String(e))
-      })
-  }
-  // Re-fetch when the backend advances, like the other list screens (F-0299):
-  // besides following other sessions, it is the screen's way out of an error.
-  useEffect(() => {
-    void load()
-  }, [version])
-
-  // A load failure never strands the screen (F-0299): with no list yet it is the
-  // error page, with one it is a notice over the list; both offer a retry.
-  const retry = (
-    <button
-      type="button"
-      disabled={retrying}
-      onClick={() => {
-        setRetrying(true)
-        void load().finally(() => setRetrying(false))
-      }}
-    >
-      {t.manage.retry}
-    </button>
-  )
-  // `!== null`: a failure with an empty message is still a failure.
-  if (error !== null && !features)
-    return (
-      <p className="status error">
-        {t.manage.loadError(error)} {retry}
-      </p>
-    )
-  if (!features) return <p className="status">{t.common.loading}</p>
+  if (!features) return <LoadPending load={live} message={t.manage.loadError} />
 
   const counts = new Map<FeatureState, number>()
   for (const f of features) counts.set(f.state, (counts.get(f.state) ?? 0) + 1)
@@ -158,12 +108,10 @@ export default function Manage() {
           </button>
         ))}
       </div>
-      {error !== null && (
-        <div className="manage-load-error" role="status">
-          <p className="form-error">{t.manage.reloadError(error)}</p>
-          {retry}
-        </div>
-      )}
+      <LoadNotice
+        load={live}
+        message={live.error !== null ? t.manage.reloadError(live.error) : undefined}
+      />
       {actionError && (
         <div className="manage-action-error" role="alert">
           <strong>{t.manage.actionRefused(actionError.id)}</strong>
