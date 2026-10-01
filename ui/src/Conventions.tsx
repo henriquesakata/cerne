@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
 import { fetchState, type Note } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 // Component reservado que marca uma nota como convenção prescritiva (F-0165).
@@ -14,22 +13,11 @@ const CONVENTION = 'convention'
 // agente lê via `cerne note tags`. Sem endpoint próprio: o /state já embarca
 // todas as notas com seus components.
 export default function Conventions() {
-  const [notes, setNotes] = useState<Note[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const version = useLiveVersion()
+  const load = useLiveLoad(fetchState)
+  const notes = load.data?.notes ?? null
   const { t } = useT()
 
-  useEffect(() => {
-    fetchState()
-      .then((s) => {
-        setNotes(s.notes)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.conventions.loadError(error)}</p>
-  if (!notes) return <p className="status">{t.common.loading}</p>
+  if (!notes) return <LoadPending load={load} message={t.conventions.loadError} />
 
   const conventions = notes.filter(
     (n) => n.state === 'active' && (n.components ?? []).includes(CONVENTION),
@@ -50,6 +38,7 @@ export default function Conventions() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.conventions.title}</h1>
       <p className="counts">{t.conventions.counts(conventions.length)}</p>
       <p className="muted">{t.conventions.intro}</p>

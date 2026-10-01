@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
 import { fetchLintStatus, type LintFinding } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 // Espelha as regras de internal/lint, na mesma ordem de relatório (RuleOrder).
@@ -18,24 +17,12 @@ const RULE_ORDER = [
 ]
 
 export default function Lint() {
-  const [findings, setFindings] = useState<LintFinding[] | null>(null)
-  const [stale, setStale] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const version = useLiveVersion()
+  const load = useLiveLoad(fetchLintStatus)
+  const findings = load.data?.findings ?? null
+  const stale = load.data?.stale ?? false
   const { t } = useT()
 
-  useEffect(() => {
-    fetchLintStatus()
-      .then((r) => {
-        setFindings(r.findings)
-        setStale(r.stale)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.lint.error(error)}</p>
-  if (!findings) return <p className="status">{t.common.loading}</p>
+  if (!findings) return <LoadPending load={load} message={t.lint.error} />
 
   // A revalidação em background está rodando (F-0155): mostra o dado servido
   // do cache com um marcador discreto; o SSE traz o fresh em seguida.
@@ -44,6 +31,7 @@ export default function Lint() {
   if (findings.length === 0) {
     return (
       <main className="page">
+        <LoadNotice load={load} />
         <h1>
           {t.lint.title} {staleBadge}
         </h1>
@@ -61,6 +49,7 @@ export default function Lint() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>
         {t.lint.title} {staleBadge}
       </h1>

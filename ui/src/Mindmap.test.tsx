@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import Mindmap from './Mindmap'
-import type { StateResponse } from './api'
+import { fetchState, type StateResponse } from './api'
 
 // React Flow e ELK são canvas/worker pesados — mockados. O stub de ReactFlow
 // renderiza o label JSX de cada nó, o suficiente para asserções de DOM reais
@@ -94,8 +94,10 @@ vi.mock('./api', async (importOriginal) => ({
   fetchState: vi.fn(async () => mockState),
 }))
 
+// Versão ao vivo controlável (F-0300): a tela re-busca quando ela muda.
+const live = vi.hoisted(() => ({ version: 0 }))
 vi.mock('./live', () => ({
-  useLiveVersion: () => 0,
+  useLiveVersion: () => live.version,
   useProjects: () => ({
     projects: [{ pid: 'p1', name: 'P1' }],
     activePid: 'p1',
@@ -116,6 +118,7 @@ function seedExpanded() {
 
 beforeEach(() => {
   mockState = state
+  live.version = 0
   localStorage.clear()
   cleanup()
 })
@@ -297,5 +300,38 @@ describe('Mindmap', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Só entregues' }))
     expect(await screen.findByText(/2 features visíveis/)).toBeInTheDocument()
     expect(screen.queryByText('Feature avulsa')).not.toBeInTheDocument()
+  })
+})
+
+// F-0300: uma atualização que falha não apaga o mapa — vira aviso com
+// "Tentar de novo".
+describe('Mindmap — falha de carga (F-0300)', () => {
+  it('mantém o mapa e mostra o aviso quando a re-busca ao vivo falha', async () => {
+    seedExpanded()
+    const { rerender } = render(<Mindmap />)
+    expect(await screen.findByText('Projetos no Studio')).toBeInTheDocument()
+
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
+    live.version = 1
+    rerender(<Mindmap />)
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    expect(screen.getByText('Projetos no Studio')).toBeInTheDocument()
+    // O aviso é o primeiro filho da raiz da tela, acima do canvas.
+    expect(notice.parentElement).toHaveClass('mindmap-page')
+    expect(notice.parentElement?.firstElementChild).toBe(notice)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(screen.getByText('Projetos no Studio')).toBeInTheDocument()
+  })
+
+  it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
+    seedExpanded()
+    vi.mocked(fetchState).mockRejectedValueOnce(new Error('offline'))
+    render(<Mindmap />)
+    expect(await screen.findByText('Erro ao montar o mapa mental: offline')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText('Projetos no Studio')).toBeInTheDocument()
   })
 })

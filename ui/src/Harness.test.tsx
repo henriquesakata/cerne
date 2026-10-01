@@ -8,7 +8,9 @@ const api = vi.hoisted(() => ({
   fetchHarness: vi.fn<() => Promise<HarnessInventory>>(),
 }))
 vi.mock('./api', () => ({ fetchHarness: api.fetchHarness }))
-vi.mock('./live', () => ({ useLiveVersion: () => 0 }))
+// Versão ao vivo controlável (F-0300): a tela re-busca quando ela muda.
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
 
 const item = (over: Partial<HarnessItem>): HarnessItem => ({
   class: 'hooks',
@@ -72,6 +74,7 @@ const inventory = (): HarnessInventory => ({
 beforeEach(() => {
   cleanup()
   api.fetchHarness.mockReset()
+  live.version = 0
 })
 
 describe('Harness', () => {
@@ -163,5 +166,35 @@ describe('Harness', () => {
     fireEvent.click(screen.getAllByText('1 lacuna')[1])
     expect(screen.getByText('cerne hook install --provider gemini')).toBeInTheDocument()
     expect(screen.getByText('instalável')).toBeInTheDocument()
+  })
+})
+
+// F-0300: uma atualização que falha não apaga o inventário — vira aviso com
+// "Tentar de novo"; sem inventário ainda, a página de erro oferece o mesmo botão.
+describe('Harness — falha de carga (F-0300)', () => {
+  it('mantém o inventário e mostra o aviso quando a re-busca ao vivo falha', async () => {
+    api.fetchHarness.mockResolvedValue(inventory())
+    const { rerender } = render(<Harness />)
+    await waitFor(() => expect(screen.getByText('cerne-work-gate.sh')).toBeInTheDocument())
+
+    api.fetchHarness.mockRejectedValueOnce(new Error('HTTP 502'))
+    live.version = 1
+    rerender(<Harness />)
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    expect(screen.getByText('cerne-work-gate.sh')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(screen.getByText('cerne-work-gate.sh')).toBeInTheDocument()
+  })
+
+  it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
+    api.fetchHarness.mockResolvedValue(inventory())
+    api.fetchHarness.mockRejectedValueOnce(new Error('offline'))
+    render(<Harness />)
+    expect(await screen.findByText('Erro ao carregar o harness: offline')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.getByText('cerne-work-gate.sh')).toBeInTheDocument())
   })
 })

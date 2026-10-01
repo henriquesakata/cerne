@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Conventions from './Conventions'
 import type { Note } from './api'
@@ -8,7 +8,9 @@ const api = vi.hoisted(() => ({
   fetchState: vi.fn<() => Promise<{ notes: Note[] }>>(),
 }))
 vi.mock('./api', () => ({ fetchState: api.fetchState }))
-vi.mock('./live', () => ({ useLiveVersion: () => 0 }))
+// Versão ao vivo controlável (F-0300): a tela re-busca quando ela muda.
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
 
 const note = (id: string, title: string, components: string[], state = 'active'): Note => ({
   id,
@@ -22,6 +24,7 @@ const note = (id: string, title: string, components: string[], state = 'active')
 beforeEach(() => {
   cleanup()
   api.fetchState.mockReset()
+  live.version = 0
 })
 
 describe('Conventions', () => {
@@ -64,5 +67,37 @@ describe('Conventions', () => {
     await waitFor(() =>
       expect(screen.getByText(/Nenhuma convenção registrada/)).toBeInTheDocument(),
     )
+  })
+})
+
+// F-0300: uma atualização que falha não apaga as convenções — vira aviso com
+// "Tentar de novo"; sem conteúdo ainda, a página de erro oferece o mesmo botão.
+describe('Conventions — falha de carga (F-0300)', () => {
+  const loaded = { notes: [note('N-0001', 'Padrão amplo', ['convention'])] }
+
+  it('mantém as convenções e mostra o aviso quando a re-busca ao vivo falha', async () => {
+    api.fetchState.mockResolvedValue(loaded)
+    const { rerender } = render(<Conventions />)
+    await waitFor(() => expect(screen.getByText('Padrão amplo')).toBeInTheDocument())
+
+    api.fetchState.mockRejectedValueOnce(new Error('HTTP 502'))
+    live.version = 1
+    rerender(<Conventions />)
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    expect(screen.getByText('Padrão amplo')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(screen.getByText('Padrão amplo')).toBeInTheDocument()
+  })
+
+  it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
+    api.fetchState.mockResolvedValue(loaded)
+    api.fetchState.mockRejectedValueOnce(new Error('offline'))
+    render(<Conventions />)
+    expect(await screen.findByText('Erro ao carregar convenções: offline')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.getByText('Padrão amplo')).toBeInTheDocument())
   })
 })

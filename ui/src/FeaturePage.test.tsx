@@ -3,7 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
 import type { Feature, FeatureDetail, FeatureState, LLMMode } from './api'
-import { fetchArtifactText, generateDiagram, postTransition, roastPlan, roastSpec } from './api'
+import {
+  fetchArtifactText,
+  fetchFeature,
+  generateDiagram,
+  postTransition,
+  roastPlan,
+  roastSpec,
+} from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
   feature: {
@@ -53,12 +60,15 @@ vi.mock('./api', async (importOriginal) => ({
   fetchArtifactText: vi.fn(async () => '# Roast da spec\n\n- [alta] achado'),
 }))
 
+// Versão ao vivo controlável (F-0300): a página re-busca quando ela muda.
+const live = vi.hoisted(() => ({ version: 0 }))
 vi.mock('./live', () => ({
-  useLiveVersion: () => 0,
+  useLiveVersion: () => live.version,
 }))
 
 beforeEach(() => {
   cleanup()
+  live.version = 0
   llmMode = 'byo-key'
   vi.mocked(postTransition).mockClear()
   vi.mocked(generateDiagram).mockClear()
@@ -281,5 +291,34 @@ describe('FeaturePage diagrams section', () => {
     await waitFor(() => expect(btn).toBeDisabled())
     fireEvent.click(btn)
     expect(generateDiagram).not.toHaveBeenCalled()
+  })
+})
+
+// F-0300: uma re-busca que falha não apaga a página — vira aviso com
+// "Tentar de novo"; sem página ainda, o erro oferece o mesmo botão.
+describe('FeaturePage — falha de carga (F-0300)', () => {
+  it('mantém a página e mostra o aviso quando a re-busca ao vivo falha', async () => {
+    payload = detail('approved')
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Feature de teste')).toBeInTheDocument()
+
+    vi.mocked(fetchFeature).mockRejectedValueOnce(new Error('HTTP 502'))
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    expect(screen.getByText('Feature de teste')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(screen.getByText('Feature de teste')).toBeInTheDocument()
+  })
+
+  it('oferece "Tentar de novo" na página de erro da primeira carga', async () => {
+    payload = detail('approved')
+    vi.mocked(fetchFeature).mockRejectedValueOnce(new Error('offline'))
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText('Feature de teste')).toBeInTheDocument()
   })
 })

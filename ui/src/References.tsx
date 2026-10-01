@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type Dispatch,
@@ -15,9 +14,8 @@ import {
   fetchReference,
   fetchState,
   type Reference,
-  type ReferenceDetail as ReferenceDetailData,
 } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 const ORDER = ['current', 'obsolete']
@@ -45,22 +43,12 @@ function parseCsv(s: string): string[] {
 }
 
 export default function References() {
-  const [references, setReferences] = useState<Reference[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
   const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
   const { t } = useT()
 
-  const version = useLiveVersion()
-  const load = () => {
-    fetchState()
-      .then((s) => {
-        setReferences(s.references)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }
-  useEffect(load, [version])
+  const load = useLiveLoad(fetchState)
+  const references = load.data?.references ?? null
 
   // Filter options derive from every loaded reference (not the filtered set), so
   // the available chips stay stable as the user narrows down (mirrors Notes).
@@ -73,8 +61,7 @@ export default function References() {
     [references],
   )
 
-  if (error) return <p className="status error">{t.references.loadError(error)}</p>
-  if (!references) return <p className="status">{t.common.loading}</p>
+  if (!references) return <LoadPending load={load} message={t.references.loadError} />
 
   const toggleFacet = toggleIn(setSelFacets)
   const toggleComponent = toggleIn(setSelComponents)
@@ -103,11 +90,12 @@ export default function References() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.references.title}</h1>
       <p className="counts">
         {t.references.counts(shown.length)}{hasFilter && t.common.ofTotal(references.length)}
       </p>
-      <NewExternalReference onCreated={load} />
+      <NewExternalReference onCreated={() => void load.reload()} />
       {hasOptions && (
         <div className="note-filter">
           {allFacets.length > 0 && (
@@ -289,28 +277,17 @@ function NewExternalReference({ onCreated }: { onCreated: () => void }) {
 }
 
 export function ReferenceDetail({ id }: { id: string }) {
-  const [data, setData] = useState<ReferenceDetailData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [refresh, setRefresh] = useState(0)
-  const version = useLiveVersion()
+  const load = useLiveLoad(() => fetchReference(id), [id])
+  const data = load.data
   const { t } = useT()
 
-  useEffect(() => {
-    fetchReference(id)
-      .then((d) => {
-        setData(d)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version, refresh])
-
-  if (error) return <p className="status error">{t.references.loadOneError(error)}</p>
-  if (!data) return <p className="status">{t.common.loading}</p>
+  if (!data) return <LoadPending load={load} message={t.references.loadOneError} />
 
   const ref = data.reference
   const stateLabel = (t.references.stateLabels as Record<string, string>)[ref.state] ?? ref.state
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <a className="back" href="#/references">{t.references.back}</a>
       <header className="feature-header">
         <h1>
@@ -356,7 +333,7 @@ export function ReferenceDetail({ id }: { id: string }) {
               id={ref.id}
               docPath={`content/references/${ref.id}.md`}
               content={data.doc}
-              onSaved={() => setRefresh((n) => n + 1)}
+              onSaved={() => void load.reload()}
             />
           ) : (
             <Markdown>{data.doc}</Markdown>

@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type Dispatch,
@@ -14,9 +13,8 @@ import {
   fetchNote,
   fetchState,
   type Note,
-  type NoteDetail as NoteDetailData,
 } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 const ORDER = ['active', 'superseded']
@@ -34,21 +32,11 @@ function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
 }
 
 export default function Notes() {
-  const [notes, setNotes] = useState<Note[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(fetchState)
+  const notes = load.data?.notes ?? null
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
   const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
-  const version = useLiveVersion()
   const { t } = useT()
-
-  useEffect(() => {
-    fetchState()
-      .then((s) => {
-        setNotes(s.notes)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
 
   // Filter options are derived from every loaded note (not the filtered set), so
   // the available chips stay stable as the user narrows down (crit. 6).
@@ -61,8 +49,7 @@ export default function Notes() {
     [notes],
   )
 
-  if (error) return <p className="status error">{t.notes.loadError(error)}</p>
-  if (!notes) return <p className="status">{t.common.loading}</p>
+  if (!notes) return <LoadPending load={load} message={t.notes.loadError} />
 
   const toggleFacet = toggleIn(setSelFacets)
   const toggleComponent = toggleIn(setSelComponents)
@@ -91,6 +78,7 @@ export default function Notes() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.notes.title}</h1>
       <p className="counts">
         {t.notes.counts(shown.length)}{hasFilter && t.common.ofTotal(notes.length)}
@@ -193,28 +181,17 @@ export default function Notes() {
 }
 
 export function NoteDetail({ id }: { id: string }) {
-  const [data, setData] = useState<NoteDetailData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [refresh, setRefresh] = useState(0)
-  const version = useLiveVersion()
+  const load = useLiveLoad(() => fetchNote(id), [id])
+  const data = load.data
   const { t } = useT()
 
-  useEffect(() => {
-    fetchNote(id)
-      .then((d) => {
-        setData(d)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version, refresh])
-
-  if (error) return <p className="status error">{t.notes.loadOneError(error)}</p>
-  if (!data) return <p className="status">{t.common.loading}</p>
+  if (!data) return <LoadPending load={load} message={t.notes.loadOneError} />
 
   const n = data.note
   const stateLabel = (t.notes.stateLabels as Record<string, string>)[n.state] ?? n.state
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <a className="back" href="#/notes">{t.notes.back}</a>
       <header className="feature-header">
         <h1>
@@ -241,7 +218,7 @@ export function NoteDetail({ id }: { id: string }) {
               id={n.id}
               docPath={`content/notes/${n.id}.md`}
               content={data.doc}
-              onSaved={() => setRefresh((v) => v + 1)}
+              onSaved={() => void load.reload()}
             />
           ) : (
             <Markdown>{data.doc}</Markdown>

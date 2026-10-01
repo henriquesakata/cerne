@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type Dispatch,
@@ -14,9 +13,8 @@ import {
   fetchRunbook,
   fetchState,
   type Runbook,
-  type RunbookDetail as RunbookDetailData,
 } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 const ORDER = ['active', 'superseded']
@@ -34,21 +32,11 @@ function toggleIn(setter: Dispatch<SetStateAction<Set<string>>>) {
 }
 
 export default function Runbooks() {
-  const [runbooks, setRunbooks] = useState<Runbook[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(fetchState)
+  const runbooks = load.data?.runbooks ?? null
   const [selFacets, setSelFacets] = useState<Set<string>>(() => new Set())
   const [selComponents, setSelComponents] = useState<Set<string>>(() => new Set())
-  const version = useLiveVersion()
   const { t } = useT()
-
-  useEffect(() => {
-    fetchState()
-      .then((s) => {
-        setRunbooks(s.runbooks)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
 
   // Filter options derive from every loaded runbook (not the filtered set), so the
   // available chips stay stable as the user narrows down (mirrors References).
@@ -61,8 +49,7 @@ export default function Runbooks() {
     [runbooks],
   )
 
-  if (error) return <p className="status error">{t.runbooks.loadError(error)}</p>
-  if (!runbooks) return <p className="status">{t.common.loading}</p>
+  if (!runbooks) return <LoadPending load={load} message={t.runbooks.loadError} />
 
   const toggleFacet = toggleIn(setSelFacets)
   const toggleComponent = toggleIn(setSelComponents)
@@ -91,6 +78,7 @@ export default function Runbooks() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.runbooks.title}</h1>
       <p className="counts">
         {t.runbooks.counts(shown.length)}{hasFilter && t.common.ofTotal(runbooks.length)}
@@ -193,28 +181,17 @@ export default function Runbooks() {
 }
 
 export function RunbookDetail({ id }: { id: string }) {
-  const [data, setData] = useState<RunbookDetailData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [refresh, setRefresh] = useState(0)
-  const version = useLiveVersion()
+  const load = useLiveLoad(() => fetchRunbook(id), [id])
+  const data = load.data
   const { t } = useT()
 
-  useEffect(() => {
-    fetchRunbook(id)
-      .then((d) => {
-        setData(d)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [id, version, refresh])
-
-  if (error) return <p className="status error">{t.runbooks.loadOneError(error)}</p>
-  if (!data) return <p className="status">{t.common.loading}</p>
+  if (!data) return <LoadPending load={load} message={t.runbooks.loadOneError} />
 
   const rb = data.runbook
   const stateLabel = (t.runbooks.stateLabels as Record<string, string>)[rb.state] ?? rb.state
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <a className="back" href="#/runbooks">{t.runbooks.back}</a>
       <header className="feature-header">
         <h1>
@@ -241,7 +218,7 @@ export function RunbookDetail({ id }: { id: string }) {
               id={rb.id}
               docPath={`content/runbooks/${rb.id}.md`}
               content={data.doc}
-              onSaved={() => setRefresh((n) => n + 1)}
+              onSaved={() => void load.reload()}
             />
           ) : (
             <Markdown>{data.doc}</Markdown>
