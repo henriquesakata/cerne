@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
 import { fetchWork, type Work } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 // Aba Atividade (F-0130): o work-in-progress compartilhado dos agentes,
@@ -26,22 +25,11 @@ function refHref(id: string): string {
 }
 
 export default function Activity() {
-  const [works, setWorks] = useState<Work[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const version = useLiveVersion()
+  const load = useLiveLoad(fetchWork)
+  const works = load.data
   const { t, lang } = useT()
 
-  useEffect(() => {
-    fetchWork()
-      .then((w) => {
-        setWorks(w)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.activity.loadError(error)}</p>
-  if (!works) return <p className="status">{t.common.loading}</p>
+  if (!works) return <LoadPending load={load} message={t.activity.loadError} />
 
   const active = works
     .filter((w) => w.state === 'active')
@@ -53,6 +41,7 @@ export default function Activity() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.activity.title}</h1>
       <p className="counts">{t.activity.subtitle}</p>
 

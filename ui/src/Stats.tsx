@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { fetchSavings, type Stats } from './api'
-import { useLiveVersion } from './live'
+import { fetchSavings } from './api'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 // Página #/stats (F-0127): a economia de contexto que o cerne entrega — o
@@ -21,25 +20,15 @@ function fmtTokens(n: number, lang: string): string {
 }
 
 export default function StatsPage() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const version = useLiveVersion()
+  const load = useLiveLoad(fetchSavings)
+  const stats = load.data
   const { t, lang } = useT()
 
-  useEffect(() => {
-    fetchSavings()
-      .then((s) => {
-        setStats(s)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.stats.loadError(error)}</p>
-  if (!stats) return <p className="status">{t.common.loading}</p>
+  if (!stats) return <LoadPending load={load} message={t.stats.loadError} />
   if (stats.total_count === 0) {
     return (
       <main className="page">
+        <LoadNotice load={load} />
         <h1>{t.stats.title}</h1>
         <p className="muted">{t.stats.empty}</p>
       </main>
@@ -54,6 +43,7 @@ export default function StatsPage() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.stats.title}</h1>
       <p className="counts">{t.stats.subtitle}</p>
 

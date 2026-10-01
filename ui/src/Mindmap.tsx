@@ -12,7 +12,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
-import { fetchState, type Feature, type FeatureState, type StateResponse } from './api'
+import { fetchState, type Feature, type FeatureState } from './api'
 import {
   branchIds,
   buildCapabilityTree,
@@ -21,7 +21,8 @@ import {
   splitSides,
   type MindNode,
 } from './mindmap-tree'
-import { useLiveVersion, useProjects } from './live'
+import { useProjects } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
 
@@ -92,8 +93,11 @@ export default function Mindmap() {
   const { t } = useT()
   const theme = useEffectiveTheme()
   const { activePid } = useProjects()
-  const [data, setData] = useState<StateResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(fetchState)
+  const data = load.data
+  // An ELK layout failure is not a load failure: it keeps its own state and
+  // the whole-page error it always had. A fresh load clears it (see the effect).
+  const [layoutError, setLayoutError] = useState<string | null>(null)
   const [deliveredOnly, setDeliveredOnly] = useState(false)
   const [showTerminal, setShowTerminal] = useState(false)
   // null = ainda não inicializado — o default (tudo aberto vs módulos
@@ -109,16 +113,6 @@ export default function Mindmap() {
   const [laying, setLaying] = useState(false)
   const rf = useRef<ReactFlowInstance | null>(null)
   const nodeIndex = useRef<Map<string, MindNode>>(new Map())
-
-  const version = useLiveVersion()
-  useEffect(() => {
-    fetchState()
-      .then((s) => {
-        setData(s)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
 
   const hasCapabilities = useMemo(
     () => (data?.capabilities ?? []).some((c) => c.state === 'active'),
@@ -185,6 +179,7 @@ export default function Mindmap() {
   // da raiz. Poda pequena = layout barato, mesmo num backend grande.
   useEffect(() => {
     if (!tree) return
+    setLayoutError(null)
     let cancelled = false
     const flat = flatten(tree.root)
     const { right, left } = splitSides(tree.root)
@@ -332,7 +327,7 @@ export default function Mindmap() {
       })
       .catch((e: unknown) => {
         if (cancelled) return
-        setError(e instanceof Error ? e.message : String(e))
+        setLayoutError(e instanceof Error ? e.message : String(e))
         setLaying(false)
       })
     return () => {
@@ -348,10 +343,14 @@ export default function Mindmap() {
   }, [data])
   const selectedNode = selected ? (nodeIndex.current.get(selected) ?? null) : null
 
-  if (error) return <p className="status error">{t.mindmap.loadError(error)}</p>
+  if (layoutError) return <p className="status error">{t.mindmap.loadError(layoutError)}</p>
+  // While loading the screen keeps its own shell ("carregando" in the heading);
+  // LoadPending is only the first-load failure page.
+  if (!data && load.error !== null) return <LoadPending load={load} message={t.mindmap.loadError} />
 
   return (
     <main className="page mindmap-page">
+      <LoadNotice load={load} />
       <h1>
         {t.mindmap.title}{' '}
         <span className="graph-count">

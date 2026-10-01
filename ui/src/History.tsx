@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { fetchEvents, type LifecycleEvent } from './api'
-import { useLiveVersion } from './live'
+import { fetchEvents } from './api'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 function formatAt(at: string, lang: string): string {
@@ -9,25 +8,15 @@ function formatAt(at: string, lang: string): string {
 }
 
 export default function History() {
-  const [events, setEvents] = useState<LifecycleEvent[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const version = useLiveVersion()
+  const load = useLiveLoad(fetchEvents)
+  const events = load.data
   const { t, lang } = useT()
 
-  useEffect(() => {
-    fetchEvents()
-      .then((evs) => {
-        setEvents(evs)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.history.error(error)}</p>
-  if (!events) return <p className="status">{t.common.loading}</p>
+  if (!events) return <LoadPending load={load} message={t.history.error} />
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.history.title}</h1>
       <p className="muted">{t.history.intro}</p>
       {events.length === 0 && <p className="muted">{t.history.none}</p>}

@@ -11,13 +11,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
-import {
-  fetchGraph,
-  type Graph as GraphData,
-  type GraphKind,
-  type GraphEdgeType,
-} from './api'
-import { useLiveVersion } from './live'
+import { fetchGraph, type GraphKind, type GraphEdgeType } from './api'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 import { useEffectiveTheme } from './theme'
 
@@ -76,8 +71,11 @@ type Conn = { dir: 'out' | 'in'; other: string; type: GraphEdgeType; reason?: st
 export default function Graph() {
   const { t } = useT()
   const theme = useEffectiveTheme()
-  const [data, setData] = useState<GraphData | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(fetchGraph)
+  const data = load.data
+  // An ELK layout failure is not a load failure: it keeps its own state and
+  // the whole-page error it always had. A fresh load clears it (see the effect).
+  const [layoutError, setLayoutError] = useState<string | null>(null)
   const [baseNodes, setBaseNodes] = useState<Node[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [laying, setLaying] = useState(false)
@@ -101,16 +99,6 @@ export default function Graph() {
     }
   }
 
-  const version = useLiveVersion()
-  useEffect(() => {
-    fetchGraph()
-      .then((g) => {
-        setData(g)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
   const typeCounts = useMemo(() => {
     const c: Record<GraphEdgeType, number> = { superseded_by: 0, part_of: 0, informs: 0, links: 0 }
     for (const e of data?.edges ?? []) c[e.type]++
@@ -126,6 +114,7 @@ export default function Graph() {
   // arestas visíveis (evita pilha de nós e o custo do ELK num grafo grande).
   useEffect(() => {
     if (!data) return
+    setLayoutError(null)
     let cancelled = false
     const mkNodes = (pos: Map<string, { x: number; y: number }>): Node[] =>
       data.nodes.map((n) => {
@@ -208,7 +197,7 @@ export default function Graph() {
       })
       .catch((e: unknown) => {
         if (cancelled) return
-        setError(e instanceof Error ? e.message : String(e))
+        setLayoutError(e instanceof Error ? e.message : String(e))
         setLaying(false)
       })
     return () => {
@@ -300,8 +289,8 @@ export default function Graph() {
       }))
   }, [data, selected])
 
-  if (error) return <p className="status error">{t.graph.loadError(error)}</p>
-  if (!data) return <p className="status">{t.common.loading}</p>
+  if (layoutError) return <p className="status error">{t.graph.loadError(layoutError)}</p>
+  if (!data) return <LoadPending load={load} message={t.graph.loadError} />
 
   const toggleType = (et: GraphEdgeType) =>
     setHidden((h) => {
@@ -313,6 +302,7 @@ export default function Graph() {
 
   return (
     <main className="page graph-page">
+      <LoadNotice load={load} />
       <h1>
         {t.graph.title}{' '}
         <span className="graph-count">

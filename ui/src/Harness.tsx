@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   fetchHarness,
-  type HarnessInventory,
   type HarnessItem,
   type HarnessProviderCoverage,
 } from './api'
-import { useLiveVersion } from './live'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
 // Ordem fixa das classes na tela — espelha o payload do servidor (F-0251).
@@ -18,25 +17,14 @@ const PROBLEM_STATES = new Set(['divergent', 'missing', 'broken'])
 const PROVIDERS = ['claude', 'cursor', 'codex', 'gemini']
 
 export default function Harness() {
-  const [inv, setInv] = useState<HarnessInventory | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const load = useLiveLoad(fetchHarness)
+  const inv = load.data
   const [onlyProblems, setOnlyProblems] = useState(false)
   const [onlyOutside, setOnlyOutside] = useState(false)
   const [provider, setProvider] = useState<string | null>(null)
-  const version = useLiveVersion()
   const { t } = useT()
 
-  useEffect(() => {
-    fetchHarness()
-      .then((r) => {
-        setInv(r)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [version])
-
-  if (error) return <p className="status error">{t.harness.loadError(error)}</p>
-  if (!inv) return <p className="status">{t.common.loading}</p>
+  if (!inv) return <LoadPending load={load} message={t.harness.loadError} />
 
   const keep = (it: HarnessItem) =>
     (!onlyProblems || PROBLEM_STATES.has(it.state)) &&
@@ -50,6 +38,7 @@ export default function Harness() {
 
   return (
     <main className="page">
+      <LoadNotice load={load} />
       <h1>{t.harness.title}</h1>
       {/* Critério 11: "divergente" só faz sentido ancorado na versão que serve. */}
       <p className="muted">{t.harness.versionNote(inv.version)}</p>
