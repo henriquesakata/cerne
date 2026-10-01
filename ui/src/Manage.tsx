@@ -46,10 +46,30 @@ export default function Manage() {
   const inFlight = useRef(new Set<string>())
   const { t } = useT()
 
-  const load = () =>
-    fetchState()
-      .then((s) => setFeatures(s.features))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+  // Reloads overlap (one per successful action, F-0297) and may land out of
+  // order (F-0298): a response older than the last applied one is dropped, data
+  // or error. Not "only the latest issued wins" — that would freeze the list
+  // while the latest is in flight and free rows over a stale snapshot.
+  const issued = useRef(0)
+  const applied = useRef(0)
+  const load = () => {
+    const seq = ++issued.current
+    const fresh = () => {
+      if (seq < applied.current) return false
+      applied.current = seq
+      return true
+    }
+    return fetchState()
+      .then((s) => {
+        if (!fresh()) return
+        // A newer snapshot supersedes an older failure, as it does older data.
+        setError(null)
+        setFeatures(s.features)
+      })
+      .catch((e: unknown) => {
+        if (fresh()) setError(e instanceof Error ? e.message : String(e))
+      })
+  }
   useEffect(() => {
     void load()
   }, [])
