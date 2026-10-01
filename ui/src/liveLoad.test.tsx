@@ -124,6 +124,9 @@ describe('useLiveLoad (F-0300)', () => {
     retry.focus()
     fireEvent.click(retry)
     expect(retry).toHaveAttribute('aria-disabled', 'true')
+    // jsdom keeps the focus on a button that becomes `disabled`: what proves
+    // the focus really stays is the attribute's absence, not toHaveFocus alone.
+    expect(retry).not.toBeDisabled()
     expect(retry).toHaveFocus()
     await act(async () => second.resolve('v1'))
     expect(screen.getByTestId('data')).toHaveTextContent('v1')
@@ -395,6 +398,7 @@ describe('Notice (F-0301)', () => {
     render(<Notice message="x" onRetry={onRetry} busy />)
     const retry = screen.getByRole('button')
     expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).not.toBeDisabled()
     retry.focus()
     expect(retry).toHaveFocus()
     fireEvent.click(retry)
