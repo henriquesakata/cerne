@@ -81,7 +81,7 @@ func TestLintParentScopeIsTransitive(t *testing.T) {
 
 	out, err := execCerne(t, "lint", "--parent", "F-0010", "--dir", projDir)
 	if err == nil || err.Error() != "5 problem(s) found" {
-		t.Fatalf("err = %v, want '3 problem(s) found'\n%s", err, out)
+		t.Fatalf("err = %v, want '5 problem(s) found'\n%s", err, out)
 	}
 	for _, id := range []string{"F-0010", "F-0011", "F-0012"} {
 		if !strings.Contains(out, "  "+id+" — ") {
@@ -102,10 +102,30 @@ func TestLintParentScopeCycleTerminates(t *testing.T) {
 
 	out, err := execCerne(t, "lint", "--parent", "F-0020", "--dir", projDir)
 	if err == nil || err.Error() != "4 problem(s) found" {
-		t.Fatalf("err = %v, want '2 problem(s) found'\n%s", err, out)
+		t.Fatalf("err = %v, want '4 problem(s) found'\n%s", err, out)
 	}
 	if !strings.Contains(out, "in F-0020 and 1 descendant(s)") {
 		t.Fatalf("label wrong:\n%s", out)
+	}
+}
+
+// A child whose stored parent differs in case (feature new on a
+// case-insensitive filesystem) is still a descendant.
+func TestLintParentScopeMatchesParentCaseInsensitively(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedScopeFixture(t, repoDir)
+	now := time.Now().UTC()
+	child := store.Feature{ID: "F-0030", Title: "Filha", State: domain.StateApproved, Parent: "f-0013", Facets: []string{"code"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveFeature(repoDir, child); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "lowercase parent"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "lint", "--parent", "F-0013", "--dir", projDir)
+	if err == nil || !strings.Contains(out, "  F-0030 — ") || !strings.Contains(out, "in F-0013 and 1 descendant(s)") {
+		t.Fatalf("lowercase-parent child missed: %v\n%s", err, out)
 	}
 }
 
@@ -131,11 +151,17 @@ func TestLintScopeUnknownID(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	seedScopeFixture(t, repoDir)
 
+	blank := map[string]string{"--feature": "--feature needs a feature id", "--parent": "--parent needs a feature id"}
+	for flag, want := range blank {
+		out, err := execCerne(t, "lint", flag, "  ", "--dir", projDir)
+		if err == nil || err.Error() != want {
+			t.Fatalf("%s blank: err = %v, want %q\n%s", flag, err, want, out)
+		}
+	}
 	cases := []struct{ name, flag, id, wantID string }{
 		{"feature", "--feature", "F-9999", "F-9999"},
 		{"parent", "--parent", "F-9999", "F-9999"},
 		{"decision id is not a feature", "--feature", "D-0001", "D-0001"},
-		{"blank id", "--feature", "  ", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -168,7 +194,7 @@ func TestLintScopeReportsOutsideCount(t *testing.T) {
 	if !strings.Contains(out, "(11 outside the scope).") {
 		t.Fatalf("dirty scope lacks outside count:\n%s", out)
 	}
-	// Nothing is outside when the scope is the whole project's only debt.
+	// Without a scope flag the output never mentions a scope.
 	whole, _ := execCerne(t, "lint", "--dir", projDir)
 	if strings.Contains(whole, "outside the scope") {
 		t.Fatalf("unscoped output mentions scope:\n%s", whole)
@@ -203,7 +229,11 @@ func TestLintScopeStagedAndFixTasks(t *testing.T) {
 	if !strings.Contains(out, "BROKEN-LINK") || !strings.Contains(out, "outside the scope") {
 		t.Fatalf("staged scope output wrong:\n%s", out)
 	}
-	tasks := out[strings.Index(out, "## Maintenance tasks"):]
+	idx := strings.Index(out, "## Maintenance tasks")
+	if idx < 0 {
+		t.Fatalf("fix-tasks section missing:\n%s", out)
+	}
+	tasks := out[idx:]
 	if strings.Contains(tasks, "F-0002") || strings.Contains(tasks, "F-0010") {
 		t.Fatalf("fix-tasks lists out-of-scope entities:\n%s", tasks)
 	}

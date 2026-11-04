@@ -22,6 +22,11 @@ func newLintCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Changed, not != "": a blank --feature must fail, not widen to the project.
+			for _, name := range []string{"feature", "parent"} {
+				if v, _ := cmd.Flags().GetString(name); cmd.Flags().Changed(name) && strings.TrimSpace(v) == "" {
+					return fmt.Errorf("--%s needs a feature id", name)
+				}
+			}
 			scoped := cmd.Flags().Changed("feature") || cmd.Flags().Changed("parent")
 			return runLint(cmd, dir, fixTasks, staged, scoped, feature, parent)
 		},
@@ -116,7 +121,14 @@ func lintScope(repoDir, feature, parent string) (ids map[string]bool, label stri
 	if parent == "" {
 		return ids, id, nil
 	}
-	children := store.ChildrenByParent(features)
+	// Stored parents may differ in case (feature new --parent f-0001 on a
+	// case-insensitive filesystem), so index them normalized.
+	norm := make([]store.Feature, len(features))
+	for i, f := range features {
+		f.Parent = strings.ToUpper(strings.TrimSpace(f.Parent))
+		norm[i] = f
+	}
+	children := store.ChildrenByParent(norm)
 	queue := []string{id}
 	for len(queue) > 0 {
 		cur := queue[0]
