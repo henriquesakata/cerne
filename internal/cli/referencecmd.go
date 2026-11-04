@@ -25,6 +25,7 @@ func newReferenceCmd() *cobra.Command {
 	cmd.AddCommand(newReferenceNewCmd(&dir))
 	cmd.AddCommand(newReferenceListCmd(&dir))
 	cmd.AddCommand(newReferenceRetagCmd(&dir))
+	cmd.AddCommand(newReferenceRetireCmd(&dir))
 	return cmd
 }
 
@@ -62,6 +63,39 @@ func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, set
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		r.ID, strings.Join(r.Facets, ", "), strings.Join(r.Components, ", "))
+	return nil
+}
+
+func newReferenceRetireCmd(dir *string) *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "retire <id>",
+		Short: "Retire a reference (current -> obsolete; --reason required)",
+		Long: "Moves a current reference to obsolete: the source stays searchable as history but leaves the " +
+			"current state. Use it for a duplicate (same URL registered twice) or a source that no longer holds.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferenceRetire(cmd, *dir, args[0], reason)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
+	return cmd
+}
+
+func runReferenceRetire(cmd *cobra.Command, dir, id, reason string) error {
+	// Fail fast before touching origin, like note retire.
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("--reason is required")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	out, err := app.RetireReference(ctx.repoDir, ctx.projDir, id, reason)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retired: %s → %s\n", out.ID, out.From, out.To)
 	return nil
 }
 

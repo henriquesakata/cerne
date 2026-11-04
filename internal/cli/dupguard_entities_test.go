@@ -95,3 +95,28 @@ func TestReferenceNewDupGuard(t *testing.T) {
 		t.Fatalf("--force: %v\n%s", err, out)
 	}
 }
+
+func TestReferenceRetire(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	f := writeBodyFile(t, "conteúdo\n")
+	if out, err := execCerne(t, "reference", "new", "Fonte", "--url", "http://a", "--file", f, "--dir", projDir); err != nil {
+		t.Fatalf("new: %v\n%s", err, out)
+	}
+	if _, err := execCerne(t, "reference", "retire", "R-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--reason is required") {
+		t.Fatalf("missing reason err = %v", err)
+	}
+	out, err := execCerne(t, "reference", "retire", "R-0001", "--reason", "duplicate of R-0002", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "R-0001 retired: current → obsolete") {
+		t.Fatalf("retire: %v\n%s", err, out)
+	}
+	if r, _ := store.LoadReference(repoDir, "R-0001"); r.State != "obsolete" {
+		t.Fatalf("state = %s", r.State)
+	}
+	if _, err := execCerne(t, "reference", "retire", "R-0001", "--reason", "again", "--dir", projDir); err == nil {
+		t.Fatal("second retire must fail")
+	}
+	// retired no longer blocks a new registration of the same URL
+	if out, err := execCerne(t, "reference", "new", "Fonte", "--url", "http://a", "--file", f, "--dir", projDir); err != nil {
+		t.Fatalf("after retire: %v\n%s", err, out)
+	}
+}

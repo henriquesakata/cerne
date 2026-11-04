@@ -225,3 +225,50 @@ func ReferencesInforming(repoDir, entityID string) ([]store.Reference, error) {
 	}
 	return out, nil
 }
+
+// ReferenceOutcome reports a reference transition that was applied and synced.
+type ReferenceOutcome struct {
+	ID   string
+	From domain.ReferenceState
+	To   domain.ReferenceState
+}
+
+// RetireReference moves a current reference to obsolete (history, still
+// searchable) — the remedy for a duplicate or a dead source (F-0324), parity
+// with note retire. The reason is required and recorded on reference.obsoleted;
+// an already-obsolete reference refuses with domain.ErrInvalidTransition.
+func RetireReference(repoDir, projDir, id, reason string) (ReferenceOutcome, error) {
+	var out ReferenceOutcome
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return out, fmt.Errorf("--reason is required")
+	}
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		r, err := store.LoadReference(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("reference %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		to, err := domain.TransitionReference(r.State, domain.ActionObsolete)
+		if err != nil {
+			return "", err
+		}
+		out = ReferenceOutcome{ID: id, From: r.State, To: to}
+		r.State = to
+		r.UpdatedAt = time.Now().UTC()
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "reference.obsoleted", map[string]string{"reason": reason}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retire %s", id), nil
+	})
+	if err != nil {
+		return ReferenceOutcome{}, err
+	}
+	return out, nil
+}
