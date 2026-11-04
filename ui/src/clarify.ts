@@ -38,10 +38,11 @@ const RESOLVED_WORDS = new Set(VOCABS.map((v) => v.resolved))
 // corpo opcional (sem ]) que atravessa quebras simples de linha dentro do
 // parágrafo — cada continuação precisa de um não-branco que não seja colchete depois
 // da indentação (linha em branco encerra) e nenhuma continuação contém [, então
-// um marcador nunca absorve outro (F-0317). Exclui prefixos como
+// um marcador que começa numa linha POSTERIOR nunca é absorvido (F-0317). Exclui prefixos como
 // [ESCLARECEDOR] e [CLARIFIER]. Classes explícitas, nunca \s (RE2 x JS).
 // ponytail: marcador multi-linha com [ numa continuação não é reconhecido
-// (segue invisível, como antes); fronteira de bloco markdown não é detectada,
+// (segue invisível, como antes); abertura sem fecho ainda absorve marcador que
+// começa depois dela na MESMA linha, como antes (a classe da 1ª linha admite [); fronteira de bloco markdown não é detectada,
 // então marcador SEM fecho absorve as linhas seguintes sem [ do parágrafo;
 // upgrade = span via mdast.
 export const CLARIFY_RE = new RegExp(
@@ -91,7 +92,7 @@ const escapePipe = (s: string) => s.replace(/[\\|]/g, (c) => '\\' + c)
 export function parseClarification(raw: string): ClarifyInfo | null {
   const m = new RegExp(CLARIFY_RE.source).exec(raw)
   if (!m || m[0] !== raw) return null
-  const body = (m[2] ?? '').replace(/[ \t]*\r?\n[ \t]*/g, ' ').trim()
+  const body = (m[2] ?? '').replace(/[ \t]*\r?\n[ \t]*(?:>[ \t]*)*/g, ' ').trim()
   if (RESOLVED_WORDS.has(m[1])) {
     // A pergunta é o que precede a PRIMEIRA seta; o resto é a trilha, cada
     // correção anexada com a mesma seta (F-0197). Sem seta alguma, o corpo

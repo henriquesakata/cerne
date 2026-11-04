@@ -437,6 +437,40 @@
       "name": "known limit (F-0317): a continuation line containing [ ends the multi-line read",
       "content": "[ESCLARECER: usar a\n[0] ou b?]",
       "spans": []
+    },
+    {
+      "name": "blockquote marker prefix is dropped from a multi-line question",
+      "content": "> Nota: [ESCLARECER: qual\n> formato usar? | json | yaml]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: qual\n> formato usar? | json | yaml]",
+          "offset": 8,
+          "resolved": false
+        }
+      ],
+      "question": "qual formato usar?",
+      "options": [
+        "json",
+        "yaml"
+      ]
+    },
+    {
+      "name": "nested blockquote prefix is dropped from a multi-line question",
+      "content": "> - [ESCLARECER: a\n>   b?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: a\n>   b?]",
+          "offset": 4,
+          "resolved": false
+        }
+      ],
+      "question": "a b?",
+      "options": []
+    },
+    {
+      "name": "known limit (F-0317): an unclosed opener absorbs a marker that starts later on the same line, as on main",
+      "content": "Use `[ESCLARECER:` p.ex. [ESCLARECER: real\npergunta?]",
+      "spans": []
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",
@@ -528,6 +562,14 @@
       "offset": 2,
       "answer": "S3",
       "want": "x [ESCLARECIDO: qual backend? → S3] y"
+    },
+    {
+      "name": "quoted two-line marker resolves to one line",
+      "content": "> Nota: [ESCLARECER: qual\n> formato?] fim",
+      "raw": "[ESCLARECER: qual\n> formato?]",
+      "offset": 8,
+      "answer": "json",
+      "want": "> Nota: [ESCLARECIDO: qual formato? → json] fim"
     }
   ],
   "_correct_comment": "Correction parity (F-0197): each case rewrites ONE anchored RESOLVED marker, appending the new answer to its trail instead of replacing it. Go replays via clarify.Correct + manual splice (TestCorrectCorpus); TS replays via correctMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch, or a still-open marker — correcting an open marker is answering it). Anchor offsets stay BEFORE any arrow: the arrow is 3 bytes in Go and 1 code unit in TS, so a later offset would not agree on both sides.",
