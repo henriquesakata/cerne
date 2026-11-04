@@ -13,7 +13,7 @@ import (
 func TestCreateNoteWithTags(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	n, err := CreateNote(repoDir, projDir, "Gitea install gotcha", "corpo real da nota", nil,
-		[]string{"Infra", "INFRA", "code"}, []string{"Gitea", "KPack"}, false)
+		[]string{"Infra", "INFRA", "code"}, []string{"Gitea", "KPack"}, false, false)
 	if err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestCreateNoteWithTags(t *testing.T) {
 func TestCreateNoteDurable(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	n, err := CreateNote(repoDir, projDir, "Vocabulário do domínio", "corpo real da nota", nil,
-		[]string{"code"}, []string{"backlog"}, true)
+		[]string{"code"}, []string{"backlog"}, true, false)
 	if err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestCreateNoteDurable(t *testing.T) {
 // writes nothing (validated before any side effect).
 func TestCreateNoteInvalidFacet(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	_, err := CreateNote(repoDir, projDir, "T", "body", nil, []string{"prod"}, nil, false)
+	_, err := CreateNote(repoDir, projDir, "T", "body", nil, []string{"prod"}, nil, false, false)
 	if !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want errors.Is ErrUnknownFacet", err)
 	}

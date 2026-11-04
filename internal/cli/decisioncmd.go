@@ -159,25 +159,28 @@ func runDecisionRetag(cmd *cobra.Command, dir, id, facet, component string, setF
 
 func newDecisionNewCmd(dir *string) *cobra.Command {
 	var file, facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a decision (active); one-shot with a --file/stdin body",
 		Long: "Creates an active decision. With a body (--file or piped stdin) it is one-shot: the ADR is born with " +
 			"real content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +
 			"template to fill in. Use --facet (closed axis: infra,code,data,process,auth) and --component " +
-			"(subsystem/tool, e.g. keycloak,gitea) to organize — both multi-valued, comma-separated.",
+			"(subsystem/tool, e.g. keycloak,gitea) to organize — both multi-valued, comma-separated. " +
+			"A live decision with a similar title refuses the creation (F-0324); --force overrides it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecisionNew(cmd, *dir, args[0], file, facet, component)
+			return runDecisionNew(cmd, *dir, args[0], file, facet, component, force)
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "file with the ADR body (defaults to piped stdin); one-shot, skips draft+push")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. keycloak,gitea)")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct decision")
 	return cmd
 }
 
-func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component string) error {
+func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component string, force bool) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return fmt.Errorf("the decision title cannot be empty")
@@ -190,7 +193,7 @@ func runDecisionNew(cmd *cobra.Command, dir, title, file, facet, component strin
 	if err != nil {
 		return err
 	}
-	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(facet), splitInforms(component))
+	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(facet), splitInforms(component), force)
 	if err != nil {
 		return err
 	}

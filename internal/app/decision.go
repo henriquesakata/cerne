@@ -26,8 +26,10 @@ type DecisionOutcome struct {
 // commits+pushes the backend and refreshes the docs.lock snapshot in projDir. A
 // non-empty body makes 'decision new' one-shot: the ADR is born with real
 // content, no draft+push needed. facets/components tag the decision on the
-// shared D-0002 axes (facet closed-set, component curated), like a note.
-func CreateDecision(repoDir, projDir, title, body string, facets, components []string) (store.Decision, error) {
+// shared D-0002 axes (facet closed-set, component curated), like a note. A live
+// decision with a similar title refuses the creation (F-0324); force overrides
+// it and records guard=forced on decision.created.
+func CreateDecision(repoDir, projDir, title, body string, facets, components []string, force bool) (store.Decision, error) {
 	// Validate/normalize tags before any side effect (NextID, save): an unknown
 	// facet must abort without minting an id or writing a file.
 	normFacets, err := domain.NormalizeFacets(facets)
@@ -39,6 +41,11 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 	// (F-0122): concurrent creations serialize instead of minting the same id.
 	var d store.Decision
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		// Duplicate guard (F-0324): before the id mint and any write.
+		forced, err := guardDecision(repoDir, title, tagSet{facets: normFacets, components: normComponents}, force)
+		if err != nil {
+			return "", err
+		}
 		id, err := store.NextID(repoDir, "D")
 		if err != nil {
 			return "", err
@@ -59,7 +66,11 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 		if err := writeDecisionBody(repoDir, id, title, body); err != nil {
 			return "", err
 		}
-		ev := domain.NewEvent(id, "decision.created", map[string]string{"title": title}, EventActor())
+		payload := map[string]string{"title": title}
+		if forced {
+			payload["guard"] = "forced"
+		}
+		ev := domain.NewEvent(id, "decision.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}

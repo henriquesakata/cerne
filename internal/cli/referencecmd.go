@@ -67,6 +67,7 @@ func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, set
 
 func newReferenceNewCmd(dir *string) *cobra.Command {
 	var url, informs, file, facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register an external source (article/doc) as a reference",
@@ -75,10 +76,10 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
 			"(F-/D-/RB-/N-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
 			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
-			"comma-separated.",
+			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component)
+			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component, force)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
@@ -86,11 +87,12 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source")
 	_ = cmd.MarkFlagRequired("url")
 	return cmd
 }
 
-func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string) error {
+func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string, force bool) error {
 	content, err := readReferenceContent(cmd, file)
 	if err != nil {
 		return err
@@ -99,7 +101,7 @@ func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, 
 	if err != nil {
 		return err
 	}
-	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component))
+	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component), force)
 	if err != nil {
 		return err
 	}

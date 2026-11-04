@@ -78,7 +78,7 @@ func TestCreateReferenceUnknownFacet(t *testing.T) {
 // (already serialized via the embedded store.Reference) — guard for crit. 2.
 func TestReferenceDetailHasTags(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Doc", "http://a", "c", nil, []string{"infra"}, []string{"gitea"}); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Doc", "http://a", "c", nil, []string{"infra"}, []string{"gitea"}, false); err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
 	var got struct {
@@ -111,7 +111,7 @@ func TestCreateReferenceEndpointDangling(t *testing.T) {
 // inform it (the reverse "Fontes" backlink).
 func TestFeatureDetailInformedBy(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"F-0001"}, nil, nil); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"F-0001"}, nil, nil, false); err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
 	var got struct {
@@ -135,7 +135,7 @@ func TestDecisionDetailInformedBy(t *testing.T) {
 		t.Fatalf("SaveDecision: %v", err)
 	}
 	commitBackend(t, repoDir)
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"D-0001"}, nil, nil); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{"D-0001"}, nil, nil, false); err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
 	var got struct {

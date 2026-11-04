@@ -21,7 +21,7 @@ func TestCreateExternalReference(t *testing.T) {
 
 	r, err := CreateExternalReference(repoDir, projDir,
 		"  Artigo sobre PKCE  ", "https://example.com/pkce",
-		"# PKCE\n\nO fluxo PKCE protege o code grant.", []string{"F-0001"}, nil, nil)
+		"# PKCE\n\nO fluxo PKCE protege o code grant.", []string{"F-0001"}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
@@ -70,24 +70,24 @@ func TestCreateExternalReference(t *testing.T) {
 func TestCreateExternalReferenceValidation(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "", "c", nil, nil, nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "", "c", nil, nil, nil, false); err == nil {
 		t.Fatalf("empty url should error")
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"F-9999"}, nil, nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"F-9999"}, nil, nil, false); err == nil {
 		t.Fatalf("dangling feature informs target should error")
 	}
 	// Dangling runbook/note targets error too (F-0108: RB-/N- accepted only when they exist).
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"RB-9999"}, nil, nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"RB-9999"}, nil, nil, false); err == nil {
 		t.Fatalf("dangling runbook informs target should error")
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"N-9999"}, nil, nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"N-9999"}, nil, nil, false); err == nil {
 		t.Fatalf("dangling note informs target should error")
 	}
 	// A reference id (R-) is not a valid informs target; the error names the accepted kinds.
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"R-1"}, nil, nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"R-1"}, nil, nil, false); err == nil {
 		t.Fatalf("reference informs target should error")
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"X-1"}, nil, nil); err == nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", []string{"X-1"}, nil, nil, false); err == nil {
 		t.Fatalf("unknown-kind informs target should error")
 	}
 	// Nothing was written.
@@ -104,18 +104,18 @@ func TestCreateExternalReferenceInformsRunbookNote(t *testing.T) {
 	if _, err := CreateRunbook(repoDir, projDir, "Deploy do serviço", "# Deploy\n\npassos"); err != nil {
 		t.Fatalf("CreateRunbook: %v", err)
 	}
-	if _, err := CreateNote(repoDir, projDir, "Gotcha do build", "corpo", nil, nil, nil, false); err != nil {
+	if _, err := CreateNote(repoDir, projDir, "Gotcha do build", "corpo", nil, nil, nil, false, false); err != nil {
 		t.Fatalf("CreateNote: %v", err)
 	}
 
-	rbRef, err := CreateExternalReference(repoDir, projDir, "Doc do fornecedor", "http://vendor/x", "conteúdo", []string{"RB-0001"}, nil, nil)
+	rbRef, err := CreateExternalReference(repoDir, projDir, "Doc do fornecedor", "http://vendor/x", "conteúdo", []string{"RB-0001"}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateExternalReference --informs RB-0001: %v", err)
 	}
 	if len(rbRef.Informs) != 1 || rbRef.Informs[0] != "RB-0001" {
 		t.Fatalf("rbRef.Informs = %v, want [RB-0001]", rbRef.Informs)
 	}
-	nRef, err := CreateExternalReference(repoDir, projDir, "Artigo da gotcha", "http://blog/y", "conteúdo", []string{"N-0001"}, nil, nil)
+	nRef, err := CreateExternalReference(repoDir, projDir, "Artigo da gotcha", "http://blog/y", "conteúdo", []string{"N-0001"}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateExternalReference --informs N-0001: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestCreateNoteInformsRunbook(t *testing.T) {
 	if _, err := CreateRunbook(repoDir, projDir, "Recuperação", "# Recovery\n\npassos"); err != nil {
 		t.Fatalf("CreateRunbook: %v", err)
 	}
-	n, err := CreateNote(repoDir, projDir, "Nota operacional", "corpo", []string{"RB-0001"}, nil, nil, false)
+	n, err := CreateNote(repoDir, projDir, "Nota operacional", "corpo", []string{"RB-0001"}, nil, nil, false, false)
 	if err != nil {
 		t.Fatalf("CreateNote --informs RB-0001: %v", err)
 	}
@@ -156,10 +156,10 @@ func TestReferencesInforming(t *testing.T) {
 	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "A", "http://a", "ca", []string{"F-0001"}, nil, nil); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "A", "http://a", "ca", []string{"F-0001"}, nil, nil, false); err != nil {
 		t.Fatalf("create A: %v", err)
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "B", "http://b", "cb", nil, nil, nil); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "B", "http://b", "cb", nil, nil, nil, false); err != nil {
 		t.Fatalf("create B: %v", err)
 	}
 

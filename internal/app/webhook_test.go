@@ -92,11 +92,11 @@ func TestTransitionFeatureWebhookFailureNeverFailsTransition(t *testing.T) {
 // TestTransitionDecisionFiresWebhook (crit. 1, kind=decision).
 func TestTransitionDecisionFiresWebhook(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	d1, err := CreateDecision(repoDir, projDir, "Decisão 1", "corpo", nil, nil)
+	d1, err := CreateDecision(repoDir, projDir, "Decisão 1", "corpo", nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateDecision d1: %v", err)
 	}
-	d2, err := CreateDecision(repoDir, projDir, "Decisão 2", "corpo", nil, nil)
+	d2, err := CreateDecision(repoDir, projDir, "Decisão 2", "corpo", nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateDecision d2: %v", err)
 	}

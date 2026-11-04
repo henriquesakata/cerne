@@ -404,7 +404,7 @@ func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir str
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("at least one component is required: an untagged note is born as lint debt (untagged-live)"))
 		return
 	}
-	n, err := app.CreateNote(repoDir, projDir, req.Title, req.Body, req.Informs, req.Facets, req.Components, true)
+	n, err := app.CreateNote(repoDir, projDir, req.Title, req.Body, req.Informs, req.Facets, req.Components, true, false)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return

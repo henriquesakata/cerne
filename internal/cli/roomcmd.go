@@ -571,7 +571,7 @@ func runRoomMinutesRegister(cmd *cobra.Command, dir string, port int, roomID, in
 	body := room.RenderMinutesNoteBody(*rm, time.Now().UTC())
 	title := fmt.Sprintf("Ata — %s: %s", rm.ID, rm.Topic)
 	components := append([]string{domain.AtaComponent}, splitInforms(component)...)
-	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), components, false)
+	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), components, false, force) // --force re-registers the same minutes (F-0238); the same flag lifts the F-0324 guard
 	if err != nil {
 		return err
 	}

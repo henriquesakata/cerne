@@ -23,16 +23,16 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 		doc    func(id string) string
 	}{
 		{"note", func(r, p string, i int) (string, error) {
-			n, err := CreateNote(r, p, fmt.Sprintf("Nota %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false)
+			n, err := CreateNote(r, p, fmt.Sprintf("Nota %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false, false)
 			return n.ID, err
 		}, func(id string) string { return "content/notes/" + id + ".md" }},
 		{"decision", func(r, p string, i int) (string, error) {
-			d, err := CreateDecision(r, p, fmt.Sprintf("Decisão %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil)
+			d, err := CreateDecision(r, p, fmt.Sprintf("Decisão %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, false)
 			return d.ID, err
 		}, func(id string) string { return "content/decisions/" + id + ".md" }},
 		{"reference", func(r, p string, i int) (string, error) {
 			ref, err := CreateExternalReference(r, p, fmt.Sprintf("Ref %d", i),
-				fmt.Sprintf("https://example.com/%d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil)
+				fmt.Sprintf("https://example.com/%d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false)
 			return ref.ID, err
 		}, func(id string) string { return "content/references/" + id + ".md" }},
 		{"runbook", func(r, p string, i int) (string, error) {

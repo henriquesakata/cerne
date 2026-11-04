@@ -22,8 +22,10 @@ func ReferenceDocPath(repoDir, id string) string {
 // informs target (F-/D-) exists, allocates the next R- id, persists the entity
 // with URL/External/Informs, writes the pasted content as the reference's
 // content doc (indexed, so ask can cite it), appends reference.created, and
-// commits+pushes the backend refreshing the docs.lock snapshot in projDir.
-func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string) (store.Reference, error) {
+// commits+pushes the backend refreshing the docs.lock snapshot in projDir. A
+// live reference with the same normalized URL refuses the creation (F-0324);
+// force overrides it and records guard=forced on reference.created.
+func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string, force bool) (store.Reference, error) {
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	if title == "" {
@@ -44,6 +46,12 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	var r store.Reference
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateInforms(repoDir, informs)
+		if err != nil {
+			return "", err
+		}
+		// Duplicate guard (F-0324): a reference is its source, so only a live
+		// reference with the same normalized URL collides (never the title).
+		forced, err := guardReference(repoDir, url, tagSet{normFacets, normComponents, cleaned}, force)
 		if err != nil {
 			return "", err
 		}
@@ -70,7 +78,11 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		if err := writeReferenceDoc(repoDir, id, title, content); err != nil {
 			return "", err
 		}
-		ev := domain.NewEvent(id, "reference.created", map[string]string{"url": url, "source": "external"}, EventActor())
+		payload := map[string]string{"url": url, "source": "external"}
+		if forced {
+			payload["guard"] = "forced"
+		}
+		ev := domain.NewEvent(id, "reference.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
