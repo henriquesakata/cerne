@@ -35,10 +35,14 @@ const MARKER_WORDS = VOCABS.flatMap((v) => [v.open, v.resolved]).sort(
 const RESOLVED_WORDS = new Set(VOCABS.map((v) => v.resolved))
 
 // Mesma forma do Go: palavra do catálogo com guilhemets legados opcionais e
-// corpo opcional de linha única (sem ] nem quebra), o que também exclui
-// prefixos como [ESCLARECEDOR] e [CLARIFIER].
+// corpo opcional (sem ]) que atravessa quebras simples de linha dentro do
+// parágrafo — cada continuação precisa de um não-branco que não seja ] depois
+// da indentação, então linha em branco encerra (F-0317). Exclui prefixos como
+// [ESCLARECEDOR] e [CLARIFIER]. Classes explícitas, nunca \s (RE2 x JS).
+// ponytail: fronteira de bloco markdown dentro do parágrafo não é detectada;
+// upgrade = span via mdast.
 export const CLARIFY_RE = new RegExp(
-  `\\[«?(${MARKER_WORDS.join('|')})»?(?::[ \\t]*([^\\]\\n]*))?\\]`,
+  `\\[«?(${MARKER_WORDS.join('|')})»?(?::[ \\t]*([^\\]\\n]*(?:\\n[ \\t]*[^\\] \\t\\r\\n][^\\]\\n]*)*))?\\]`,
   'g',
 )
 
@@ -80,7 +84,7 @@ const escapePipe = (s: string) => s.replace(/[\\|]/g, (c) => '\\' + c)
 export function parseClarification(raw: string): ClarifyInfo | null {
   const m = new RegExp(CLARIFY_RE.source).exec(raw)
   if (!m || m[0] !== raw) return null
-  const body = (m[2] ?? '').trim()
+  const body = (m[2] ?? '').replace(/[ \t]*\r?\n[ \t]*/g, ' ').trim()
   if (RESOLVED_WORDS.has(m[1])) {
     // A pergunta é o que precede a PRIMEIRA seta; o resto é a trilha, cada
     // correção anexada com a mesma seta (F-0197). Sem seta alguma, o corpo

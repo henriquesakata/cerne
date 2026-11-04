@@ -384,6 +384,17 @@ describe('Markdown com chips de esclarecimento', () => {
     expect(screen.getByRole('button', { name: /B2, S3 ou outro\?/ })).toBeInTheDocument()
   })
 
+  // F-0317 critério 8: marcador quebrado em 2 linhas é um chip respondível e o
+  // badge conta 1; pergunta normalizada em uma linha.
+  it('F-0317: marcador de 2 linhas vira chip respondível e conta 1', () => {
+    const md = 'Texto [ESCLARECER: sincrona ou\n  assincrona? | sincrona | assincrona] fim.'
+    expect(countOpen(md)).toBe(1)
+    expect(parseClarification(markerSpans(md)[0].raw)?.question).toBe('sincrona ou assincrona?')
+    const { container } = render(<Markdown onAnswer={() => {}}>{md}</Markdown>)
+    expect(container.querySelectorAll('.clarify-open')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /sincrona ou assincrona\?/ })).toBeInTheDocument()
+  })
+
   it('round-trip: a resposta do chip produz o doc resolvido', () => {
     const doc = '---\ncerne_id: F-0001\n---\n\nX [ESCLARECER: onde?] fim.'
     let saved = ''

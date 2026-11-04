@@ -120,9 +120,15 @@
       ]
     },
     {
-      "name": "en marker does not span lines",
+      "name": "en marker spans a soft line break (F-0317 supersedes 'does not span lines')",
       "content": "[CLARIFY: broken\nhere]",
-      "spans": []
+      "spans": [
+        {
+          "raw": "[CLARIFY: broken\nhere]",
+          "offset": 0,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "duplicated markers get distinct offsets",
@@ -224,6 +230,61 @@
       "answers": [
         "a\\|b"
       ]
+    },
+    {
+      "name": "pt open question broken across two lines",
+      "content": "x [ESCLARECER: sincrona ou\n  assincrona?] y",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: sincrona ou\n  assincrona?]",
+          "offset": 2,
+          "resolved": false
+        }
+      ],
+      "question": "sincrona ou assincrona?",
+      "options": []
+    },
+    {
+      "name": "en open options broken across lines",
+      "content": "[CLARIFY: where to persist? |\tin-place\n| sidecar]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: where to persist? |\tin-place\n| sidecar]",
+          "offset": 0,
+          "resolved": false
+        }
+      ],
+      "question": "where to persist?",
+      "options": [
+        "in-place",
+        "sidecar"
+      ]
+    },
+    {
+      "name": "pt resolved broken across two lines",
+      "content": "[ESCLARECIDO: qual\nbackend? → S3]",
+      "spans": [
+        {
+          "raw": "[ESCLARECIDO: qual\nbackend? → S3]",
+          "offset": 0,
+          "resolved": true
+        }
+      ],
+      "question": "qual backend?",
+      "answers": [
+        "S3"
+      ]
+    },
+    {
+      "name": "unclosed marker stops at a blank line",
+      "content": "[ESCLARECER: sem fecho\n\nparagrafo novo [ESCLARECER: ok?] fim",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: ok?]",
+          "offset": 39,
+          "resolved": false
+        }
+      ]
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",
@@ -307,6 +368,14 @@
       "offset": 33,
       "answer": "a\\|b",
       "want": "| Fork | Razao |\n| --- | --- |\n| [ESCLARECIDO: A? → a\\\\\\|b] | pq |"
+    },
+    {
+      "name": "two-line marker resolves to one line",
+      "content": "x [ESCLARECER: qual\nbackend?] y",
+      "raw": "[ESCLARECER: qual\nbackend?]",
+      "offset": 2,
+      "answer": "S3",
+      "want": "x [ESCLARECIDO: qual backend? → S3] y"
     }
   ],
   "_correct_comment": "Correction parity (F-0197): each case rewrites ONE anchored RESOLVED marker, appending the new answer to its trail instead of replacing it. Go replays via clarify.Correct + manual splice (TestCorrectCorpus); TS replays via correctMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch, or a still-open marker — correcting an open marker is answering it). Anchor offsets stay BEFORE any arrow: the arrow is 3 bytes in Go and 1 code unit in TS, so a later offset would not agree on both sides.",
@@ -374,6 +443,14 @@
       "offset": 2,
       "answer": "c | d",
       "want": "x [ESCLARECIDO: qual? → a \\| b → c \\| d] y"
+    },
+    {
+      "name": "two-line resolved marker corrects to one line",
+      "content": "x [ESCLARECIDO: qual\nbackend? → S3] y",
+      "raw": "[ESCLARECIDO: qual\nbackend? → S3]",
+      "offset": 2,
+      "answer": "GCS",
+      "want": "x [ESCLARECIDO: qual backend? → S3 → GCS] y"
     }
   ]
 }
