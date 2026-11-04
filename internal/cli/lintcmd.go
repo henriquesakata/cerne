@@ -8,28 +8,40 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newLintCmd() *cobra.Command {
 	var dir string
 	var fixTasks bool
 	var staged bool
+	var feature, parent string
 	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Detect stale documentation in the backend",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLint(cmd, dir, fixTasks, staged)
+			// Changed, not != "": a blank --feature must fail, not widen to the project.
+			for _, name := range []string{"feature", "parent"} {
+				if v, _ := cmd.Flags().GetString(name); cmd.Flags().Changed(name) && strings.TrimSpace(v) == "" {
+					return fmt.Errorf("--%s needs a feature id", name)
+				}
+			}
+			scoped := cmd.Flags().Changed("feature") || cmd.Flags().Changed("parent")
+			return runLint(cmd, dir, fixTasks, staged, scoped, feature, parent)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&fixTasks, "fix-tasks", false, "print a maintenance task list after the findings")
 	cmd.Flags().BoolVar(&staged, "staged", false, "validate local .docs/ edits before push, without touching the backend")
+	cmd.Flags().StringVar(&feature, "feature", "", "only the findings about this feature")
+	cmd.Flags().StringVar(&parent, "parent", "", "only the findings about this epic and its descendants")
+	cmd.MarkFlagsMutuallyExclusive("feature", "parent")
 	return cmd
 }
 
-func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
+func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feature, parent string) error {
 	repoDir, ignore, staleReadyDays, staleWorkHours, cleanup, driftCtx, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
@@ -53,17 +65,82 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged bool) error {
 		lint.Sort(findings)
 	}
 	out := cmd.OutOrStdout()
+	var label string
+	var outside int
+	if scoped {
+		ids, l, err := lintScope(repoDir, feature, parent)
+		if err != nil {
+			return err
+		}
+		label = l
+		findings, outside = lint.Scope(findings, ids)
+	}
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "No problems found.")
+		if !scoped {
+			fmt.Fprintln(out, "No problems found.")
+		} else if outside == 0 {
+			fmt.Fprintf(out, "No problems found in %s.\n", label)
+		} else {
+			fmt.Fprintf(out, "No problems found in %s (%d problem(s) outside the scope — run 'cerne lint' for the full list).\n", label, outside)
+		}
 		return nil
 	}
-	printFindings(out, findings)
+	if scoped {
+		printFindingsTotal(out, findings, fmt.Sprintf(" in %s (%d outside the scope)", label, outside))
+	} else {
+		printFindings(out, findings)
+	}
 	if fixTasks {
 		printFixTasks(out, findings)
 	}
 	// Root has SilenceUsage, so this surfaces as a single error line and
 	// exit code 1 via main.
 	return fmt.Errorf("%d problem(s) found", len(findings))
+}
+
+// lintScope resolves --feature / --parent to the set of entity ids whose
+// findings are kept, plus the label shown in the output. --parent covers the
+// epic and every descendant; the visited set guards against a parent cycle.
+func lintScope(repoDir, feature, parent string) (ids map[string]bool, label string, err error) {
+	id := strings.ToUpper(strings.TrimSpace(feature + parent))
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return nil, "", err
+	}
+	found := false
+	for _, f := range features {
+		if f.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, "", fmt.Errorf("feature %s not found in backend", id)
+	}
+	ids = map[string]bool{id: true}
+	if parent == "" {
+		return ids, id, nil
+	}
+	// Stored parents may differ in case (feature new --parent f-0001 on a
+	// case-insensitive filesystem), so index them normalized.
+	norm := make([]store.Feature, len(features))
+	for i, f := range features {
+		f.Parent = strings.ToUpper(strings.TrimSpace(f.Parent))
+		norm[i] = f
+	}
+	children := store.ChildrenByParent(norm)
+	queue := []string{id}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, c := range children[cur] {
+			if !ids[c.ID] {
+				ids[c.ID] = true
+				queue = append(queue, c.ID)
+			}
+		}
+	}
+	return ids, fmt.Sprintf("%s and %d descendant(s)", id, len(ids)-1), nil
 }
 
 // lintRoot resolves the directory lint.Run scans. Default: the cache clone,
@@ -92,6 +169,12 @@ func lintRoot(dir string, staged bool) (repoDir string, ignore []string, staleRe
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.
 func printFindings(w io.Writer, findings []lint.Finding) {
+	printFindingsTotal(w, findings, "")
+}
+
+// printFindingsTotal is printFindings with a suffix on the Total line (the
+// scope label of `lint --feature/--parent`).
+func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string) {
 	for _, rule := range lint.RuleOrder {
 		var group []lint.Finding
 		for _, f := range findings {
@@ -108,7 +191,7 @@ func printFindings(w io.Writer, findings []lint.Finding) {
 		}
 		fmt.Fprintln(w)
 	}
-	fmt.Fprintf(w, "Total: %d problem(s).\n", len(findings))
+	fmt.Fprintf(w, "Total: %d problem(s)%s.\n", len(findings), totalSuffix)
 }
 
 // findingLoc is the location shown for a finding: the file when known,
