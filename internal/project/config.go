@@ -52,7 +52,11 @@ type Config struct {
 	// F-0130) may go without a done/abandon before the stale-work lint flags
 	// it. 0 (absent) means the 8-hour default — read it via
 	// StaleWorkWindowHours.
-	StaleWorkHours int             `toml:"stale_work_hours,omitzero"`
+	StaleWorkHours int `toml:"stale_work_hours,omitzero"`
+	// RecentWorkDays is the activity window (days) the CONTEXT.md "In progress"
+	// board uses: older active works fold into one triage line (F-0319).
+	// 0 (absent) means the 14-day default — read it via RecentWorkWindowDays.
+	RecentWorkDays int             `toml:"recent_work_days,omitzero"`
 	Gates          GatesConfig     `toml:"gates"`     // F-0131: who may cross the human gates
 	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
 	UI             UIConfig        `toml:"ui"`        // F-0187: per-project UI preferences (mindmap tab toggle)
@@ -141,7 +145,7 @@ func (a AgentConfig) Resolve(projDir string) (string, error) {
 // package, not here (this struct stays a plain TOML mirror).
 type WebhookConfig struct {
 	URL     string `toml:"url,omitempty"`
-	Format  string `toml:"format,omitempty"`  // "json" (default) | "slack"
+	Format  string `toml:"format,omitempty"` // "json" (default) | "slack"
 	Timeout int    `toml:"timeout,omitzero"` // seconds; default 3
 }
 
@@ -278,6 +282,15 @@ func (c Config) StaleReadyWindowDays() int {
 	return 14
 }
 
+// RecentWorkWindowDays returns the configured recent_work_days or the 14-day
+// default when absent/zero (F-0319).
+func (c Config) RecentWorkWindowDays() int {
+	if c.RecentWorkDays > 0 {
+		return c.RecentWorkDays
+	}
+	return 14
+}
+
 // StaleWorkWindowHours returns the configured stale_work_hours or the 8-hour
 // default when absent/zero (F-0130).
 func (c Config) StaleWorkWindowHours() int {
@@ -360,6 +373,7 @@ func SaveConfig(dir string, c Config) error {
 		ComponentPaths           map[string][]string `toml:"component_paths,omitempty"`
 		StaleReadyDays           int                 `toml:"stale_ready_days,omitzero"`
 		StaleWorkHours           int                 `toml:"stale_work_hours,omitzero"`
+		RecentWorkDays           int                 `toml:"recent_work_days,omitzero"`
 		Gates                    *GatesConfig        `toml:"gates,omitempty"`
 		Activity                 *ActivityConfig     `toml:"activity,omitempty"`
 		LLM                      *LLMConfig          `toml:"llm,omitempty"`
@@ -369,7 +383,7 @@ func SaveConfig(dir string, c Config) error {
 		Agent                    *AgentConfig        `toml:"agent,omitempty"`
 		Guard                    *GuardConfig        `toml:"guard,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours, RecentWorkDays: c.RecentWorkDays}
 	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates
