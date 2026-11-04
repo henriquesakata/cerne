@@ -377,6 +377,66 @@
       ],
       "question": "x y",
       "options": []
+    },
+    {
+      "name": "R3-1 unclosed opener in inline code does not swallow the next line's marker",
+      "content": "Escreva `[ESCLARECER:` e a pergunta.\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 37,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-1 unclosed opener in inline code before a list marker",
+      "content": "Use `[CLARIFY: q` then close.\n- [CLARIFY: real?]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: real?]",
+          "offset": 32,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-1 unclosed opener in an HTML comment does not swallow a marker after the arrow",
+      "content": "<!-- exemplo: [ESCLARECER: pergunta\n-->\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 40,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-1 unclosed opener in a fence does not swallow a marker after it",
+      "content": "```\n[ESCLARECER: q\n```\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 23,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-2 unclosed resolved marker does not swallow an open marker",
+      "content": "[ESCLARECIDO: x - y\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 20,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "known limit (F-0317): a continuation line containing [ ends the multi-line read",
+      "content": "[ESCLARECER: usar a\n[0] ou b?]",
+      "spans": []
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",

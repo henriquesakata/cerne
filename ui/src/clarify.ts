@@ -36,13 +36,16 @@ const RESOLVED_WORDS = new Set(VOCABS.map((v) => v.resolved))
 
 // Mesma forma do Go: palavra do catálogo com guilhemets legados opcionais e
 // corpo opcional (sem ]) que atravessa quebras simples de linha dentro do
-// parágrafo — cada continuação precisa de um não-branco que não seja ] depois
-// da indentação, então linha em branco encerra (F-0317). Exclui prefixos como
+// parágrafo — cada continuação precisa de um não-branco que não seja colchete depois
+// da indentação (linha em branco encerra) e nenhuma continuação contém [, então
+// um marcador nunca absorve outro (F-0317). Exclui prefixos como
 // [ESCLARECEDOR] e [CLARIFIER]. Classes explícitas, nunca \s (RE2 x JS).
-// ponytail: fronteira de bloco markdown dentro do parágrafo não é detectada;
+// ponytail: marcador multi-linha com [ numa continuação não é reconhecido
+// (segue invisível, como antes); fronteira de bloco markdown não é detectada,
+// então marcador SEM fecho absorve as linhas seguintes sem [ do parágrafo;
 // upgrade = span via mdast.
 export const CLARIFY_RE = new RegExp(
-  `\\[«?(${MARKER_WORDS.join('|')})»?(?::[ \\t]*([^\\]\\n]*(?:\\n[ \\t]*[^\\] \\t\\r\\n][^\\]\\n]*)*))?\\]`,
+  `\\[«?(${MARKER_WORDS.join('|')})»?(?::[ \\t]*([^\\]\\n]*(?:\\n[ \\t]*[^\\[\\] \\t\\r\\n][^\\[\\]\\n]*)*))?\\]`,
   'g',
 )
 

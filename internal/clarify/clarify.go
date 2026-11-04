@@ -83,14 +83,17 @@ var resolvedWords = func() map[string]bool {
 // pair and an optional body. The body is a first line plus continuation lines
 // (a soft line break renders as a space in markdown, F-0317); each
 // continuation must carry, after its indentation, a non-blank char other than
-// the closing bracket, so a blank line (paragraph end) stops the match. The
-// body never contains a closing bracket, which also keeps prefix words
-// ([ESCLARECEDOR], [CLARIFIER]) out. Explicit classes, never \s: RE2 and JS
-// disagree on it and the parity corpus locks the two together.
-// ponytail: markdown block boundaries inside the paragraph (list item,
-// heading, table row, quote) are not detected, so an UNCLOSED marker can
-// absorb the next line up to a bracket; upgrade = span via mdast.
-var markerRe = regexp.MustCompile(`\[«?(` + markerWords() + `)»?(?::[ \t]*([^\]\n]*(?:\n[ \t]*[^\] \t\r\n][^\]\n]*)*))?\]`)
+// a bracket, so a blank line (paragraph end) stops the match, and no
+// continuation line contains an opening bracket, so one marker can never
+// absorb another. The body never contains a closing bracket, which also keeps
+// prefix words ([ESCLARECEDOR], [CLARIFIER]) out. Explicit classes, never \s:
+// RE2 and JS disagree on it and the parity corpus locks the two together.
+// ponytail: a multi-line marker whose continuation line contains "[" is not
+// recognized (stays invisible, as before F-0317); markdown block boundaries
+// (list item, heading, table row, quote) are not detected, so an UNCLOSED
+// marker absorbs the following bracket-free lines of its paragraph; upgrade =
+// span via mdast.
+var markerRe = regexp.MustCompile(`\[«?(` + markerWords() + `)»?(?::[ \t]*([^\]\n]*(?:\n[ \t]*[^\[\] \t\r\n][^\[\]\n]*)*))?\]`)
 
 // lineBreakRe is a soft line break with the indentation around it: markdown
 // renders it as one space, and so does the parsed body.
