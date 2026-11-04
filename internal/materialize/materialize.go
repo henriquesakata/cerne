@@ -68,7 +68,7 @@ const contextTemplate = `# {{.ProjectName}} — current state
 ## In progress
 
 {{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}})
-{{end}}{{if .IdleWorks}}- {{.IdleWorks}} more active work(s) idle for over {{.IdleDays}} days (oldest: {{.IdleOldestID}}, since {{.IdleOldestSince}}) — triage: 'cerne work list', then 'cerne work done|abandon <id>'
+{{end}}{{if .IdleWorks}}- {{.IdleWorks}} more active work(s) idle for over {{.IdleDays}} days (oldest: {{.IdleOldestID}}, idle since {{.IdleOldestSince}}) — triage: 'cerne work list', then 'cerne work done|abandon <id>'
 {{end}}{{end}}
 ## Features
 
@@ -216,6 +216,11 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	if err != nil {
 		return nil, err
 	}
+	// Read once, before the wipe: a malformed log must not leave .docs/ deleted.
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := os.RemoveAll(docsDir); err != nil {
 		return nil, err
@@ -230,10 +235,6 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	manifest := map[string]string{}
 	descs := map[string]string{} // entity id -> derived OKF description (okf only)
 	data := contextData{ProjectName: proj.Name, IdleDays: recentDays}
-	events, err := store.ReadEvents(repoDir)
-	if err != nil {
-		return nil, err
-	}
 	lastEvent := map[string]time.Time{}
 	for _, ev := range events {
 		if ev.At.After(lastEvent[ev.EntityID]) {
@@ -254,7 +255,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		}
 		activity = activity.UTC()
 		if activity.Before(cutoff) {
-			if data.IdleWorks == 0 || activity.Before(oldestAt) || (activity.Equal(oldestAt) && w.ID < data.IdleOldestID) {
+			if data.IdleWorks == 0 || activity.Before(oldestAt) {
 				oldestAt, data.IdleOldestID = activity, w.ID
 				data.IdleOldestSince = activity.Format("2006-01-02")
 			}
@@ -368,10 +369,6 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		idPath := entityPaths(features, decisions, runbooks, notes, references, manifest)
 		sections := okfIndexSections(features, decisions, references, notes, runbooks, idPath, descs)
 		if err := writeRootIndex(docsDir, proj.Name, sections, manifest); err != nil {
-			return nil, err
-		}
-		events, err := store.ReadEvents(repoDir)
-		if err != nil {
 			return nil, err
 		}
 		if err := writeLog(docsDir, events, idPath, manifest); err != nil {

@@ -1,6 +1,7 @@
 package materialize
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -112,7 +113,7 @@ func TestInProgressRecentListedIdleFolded(t *testing.T) {
 	if strings.Contains(got, "- W-0002 —") || strings.Contains(got, "- W-0003 —") {
 		t.Fatalf("idle work listed individually:\n%s", got)
 	}
-	want := "- 2 more active work(s) idle for over 14 days (oldest: W-0002, since 2026-10-05) " + triageTail + "\n"
+	want := "- 2 more active work(s) idle for over 14 days (oldest: W-0002, idle since 2026-10-05) " + triageTail + "\n"
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("triage line must be last, want %q in:\n%s", want, got)
 	}
@@ -123,7 +124,7 @@ func TestInProgressAllIdleKeepsHeader(t *testing.T) {
 	b := seedBackend(t)
 	addWorkRefs(t, b, "W-0001", recentNow.Add(-40*24*time.Hour))
 	got := inProgress(t, b, 14)
-	want := "## In progress\n\n- 1 more active work(s) idle for over 14 days (oldest: W-0001, since 2026-09-25) " + triageTail + "\n"
+	want := "## In progress\n\n- 1 more active work(s) idle for over 14 days (oldest: W-0001, idle since 2026-09-25) " + triageTail + "\n"
 	if strings.TrimRight(got, "\n")+"\n" != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
@@ -166,7 +167,7 @@ func TestInProgressWindowBoundary(t *testing.T) {
 	}
 }
 
-// F-0319 crit. 8 + "oldest" is by activity, not by opening date; ties by lowest id.
+// F-0319 crit. 8 + "oldest" is by activity, not by opening date; ties keep the lowest id (LoadAllWorks returns works sorted by ID, store/entity.go:372).
 func TestInProgressOldestByActivityAndWindowCited(t *testing.T) {
 	b := seedBackend(t)
 	addWorkRefs(t, b, "W-0001", recentNow.Add(-100*24*time.Hour), "F-0001") // opened first, active later
@@ -174,8 +175,42 @@ func TestInProgressOldestByActivityAndWindowCited(t *testing.T) {
 	addWorkRefs(t, b, "W-0003", recentNow.Add(-50*24*time.Hour))
 	addEvent(t, b, "F-0001", recentNow.Add(-20*24*time.Hour))
 	got := inProgress(t, b, 7)
-	want := "- 3 more active work(s) idle for over 7 days (oldest: W-0002, since 2026-09-15) " + triageTail + "\n"
+	want := "- 3 more active work(s) idle for over 7 days (oldest: W-0002, idle since 2026-09-15) " + triageTail + "\n"
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("want %q in:\n%s", want, got)
+	}
+}
+
+// A4: "idle since" prints the last-activity date, not the opening date.
+func TestInProgressIdleSinceIsActivityDate(t *testing.T) {
+	b := seedBackend(t)
+	addWorkRefs(t, b, "W-0001", recentNow.Add(-100*24*time.Hour), "F-0001") // opened 2026-07-27
+	addEvent(t, b, "F-0001", recentNow.Add(-30*24*time.Hour))               // activity 2026-10-05, still idle
+	got := inProgress(t, b, 14)
+	want := "(oldest: W-0001, idle since 2026-10-05) " + triageTail + "\n"
+	if !strings.HasSuffix(got, want) {
+		t.Fatalf("want suffix %q in:\n%s", want, got)
+	}
+}
+
+// A1: a malformed event log must fail before .docs/ is wiped.
+func TestMaterializeMalformedEventsKeepsDocs(t *testing.T) {
+	b := seedBackend(t)
+	if err := os.WriteFile(filepath.Join(b, "events", "9999-12.ndjson"), []byte("<<<<<<< HEAD\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(docsDir, "unsent.md")
+	if err := os.WriteFile(keep, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MaterializeAt(b, docsDir, "", false, 14, recentNow); err == nil {
+		t.Fatal("expected an error for a malformed event line")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("pre-existing docs file must survive a failed materialize: %v", err)
 	}
 }
