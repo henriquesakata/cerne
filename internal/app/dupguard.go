@@ -255,14 +255,30 @@ func guardEntity(k entityKind, matches []SimilarMatch, signals string, force boo
 // refusal line — never part of the duplicate criterion.
 type tagSet struct{ facets, components, informs []string }
 
+// sameSet reports whether a and b hold the same elements, order and repeats
+// aside (tags are sets: "infra,code" is "code,infra").
+func sameSet(a, b []string) bool {
+	for _, x := range a {
+		if !slices.Contains(b, x) {
+			return false
+		}
+	}
+	for _, x := range b {
+		if !slices.Contains(a, x) {
+			return false
+		}
+	}
+	return true
+}
+
 // sharedSignals renders the informative line of a refusal: what the new entity
 // shares with the existing one. Empty when nothing is shared.
 func sharedSignals(id string, a, b tagSet) string {
 	var parts []string
-	if len(a.facets) > 0 && slices.Equal(a.facets, b.facets) {
+	if len(a.facets) > 0 && sameSet(a.facets, b.facets) {
 		parts = append(parts, "the same facets")
 	}
-	if len(a.components) > 0 && slices.Equal(a.components, b.components) {
+	if len(a.components) > 0 && sameSet(a.components, b.components) {
 		parts = append(parts, "the same components")
 	}
 	var common []string
