@@ -120,9 +120,15 @@
       ]
     },
     {
-      "name": "en marker does not span lines",
+      "name": "en marker spans a soft line break (F-0317 supersedes 'does not span lines')",
       "content": "[CLARIFY: broken\nhere]",
-      "spans": []
+      "spans": [
+        {
+          "raw": "[CLARIFY: broken\nhere]",
+          "offset": 0,
+          "resolved": false
+        }
+      ]
     },
     {
       "name": "duplicated markers get distinct offsets",
@@ -224,6 +230,247 @@
       "answers": [
         "a\\|b"
       ]
+    },
+    {
+      "name": "pt open question broken across two lines",
+      "content": "x [ESCLARECER: sincrona ou\n  assincrona?] y",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: sincrona ou\n  assincrona?]",
+          "offset": 2,
+          "resolved": false
+        }
+      ],
+      "question": "sincrona ou assincrona?",
+      "options": []
+    },
+    {
+      "name": "en open options broken across lines",
+      "content": "[CLARIFY: where to persist? |\tin-place\n| sidecar]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: where to persist? |\tin-place\n| sidecar]",
+          "offset": 0,
+          "resolved": false
+        }
+      ],
+      "question": "where to persist?",
+      "options": [
+        "in-place",
+        "sidecar"
+      ]
+    },
+    {
+      "name": "pt resolved broken across two lines",
+      "content": "[ESCLARECIDO: qual\nbackend? → S3]",
+      "spans": [
+        {
+          "raw": "[ESCLARECIDO: qual\nbackend? → S3]",
+          "offset": 0,
+          "resolved": true
+        }
+      ],
+      "question": "qual backend?",
+      "answers": [
+        "S3"
+      ]
+    },
+    {
+      "name": "unclosed marker stops at a blank line",
+      "content": "[ESCLARECER: sem fecho\n\nparagrafo novo [ESCLARECER: ok?] fim",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: ok?]",
+          "offset": 39,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: stray backtick in a list item does not hide the next item's marker",
+      "content": "- item com crase solta ` aqui\n- [ESCLARECER: real?] usar `x`",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 32,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: escaped backtick in a table row does not hide a marker row",
+      "content": "| S | N |\n| --- | --- |\n| \\` | crase |\n| [ESCLARECER: real?] | `x` |",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 41,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: backtick inside an HTML comment does not hide a marker after the arrow",
+      "content": "<!-- a crase ` delimita\n-->\nTexto [ESCLARECER: real?] com `x`.",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 34,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: CRLF closing fence then a marker",
+      "content": "```go\r\ncode\r\n```\r\n[ESCLARECER: real?] see `x`",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 18,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N2 CRLF: open question broken across a CRLF soft break",
+      "content": "x [ESCLARECER: qual\r\n  formato?] y",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: qual\r\n  formato?]",
+          "offset": 2,
+          "resolved": false
+        }
+      ],
+      "question": "qual formato?",
+      "options": []
+    },
+    {
+      "name": "N2 CRLF: unclosed marker stops at a blank CRLF line",
+      "content": "[ESCLARECER: sem fecho\r\n\r\npar [ESCLARECER: real?] fim",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 30,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "backticks in different paragraphs are not a citation",
+      "content": "`a\n\nb [CLARIFY: ok?] c`",
+      "spans": [
+        {
+          "raw": "[CLARIFY: ok?]",
+          "offset": 6,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "known limit, accepted (F-0317): marker quoted in inline code that wraps a line is read as a marker",
+      "content": "use `[ESCLARECER: x\ny]` here",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: x\ny]",
+          "offset": 5,
+          "resolved": false
+        }
+      ],
+      "question": "x y",
+      "options": []
+    },
+    {
+      "name": "R3-1 unclosed opener in inline code does not swallow the next line's marker",
+      "content": "Escreva `[ESCLARECER:` e a pergunta.\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 37,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-1 unclosed opener in inline code before a list marker",
+      "content": "Use `[CLARIFY: q` then close.\n- [CLARIFY: real?]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: real?]",
+          "offset": 32,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-1 unclosed opener in an HTML comment does not swallow a marker after the arrow",
+      "content": "<!-- exemplo: [ESCLARECER: pergunta\n-->\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 40,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-1 unclosed opener in a fence does not swallow a marker after it",
+      "content": "```\n[ESCLARECER: q\n```\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 23,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "R3-2 unclosed resolved marker does not swallow an open marker",
+      "content": "[ESCLARECIDO: x - y\n[ESCLARECER: real?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 20,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "known limit (F-0317): a continuation line containing [ ends the multi-line read",
+      "content": "[ESCLARECER: usar a\n[0] ou b?]",
+      "spans": []
+    },
+    {
+      "name": "blockquote marker prefix is dropped from a multi-line question",
+      "content": "> Nota: [ESCLARECER: qual\n> formato usar? | json | yaml]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: qual\n> formato usar? | json | yaml]",
+          "offset": 8,
+          "resolved": false
+        }
+      ],
+      "question": "qual formato usar?",
+      "options": [
+        "json",
+        "yaml"
+      ]
+    },
+    {
+      "name": "nested blockquote prefix is dropped from a multi-line question",
+      "content": "> - [ESCLARECER: a\n>   b?]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: a\n>   b?]",
+          "offset": 4,
+          "resolved": false
+        }
+      ],
+      "question": "a b?",
+      "options": []
+    },
+    {
+      "name": "known limit (F-0317): an unclosed opener absorbs a marker that starts later on the same line, as on main",
+      "content": "Use `[ESCLARECER:` p.ex. [ESCLARECER: real\npergunta?]",
+      "spans": []
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",
@@ -307,6 +554,22 @@
       "offset": 33,
       "answer": "a\\|b",
       "want": "| Fork | Razao |\n| --- | --- |\n| [ESCLARECIDO: A? → a\\\\\\|b] | pq |"
+    },
+    {
+      "name": "two-line marker resolves to one line",
+      "content": "x [ESCLARECER: qual\nbackend?] y",
+      "raw": "[ESCLARECER: qual\nbackend?]",
+      "offset": 2,
+      "answer": "S3",
+      "want": "x [ESCLARECIDO: qual backend? → S3] y"
+    },
+    {
+      "name": "quoted two-line marker resolves to one line",
+      "content": "> Nota: [ESCLARECER: qual\n> formato?] fim",
+      "raw": "[ESCLARECER: qual\n> formato?]",
+      "offset": 8,
+      "answer": "json",
+      "want": "> Nota: [ESCLARECIDO: qual formato? → json] fim"
     }
   ],
   "_correct_comment": "Correction parity (F-0197): each case rewrites ONE anchored RESOLVED marker, appending the new answer to its trail instead of replacing it. Go replays via clarify.Correct + manual splice (TestCorrectCorpus); TS replays via correctMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch, or a still-open marker — correcting an open marker is answering it). Anchor offsets stay BEFORE any arrow: the arrow is 3 bytes in Go and 1 code unit in TS, so a later offset would not agree on both sides.",
@@ -374,6 +637,14 @@
       "offset": 2,
       "answer": "c | d",
       "want": "x [ESCLARECIDO: qual? → a \\| b → c \\| d] y"
+    },
+    {
+      "name": "two-line resolved marker corrects to one line",
+      "content": "x [ESCLARECIDO: qual\nbackend? → S3] y",
+      "raw": "[ESCLARECIDO: qual\nbackend? → S3]",
+      "offset": 2,
+      "answer": "GCS",
+      "want": "x [ESCLARECIDO: qual backend? → S3 → GCS] y"
     }
   ]
 }

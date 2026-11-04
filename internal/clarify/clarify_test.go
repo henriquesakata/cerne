@@ -107,9 +107,13 @@ func TestParse(t *testing.T) {
 			want:    nil,
 		},
 		{
-			name:    "marker does not span lines",
+			// F-0317 supersedes "marker does not span lines": a soft break
+			// inside the paragraph no longer hides the marker.
+			name:    "marker spans a soft line break",
 			content: "[ESCLARECER: quebrou\naqui]",
-			want:    nil,
+			want: []Clarification{
+				{Question: "quebrou aqui", Raw: "[ESCLARECER: quebrou\naqui]", Offset: 0},
+			},
 		},
 		{
 			name:    "empty question with options still yields options",
@@ -562,5 +566,48 @@ func TestCorrectCorpus(t *testing.T) {
 				t.Errorf("corrected content = %q, want %q", got, *c.Want)
 			}
 		})
+	}
+}
+
+// TestParse_MultiLineMarker pins F-0317 criterion 1: a marker whose body
+// crosses a soft line break is ONE marker; Raw keeps the break (it anchors the
+// in-place rewrite), the parsed fields collapse each break and the blanks
+// around it to one space.
+func TestParse_MultiLineMarker(t *testing.T) {
+	content := "a [ESCLARECER: sincrona ou\n\t assincrona? | sincrona\r\n  | assincrona] b"
+	got := Parse(content)
+	if len(got) != 1 {
+		t.Fatalf("Parse() = %d markers, want 1: %+v", len(got), got)
+	}
+	m := got[0]
+	if m.Raw != content[2:len(content)-2] || m.Offset != 2 || m.Resolved {
+		t.Errorf("Raw/Offset/Resolved = %q %d %v", m.Raw, m.Offset, m.Resolved)
+	}
+	if m.Question != "sincrona ou assincrona?" {
+		t.Errorf("Question = %q", m.Question)
+	}
+	if len(m.Options) != 2 || m.Options[0] != "sincrona" || m.Options[1] != "assincrona" {
+		t.Errorf("Options = %#v", m.Options)
+	}
+
+	res := Parse("[ESCLARECIDO: qual\nbackend? → S3]")
+	if len(res) != 1 || !res[0].Resolved || res[0].Question != "qual backend?" || res[0].Answer != "S3" {
+		t.Errorf("resolved two-line = %+v", res)
+	}
+}
+
+// TestParse_MultiLineStopsAtBlankLine pins criterion 2: an unclosed marker
+// never reaches across a paragraph end, and the next paragraph's marker is
+// still detected intact.
+func TestParse_MultiLineStopsAtBlankLine(t *testing.T) {
+	content := "[ESCLARECER: sem fecho\n\npar novo [ESCLARECER: ok?] fim"
+	got := Parse(content)
+	if len(got) != 1 || got[0].Raw != "[ESCLARECER: ok?]" || got[0].Question != "ok?" {
+		t.Fatalf("Parse() = %+v, want only the well-formed marker", got)
+	}
+	// indentation-only line is blank too
+	got = Parse("[ESCLARECER: sem fecho\n  \t\nx [CLARIFY: q?]")
+	if len(got) != 1 || got[0].Raw != "[CLARIFY: q?]" {
+		t.Fatalf("whitespace-only line did not stop the match: %+v", got)
 	}
 }

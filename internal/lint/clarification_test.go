@@ -216,3 +216,13 @@ func TestClarifyUnescapedPipe_InRuleOrderAndRank(t *testing.T) {
 		t.Fatalf("RuleClarifyUnescapedPipe ausente de ruleRank")
 	}
 }
+
+// TestClarificationFindings_MultiLineMarker pins F-0317 criterion 4: an open
+// marker broken across a soft line break is one finding, question on one line.
+func TestClarificationFindings_MultiLineMarker(t *testing.T) {
+	d := scannedDoc{entity: "F-0001", rel: "content/features/F-0001/spec.md"}
+	got := clarificationFindings(d, "x [ESCLARECER: qual\n  formato usar?] y")
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "qual formato usar?") {
+		t.Fatalf("findings = %+v, want one with the normalized question", got)
+	}
+}

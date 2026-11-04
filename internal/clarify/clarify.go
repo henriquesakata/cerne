@@ -4,9 +4,11 @@
 // lint rules, lifecycle gates and CLI surfaces can share one definition of
 // what counts as an open clarification.
 //
-// Recognized forms, always single-line (the marker word comes from a closed
-// per-language catalog — pt ESCLARECER/ESCLARECIDO, en CLARIFY/CLARIFIED —
-// so a doc authored in English gates exactly like one in Portuguese; F-0182):
+// Recognized forms. A body may cross soft line breaks inside one paragraph:
+// each break and the blanks around it read as one space, and a blank line
+// stops the match (F-0317). The marker word comes from a closed per-language
+// catalog — pt ESCLARECER/ESCLARECIDO, en CLARIFY/CLARIFIED — so a doc
+// authored in English gates exactly like one in Portuguese (F-0182):
 //
 //	[ESCLARECER]                              open, no question
 //	[ESCLARECER: question]                    open
@@ -78,10 +80,26 @@ var resolvedWords = func() map[string]bool {
 }()
 
 // markerRe matches any catalog marker word with an optional legacy guillemet
-// pair and an optional single-line body. The body must not cross lines nor
-// contain a closing bracket, which also keeps prefix words ([ESCLARECEDOR],
-// [CLARIFIER]) out.
-var markerRe = regexp.MustCompile(`\[«?(` + markerWords() + `)»?(?::[ \t]*([^\]\n]*))?\]`)
+// pair and an optional body. The body is a first line plus continuation lines
+// (a soft line break renders as a space in markdown, F-0317); each
+// continuation must carry, after its indentation, a non-blank char other than
+// a bracket, so a blank line (paragraph end) stops the match, and no
+// continuation line contains an opening bracket, so a marker that starts on a
+// LATER line is never absorbed. The body never contains a closing bracket,
+// which also keeps prefix words ([ESCLARECEDOR], [CLARIFIER]) out. Explicit
+// classes, never \s: RE2 and JS disagree on it and the parity corpus locks the
+// two together.
+// ponytail: a multi-line marker whose continuation line contains "[" is not
+// recognized (stays invisible, as before F-0317); an unclosed opener still
+// absorbs a marker that starts later on its OWN line, exactly as before (the
+// first-line class allows "["); markdown block boundaries (list item,
+// heading, table row, quote) are not detected, so an UNCLOSED marker absorbs the following bracket-free lines of its paragraph; upgrade =
+// span via mdast (a real markdown parse).
+var markerRe = regexp.MustCompile(`\[«?(` + markerWords() + `)»?(?::[ \t]*([^\]\n]*(?:\n[ \t]*[^\[\] \t\r\n][^\[\]\n]*)*))?\]`)
+
+// lineBreakRe is a soft line break with the indentation around it: markdown
+// renders it as one space, and so does the parsed body.
+var lineBreakRe = regexp.MustCompile(`[ \t]*\r?\n[ \t]*(?:>[ \t]*)*`)
 
 // Citation contexts: a marker inside any of these is the doc *talking about*
 // the convention, not an authored clarification. HTML comments carry the
@@ -89,8 +107,12 @@ var markerRe = regexp.MustCompile(`\[«?(` + markerWords() + `)»?(?::[ \t]*([^\
 // fenced blocks and inline code are how prose cites the syntax — the same
 // contexts the UI's markdown render leaves untouched.
 var (
-	commentRe    = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
-	fencedRe     = regexp.MustCompile("(?m)^```[^\n]*\n[\\s\\S]*?^```")
+	commentRe = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
+	fencedRe  = regexp.MustCompile("(?m)^```[^\n]*\n[\\s\\S]*?^```")
+	// ponytail: inline code that wraps a line is not a citation, so a marker
+	// quoted in it reads as a marker (visible false positive, accepted
+	// 2026-11-04); upgrade = span via mdast, never a wider regex (that hid real
+	// markers, F-0317 round 2).
 	inlineCodeRe = regexp.MustCompile("`[^`\n]+`")
 )
 
@@ -178,7 +200,7 @@ func Parse(content string) []Clarification {
 		word := content[m[2]:m[3]]
 		body := ""
 		if m[4] >= 0 {
-			body = strings.TrimSpace(content[m[4]:m[5]])
+			body = strings.TrimSpace(lineBreakRe.ReplaceAllString(content[m[4]:m[5]], " "))
 		}
 		if resolvedWords[word] {
 			c.Resolved = true
