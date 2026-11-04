@@ -285,6 +285,98 @@
           "resolved": false
         }
       ]
+    },
+    {
+      "name": "N1 guard: stray backtick in a list item does not hide the next item's marker",
+      "content": "- item com crase solta ` aqui\n- [ESCLARECER: real?] usar `x`",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 32,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: escaped backtick in a table row does not hide a marker row",
+      "content": "| S | N |\n| --- | --- |\n| \\` | crase |\n| [ESCLARECER: real?] | `x` |",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 41,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: backtick inside an HTML comment does not hide a marker after the arrow",
+      "content": "<!-- a crase ` delimita\n-->\nTexto [ESCLARECER: real?] com `x`.",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 34,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N1 guard: CRLF closing fence then a marker",
+      "content": "```go\r\ncode\r\n```\r\n[ESCLARECER: real?] see `x`",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 18,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "N2 CRLF: open question broken across a CRLF soft break",
+      "content": "x [ESCLARECER: qual\r\n  formato?] y",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: qual\r\n  formato?]",
+          "offset": 2,
+          "resolved": false
+        }
+      ],
+      "question": "qual formato?",
+      "options": []
+    },
+    {
+      "name": "N2 CRLF: unclosed marker stops at a blank CRLF line",
+      "content": "[ESCLARECER: sem fecho\r\n\r\npar [ESCLARECER: real?] fim",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: real?]",
+          "offset": 30,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "backticks in different paragraphs are not a citation",
+      "content": "`a\n\nb [CLARIFY: ok?] c`",
+      "spans": [
+        {
+          "raw": "[CLARIFY: ok?]",
+          "offset": 6,
+          "resolved": false
+        }
+      ]
+    },
+    {
+      "name": "known limit, accepted (F-0317): marker quoted in inline code that wraps a line is read as a marker",
+      "content": "use `[ESCLARECER: x\ny]` here",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: x\ny]",
+          "offset": 5,
+          "resolved": false
+        }
+      ],
+      "question": "x y",
+      "options": []
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",

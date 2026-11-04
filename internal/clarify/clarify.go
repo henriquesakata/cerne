@@ -102,8 +102,12 @@ var lineBreakRe = regexp.MustCompile(`[ \t]*\r?\n[ \t]*`)
 // fenced blocks and inline code are how prose cites the syntax — the same
 // contexts the UI's markdown render leaves untouched.
 var (
-	commentRe    = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
-	fencedRe     = regexp.MustCompile("(?m)^```[^\n]*\n[\\s\\S]*?^```")
+	commentRe = regexp.MustCompile(`<!--([\s\S]*?)(-->|$)`)
+	fencedRe  = regexp.MustCompile("(?m)^```[^\n]*\n[\\s\\S]*?^```")
+	// ponytail: inline code that wraps a line is not a citation, so a marker
+	// quoted in it reads as a marker (visible false positive, accepted
+	// 2026-11-04); upgrade = span via mdast, never a wider regex (that hid real
+	// markers, F-0317 round 2).
 	inlineCodeRe = regexp.MustCompile("`[^`\n]+`")
 )
 

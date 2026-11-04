@@ -52,6 +52,10 @@ export const CLARIFY_RE = new RegExp(
 // cita a sintaxe — os mesmos contextos que o render markdown não transforma.
 const COMMENT_RE = /<!--[\s\S]*?(-->|$)/g
 const FENCED_RE = /^```[^\n]*\n[\s\S]*?^```/gm
+// ponytail: código inline que quebra linha não é citação, então um marcador
+// citado nele é lido como marcador (falso positivo visível, aceito em
+// 2026-11-04); upgrade = span via mdast, nunca um regex mais largo (escondia
+// marcador real, F-0317 rodada 2).
 const INLINE_CODE_RE = /`[^`\n]+`/g
 
 // Dentro de uma tabela GFM um pipe cru é separador de CÉLULA: o parser fatia

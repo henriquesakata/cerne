@@ -10,7 +10,7 @@ import (
 )
 
 // F-0317: a marker broken across a soft line break is one marker on every
-// surface. specPre/specPost surround the marker so "no byte outside it
+// surface. mlPre/mlPost surround the marker so "no byte outside it
 // touched" is checkable.
 const (
 	mlPre  = "# Feature\n\n## Problema\n\nContexto real.\n\nAntes "
