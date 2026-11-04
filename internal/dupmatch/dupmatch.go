@@ -76,18 +76,25 @@ func SimilarTitles(a, b string) bool {
 	return float64(shared)/float64(minLen) >= dupOverlapThreshold
 }
 
-// NormalizeURL canonicalizes a source URL for equality: lowercase scheme and
-// host, no fragment, no trailing slash on the path. Query is kept (it can
-// select a different document). An unparsable URL falls back to its trimmed,
-// lowercased text.
+// NormalizeURL canonicalizes a source URL for equality: http and https are the
+// same scheme (folded to https), the host is lower-cased and loses a leading
+// "www.", the fragment and a trailing slash on the path are dropped. The path
+// keeps its case (paths are case-sensitive) and the query is kept (it can
+// select a different document). A URL without a scheme is read as https, so
+// only its host part is lower-cased. An unparsable URL falls back to its
+// trimmed text without a trailing slash.
 func NormalizeURL(raw string) string {
 	raw = strings.TrimSpace(raw)
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return strings.ToLower(strings.TrimRight(raw, "/"))
+	parse := raw
+	if !strings.Contains(parse, "://") {
+		parse = "https://" + parse
 	}
-	u.Scheme = strings.ToLower(u.Scheme)
-	u.Host = strings.ToLower(u.Host)
+	u, err := url.Parse(parse)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	u.Scheme = "https"
+	u.Host = strings.TrimPrefix(strings.ToLower(u.Host), "www.")
 	u.Fragment = ""
 	u.RawFragment = ""
 	u.Path = strings.TrimRight(u.Path, "/")

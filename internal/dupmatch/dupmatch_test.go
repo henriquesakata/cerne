@@ -36,17 +36,29 @@ func TestNormalizeURL(t *testing.T) {
 	same := [][2]string{
 		{"https://Example.COM/a/b/", "https://example.com/a/b"},
 		{"https://example.com/a#frag", "https://example.com/a"},
-		{"HTTP://x.org", "http://x.org/"},
+		{"HTTP://x.org", "https://x.org/"},
+		{"http://example.com/a", "https://example.com/a"},
+		{"https://www.example.com/a", "https://example.com/a"},
+		{"https://WWW.Example.com/a", "http://example.com/a/"},
+		{"Example.com/Docs/", "https://example.com/Docs"},
+		{"www.example.com/a#x", "https://example.com/a"},
 	}
 	for _, c := range same {
 		if NormalizeURL(c[0]) != NormalizeURL(c[1]) {
-			t.Errorf("NormalizeURL(%q) != NormalizeURL(%q)", c[0], c[1])
+			t.Errorf("NormalizeURL(%q)=%q != NormalizeURL(%q)=%q", c[0], NormalizeURL(c[0]), c[1], NormalizeURL(c[1]))
 		}
 	}
-	if NormalizeURL("https://a.com/x?p=1") == NormalizeURL("https://a.com/x?p=2") {
-		t.Error("different queries must stay different")
+	different := [][2]string{
+		{"https://a.com/x?p=1", "https://a.com/x?p=2"},
+		{"https://a.com/x", "https://a.com/y"},
+		{"https://a.com/Docs", "https://a.com/docs"}, // path case matters
+		{"a.com/Docs", "a.com/docs"},                 // ... also without a scheme
+		{"https://a.com/x", "https://sub.a.com/x"},
+		{"https://wwwx.com/x", "https://x.com/x"}, // only a leading "www." is dropped
 	}
-	if NormalizeURL("https://a.com/x") == NormalizeURL("https://a.com/y") {
-		t.Error("different paths must stay different")
+	for _, c := range different {
+		if NormalizeURL(c[0]) == NormalizeURL(c[1]) {
+			t.Errorf("NormalizeURL(%q) == NormalizeURL(%q), want different", c[0], c[1])
+		}
 	}
 }
