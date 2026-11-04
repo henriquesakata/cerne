@@ -64,10 +64,13 @@ const (
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
 	RuleResultMissingEvidence    = "result-missing-evidence"
 	RuleResultMissingGauntlet    = "result-missing-gauntlet"
+
+	// RuleDuplicateLive flags live entities of one type registered twice (F-0324).
+	RuleDuplicateLive = "duplicate-live"
 )
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -96,6 +99,7 @@ var ruleRank = map[string]int{
 	RuleSpecChangedAfterApproval: 21,
 	RuleResultMissingEvidence:    22,
 	RuleResultMissingGauntlet:    23,
+	RuleDuplicateLive:            24,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -283,6 +287,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, specChangedFindings(features, events)...)
 	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
 	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
+	findings = append(findings, duplicateLiveFindings(notes, decisions, references, events)...)
 
 	Sort(findings)
 	return findings, nil
