@@ -4,11 +4,11 @@
 // lint rules, lifecycle gates and CLI surfaces can share one definition of
 // what counts as an open clarification.
 //
-// Recognized forms (a body may cross soft line breaks inside one paragraph —
-// each break and the blanks around it read as one space; a blank line stops
-// the match; F-0317). The marker word comes from a closed
-// per-language catalog — pt ESCLARECER/ESCLARECIDO, en CLARIFY/CLARIFIED —
-// so a doc authored in English gates exactly like one in Portuguese; F-0182):
+// Recognized forms. A body may cross soft line breaks inside one paragraph:
+// each break and the blanks around it read as one space, and a blank line
+// stops the match (F-0317). The marker word comes from a closed per-language
+// catalog — pt ESCLARECER/ESCLARECIDO, en CLARIFY/CLARIFIED — so a doc
+// authored in English gates exactly like one in Portuguese (F-0182):
 //
 //	[ESCLARECER]                              open, no question
 //	[ESCLARECER: question]                    open

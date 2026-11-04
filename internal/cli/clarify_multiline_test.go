@@ -51,8 +51,8 @@ func TestClarifyAnswerMultiLineMarker(t *testing.T) {
 		}
 	}
 
-	// correct on the (now single-line) resolved form keeps the trail; and a
-	// resolved two-line marker corrects the same way.
+	// In a fresh project, correcting a resolved TWO-line marker keeps the
+	// answer trail and rewrites it in place as one line.
 	projDir2, _, repoDir2 := setupProject(t)
 	newFeatureWithSpec(t, projDir2, "Quebrada resolvida", multiLineSpec("[ESCLARECIDO: sincrona ou\n  assincrona? → sincrona]"))
 	if out, err := execCerne(t, "clarify", "correct", "F-0001", "1", "--answer", "assincrona", "--dir", projDir2); err != nil {
