@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -99,7 +100,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			}
 		}
 
-		manifest, err = materialize.Materialize(ctx.repoDir, docsDir, scope, okf)
+		manifest, err = materialize.MaterializeAt(ctx.repoDir, docsDir, scope, okf, ctx.cfg.RecentWorkWindowDays(), time.Now())
 		if err != nil {
 			return err
 		}
