@@ -5,6 +5,8 @@ package dupmatch
 
 import (
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/slug"
@@ -29,11 +31,31 @@ func titleTokens(title string) map[string]bool {
 	return tokens
 }
 
-// SimilarTitles reports whether two titles register the same thing: exact
+// idToken matches an id-like token (F-0101, RM-0003, W-12, T-0008).
+var idToken = regexp.MustCompile(`(?i)\b[A-Z]+-\d+\b`)
+
+// idSet is the normalized (upper-case) set of id-like tokens of a title,
+// rendered as a sorted key so two sets compare by equality.
+func idSet(title string) string {
+	var ids []string
+	for _, m := range idToken.FindAllString(title, -1) {
+		ids = append(ids, strings.ToUpper(m))
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
+}
+
+// SimilarTitles reports whether two titles register the same thing: titles that
+// both carry id-like tokens (F-0101, RM-0003) with DIFFERENT id sets never
+// match — the id is what distinguishes "Lint de F-0101 quebra" from "... F-0110
+// ...". Otherwise exact
 // normalized equality always matches; otherwise token overlap against the
 // smaller set must reach dupOverlapThreshold. Single-token titles only match
 // exactly (one shared word is not a duplicate).
 func SimilarTitles(a, b string) bool {
+	if ia, ib := idSet(a), idSet(b); ia != "" && ib != "" && ia != ib {
+		return false
+	}
 	if slug.Make(a) == slug.Make(b) {
 		return true
 	}
