@@ -52,10 +52,13 @@ func TestCreateNoteRefusesSimilarLive(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	for _, want := range []string{first.ID, "cerne note retag " + first.ID, "--force"} {
+	for _, want := range []string{first.ID, "cerne note retag " + first.ID, "cerne note retire " + first.ID + ` --reason "<why>"`, "--force"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err.Error(), want)
 		}
+	}
+	if strings.Count(err.Error(), "already") != 1 {
+		t.Errorf("header must be said once, got %q", err.Error())
 	}
 	if got := liveNotes(t, repoDir, "Desligar capacidade rebaixa a cobrança"); got != 1 {
 		t.Fatalf("live notes = %d, want 1", got)
@@ -121,7 +124,8 @@ func TestCreateDecisionGuard(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), "cerne decision retag "+first.ID) {
+	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), "cerne decision retag "+first.ID) ||
+		!strings.Contains(err.Error(), "cerne decision substituir "+first.ID+" --by <new-id>") {
 		t.Errorf("message %q lacks id/retag verb", err.Error())
 	}
 	if ds, _ := store.LoadAllDecisions(repoDir); len(ds) != 1 {
@@ -163,7 +167,8 @@ func TestCreateReferenceGuardByURL(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), "cerne reference retag "+first.ID) {
+	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), "cerne reference retag "+first.ID) ||
+		!strings.Contains(err.Error(), "cerne reference retire "+first.ID+` --reason "<why>"`) {
 		t.Errorf("message %q lacks id/retag verb", err.Error())
 	}
 	if rs, _ := store.LoadAllReferences(repoDir); len(rs) != 2 {

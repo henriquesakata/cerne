@@ -209,13 +209,16 @@ func (e *SimilarExistsError) Error() string { return e.msg }
 func (e *SimilarExistsError) Unwrap() error { return ErrSimilarExists }
 
 // entityKind describes one creation verb guarded by F-0324: the noun for the
-// message, and the cerne verb that updates an existing entity of that type.
-type entityKind struct{ noun, retag string }
+// message, the verb that updates an existing entity of that type and the verb
+// that takes it out of the live set (decisions have no retire: they are
+// superseded). Both are printed with the existing id filled in, so they run
+// as written.
+type entityKind struct{ noun, retag, retire string }
 
 var (
-	kindNote      = entityKind{"note", "cerne note retag"}
-	kindDecision  = entityKind{"decision", "cerne decision retag"}
-	kindReference = entityKind{"reference", "cerne reference retag"}
+	kindNote      = entityKind{"note", "cerne note retag", "retire it ('cerne note retire %s --reason \"<why>\"')"}
+	kindDecision  = entityKind{"decision", "cerne decision retag", "supersede it ('cerne decision substituir %s --by <new-id> --reason \"<why>\"')"}
+	kindReference = entityKind{"reference", "cerne reference retag", "retire it ('cerne reference retire %s --reason \"<why>\"')"}
 )
 
 // guardEntity is guardRegistration for the creation verbs of note, decision and
@@ -238,8 +241,9 @@ func guardEntity(k entityKind, matches []SimilarMatch, signals string, force boo
 	for _, m := range matches {
 		lines = append(lines, fmt.Sprintf("  %s  [%s]  %s", m.ID, m.State, m.Title))
 	}
-	msg := fmt.Sprintf("%s: a live %s already registers this:\n%s\nupdate it instead (e.g. '%s %s'), or retire it first",
-		ErrSimilarExists, k.noun, strings.Join(lines, "\n"), k.retag, matches[0].ID)
+	id := matches[0].ID
+	msg := fmt.Sprintf("%s:\n%s\nupdate it (e.g. '%s %s') or %s",
+		ErrSimilarExists, strings.Join(lines, "\n"), k.retag, id, fmt.Sprintf(k.retire, id))
 	if signals != "" {
 		msg += "\n" + signals
 	}

@@ -1032,6 +1032,10 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 		return
 	}
 	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, req.Facets, req.Components, false)
+	if errors.Is(err, app.ErrSimilarExists) {
+		writeJSON(w, http.StatusConflict, dupConflictBody(err)) // F-0324: same 409 shape as the feature routes
+		return
+	}
 	if err != nil {
 		// Validation (empty url, dangling informs, unknown facet) surfaces as 422, like features.
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
