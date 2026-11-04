@@ -36,6 +36,13 @@ func TestDuplicateLiveNoteGroup(t *testing.T) {
 			t.Errorf("detail %q lacks %s", f.Detail, id)
 		}
 	}
+	// Every printed command must run as written and never advise re-creating.
+	if want := `cerne note retire N-0048 --reason "duplicate of N-0047"`; !strings.Contains(f.Detail, want) {
+		t.Errorf("detail %q lacks runnable remedy %q", f.Detail, want)
+	}
+	if strings.Contains(f.Detail, "--force") {
+		t.Errorf("detail %q must never advise --force", f.Detail)
+	}
 	for _, id := range []string{"N-0050", "N-0060"} {
 		if strings.Contains(f.Detail, id) {
 			t.Errorf("detail %q must not list %s", f.Detail, id)
@@ -55,6 +62,7 @@ func TestDuplicateLiveReferenceByURL(t *testing.T) {
 	}
 	got := duplicateLiveFindings(nil, nil, refs, nil)
 	if len(got) != 1 || !strings.Contains(got[0].Detail, "R-0001") || !strings.Contains(got[0].Detail, "R-0002") ||
+		!strings.Contains(got[0].Detail, `cerne reference retire R-0002 --reason "duplicate of R-0001"`) ||
 		strings.Contains(got[0].Detail, "R-0014") || strings.Contains(got[0].Detail, "R-0016") {
 		t.Fatalf("findings = %+v, want one group {R-0001, R-0002}", got)
 	}
@@ -65,8 +73,9 @@ func TestDuplicateLiveDecisionGroup(t *testing.T) {
 		{ID: "D-0001", Title: "Usar Keycloak para OIDC", State: domain.DecisionActive},
 		{ID: "D-0002", Title: "Usar Keycloak para OIDC", State: domain.DecisionActive},
 	}
-	if got := duplicateLiveFindings(nil, ds, nil, nil); len(got) != 1 {
-		t.Fatalf("findings = %+v, want 1", got)
+	got := duplicateLiveFindings(nil, ds, nil, nil)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, `cerne decision substituir D-0002 --by D-0001 --reason "duplicate of D-0001"`) {
+		t.Fatalf("findings = %+v, want 1 with the substituir remedy", got)
 	}
 }
 

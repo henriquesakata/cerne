@@ -27,7 +27,7 @@ func duplicateLiveFindings(notes []store.Note, decisions []store.Decision, refer
 		}
 	}
 	var out []Finding
-	report := func(noun, retire string, items []dupItem, same func(a, b string) bool) {
+	report := func(noun string, remedy func(id, kept string) string, items []dupItem, same func(a, b string) bool) {
 		for _, g := range dupGroups(items, same) {
 			ack := false
 			for _, id := range g {
@@ -39,7 +39,7 @@ func duplicateLiveFindings(notes []store.Note, decisions []store.Decision, refer
 			out = append(out, Finding{
 				Rule:   RuleDuplicateLive,
 				Entity: g[0],
-				Detail: fmt.Sprintf("live %ss register the same thing: %s — keep one and retire the others ('%s <id>'), or re-create with --force to acknowledge", noun, strings.Join(g, ", "), retire),
+				Detail: fmt.Sprintf("live %ss register the same thing: %s — keep %s and retire the others, e.g. '%s'", noun, strings.Join(g, ", "), g[0], remedy(g[1], g[0])),
 			})
 		}
 	}
@@ -59,9 +59,15 @@ func duplicateLiveFindings(notes []store.Note, decisions []store.Decision, refer
 			rs = append(rs, dupItem{r.ID, dupmatch.NormalizeURL(r.URL)})
 		}
 	}
-	report("note", "cerne note retire", ns, dupmatch.SimilarTitles)
-	report("decision", "cerne decision substituir --by", ds, dupmatch.SimilarTitles)
-	report("reference", "cerne reference retag", rs, func(a, b string) bool { return a == b })
+	report("note", func(id, kept string) string {
+		return fmt.Sprintf(`cerne note retire %s --reason "duplicate of %s"`, id, kept)
+	}, ns, dupmatch.SimilarTitles)
+	report("decision", func(id, kept string) string {
+		return fmt.Sprintf(`cerne decision substituir %s --by %s --reason "duplicate of %s"`, id, kept, kept)
+	}, ds, dupmatch.SimilarTitles)
+	report("reference", func(id, kept string) string {
+		return fmt.Sprintf(`cerne reference retire %s --reason "duplicate of %s"`, id, kept)
+	}, rs, func(a, b string) bool { return a == b })
 	return out
 }
 
