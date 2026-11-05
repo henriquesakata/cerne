@@ -500,7 +500,7 @@ func TestTransitionMissingFeature(t *testing.T) {
 }
 
 // F-0545 crit. 1 wiring: the approve command itself refuses a real spec that
-// names no Gauntlet bar, and teaches the accepted forms. Unit coverage of the
+// names no Gauntlet bar, in one line pointing at --check. Unit coverage of the
 // forms lives in app/bargate_test.go — this pins the CLI call site.
 func TestApproveRefusesSpecWithoutBar(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
@@ -517,8 +517,9 @@ func TestApproveRefusesSpecWithoutBar(t *testing.T) {
 	if !errors.Is(err, app.ErrSpecMissingBar) {
 		t.Fatalf("err = %v, want ErrSpecMissingBar", err)
 	}
-	if !strings.Contains(err.Error(), "dispensada por decisão humana") {
-		t.Fatalf("refusal does not teach the accepted forms: %v", err)
+	// One line pointing at the check, which teaches the forms (F-0308 crit. 11).
+	if !strings.Contains(err.Error(), "cerne feature approve "+id+" --check") {
+		t.Fatalf("refusal does not point at the check: %v", err)
 	}
 	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateCandidate {
 		t.Fatalf("state after refusal = %s, want candidate", f.State)

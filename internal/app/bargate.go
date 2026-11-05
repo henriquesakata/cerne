@@ -14,13 +14,7 @@ import (
 // names no Gauntlet bar (F-0545). It is enforced in the shared transition core,
 // so CLI and UI approve alike (F-0295), and is deliberately NOT bypassed by
 // --force: a silent absence of a bar is the exact failure this gate exists to stop.
-var ErrSpecMissingBar = errors.New("spec sem barra do Gauntlet")
-
-const barForms = `a spec precisa de uma das três formas literais (seção ## Verificação):
-  Barra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>
-  Barra: não aplicável (<justificativa de 1 linha, confirmada pelo humano>) — padrão alternativo: <teste/benchmark/invariante>
-  Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)
-Protocolo Gauntlet: skill cerne-authoring — a barra é da mesma classe do que se entrega, e barra proposta pelo agente exige aceite humano explícito.`
+var ErrSpecMissingBar = errors.New("spec has no valid Gauntlet bar")
 
 // CheckSpecBar refuses when the feature's spec names no Gauntlet bar in one of
 // the three literal forms (F-0545 crit. 1). A missing spec passes — doc
@@ -40,7 +34,9 @@ func CheckSpecBar(repoDir, id string) error {
 		return nil
 	}
 	if _, err := doccheck.SpecBar(data); err != nil {
-		return fmt.Errorf("%w — %v; %s", ErrSpecMissingBar, err, barForms)
+		// One line (F-0308 crit. 11): the three literal forms are taught by the
+		// check, not repeated in every refusal.
+		return fmt.Errorf("%w: %v — run 'cerne feature approve %s --check' for the accepted forms", ErrSpecMissingBar, err, id)
 	}
 	return nil
 }

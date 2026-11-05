@@ -30,7 +30,7 @@ func TestCheckSpecBar(t *testing.T) {
 		{"nao aplicavel with justification passes", "# t\n\nBarra: não aplicável (fix pontual sem artefato comparável, confirmado pelo humano) — padrão alternativo: teste de integração\n", false, ""},
 		{"dispensada with quote passes", "# t\n\nBarra: dispensada por decisão humana (\"pode seguir sem barra dessa vez\")\n", false, ""},
 		{"no bar line refuses", "# t\n\n## Verificação\n\nSó testes unitários.\n", true, "Barra:"},
-		{"empty bar refuses", "# t\n\nBarra:\n", true, "has no value"},
+		{"empty bar refuses", "# t\n\nBarra:\n", true, "no value"},
 		{"nao aplicavel without parens refuses", "# t\n\nBarra: não aplicável\n", true, "justification"},
 		{"dispensada without quote refuses", "# t\n\nBarra: dispensada por decisão humana\n", true, "quoted words"},
 		{"bar only inside guide comment refuses", "# t\n\n## Problema\n\nProblema real descrito aqui.\n\n## Verificação\n<!-- uma das três formas: \"Barra: não\naplicável (<justificativa>)\" ou \"Barra: dispensada por decisão humana\". -->\n", true, "Barra:"},
@@ -52,11 +52,10 @@ func TestCheckSpecBar(t *testing.T) {
 				if tc.wantIn != "" && !strings.Contains(err.Error(), tc.wantIn) {
 					t.Fatalf("error %q lacks teaching substring %q", err, tc.wantIn)
 				}
-				// Every refusal teaches all three accepted forms.
-				for _, form := range []string{"Barra: <referência", "não aplicável", "dispensada por decisão humana"} {
-					if !strings.Contains(err.Error(), form) {
-						t.Fatalf("error %q does not teach form %q", err, form)
-					}
+				// Every refusal is one line pointing at the check, which teaches
+				// the three accepted forms (F-0308 crit. 11).
+				if strings.Contains(err.Error(), "\n") || !strings.Contains(err.Error(), "cerne feature approve F-0001 --check") {
+					t.Fatalf("error %q is not one line pointing at --check", err)
 				}
 				return
 			}

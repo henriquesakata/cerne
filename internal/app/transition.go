@@ -147,9 +147,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// check the UI approved specs with no bar.
 		if action == domain.ActionApprove {
 			if err := CheckSpecBar(repoDir, id); err != nil {
-				// Read from the synced backend, so a bar written only in .docs/
-				// is invisible until pushed — say so, like the doc gate does.
-				return "", fmt.Errorf("%w\n— write it in content/features/%s/spec.md in the backend and run 'cerne push'", err, id)
+				return "", err
 			}
 		}
 

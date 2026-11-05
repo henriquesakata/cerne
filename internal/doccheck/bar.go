@@ -45,11 +45,11 @@ func SpecBar(body []byte) (string, error) {
 		var err error
 		switch {
 		case value == "":
-			err = fmt.Errorf(`%w: "Barra:" has no value`, ErrBarMalformed)
+			err = fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
 		case naoAplicavelPrefixRe.MatchString(value) && !naoAplicavelRe.MatchString(value):
-			err = fmt.Errorf(`%w: "Barra: não aplicável" needs its one-line justification in parentheses`, ErrBarMalformed)
+			err = fmt.Errorf(`%w: "não aplicável" needs its one-line justification in parentheses`, ErrBarMalformed)
 		case dispensadaPrefixRe.MatchString(value) && !dispensadaRe.MatchString(value):
-			err = fmt.Errorf(`%w: "Barra: dispensada por decisão humana" needs the quoted words in parentheses`, ErrBarMalformed)
+			err = fmt.Errorf(`%w: "dispensada por decisão humana" needs the quoted words in parentheses`, ErrBarMalformed)
 		default:
 			return "Barra: " + value, nil
 		}
