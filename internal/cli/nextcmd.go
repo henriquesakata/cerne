@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"sort"
+	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -27,6 +29,10 @@ var nextGroups = []nextGroup{
 	{domain.StateApproved, "READY TO START", "run 'cerne feature start'"},
 	{domain.StateCandidate, "CANDIDATES", "write the spec and run 'cerne feature approve'"},
 }
+
+// nextPendingCap bounds the open-pendings block of cerne next; the rest is
+// counted and left to 'cerne pending list'.
+const nextPendingCap = 10
 
 func isNextState(s domain.FeatureState) bool {
 	for _, g := range nextGroups {
@@ -128,6 +134,33 @@ func runNext(cmd *cobra.Command, dir string) error {
 		fmt.Fprintf(out, "EPICS READY TO CLOSE (%d) — fill the result and run 'cerne feature complete <id>'\n", len(readyEpics))
 		for _, f := range readyEpics {
 			fmt.Fprintln(out, statusLine(f, width))
+		}
+		fmt.Fprintln(out)
+	}
+
+	// Open pendings (F-0322): a reminder, not an interruption — after the
+	// active work, before the lint debts; oldest first, capped.
+	pendings, err := store.LoadAllPendings(ctx.repoDir)
+	if err != nil {
+		return err
+	}
+	var open []store.Pending
+	for _, p := range pendings {
+		if p.State == domain.PendingOpen {
+			open = append(open, p)
+		}
+	}
+	if len(open) > 0 {
+		printed = true
+		// LoadAllPendings is id-ordered; the stable sort keeps it as the tie-break.
+		sort.SliceStable(open, func(i, j int) bool { return open[i].CreatedAt.Before(open[j].CreatedAt) })
+		fmt.Fprintf(out, "OPEN PENDINGS (%d) — resolve, drop or promote: 'cerne pending resolve|drop|promote <id>'\n", len(open))
+		now := time.Now().UTC()
+		for _, p := range open[:min(len(open), nextPendingCap)] {
+			fmt.Fprintf(out, "%s  %s  %s  %s\n", p.ID, pendingAge(now, p), p.From, p.Title)
+		}
+		if rest := len(open) - nextPendingCap; rest > 0 {
+			fmt.Fprintf(out, "… and %d more ('cerne pending list')\n", rest)
 		}
 		fmt.Fprintln(out)
 	}

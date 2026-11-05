@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -218,5 +219,63 @@ func TestShowFeatureListsOpenPendings(t *testing.T) {
 	out, err = execCerne(t, "show", "F-0001", "--json", "--dir", projDir)
 	if err != nil || !strings.Contains(out, `"name": "pending"`) || !strings.Contains(out, "P-0001  Débito aberto") {
 		t.Fatalf("show --json lacks the pending backlink: %v\n%s", err, out)
+	}
+}
+
+// Crit. 7 and 8: open pendings get their own block in next, identified by id
+// and origin, oldest first and capped; a resolved one leaves it; no block at
+// all without open pendings.
+func TestNextShowsOpenPendings(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem")
+	next := func() string {
+		t.Helper()
+		out, err := execCerne(t, "next", "--dir", projDir)
+		if err != nil {
+			t.Fatalf("next: %v\n%s", err, out)
+		}
+		return out
+	}
+	if out := next(); strings.Contains(out, "OPEN PENDINGS") {
+		t.Fatalf("no open pending, yet next prints the block:\n%s", out)
+	}
+	pendingNew(t, projDir, "Débito novo", "--from", "F-0001")
+	out := next()
+	if !strings.Contains(out, "OPEN PENDINGS (1)") || !strings.Contains(out, "P-0001  0d  F-0001  Débito novo") {
+		t.Fatalf("next lacks the open pending block:\n%s", out)
+	}
+	if d := strings.Index(out, "DEBTS"); d >= 0 && strings.Index(out, "OPEN PENDINGS") > d {
+		t.Fatalf("the pendings block must come before DEBTS:\n%s", out)
+	}
+	if out, err := execCerne(t, "pending", "resolve", "P-0001", "--dir", projDir); err != nil {
+		t.Fatalf("resolve: %v\n%s", err, out)
+	}
+	if out := next(); strings.Contains(out, "OPEN PENDINGS") || strings.Contains(out, "P-0001") {
+		t.Fatalf("a resolved pending must leave next:\n%s", out)
+	}
+
+	// Oldest first, capped at nextPendingCap with the remainder counted.
+	n := nextPendingCap + 2
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 2; i <= n+1; i++ {
+		p := store.Pending{ID: fmt.Sprintf("P-%04d", i), Title: fmt.Sprintf("Débito %d", i), From: "F-0001",
+			State: domain.PendingOpen, CreatedAt: base.Add(-time.Duration(i) * 24 * time.Hour)}
+		if err := store.SavePending(repoDir, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed pendings"); err != nil {
+		t.Fatal(err)
+	}
+	out = next()
+	if !strings.Contains(out, fmt.Sprintf("OPEN PENDINGS (%d)", n)) || !strings.Contains(out, "… and 2 more ('cerne pending list')") {
+		t.Fatalf("next must count all and cap the listing:\n%s", out)
+	}
+	oldest, newer := fmt.Sprintf("P-%04d", n+1), fmt.Sprintf("P-%04d", 4)
+	if i, j := strings.Index(out, oldest), strings.Index(out, newer); i < 0 || j < 0 || i > j {
+		t.Fatalf("next must list the oldest (%s) before the newer %s:\n%s", oldest, newer, out)
+	}
+	if strings.Contains(out, "P-0002 ") || strings.Contains(out, "P-0003 ") {
+		t.Fatalf("the two newest pendings must fall beyond the cap:\n%s", out)
 	}
 }
