@@ -23,12 +23,13 @@ import (
 // spec/plan/result lifecycle set.
 var ErrUnknownDoc = errors.New("documento de feature desconhecido")
 
-// ErrNotCandidate is returned by the Backlog chat's refine path (F-0256) for a
-// feature past approval: in development the spec is the contract being built,
-// not a chat draft. An approved spec stays open to the chat (F-0318, revoking
+// ErrNotCandidate is returned by the Backlog chat's refine path (F-0256) and
+// 'cerne feature spec' for a feature past approval: in development the spec is
+// the contract being built, not a chat draft; the refusal names the state's
+// path (DocFixPhrase). An approved spec stays open to the chat (F-0318, revoking
 // F-0262's chat restriction for approved only) — rewriting it stales the
 // approval like any other write.
-var ErrNotCandidate = errors.New("the feature's spec is no longer open to the chat")
+var ErrNotCandidate = errors.New("the feature is past approval")
 
 // ErrParentNotFound is returned when a feature's parent (epic) does not exist.
 var ErrParentNotFound = errors.New("parent feature (epic) not found")
@@ -724,7 +725,7 @@ func loadCandidate(repoDir, id string) (store.Feature, error) {
 		return store.Feature{}, err
 	}
 	if f.State != domain.StateCandidate && f.State != domain.StateApproved {
-		return store.Feature{}, fmt.Errorf("%w: %s is %s", ErrNotCandidate, id, f.State)
+		return store.Feature{}, fmt.Errorf("%w: %s is %s — %s", ErrNotCandidate, id, f.State, DocFixPhrase(id, "spec", f.State))
 	}
 	return f, nil
 }

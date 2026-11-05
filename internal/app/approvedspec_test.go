@@ -272,8 +272,9 @@ func TestChatStillRefusesInDevelopment(t *testing.T) {
 	if _, err := BuildRefineBlock(repoDir, "F-0001"); !errors.Is(err, ErrNotCandidate) {
 		t.Fatalf("refine err = %v, want ErrNotCandidate", err)
 	}
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
-		t.Fatalf("write err = %v, want ErrNotCandidate", err)
+	_, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n")
+	if !errors.Is(err, ErrNotCandidate) || !strings.Contains(err.Error(), "cerne push") {
+		t.Fatalf("write err = %v, want ErrNotCandidate naming the push path", err)
 	}
 	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
 		t.Fatalf("spec.md changed on a refused write: %q", got)
@@ -348,6 +349,9 @@ func TestDoneFeatureKeepsErrataPath(t *testing.T) {
 	_, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody+"\nDe novo.\n", "de novo")
 	if !errors.Is(err, ErrAmendNotImplemented) || !strings.Contains(err.Error(), "cerne feature errata F-0001") {
 		t.Fatalf("amend on done err = %v, want ErrAmendNotImplemented naming the errata", err)
+	}
+	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nTarde.\n"); !errors.Is(err, ErrNotCandidate) || !strings.Contains(err.Error(), "cerne feature errata F-0001") {
+		t.Fatalf("spec verb on done err = %v, want ErrNotCandidate naming the errata", err)
 	}
 	if _, err := AddErrata(repoDir, projDir, "F-0001", "Correção depois do aceite.", "tester"); err != nil {
 		t.Fatalf("errata on done: %v", err)
