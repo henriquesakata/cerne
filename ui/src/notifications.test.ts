@@ -4,6 +4,7 @@ import {
   buildNativePayload,
   classifyEvent,
   countUnread,
+  modelsNotice,
   NOTIF_MAX,
   NOTIF_WINDOW_MS,
   windowEvents,
@@ -144,5 +145,22 @@ describe('countUnread', () => {
 
   it('marcador intermediário conta só os mais novos', () => {
     expect(countUnread(windowed, windowed[2].at)).toBe(2)
+  })
+})
+
+// F-0311 critério 22: o refresh do catálogo é global, não um evento de projeto
+// — vira uma entrada do sino nomeando os ids adicionados e delistados.
+describe('modelsNotice', () => {
+  it('nomeia adicionados e delistados, com id estável por refresh', () => {
+    const at = new Date(NOW - 60_000).toISOString()
+    const n = modelsNotice({ at, added: ['m-novo-1', 'm-novo-2'], delisted: ['m-velho-1'] })
+    expect(n).toMatchObject({ id: `models-${at}`, at, type: 'models.refreshed', entity_id: '' })
+    expect(n.payload?.excerpt).toBe('+ m-novo-1, m-novo-2 · − m-velho-1')
+    expect(windowEvents([n, n], NOW)).toEqual([n])
+  })
+
+  it('só o lado que mudou aparece', () => {
+    expect(modelsNotice({ at: 'x', added: [], delisted: ['m-1'] }).payload?.excerpt).toBe('− m-1')
+    expect(modelsNotice({ at: 'x', added: ['m-2'], delisted: [] }).payload?.excerpt).toBe('+ m-2')
   })
 })

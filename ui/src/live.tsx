@@ -10,6 +10,7 @@ import {
   fetchProjects,
   setApiProject,
   subscribeLive,
+  type ModelsChange,
   type ProjectInfo,
 } from './api'
 import { useT } from './i18n'
@@ -36,6 +37,8 @@ type ProjectsState = {
   // Último change do SSE com o pid de origem (F-0161): aditivo — permite a
   // camada de notificações observar projetos que não são o ativo.
   lastChange: { pid: string; seq: number }
+  // Último refresh do catálogo de modelos anunciado (F-0311): global, sem pid.
+  modelsChange: ModelsChange | null
 }
 
 const Ctx = createContext<ProjectsState | null>(null)
@@ -46,6 +49,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [changed, setChanged] = useState<Set<string>>(() => new Set())
   const [version, setVersion] = useState(0)
   const [lastChange, setLastChange] = useState({ pid: '', seq: 0 })
+  const [modelsChange, setModelsChange] = useState<ModelsChange | null>(null)
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const { t } = useT()
@@ -104,6 +108,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         else setChanged((s) => new Set(s).add(pid))
       },
       onProjects: () => void reload(),
+      onModels: setModelsChange,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -134,7 +139,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   if (projects.length === 0) return <p className="status">{t.live.noProjects}</p>
 
   return (
-    <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version, lastChange }}>
+    <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version, lastChange, modelsChange }}>
       {children}
     </Ctx.Provider>
   )

@@ -1006,11 +1006,24 @@ export async function fetchGraph(): Promise<Graph> {
 // pid do projeto que avançou (a página re-busca o ativo e marca os demais);
 // onProjects dispara quando o conjunto de projetos muda. Devolve um disposer
 // que fecha o canal; o EventSource reconecta sozinho.
+// ModelsChange (F-0311) é o evento "models" do SSE: um refresh do catálogo
+// global de modelos que mudou algo — já aplicado, só avisado (D-0005).
+export type ModelsChange = { at: string; added: string[]; delisted: string[] }
+
 export function subscribeLive(handlers: {
   onChange: (pid: string) => void
   onProjects: () => void
+  onModels?: (change: ModelsChange) => void
 }): () => void {
   const es = new EventSource('/api/stream')
+  es.addEventListener('models', (e) => {
+    try {
+      const c = JSON.parse(String((e as MessageEvent).data)) as Partial<ModelsChange>
+      handlers.onModels?.({ at: c.at ?? '', added: c.added ?? [], delisted: c.delisted ?? [] })
+    } catch {
+      // evento ilegível: o sino só fica quieto
+    }
+  })
   es.addEventListener('change', (e) => {
     const pid = String((e as MessageEvent).data ?? '')
       .trim()
