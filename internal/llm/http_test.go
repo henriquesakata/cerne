@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -180,6 +182,7 @@ func TestNewProviderAppliesDefaults(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("TEST_LLM_KEY", "sk")
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir()) // no global catalog: the baseline default
 	// base_url overridden to the test server, but model/provider left to defaults.
 	prov, err := NewProvider(project.LLMConfig{Mode: "byo-key", KeyEnv: "TEST_LLM_KEY", BaseURL: srv.URL})
 	if err != nil {
@@ -307,5 +310,37 @@ func TestHTTPProviderStreamNon2xx(t *testing.T) {
 	_, err := newStreamProvider(t, srv.URL).Stream(context.Background(), "p", func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "429") {
 		t.Fatalf("err = %v, want a 429 status error", err)
+	}
+}
+
+// TestNewProviderDefaultModelFromGlobalCatalog: C5 / criteria 1-2 — a
+// default_model set in the global catalog is what an LLM call without
+// [llm] model sends (cerne ask, compile, drafts, chat), not the baseline's.
+func TestNewProviderDefaultModelFromGlobalCatalog(t *testing.T) {
+	var gotModel any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		gotModel = body["model"]
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"ok"}]}`)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, models.FileName), []byte(`{"default_model":"vendor-global-1","entries":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_LLM_KEY", "sk")
+
+	prov, err := NewProvider(project.LLMConfig{Mode: "byo-key", KeyEnv: "TEST_LLM_KEY", BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	if _, err := prov.Complete(context.Background(), "p"); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if gotModel != "vendor-global-1" {
+		t.Fatalf("model sent = %v, want the global default vendor-global-1", gotModel)
 	}
 }

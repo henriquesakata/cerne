@@ -57,3 +57,23 @@ func TestConfigDirDefault(t *testing.T) {
 		t.Fatalf("ConfigDir = %q, %v; want %s", got, err, filepath.Join(root, "cerne"))
 	}
 }
+
+// TestLLMDefaultModelFromGlobalCatalog: C5 — the backend's default model is
+// resolved over both catalog layers, so a global default_model reaches the
+// LLM config; without one, the baseline's.
+func TestLLMDefaultModelFromGlobalCatalog(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", dir)
+	if got := (LLMConfig{}).WithDefaults().Model; got != models.Baseline().DefaultModel {
+		t.Fatalf("default without a global file = %q, want the baseline's", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, models.FileName), []byte(`{"default_model":"vendor-global-1","entries":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := (LLMConfig{Mode: "byo-key"}).WithDefaults().Model; got != "vendor-global-1" {
+		t.Fatalf("default = %q, want the global vendor-global-1", got)
+	}
+	if got := (LLMConfig{Model: "pinned"}).WithDefaults().Model; got != "pinned" {
+		t.Fatalf("an explicit [llm] model = %q, want it kept", got)
+	}
+}
