@@ -34,6 +34,7 @@ var layoutSubdirsInit = []string{
 	notesSubdir,
 	historicalsSubdir,
 	worksSubdir,
+	pendingsSubdir,
 	eventsSubdir,
 	"content/features",
 	"content/decisions",
@@ -58,6 +59,7 @@ var idSubdirs = map[string]string{
 	"H":  historicalsSubdir,
 	"W":  worksSubdir,
 	"C":  capabilitiesSubdir,
+	"P":  pendingsSubdir,
 }
 
 // Project is the persisted form of project.json.

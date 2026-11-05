@@ -67,10 +67,26 @@ const (
 
 	// RuleDuplicateLive flags live entities of one type registered twice (F-0324).
 	RuleDuplicateLive = "duplicate-live"
+
+	// RuleStalePending flags an open pending older than StalePendingAfter
+	// (F-0322). Advisory: it never fails 'cerne lint'.
+	RuleStalePending = "stale-pending"
 )
 
+// StalePendingAfter is how long a pending may stay open before stale-pending
+// flags it (F-0322) — the single source of the threshold, a named constant on
+// purpose (no settings key yet).
+const StalePendingAfter = 30 * 24 * time.Hour
+
+// advisoryRules are the warning-severity rules: printed like any other, but
+// they never fail 'cerne lint' on their own.
+var advisoryRules = map[string]bool{RuleStalePending: true}
+
+// Advisory reports whether rule is a warning that does not fail the lint.
+func Advisory(rule string) bool { return advisoryRules[rule] }
+
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -100,6 +116,7 @@ var ruleRank = map[string]int{
 	RuleResultMissingEvidence:    22,
 	RuleResultMissingGauntlet:    23,
 	RuleDuplicateLive:            24,
+	RuleStalePending:             25,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -196,6 +213,10 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	if err != nil {
 		return nil, err
 	}
+	pendings, err := store.LoadAllPendings(repoDir)
+	if err != nil {
+		return nil, err
+	}
 
 	needles, err := buildNeedles(repoDir, features, decisions, references, runbooks, notes, historicals)
 	if err != nil {
@@ -210,6 +231,9 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	// and run only over authored docs — the generated wiki regenerates from
 	// source and is validated separately by wikiSourceFindings (F-0090).
 	ids := knownEntityIDs(features, decisions, references, runbooks, notes, historicals)
+	for _, p := range pendings {
+		ids[mdlink.CanonicalID(p.ID)] = true
+	}
 	var findings []Finding
 	for _, d := range docs {
 		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(d.rel)))
@@ -265,6 +289,8 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, staleReadyFindings(features, staleReadyDays, time.Now())...)
 
 	findings = append(findings, staleWorkFindings(works, staleWorkHours, time.Now())...)
+
+	findings = append(findings, stalePendingFindings(pendings, time.Now())...)
 
 	incomplete, err := incompleteDocFindings(repoDir, features, decisions, runbooks)
 	if err != nil {
@@ -1358,6 +1384,27 @@ func staleWorkFindings(works []store.Work, hours int, now time.Time) []Finding {
 			Rule:   RuleStaleWork,
 			Entity: w.ID,
 			Detail: fmt.Sprintf("active for %.0fh without done/abandon — run 'cerne work done %s' or 'cerne work abandon %s'", age.Hours(), w.ID, w.ID),
+		})
+	}
+	return findings
+}
+
+// stalePendingFindings flags an open pending created more than
+// StalePendingAfter before now (F-0322). The finding belongs to the ORIGIN
+// (F-0071), so 'cerne lint --feature/--parent' on the delivery that left the
+// debt shows it; File points at the pending itself.
+func stalePendingFindings(pendings []store.Pending, now time.Time) []Finding {
+	var findings []Finding
+	for _, p := range pendings {
+		age := now.Sub(p.CreatedAt)
+		if p.State != domain.PendingOpen || age <= StalePendingAfter {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:   RuleStalePending,
+			Entity: p.From,
+			File:   "entities/pendings/" + p.ID + ".json",
+			Detail: fmt.Sprintf("%s open for %dd (from %s) — resolve, drop or promote it: 'cerne pending resolve|drop|promote %s'", p.ID, int(age.Hours()/24), p.From, p.ID),
 		})
 	}
 	return findings

@@ -200,7 +200,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 		return nil
 	}
 	printFindings(out, findings)
-	return fmt.Errorf("%d problem(s) found", len(findings))
+	return lintFailure(findings)
 }
 
 // checkContextUntouched errors when the generated CONTEXT.md was edited
