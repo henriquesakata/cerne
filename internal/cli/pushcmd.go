@@ -349,8 +349,14 @@ func frozenBlock(rel, id string, s domain.FeatureState) string {
 	if kind == lint.CorrectByAmend {
 		unblock = "remove " + local + " (it blocks every push until removed; the amend reads it, so run that first)"
 	}
-	return fmt.Sprintf("frozen document: %s — %s is %s and 'cerne pull' does not materialize it.\n  correct it: %s\n  read it:    cerne show %s --doc %s\n  unblock:    %s",
-		rel, id, s, fix, id, doc, unblock)
+	// `show --doc` has no errata document: where the path is an erratum (or none),
+	// plain `show <id>` is the read that includes it.
+	read := "cerne show " + id
+	if kind == lint.CorrectByAmend {
+		read += " --doc " + doc
+	}
+	return fmt.Sprintf("frozen document: %s — %s is %s and 'cerne pull' does not materialize it.\n  correct it: %s\n  read it:    %s\n  unblock:    %s",
+		rel, id, s, fix, read, unblock)
 }
 
 // acceptableNewDoc reports whether rel is a net-new plan.md/result.md authored

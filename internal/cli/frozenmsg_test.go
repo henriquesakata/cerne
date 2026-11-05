@@ -62,8 +62,7 @@ func TestPushFrozenDocumentMessage(t *testing.T) {
 					"frozen document: " + rel,
 					id + " is " + string(state),
 					"correct it: " + cmd,
-					"read it:    cerne show " + id + " --doc result",
-					"unblock:    remove " + local,
+					"read it:    " + wantRead(state, id, "result") + "\n  unblock:    remove " + local,
 				} {
 					if !strings.Contains(err.Error(), want) {
 						t.Errorf("%s %s %v: message lacks %q:\n%v", state, name, args, want, err)
@@ -98,8 +97,7 @@ func TestFrozenMessageTerminalHasNoPath(t *testing.T) {
 		for _, want := range []string{
 			"frozen document: " + rel,
 			"correct it: no command changes it: terminal history ('cerne feature errata " + id + "' only annotates)",
-			"read it:    cerne show " + id + " --doc result",
-			"unblock:    remove .docs/" + rel,
+			"read it:    " + wantRead(state, id, "result") + "\n  unblock:    remove .docs/" + rel,
 		} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("%s: message lacks %q:\n%v", state, want, err)
@@ -368,4 +366,14 @@ func TestPushNamesEveryFrozenDocument(t *testing.T) {
 			t.Fatalf("%v: want both blocks in walk order:\n%s", args, msg)
 		}
 	}
+}
+
+// wantRead is what the push block's read line must say: the document alone for
+// a live-style amend, the whole feature (which prints its errata) when the
+// path is an erratum or none — `show --doc` has no errata document.
+func wantRead(state domain.FeatureState, id, doc string) string {
+	if kind, _ := lint.Correction(state, id, doc); kind == lint.CorrectByAmend {
+		return "cerne show " + id + " --doc " + doc
+	}
+	return "cerne show " + id
 }
