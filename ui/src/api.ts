@@ -164,8 +164,10 @@ export type FeatureDetail = {
   // spec difere da versão aprovada (F-0262, por conteúdo desde a F-0318): a
   // aprovação venceu — o start fica bloqueado até reaprovar.
   spec_changed_after_approval: boolean
-  // F-0318: o texto aprovado, só quando vencida — a página diffa contra docs.spec.
-  approved_spec?: string
+  // F-0318: o que a comparação leu, só quando vencida — corpo aprovado e corpo
+  // atual já normalizados (sem frontmatter, CRLF, BOM nem espaço no fim); a
+  // página diffa estes dois, nunca o docs.spec cru.
+  approval_delta?: { approved: string; current: string }
   // rodadas persistidas do roast adversarial da spec (F-0271/F-0277), mais
   // recente primeiro; o corpo de cada rodada é buscado sob demanda via
   // fetchArtifactText ao abrir o modal de leitura.

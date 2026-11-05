@@ -397,8 +397,7 @@ export default function FeaturePage({ id }: { id: string }) {
               id={f.id}
               state={f.state}
               staleApproval={detail.spec_changed_after_approval}
-              approvedSpec={detail.approved_spec}
-              currentSpec={detail.docs.spec}
+              approvalDelta={detail.approval_delta}
               readiness={detail.approve_readiness}
               bar={detail.bar}
               onRefresh={load}
@@ -993,8 +992,7 @@ function ActionsPanel({
   id,
   state,
   staleApproval,
-  approvedSpec,
-  currentSpec = '',
+  approvalDelta,
   readiness = [],
   bar,
   onDone,
@@ -1003,8 +1001,7 @@ function ActionsPanel({
   id: string
   state: FeatureState
   staleApproval: boolean
-  approvedSpec?: string
-  currentSpec?: string
+  approvalDelta?: { approved: string; current: string }
   readiness?: ApproveImpediment[]
   bar?: string
   onDone: (r: TransitionResult) => void
@@ -1072,7 +1069,7 @@ function ActionsPanel({
         <div className="approval-delta">
           <p className="form-error">{t.feature.staleApproval}</p>
           <pre className="proposal-draft-diff">
-            {lineDiff(approvedSpec ?? '', currentSpec)
+            {lineDiff(approvalDelta?.approved ?? '', approvalDelta?.current ?? '')
               .filter((l) => l.kind !== 'same')
               .map((l, i) => (
                 <span key={i} className={`diff-${l.kind}`}>

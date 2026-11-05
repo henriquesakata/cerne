@@ -134,7 +134,7 @@ describe('FeaturePage revert action (F-0262)', () => {
   })
 
   it('avisa quando a spec mudou depois da aprovação', async () => {
-    payload = { ...detail('approved'), spec_changed_after_approval: true, approved_spec: '' }
+    payload = { ...detail('approved'), spec_changed_after_approval: true, approval_delta: { approved: '', current: '' } }
     render(<FeaturePage id="F-0221" />)
     await waitFor(() => expect(screen.getByText(/aprovação venceu/i)).toBeInTheDocument())
 
@@ -153,7 +153,10 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
   const stale = (): FeatureDetail => ({
     ...detail('approved'),
     spec_changed_after_approval: true,
-    approved_spec: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta\n3. QUANDO excede\n',
+    approval_delta: {
+      approved: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta\n3. QUANDO excede',
+      current: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta e cita\n3. QUANDO excede\n4. QUANDO repete',
+    },
     docs: { spec: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta e cita\n3. QUANDO excede\n4. QUANDO repete\n', plan: '', result: '' },
     docs_real: { spec: true, plan: false, result: false },
   })
@@ -174,6 +177,23 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
     expect(delta.querySelector('.diff-same')).toBeNull()
     // Uma mensagem só: o aviso da F-0262 virou o título do bloco.
     expect(screen.getAllByText(/aprovação venceu/i)).toHaveLength(1)
+  })
+
+  // C3: o delta vem dos textos que o servidor comparou (approval_delta, já
+  // normalizados), nunca do docs.spec cru — senão CRLF, frontmatter OKF ou
+  // espaço no fim viravam pares −/+ idênticos a olho nu.
+  it('diff lê o approval_delta normalizado, não o docs.spec cru', async () => {
+    payload = {
+      ...stale(),
+      approval_delta: { approved: 'A\nB', current: 'A\nB.' },
+      docs: { spec: '---\r\ntype: spec\r\ntimestamp: "x"\r\n---\r\n\r\nA  \r\nB.\r\n', plan: '', result: '' },
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(container.querySelector('.approval-delta')).toBeInTheDocument())
+    const lines = [...(container.querySelector('.approval-delta pre') as HTMLElement).children].map(
+      (e) => `${e.className}|${e.textContent}`,
+    )
+    expect(lines).toEqual(['diff-del|- B', 'diff-add|+ B.'])
   })
 
   it('Iniciar bloqueado e Reaprovar envia o approve', async () => {
