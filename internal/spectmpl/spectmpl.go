@@ -95,7 +95,7 @@ schemas, endpoints, eventos). Inclua o HOW — não o omita. -->
 <!-- Plano de testes (TDD), 1:1 com os critérios de aceitação. Padrão de parada (Gauntlet),
 uma das três formas: Barra (referência nomeada + acesso) + Método (comparação cega, crítico
 fresco) + Saída (vencer/empatar; parar perdendo só por encerramento humano); "Barra: não
-aplicável (<justificativa confirmada>) — padrão alternativo: <teste/benchmark/invariante>";
+aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>";
 ou "Barra: dispensada por decisão humana". -->
 
 
