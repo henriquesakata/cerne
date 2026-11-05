@@ -25,9 +25,9 @@ func writeBackendDoc(t *testing.T, repoDir, rel, content string) {
 	}
 }
 
-// seedLintFixture seeds a backend with 10 lint findings: 2 ref-to-superseded,
+// seedLintFixture seeds a backend with 11 lint findings: 2 ref-to-superseded,
 // 1 broken-link, 1 orphan-content, 2 missing-gate-doc, 1 stale-note,
-// 2 incomplete-doc, 1 unregistered-source.
+// 2 incomplete-doc, 1 unregistered-source, 1 spec-missing-bar.
 func seedLintFixture(t *testing.T, repoDir string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -87,8 +87,8 @@ func TestLintFindings(t *testing.T) {
 	if err == nil {
 		t.Fatalf("lint with findings returned nil error, want exit error\noutput: %s", out)
 	}
-	if err.Error() != "10 problem(s) found" {
-		t.Fatalf("lint error = %q, want %q", err.Error(), "10 problem(s) found")
+	if err.Error() != "11 problem(s) found" {
+		t.Fatalf("lint error = %q, want %q", err.Error(), "11 problem(s) found")
 	}
 
 	// Groups in fixed rule order, each line "  <loc> — <detail>".
@@ -110,7 +110,9 @@ func TestLintFindings(t *testing.T) {
 			"  content/features/F-0003/spec.md — content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo\n",
 		"UNREGISTERED-SOURCE (1)\n" +
 			"  content/features/F-0003/spec.md — external URL https://example.com cited without a registered reference — register it with 'cerne reference new … --informs F-0003' or remove the URL\n",
-		"Total: 10 problem(s).\n",
+		"SPEC-MISSING-BAR (1)\n" +
+			"  content/features/F-0003/spec.md — no \"Barra:\" line (Conta digital) — the approve refuses it; 'cerne feature approve F-0003 --check' lists the accepted forms\n",
+		"Total: 11 problem(s).\n",
 	}
 	prev := -1
 	for _, b := range blocks {

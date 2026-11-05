@@ -64,6 +64,8 @@ const (
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
 	RuleResultMissingEvidence    = "result-missing-evidence"
 	RuleResultMissingGauntlet    = "result-missing-gauntlet"
+	// RuleSpecMissingBar flags a candidate spec with no valid bar (F-0308).
+	RuleSpecMissingBar = "spec-missing-bar"
 
 	// RuleDuplicateLive flags live entities of one type registered twice (F-0324).
 	RuleDuplicateLive = "duplicate-live"
@@ -86,7 +88,7 @@ var advisoryRules = map[string]bool{RuleStalePending: true}
 func Advisory(rule string) bool { return advisoryRules[rule] }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -117,6 +119,7 @@ var ruleRank = map[string]int{
 	RuleResultMissingGauntlet:    23,
 	RuleDuplicateLive:            24,
 	RuleStalePending:             25,
+	RuleSpecMissingBar:           26,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -314,6 +317,12 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
 	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
 	findings = append(findings, duplicateLiveFindings(notes, decisions, references, events)...)
+
+	specBar, err := specBarFindings(repoDir, features)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, specBar...)
 
 	Sort(findings)
 	return findings, nil

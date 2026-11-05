@@ -418,6 +418,8 @@ func TestRunFindings(t *testing.T) {
 			Detail: "content/features/F-0003/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
 		{Rule: RuleUnregisteredSource, Entity: "F-0003", File: "content/features/F-0003/spec.md",
 			Detail: "external URL https://example.com cited without a registered reference — register it with 'cerne reference new … --informs F-0003' or remove the URL"},
+		{Rule: RuleSpecMissingBar, Entity: "F-0003", File: "content/features/F-0003/spec.md",
+			Detail: `no "Barra:" line (Conta digital) — the approve refuses it; 'cerne feature approve F-0003 --check' lists the accepted forms`},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
@@ -526,6 +528,13 @@ func TestRunImportedFromNeedles(t *testing.T) {
 			Detail: "content/features/F-0092/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
 		{Rule: RuleIncompleteDoc, File: "content/features/F-0093/spec.md",
 			Detail: "content/features/F-0093/spec.md: missing template sections: Problema, Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo"},
+		// The fixture candidates have written specs with no bar (F-0308).
+		{Rule: RuleSpecMissingBar, Entity: "F-0091", File: "content/features/F-0091/spec.md",
+			Detail: `no "Barra:" line (Plataforma de agentes) — the approve refuses it; 'cerne feature approve F-0091 --check' lists the accepted forms`},
+		{Rule: RuleSpecMissingBar, Entity: "F-0092", File: "content/features/F-0092/spec.md",
+			Detail: `no "Barra:" line (Relatório de uso) — the approve refuses it; 'cerne feature approve F-0092 --check' lists the accepted forms`},
+		{Rule: RuleSpecMissingBar, Entity: "F-0093", File: "content/features/F-0093/spec.md",
+			Detail: `no "Barra:" line (Limites de uso) — the approve refuses it; 'cerne feature approve F-0093 --check' lists the accepted forms`},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Run returned %d findings, want %d:\n%+v", len(got), len(want), got)
