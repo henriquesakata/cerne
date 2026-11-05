@@ -28,7 +28,8 @@ type nextGroup struct {
 var nextGroups = []nextGroup{
 	{domain.StateInDevelopment, "IN PROGRESS", "finish and run 'cerne feature complete'"},
 	{domain.StateApproved, "READY TO START", "run 'cerne feature start'"},
-	{domain.StateCandidate, "CANDIDATES", "write the spec and run 'cerne feature approve'"},
+	// F-0308: rehearse with --check; the approve itself is a human act (F-0131).
+	{domain.StateCandidate, "CANDIDATES", "write the spec, run 'cerne feature approve <id> --check', then ask a human to approve (a human act)"},
 }
 
 // nextPendingCap bounds the open-pendings block of cerne next; the rest is
