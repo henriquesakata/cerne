@@ -462,7 +462,7 @@ function EpicBoard({
                         isEpic={isEpic(f.id)}
                         isBehind={isBehind(f.id)}
                         stale={isStale(f.id)}
-                      pending={pendingClarify(f.id)}
+                        pending={pendingClarify(f.id)}
                         activeWork={activeWorkFor(f.id)}
                       />
                     ))}
