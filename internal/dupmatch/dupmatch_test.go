@@ -19,6 +19,7 @@ func TestSimilarTitles(t *testing.T) {
 		{"different feature ids", "Lint de F-0101 quebra no push", "Lint de F-0110 quebra no push", false},
 		{"different room ids", "Ata — RM-0003: Revisão da sprint", "Ata — RM-0004: Revisão da sprint", false},
 		{"same id case-insensitive", "Lint de f-0101 quebra no push", "Lint de F-0101 quebra no push", true},
+		{"repeated id is one id", "Corrigir F-0101: lint de F-0101 quebra no push", "Corrigir F-0101: lint quebra no push", true},
 		{"id on one side only still overlaps", "Lint de F-0101 quebra no push", "Lint quebra no push", true},
 		{"identical long titles", "Desligar capacidade rebaixa a cobrança: informativo sim, fila do agente não", "Desligar capacidade rebaixa a cobrança: informativo sim, fila do agente não", true},
 		{"single token needs exact", "lock", "lock do push", false},

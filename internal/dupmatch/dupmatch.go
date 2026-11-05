@@ -6,6 +6,7 @@ package dupmatch
 import (
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -42,6 +43,7 @@ func idSet(title string) string {
 		ids = append(ids, strings.ToUpper(m))
 	}
 	sort.Strings(ids)
+	ids = slices.Compact(ids) // a set: a repeated id is the same id
 	return strings.Join(ids, ",")
 }
 
