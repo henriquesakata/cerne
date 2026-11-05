@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,7 @@ var (
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
 	roundAnchorRe = regexp.MustCompile(`^Rodada[\s\x{00A0}]+(\d+)\b`)
-	barLineRe     = regexp.MustCompile(`(?i)^Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[\s*_]*([^\s*_].*)$`)
+	barLineRe     = regexp.MustCompile(`(?i)^Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[\s\x{00A0}*_]*([^\s\x{00A0}*_].*)$`)
 	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da)[*_]*:`)
 	criticLineRe  = regexp.MustCompile(`(?i)^Achados? do cr(?:í|i\x{0301}|i)tico`)
 	headingRe     = regexp.MustCompile(`^\s*#{1,6}(\s|$)`)
@@ -140,6 +141,9 @@ func parseGauntlet(section string) gauntletRecord {
 	critic, criticList, criticIndent := false, false, 0
 	emphasis := strings.NewReplacer("*", "", "_", "", "\u00a0", " ")
 	for _, line := range strings.Split(section, "\n") {
+		if headingRe.MatchString(line) {
+			critic = false
+		}
 		s := lineMarkersRe.ReplaceAllString(line, "")
 		// Bar and header lines are consumed first, even inside a critic block
 		// and even when they cite a verdict (accepted limit).
@@ -155,10 +159,15 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 		list := listItemRe.MatchString(line)
 		if critic { // Achados block: excluded from every round until it ends
-			anchor := roundAnchorRe.MatchString(s)
+			m := roundAnchorRe.FindStringSubmatch(s)
+			newRound := false
+			if m != nil {
+				n, _ := strconv.Atoi(m[1])
+				newRound = !slices.Contains(nums, n)
+			}
 			switch {
-			case headingRe.MatchString(line), anchor && !list,
-				anchor && criticList && len(line)-len(strings.TrimLeft(line, " \t")) <= criticIndent:
+			case m != nil && !list,
+				newRound && criticList && len(line)-len(strings.TrimLeft(line, " \t")) <= criticIndent:
 				critic = false
 			default:
 				continue

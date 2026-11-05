@@ -280,7 +280,9 @@ func TestGauntletCriticBlockEnds(t *testing.T) {
 		{"R2: numbered disposition with quote on continuation", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n1. corrigido (x)\n\n   \"lock stale\" no arquivo\n", "rodada 1 sem citação do juiz"},
 		{"R3: Achados heading, blank, table with quote", "Barra: x\nRodada 1 — vitória\n### Achados do crítico\n\n| # | \"q\" |\n", "rodada 1 sem citação do juiz"},
 		{"R4: #1 is not a heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n#2 \"x\"\n", "rodada 1 sem citação do juiz"},
-		{"a real heading still ends it", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n## x\n", "rodada 1 sem citação do juiz"},
+		{"a real heading still ends it", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n### x\nJuiz: \"c\"\n", ""},
+		{"S1: a heading that is also a Saída line ends it", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1 — corrigido\n### Saída: vencer\nJuiz: \"hierarquia clara\"\n", ""},
+		{"S2: sibling item of an existing round does not end it", "Barra: x\n- **Rodada 1 — vitória.** Juiz escolheu A.\n- **Achados do crítico:** 1\n- Rodada 1 → \"lock stale\" corrigido\n", "rodada 1 sem citação do juiz"},
 		{"R6: Barra right after Achados is the bar", "Rodada 1 — vitória: \"c\"\nAchados do crítico: 1\nBarra: x\n", ""},
 	})
 }
@@ -293,6 +295,7 @@ func TestGauntletHeaderEdges(t *testing.T) {
 		{"accepted limit (R5): M\u00e9todo listing the literals is consumed", "Barra: x\nRodada 1: \"c\"\nM\u00e9todo: juiz responde VEREDITO: A, B ou EMPATE\n", "rodada 1 sem veredito"},
 		{"R7: emphasised Método/Saída are consumed", "Barra: x\n**Método**: y \"vitória\"\n**Saída**: derrota\n", "rodada sem citação do juiz"},
 		{"R9: NBSP inside the exemption", "Barra: n\u00e3o\u00a0aplic\u00e1vel (x)\n", ""},
+		{"S4: NBSP-only bar value is no value", "Barra:\u00a0\nRodada 1 — vitória: \"c\"\n", `sem linha "Barra:"`},
 		{"R9: NBSP after the colon", "Barra:\u00a0n\u00e3o aplic\u00e1vel (x)\n", ""},
 	})
 }
