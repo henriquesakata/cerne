@@ -307,3 +307,44 @@ func TestBootRefreshNotifies(t *testing.T) {
 		return
 	}
 }
+
+// TestBootRefreshKeepsConcurrentPreference: C3 — a provider choice saved while
+// the boot refresh waits on the provider survives the refresh's write: the
+// refresh re-reads the file after the network call and applies its diff to
+// that fresh copy, under the lock the PUT shares.
+func TestBootRefreshKeepsConcurrentPreference(t *testing.T) {
+	release := make(chan struct{})
+	env := newBootEnv(t, "byo-key", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		w.Write([]byte(listing("", "claude-new-9")))
+	})
+	h, err := NewUIMulti(env.ctx, env.resolve, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	for env.hits.Load() == 0 { // the listing is in flight
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/projects/pA/config/models/provider", strings.NewReader(`{"provider":"anthropic"}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT provider: %v %v", err, resp)
+	}
+	resp.Body.Close()
+	close(release)
+	waitRefresh(t)
+
+	cat, _ := models.Load(env.configDir)
+	if cat.PreferredProvider != "anthropic" {
+		t.Fatalf("preferred provider = %q after the refresh, want the PUT's anthropic", cat.PreferredProvider)
+	}
+	if _, ok := cat.Find("claude-new-9"); !ok {
+		t.Fatal("the refresh result was not applied")
+	}
+}

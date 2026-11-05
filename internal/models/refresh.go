@@ -83,14 +83,18 @@ func apply(f *layerFile, provider string, listed []Entry, now time.Time) Diff {
 }
 
 // Refresh lists provider through list and folds the result into the global
-// file at dir. Any failure — the listing, or a global file that is not a
-// valid catalog (never overwritten) — leaves the file as it was.
+// file at dir. The file is read only AFTER the network call, under the lock a
+// provider PUT shares, so a write that landed while the listing was in flight
+// is kept. Any failure — the listing, or a global file that is not a valid
+// catalog (never overwritten) — leaves the file as it was.
 func Refresh(ctx context.Context, dir, provider string, list func(context.Context) ([]Entry, error), now time.Time) (Diff, error) {
-	f, err := readLayerFile(dir)
+	listed, err := list(ctx)
 	if err != nil {
 		return Diff{}, err
 	}
-	listed, err := list(ctx)
+	layerMu.Lock()
+	defer layerMu.Unlock()
+	f, err := readLayerFile(dir)
 	if err != nil {
 		return Diff{}, err
 	}

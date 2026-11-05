@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -130,6 +131,14 @@ func parseLayer(path string, data []byte) (Catalog, error) {
 	return c, nil
 }
 
+// layerMu serializes every read-modify-write of the global file inside this
+// process (provider PUT, refresh), so neither loses the other's write.
+// ponytail: in-process only — two cerne processes writing in the same instant
+// can still lose one write; an advisory file lock on models.json is the
+// upgrade if that ever shows up. Writes are atomic, so a reader never sees half
+// a file either way.
+var layerMu sync.Mutex
+
 // layerFile is the global file as its author wrote it. The file is
 // hand-edited, so a program write touches only the keys it owns: unknown
 // fields, an explicit "efforts": [] and untouched entries all survive.
@@ -230,6 +239,8 @@ func (f layerFile) save(dir string) error {
 // at dir — global like the catalog, so it survives a restart and reaches every
 // project. A malformed file is left alone (error), never overwritten.
 func SetPreferredProvider(dir, provider string) error {
+	layerMu.Lock()
+	defer layerMu.Unlock()
 	f, err := readLayerFile(dir)
 	if err != nil {
 		return err
