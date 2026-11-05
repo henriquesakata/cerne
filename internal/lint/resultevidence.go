@@ -163,7 +163,7 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 		Rule:   RuleResultMissingEvidence,
 		Entity: f.ID,
 		File:   filepath.ToSlash(resultPath),
-		Detail: fmt.Sprintf("result.md sem evidência do(s) critério(s) %s da spec (%s) — cite \"critério N\" com a prova de cada um", strings.Join(missing, ", "), f.Title),
+		Detail: fmt.Sprintf("result.md sem evidência do(s) critério(s) %s da spec (%s) — feature %s: %s. Forma: cite \"critério N\" com a prova de cada um", strings.Join(missing, ", "), f.Title, f.State, resultFix(f, "citando \"critério N\"")),
 	}}
 }
 

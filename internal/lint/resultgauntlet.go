@@ -146,7 +146,7 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 		Rule:   RuleResultMissingGauntlet,
 		Entity: f.ID,
 		File:   filepath.ToSlash(resultPath),
-		Detail: fmt.Sprintf("result.md %s (%s) — registre o loop: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title),
+		Detail: fmt.Sprintf("result.md %s (%s) — feature %s: %s. Forma: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title, f.State, resultFix(f, "dentro de uma seção \"## Gauntlet\"")),
 	}}
 }
 

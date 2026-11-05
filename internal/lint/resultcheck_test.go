@@ -293,3 +293,27 @@ func TestResultGauntletErrataEntriesDoNotJoin(t *testing.T) {
 		t.Fatalf("want one finding, got %+v", got)
 	}
 }
+
+// F-0307 crit. 1: both result findings say the feature's state and the command
+// that corrects the result in that state — read from Correction, not repeated.
+func TestResultFindingsNameStateAndPath(t *testing.T) {
+	for _, state := range []domain.FeatureState{domain.StateInDevelopment, domain.StateImplemented, domain.StateDone} {
+		dir, f := writeResultFixture(t, state, checkSpec, "texto sem prova\n")
+		got := CheckResult(dir, f)
+		if len(got) != 2 {
+			t.Fatalf("%s: want evidence + gauntlet findings, got %+v", state, got)
+		}
+		_, cmd := Correction(state, f.ID, "result")
+		for _, fd := range got {
+			if !strings.Contains(fd.Detail, "feature "+string(state)+":") {
+				t.Errorf("%s %s: detail lacks the state: %q", state, fd.Rule, fd.Detail)
+			}
+			if !strings.Contains(fd.Detail, "'"+cmd+"'") {
+				t.Errorf("%s %s: detail lacks the command %q: %q", state, fd.Rule, cmd, fd.Detail)
+			}
+			if !strings.Contains(fd.Detail, ". Forma: ") {
+				t.Errorf("%s %s: detail lacks the form: %q", state, fd.Rule, fd.Detail)
+			}
+		}
+	}
+}
