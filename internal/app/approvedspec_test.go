@@ -279,3 +279,81 @@ func TestChatStillRefusesInDevelopment(t *testing.T) {
 		t.Fatalf("spec.md changed on a refused write: %q", got)
 	}
 }
+
+// assertNotStale fails when feature id reads as a stale approval on the
+// function or as a lint finding.
+func assertNotStale(t *testing.T, repoDir, id string) {
+	t.Helper()
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+		t.Errorf("%s (%s) reads as a stale approval", id, f.State)
+	}
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fd := range findings {
+		if fd.Rule == lint.RuleSpecChangedAfterApproval {
+			t.Errorf("%s (%s): %+v", id, f.State, fd)
+		}
+	}
+}
+
+// TestInDevelopmentSpecWriteNeverStales (F-0318 crit. 12; F-0262 crit. 7): in
+// development a spec write is never blocked by the state and never stales
+// anything — the approval is spent, the spec is the contract being built.
+func TestInDevelopmentSpecWriteNeverStales(t *testing.T) {
+	repoDir, projDir := approvedWithPlan(t)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", approvedSpecA+"\nAjuste durante o desenvolvimento.\n"); err != nil {
+		t.Fatalf("spec write in development: %v", err)
+	}
+	assertNotStale(t, repoDir, "F-0001")
+}
+
+// TestDoneFeatureKeepsErrataPath (F-0318 crit. 12, 13, read against the F-0305
+// boundary): a closed feature's documents are frozen — implemented corrects
+// its result with amend, done only takes errata — and neither ever reads as a
+// stale approval, though the approved copy is still in the backend.
+func TestDoneFeatureKeepsErrataPath(t *testing.T) {
+	repoDir, projDir := approvedWithPlan(t)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "result", "# Resultado\n\nEntregue.\n"+testGauntletTail); err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	// implemented: the spec is frozen; the result's correction is amend.
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", approvedSpecA+"\nTarde demais.\n"); !errors.Is(err, ErrFeatureFrozen) {
+		t.Fatalf("implemented spec write err = %v, want ErrFeatureFrozen", err)
+	}
+	if _, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "evidência faltando"); err != nil {
+		t.Fatalf("amend on implemented: %v", err)
+	}
+	assertNotStale(t, repoDir, "F-0001")
+
+	// done: amend refuses with the errata path; the errata is appended.
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "", nil); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	_, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody+"\nDe novo.\n", "de novo")
+	if !errors.Is(err, ErrAmendNotImplemented) || !strings.Contains(err.Error(), "cerne feature errata F-0001") {
+		t.Fatalf("amend on done err = %v, want ErrAmendNotImplemented naming the errata", err)
+	}
+	if _, err := AddErrata(repoDir, projDir, "F-0001", "Correção depois do aceite.", "tester"); err != nil {
+		t.Fatalf("errata on done: %v", err)
+	}
+	assertNotStale(t, repoDir, "F-0001")
+	if _, err := os.Stat(store.ApprovedSpecPath(repoDir, "F-0001")); err != nil {
+		t.Fatalf("approved copy gone: %v", err)
+	}
+}
