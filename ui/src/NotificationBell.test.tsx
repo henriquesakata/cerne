@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import type { LifecycleEvent } from './api'
+import type { LifecycleEvent, ModelsChange } from './api'
 
 // O provider/sino só importam fetchEvents de ./api e useProjects de ./live;
 // os mocks abaixo isolam o componente do EventSource e do fetch reais.
@@ -9,6 +9,8 @@ const fetchEventsMock = vi.fn<() => Promise<LifecycleEvent[]>>()
 vi.mock('./api', () => ({
   fetchEvents: () => fetchEventsMock(),
 }))
+// live.modelsChange (F-0311): o último refresh do catálogo anunciado no SSE.
+const live: { modelsChange: ModelsChange | null } = { modelsChange: null }
 vi.mock('./live', () => ({
   useProjects: () => ({
     projects: [],
@@ -16,6 +18,7 @@ vi.mock('./live', () => ({
     setActivePid: () => {},
     changed: new Set<string>(),
     version: 0,
+    modelsChange: live.modelsChange,
   }),
 }))
 
@@ -44,6 +47,7 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   fetchEventsMock.mockReset()
+  live.modelsChange = null
 })
 
 describe('NotificationBell', () => {
@@ -188,5 +192,19 @@ describe('NotificationBell', () => {
     )
     expect(req).toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+})
+
+// F-0311 critério 22: o refresh do catálogo que mudou algo aparece no sino,
+// nomeando os ids — aplicado antes, avisado depois (D-0005).
+describe('NotificationBell — catálogo de modelos (F-0311)', () => {
+  it('mostra a atualização do catálogo com os ids adicionados e delistados', async () => {
+    fetchEventsMock.mockResolvedValue([])
+    live.modelsChange = { at: new Date(Date.now() - 30_000).toISOString(), added: ['m-novo-1'], delisted: ['m-velho-1'] }
+    mount()
+    await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /notifica/i }))
+    expect(screen.getByText(/catálogo de modelos atualizado/i)).toBeInTheDocument()
+    expect(screen.getByText('+ m-novo-1 · − m-velho-1')).toBeInTheDocument()
   })
 })

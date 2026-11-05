@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { fetchEvents, fetchEventsFor, type LifecycleEvent } from './api'
+import { fetchEvents, fetchEventsFor, type LifecycleEvent, type ModelsChange } from './api'
 import { useProjects } from './live'
 import { useT } from './i18n'
 
@@ -115,6 +115,26 @@ export function entityHref(id: string): string | null {
   return null
 }
 
+// modelsNotice (F-0311 critério 22) leva o refresh do catálogo de modelos —
+// global, fora do log de eventos do projeto — para o formato de uma entrada do
+// sino: id estável por refresh (dedupe na reconexão do SSE, que reenvia o
+// último) e o resumo dos ids adicionados (+), delistados (−) e relistados (~).
+export function modelsNotice(c: ModelsChange): LifecycleEvent {
+  const parts = [
+    c.added.length > 0 ? `+ ${c.added.join(', ')}` : '',
+    c.delisted.length > 0 ? `− ${c.delisted.join(', ')}` : '',
+    c.relisted && c.relisted.length > 0 ? `~ ${c.relisted.join(', ')}` : '',
+  ].filter(Boolean)
+  return {
+    id: `models-${c.at}`,
+    at: c.at,
+    entity_id: '',
+    type: 'models.refreshed',
+    actor: 'cerne',
+    payload: { excerpt: parts.join(' · ') },
+  }
+}
+
 const ENABLED_KEY = 'cerne.notif.enabled'
 const NATIVE_KEY = 'cerne.notif.native'
 const lastSeenKey = (pid: string) => `cerne.notif.lastSeen.${pid}`
@@ -135,9 +155,12 @@ type NotifState = {
 const Ctx = createContext<NotifState | null>(null)
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const { activePid, version, projects, setActivePid, lastChange } = useProjects()
+  const { activePid, version, projects, setActivePid, lastChange, modelsChange } = useProjects()
   const { t } = useT()
   const [raw, setRaw] = useState<LifecycleEvent[]>([])
+  // F-0311: entradas do catálogo de modelos — não vêm do log do projeto, então
+  // não somem quando o log é re-buscado; a janela de 15 min as recorta igual.
+  const [modelNotices, setModelNotices] = useState<LifecycleEvent[]>([])
   const [lastSeen, setLastSeen] = useState<string | null>(null)
   const [enabled, setEnabledState] = useState(
     () => localStorage.getItem(ENABLED_KEY) !== 'false',
@@ -257,6 +280,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastChange])
 
+  useEffect(() => {
+    if (modelsChange) setModelNotices((ns) => [...ns, modelsNotice(modelsChange)])
+  }, [modelsChange])
+
   // A janela de 15 min expira sozinha: re-avalia a cada 60 s.
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000)
@@ -265,7 +292,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   // tick só existe para re-janelar com o relógio andando.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const items = useMemo(() => windowEvents(raw, Date.now()), [raw, tick])
+  const items = useMemo(() => windowEvents([...raw, ...modelNotices], Date.now()), [raw, modelNotices, tick])
   const unread = enabled ? countUnread(items, lastSeen) : 0
   const unreadAction = enabled
     ? countUnread(items.filter((e) => classifyEvent(e.type) === 'action'), lastSeen)

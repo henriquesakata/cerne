@@ -7,7 +7,16 @@ import {
   type KeyboardEvent,
   type UIEvent,
 } from 'react'
-import { fetchLLMOptions, registerChatCandidate, registerChatNote, type ChatMsg, type DupMatch, type Feature } from './api'
+import {
+  fetchLLMOptions,
+  registerChatCandidate,
+  registerChatNote,
+  setPreferredProvider,
+  type ChatMsg,
+  type DupMatch,
+  type Feature,
+  type ModelEntry,
+} from './api'
 import * as chatRequest from './chatRequest'
 import CommandProposal from './CommandProposal'
 import Markdown from './Markdown'
@@ -155,11 +164,13 @@ function MenuSelect({
   options,
   onSelect,
   label,
+  format = (v) => v,
 }: {
   value: string
   options: string[]
   onSelect: (v: string) => void
   label: string
+  format?: (v: string) => string
 }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
@@ -199,7 +210,7 @@ function MenuSelect({
         aria-label={label}
         onClick={() => setOpen((o) => !o)}
       >
-        {value}
+        {format(value)}
       </button>
       {open && (
         <div
@@ -222,12 +233,203 @@ function MenuSelect({
                 setOpen(false)
               }}
             >
-              <span className="chat-menu-item-name">{o}</span>
+              <span className="chat-menu-item-name">{format(o)}</span>
               <span className="chat-menu-item-key" aria-hidden="true">
                 {o === value ? '✓' : i + 1}
               </span>
             </button>
           ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+// ModelMenu (F-0311): o seletor de modelo na forma do /model do Claude Code —
+// correntes no primeiro nível (com dígito de atalho), legados agrupados num
+// submenu que abre dentro do mesmo popup, delistados fora (quem chama já os
+// filtrou). Cada entrada mostra rótulo e provedor, nunca o id cru.
+//
+// Teclado (C12): setas andam entre os itens do nível aberto, Enter escolhe,
+// → ou Enter em "Modelos anteriores" abre o submenu, ← ou Escape voltam ao
+// primeiro nível; escolher devolve o foco ao gatilho.
+function ModelMenu({
+  value,
+  entries,
+  onSelect,
+  label,
+  legacyLabel,
+}: {
+  value: string
+  entries: ModelEntry[]
+  onSelect: (id: string) => void
+  label: string
+  legacyLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [legacyOpen, setLegacyOpen] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const subTriggerRef = useRef<HTMLButtonElement>(null)
+  const subListRef = useRef<HTMLDivElement>(null)
+  // focusSub: o submenu acabou de abrir pelo teclado — foca o primeiro legado
+  // assim que ele existir no DOM.
+  const focusSub = useRef(false)
+
+  useEffect(() => {
+    if (legacyOpen && focusSub.current) {
+      focusSub.current = false
+      subListRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    }
+  }, [legacyOpen])
+
+  useEffect(() => {
+    if (!open) return
+    listRef.current?.focus()
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  if (entries.length === 0) return null
+
+  const current = entries.filter((e) => e.visibility === 'current')
+  const legacy = entries.filter((e) => e.visibility === 'legacy')
+  const selected = entries.find((e) => e.id === value)
+  const pick = (id: string) => {
+    onSelect(id)
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
+  const openLegacy = () => {
+    focusSub.current = true
+    setLegacyOpen(true)
+  }
+  const closeLegacy = () => {
+    setLegacyOpen(false)
+    subTriggerRef.current?.focus()
+  }
+  // levelItems: os botões do nível aberto, na ordem da tela.
+  const levelItems = () => {
+    const level = legacyOpen ? subListRef.current : listRef.current
+    return Array.from(level?.children ?? []).filter((el): el is HTMLButtonElement => el instanceof HTMLButtonElement)
+  }
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const active = document.activeElement
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        e.preventDefault()
+        const items = levelItems()
+        if (items.length === 0) return
+        const i = items.indexOf(active as HTMLButtonElement)
+        const next = e.key === 'ArrowDown' ? (i + 1) % items.length : i <= 0 ? items.length - 1 : i - 1
+        items[next].focus()
+        return
+      }
+      case 'ArrowRight':
+        if (active === subTriggerRef.current) {
+          e.preventDefault()
+          openLegacy()
+        }
+        return
+      case 'ArrowLeft':
+        if (legacyOpen) {
+          e.preventDefault()
+          closeLegacy()
+        }
+        return
+      case 'Enter':
+        // preventDefault: o botão nativo não dispara um segundo clique.
+        if (active === subTriggerRef.current) {
+          e.preventDefault()
+          openLegacy()
+        } else if (active instanceof HTMLButtonElement && listRef.current?.contains(active)) {
+          e.preventDefault()
+          active.click()
+        }
+        return
+      case 'Escape':
+        if (legacyOpen) closeLegacy()
+        else {
+          setOpen(false)
+          triggerRef.current?.focus()
+        }
+        return
+    }
+    const n = Number(e.key)
+    if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, current.length)) pick(current[n - 1].id)
+  }
+
+  const item = (e: ModelEntry, key: string) => (
+    <button
+      key={e.id}
+      type="button"
+      role="menuitemradio"
+      aria-checked={e.id === value}
+      className="chat-menu-item"
+      onClick={() => pick(e.id)}
+    >
+      <span className="chat-menu-item-name">
+        {e.label}{' '}
+        <span className="chat-menu-item-provider">{providerName(e.provider)}</span>
+      </span>
+      <span className="chat-menu-item-key" aria-hidden="true">
+        {e.id === value ? '✓' : key}
+      </span>
+    </button>
+  )
+
+  return (
+    <span className="chat-menu" ref={wrapRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="chat-menu-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => {
+          setOpen((o) => !o)
+          // Um legado selecionado abre com o submenu à mostra: a marca de
+          // selecionado não pode ficar escondida.
+          setLegacyOpen(selected?.visibility === 'legacy')
+        }}
+      >
+        {selected?.label ?? value}
+      </button>
+      {open && (
+        <div className="chat-menu-list" role="menu" tabIndex={-1} ref={listRef} onKeyDown={onKeyDown}>
+          <p className="chat-menu-title">{label}</p>
+          {/* C2: o teclado atende um dígito (1–9); além disso, nenhum atalho desenhado */}
+          {current.map((e, i) => item(e, i < 9 ? String(i + 1) : ''))}
+          {legacy.length > 0 && (
+            <>
+              <button
+                ref={subTriggerRef}
+                type="button"
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={legacyOpen}
+                className="chat-menu-item"
+                onClick={() => setLegacyOpen((o) => !o)}
+              >
+                <span className="chat-menu-item-name">{legacyLabel}</span>
+                <span className="chat-menu-item-key" aria-hidden="true">
+                  {legacyOpen ? '▾' : '›'}
+                </span>
+              </button>
+              {legacyOpen && (
+                <div className="chat-menu-sublist" role="menu" aria-label={legacyLabel} ref={subListRef}>
+                  {legacy.map((e) => item(e, ''))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </span>
@@ -269,31 +471,39 @@ export function continueList(
   }
 }
 
-// Preferências de padrão (F-0241). Regex, não id literal: a lista vem do
-// servidor e varia por projeto — casar por nome sobrevive a versionamento
-// ("claude-opus-5" hoje, outro amanhã).
-const PREFERRED_MODEL = /opus/i
-const PREFERRED_EFFORT = /^high$/i
+// Seleção de modelo (F-0311): o catálogo do servidor já traz ordem, default e
+// a matriz modelo×esforço. Aqui só se filtra e reconcilia — nenhum id, nenhuma
+// preferência por nome: o que ontem era regex /opus/ hoje é o default do
+// catálogo, que muda sem recompilar.
 
-// pickDefault escolhe da lista disponível: o preferido se existir, senão o
-// primeiro, senão vazio (lista vazia = servidor sem provider configurado).
-// Nunca inventa um valor que o servidor não ofereceu.
-export function pickDefault(options: string[], preferred: RegExp): string {
-  return options.find((o) => preferred.test(o)) ?? options[0] ?? ''
+// visibleModels é o que o seletor oferece: só o provedor escolhido (vazio =
+// sem provedor configurado, sem filtro), nunca um delistado.
+export function visibleModels(entries: ModelEntry[], provider: string): ModelEntry[] {
+  return entries.filter((e) => e.visibility !== 'delisted' && (!provider || e.provider === provider))
 }
 
-// Ordem de exibição dos modelos: o servidor devolve na ordem dele, que não é a
-// que o leitor espera. Casamento por nome, não por id literal, pelo mesmo
-// motivo de PREFERRED_MODEL. Modelo desconhecido vai para o fim preservando a
-// ordem recebida — some da lista seria pior que aparecer por último.
-const MODEL_ORDER = [/fable/i, /opus/i, /sonnet/i, /haiku/i]
+// pickModel mantém a escolha salva enquanto ela é ofertada (legado incluso);
+// senão o default do catálogo; senão a primeira corrente. Nunca inventa.
+export function pickModel(offered: ModelEntry[], saved: string, defaultModel: string): string {
+  const has = (id: string) => offered.some((e) => e.id === id)
+  if (saved && has(saved)) return saved
+  if (defaultModel && has(defaultModel)) return defaultModel
+  return (offered.find((e) => e.visibility === 'current') ?? offered[0])?.id ?? ''
+}
 
-export function sortModels(models: string[]): string[] {
-  const rank = (m: string) => {
-    const i = MODEL_ORDER.findIndex((re) => re.test(m))
-    return i < 0 ? MODEL_ORDER.length : i
-  }
-  return [...models].sort((a, b) => rank(a) - rank(b))
+// reconcileEffort (critérios 12/13): esforço aceito pelo modelo fica; fora da
+// matriz vira o default declarado (ou o primeiro aceito) — nunca vazio quando
+// o modelo declara níveis, e vazio quando não declara nenhum.
+export function reconcileEffort(entry: ModelEntry | undefined, effort: string): string {
+  const efforts = entry?.efforts ?? []
+  if (efforts.includes(effort)) return effort
+  const def = entry?.default_effort ?? ''
+  return efforts.includes(def) ? def : (efforts[0] ?? '')
+}
+
+// providerName só capitaliza o nome técnico do provedor ("anthropic").
+function providerName(p: string): string {
+  return p.charAt(0).toUpperCase() + p.slice(1)
 }
 
 // Tolerância do glue-scroll (F-0239): "no fim" não pode exigir pixel exato —
@@ -353,8 +563,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // vez, e a proteção real contra duplicata é o agente consultar note list.
   const [createdNotes, setCreatedNotes] = useState<Record<number, string>>({})
   const [registeringNote, setRegisteringNote] = useState(false)
-  const [models, setModels] = useState<string[]>([])
-  const [efforts, setEfforts] = useState<string[]>([])
+  const [catalog, setCatalog] = useState<ModelEntry[]>([])
+  const [defaultModel, setDefaultModel] = useState('')
+  const [providers, setProviders] = useState<string[]>([])
+  const [provider, setProvider] = useState('')
   const [model, setModel] = useState(conversation.model)
   const [effort, setEffort] = useState(conversation.effort)
   const [, forceTick] = useState(0)
@@ -374,13 +586,21 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     fetchLLMOptions()
       .then((opts) => {
         setNeedsProvider(opts.mode === 'delegation')
-        setModels(sortModels(opts.models))
-        setEfforts(opts.efforts)
-        // F-0241: a seleção deixa de admitir vazio. O padrão sai da lista que
-        // o servidor devolveu — id fixo quebraria um projeto cujo .cernerc não
-        // expõe o preferido. Só preenche o que a conversa ainda não escolheu.
-        setModel((m) => m || pickDefault(opts.models, PREFERRED_MODEL))
-        setEffort((e) => e || pickDefault(opts.efforts, PREFERRED_EFFORT))
+        // F-0311: o provedor inicial é a preferência persistida (critério 16),
+        // se o projeto ainda o alcança; senão o primeiro configurado.
+        const prov = opts.providers.includes(opts.preferredProvider)
+          ? opts.preferredProvider
+          : (opts.providers[0] ?? '')
+        const offered = visibleModels(opts.models, prov)
+        // F-0241: a seleção não admite vazio. A conversa guarda o que escolheu;
+        // o que saiu da oferta (delistado, outro provedor) volta ao default.
+        const next = pickModel(offered, conversation.model, opts.defaultModel)
+        setCatalog(opts.models)
+        setDefaultModel(opts.defaultModel)
+        setProviders(opts.providers)
+        setProvider(prov)
+        setModel(next)
+        setEffort(reconcileEffort(offered.find((e) => e.id === next), conversation.effort))
       })
       .catch(() => {})
   }, [])
@@ -469,6 +689,22 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }
+
+  // F-0311: trocar de modelo reconcilia o esforço com a matriz do novo modelo;
+  // trocar de provedor restringe a oferta, reconcilia o modelo e persiste a
+  // escolha (falha de rede não desfaz a seleção da sessão).
+  const offered = visibleModels(catalog, provider)
+  const selectedEntry = catalog.find((e) => e.id === model)
+  const chooseModel = (id: string) => {
+    setModel(id)
+    setEffort((e) => reconcileEffort(catalog.find((x) => x.id === id), e))
+  }
+  const chooseProvider = (p: string) => {
+    setProvider(p)
+    chooseModel(pickModel(visibleModels(catalog, p), model, defaultModel))
+    setPreferredProvider(p).catch(() => {})
+  }
+  const labelOf = (id: string) => catalog.find((e) => e.id === id)?.label ?? id
 
   // sendMessages guarda `next` como o candidato a reenvio (critério 4) — só
   // vira "erro visível" se a requisição falhar; sucesso limpa em reconcile().
@@ -702,7 +938,11 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         {busy && (
           <p className="status backlog-chat-progress">
             <span className="backlog-chat-spinner" aria-hidden="true" />
-            {t.backlogChat.processing(formatElapsed(Date.now() - requestStatus.startedAt), requestStatus.model, requestStatus.effort)}
+            {t.backlogChat.processing(
+              formatElapsed(Date.now() - requestStatus.startedAt),
+              requestStatus.model ? labelOf(requestStatus.model) : '',
+              requestStatus.effort,
+            )}
           </p>
         )}
       </div>
@@ -767,17 +1007,27 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         </div>
         {/* F-0241: sem rótulo e sem opção vazia — o valor corrente já nomeia o
             campo, e o padrão garante que nunca fica sem seleção. */}
-        {(models.length > 0 || efforts.length > 0) && (
+        {offered.length > 0 && (
           <div className="backlog-chat-options">
+            {/* F-0311: provedor (só os já configurados), modelo (submenu de
+                legados) e esforço (só os declarados do modelo). */}
             <MenuSelect
+              value={provider}
+              options={providers}
+              onSelect={chooseProvider}
+              label={t.backlogChat.providerLabel}
+              format={providerName}
+            />
+            <ModelMenu
               value={model}
-              options={models}
-              onSelect={setModel}
+              entries={offered}
+              onSelect={chooseModel}
               label={t.backlogChat.modelLabel}
+              legacyLabel={t.backlogChat.legacyModels}
             />
             <MenuSelect
               value={effort}
-              options={efforts}
+              options={selectedEntry?.efforts ?? []}
               onSelect={setEffort}
               label={t.backlogChat.effortLabel}
             />

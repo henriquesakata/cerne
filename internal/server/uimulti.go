@@ -21,12 +21,14 @@ import (
 // per-project live-refresh of case 0031, and a multiplexed SSE stream.
 
 // liveEvent is one server-sent signal: a backend change for a project (kind
-// "change", with pid+sha) or a change to the set of registered projects (kind
-// "projects").
+// "change", with pid+sha), a change to the set of registered projects (kind
+// "projects") or a model catalog refresh that changed it (kind "models", with
+// the JSON diff in data — F-0311).
 type liveEvent struct {
-	kind string // "change" | "projects"
+	kind string // "change" | "projects" | "models"
 	pid  string
 	sha  string
+	data string
 }
 
 // multiHub fans liveEvents out to every /api/stream subscriber. done is the
@@ -37,6 +39,10 @@ type multiHub struct {
 	mu   sync.Mutex
 	subs map[chan liveEvent]struct{}
 	done <-chan struct{}
+	// models is the last catalog refresh announcement, replayed to every page
+	// that connects later: the boot refresh usually lands before the browser
+	// opens the stream, and the bell must still hear about it.
+	models *liveEvent
 }
 
 func newMultiHub(done <-chan struct{}) *multiHub {
@@ -64,6 +70,9 @@ func (h *multiHub) unsubscribe(ch chan liveEvent) {
 func (h *multiHub) broadcast(ev liveEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if ev.kind == "models" {
+		h.models = &ev
+	}
 	for ch := range h.subs {
 		select {
 		case ch <- ev:
@@ -89,10 +98,16 @@ func (h *multiHub) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	ch := h.subscribe()
 	defer h.unsubscribe(ch)
+	h.mu.Lock()
+	replay := h.models
+	h.mu.Unlock()
 	telemetry.Default.SSEClients.Inc()
 	defer telemetry.Default.SSEClients.Dec()
 
 	fmt.Fprint(w, "event: projects\ndata: \n\n") // resync the list on connect
+	if replay != nil {
+		fmt.Fprintf(w, "event: models\ndata: %s\n\n", replay.data)
+	}
 	flusher.Flush()
 
 	keepalive := time.NewTicker(keepaliveInterval)
@@ -112,6 +127,8 @@ func (h *multiHub) handleStream(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "event: change\ndata: %s %s\n\n", ev.pid, ev.sha)
 			case "projects":
 				fmt.Fprint(w, "event: projects\ndata: \n\n")
+			case "models":
+				fmt.Fprintf(w, "event: models\ndata: %s\n\n", ev.data)
 			}
 			flusher.Flush()
 		case <-keepalive.C:
@@ -299,9 +316,13 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 		pull:     pullInterval,
 		poll:     headPollInterval,
 	}
-	if _, _, err := reg.add(initialDir); err != nil {
+	pid, _, err := reg.add(initialDir)
+	if err != nil {
 		return nil, err
 	}
+	// F-0311: the model catalog refresh rides the process boot — here, once,
+	// never in registry.add (a second project must not re-trigger it).
+	startCatalogRefresh(ctx, hub, reg.projDir(pid))
 
 	mux := http.NewServeMux()
 

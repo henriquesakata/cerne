@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/llm"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/restmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -135,7 +136,7 @@ func BuildResultDraftPrompt(f store.Feature, specContent, planContent, currentCo
 	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
 	b.WriteString("- Dimensione pelo trabalho: entrega pequena tem seções curtas; \"N/A\" onde não se aplica (nunca na seção Gauntlet). Não infle.\n")
 	b.WriteString("- Na seção Gauntlet, transcreva só o registro real do loop que estiver no conteúdo atual ou no plano: a linha Barra:, uma linha Rodada N — <veredito>: \"<citação do juiz>\" por rodada e a linha Achados do crítico. O cerne feature complete confere esse registro: nunca invente rodada, veredito, citação do juiz ou dispensa. Sem o registro, escreva na seção só \"" + spectmpl.AmbiguityMarker + " registro do Gauntlet: barra, rodadas com o veredito citado do juiz e disposição dos achados]\".\n")
-	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o id CONCRETO do modelo e o esforço com que VOCÊ está rodando — o nível na escala do seu harness (ex.: low/medium/high) — ou \"**Agente:** humano\"; se não souber um dos dois, escreva \"desconhecido\" só nele (ex.: \"claude-opus-5 · esforço desconhecido\"), nunca um palpite nem uma categoria genérica.\n\n")
+	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o id CONCRETO do modelo e o esforço com que VOCÊ está rodando — o nível na escala do seu harness (ex.: low/medium/high) — ou \"**Agente:** humano\"; se não souber um dos dois, escreva \"desconhecido\" só nele (ex.: \"" + project.LLMConfig{}.WithDefaults().Model + " · esforço desconhecido\"), nunca um palpite nem uma categoria genérica.\n\n")
 	b.WriteString("Use a spec, o plano e o título acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()

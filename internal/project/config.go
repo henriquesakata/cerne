@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"gitlab.com/rockt/cerne/internal/models"
 )
 
 // ErrNoProject is the sentinel for a LoadConfig walk that reaches the
@@ -311,7 +313,7 @@ func (c Config) StaleWorkWindowHours() int {
 type LLMConfig struct {
 	Mode      string `toml:"mode,omitempty"`       // "delegation" (default when empty) | "byo-key" | "claude-cli"
 	Provider  string `toml:"provider,omitempty"`   // byo-key provider; default "anthropic"
-	Model     string `toml:"model,omitempty"`      // model id; default "claude-opus-4-8"
+	Model     string `toml:"model,omitempty"`      // model id; default: the model catalog's default (F-0311)
 	KeyEnv    string `toml:"key_env,omitempty"`    // env var NAME holding the key; default "CERNE_LLM_API_KEY"
 	BaseURL   string `toml:"base_url,omitempty"`   // API base URL; default "https://api.anthropic.com"
 	MaxTokens int    `toml:"max_tokens,omitzero"`  // max output tokens; default 8000
@@ -321,12 +323,23 @@ type LLMConfig struct {
 // LLM defaults applied by withDefaults when a byo-key field is empty/zero.
 const (
 	defaultLLMProvider  = "anthropic"
-	defaultLLMModel     = "claude-opus-4-8"
 	defaultLLMKeyEnv    = "CERNE_LLM_API_KEY"
 	defaultLLMBaseURL   = "https://api.anthropic.com"
 	defaultLLMMaxTokens = 8000
 	defaultLLMClaudeBin = "claude"
 )
+
+// defaultModel is the resolved model catalog's default — the global file over
+// the embedded baseline (F-0311 criteria 1/2) — so a hand-set default_model
+// reaches every LLM call, not only the UI.
+func defaultModel() string {
+	dir, err := ConfigDir()
+	if err != nil {
+		return models.Baseline().DefaultModel
+	}
+	cat, _ := models.Load(dir)
+	return cat.DefaultModel
+}
 
 // WithDefaults returns a copy with each empty/zero byo-key field filled by its
 // default. Mode is left untouched (llm.ResolveMode owns that fallback). It is
@@ -336,7 +349,7 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 		c.Provider = defaultLLMProvider
 	}
 	if c.Model == "" {
-		c.Model = defaultLLMModel
+		c.Model = defaultModel()
 	}
 	if c.KeyEnv == "" {
 		c.KeyEnv = defaultLLMKeyEnv

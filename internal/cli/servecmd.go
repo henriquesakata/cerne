@@ -52,5 +52,8 @@ func runServe(cmd *cobra.Command, root string, port int) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "cerne serve (multi-project) at %s\n", addr)
 	defer initServerTelemetry(context.Background(), "")()
+	// F-0311 criterion 18: the opportunistic model catalog refresh rides the
+	// serve boot too, picking the provider from this process's own [llm].
+	server.StartCatalogRefresh(cmd.Context(), ".")
 	return http.Serve(ln, server.NewMultiProject(secret))
 }
