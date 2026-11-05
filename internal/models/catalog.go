@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -93,7 +94,7 @@ func Load(dir string) (cat Catalog, warn error) {
 	return merge(base, layer), nil
 }
 
-// readLayer reads the raw global layer (no baseline merge). An absent file
+// readLayer reads the typed global layer (no baseline merge). An absent file
 // yields an error wrapping fs.ErrNotExist.
 func readLayer(dir string) (Catalog, error) {
 	path := filepath.Join(dir, FileName)
@@ -101,6 +102,11 @@ func readLayer(dir string) (Catalog, error) {
 	if err != nil {
 		return Catalog{}, err
 	}
+	return parseLayer(path, data)
+}
+
+// parseLayer validates a global file's bytes into a typed layer.
+func parseLayer(path string, data []byte) (Catalog, error) {
 	if strings.TrimSpace(string(data)) == "" {
 		return Catalog{}, fmt.Errorf("%w: %s", ErrEmpty, path)
 	}
@@ -119,26 +125,85 @@ func readLayer(dir string) (Catalog, error) {
 	return c, nil
 }
 
-// SetPreferredProvider records the chat's provider choice in the global layer
-// at dir — global like the catalog, so it survives a restart and reaches every
-// project. A malformed file is left alone (error), never overwritten.
-func SetPreferredProvider(dir, provider string) error {
-	layer, err := readLayer(dir)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	layer.PreferredProvider = provider
-	return saveLayer(dir, layer)
+// layerFile is the global file as its author wrote it. The file is
+// hand-edited, so a program write touches only the keys it owns: unknown
+// fields, an explicit "efforts": [] and untouched entries all survive.
+type layerFile struct {
+	typed   Catalog
+	doc     map[string]json.RawMessage
+	entries []json.RawMessage
 }
 
-// saveLayer writes the global layer to dir atomically (temp file + rename), so
-// a reader in another process never sees half a file.
-func saveLayer(dir string, c Catalog) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+// readLayerFile loads the global file for a read-modify-write: absent is an
+// empty file; empty or malformed is an error, so it is never overwritten.
+func readLayerFile(dir string) (layerFile, error) {
+	f := layerFile{doc: map[string]json.RawMessage{}}
+	path := filepath.Join(dir, FileName)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return f, nil
+	}
+	if err != nil {
+		return f, err
+	}
+	if f.typed, err = parseLayer(path, data); err != nil {
+		return f, err
+	}
+	if err := json.Unmarshal(data, &f.doc); err != nil {
+		return f, fmt.Errorf("%w: %s: %v", ErrMalformed, path, err)
+	}
+	if raw := f.doc["entries"]; raw != nil {
+		if err := json.Unmarshal(raw, &f.entries); err != nil {
+			return f, fmt.Errorf("%w: %s: %v", ErrMalformed, path, err)
+		}
+	}
+	return f, nil
+}
+
+// set writes one top-level key.
+func (f *layerFile) set(key string, v any) {
+	f.doc[key], _ = json.Marshal(v)
+}
+
+// patch edits the entry for id through fn, creating {"id": id} when the file
+// has none. An entry left holding only its id is dropped: it no longer says
+// anything the baseline does not.
+func (f *layerFile) patch(id string, fn func(m map[string]json.RawMessage)) {
+	idJSON, _ := json.Marshal(id)
+	for i, raw := range f.entries {
+		var m map[string]json.RawMessage
+		var got string
+		if json.Unmarshal(raw, &m) != nil || json.Unmarshal(m["id"], &got) != nil || got != id {
+			continue
+		}
+		fn(m)
+		if len(m) == 1 {
+			f.entries = slices.Delete(f.entries, i, i+1)
+			return
+		}
+		f.entries[i], _ = json.Marshal(m)
+		return
+	}
+	m := map[string]json.RawMessage{"id": idJSON}
+	fn(m)
+	if len(m) > 1 {
+		raw, _ := json.Marshal(m)
+		f.entries = append(f.entries, raw)
+	}
+}
+
+// save writes the file atomically (temp file + rename), so a reader in
+// another process never sees half a file.
+func (f layerFile) save(dir string) error {
+	if f.entries == nil {
+		f.entries = []json.RawMessage{}
+	}
+	f.set("entries", f.entries)
+	data, err := json.MarshalIndent(f.doc, "", "  ")
+	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, FileName+".*")
@@ -154,6 +219,18 @@ func saveLayer(dir string, c Catalog) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), filepath.Join(dir, FileName))
+}
+
+// SetPreferredProvider records the chat's provider choice in the global layer
+// at dir — global like the catalog, so it survives a restart and reaches every
+// project. A malformed file is left alone (error), never overwritten.
+func SetPreferredProvider(dir, provider string) error {
+	f, err := readLayerFile(dir)
+	if err != nil {
+		return err
+	}
+	f.set("preferred_provider", provider)
+	return f.save(dir)
 }
 
 // merge resolves layer over base: an id present in both takes the layer's

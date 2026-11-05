@@ -23,16 +23,30 @@ func listedAll(provider string) []Entry {
 	return out
 }
 
+// refreshWith runs one successful refresh of anthropic over the global file
+// in dir and returns the resolved catalog and the diff.
+func refreshWith(t *testing.T, dir string, listed []Entry) (Catalog, Diff) {
+	t.Helper()
+	d, err := Refresh(context.Background(), dir, "anthropic", func(context.Context) ([]Entry, error) { return listed, nil }, now)
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	cat, warn := Load(dir)
+	if warn != nil {
+		t.Fatalf("Load after refresh: %v", warn)
+	}
+	return cat, d
+}
+
 // TestRefreshAddsAsCurrent: criterion 7 — a listed model the catalog lacks
 // enters as current, labelled by the provider's display name.
 func TestRefreshAddsAsCurrent(t *testing.T) {
 	listed := append(listedAll("anthropic"), Entry{ID: "claude-new-9", Label: "Claude New 9"})
-	layer, diff := Apply(Catalog{}, "anthropic", listed, now)
+	cat, diff := refreshWith(t, t.TempDir(), listed)
 
 	if !slices.Equal(diff.Added, []string{"claude-new-9"}) || len(diff.Delisted) != 0 {
 		t.Fatalf("diff = %+v, want only claude-new-9 added", diff)
 	}
-	cat := merge(Baseline(), layer)
 	got, ok := cat.Find("claude-new-9")
 	if !ok || got.Visibility != Current || got.Label != "Claude New 9" || got.Provider != "anthropic" {
 		t.Fatalf("added entry = %+v", got)
@@ -48,12 +62,12 @@ func TestRefreshAddsAsCurrent(t *testing.T) {
 func TestRefreshDelistsMissing(t *testing.T) {
 	all := listedAll("anthropic")
 	gone := all[len(all)-1]
-	layer, diff := Apply(Catalog{}, "anthropic", all[:len(all)-1], now)
+	dir := t.TempDir()
+	cat, diff := refreshWith(t, dir, all[:len(all)-1])
 
 	if !slices.Equal(diff.Delisted, []string{gone.ID}) || len(diff.Added) != 0 {
 		t.Fatalf("diff = %+v, want only %s delisted", diff, gone.ID)
 	}
-	cat := merge(Baseline(), layer)
 	got, ok := cat.Find(gone.ID)
 	if !ok || got.Visibility != Delisted || got.Label != gone.Label {
 		t.Fatalf("delisted entry = %+v (found %v), want kept with its label", got, ok)
@@ -61,7 +75,7 @@ func TestRefreshDelistsMissing(t *testing.T) {
 	if len(cat.Entries) != len(Baseline().Entries) {
 		t.Fatalf("entries = %d, want %d (nothing removed)", len(cat.Entries), len(Baseline().Entries))
 	}
-	if _, again := Apply(layer, "anthropic", all[:len(all)-1], now); !again.Empty() {
+	if _, again := refreshWith(t, dir, all[:len(all)-1]); !again.Empty() {
 		t.Fatalf("repeat listing changed the catalog: %+v", again)
 	}
 }
@@ -71,8 +85,7 @@ func TestRefreshDelistsMissing(t *testing.T) {
 // a hand edit of the global file.
 func TestRefreshNeverDemotes(t *testing.T) {
 	listed := append(listedAll("anthropic"), Entry{ID: "claude-new-9", Label: "Claude New 9"})
-	layer, _ := Apply(Catalog{}, "anthropic", listed, now)
-	cat := merge(Baseline(), layer)
+	cat, _ := refreshWith(t, t.TempDir(), listed)
 	for _, b := range Baseline().Entries {
 		got, _ := cat.Find(b.ID)
 		if got.Visibility != b.Visibility {
@@ -101,12 +114,16 @@ func TestNoListingKeepsBaselineAuthority(t *testing.T) {
 		t.Fatalf("baseline offers %d current / %d legacy, want both", current, legacy)
 	}
 
-	other := Catalog{Entries: []Entry{{ID: "vendor-x-1", Label: "Vendor X 1", Provider: "vendor"}}}
-	layer, diff := Apply(other, "anthropic", listedAll("anthropic"), now)
+	dir := t.TempDir()
+	other := `{"entries":[{"id":"vendor-x-1","label":"Vendor X 1","provider":"vendor"}]}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, diff := refreshWith(t, dir, listedAll("anthropic"))
 	if !diff.Empty() {
 		t.Fatalf("diff = %+v, want none", diff)
 	}
-	if got, _ := merge(Baseline(), layer).Find("vendor-x-1"); got.Visibility != Current {
+	if got, _ := cat.Find("vendor-x-1"); got.Visibility != Current {
 		t.Fatalf("another provider's entry became %q", got.Visibility)
 	}
 }
