@@ -5,8 +5,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func TestErrataCreatesRecordOneShot(t *testing.T) {
@@ -121,4 +125,45 @@ func hasSubcommand(root *cobra.Command, parent, child string) bool {
 		}
 	}
 	return false
+}
+
+// TestErrataClearsResultDebtEndToEnd: a feature that froze with a result in
+// debt leaves the lint through `feature errata` alone (F-0305, crit. 5).
+func TestErrataClearsResultDebtEndToEnd(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "finance")
+	now := time.Now().UTC()
+	f := store.Feature{ID: "F-0001", Title: "Boletos", State: domain.StateImplemented, Facets: []string{"code"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	writeDoc(t, repoDir, "F-0001", "spec.md", "---\ncerne_id: F-0001\n---\n\n# Boletos\n\n## Objetivo e critérios de aceitação\n\n1. a\n2. b\n")
+	writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "passos"))
+	writeDoc(t, repoDir, "F-0001", "result.md", "---\ncerne_id: F-0001\n---\n\n# Boletos\n\ncritério 1 provado.\n")
+	if err := store.AppendEvent(repoDir, domain.Event{EntityID: "F-0001", Type: "feature.completed", At: now}); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	resultPath := filepath.Join(repoDir, "content", "features", "F-0001", "result.md")
+	before, _ := os.ReadFile(resultPath)
+
+	out, _ := execCerne(t, "lint", "--dir", projDir)
+	if !strings.Contains(out, "RESULT-MISSING-EVIDENCE") || !strings.Contains(out, "RESULT-MISSING-GAUNTLET") {
+		t.Fatalf("want both findings before errata:\n%s", out)
+	}
+	errFile := filepath.Join(t.TempDir(), "errata.md")
+	body := "critério 2 provado.\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	if err := os.WriteFile(errFile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "feature", "errata", "F-0001", "--file", errFile, "--dir", projDir); err != nil {
+		t.Fatalf("errata: %v\n%s", err, out)
+	}
+	out, err := execCerne(t, "lint", "--dir", projDir)
+	if err != nil || strings.Contains(out, "RESULT-MISSING") {
+		t.Fatalf("want lint clean of result findings (err %v):\n%s", err, out)
+	}
+	after, _ := os.ReadFile(resultPath)
+	if string(after) != string(before) {
+		t.Fatal("result.md changed")
+	}
 }

@@ -169,3 +169,55 @@ func TestCheckResultCommentMarkersInCode(t *testing.T) {
 		t.Fatalf("rules = %v, want none", got)
 	}
 }
+
+func addErrata(t *testing.T, dir string, entries ...string) {
+	t.Helper()
+	for _, e := range entries {
+		if err := store.AppendErrata(dir, "F-0001", e, "ator", time.Unix(0, 0).UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+const goodGauntlet = "## Gauntlet\n\nBarra: x\n\nRodada 1 — vitória: \"ok\"\n"
+const badGauntlet = "## Gauntlet\n\nBarra: x\n\nRodada 1 — vitória\n"
+
+func TestResultEvidenceReadsErrata(t *testing.T) {
+	spec := "## Objetivo e critérios de aceitação\n\n1. a\n2. b\n3. c\n"
+	dir, f := writeResultFixture(t, domain.StateImplemented, spec, "critérios 1 e 2\n")
+	if got := evidenceFinding(dir, f); len(got) != 1 {
+		t.Fatalf("want a finding before errata, got %+v", got)
+	}
+	addErrata(t, dir, "critério 3 provado\n")
+	if got := evidenceFinding(dir, f); len(got) != 0 {
+		t.Fatalf("want no finding, got %+v", got)
+	}
+}
+
+func TestResultGauntletReadsErrata(t *testing.T) {
+	for name, entries := range map[string][]string{
+		"complete":         {goodGauntlet},
+		"incomplete first": {badGauntlet, goodGauntlet},
+		"complete first":   {goodGauntlet, badGauntlet},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n\n"+badGauntlet)
+			if got := gauntletFinding(dir, f, false); len(got) != 1 {
+				t.Fatalf("want a finding before errata, got %+v", got)
+			}
+			addErrata(t, dir, entries...)
+			if got := gauntletFinding(dir, f, false); len(got) != 0 {
+				t.Fatalf("want no finding, got %+v", got)
+			}
+		})
+	}
+}
+
+func TestResultRulesErrataWithoutEvidence(t *testing.T) {
+	dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1\n")
+	addErrata(t, dir, "outro assunto\n", badGauntlet, "<!-- critério 2 -->\n"+"<!--\n"+goodGauntlet+"-->\n")
+	got := CheckResult(dir, f)
+	if len(got) != 2 || got[0].Rule != RuleResultMissingEvidence || got[1].Rule != RuleResultMissingGauntlet {
+		t.Fatalf("want both findings, got %+v", got)
+	}
+}

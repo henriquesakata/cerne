@@ -147,6 +147,9 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 		result = nil // gate doc coverage is missing-gate-doc's job; here absence = zero evidence
 	}
 	mentions := resultMentions(stripHTMLComments(result))
+	for n := range resultMentions(errataText(repoDir, f.ID)) { // the errata completes what the result lacks (F-0305)
+		mentions[n] = true
+	}
 	var missing []string
 	for _, n := range criteria {
 		if !mentions[n] {
@@ -162,6 +165,13 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 		File:   filepath.ToSlash(resultPath),
 		Detail: fmt.Sprintf("result.md sem evidência do(s) critério(s) %s da spec (%s) — cite \"critério N\" com a prova de cada um", strings.Join(missing, ", "), f.Title),
 	}}
+}
+
+// errataText returns the feature's errata without HTML comments, for the
+// result presence rules (F-0305). Unreadable or absent errata is no errata.
+func errataText(repoDir, id string) []byte {
+	er, _ := store.LoadErrata(repoDir, id)
+	return stripHTMLComments([]byte(er))
 }
 
 // CheckResult returns the result-record findings of ONE feature, ignoring its

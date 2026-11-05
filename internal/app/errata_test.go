@@ -25,6 +25,11 @@ func TestAddErrataAppendsWithoutTouchingBody(t *testing.T) {
 	if err := os.WriteFile(specPath, specBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	resultPath := filepath.Join(filepath.Dir(specPath), "result.md")
+	resultBody := []byte("# Result\n\ncritério 1\n")
+	if err := os.WriteFile(resultPath, resultBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	commitBackend(t, repoDir)
 
 	if _, err := AddErrata(repoDir, projDir, "F-0001", "Correção: usar D-0002.", "ator"); err != nil {
@@ -41,6 +46,9 @@ func TestAddErrataAppendsWithoutTouchingBody(t *testing.T) {
 	}
 	if !bytes.Equal(after, specBody) {
 		t.Fatalf("spec was mutated by errata (must stay byte-identical):\n%s", after)
+	}
+	if got, _ := os.ReadFile(resultPath); !bytes.Equal(got, resultBody) {
+		t.Fatalf("result was mutated by errata (must stay byte-identical):\n%s", got)
 	}
 }
 

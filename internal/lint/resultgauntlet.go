@@ -126,7 +126,10 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	// complete, the last section's problem is told — the template puts the
 	// record last, and copies or narrative sit above it.
 	detail := "sem seção \"## Gauntlet\""
-	for _, section := range gauntletSections(stripHTMLComments(result)) {
+	// The errata entries' Gauntlet sections count like the result's (F-0305);
+	// an entry ends at the next "## errata" heading.
+	sections := append(gauntletSections(stripHTMLComments(result)), gauntletSections(errataText(repoDir, f.ID))...)
+	for _, section := range sections {
 		p := parseGauntlet(section).problem()
 		if p == "" || (legacy && legacyGauntletRecorded(section)) {
 			return nil
