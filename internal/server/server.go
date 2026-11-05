@@ -247,8 +247,9 @@ type featureDetailResponse struct {
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
 	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
 	Errata      string            `json:"errata"`      // additive corrections (F-0163); "" when none
-	// SpecChangedAfterApproval is true when the spec was edited while approved,
-	// after the last approval (F-0262) — the page warns the approval is stale.
+	// SpecChangedAfterApproval is true when an approved feature's spec differs
+	// from the copy its last approve kept (F-0262, by content since F-0318) —
+	// the page warns the approval is stale.
 	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
 	// RoastRounds lists the persisted adversarial spec critiques (F-0271/
 	// F-0277), newest first; empty when no roast ran yet. The report body is
@@ -368,15 +369,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	specChanged := false
-	if f.State == domain.StateApproved {
-		events, err := store.ReadEvents(repoDir)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-			return
-		}
-		specChanged = lint.SpecChangedAfterApproval(events, id)
-	}
+	specChanged, _, _ := lint.SpecChangedAfterApproval(repoDir, f)
 	planRounds, err := planRoastRounds(repoDir, id, docs.Spec, docs.Plan)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
