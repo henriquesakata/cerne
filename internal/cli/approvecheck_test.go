@@ -2,6 +2,10 @@ package cli
 
 import (
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,17 +18,25 @@ import (
 // TestApproveCheckListsWithoutTransition (F-0308 crit. 3, 11): an agent — whom
 // the human gate refuses the approve itself — rehearses it with --check: every
 // impediment is listed (with the three literal bar forms when the bar is the
-// problem), the exit code follows the list, and nothing moves: state, events
-// and the origin HEAD stay put.
+// problem), the exit code follows the list, and nothing moves: state, events,
+// the origin HEAD, the docs.lock bytes and the .docs/ tree stay put.
 func TestApproveCheckListsWithoutTransition(t *testing.T) {
 	projDir, origin, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature a conferir", 1)
 	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\n## Problema\n\nProblema real. [ESCLARECER: qual o limite?]\n")
 	commitBackend(t, repoDir)
 	t.Setenv("CERNE_ACTOR", "agent")
+	// A materialized .docs/ to watch, besides the backend.
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
 
 	head, _ := gitback.HeadSHA(origin)
 	events, _ := store.ReadEvents(repoDir)
+	lock, docs := projectFiles(t, projDir)
+	if len(docs) == 0 {
+		t.Fatal("pull materialized no .docs/ file to watch")
+	}
 	out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
 	if !errors.Is(err, errCheckImpediments) {
 		t.Fatalf("check err = %v, want errCheckImpediments\noutput: %s", err, out)
@@ -50,6 +62,13 @@ func TestApproveCheckListsWithoutTransition(t *testing.T) {
 		if evs, _ := store.ReadEvents(repoDir); len(evs) != len(events) {
 			t.Fatalf("events %d → %d on --check", len(events), len(evs))
 		}
+		nowLock, nowDocs := projectFiles(t, projDir)
+		if nowLock != lock {
+			t.Fatalf("docs.lock changed on --check:\n%s\n→\n%s", lock, nowLock)
+		}
+		if !reflect.DeepEqual(nowDocs, docs) {
+			t.Fatalf(".docs/ changed on --check: %d files → %d", len(docs), len(nowDocs))
+		}
 	}
 	assertUntouched()
 
@@ -59,6 +78,7 @@ func TestApproveCheckListsWithoutTransition(t *testing.T) {
 	commitBackend(t, repoDir)
 	head, _ = gitback.HeadSHA(origin)
 	events, _ = store.ReadEvents(repoDir)
+	lock, docs = projectFiles(t, projDir)
 	out, err = execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("check on an approvable spec: %v\noutput: %s", err, out)
@@ -72,6 +92,30 @@ func TestApproveCheckListsWithoutTransition(t *testing.T) {
 		t.Fatalf("approvable check still lists impediments:\n%s", out)
 	}
 	assertUntouched()
+}
+
+// projectFiles returns the docs.lock bytes and every .docs/ file (path →
+// content) of the user's project.
+func projectFiles(t *testing.T, projDir string) (string, map[string]string) {
+	t.Helper()
+	lock, err := os.ReadFile(filepath.Join(projDir, "docs.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := map[string]string{}
+	root := filepath.Join(projDir, ".docs")
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		docs[strings.TrimPrefix(p, root)] = string(b)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(lock), docs
 }
 
 // --check is an approve rehearsal only: the other transitions do not take it.
