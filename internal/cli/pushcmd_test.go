@@ -517,7 +517,7 @@ func TestPushRefusalOfClosedDocUnblocks(t *testing.T) {
 	_, err := execCerne(t, "push", "--dir", projDir)
 	for _, want := range []string{
 		"cerne feature amend " + id + " --file " + rel,
-		"then delete the local copy " + rel,
+		"unblock:    remove " + rel,
 	} {
 		if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), want) {
 			t.Fatalf("push: err = %v, want ErrFeatureFrozen containing %q", err, want)

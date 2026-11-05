@@ -68,6 +68,12 @@ func DocFixPath(id, doc string, s domain.FeatureState) string {
 	}
 }
 
+// NoCorrectionNote is the sentence for a document no command changes
+// (lint.CorrectNone: rejected, superseded) — terminal history (F-0307).
+func NoCorrectionNote(id string) string {
+	return fmt.Sprintf("no command changes it: terminal history ('cerne feature errata %s' only annotates)", id)
+}
+
 // CheckDocWritable loads feature id and returns it when its document doc may be
 // written — only while the feature is live (domain.TitleEditable). Past that it
 // returns ErrFeatureFrozen wrapped, naming the state's path (DocFixPath). The
