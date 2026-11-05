@@ -93,9 +93,23 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 	if fixTasks {
 		printFixTasks(out, findings)
 	}
-	// Root has SilenceUsage, so this surfaces as a single error line and
-	// exit code 1 via main.
-	return fmt.Errorf("%d problem(s) found", len(findings))
+	return lintFailure(findings)
+}
+
+// lintFailure is the exit policy of a lint gate: an error counting the
+// blocking findings, nil when every finding is advisory (F-0322). Root has
+// SilenceUsage, so the error surfaces as a single line and exit code 1.
+func lintFailure(findings []lint.Finding) error {
+	blocking := 0
+	for _, f := range findings {
+		if !lint.Advisory(f.Rule) {
+			blocking++
+		}
+	}
+	if blocking == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d problem(s) found", blocking)
 }
 
 // lintScope resolves --feature / --parent to the set of entity ids whose
@@ -185,7 +199,11 @@ func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string
 		if len(group) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "%s (%d)\n", strings.ToUpper(rule), len(group))
+		warning := ""
+		if lint.Advisory(rule) {
+			warning = " (warning)"
+		}
+		fmt.Fprintf(w, "%s (%d)%s\n", strings.ToUpper(rule), len(group), warning)
 		for _, f := range group {
 			fmt.Fprintf(w, "  %s — %s\n", findingLoc(f), f.Detail)
 		}
@@ -246,6 +264,8 @@ func taskAction(f lint.Finding) string {
 		return "finish it (cerne work done) or abandon it (cerne work abandon)"
 	case lint.RuleStaleNote:
 		return "retire it (cerne note retire) or mark it durable (cerne note keep)"
+	case lint.RuleStalePending:
+		return "resolve, drop or promote it (cerne pending resolve|drop|promote)"
 	}
 	return f.Detail
 }

@@ -11,6 +11,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -277,5 +278,44 @@ func TestNextShowsOpenPendings(t *testing.T) {
 	}
 	if strings.Contains(out, "P-0002 ") || strings.Contains(out, "P-0003 ") {
 		t.Fatalf("the two newest pendings must fall beyond the cap:\n%s", out)
+	}
+}
+
+// Crit. 11 ("severidade warning"): stale-pending alone keeps 'cerne lint' at
+// exit 0 and labels the section as a warning; with a blocking finding too, the
+// lint still fails.
+func TestLintAdvisoryKeepsExitCode(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem", "--facet", "code")
+	pendingNew(t, projDir, "Débito velho", "--from", "F-0001")
+	p, _ := store.LoadPending(repoDir, "P-0001")
+	p.CreatedAt = time.Now().UTC().Add(-lint.StalePendingAfter - time.Hour)
+	if err := store.SavePending(repoDir, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "age P-0001"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "lint", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("lint with only an advisory finding must exit 0: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "STALE-PENDING (1) (warning)") || !strings.Contains(out, "P-0001 open for") {
+		t.Fatalf("lint output lacks the warning section:\n%s", out)
+	}
+	if out, err := execCerne(t, "lint", "--feature", "F-0001", "--dir", projDir); err != nil || !strings.Contains(out, "P-0001") {
+		t.Fatalf("lint --feature on the origin must show the finding and exit 0: %v\n%s", err, out)
+	}
+
+	old := time.Now().UTC().Add(-48 * time.Hour)
+	w := store.Work{ID: "W-0001", Title: "Esquecida", State: domain.WorkActive, Actor: "a@b", CreatedAt: old, UpdatedAt: old}
+	if err := store.SaveWork(repoDir, w); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "stale work"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "lint", "--dir", projDir); err == nil {
+		t.Fatalf("an advisory plus a blocking finding must still fail lint:\n%s", out)
 	}
 }
