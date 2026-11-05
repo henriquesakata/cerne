@@ -29,9 +29,11 @@ type ApproveImpediment struct {
 	Hard    bool   `json:"hard"`
 }
 
-// ApproveReadiness returns every impediment to approving candidate id, in the
-// order the approve would hit them: the document gate, the bar gate, then one
-// per open clarification. It composes the same predicates the gates run —
+// ApproveReadiness returns every impediment to approving candidate id: the
+// document gate, then the bar gate (both hard: the shared core refuses them on
+// every surface), then one per open clarification (soft: only the CLI refuses
+// them, and it checks them first, before the core). It composes the same
+// predicates the gates run —
 // domain.CheckGate over FeatureDocSet, doccheck.SpecBar, clarify.Open — so an
 // empty hard list is exactly an approve the core accepts. A missing feature or
 // one past candidacy is an error, the approve's own refusal.

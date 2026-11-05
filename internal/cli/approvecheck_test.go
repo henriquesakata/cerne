@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -130,5 +131,34 @@ func TestApproveCheckSoftOnly(t *testing.T) {
 		if strings.Contains(out, gone) {
 			t.Fatalf("soft-only check output carries %q:\n%s", gone, out)
 		}
+	}
+}
+
+// TestClarificationRefusalNamesHardImpediments (F-0308): the CLI refuses open
+// clarifications before the core checks the spec, so a spec with no bar AND a
+// question used to be refused on the question alone — answered, the approve
+// then failed on the bar. The refusal now names the hard impediments waiting
+// behind it; with none, it stays as it was.
+func TestClarificationRefusalNamesHardImpediments(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature sem barra e com pergunta", 1)
+	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\n## Problema\n\nProblema real. [ESCLARECER: qual o limite?]\n")
+	commitBackend(t, repoDir)
+
+	_, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if !errors.Is(err, app.ErrOpenClarifications) {
+		t.Fatalf("err = %v, want ErrOpenClarifications", err)
+	}
+	for _, want := range []string{"bar-missing", "cerne feature approve " + id + " --check"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("clarification refusal does not name the hard impediment (%q):\n%v", want, err)
+		}
+	}
+
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real. [ESCLARECER: qual o limite?]"))
+	commitBackend(t, repoDir)
+	_, err = execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if !errors.Is(err, app.ErrOpenClarifications) || strings.Contains(err.Error(), "--check") {
+		t.Fatalf("with no hard impediment the refusal must stay the clarification one: %v", err)
 	}
 }
