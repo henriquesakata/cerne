@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/app"
@@ -114,9 +115,10 @@ func TestStaleApprovalOneSourceOfTruth(t *testing.T) {
 }
 
 // TestFeatureDetailCarriesApprovedSpec (F-0318 crit. 9, 7): a stale approval's
-// payload carries the approved text — the page diffs it against the live spec
-// — and the re-approve's readiness, so the button tells before the click.
-// A clean approval carries neither.
+// payload carries the approval delta — the approved and the live spec as the
+// comparison read them (bodies, no frontmatter), so the page diffs exactly what
+// staled it — and the re-approve's readiness, so the button tells before the
+// click. A clean approval carries neither.
 func TestFeatureDetailCarriesApprovedSpec(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeature(t, repoDir, "F-0001", "Editada após aprovar", domain.StateApproved)
@@ -126,23 +128,26 @@ func TestFeatureDetailCarriesApprovedSpec(t *testing.T) {
 	writeApprovedCopy(t, repoDir, "F-0002", realDoc("F-0002", "Versão aprovada."))
 	writeDoc(t, repoDir, "F-0002", "spec.md", realDoc("F-0002", "Versão aprovada."))
 
+	type delta struct{ Approved, Current string }
 	var got struct {
-		ApprovedSpec     *string                 `json:"approved_spec"`
+		ApprovalDelta    *delta                  `json:"approval_delta"`
 		Bar              string                  `json:"bar"`
 		ApproveReadiness []app.ApproveImpediment `json:"approve_readiness"`
 	}
 	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
-	if got.ApprovedSpec == nil || *got.ApprovedSpec != realDoc("F-0001", "Versão aprovada.") {
-		t.Fatalf("F-0001 approved_spec = %v, want the approved copy", got.ApprovedSpec)
+	body := func(doc string) string { return strings.TrimSpace(doc[strings.Index(doc, "# Título"):]) }
+	want := delta{body(realDoc("F-0001", "Versão aprovada.")), body(realDoc("F-0001", "Versão editada."))}
+	if got.ApprovalDelta == nil || *got.ApprovalDelta != want {
+		t.Fatalf("F-0001 approval_delta = %+v, want the two bodies %+v", got.ApprovalDelta, want)
 	}
 	if got.Bar == "" {
 		t.Fatalf("F-0001 bar = %q, want the bar the re-approve would accept", got.Bar)
 	}
 
-	got.ApprovedSpec, got.Bar = nil, ""
+	got.ApprovalDelta, got.Bar = nil, ""
 	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0002", "", &got)
-	if got.ApprovedSpec != nil || got.Bar != "" {
-		t.Fatalf("F-0002 approved_spec = %v, bar = %q, want neither on a clean approval", got.ApprovedSpec, got.Bar)
+	if got.ApprovalDelta != nil || got.Bar != "" {
+		t.Fatalf("F-0002 approval_delta = %v, bar = %q, want neither on a clean approval", got.ApprovalDelta, got.Bar)
 	}
 }
 

@@ -262,9 +262,10 @@ type featureDetailResponse struct {
 	// from the copy its last approve kept (F-0262, by content since F-0318) —
 	// the page warns the approval is stale.
 	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
-	// ApprovedSpec is the approved text a stale approval diverged from (F-0318),
-	// for the page to diff against docs.spec; omitted when not stale.
-	ApprovedSpec *string `json:"approved_spec,omitempty"`
+	// ApprovalDelta is what a stale approval compared (F-0318): the approved and
+	// the live spec bodies, normalized by lint.SpecChangedAfterApproval, for the
+	// page to diff; omitted when not stale.
+	ApprovalDelta *approvalDelta `json:"approval_delta,omitempty"`
 	// RoastRounds lists the persisted adversarial spec critiques (F-0271/
 	// F-0277), newest first; empty when no roast ran yet. The report body is
 	// fetched per round via GET /artifacts/{id}/{name}.
@@ -278,6 +279,11 @@ type featureDetailResponse struct {
 	// click; both omitted when empty.
 	ApproveReadiness []app.ApproveImpediment `json:"approve_readiness,omitempty"`
 	Bar              string                  `json:"bar,omitempty"`
+}
+
+type approvalDelta struct {
+	Approved string `json:"approved"`
+	Current  string `json:"current"`
 }
 
 type featureDocs struct {
@@ -384,11 +390,10 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	specChanged, approvedSpec, _ := lint.SpecChangedAfterApproval(repoDir, f)
-	var approved *string
+	specChanged, approvedSpec, currentSpec := lint.SpecChangedAfterApproval(repoDir, f)
+	var delta *approvalDelta
 	if specChanged {
-		s := string(approvedSpec)
-		approved = &s
+		delta = &approvalDelta{string(approvedSpec), string(currentSpec)}
 	}
 	planRounds, err := planRoastRounds(repoDir, id, docs.Spec, docs.Plan)
 	if err != nil {
@@ -411,7 +416,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovedSpec: approved, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

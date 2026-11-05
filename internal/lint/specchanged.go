@@ -5,16 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // SpecChangedAfterApproval reports whether approved feature f's live spec
-// differs from the copy its last approve kept (F-0318) — any byte counts — and
-// returns both texts so a caller can show the delta. A spec edited back to the
-// approved text is not changed, whatever edit events the log holds (the F-0262
-// trail is still written; it no longer decides). Only an approved feature can
+// differs in content from the copy its last approve kept (F-0318) — one comma
+// counts, the wrapping does not (specContent) — and returns both texts,
+// normalized, so a caller shows exactly the delta that was compared. A spec
+// edited back to the approved text is not changed, whatever edit events the
+// log holds (the F-0262 trail is still written; it no longer decides). Only an approved feature can
 // be stale, and one with no copy — approved before F-0318 — never is: a
 // missing (or unreadable) baseline is not a divergence. A re-approval, which
 // renews the copy, is what clears it.
@@ -30,7 +33,36 @@ func SpecChangedAfterApproval(repoDir string, f store.Feature) (changed bool, ap
 		return false, nil, nil
 	}
 	current, _ = os.ReadFile(filepath.Join(repoDir, "content", "features", f.ID, "spec.md"))
+	approved, current = specContent(approved), specContent(current)
 	return !bytes.Equal(approved, current), approved, current
+}
+
+// specContent is what the comparison reads of a spec: its body, not its
+// wrapping. A BOM and CRs go, every leading "---"-delimited frontmatter block
+// goes (cerne_id, the OKF header 'cerne push' writes in okf mode — its
+// timestamp churns on every transition — and a block doubled by a re-fed
+// file), and so do trailing whitespace on each line and blank lines at both
+// ends. An unterminated block is body. Everything else counts.
+func specContent(data []byte) []byte {
+	s := strings.ReplaceAll(strings.TrimPrefix(string(data), "\ufeff"), "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t\r")
+	}
+	for {
+		for len(lines) > 0 && lines[0] == "" {
+			lines = lines[1:]
+		}
+		if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+			break
+		}
+		end := slices.IndexFunc(lines[1:], func(l string) bool { return strings.TrimSpace(l) == "---" })
+		if end < 0 {
+			break
+		}
+		lines = lines[end+2:]
+	}
+	return []byte(strings.TrimRight(strings.Join(lines, "\n"), "\n"))
 }
 
 // specChangedFindings flags the debt for features that are approved *right now*.

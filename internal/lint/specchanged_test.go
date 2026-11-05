@@ -46,20 +46,33 @@ func writeSpecs(t *testing.T, repoDir, id, approved, current string) {
 	}
 }
 
-// TestSpecChangedByContent (F-0318 crit. 2, 3): a stale approval is a content
-// difference between the live spec and the approved copy — any byte counts —
-// and a spec back to the approved text (A→B→A) is not stale, whatever edit
-// events the log carries after the approval.
+// TestSpecChangedByContent (F-0318 crit. 2, 3): a stale approval is a
+// difference in the spec's content between the live spec and the approved copy
+// — one comma counts — and a spec back to the approved text (A→B→A) is not
+// stale, whatever edit events the log carries after the approval. Content is
+// the body, not its wrapping: the frontmatter (cerne_id, the OKF header
+// 'cerne push' writes in okf mode, a block doubled by a re-fed file), CRLF,
+// a BOM, trailing spaces and blank lines at the edges never count. Both texts
+// come back normalized: the page diffs what was compared.
 func TestSpecChangedByContent(t *testing.T) {
+	const fm = "---\ncerne_id: F-0001\n---\n\n"
+	const okf = "---\ntype: spec\ntitle: Exportar CSV\ntimestamp: \"2026-11-05T20:29:17Z\"\ncerne_id: F-0001\n---\n\n"
 	cases := []struct {
 		name     string
 		approved string
 		current  string
 		want     bool
 	}{
-		{"edited after approval", "A\n", "A\nB\n", true},
-		{"one comma is a difference", "A, b\n", "A b\n", true},
-		{"A→B→A is back to the approved text", "A\n", "A\n", false},
+		{"edited after approval", fm + "A\n", fm + "A\nB\n", true},
+		{"one comma in the body is a difference", fm + "A, b\n", fm + "A b\n", true},
+		{"A→B→A is back to the approved text", fm + "A\n", fm + "A\n", false},
+		{"OKF header written by push (A→B→A in okf mode)", fm + "A\n", okf + "A\n", false},
+		{"OKF timestamp churn between pushes", okf + "A\n", strings.Replace(okf, "20:29:17", "21:00:00", 1) + "A\n", false},
+		{"OKF header does not hide a body change", fm + "A\n", okf + "A.\n", true},
+		{"CRLF only", fm + "A\nB\n", strings.ReplaceAll(fm+"A\nB\n", "\n", "\r\n"), false},
+		{"doubled frontmatter (a re-fed file)", fm + "A\n", fm + fm + "A\n", false},
+		{"BOM", fm + "A\n", "\ufeff" + fm + "A\n", false},
+		{"trailing spaces and blank lines", fm + "A\nB\n", fm + "A  \nB\t\n\n\n", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,10 +81,10 @@ func TestSpecChangedByContent(t *testing.T) {
 			f := store.Feature{ID: "F-0001", State: domain.StateApproved}
 			changed, approved, current := SpecChangedAfterApproval(repoDir, f)
 			if changed != tc.want {
-				t.Fatalf("changed = %v, want %v", changed, tc.want)
+				t.Fatalf("changed = %v, want %v (approved %q, current %q)", changed, tc.want, approved, current)
 			}
-			if string(approved) != tc.approved || string(current) != tc.current {
-				t.Fatalf("approved, current = %q, %q, want %q, %q", approved, current, tc.approved, tc.current)
+			if strings.Contains(string(approved), "cerne_id") || strings.Contains(string(current), "\r") {
+				t.Fatalf("texts not normalized: %q, %q", approved, current)
 			}
 		})
 	}
