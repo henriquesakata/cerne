@@ -3,6 +3,7 @@ package lint
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,5 +90,81 @@ func TestCheckResultIgnoresHTMLComments(t *testing.T) {
 				t.Fatalf("rules = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func checkRules(t *testing.T, result string) []string {
+	t.Helper()
+	dir, f := writeResultFixture(t, domain.StateInDevelopment, checkSpec, result)
+	var got []string
+	for _, fi := range CheckResult(dir, f) {
+		got = append(got, fi.Rule)
+	}
+	return got
+}
+
+// A template placeholder "<…>" left unfilled is not a record: not a bar, not
+// an exemption's justification, not the judge's citation (critic F-0303 A1).
+func TestCheckResultRefusesPlaceholders(t *testing.T) {
+	const cites = "critério 1 e critério 2\n\n"
+	refused := map[string]string{
+		"template forms":       "## Gauntlet\nBarra: <referência nomeada + acesso (URL, comando ou arquivo)>\nRodada 1 — vitória: \"<citação curta do veredito do juiz>\"\n",
+		"skill example":        "## Gauntlet\nBarra: <referência + acesso>\nRodada <n> — <vitória|derrota|empate>: \"<citação curta do veredito do juiz>\"\nAchados do crítico: <n> — corrigidos <…>\n",
+		"placeholder bar":      "## Gauntlet\nBarra: <referência>\nRodada 1 — vitória: \"o juiz preferiu A\"\n",
+		"placeholder quote":    "## Gauntlet\nBarra: R-0008\nRodada 1 — vitória: “<citação>”\n",
+		"exemption not filled": "## Gauntlet\nBarra: não aplicável (<justificativa>)\n",
+		"draft clarify marker": "## Gauntlet\n[ESCLARECER: registro do Gauntlet: barra, rodadas com o veredito citado do juiz e disposição dos achados]\n",
+		"dispensa not filled":  "## Gauntlet\nBarra: dispensada por decisão humana ( <citação> )\n",
+	}
+	for name, sec := range refused {
+		t.Run(name, func(t *testing.T) {
+			if got := checkRules(t, cites+sec); len(got) != 1 || got[0] != RuleResultMissingGauntlet {
+				t.Fatalf("rules = %v, want [%s]", got, RuleResultMissingGauntlet)
+			}
+		})
+	}
+	for name, sec := range map[string]string{
+		"filled":           "## Gauntlet\nBarra: R-0008 <recorte do painel>\nRodada 1 — vitória: \"<b>A</b> lê melhor\"\n",
+		"exemption filled": "## Gauntlet\nBarra: não aplicável (refator sem comportamento novo)\n",
+		"dispensa filled":  "## Gauntlet\nBarra: dispensada por decisão humana (\"pode seguir sem\")\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := checkRules(t, cites+sec); len(got) != 0 {
+				t.Fatalf("rules = %v, want none", got)
+			}
+		})
+	}
+}
+
+// Every "## Gauntlet" section is read and one complete record is enough: a
+// template copy or a narrative section above the real record must not hide it
+// (critic F-0303 A2). With none complete, the first section's problem is told.
+func TestCheckResultReadsEveryGauntletSection(t *testing.T) {
+	const cites = "critério 1 e critério 2\n\n"
+	codeCopy := "## O que mudou\n\n```markdown\n## Gauntlet\n<!-- guia -->\n```\n\n"
+	for name, result := range map[string]string{
+		"template copy in a code block": cites + codeCopy + "## Gauntlet\nBarra: R-0008\nRodada 1 — vitória: \"A lê melhor\"\n",
+		"exemption below a code copy":   cites + codeCopy + "## Gauntlet\nBarra: não aplicável (refator puro)\n",
+		"narrative then record":         cites + "## Gauntlet\nO loop rodou duas vezes.\n\n## Gauntlet\nBarra: R-0008\nRodada 1 — vitória: \"A lê melhor\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := checkRules(t, result); len(got) != 0 {
+				t.Fatalf("rules = %v, want none", got)
+			}
+		})
+	}
+	dir, f := writeResultFixture(t, domain.StateInDevelopment, checkSpec, cites+"## Gauntlet\nRodada 1 — vitória: \"x\"\n\n## Gauntlet\nBarra: R-0008\n")
+	got := CheckResult(dir, f)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, `sem linha "Barra:"`) {
+		t.Fatalf("want the first section's problem, got %+v", got)
+	}
+}
+
+// A comment opener written as code ("`<!--`") is not a comment: the text up
+// to a "`-->`" further down stays readable (critic F-0303 A4).
+func TestCheckResultCommentMarkersInCode(t *testing.T) {
+	result := "critério 1 usa `<!--`\n\ncritério 2 fecha com `-->`\n\n## Gauntlet\nBarra: R-0008\nRodada 1 — vitória: \"ok\"\n"
+	if got := checkRules(t, result); len(got) != 0 {
+		t.Fatalf("rules = %v, want none", got)
 	}
 }

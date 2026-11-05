@@ -29,8 +29,14 @@ var (
 	gauntletHeadingRe = regexp.MustCompile(`(?m)^\s*##\s+Gauntlet\s*$`)
 	// HTML comments are template scaffold (doccheck reads them so), never
 	// record: the result template's Gauntlet guide carries the literal forms.
-	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
-	nextHeadingRe = regexp.MustCompile(`(?m)^\s*##\s`)
+	// An opener written as code ("`<!--`") is not one, so a backtick before
+	// it disqualifies the match (the preceding byte is kept by the replace).
+	htmlCommentRe = regexp.MustCompile("(?s)(^|[^`])<!--.*?-->")
+	// A template placeholder left unfilled, e.g. "<referência + acesso>".
+	placeholderRe = regexp.MustCompile(`^<[^<>]*>$`)
+	// An exemption whose parenthesized justification is still a placeholder.
+	placeholderParenRe = regexp.MustCompile(`\(\s*<[^<>()]*>\s*\)`)
+	nextHeadingRe      = regexp.MustCompile(`(?m)^\s*##\s`)
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
@@ -50,18 +56,22 @@ var (
 	exemptionRe = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)\s*\(`)
 )
 
-// gauntletSection returns the body of the "## Gauntlet" section, and whether
-// the heading exists at all.
-func gauntletSection(result []byte) (string, bool) {
-	loc := gauntletHeadingRe.FindIndex(result)
-	if loc == nil {
-		return "", false
+// gauntletSections returns the body of every "## Gauntlet" section, in order.
+func gauntletSections(result []byte) []string {
+	var out []string
+	for _, loc := range gauntletHeadingRe.FindAllIndex(result, -1) {
+		body := result[loc[1]:]
+		if next := nextHeadingRe.FindIndex(body); next != nil {
+			body = body[:next[0]]
+		}
+		out = append(out, string(body))
 	}
-	body := result[loc[1]:]
-	if next := nextHeadingRe.FindIndex(body); next != nil {
-		body = body[:next[0]]
-	}
-	return string(body), true
+	return out
+}
+
+// stripHTMLComments drops HTML comments (template scaffold, never record).
+func stripHTMLComments(b []byte) []byte {
+	return htmlCommentRe.ReplaceAll(b, []byte("${1}"))
 }
 
 // legacyGauntletRecorded is the pre-F-0304 per-line predicate, kept verbatim
@@ -111,12 +121,17 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	if err != nil {
 		result = nil // absence of the doc is missing-gate-doc's job; here absence = no record
 	}
-	section, has := gauntletSection(htmlCommentRe.ReplaceAll(result, nil))
+	// Every section is read and one complete record is enough: a template
+	// copy or a narrative section above the record must not hide it. With none
+	// complete, the first section's problem is the one told.
 	detail := "sem seção \"## Gauntlet\""
-	if has {
-		detail = parseGauntlet(section).problem()
-		if detail == "" || (legacy && legacyGauntletRecorded(section)) {
+	for i, section := range gauntletSections(stripHTMLComments(result)) {
+		p := parseGauntlet(section).problem()
+		if p == "" || (legacy && legacyGauntletRecorded(section)) {
 			return nil
+		}
+		if i == 0 {
+			detail = p
 		}
 	}
 	return []Finding{{
@@ -158,10 +173,11 @@ func parseGauntlet(section string) gauntletRecord {
 		// Bar and header lines are consumed first, even inside a critic block
 		// and even when they cite a verdict (accepted limit).
 		if m := barLineRe.FindStringSubmatch(s); m != nil {
-			if rec.bar == "" {
+			value := strings.TrimSpace(emphasis.Replace(m[1]))
+			if rec.bar == "" && !placeholderRe.MatchString(value) {
 				rec.bar = m[1]
 			}
-			rec.exempt = rec.exempt || exemptionRe.MatchString("Barra: "+emphasis.Replace(m[1]))
+			rec.exempt = rec.exempt || (exemptionRe.MatchString("Barra: "+value) && !placeholderParenRe.MatchString(value))
 			continue
 		}
 		if headerLineRe.MatchString(s) {
@@ -221,8 +237,16 @@ func gauntletVerdict(text string) bool {
 	return verdictLitRe.MatchString(text) || verdictRe.MatchString(text)
 }
 
+// gauntletQuote reports a quoted span with content; a span that only holds a
+// template placeholder ("<citação>") is not a citation.
 func gauntletQuote(text string) bool {
-	return quoteRe.MatchString(codeSpanRe.ReplaceAllString(text, ""))
+	for _, q := range quoteRe.FindAllString(codeSpanRe.ReplaceAllString(text, ""), -1) {
+		inner := strings.TrimSpace(strings.Trim(q, "\"“”«»"))
+		if !placeholderRe.MatchString(inner) {
+			return true
+		}
+	}
+	return false
 }
 
 // problem returns "" for a complete record, else the first missing piece:
