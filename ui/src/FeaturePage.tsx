@@ -18,6 +18,7 @@ import {
   roastSpec,
   saveFeatureDoc,
   setFeatureParent,
+  type ApproveImpediment,
   type Feature,
   type FeatureDetail,
   type FeatureState,
@@ -395,6 +396,9 @@ export default function FeaturePage({ id }: { id: string }) {
               id={f.id}
               state={f.state}
               staleApproval={detail.spec_changed_after_approval}
+              readiness={detail.approve_readiness}
+              bar={detail.bar}
+              onRefresh={load}
               onDone={(r: TransitionResult) => {
                 setNotice(`${t.state[r.from]} → ${t.state[r.to]}`)
                 load()
@@ -977,14 +981,24 @@ function ActionsPanel({
   id,
   state,
   staleApproval,
+  readiness = [],
+  bar,
   onDone,
+  onRefresh,
 }: {
   id: string
   state: FeatureState
   staleApproval: boolean
+  readiness?: ApproveImpediment[]
+  bar?: string
   onDone: (r: TransitionResult) => void
+  onRefresh: () => void
 }) {
   const { t } = useT()
+  // F-0308: impedimento duro não se resolve clicando — o Aprovar fica
+  // desabilitado e a lista diz o porquê, antes de qualquer tentativa.
+  const blocked = readiness.some((r) => r.hard)
+  const [refused, setRefused] = useState<TransitionAction | null>(null)
   const [openForm, setOpenForm] = useState<TransitionAction | null>(null)
   const [by, setBy] = useState('')
   const [reason, setReason] = useState('')
@@ -1010,15 +1024,21 @@ function ActionsPanel({
         setOpenForm(null)
         setBy('')
         setReason('')
+        setRefused(null)
         onDone(res.data)
       } else {
         setFormError(res.error)
+        setRefused(action)
+        // Recusa do approve: recarrega para a lista de impedimentos falar no
+        // lugar do texto cru do erro.
+        if (action === 'approve') onRefresh()
       }
     })
   }
 
   const toggleForm = (action: TransitionAction) => {
     setFormError(null)
+    setRefused(null)
     setOpenForm((cur) => (cur === action ? null : action))
   }
 
@@ -1028,11 +1048,34 @@ function ActionsPanel({
     <section className="actions">
       <h2>{t.feature.actions}</h2>
       {staleApproval && <p className="form-error">{t.feature.staleApproval}</p>}
+      {state === 'candidate' && (bar || readiness.length > 0) && (
+        <div className="approve-readiness">
+          {bar && (
+            <p className="approve-bar">
+              {t.feature.approveBar} <code>{bar}</code>
+            </p>
+          )}
+          {readiness.length > 0 && (
+            <>
+              <p className="approve-readiness-title">{t.feature.approveImpediments}</p>
+              <ul>
+                {readiness.map((r, i) => (
+                  <li key={i} className={r.hard ? 'impediment-hard' : 'impediment-soft'}>
+                    {t.feature.impediment(r.code, r.message)}
+                  </li>
+                ))}
+              </ul>
+              {blocked && <p className="muted">{t.feature.approveBlocked}</p>}
+            </>
+          )}
+        </div>
+      )}
       <div className="action-buttons">
         {actions.map((a) => (
           <button
             key={a.action}
-            disabled={busy}
+            disabled={busy || (a.action === 'approve' && blocked)}
+            title={a.action === 'approve' && blocked ? t.feature.approveBlocked : undefined}
             onClick={() =>
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
@@ -1077,7 +1120,9 @@ function ActionsPanel({
           </button>
         </form>
       )}
-      {formError && <p className="form-error">{formError}</p>}
+      {formError && !(refused === 'approve' && blocked) && (
+        <p className="form-error">{formError}</p>
+      )}
     </section>
   )
 }

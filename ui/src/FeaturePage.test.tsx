@@ -148,6 +148,67 @@ describe('FeaturePage revert action (F-0262)', () => {
   })
 })
 
+// F-0308: o painel de ações mostra, antes de qualquer clique, a barra que o
+// approve aceita e os impedimentos; havendo impedimento duro, Aprovar fica
+// desabilitado com o motivo visível.
+describe('FeaturePage approve readiness (F-0308)', () => {
+  it('impedimento duro: Aprovar desabilitado e a lista renderizada', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [
+        { code: 'bar-missing', message: 'no "Barra:" line', hard: true },
+        { code: 'open-clarification', message: 'qual o limite?', hard: false },
+      ],
+    }
+    render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    expect(approve).toBeDisabled()
+    expect(screen.getByText(/Spec sem linha "Barra:"/)).toBeInTheDocument()
+    expect(screen.getByText(/Esclarecimento aberto: qual o limite\?/)).toBeInTheDocument()
+    // Rejeitar segue disponível: o impedimento só bloqueia o approve.
+    expect(screen.getByRole('button', { name: 'Rejeitar' })).toBeEnabled()
+  })
+
+  it('só impedimento não duro: Aprovar habilitado, esclarecimento listado', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'open-clarification', message: 'qual o limite?', hard: false }],
+      bar: 'Barra: cerne push --dry-run — ensaio com gate',
+    }
+    render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    expect(approve).toBeEnabled()
+    expect(screen.getByText(/Esclarecimento aberto: qual o limite\?/)).toBeInTheDocument()
+  })
+
+  it('mostra a barra junto ao Aprovar: aprovar é aceitá-la', async () => {
+    payload = { ...detail('candidate'), bar: 'Barra: cerne push --dry-run — ensaio com gate' }
+    render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    expect(approve).toBeEnabled()
+    const bar = screen.getByText('Barra: cerne push --dry-run — ensaio com gate')
+    expect(bar.closest('section')).toBe(approve.closest('section'))
+    expect(screen.getByText(/Aprovar é aceitar esta barra/)).toBeInTheDocument()
+  })
+
+  it('recusa pós-clique recarrega e reusa a lista em vez do texto cru', async () => {
+    payload = { ...detail('candidate'), bar: 'Barra: x — y' }
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: false as const,
+      error: 'spec has no valid Gauntlet bar: no "Barra:" line — run ...',
+    })
+    render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'bar-missing', message: 'no "Barra:" line', hard: true }],
+    }
+    fireEvent.click(approve)
+    await waitFor(() => expect(screen.getByText(/Spec sem linha "Barra:"/)).toBeInTheDocument())
+    expect(screen.queryByText(/spec has no valid Gauntlet bar/)).not.toBeInTheDocument()
+  })
+})
+
 // F-0271/F-0277: seção do roast — lateral lista as rodadas (nunca o relatório
 // inteiro); rodada com spec mudada ganha badge; o corpo abre num modal de
 // leitura, buscado sob demanda, fechável por Esc.

@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import type {
+  ApproveImpediment,
   FeatureState,
   GraphEdgeType,
   GraphKind,
@@ -401,6 +402,16 @@ const ptBR = {
     supersededByField: 'Substituída por (ID)',
     reasonRequired: 'Motivo (obrigatório)',
     confirmAction: (label: string) => `Confirmar ${label.toLowerCase()}`,
+    approveBar: 'Aprovar é aceitar esta barra:',
+    approveImpediments: 'O que impede a aprovação:',
+    approveBlocked: 'Resolva os impedimentos marcados antes de aprovar.',
+    impediment: (code: ApproveImpediment['code'], message: string) =>
+      ({
+        'spec-missing': 'Spec ausente ou ainda no esqueleto',
+        'bar-missing': 'Spec sem linha "Barra:" (seção Verificação)',
+        'bar-malformed': 'Linha "Barra:" fora das três formas aceitas',
+        'open-clarification': `Esclarecimento aberto: ${message}`,
+      })[code] ?? message,
     epic: 'Épico',
     childrenProgress: (done: number, total: number) =>
       `${done}/${total} filho(s) implementado(s)`,
@@ -1131,6 +1142,16 @@ const en: Messages = {
     supersededByField: 'Superseded by (ID)',
     reasonRequired: 'Reason (required)',
     confirmAction: (label: string) => `Confirm ${label.toLowerCase()}`,
+    approveBar: 'Approving accepts this bar:',
+    approveImpediments: 'What stops the approval:',
+    approveBlocked: 'Resolve the marked impediments before approving.',
+    impediment: (code: ApproveImpediment['code'], message: string) =>
+      ({
+        'spec-missing': 'Spec missing or still the template stub',
+        'bar-missing': 'Spec has no "Barra:" line (Verificação section)',
+        'bar-malformed': '"Barra:" line outside the three accepted forms',
+        'open-clarification': `Open clarification: ${message}`,
+      })[code] ?? message,
     epic: 'Epic',
     childrenProgress: (done: number, total: number) =>
       `${done}/${total} child(ren) implemented`,

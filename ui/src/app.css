@@ -1273,6 +1273,14 @@ h2 {
 
 .form-error { margin: 0.6rem 0 0; font-size: 0.85rem; }
 
+/* F-0308: barra aceita pelo approve + impedimentos, antes do clique */
+.approve-readiness { margin: 0 0 0.7rem; font-size: 0.85rem; overflow-wrap: anywhere; }
+.approve-readiness p { margin: 0 0 0.35rem; }
+.approve-readiness code { font-size: 0.82rem; }
+.approve-readiness ul { margin: 0 0 0.35rem; padding-left: 1.1rem; }
+.approve-readiness .impediment-hard { color: var(--danger); }
+.approve-readiness .impediment-soft { color: var(--muted); }
+
 /* ---- diagramas (Excalidraw) ---- */
 
 .artifacts li { margin: 0.15rem 0; }

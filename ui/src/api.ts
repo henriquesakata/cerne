@@ -168,6 +168,18 @@ export type FeatureDetail = {
   // rodadas do roast do PLANO (F-0275), lista própria sob o mesmo modelo —
   // uma rodada de plano nunca se confunde com uma de spec.
   plan_roast_rounds: RoastRound[]
+  // F-0308, só para candidatas (omitidos quando vazios): o que impede o
+  // approve e a linha da barra que o approve aceita.
+  approve_readiness?: ApproveImpediment[]
+  bar?: string
+}
+
+// Impedimento ao approve (F-0308): duro = o núcleo recusa em qualquer
+// superfície; não duro = só o CLI recusa (--force atravessa).
+export type ApproveImpediment = {
+  code: 'spec-missing' | 'bar-missing' | 'bar-malformed' | 'open-clarification'
+  message: string
+  hard: boolean
 }
 
 // RoastRound (F-0277): uma rodada persistida do roast. `at` vem do carimbo do
