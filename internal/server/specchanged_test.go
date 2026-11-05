@@ -226,3 +226,44 @@ func TestLegacyApprovalIsValid(t *testing.T) {
 		t.Fatalf("legacy approval start: %v", err)
 	}
 }
+
+// TestReapproveThroughTheUI (F-0318 crit. 7, 14): the page's approve on an
+// approved feature reports what it did — "renewed" for a stale approval,
+// "baseline" for a legacy one (approved before F-0318) — so the notice tells
+// the human instead of "Approved → Approved". The detail flags the legacy
+// approval, whose button records the baseline.
+func TestReapproveThroughTheUI(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	seedFeature(t, repoDir, "F-0002", "Legada", domain.StateApproved)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Versão aprovada."))
+	writeDoc(t, repoDir, "F-0002", "spec.md", realDoc("F-0002", "Aprovada antes da F-0318."))
+	commitBackend(t, repoDir)
+	h := New(repoDir, projDir, "")
+	if _, err := app.TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := app.SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", realDoc("F-0001", "Versão editada.")); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+
+	var detail struct {
+		BaselineMissing bool `json:"approval_baseline_missing"`
+	}
+	doJSON(t, h, http.MethodGet, "/api/features/F-0002", "", &detail)
+	if !detail.BaselineMissing {
+		t.Fatal("legacy approval: approval_baseline_missing = false")
+	}
+	detail.BaselineMissing = false
+	doJSON(t, h, http.MethodGet, "/api/features/F-0001", "", &detail)
+	if detail.BaselineMissing {
+		t.Fatal("F-0001 has its copy: approval_baseline_missing = true")
+	}
+
+	for id, want := range map[string]string{"F-0001": "renewed", "F-0002": "baseline"} {
+		var got map[string]string
+		rec := doJSON(t, h, http.MethodPost, "/api/features/"+id+"/transition", `{"action":"approve"}`, &got)
+		if rec.Code != http.StatusOK || got["from"] != "approved" || got["to"] != "approved" || got["approval"] != want {
+			t.Fatalf("%s: status %d, body %v, want approved → approved with approval=%s", id, rec.Code, got, want)
+		}
+	}
+}

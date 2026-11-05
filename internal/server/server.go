@@ -266,6 +266,10 @@ type featureDetailResponse struct {
 	// the live spec bodies, normalized by lint.SpecChangedAfterApproval, for the
 	// page to diff; omitted when not stale.
 	ApprovalDelta *approvalDelta `json:"approval_delta,omitempty"`
+	// ApprovalBaselineMissing flags an approved feature with no approved copy
+	// (approved before F-0318): never stale, and its approve records the
+	// baseline (crit. 14).
+	ApprovalBaselineMissing bool `json:"approval_baseline_missing,omitempty"`
 	// RoastRounds lists the persisted adversarial spec critiques (F-0271/
 	// F-0277), newest first; empty when no roast ran yet. The report body is
 	// fetched per round via GET /artifacts/{id}/{name}.
@@ -416,7 +420,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -1254,11 +1258,19 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	resp := map[string]string{
 		"id":   out.ID,
 		"from": string(out.From),
 		"to":   string(out.To),
-	})
+	}
+	// An approve on an approved feature (F-0318) says what it did, so the page
+	// does not just read "approved → approved".
+	if out.Baseline {
+		resp["approval"] = "baseline"
+	} else if out.From == domain.StateApproved && domain.Action(req.Action) == domain.ActionApprove {
+		resp["approval"] = "renewed"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // spaHandler serves the embedded ui/dist tree; any path that is not an
