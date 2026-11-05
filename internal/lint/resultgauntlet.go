@@ -133,7 +133,9 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	own := gauntletSections(stripHTMLComments(result))
 	for i, section := range append(own, gauntletSections(errataText(repoDir, f))...) {
 		p := parseGauntlet(section).problem()
-		if p == "" || (legacy && legacyGauntletRecorded(section)) {
+		// The legacy predicate vouches only for the result's own sections: an
+		// erratum is written now and answers to the strict reader.
+		if p == "" || (legacy && i < len(own) && legacyGauntletRecorded(section)) {
 			return nil
 		}
 		if i < len(own) {

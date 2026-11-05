@@ -265,3 +265,31 @@ func TestResultGauntletDetailNamesTheResult(t *testing.T) {
 		})
 	}
 }
+
+// TestResultGauntletErrataHeldToStrictReader: the legacy predicate vouches only
+// for the result's own sections — an erratum is written now, so a legacy-only
+// record in it does not clear the finding, while the same record in the result
+// of a pre-cutoff feature still does (judge finding, F-0305).
+func TestResultGauntletErrataHeldToStrictReader(t *testing.T) {
+	legacyOnly := "## Gauntlet\n\nRodada 1 — vitória: \"ok\"\n"
+	dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n")
+	addErrata(t, dir, legacyOnly)
+	if got := gauntletFinding(dir, f, true); len(got) != 1 {
+		t.Fatalf("legacy-only erratum: want one finding, got %+v", got)
+	}
+	dir, f = writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n\n"+legacyOnly)
+	if got := gauntletFinding(dir, f, true); len(got) != 0 {
+		t.Fatalf("legacy-only result before the cutoff: want no finding, got %+v", got)
+	}
+}
+
+// TestResultGauntletErrataEntriesDoNotJoin: an errata entry ends at the next
+// entry's "## errata" heading, so a Barra in one entry and a cited round in the
+// next never add up to one record (judge finding, F-0305).
+func TestResultGauntletErrataEntriesDoNotJoin(t *testing.T) {
+	dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n")
+	addErrata(t, dir, "## Gauntlet\n\nBarra: x\n", "Rodada 1 — vitória: \"ok\" — VEREDITO: A\n")
+	if got := gauntletFinding(dir, f, false); len(got) != 1 {
+		t.Fatalf("want one finding, got %+v", got)
+	}
+}
