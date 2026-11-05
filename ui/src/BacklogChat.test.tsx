@@ -556,6 +556,22 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
     expect(screen.queryByText('Claude Gone 1')).toBeNull()
   })
 
+  it('C2: só desenha atalho de dígito de 1 a 9 — nunca um atalho que o teclado não atende', async () => {
+    const many: ModelEntry[] = Array.from({ length: 11 }, (_, i) => ({
+      id: `m-${i + 1}`,
+      label: `Modelo ${String.fromCharCode(65 + i)}`,
+      provider: 'anthropic',
+      visibility: 'current',
+    }))
+    fetchLLMOptions.mockResolvedValue(opts({ models: many, defaultModel: 'm-1' }))
+    renderChat()
+    await screen.findByText('Modelo A')
+    fireEvent.click(screen.getByLabelText(/modelo/i))
+
+    const keys = screen.getAllByRole('menuitemradio').map((el) => el.querySelector('.chat-menu-item-key')?.textContent)
+    expect(keys).toEqual(['✓', '2', '3', '4', '5', '6', '7', '8', '9', '', ''])
+  })
+
   it('critério 9: um legado escolhido no submenu é seleção válida, com os esforços declarados dele', async () => {
     fetchLLMOptions.mockResolvedValue(opts())
     renderChat()

@@ -336,7 +336,8 @@ function ModelMenu({
       {open && (
         <div className="chat-menu-list" role="menu" tabIndex={-1} ref={listRef} onKeyDown={onKeyDown}>
           <p className="chat-menu-title">{label}</p>
-          {current.map((e, i) => item(e, String(i + 1)))}
+          {/* C2: o teclado atende um dígito (1–9); além disso, nenhum atalho desenhado */}
+          {current.map((e, i) => item(e, i < 9 ? String(i + 1) : ''))}
           {legacy.length > 0 && (
             <>
               <button
