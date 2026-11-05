@@ -209,16 +209,16 @@ func (e *SimilarExistsError) Error() string { return e.msg }
 func (e *SimilarExistsError) Unwrap() error { return ErrSimilarExists }
 
 // entityKind describes one creation verb guarded by F-0324: the noun for the
-// message, the verb that updates an existing entity of that type and the verb
-// that takes it out of the live set (decisions have no retire: they are
-// superseded). Both are printed with the existing id filled in, so they run
-// as written.
-type entityKind struct{ noun, retag, retire string }
+// message and the way out of the live set, as a format taking the existing id.
+// Every command quoted there runs as printed (no placeholders); decisions have
+// no retire (they are superseded by another decision), so theirs is prose naming
+// the order rather than a command.
+type entityKind struct{ noun, remedy string }
 
 var (
-	kindNote      = entityKind{"note", "cerne note retag", "retire it ('cerne note retire %s --reason \"<why>\"')"}
-	kindDecision  = entityKind{"decision", "cerne decision retag", "supersede it ('cerne decision substituir %s --by <new-id> --reason \"<why>\"')"}
-	kindReference = entityKind{"reference", "cerne reference retag", "retire it ('cerne reference retire %s --reason \"<why>\"')"}
+	kindNote      = entityKind{"note", `retire it with 'cerne note retire %[1]s --reason "re-registered"'`}
+	kindDecision  = entityKind{"decision", "to replace it, re-run with --force and then supersede %[1]s with the new decision (cerne decision substituir %[1]s --by <the new id> --reason …)"}
+	kindReference = entityKind{"reference", `retire it with 'cerne reference retire %[1]s --reason "re-registered"'`}
 )
 
 // guardEntity is guardRegistration for the creation verbs of note, decision and
@@ -242,8 +242,8 @@ func guardEntity(k entityKind, matches []SimilarMatch, signals string, force boo
 		lines = append(lines, fmt.Sprintf("  %s  [%s]  %s", m.ID, m.State, m.Title))
 	}
 	id := matches[0].ID
-	msg := fmt.Sprintf("%s:\n%s\nupdate it (e.g. '%s %s') or %s",
-		ErrSimilarExists, strings.Join(lines, "\n"), k.retag, id, fmt.Sprintf(k.retire, id))
+	msg := fmt.Sprintf("%s:\n%s\nsee it with 'cerne show %s'; %s",
+		ErrSimilarExists, strings.Join(lines, "\n"), id, fmt.Sprintf(k.remedy, id))
 	if signals != "" {
 		msg += "\n" + signals
 	}

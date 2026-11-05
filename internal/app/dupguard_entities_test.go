@@ -52,7 +52,7 @@ func TestCreateNoteRefusesSimilarLive(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	for _, want := range []string{first.ID, "cerne note retag " + first.ID, "cerne note retire " + first.ID + ` --reason "<why>"`, "--force"} {
+	for _, want := range []string{first.ID, "see it with 'cerne show " + first.ID + "'", "retire it with 'cerne note retire " + first.ID + ` --reason "re-registered"'`, "proceed with --force if this is a distinct note"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err.Error(), want)
 		}
@@ -124,9 +124,13 @@ func TestCreateDecisionGuard(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), "cerne decision retag "+first.ID) ||
-		!strings.Contains(err.Error(), "cerne decision substituir "+first.ID+" --by <new-id>") {
-		t.Errorf("message %q lacks id/retag verb", err.Error())
+	for _, want := range []string{"see it with 'cerne show " + first.ID + "'", "to replace it, re-run with --force and then supersede " + first.ID, "cerne decision substituir " + first.ID + " --by <the new id>", "proceed with --force if this is a distinct decision"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q lacks %q", err.Error(), want)
+		}
+	}
+	if strings.Contains(err.Error(), "'cerne decision substituir") {
+		t.Errorf("decision advice must be prose, not a quoted command: %q", err.Error())
 	}
 	if ds, _ := store.LoadAllDecisions(repoDir); len(ds) != 1 {
 		t.Fatalf("decisions = %d, want 1", len(ds))
@@ -167,9 +171,10 @@ func TestCreateReferenceGuardByURL(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), "cerne reference retag "+first.ID) ||
-		!strings.Contains(err.Error(), "cerne reference retire "+first.ID+` --reason "<why>"`) {
-		t.Errorf("message %q lacks id/retag verb", err.Error())
+	for _, want := range []string{"see it with 'cerne show " + first.ID + "'", "retire it with 'cerne reference retire " + first.ID + ` --reason "re-registered"'`, "proceed with --force if this is a distinct reference"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q lacks %q", err.Error(), want)
+		}
 	}
 	if rs, _ := store.LoadAllReferences(repoDir); len(rs) != 2 {
 		t.Fatalf("references = %d, want 2", len(rs))
