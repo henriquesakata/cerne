@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -137,5 +138,44 @@ func TestFeatureSpecStalesApproval(t *testing.T) {
 	}
 	if want := strings.ReplaceAll(staleLine, "F-0001", "F-0002"); !strings.Contains(out, want) {
 		t.Fatalf("feature spec output missing %q:\n%s", want, out)
+	}
+}
+
+// TestPushSaysWhenItStalesAnApproval (F-0318 crit. 2): the push that leaves an
+// approved feature stale says so after the Sent line — the reason, the human
+// re-approve, the blocked start. Only a push that changes the content does: a
+// CRLF/format-only push and a revert to the approved text print nothing.
+func TestPushSaysWhenItStalesAnApproval(t *testing.T) {
+	projDir, _, _, specPath := pulledProject(t)
+	if out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	approved, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = "F-0001: approval is now stale — spec changed since approval; a human re-approves with 'cerne feature approve F-0001' (start is blocked until then)"
+	push := func(body string) string {
+		t.Helper()
+		mustWrite(t, specPath, body)
+		out, err := execCerne(t, "push", "--dir", projDir)
+		if err != nil || !strings.Contains(out, "Sent: 1 document(s)") {
+			t.Fatalf("push: %v\n%s", err, out)
+		}
+		return out
+	}
+
+	if out := push(strings.ReplaceAll(string(approved), "\n", "\r\n")); strings.Contains(out, "approval is now stale") {
+		t.Fatalf("a CRLF-only push reported a stale approval:\n%s", out)
+	}
+	out := push(string(approved) + "\nCritério novo depois da aprovação.\n")
+	if !strings.Contains(out, line) || strings.Index(out, line) < strings.Index(out, "Sent:") {
+		t.Fatalf("content push: want, after the Sent line, %q:\n%s", line, out)
+	}
+	if out := push(string(approved)); strings.Contains(out, "approval is now stale") {
+		t.Fatalf("a revert to the approved text reported a stale approval:\n%s", out)
 	}
 }
