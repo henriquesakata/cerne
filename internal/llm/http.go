@@ -41,6 +41,20 @@ type httpProvider struct {
 	httpClient *http.Client
 }
 
+// ConfiguredProviders names the model vendors the project's [llm] config
+// already reaches (F-0311): none in delegation, the Claude Code subscription's
+// vendor for claude-cli, the configured byo-key provider otherwise. Read-only:
+// registering a provider or a key is not this seam's job.
+func ConfiguredProviders(cfg project.LLMConfig) []string {
+	switch ResolveMode(cfg.Mode) {
+	case ModeDelegation:
+		return nil
+	case ModeClaudeCLI:
+		return []string{providerAnthropic}
+	}
+	return []string{cfg.WithDefaults().Provider}
+}
+
 // NewProvider builds the configured Provider. It applies LLMConfig defaults
 // first, then routes on the resolved mode:
 //   - delegation: ErrNoProviderForDelegation (no provider exists there);

@@ -170,3 +170,74 @@ func TestLLMConfigGetLiveQuery(t *testing.T) {
 		}
 	}
 }
+
+// TestLLMConfigListsProvidersAndPreferred: criterion 14 — GET lists the
+// providers the project already reaches (none in delegation) and the global
+// preferred one; it never offers to register a provider.
+func TestLLMConfigListsProvidersAndPreferred(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, models.FileName), []byte(`{"preferred_provider":"anthropic","entries":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		mode string
+		want []string
+	}{
+		{"", nil},
+		{"claude-cli", []string{"anthropic"}},
+		{"byo-key", []string{"anthropic"}},
+	}
+	for _, tt := range tests {
+		repoDir, projDir := newBackend(t)
+		if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b",
+			LLM: project.LLMConfig{Mode: tt.mode}}); err != nil {
+			t.Fatalf("SaveConfig: %v", err)
+		}
+		var got struct {
+			Providers         []string `json:"providers"`
+			PreferredProvider string   `json:"preferred_provider"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/config/llm", "", &got)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("mode %q: status = %d; body: %s", tt.mode, rec.Code, rec.Body.String())
+		}
+		if strings.Join(got.Providers, ",") != strings.Join(tt.want, ",") {
+			t.Fatalf("mode %q: providers = %v, want %v", tt.mode, got.Providers, tt.want)
+		}
+		if got.PreferredProvider != "anthropic" {
+			t.Fatalf("mode %q: preferred = %q, want anthropic", tt.mode, got.PreferredProvider)
+		}
+	}
+}
+
+// TestPreferredProviderPersists: criterion 16 — the choice lands in the global
+// file, so a fresh Load (a restarted process) still sees it; a provider the
+// project does not reach is refused and leaves the file alone.
+func TestPreferredProviderPersists(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", dir)
+	repoDir, projDir := newBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b",
+		LLM: project.LLMConfig{Mode: "byo-key"}}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	h := New(repoDir, projDir, "")
+
+	rec := doJSON(t, h, http.MethodPut, "/api/config/models/provider", `{"provider":"openai"}`, new(map[string]any))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unconfigured provider: status = %d, want 400", rec.Code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, models.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("refused PUT touched the catalog file: %v", err)
+	}
+
+	rec = doJSON(t, h, http.MethodPut, "/api/config/models/provider", `{"provider":"anthropic"}`, new(map[string]any))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	cat, warn := models.Load(dir)
+	if warn != nil || cat.PreferredProvider != "anthropic" {
+		t.Fatalf("after restart: preferred = %q (warn %v), want anthropic", cat.PreferredProvider, warn)
+	}
+}

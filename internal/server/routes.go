@@ -129,6 +129,10 @@ func dataRoutes() []dataRoute {
 		{"PUT", "/config/llm", true, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
 			handleLLMConfigPut(w, r, projDir)
 		}},
+		// Global, per-user state: the local ui only, never the remote serve.
+		{"PUT", "/config/models/provider", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
+			handlePreferredProviderPut(w, r, projDir)
+		}},
 		{"GET", "/wiki", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleWikiIndex(w, repoDir)
 		}},

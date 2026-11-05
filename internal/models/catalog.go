@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,6 +117,43 @@ func readLayer(dir string) (Catalog, error) {
 		}
 	}
 	return c, nil
+}
+
+// SetPreferredProvider records the chat's provider choice in the global layer
+// at dir — global like the catalog, so it survives a restart and reaches every
+// project. A malformed file is left alone (error), never overwritten.
+func SetPreferredProvider(dir, provider string) error {
+	layer, err := readLayer(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	layer.PreferredProvider = provider
+	return saveLayer(dir, layer)
+}
+
+// saveLayer writes the global layer to dir atomically (temp file + rename), so
+// a reader in another process never sees half a file.
+func saveLayer(dir string, c Catalog) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, FileName+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, FileName))
 }
 
 // merge resolves layer over base: an id present in both takes the layer's

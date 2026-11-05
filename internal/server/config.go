@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
+	"slices"
 
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/models"
@@ -25,6 +27,11 @@ type llmConfigResponse struct {
 	// cerne read commands live (claude-cli's agentic mode) or only sees the
 	// static context (byo-key/delegation).
 	LiveQuery bool `json:"live_query"`
+	// Providers (F-0311) are the vendors the project already reaches (read
+	// from [llm], never registered here); PreferredProvider is the global
+	// choice the chat starts from and the catalog refresh queries.
+	Providers         []string `json:"providers"`
+	PreferredProvider string   `json:"preferred_provider,omitempty"`
 }
 
 // loadCatalog resolves the global model catalog. An unusable global file never
@@ -46,10 +53,45 @@ func loadCatalog() models.Catalog {
 	return cat
 }
 
-// llmConfig builds the GET payload for mode.
-func llmConfig(mode string) llmConfigResponse {
+// llmConfig builds the GET payload for the project's [llm] config.
+func llmConfig(cfg project.LLMConfig) llmConfigResponse {
 	cat := loadCatalog()
-	return llmConfigResponse{Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI}
+	mode := llm.ResolveMode(cfg.Mode)
+	return llmConfigResponse{
+		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI,
+		Providers: llm.ConfiguredProviders(cfg), PreferredProvider: cat.PreferredProvider,
+	}
+}
+
+// handlePreferredProviderPut records the chat's provider choice in the global
+// catalog file (F-0311 criterion 16). Only a provider the project already
+// reaches is accepted — this surface never registers one.
+func handlePreferredProviderPut(w http.ResponseWriter, r *http.Request, projDir string) {
+	var req struct {
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid body: "+err.Error()))
+		return
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil && !errors.Is(err, project.ErrNoProject) {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	if !slices.Contains(llm.ConfiguredProviders(cfg.LLM), req.Provider) {
+		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("provider %q is not configured for this project", req.Provider)))
+		return
+	}
+	dir, err := project.ConfigDir()
+	if err == nil {
+		err = models.SetPreferredProvider(dir, req.Provider)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"preferred_provider": req.Provider})
 }
 
 // llmConfigRequest is the PUT /api/config/llm body.
@@ -73,14 +115,14 @@ func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
 	if errors.Is(err, project.ErrNoProject) {
 		// Serve/multiproject mode: the per-project dir holds only docs.lock, no
 		// .cernerc yet. Report the normalized default; a PUT seeds the .cernerc.
-		writeJSON(w, http.StatusOK, llmConfig(llm.ResolveMode("")))
+		writeJSON(w, http.StatusOK, llmConfig(project.LLMConfig{}))
 		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, llmConfig(llm.ResolveMode(cfg.LLM.Mode)))
+	writeJSON(w, http.StatusOK, llmConfig(cfg.LLM))
 }
 
 // handleLLMConfigPut sets the [llm] mode in .cernerc, preserving every other
