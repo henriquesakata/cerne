@@ -62,6 +62,15 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 			t.Errorf("%s = %+v, want bool, default true, scopes [project host], a title and a description", id, s)
 		}
 	}
+	// Critic C9: a key nothing consumes yet must not claim an effect. When
+	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
+	// list change together.
+	unwired := map[string]bool{"graph.enabled": true, "wiki.enabled": true}
+	for id, s := range byID {
+		if got := strings.HasPrefix(s.Description, "Not wired yet"); got != unwired[id] {
+			t.Errorf("%s description %q: says not wired = %v, want %v", id, s.Description, got, unwired[id])
+		}
+	}
 }
 
 // TestResolveSettings pins F-0314 criteria 2 and 3: project > host > default,

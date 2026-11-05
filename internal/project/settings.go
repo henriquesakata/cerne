@@ -85,7 +85,7 @@ var settingsRegistry = []Setting{
 	{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "Shows the Graph tab in the UI. Off hides it.",
+		Description: "Not wired yet (F-0315): off will hide the Graph tab in the UI. Today it changes nothing.",
 	},
 	{
 		ID: "mindmap.enabled", Title: "Mindmap", Type: "bool", Default: true,
@@ -95,7 +95,7 @@ var settingsRegistry = []Setting{
 	{
 		ID: "wiki.enabled", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "Compiles the wiki automatically and counts its debt as pending work. Off stops both.",
+		Description: "Not wired yet (F-0316): off will stop compiling the wiki on push and counting its debt as pending work. Today it changes nothing.",
 	},
 }
 
