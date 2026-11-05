@@ -28,6 +28,7 @@ func newPendingCmd() *cobra.Command {
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newPendingNewCmd(&dir))
 	cmd.AddCommand(newPendingListCmd(&dir))
+	cmd.AddCommand(newPendingShowCmd(&dir))
 	cmd.AddCommand(newPendingResolveCmd(&dir))
 	cmd.AddCommand(newPendingDropCmd(&dir))
 	cmd.AddCommand(newPendingPromoteCmd(&dir))
@@ -141,6 +142,23 @@ func runPendingList(cmd *cobra.Command, dir, state, from, component, module stri
 // pendingAge is the whole days a pending has existed, e.g. "12d".
 func pendingAge(now time.Time, p store.Pending) string {
 	return fmt.Sprintf("%dd", int(now.Sub(p.CreatedAt).Hours()/24))
+}
+
+func newPendingShowCmd(dir *string) *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show one pending (same as 'cerne show P-NNNN')",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !strings.HasPrefix(args[0], "P-") {
+				return fmt.Errorf("%q is not a pending id (P-NNNN): use 'cerne show'", args[0])
+			}
+			return runShow(cmd, *dir, args[0], "", asJSON)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	return cmd
 }
 
 func newPendingResolveCmd(dir *string) *cobra.Command {

@@ -341,3 +341,21 @@ func TestPendingPromoteCmd(t *testing.T) {
 		t.Fatalf("show P-0001 lacks the forward link: %v\n%s", err, out)
 	}
 }
+
+// The spec's CLI surface lists 'pending show' (with --json): it is the generic
+// show, scoped to P- ids.
+func TestPendingShowAliasesShow(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newOriginFeature(t, projDir, "Origem")
+	pendingNew(t, projDir, "Tratar o caso Y", "--from", "F-0001")
+	out, err := execCerne(t, "pending", "show", "P-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "P-0001  pending  [open]  Tratar o caso Y") {
+		t.Fatalf("pending show: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "pending", "show", "P-0001", "--json", "--dir", projDir); err != nil || !strings.Contains(out, `"kind": "pending"`) {
+		t.Fatalf("pending show --json: %v\n%s", err, out)
+	}
+	if _, err := execCerne(t, "pending", "show", "F-0001", "--dir", projDir); err == nil {
+		t.Fatal("pending show must refuse a non-P- id")
+	}
+}
