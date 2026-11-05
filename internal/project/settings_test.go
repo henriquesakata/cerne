@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -460,5 +461,98 @@ func TestSetThenUnsetRestoresFile(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestConfigWritesKeepModeAndFollowSymlinks (critic C7): a rewrite keeps the
+// file's mode bits (a new file gets 0644, as git checks one out) and writes
+// through a symlink to its target, keeping the link: true of the settings
+// writers and of writeFileAtomic (SaveConfig, docs.lock).
+func TestConfigWritesKeepModeAndFollowSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mode bits and symlinks")
+	}
+	modeOf := func(p string) os.FileMode {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi.Mode().Perm()
+	}
+	for _, mode := range []os.FileMode{0o644, 0o640} {
+		projDir, _ := settingsFixture(t, "", "", false)
+		cernerc := filepath.Join(projDir, ".cernerc")
+		if err := os.Chmod(cernerc, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := SetSetting(projDir, "wiki.enabled", ScopeProject, "false"); err != nil {
+			t.Fatal(err)
+		}
+		if got := modeOf(cernerc); got != mode {
+			t.Errorf("SetSetting: .cernerc mode %v, want %v kept", got, mode)
+		}
+		if err := SetLLMMode(projDir, "claude-cli"); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveConfig(projDir, Config{ProjectID: "p", Backend: "b"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := modeOf(cernerc); got != mode {
+			t.Errorf("SetLLMMode+SaveConfig: .cernerc mode %v, want %v kept", got, mode)
+		}
+	}
+
+	projDir, hostDir := t.TempDir(), t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", hostDir)
+	if err := SaveConfig(projDir, Config{ProjectID: "p", Backend: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetSetting(projDir, "wiki.enabled", ScopeHost, "false"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(projDir, ".cernerc"), filepath.Join(hostDir, "settings.toml")} {
+		if got := modeOf(p); got != 0o644 {
+			t.Errorf("new %s mode %v, want 0644", filepath.Base(p), got)
+		}
+	}
+
+	dotfiles := t.TempDir()
+	target := filepath.Join(dotfiles, "settings.toml")
+	if err := os.WriteFile(target, []byte("[graph]\nenabled = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(hostDir, "settings.toml")
+	os.Remove(link)
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetSetting(projDir, "graph.enabled", ScopeHost, "false"); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("host settings.toml is no longer a symlink (%v)", err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "[graph]\nenabled = false\n" {
+		t.Errorf("symlink target = %q, want the write to land there", got)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dotfiles, "*.lock")); len(leftovers) != 0 {
+		t.Errorf("lock left behind: %v", leftovers)
+	}
+
+	cernercTarget := filepath.Join(dotfiles, "cernerc")
+	if err := os.Rename(filepath.Join(projDir, ".cernerc"), cernercTarget); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(cernercTarget, filepath.Join(projDir, ".cernerc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveConfig(projDir, Config{ProjectID: "q", Backend: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(filepath.Join(projDir, ".cernerc")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("SaveConfig replaced the .cernerc symlink (%v)", err)
+	}
+	if got, _ := os.ReadFile(cernercTarget); !strings.Contains(string(got), `project_id = "q"`) {
+		t.Errorf("SaveConfig did not write through the symlink: %q", got)
 	}
 }

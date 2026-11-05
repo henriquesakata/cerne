@@ -205,12 +205,17 @@ func checkDeclared(id, scope string) error {
 // process (the ui) and in others (the CLI) serialize instead of losing
 // updates; one still blocked after configLockTimeout gets ErrConfigBusy and
 // writes nothing. A foreign lock is never removed: a crashed writer's stale
-// lock is the user's to delete, as with git. No change skips the write.
+// lock is the user's to delete, as with git. No change skips the write. Like
+// writeFileAtomic, it writes through a symlink and keeps the file's mode.
 func editTOMLFile(path, table, key string, value any) error {
 	if _, err := os.Stat(path); value == nil && errors.Is(err, fs.ErrNotExist) {
 		return nil // removing from a missing file: nothing to lock or create
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	path, mode, err := writeTarget(path)
+	if err != nil {
 		return err
 	}
 	lock := path + ".lock"
@@ -233,6 +238,9 @@ func editTOMLFile(path, table, key string, value any) error {
 			os.Remove(lock)
 		}
 	}()
+	if err := f.Chmod(mode); err != nil {
+		return err
+	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

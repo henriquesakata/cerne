@@ -478,9 +478,15 @@ func findConfigDir(startDir string) (string, error) {
 }
 
 // writeFileAtomic writes data to <dir>/<filename> atomically: temp file in
-// the same dir, then rename.
+// the target's dir, then rename. A symlink is written through (its target is
+// replaced, the link kept) and an existing file keeps its mode bits; a new
+// one gets 0644 (F-0314, as git config does).
 func writeFileAtomic(dir, filename string, data []byte) error {
-	tmp, err := os.CreateTemp(dir, filename+".*.tmp")
+	path, mode, err := writeTarget(filepath.Join(dir, filename))
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
@@ -489,13 +495,36 @@ func writeFileAtomic(dir, filename string, data []byte) error {
 		os.Remove(tmp.Name())
 		return err
 	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, filename)); err != nil {
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
 	return nil
+}
+
+// writeTarget resolves path through symlinks, so a rewrite lands on the
+// link's target, and returns the mode the rewrite keeps: the existing file's,
+// or 0644 for a new one.
+func writeTarget(path string) (string, os.FileMode, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return path, 0o644, nil
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	fi, err := os.Stat(real)
+	if err != nil {
+		return "", 0, err
+	}
+	return real, fi.Mode().Perm(), nil
 }
