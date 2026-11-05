@@ -37,6 +37,11 @@ var ErrPendingPromoteKind = errors.New("--as must be feature or task")
 // epic with open children.
 var ErrPendingOriginClosed = errors.New("the origin is closed (implemented/done): a task cannot be filed under it — promote with --as feature")
 
+// ErrPendingClosedConcurrently is returned by a promotion whose pending was
+// closed (resolved/dropped/promoted) by someone else between creating the
+// feature/task and recording the promotion.
+var ErrPendingClosedConcurrently = errors.New("the pending was closed concurrently")
+
 // CreatePending mints an open pending (P-) in the backend clone at repoDir.
 // from is mandatory and must be an existing feature/task/epic. Tags are
 // normalized; an axis whose flag was not given inherits the origin's tags. A
@@ -134,9 +139,10 @@ func DropPending(repoDir, projDir, id, reason string) (store.Pending, error) {
 // force is the created entity's duplicate-guard override (F-0147): a debt
 // often reads like its origin.
 //
-// ponytail: two mutations, not one transaction. If the second fails, the
-// entity exists without promoted_to; the error names it, a retry hits the
-// duplicate guard on the created title, and 'cerne pending resolve' closes it.
+// ponytail: two mutations, not one transaction (the second re-checks the
+// pending inside the lock). If it fails, the entity exists without
+// promoted_to; markPromoted's error names it and says how to recover. One
+// transaction would need the feature core to run inside this lock.
 func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending, store.Feature, error) {
 	if as != "feature" && as != "task" {
 		return store.Pending{}, store.Feature{}, fmt.Errorf("%w: %q", ErrPendingPromoteKind, as)
@@ -167,11 +173,29 @@ func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending,
 	if err != nil {
 		return store.Pending{}, store.Feature{}, err
 	}
-	p, err = closePending(repoDir, projDir, id, domain.ActionPromote, "", f.ID)
+	p, err = markPromoted(repoDir, projDir, id, f.ID)
 	if err != nil {
-		return store.Pending{}, f, fmt.Errorf("%s created, but %s was not marked promoted (close it with 'cerne pending resolve %s'): %w", f.ID, id, id, err)
+		return store.Pending{}, f, err
 	}
 	return p, f, nil
+}
+
+// markPromoted is the promotion's second step: open -> promoted with
+// promoted_to = created, the state re-read inside the backend lock. Its errors
+// name the created entity and the way out: closed meanwhile (nothing to fix on
+// the pending), or a backend failure (the pending may still be open).
+func markPromoted(repoDir, projDir, id, created string) (store.Pending, error) {
+	p, err := closePending(repoDir, projDir, id, domain.ActionPromote, "", created)
+	switch {
+	case err == nil:
+		return p, nil
+	case errors.Is(err, domain.ErrInvalidTransition):
+		return store.Pending{}, fmt.Errorf("%w: %s was created, but %s was closed by someone else meanwhile (%v), so it does not point to %s — decide whether %s is still wanted",
+			ErrPendingClosedConcurrently, created, id, err, created, created)
+	default:
+		return store.Pending{}, fmt.Errorf("%s was created, but recording the promotion on %s failed: %w — %s may still be open: once the backend is reachable, check 'cerne pending show %s' and, if it is open, record the link with 'cerne pending drop %s --reason \"promoted to %s\"'",
+			created, id, err, id, id, id, created)
+	}
 }
 
 // closePending applies action to pending id, re-reading its state inside the

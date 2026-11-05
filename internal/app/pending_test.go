@@ -417,3 +417,48 @@ func TestCreatePendingCanonicalOrigin(t *testing.T) {
 		t.Fatalf("backend HEAD moved on refused --from values")
 	}
 }
+
+// The second step of a promotion re-checks the pending inside the lock: closed
+// meanwhile, the error names the created entity and says the pending was closed
+// concurrently (no "resolve it" advice); a backend failure says the pending may
+// still be open and how to record the link once the backend is back.
+func TestMarkPromotedReportsHowToRecover(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	closed, err := CreatePending(repoDir, projDir, "Débito fechado no meio", "", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolvePending(repoDir, projDir, closed.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = markPromoted(repoDir, projDir, closed.ID, "F-0009")
+	if !errors.Is(err, ErrPendingClosedConcurrently) {
+		t.Fatalf("err = %v, want ErrPendingClosedConcurrently", err)
+	}
+	for _, want := range []string{"F-0009", closed.ID, "resolved"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q lacks %q", err.Error(), want)
+		}
+	}
+	if strings.Contains(err.Error(), "pending resolve") {
+		t.Errorf("a concurrently closed pending must not be told to resolve: %q", err.Error())
+	}
+
+	open, err := CreatePending(repoDir, projDir, "Débito com backend fora", "", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	_, err = markPromoted(repoDir, projDir, open.ID, "F-0009")
+	if err == nil || errors.Is(err, ErrPendingClosedConcurrently) {
+		t.Fatalf("backend failure err = %v, want a plain failure", err)
+	}
+	for _, want := range []string{"F-0009", "may still be open", "cerne pending show " + open.ID, `cerne pending drop ` + open.ID + ` --reason "promoted to F-0009"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q lacks %q", err.Error(), want)
+		}
+	}
+}
