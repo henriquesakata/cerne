@@ -242,3 +242,36 @@ func TestSettingsWriteSucceedsDespiteBadHostFile(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsWriteStatusMapping (critic C5): every refusal of a write has
+// its status: no .cernerc for a project write is 409, a malformed file 422.
+func TestSettingsWriteStatusMapping(t *testing.T) {
+	cases := []struct {
+		name, cernerc, host, method, target, body string
+		want                                      int
+	}{
+		{"no .cernerc", "", "", http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"project","value":false}`, http.StatusConflict},
+		{"malformed .cernerc", "[x\n", "", http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"project","value":false}`, http.StatusUnprocessableEntity},
+		{"malformed host file", "project_id = \"p\"\n", "[x", http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":false}`, http.StatusUnprocessableEntity},
+		{"unset in malformed .cernerc", "[x\n", "", http.MethodDelete, "/api/settings/wiki.enabled?scope=project", "", http.StatusUnprocessableEntity},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir := newBackend(t)
+			hostDir := t.TempDir()
+			t.Setenv("CERNE_CONFIG_DIR", hostDir)
+			for path, content := range map[string]string{filepath.Join(projDir, ".cernerc"): tc.cernerc, filepath.Join(hostDir, "settings.toml"): tc.host} {
+				if content != "" {
+					if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			var body map[string]string
+			rec := doJSON(t, New(repoDir, projDir, ""), tc.method, tc.target, tc.body, &body)
+			if rec.Code != tc.want || body["error"] == "" {
+				t.Errorf("status %d body %v, want %d with an error", rec.Code, body, tc.want)
+			}
+		})
+	}
+}

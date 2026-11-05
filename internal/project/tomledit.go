@@ -29,7 +29,7 @@ var ErrConfigLayout = errors.New("unsupported config layout")
 func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	want := map[string]any{}
 	if err := toml.Unmarshal(raw, &want); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrConfigParse, err)
 	}
 	layoutErr := fmt.Errorf("%w: cannot safely edit [%s] %s; edit the file by hand", ErrConfigLayout, table, key)
 	tbl, ok := want[table].(map[string]any)

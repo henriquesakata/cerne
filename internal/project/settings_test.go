@@ -244,6 +244,7 @@ func TestSetSettingRefusesInvalid(t *testing.T) {
 		{"undeclared scope", "", "wiki.enabled", "global", "false", false, ErrSettingScope},
 		{"dotted layout", "wiki.enabled = true\n", "wiki.enabled", ScopeProject, "false", false, ErrConfigLayout},
 		{"no project", "", "wiki.enabled", ScopeProject, "false", true, ErrNoProject},
+		{"malformed project file", "[x\n", "wiki.enabled", ScopeProject, "false", false, ErrConfigParse},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

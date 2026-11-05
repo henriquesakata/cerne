@@ -166,7 +166,7 @@ func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) 
 		err = project.SetLLMMode(dir, req.Mode)
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		writeConfigError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, llmConfigResponse{Mode: req.Mode})

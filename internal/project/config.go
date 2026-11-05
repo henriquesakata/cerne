@@ -18,6 +18,10 @@ import (
 // filesystem root without finding a .cernerc.
 var ErrNoProject = errors.New("no cerne project")
 
+// ErrConfigParse: a config file (.cernerc, settings.toml) is not valid TOML,
+// or does not decode into Config. Wrapped with the file's path.
+var ErrConfigParse = errors.New("cannot parse config file")
+
 const configFilename = ".cernerc"
 
 // Config is the persisted form of .cernerc (TOML, committed by the user).
@@ -445,7 +449,7 @@ func LoadConfig(startDir string) (Config, string, error) {
 	}
 	var c Config
 	if err := toml.Unmarshal(data, &c); err != nil {
-		return Config{}, "", fmt.Errorf("%s: %w", path, err)
+		return Config{}, "", fmt.Errorf("%s: %w: %w", path, ErrConfigParse, err)
 	}
 	return c, dir, nil
 }

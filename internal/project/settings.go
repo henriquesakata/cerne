@@ -271,7 +271,7 @@ func settingsFile(projDir, scope string) (string, error) {
 	}
 	dir, err := findConfigDir(projDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("project scope: %w", err)
 	}
 	return filepath.Join(dir, configFilename), nil
 }
@@ -287,7 +287,7 @@ func readTOMLFile(path string) (map[string]any, error) {
 		return nil, err
 	}
 	if err := toml.Unmarshal(data, &m); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrConfigParse, err)
 	}
 	return m, nil
 }
