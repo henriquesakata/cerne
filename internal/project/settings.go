@@ -53,12 +53,15 @@ type Setting struct {
 }
 
 // ResolvedSetting is a Setting with its effective value and the scope it came
-// from: ScopeProject, ScopeHost or OriginDefault. Invalid lists the stored
-// values of this key the resolution skipped, in any scope.
+// from: ScopeProject, ScopeHost or OriginDefault. Stored holds the valid
+// value each scope that sets the key stores, keyed by scope, so a value a
+// higher scope overrides stays visible; Invalid lists the stored values of
+// this key the resolution skipped, in any scope.
 type ResolvedSetting struct {
 	Setting
 	Value   any              `json:"value"`
 	Origin  string           `json:"origin"`
+	Stored  map[string]any   `json:"stored,omitempty"`
 	Invalid []SettingProblem `json:"invalid,omitempty"`
 }
 
@@ -140,8 +143,14 @@ func ResolveSettings(projDir string) SettingsView {
 				}
 				r.Invalid = append(r.Invalid, SettingProblem{Scope: scope, File: view.Files[scope], Raw: raw,
 					Error: fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, s.Type)})
-			case r.Origin == OriginDefault:
-				r.Value, r.Origin = v, scope
+			default:
+				if r.Stored == nil {
+					r.Stored = map[string]any{}
+				}
+				r.Stored[scope] = v
+				if r.Origin == OriginDefault {
+					r.Value, r.Origin = v, scope
+				}
 			}
 		}
 		view.Settings = append(view.Settings, r)

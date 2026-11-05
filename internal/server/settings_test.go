@@ -280,3 +280,27 @@ func TestSettingsWriteStatusMapping(t *testing.T) {
 		})
 	}
 }
+
+// TestSettingsEndpointCarriesStoredValues: the payload carries each scope's
+// stored value, so the UI can show the one a higher scope overrides.
+func TestSettingsEndpointCarriesStoredValues(t *testing.T) {
+	h, _, hostDir := settingsBackend(t, "[mindmap]\nenabled = true\n")
+	if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte("[mindmap]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Settings []map[string]any `json:"settings"`
+	}
+	doJSON(t, h, http.MethodGet, "/api/settings", "", &got)
+	for _, s := range got.Settings {
+		if s["id"] != "mindmap.enabled" {
+			continue
+		}
+		stored, _ := s["stored"].(map[string]any)
+		if s["value"] != true || s["origin"] != project.ScopeProject || stored[project.ScopeProject] != true || stored[project.ScopeHost] != false || len(stored) != 2 {
+			t.Errorf("mindmap.enabled = %v, want true from project with stored {project: true, host: false}", s)
+		}
+		return
+	}
+	t.Fatal("mindmap.enabled not served")
+}

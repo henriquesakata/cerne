@@ -569,3 +569,30 @@ func TestConfigWritesKeepModeAndFollowSymlinks(t *testing.T) {
 		t.Errorf("SaveConfig did not write through the symlink: %q", got)
 	}
 }
+
+// TestResolveSettingsReportsEveryScopeValue: the view carries the valid value
+// each scope stores for a key, so the value a higher scope overrides stays
+// visible (git config --list --show-scope; F-0315's scope switch). Invalid
+// values stay out of it, in Invalid.
+func TestResolveSettingsReportsEveryScopeValue(t *testing.T) {
+	cases := []struct {
+		name, project, host string
+		want                map[string]any
+		wantValue           bool
+		wantOrigin          string
+	}{
+		{"both scopes", "[mindmap]\nenabled = true\n", "[mindmap]\nenabled = false\n", map[string]any{ScopeProject: true, ScopeHost: false}, true, ScopeProject},
+		{"host only", "", "[mindmap]\nenabled = false\n", map[string]any{ScopeHost: false}, false, ScopeHost},
+		{"invalid host left out", "[mindmap]\nenabled = true\n", "[mindmap]\nenabled = \"no\"\n", map[string]any{ScopeProject: true}, true, ScopeProject},
+		{"no scope", "", "", nil, true, OriginDefault},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			got := findSetting(t, ResolveSettings(projDir), "mindmap.enabled")
+			if !maps.Equal(got.Stored, tc.want) || got.Value != tc.wantValue || got.Origin != tc.wantOrigin {
+				t.Errorf("mindmap.enabled = %v from %s, stored %v; want %v from %s, stored %v", got.Value, got.Origin, got.Stored, tc.wantValue, tc.wantOrigin, tc.want)
+			}
+		})
+	}
+}
