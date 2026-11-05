@@ -217,6 +217,30 @@ func TestGauntletMergedRounds(t *testing.T) {
 	})
 }
 
+// A short qualifier between "Barra" and the colon still makes a bar line.
+func TestGauntletBarQualifier(t *testing.T) {
+	round := "Rodada 1 \u2014 vit\u00f3ria: \"c\"\n"
+	long := "Barra " + strings.Repeat("x", 41) + ": v\n"
+	runGauntletCases(t, []gauntletCase{
+		{"da spec", "Barra da spec: x\n" + round, ""},
+		{"herdada da spec", "Barra herdada da spec: x\n" + round, ""},
+		{"parenthesised", "Barra (herdada da spec): x\n" + round, ""},
+		{"bold parenthesised", "**Barra (herdada da spec):** x\n" + round, ""},
+		{"list with qualifier", "- Barra (frente B): x\n" + round, ""},
+		{"lowercase qualified", "barra da spec: x\n" + round, ""},
+		{"qualified exemption", "Barra da spec: n\u00e3o aplic\u00e1vel (y)\n", ""},
+		{"bold qualified exemption NFD", "**Barra (da spec):** na\u0303o aplica\u0301vel (y)\n", ""},
+		{"mid-line after round anchor", "**Rodada 1 \u2014 vit\u00f3ria.** Barra: x \"c\"\n", `sem linha "Barra:"`},
+		{"prose exemption mid-line", "A spec fixou Barra: n\u00e3o aplic\u00e1vel (y)\n" + round, `sem linha "Barra:"`},
+		{"veredito barra prose", "Veredito: barra n\u00e3o aplic\u00e1vel (y)\n" + round, `sem linha "Barra:"`},
+		{"qualifier over 40 chars", long + round, `sem linha "Barra:"`},
+		{"no colon", "Barra da spec x\n" + round, `sem linha "Barra:"`},
+		{"empty value", "Barra da spec:\n" + round, `sem linha "Barra:"`},
+		{"empty bold value", "**Barra (da spec):**\n" + round, `sem linha "Barra:"`},
+		{"word glued to Barra is no qualifier", "Barras: x\n" + round, `sem linha "Barra:"`},
+	})
+}
+
 // Criterion 7: grandfathering through the strict cutoff.
 func TestGauntletGrandfather(t *testing.T) {
 	before := resultGauntletStrictSince.Add(-24 * time.Hour)

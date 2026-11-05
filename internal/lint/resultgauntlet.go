@@ -30,7 +30,7 @@ var (
 	// emphasis delimiters.
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s#>*_|-]|\d+\.\s)*`)
 	roundAnchorRe = regexp.MustCompile(`^Rodada\s+(\d+)\b`)
-	barLineRe     = regexp.MustCompile(`(?i)^Barra:[\s*_]*([^\s*_].*)$`)
+	barLineRe     = regexp.MustCompile(`(?i)^Barra(?:[ \t(][^:\n]{0,39})?:[\s*_]*([^\s*_].*)$`)
 	criticLineRe  = regexp.MustCompile(`(?i)^Achados do cr(?:í|i\x{0301}|i)tico`)
 	verdictLitRe  = regexp.MustCompile(`(?i)VEREDITO:\s*(?:A|B|EMPATE)\b`)
 	quoteRe       = regexp.MustCompile(`"[^"]*\S[^"]*"|“[^”]*\S[^”]*”|«[^»]*\S[^»]*»`)
