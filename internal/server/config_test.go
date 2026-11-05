@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/models"
@@ -239,5 +240,27 @@ func TestPreferredProviderPersists(t *testing.T) {
 	cat, warn := models.Load(dir)
 	if warn != nil || cat.PreferredProvider != "anthropic" {
 		t.Fatalf("after restart: preferred = %q (warn %v), want anthropic", cat.PreferredProvider, warn)
+	}
+}
+
+// TestAbsentCatalogLoggedOncePerProcess: C10 — no global file is the
+// permanent state for many users; it is logged once per process, not on
+// every chat options request.
+func TestAbsentCatalogLoggedOncePerProcess(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	absentCatalogLogged = sync.Once{}
+	var logs bytes.Buffer
+	prev := telemetry.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { telemetry.SetLogger(prev) })
+
+	repoDir, projDir := newBackend(t)
+	h := New(repoDir, projDir, "")
+	for range 3 {
+		if rec := doJSON(t, h, http.MethodGet, "/api/config/llm", "", new(map[string]any)); rec.Code != http.StatusOK {
+			t.Fatalf("status = %d", rec.Code)
+		}
+	}
+	if n := strings.Count(logs.String(), "no global file"); n != 1 {
+		t.Fatalf("absent-file line logged %d times, want once:\n%s", n, logs.String())
 	}
 }

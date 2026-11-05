@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"slices"
+	"sync"
 
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/models"
@@ -34,9 +35,15 @@ type llmConfigResponse struct {
 	PreferredProvider string   `json:"preferred_provider,omitempty"`
 }
 
+// absentCatalogLogged holds the "no global file" line to once per process: it
+// is the permanent state for delegation, claude-cli and offline users, and the
+// chat asks for its options on every open.
+var absentCatalogLogged sync.Once
+
 // loadCatalog resolves the global model catalog. An unusable global file never
 // reaches the page: the baseline is served and the reason logged (F-0149) —
-// Info for the expected absent file, Warn for an empty or malformed one.
+// Info once per process for the expected absent file, Warn for an empty or
+// malformed one.
 func loadCatalog() models.Catalog {
 	dir, err := project.ConfigDir()
 	if err != nil {
@@ -46,7 +53,9 @@ func loadCatalog() models.Catalog {
 	cat, warn := models.Load(dir)
 	switch {
 	case errors.Is(warn, fs.ErrNotExist):
-		telemetry.Info("model catalog: no global file, serving the baseline", "dir", dir)
+		absentCatalogLogged.Do(func() {
+			telemetry.Info("model catalog: no global file, serving the baseline", "dir", dir)
+		})
 	case warn != nil:
 		telemetry.Warn("model catalog: global file unusable, serving the baseline", "error", warn.Error())
 	}
