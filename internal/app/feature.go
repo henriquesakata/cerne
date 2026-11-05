@@ -679,7 +679,11 @@ func amendedResult(id, body string) (string, error) {
 	if strings.TrimSpace(lines[0]) != "---" {
 		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
 	}
-	for i := 1; i < len(lines) && strings.TrimSpace(lines[i]) != "---"; i++ {
+	end := 1
+	for end < len(lines) && strings.TrimSpace(lines[end]) != "---" {
+		end++
+	}
+	for i := 1; i < end; i++ {
 		v, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), "cerne_id:")
 		got := strings.Trim(strings.TrimSpace(v), `"'`)
 		if !ok || got == "" {
@@ -687,6 +691,9 @@ func amendedResult(id, body string) (string, error) {
 		}
 		if got != id {
 			return "", fmt.Errorf("the body's frontmatter names cerne_id %q, not %s — is it another feature's result?", got, id)
+		}
+		if end == len(lines) {
+			return "", fmt.Errorf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc result'", id)
 		}
 		lines[i] = "cerne_id: " + id
 		return strings.Join(lines, "\n") + "\n", nil

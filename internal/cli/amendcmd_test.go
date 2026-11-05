@@ -138,3 +138,27 @@ func TestFeatureAmendCommand(t *testing.T) {
 		t.Fatalf("identical amend: err %v, output = %q, want %q", err, out, want)
 	}
 }
+
+// TestFeatureAmendFromStdinAndUnknownID: the documented `cat result.md |` form
+// amends, and an unknown id is refused without moving origin (judge finding,
+// F-0305).
+func TestFeatureAmendFromStdinAndUnknownID(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	id := seedResultFeatures(t, repoDir, domain.StateImplemented)[domain.StateImplemented]
+	body, _ := os.ReadFile(amendFile(t, id))
+	pipeStdinBody(t, string(body))
+	if out, err := execCerne(t, "feature", "amend", id, "--reason", "via stdin", "--dir", projDir); err != nil || !strings.Contains(out, "result amended") {
+		t.Fatalf("stdin amend: err %v, output %q", err, out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md")); !strings.Contains(string(got), "Result emendado.") {
+		t.Fatalf("result not replaced from stdin:\n%s", got)
+	}
+
+	head0, _ := gitback.HeadSHA(origin)
+	if _, err := execCerne(t, "feature", "amend", "F-0999", "--file", amendFile(t, "F-0999"), "--reason", "x", "--dir", projDir); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown id: err = %v, want store.ErrNotFound", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on an unknown id: %s -> %s", head0, h)
+	}
+}

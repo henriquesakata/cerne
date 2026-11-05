@@ -139,6 +139,7 @@ func TestAmendedResultFrontmatter(t *testing.T) {
 		{"block without id", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
 		{"horizontal rule", "---\n" + rest, "", "the body opens a '---' block without cerne_id"},
 		{"empty id", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id"},
+		{"block never closes", "---\ncerne_id: F-0001\n# R\n\nCorpo.\n", "", "the body's '---' block never closes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := amendedResult("F-0001", tc.body)
