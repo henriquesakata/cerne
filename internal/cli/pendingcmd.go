@@ -113,6 +113,7 @@ func runPendingList(cmd *cobra.Command, dir, state, from, component, module stri
 		}
 	}
 	comp := slug.Make(component)
+	from = strings.ToUpper(strings.TrimSpace(from)) // origins are stored canonical
 	shown := []store.Pending{}
 	for _, p := range pendings {
 		if string(p.State) != state || (from != "" && p.From != from) ||

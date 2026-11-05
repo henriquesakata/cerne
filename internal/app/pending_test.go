@@ -387,3 +387,33 @@ func TestPromotePendingAsTaskRefusesClosedOrigin(t *testing.T) {
 		})
 	}
 }
+
+// Crit. 11/14: the origin is stored canonical — a lower-case --from is the same
+// origin for the guard (and for every --from/--feature filter downstream), and
+// anything that is not an F-/T-/E-NNNN id is refused before the store is read.
+func TestCreatePendingCanonicalOrigin(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", " f-0001 ", nil, nil, false)
+	if err != nil {
+		t.Fatalf("lower-case --from: %v", err)
+	}
+	if p.From != f.ID {
+		t.Fatalf("from = %q, want the canonical %q", p.From, f.ID)
+	}
+	if _, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", f.ID, nil, nil, false); !errors.Is(err, ErrSimilarExists) || !strings.Contains(err.Error(), p.ID) {
+		t.Fatalf("retry with the canonical id: err = %v, want ErrSimilarExists naming %s", err, p.ID)
+	}
+	before := backendHead(t, repoDir)
+	for _, bad := range []string{"../decisions/../features/F-0001", "F-1", "D-0001", "F-0001.json"} {
+		if _, err := CreatePending(repoDir, projDir, "Outro débito "+bad, "", bad, nil, nil, false); !errors.Is(err, ErrPendingFromInvalid) {
+			t.Fatalf("--from %q: err = %v, want ErrPendingFromInvalid", bad, err)
+		}
+	}
+	if ps, _ := store.LoadAllPendings(repoDir); len(ps) != 1 {
+		t.Fatalf("%d pendings, want 1", len(ps))
+	}
+	if after := backendHead(t, repoDir); after != before {
+		t.Fatalf("backend HEAD moved on refused --from values")
+	}
+}

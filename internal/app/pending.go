@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,13 @@ import (
 // pending is always a debt of a concrete delivery (F-0322), which is what
 // keeps it apart from a speculative idea.
 var ErrPendingFromRequired = errors.New("--from is required (the F-/T-/E- id the pending was left by)")
+
+// ErrPendingFromInvalid is returned by CreatePending for an origin that is not
+// an F-/T-/E-NNNN id — refused before the store is read, so a path-like value
+// never reaches the filesystem.
+var ErrPendingFromInvalid = errors.New("--from must be an F-/T-/E-NNNN id")
+
+var pendingOriginRx = regexp.MustCompile(`^[FTE]-\d{4}$`)
 
 // ErrPendingReasonRequired is returned by DropPending with a blank reason: a
 // discarded debt keeps why it was discarded.
@@ -40,9 +48,12 @@ func CreatePending(repoDir, projDir, title, body, from string, facets, component
 	if title == "" {
 		return store.Pending{}, fmt.Errorf("the pending title cannot be empty")
 	}
-	from = strings.TrimSpace(from)
+	from = strings.ToUpper(strings.TrimSpace(from))
 	if from == "" {
 		return store.Pending{}, ErrPendingFromRequired
+	}
+	if !pendingOriginRx.MatchString(from) {
+		return store.Pending{}, fmt.Errorf("%w: %q", ErrPendingFromInvalid, from)
 	}
 	normFacets, err := domain.NormalizeFacets(facets)
 	if err != nil {
@@ -55,6 +66,7 @@ func CreatePending(repoDir, projDir, title, body, from string, facets, component
 		if err != nil {
 			return "", fmt.Errorf("--from: %w", err)
 		}
+		from = origin.ID // the stored id, never the typed spelling
 		if len(facets) == 0 {
 			normFacets = origin.Facets
 		}
