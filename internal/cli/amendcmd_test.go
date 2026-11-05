@@ -159,3 +159,32 @@ func TestFeatureAmendFromStdinAndUnknownID(t *testing.T) {
 		t.Fatalf("origin moved on an unknown id: %s -> %s", head0, h)
 	}
 }
+
+// F-0307: an amend whose --file is the .docs/ copy says to remove it — the
+// copy keeps blocking push until it is gone — on both the success and the
+// unchanged message; a file elsewhere gets no such line.
+func TestAmendFromDocsCopySaysToRemoveIt(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := seedResultFeatures(t, repoDir, domain.StateImplemented)[domain.StateImplemented]
+	local := filepath.Join(projDir, ".docs", "current", "features", id+"-x", "result.md")
+	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, local, realDoc(id, "Result emendado."))
+	rel := ".docs/current/features/" + id + "-x/result.md"
+	want := "remove " + rel + " now"
+
+	for _, step := range []string{"amended", "unchanged"} {
+		out, err := execCerne(t, "feature", "amend", id, "--file", local, "--reason", "r", "--dir", projDir)
+		if err != nil || !strings.Contains(out, step) || !strings.Contains(out, want) {
+			t.Fatalf("%s: err %v, output %q, want %q", step, err, out, want)
+		}
+	}
+	other := amendFile(t, id)
+	for i := 0; i < 2; i++ {
+		out, err := execCerne(t, "feature", "amend", id, "--file", other, "--reason", "r", "--dir", projDir)
+		if err != nil || strings.Contains(out, "remove ") {
+			t.Fatalf("file outside .docs/: err %v, output %q, want no remove line", err, out)
+		}
+	}
+}
