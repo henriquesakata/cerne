@@ -668,17 +668,30 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 
 // amendedResult is the stored form of an amend body, under ONE cerne_id
 // frontmatter: the body's own block when it already names id (what
-// `cerne show --doc result` prints, extra keys kept), cerne's stamp otherwise.
-// A block naming anything else is refused — it is another document.
+// `cerne show --doc result` prints, extra keys kept; a quoted id is stored
+// unquoted, as every cerne_id reader expects), cerne's stamp when the body has
+// no block. A block naming another id is refused — it is another document —
+// and so is a '---' opening with no cerne_id (a frontmatter without it, or a
+// horizontal rule), which cerne cannot tell apart.
 func amendedResult(id, body string) (string, error) {
 	body = strings.TrimSpace(strings.TrimPrefix(body, "\ufeff"))
-	if first, _, _ := strings.Cut(body, "\n"); strings.TrimSpace(first) != "---" {
+	lines := strings.Split(body, "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
 		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
 	}
-	if got := doccheck.FrontmatterValue([]byte(body), "cerne_id"); got != id {
-		return "", fmt.Errorf("the body's frontmatter names cerne_id %q, not %s — is it another feature's result?", got, id)
+	for i := 1; i < len(lines) && strings.TrimSpace(lines[i]) != "---"; i++ {
+		v, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), "cerne_id:")
+		got := strings.Trim(strings.TrimSpace(v), `"'`)
+		if !ok || got == "" {
+			continue
+		}
+		if got != id {
+			return "", fmt.Errorf("the body's frontmatter names cerne_id %q, not %s — is it another feature's result?", got, id)
+		}
+		lines[i] = "cerne_id: " + id
+		return strings.Join(lines, "\n") + "\n", nil
 	}
-	return body + "\n", nil
+	return "", fmt.Errorf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc result' or drop the block", id)
 }
 
 // loadCandidate loads a feature and asserts it is still a candidate — the

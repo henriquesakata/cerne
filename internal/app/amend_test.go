@@ -122,6 +122,39 @@ func TestAmendIdenticalIsNoOp(t *testing.T) {
 	}
 }
 
+// TestAmendedResultFrontmatter: the body's opening block is kept when it names
+// the feature — quoted or not, stored unquoted like every reader expects — and
+// a refusal says what is wrong with it: another feature's id, or a '---' block
+// (a frontmatter or a horizontal rule) that carries no cerne_id at all.
+func TestAmendedResultFrontmatter(t *testing.T) {
+	const rest = "\n# R\n\nCorpo.\n"
+	for _, tc := range []struct {
+		name, body, want, refusal string
+	}{
+		{"no block", "# R\n\nCorpo.\n", "---\ncerne_id: F-0001\n---\n\n# R\n\nCorpo.\n", ""},
+		{"plain id", "---\ncerne_id: F-0001\nx: y\n---\n" + rest, "---\ncerne_id: F-0001\nx: y\n---\n" + rest, ""},
+		{"double-quoted id", "---\ncerne_id: \"F-0001\"\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
+		{"single-quoted id", "---\ncerne_id: 'F-0001'\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
+		{"other id", "---\ncerne_id: F-0002\n---\n" + rest, "", `names cerne_id "F-0002", not F-0001 — is it another feature's result?`},
+		{"block without id", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
+		{"horizontal rule", "---\n" + rest, "", "the body opens a '---' block without cerne_id"},
+		{"empty id", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := amendedResult("F-0001", tc.body)
+			if tc.refusal != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
+					t.Fatalf("err = %v, want %q", err, tc.refusal)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("got %q, %v — want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
 // gitOut runs git in dir and returns its trimmed output.
 func gitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
