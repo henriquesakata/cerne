@@ -212,3 +212,28 @@ func TestDropPendingRequiresReason(t *testing.T) {
 		t.Fatalf("dropped = %+v, want dropped with reason and closed_at", stored)
 	}
 }
+
+// Crit. 15 (invariant): an open pending never blocks a lifecycle transition —
+// a feature, epic or task with open pendings walks approve, start, complete
+// and accept as if it had none.
+func TestOpenPendingsNeverBlockTransitions(t *testing.T) {
+	for _, id := range []string{"F-0001", "E-0001", "T-0001"} {
+		t.Run(id, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, id, domain.StateCandidate, "spec.md", "plan.md", "result.md")
+			for _, title := range []string{"Primeiro débito aberto", "Outro assunto pendente"} {
+				if _, err := CreatePending(repoDir, projDir, title, "", id, nil, nil, false); err != nil {
+					t.Fatalf("CreatePending: %v", err)
+				}
+			}
+			for _, a := range []domain.Action{domain.ActionApprove, domain.ActionStart, domain.ActionComplete, domain.ActionAccept} {
+				if _, err := TransitionFeature(repoDir, projDir, id, a, "", "", nil); err != nil {
+					t.Fatalf("%s %s with open pendings: %v", a, id, err)
+				}
+			}
+			if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateDone {
+				t.Fatalf("%s state = %s, want done", id, f.State)
+			}
+		})
+	}
+}
