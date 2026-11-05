@@ -1280,6 +1280,7 @@ h2 {
 .approve-readiness ul { margin: 0 0 0.35rem; padding-left: 1.1rem; }
 .approve-readiness .impediment-hard { color: var(--danger); }
 .approve-readiness .impediment-soft { color: var(--muted); }
+.approve-readiness .bar-forms { margin: 0 0 0.35rem; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---- diagramas (Excalidraw) ---- */
 

@@ -170,6 +170,27 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     expect(screen.getByRole('button', { name: 'Rejeitar' })).toBeEnabled()
   })
 
+  it('impedimento de barra: mostra as três formas literais aceitas', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'bar-malformed', message: 'malformed', hard: true }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    const forms = screen.getByText(/Barra: <referência nomeada \+ acesso/)
+    expect(forms).toHaveTextContent('Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>')
+    expect(forms).toHaveTextContent('Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)')
+
+    cleanup()
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'open-clarification', message: 'qual o limite?', hard: false }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    expect(screen.queryByText(/Barra: <referência nomeada/)).not.toBeInTheDocument()
+  })
+
   it('só impedimento não duro: Aprovar habilitado, esclarecimento listado', async () => {
     payload = {
       ...detail('candidate'),

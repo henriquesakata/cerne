@@ -943,6 +943,13 @@ function RoastModal({
   )
 }
 
+// As três formas literais da barra (F-0308), o mesmo texto que o
+// 'cerne feature approve --check' imprime: são texto de spec, por isso ficam em
+// pt-BR nos dois idiomas da UI.
+const BAR_FORMS = `Barra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>
+Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>
+Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`
+
 type ActionSpec = {
   action: TransitionAction
   form: 'none' | 'reason' | 'supersede'
@@ -1067,6 +1074,12 @@ function ActionsPanel({
                   </li>
                 ))}
               </ul>
+              {readiness.some((r) => r.code === 'bar-missing' || r.code === 'bar-malformed') && (
+                <>
+                  <p className="muted">{t.feature.barFormsIntro}</p>
+                  <pre className="bar-forms">{BAR_FORMS}</pre>
+                </>
+              )}
               {blocked && <p className="muted">{t.feature.approveBlocked}</p>}
             </>
           )}

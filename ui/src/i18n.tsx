@@ -406,6 +406,7 @@ const ptBR = {
     approveImpediments: 'O que impede a aprovação:',
     approvePending: 'Pendente antes de aprovar:',
     approveBlocked: 'Resolva os impedimentos marcados antes de aprovar.',
+    barFormsIntro: 'A seção Verificação da spec precisa de uma das três formas literais:',
     impediment: (code: ApproveImpediment['code'], message: string) =>
       ({
         'spec-missing': 'Spec ausente ou ainda no esqueleto',
@@ -1147,6 +1148,7 @@ const en: Messages = {
     approveImpediments: 'What stops the approval:',
     approvePending: 'Pending before approving:',
     approveBlocked: 'Resolve the marked impediments before approving.',
+    barFormsIntro: "The spec's Verificação section needs one of the three literal forms:",
     impediment: (code: ApproveImpediment['code'], message: string) =>
       ({
         'spec-missing': 'Spec missing or still the template stub',
