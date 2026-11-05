@@ -153,6 +153,14 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			}
 		}
 
+		// Result record gate (F-0303): the lint's result rules, charged while the
+		// result is still editable — after complete it is frozen out of .docs/.
+		if action == domain.ActionComplete {
+			if err := CheckResultRecord(repoDir, f); err != nil {
+				return "", fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, id)
+			}
+		}
+
 		oldState := f.State
 		f.State = newState
 		f.UpdatedAt = time.Now().UTC()

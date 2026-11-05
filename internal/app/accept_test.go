@@ -27,6 +27,9 @@ func seedFeatureInState(t *testing.T, repoDir string, id string, state domain.Fe
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		body := "# Doc\n\n## Conteúdo real\n\nCorpo real do documento, não um stub.\n" + testBarTail
+		if doc == "result.md" {
+			body += testGauntletTail // the complete gate charges the record (F-0303)
+		}
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatalf("WriteFile %s: %v", doc, err)
 		}

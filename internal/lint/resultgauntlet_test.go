@@ -90,11 +90,11 @@ func readFixture(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	section, has := gauntletSection(b)
-	if !has {
+	secs := gauntletSections(b)
+	if len(secs) == 0 {
 		t.Fatalf("%s has no Gauntlet section", name)
 	}
-	return section
+	return secs[0]
 }
 
 type gauntletCase struct {

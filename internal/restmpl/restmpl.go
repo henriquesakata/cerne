@@ -22,6 +22,7 @@ var Sections = []string{
 	"O que mudou",
 	"Débitos e follow-ups",
 	"Aprendizados e desvios",
+	"Gauntlet",
 }
 
 // Body is the result template skeleton: the canonical section headings in order,
@@ -50,7 +51,8 @@ o id concreto do modelo que rodou, não uma categoria genérica. -->
 
 ## Aceitação
 <!-- Cada critério de aceitação da spec → ATENDIDO/PENDENTE, com EVIDÊNCIA (nome do teste, arquivo:linha,
-números). Binário e 1:1 com a spec — nada de "parece pronto". Cite o número do critério. -->
+números). Binário e 1:1 com a spec — nada de "parece pronto". Cite "critério N" (forma literal) para cada
+critério numerado: é o que o cerne feature complete confere. -->
 
 ## O que mudou
 <!-- As mudanças concretas que entraram, do ponto de vista de quem lê: arquivos/módulos criados e editados,
@@ -63,6 +65,17 @@ feature/caso novo), não TODO órfão. "Nenhum" quando não houver. -->
 ## Aprendizados e desvios
 <!-- O que aprendeu, o que faria diferente, e desvios intencionais do plano/spec (o que mudou e por quê).
 Conciso; "N/A" se nada notável. -->
+
+## Gauntlet
+<!-- Registro do loop de comparação; o cerne feature complete recusa o result sem ele. Escreva fora deste
+comentário, uma linha por item (as formas literais abaixo, sem o rótulo antes dos dois-pontos):
+Linha da barra: Barra: <referência nomeada + acesso (URL, comando ou arquivo)>
+Linha de cada rodada: Rodada N — <vitória|derrota|empate>: "<citação curta do veredito do juiz>"
+Linha dos achados: Achados do crítico: <n> — corrigidos <…>; refutados <… com file:line>; aceitos como limite <…>
+Sem barra aplicável: Barra: não aplicável (<justificativa>)
+Dispensa pelo humano: Barra: dispensada por decisão humana (<citação>)
+Uma passada só do crítico, sem juiz, vai em "Achados do crítico", nunca numa linha "Rodada N": a linha
+"Rodada N" leva o veredito citado do juiz. -->
 `
 
 // Stub returns the result body cerne scaffolds when a feature enters

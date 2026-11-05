@@ -1,13 +1,18 @@
 package restmpl_test
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/restmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // TestSectionsCanonical pins the canonical sections and their order. Ordering is
@@ -19,6 +24,7 @@ func TestSectionsCanonical(t *testing.T) {
 		"O que mudou",
 		"Débitos e follow-ups",
 		"Aprendizados e desvios",
+		"Gauntlet",
 	}
 	if !reflect.DeepEqual(restmpl.Sections, want) {
 		t.Fatalf("Sections = %v, want %v", restmpl.Sections, want)
@@ -93,4 +99,49 @@ func TestStubCarimboAgente(t *testing.T) {
 			t.Errorf("Stub must carry the agent stamp guidance %q:\n%s", want, s)
 		}
 	}
+}
+
+// TestBodyHasGauntletGuidance (F-0303 crit. 8): the template teaches the record
+// the complete gate charges — the literal lines, the two literal exemptions and
+// the literal "critério N" citation.
+func TestBodyHasGauntletGuidance(t *testing.T) {
+	for _, want := range []string{
+		"## Gauntlet",
+		"Barra: <referência nomeada + acesso",
+		`Rodada N — <vitória|derrota|empate>: "<citação curta do veredito do juiz>"`,
+		"Achados do crítico:",
+		"Barra: não aplicável (<justificativa>)",
+		"Barra: dispensada por decisão humana (<citação>)",
+		`"critério N"`,
+		"nunca numa linha",
+	} {
+		if !strings.Contains(restmpl.Body, want) {
+			t.Errorf("Body missing Gauntlet guidance %q", want)
+		}
+	}
+}
+
+// The guide lines are literal forms inside a comment, which the lint reader
+// does not skip: an author who fills the other sections and forgets the
+// Gauntlet one must still be refused, not vouched for by the leftover guide.
+func TestLeftoverGauntletGuideDoesNotVouch(t *testing.T) {
+	dir := t.TempDir()
+	f := store.Feature{ID: "F-0001", Title: "demo", State: domain.StateInDevelopment}
+	if err := store.SaveFeature(dir, f); err != nil {
+		t.Fatal(err)
+	}
+	docDir := filepath.Join(dir, "content", "features", f.ID)
+	if err := os.MkdirAll(docDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := strings.Replace(restmpl.Stub("demo"), "## Resultado\n", "## Resultado\nEntregue.\n", 1)
+	if err := os.WriteFile(filepath.Join(docDir, "result.md"), []byte(result), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, fi := range lint.CheckResult(dir, f) {
+		if fi.Rule == lint.RuleResultMissingGauntlet {
+			return
+		}
+	}
+	t.Fatalf("an untouched Gauntlet guide counted as a record:\n%s", result)
 }

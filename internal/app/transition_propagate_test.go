@@ -18,6 +18,11 @@ const realDocBody = "---\ncerne_id: %s\n---\n\n# Doc real\n\nConteúdo real o ba
 // transition core) for fixtures that approve a real spec.
 const testBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
 
+// testGauntletTail satisfies the complete result gate (F-0303) for fixtures
+// whose result.md is completed; fixtures with numbered spec criteria also cite
+// "critério N".
+const testGauntletTail = "\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+
 // seedApproved creates a feature under parent (empty for none) and drives it to
 // approved with a real plan, so a start gate would open. It does not start it.
 func seedApproved(t *testing.T, repoDir, projDir, title, parent string) store.Feature {

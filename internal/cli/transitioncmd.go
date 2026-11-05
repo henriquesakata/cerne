@@ -30,7 +30,9 @@ var transitionSpecs = []transitionSpec{
 		"  # gate: the plan must be filled in (not the stub) and pushed\n" +
 			"  cerne push && cerne feature start <id>\n" + lifecycleSeq},
 	{"complete", "Complete development (requires a real result)", domain.ActionComplete,
-		"  # gate: the result must be filled in (not the stub) and pushed\n" +
+		"  # gate: the result must be filled in (not the stub) and pushed, cite\n" +
+			"  # \"critério N\" for each numbered spec criterion, and carry a\n" +
+			"  # \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
 	{"substituir", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
 	{"revert", "Send an approved feature back to candidate (requires --reason)", domain.ActionRevert,

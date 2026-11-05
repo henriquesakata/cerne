@@ -125,35 +125,49 @@ func resultEvidenceFindings(repoDir string, features []store.Feature, events []d
 		if !completedAfter(events, f.ID, resultEvidenceSince) {
 			continue
 		}
-		spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", f.ID, "spec.md"))
-		if err != nil {
-			continue
-		}
-		criteria := specCriteria(spec)
-		if len(criteria) == 0 {
-			continue
-		}
-		resultPath := filepath.Join("content", "features", f.ID, "result.md")
-		result, err := os.ReadFile(filepath.Join(repoDir, resultPath))
-		if err != nil {
-			result = nil // gate doc coverage is missing-gate-doc's job; here absence = zero evidence
-		}
-		mentions := resultMentions(result)
-		var missing []string
-		for _, n := range criteria {
-			if !mentions[n] {
-				missing = append(missing, strconv.Itoa(n))
-			}
-		}
-		if len(missing) == 0 {
-			continue
-		}
-		out = append(out, Finding{
-			Rule:   RuleResultMissingEvidence,
-			Entity: f.ID,
-			File:   filepath.ToSlash(resultPath),
-			Detail: fmt.Sprintf("result.md sem evidência do(s) critério(s) %s da spec (%s) — cite \"critério N\" com a prova de cada um", strings.Join(missing, ", "), f.Title),
-		})
+		out = append(out, evidenceFinding(repoDir, f)...)
 	}
 	return out
+}
+
+// evidenceFinding is the per-feature result-missing-evidence check, shared by
+// the lint loop and CheckResult.
+func evidenceFinding(repoDir string, f store.Feature) []Finding {
+	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", f.ID, "spec.md"))
+	if err != nil {
+		return nil
+	}
+	criteria := specCriteria(spec)
+	if len(criteria) == 0 {
+		return nil
+	}
+	resultPath := filepath.Join("content", "features", f.ID, "result.md")
+	result, err := os.ReadFile(filepath.Join(repoDir, resultPath))
+	if err != nil {
+		result = nil // gate doc coverage is missing-gate-doc's job; here absence = zero evidence
+	}
+	mentions := resultMentions(stripHTMLComments(result))
+	var missing []string
+	for _, n := range criteria {
+		if !mentions[n] {
+			missing = append(missing, strconv.Itoa(n))
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return []Finding{{
+		Rule:   RuleResultMissingEvidence,
+		Entity: f.ID,
+		File:   filepath.ToSlash(resultPath),
+		Detail: fmt.Sprintf("result.md sem evidência do(s) critério(s) %s da spec (%s) — cite \"critério N\" com a prova de cada um", strings.Join(missing, ", "), f.Title),
+	}}
+}
+
+// CheckResult returns the result-record findings of ONE feature, ignoring its
+// state and the adoption cutoffs: result-missing-evidence and
+// result-missing-gauntlet, in RuleOrder. It reads only the strict Gauntlet
+// reader (no legacy tolerance) — the gate at `complete` (F-0303).
+func CheckResult(repoDir string, f store.Feature) []Finding {
+	return append(evidenceFinding(repoDir, f), gauntletFinding(repoDir, f, false)...)
 }

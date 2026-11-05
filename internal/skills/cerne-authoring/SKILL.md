@@ -158,6 +158,10 @@ Achados do crítico: <n> — corrigidos <…>; refutados <… com file:line>; ac
 
 The quoted verdict is what makes the record checkable at the human `accept` gate: a Gauntlet section with no quoted verdict per round and no disposition per finding cannot be told apart from a loop that never ran.
 
+`cerne feature complete` itself refuses a result whose record the lint would flag (a numbered criterion never cited, or no valid `## Gauntlet`), and `--force` does not cross it. Fix the result while the doc is still editable: once the feature is `implemented` the result is frozen out of `.docs/`.
+
+A critic-only pass (no judge) goes on the `Achados do crítico` line, never on a `Rodada N` line — a `Rodada N` line must carry the judge's quoted verdict.
+
 ## Epics (large work, decomposed)
 
 An **epic is just a feature that has children** — the role is inferred from the parent link, there is no separate entity, so the epic gets the full feature lifecycle/spec/plan/result for free. Use one when a body of work is too large for a single spec and naturally splits into sub-features.
