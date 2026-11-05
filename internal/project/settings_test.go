@@ -6,8 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 const baseCernerc = "project_id = \"p\"\nbackend = \"b\"\ndefault_scope = \"\"\n"
@@ -280,5 +283,104 @@ func TestUnsetSettingAbsentIsNoop(t *testing.T) {
 	}
 	if err := UnsetSetting(projDir, "wiki.enabled", "global"); !errors.Is(err, ErrSettingScope) {
 		t.Errorf("undeclared scope: err = %v, want ErrSettingScope", err)
+	}
+}
+
+// TestSetSettingConcurrentWritersAllLand pins git's lockfile discipline on
+// settings writes (C1): concurrent writers of distinct keys of one file, as
+// the ui fires them back to back, serialize instead of losing updates.
+func TestSetSettingConcurrentWritersAllLand(t *testing.T) {
+	projDir, hostDir := settingsFixture(t, "", "", false)
+	files := map[string]string{
+		ScopeProject: filepath.Join(projDir, ".cernerc"),
+		ScopeHost:    filepath.Join(hostDir, "settings.toml"),
+	}
+	ids := []string{"graph.enabled", "mindmap.enabled", "wiki.enabled"}
+	for round := range 20 {
+		want := round%2 == 1
+		var wg sync.WaitGroup
+		errs := make(chan error, len(ids)*len(files))
+		for _, id := range ids {
+			for scope := range files {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					errs <- SetSetting(projDir, id, scope, strconv.FormatBool(want))
+				}()
+			}
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: SetSetting: %v", round, err)
+			}
+		}
+		for scope, path := range files {
+			m, err := readTOMLFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range ids {
+				table, key, _ := strings.Cut(id, ".")
+				tbl, _ := m[table].(map[string]any)
+				if got := tbl[key]; got != want {
+					t.Fatalf("round %d: %s %s = %v, want %v (a concurrent write was lost)", round, scope, id, got, want)
+				}
+			}
+		}
+	}
+	for _, path := range files {
+		if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s.lock left behind (%v)", path, err)
+		}
+	}
+}
+
+// TestConfigWritersRefuseAHeldLock: a lock another writer holds past the wait
+// is ErrConfigBusy for every writer (set, unset, llm mode); the file stays
+// as it was and the foreign lock is left alone. A writer's own failure
+// removes its lock.
+func TestConfigWritersRefuseAHeldLock(t *testing.T) {
+	prev := configLockTimeout
+	configLockTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { configLockTimeout = prev })
+	projDir, hostDir := settingsFixture(t, "[graph]\nenabled = true\n", "[graph]\nenabled = true\n", false)
+	host, cernerc := filepath.Join(hostDir, "settings.toml"), filepath.Join(projDir, ".cernerc")
+	before := map[string]string{}
+	for _, p := range []string{host, cernerc} {
+		data, _ := os.ReadFile(p)
+		before[p] = string(data)
+		if err := os.WriteFile(p+".lock", []byte("held"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, write := range map[string]func() error{
+		"set":      func() error { return SetSetting(projDir, "graph.enabled", ScopeHost, "false") },
+		"unset":    func() error { return UnsetSetting(projDir, "graph.enabled", ScopeProject) },
+		"llm mode": func() error { return SetLLMMode(projDir, "claude-cli") },
+	} {
+		if err := write(); !errors.Is(err, ErrConfigBusy) {
+			t.Errorf("%s under a held lock: err = %v, want ErrConfigBusy", name, err)
+		}
+	}
+	for p, want := range before {
+		if got, _ := os.ReadFile(p); string(got) != want {
+			t.Errorf("%s changed under a held lock: %q", p, got)
+		}
+		if lock, _ := os.ReadFile(p + ".lock"); string(lock) != "held" {
+			t.Errorf("%s.lock = %q, want the foreign lock untouched", p, lock)
+		}
+		os.Remove(p + ".lock")
+	}
+
+	if err := os.WriteFile(host, []byte("graph.enabled = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetSetting(projDir, "graph.enabled", ScopeHost, "false"); !errors.Is(err, ErrConfigLayout) {
+		t.Fatalf("err = %v, want ErrConfigLayout", err)
+	}
+	if _, err := os.Stat(host + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("refused write left its lock behind (%v)", err)
 	}
 }

@@ -56,6 +56,8 @@ func writeSettingsError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, project.ErrConfigLayout):
 		status = http.StatusUnprocessableEntity
+	case errors.Is(err, project.ErrConfigBusy):
+		status = http.StatusConflict
 	}
 	writeJSON(w, status, errorBody(err.Error()))
 }

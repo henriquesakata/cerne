@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -28,7 +30,13 @@ var (
 	ErrUnknownSetting      = errors.New("unknown setting")
 	ErrInvalidSettingValue = errors.New("invalid setting value")
 	ErrSettingScope        = errors.New("scope not allowed for setting")
+	// ErrConfigBusy: another writer held the file's lock past
+	// configLockTimeout. Nothing was written.
+	ErrConfigBusy = errors.New("config file is locked by another writer")
 )
+
+// configLockTimeout bounds the wait for another writer's <file>.lock.
+var configLockTimeout = 2 * time.Second
 
 // Setting is one declared configuration key. ID is "table.key", the TOML
 // address in both scopes (git config's section.key, R-0043).
@@ -120,8 +128,6 @@ func ResolveSettings(projDir string) (SettingsView, error) {
 // project's .cernerc or the host settings.toml, editing only that key's line.
 // Key, scope and value are validated before any file is read, so a refusal
 // writes nothing.
-//
-// ponytail: read-modify-write with no lock, the last writer wins; add a flock if CLI and UI really edit concurrently.
 func SetSetting(projDir, id, scope, raw string) error {
 	if err := checkDeclared(id, scope); err != nil {
 		return err
@@ -170,11 +176,43 @@ func checkDeclared(id, scope string) error {
 	return nil
 }
 
-// editTOMLFile applies editTOML to the file at path (absent = empty),
-// creating its directory, and skips the write when nothing changes.
+// editTOMLFile applies editTOML to the file at path (absent = empty) under
+// git's lockfile discipline: <path>.lock, created O_EXCL, is the lock and
+// receives the new content, then is renamed over the file. Writers in this
+// process (the ui) and in others (the CLI) serialize instead of losing
+// updates; one still blocked after configLockTimeout gets ErrConfigBusy and
+// writes nothing. A foreign lock is never removed: a crashed writer's stale
+// lock is the user's to delete, as with git. No change skips the write.
 func editTOMLFile(path, table, key string, value any) error {
+	if _, err := os.Stat(path); value == nil && errors.Is(err, fs.ErrNotExist) {
+		return nil // removing from a missing file: nothing to lock or create
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	lock := path + ".lock"
+	deadline := time.Now().Add(configLockTimeout)
+	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	for errors.Is(err, fs.ErrExist) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		f, err = os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("%s: %w; if no cerne is running, remove %s", path, ErrConfigBusy, lock)
+	}
+	if err != nil {
+		return err
+	}
+	renamed := false
+	defer func() {
+		f.Close()
+		if !renamed {
+			os.Remove(lock)
+		}
+	}()
+
 	raw, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	out, err := editTOML(raw, table, key, value)
@@ -184,10 +222,17 @@ func editTOMLFile(path, table, key string, value any) error {
 	if bytes.Equal(out, raw) {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if _, err := f.Write(out); err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Dir(path), filepath.Base(path), out)
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(lock, path); err != nil {
+		return err
+	}
+	renamed = true
+	return nil
 }
 
 // settingsFile returns the file behind scope: the .cernerc LoadConfig finds

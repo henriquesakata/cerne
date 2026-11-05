@@ -179,3 +179,21 @@ func TestSettingsRouteLocalOnly(t *testing.T) {
 		t.Errorf("serve /settings: status %d, want 404", rec.Code)
 	}
 }
+
+// TestSettingsPutBusyIsConflict: a write blocked by another writer's lock is
+// 409 and writes nothing.
+func TestSettingsPutBusyIsConflict(t *testing.T) {
+	h, _, hostDir := settingsBackend(t, "")
+	lock := filepath.Join(hostDir, "settings.toml.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]string
+	rec := doJSON(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":false}`, &body)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d body %v, want 409", rec.Code, body)
+	}
+	if _, err := os.Stat(filepath.Join(hostDir, "settings.toml")); err == nil {
+		t.Errorf("settings.toml written despite the held lock")
+	}
+}
