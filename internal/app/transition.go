@@ -47,6 +47,24 @@ type TransitionOutcome struct {
 // differs from the version its last approve accepted (F-0318).
 var ErrApprovalStale = errors.New("spec changed since approval")
 
+// ErrNothingToReapprove refuses approving an approved feature whose spec is
+// still the version approved (F-0318) — or that has no approved copy at all.
+// It wraps domain.ErrInvalidTransition: to every caller that asks "can this be
+// approved?", an approved feature with nothing to renew answers as before.
+var ErrNothingToReapprove = fmt.Errorf("%w: nothing to re-approve", domain.ErrInvalidTransition)
+
+// checkReapprove returns ErrNothingToReapprove for an approved feature whose
+// approval is not stale; nil for any other feature.
+func checkReapprove(repoDir string, f store.Feature) error {
+	if f.State != domain.StateApproved {
+		return nil
+	}
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); !stale {
+		return fmt.Errorf("%w: %s is approved and its spec is the approved version", ErrNothingToReapprove, f.ID)
+	}
+	return nil
+}
+
 // eventTypes maps each lifecycle action to the event type it appends.
 var eventTypes = map[domain.Action]string{
 	domain.ActionApprove:   "feature.approved",
@@ -127,8 +145,14 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		}
 
 		// Stale-approval gate (F-0318): the spec to implement is the one a human
-		// approved. Refused before the parallel guard and any write, so a refused
-		// start opens no work; --force does not cross it.
+		// approved, and a re-approval needs something to renew. Refused before the
+		// parallel guard and any write, so a refused start opens no work; --force
+		// does not cross it.
+		if action == domain.ActionApprove {
+			if err := checkReapprove(repoDir, f); err != nil {
+				return "", err
+			}
+		}
 		if action == domain.ActionStart {
 			if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
 				return "", fmt.Errorf("%w: %s — a human re-approves it with 'cerne feature approve %s' (or 'cerne feature revert %s' sends it back to the Backlog)", ErrApprovalStale, id, id, id)
@@ -264,6 +288,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Approving a candidate opens the plan phase: scaffold the plan stub from the
 		// canonical template so it is committed alongside the approval (mirrors the
 		// spec stub written at create time). No-op if a real plan already exists.
+		// Every approve — a re-approval too — keeps the spec it accepted.
 		if action == domain.ActionApprove {
 			if err := writePlanStub(repoDir, id, f.Title); err != nil {
 				return "", err

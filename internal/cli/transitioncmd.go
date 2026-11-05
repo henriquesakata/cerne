@@ -26,10 +26,12 @@ type transitionSpec struct {
 const lifecycleSeq = "  # lifecycle: new → approve → start → complete"
 
 var transitionSpecs = []transitionSpec{
-	{"approve", "Approve a candidate feature (requires a real spec)", domain.ActionApprove,
+	{"approve", "Approve a candidate, or re-approve an approved feature whose spec changed (requires a real spec)", domain.ActionApprove,
 		"  # gate: the spec must be filled in (not the stub), name its bar, and be pushed\n" +
 			"  cerne feature approve <id> --check   # rehearsal: lists every impediment, writes nothing\n" +
-			"  cerne push && cerne feature approve <id>\n" + lifecycleSeq},
+			"  cerne push && cerne feature approve <id>\n" +
+			"  # an approved spec edited since its approval blocks the start until re-approved:\n" +
+			"  cerne feature approve <id>           # renews the approval with the current spec\n" + lifecycleSeq},
 	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject, ""},
 	{"start", "Start development (requires a real plan)", domain.ActionStart,
 		"  # gate: the plan must be filled in (not the stub) and pushed\n" +
@@ -147,8 +149,12 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintf(cmd.OutOrStdout(), "  ↳ epic %s started along with it (a child entered development)\n", epic)
 	}
 	// Approving a feature scaffolds its plan stub; starting scaffolds its result
-	// stub: point the author at the doc the next gate will require.
-	if action == domain.ActionApprove {
+	// stub: point the author at the doc the next gate will require. A
+	// re-approval (F-0318) reopens the start instead.
+	switch {
+	case action == domain.ActionApprove && out.From == domain.StateApproved:
+		fmt.Fprintf(cmd.OutOrStdout(), "Approval renewed: the current spec is now the approved version — 'cerne feature start %s' is open again.\n", id)
+	case action == domain.ActionApprove:
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
 	}
 	if action == domain.ActionStart {

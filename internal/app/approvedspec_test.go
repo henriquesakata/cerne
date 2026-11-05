@@ -173,3 +173,55 @@ func TestStartPropagationSkipsStaleEpic(t *testing.T) {
 		t.Fatalf("epic state = %s, want approved", f.State)
 	}
 }
+
+// TestReapproveRefreshesApprovedSpec (F-0318 crit. 7): approving an approved
+// feature whose spec changed promotes the current spec to the new approved
+// version — no revert — which clears the stale approval and reopens the start.
+func TestReapproveRefreshesApprovedSpec(t *testing.T) {
+	repoDir, projDir := approvedWithPlan(t)
+	specB := approvedSpecA + "\nCritério novo.\n"
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", specB); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+	if err != nil {
+		t.Fatalf("re-approve: %v", err)
+	}
+	if out.From != domain.StateApproved || out.To != domain.StateApproved {
+		t.Fatalf("outcome = %s → %s, want approved → approved", out.From, out.To)
+	}
+	if got, _ := os.ReadFile(store.ApprovedSpecPath(repoDir, "F-0001")); string(got) != specB {
+		t.Fatalf("approved copy = %q, want the re-approved spec", got)
+	}
+	f, _ := store.LoadFeature(repoDir, "F-0001")
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+		t.Fatal("still stale after the re-approval")
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("start after re-approval: %v", err)
+	}
+}
+
+// TestReapproveRefusedWhenNotStale (F-0318 crit. 7, 14): there is nothing to
+// re-approve while the spec is the approved version — nor for a feature
+// approved before F-0318, with no copy. The readiness the approve --check and
+// the page read refuses alike, as an invalid transition, so every "nothing to
+// approve here" caller keeps reading it as before.
+func TestReapproveRefusedWhenNotStale(t *testing.T) {
+	repoDir, projDir, _ := approveFixture(t)
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateApproved, "spec.md") // legacy: no copy
+
+	for _, id := range []string{"F-0001", "F-0002"} {
+		_, err := TransitionFeature(repoDir, projDir, id, domain.ActionApprove, "", "", nil)
+		if !errors.Is(err, ErrNothingToReapprove) || !errors.Is(err, domain.ErrInvalidTransition) {
+			t.Fatalf("%s: re-approve err = %v, want ErrNothingToReapprove (an invalid transition)", id, err)
+		}
+		if _, err := ApproveReadiness(repoDir, id); !errors.Is(err, ErrNothingToReapprove) {
+			t.Fatalf("%s: readiness err = %v, want ErrNothingToReapprove", id, err)
+		}
+	}
+	if _, err := os.Stat(store.ApprovedSpecPath(repoDir, "F-0002")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refused re-approve wrote a copy: %v", err)
+	}
+}

@@ -530,3 +530,33 @@ func TestApproveRefusesSpecWithoutBar(t *testing.T) {
 		t.Fatalf("--force crossed the bar gate: %v", err)
 	}
 }
+
+// TestReapproveIsHumanGated (F-0318 crit. 7): re-approving a stale approval
+// is the approve itself — the same human gate refuses an agent, and the human
+// re-approval renews the approval and says so.
+func TestReapproveIsHumanGated(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v\n%s", err, out)
+	}
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real, com um critério novo."))
+	commitBackend(t, repoDir)
+
+	t.Setenv("CERNE_ACTOR", "agent")
+	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); !errors.Is(err, app.ErrHumanGate) {
+		t.Fatalf("agent re-approve err = %v, want ErrHumanGate", err)
+	}
+	t.Setenv("CERNE_ACTOR", "")
+	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("human re-approve: %v\n%s", err, out)
+	}
+	for _, want := range []string{id + ": approved → approved", "Approval renewed", "cerne feature start " + id} {
+		if !strings.Contains(out, want) {
+			t.Errorf("re-approve output missing %q:\n%s", want, out)
+		}
+	}
+}
