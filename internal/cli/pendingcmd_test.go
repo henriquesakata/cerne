@@ -319,3 +319,25 @@ func TestLintAdvisoryKeepsExitCode(t *testing.T) {
 		t.Fatalf("an advisory plus a blocking finding must still fail lint:\n%s", out)
 	}
 }
+
+// Crit. 10 through the CLI: promote --as feature prints the transition and the
+// created id; a missing --as refuses.
+func TestPendingPromoteCmd(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem")
+	pendingNew(t, projDir, "Configurar o limiar", "--from", "F-0001")
+	if _, err := execCerne(t, "pending", "promote", "P-0001", "--dir", projDir); !errors.Is(err, app.ErrPendingPromoteKind) {
+		t.Fatalf("promote without --as: err = %v, want ErrPendingPromoteKind", err)
+	}
+	out, err := execCerne(t, "pending", "promote", "P-0001", "--as", "feature", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "P-0001: open -> promoted (F-0002)") {
+		t.Fatalf("promote: %v\n%s", err, out)
+	}
+	if p, _ := store.LoadPending(repoDir, "P-0001"); p.PromotedTo != "F-0002" {
+		t.Fatalf("pending = %+v, want promoted_to F-0002", p)
+	}
+	out, err = execCerne(t, "show", "P-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "promoted to: F-0002") {
+		t.Fatalf("show P-0001 lacks the forward link: %v\n%s", err, out)
+	}
+}

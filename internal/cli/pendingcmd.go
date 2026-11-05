@@ -30,6 +30,7 @@ func newPendingCmd() *cobra.Command {
 	cmd.AddCommand(newPendingListCmd(&dir))
 	cmd.AddCommand(newPendingResolveCmd(&dir))
 	cmd.AddCommand(newPendingDropCmd(&dir))
+	cmd.AddCommand(newPendingPromoteCmd(&dir))
 	return cmd
 }
 
@@ -182,5 +183,31 @@ func newPendingDropCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why the debt is discarded (required)")
+	return cmd
+}
+
+func newPendingPromoteCmd(dir *string) *cobra.Command {
+	var as string
+	cmd := &cobra.Command{
+		Use:   "promote <id>",
+		Short: "Turn an open pending into a feature or task (open -> promoted), linked both ways",
+		Long: "Creates a feature (candidate) or a task (under the origin, which must be past candidacy) with the " +
+			"pending's title, tags and context; the generated spec links back with '**Origem:** [[P-NNNN]]' and " +
+			"the pending records promoted_to. The new entity enters the regular funnel with its own human gates.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			p, f, err := app.PromotePending(ctx.repoDir, ctx.projDir, args[0], as)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", p.ID, domain.PendingOpen, p.State, f.ID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&as, "as", "", "feature or task (required)")
 	return cmd
 }

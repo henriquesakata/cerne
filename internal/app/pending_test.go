@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v5"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -235,5 +237,100 @@ func TestOpenPendingsNeverBlockTransitions(t *testing.T) {
 				t.Fatalf("%s state = %s, want done", id, f.State)
 			}
 		})
+	}
+}
+
+// promotedSpec reads the generated spec of a promoted entity.
+func promotedSpec(t *testing.T, repoDir, id string) string {
+	t.Helper()
+	data, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md"))
+	if err != nil {
+		t.Fatalf("read spec of %s: %v", id, err)
+	}
+	return string(data)
+}
+
+// Crit. 10: promote --as feature creates a candidate inheriting title, tags and
+// context; the pending goes to promoted with promoted_to, and the spec carries
+// the back-link line that resolves as an id wiki-link.
+func TestPromotePendingToFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Origem", []string{"code"}, []string{"lint"})
+	p, err := CreatePending(repoDir, projDir, "Configurar o limiar de envelhecimento", "hoje é constante", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature")
+	if err != nil {
+		t.Fatalf("PromotePending: %v", err)
+	}
+	if !strings.HasPrefix(created.ID, "F-") || created.State != domain.StateCandidate || created.Title != p.Title ||
+		!slices.Equal(created.Facets, []string{"code"}) || !slices.Equal(created.Components, []string{"lint"}) {
+		t.Fatalf("created = %+v, want a candidate F- with the pending's title and tags", created)
+	}
+	if got.State != domain.PendingPromoted || got.PromotedTo != created.ID || got.ClosedAt == nil {
+		t.Fatalf("pending = %+v, want promoted to %s", got, created.ID)
+	}
+	spec := promotedSpec(t, repoDir, created.ID)
+	for _, want := range []string{"**Origem:** pendência [[" + p.ID + "]] (de " + f.ID + ")", "hoje é constante"} {
+		if !strings.Contains(spec, want) {
+			t.Fatalf("spec lacks %q:\n%s", want, spec)
+		}
+	}
+}
+
+// Crit. 10: promote --as task files the task under the origin (born approved),
+// linked both ways, and the back-link is not a broken wiki-link.
+func TestPromotePendingToTask(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", "F-0001", nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, task, err := PromotePending(repoDir, projDir, p.ID, "task")
+	if err != nil {
+		t.Fatalf("PromotePending: %v", err)
+	}
+	if !strings.HasPrefix(task.ID, "T-") || task.Parent != "F-0001" || task.State != domain.StateApproved {
+		t.Fatalf("task = %+v, want an approved T- under F-0001", task)
+	}
+	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingPromoted || stored.PromotedTo != task.ID || got.PromotedTo != task.ID {
+		t.Fatalf("pending = %+v, want promoted_to %s", stored, task.ID)
+	}
+	if !strings.Contains(promotedSpec(t, repoDir, task.ID), "[["+p.ID+"]]") {
+		t.Fatal("the task's spec must link back to the pending")
+	}
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fnd := range findings {
+		if fnd.Rule == lint.RuleBrokenLink && strings.Contains(fnd.Detail, p.ID) {
+			t.Fatalf("the back-link is a broken wiki-link: %+v", fnd)
+		}
+	}
+}
+
+// A closed pending cannot be promoted, an unknown kind refuses, and neither
+// creates an entity.
+func TestPromotePendingRefusesClosed(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "epic"); !errors.Is(err, ErrPendingPromoteKind) {
+		t.Fatalf("--as epic err = %v, want ErrPendingPromoteKind", err)
+	}
+	if _, err := ResolvePending(repoDir, projDir, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature"); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("promote of a resolved pending err = %v, want ErrInvalidTransition", err)
+	}
+	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 {
+		t.Fatalf("refused promotions created entities: %d features, want only the origin", len(fs))
 	}
 }
