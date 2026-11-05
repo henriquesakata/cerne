@@ -287,6 +287,19 @@ func TestNextShowsOpenPendings(t *testing.T) {
 func TestLintAdvisoryKeepsExitCode(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	newOriginFeature(t, projDir, "Origem", "--facet", "code")
+	// The --context spec names no bar, which the blocking spec-missing-bar rule
+	// (F-0308) would report: give it one, so the advisory finding stands alone.
+	specPath := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	spec, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(specPath, append(spec, "\nBarra: fixture de teste — referência nomeada\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "bar for F-0001"); err != nil {
+		t.Fatal(err)
+	}
 	pendingNew(t, projDir, "Débito velho", "--from", "F-0001")
 	p, _ := store.LoadPending(repoDir, "P-0001")
 	p.CreatedAt = time.Now().UTC().Add(-lint.StalePendingAfter - time.Hour)
@@ -435,7 +448,9 @@ func TestPushDryRunAdvisoryPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, specPath, string(data)+"\nMais contexto.\n")
+	// The edit names a bar too: the --context spec has none, and the blocking
+	// spec-missing-bar rule (F-0308) would otherwise join the advisory finding.
+	mustWrite(t, specPath, string(data)+"\nMais contexto.\n\nBarra: fixture de teste — referência nomeada\n")
 
 	out, err := execCerne(t, "push", "--dry-run", "--dir", projDir)
 	if err != nil || !strings.Contains(out, "STALE-PENDING (1) (warning)") || !strings.Contains(out, "all advisory") {
