@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,5 +100,76 @@ func TestApprovedCopyNotScanned(t *testing.T) {
 	}
 	if hits, err := index.Search(db, "zebraquartz", 10); err != nil || len(hits) != 0 {
 		t.Fatalf("index hits = %v, %v — the copy must not be indexed", hits, err)
+	}
+}
+
+// approvedWithPlan is approveFixture with a real plan, so only the stale
+// approval can stop a start.
+func approvedWithPlan(t *testing.T) (repoDir, projDir string) {
+	t.Helper()
+	repoDir, projDir, _ = approveFixture(t)
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "plan", "# Plano\n\n## Tarefas\n\nPlano real, não um stub.\n"); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	return repoDir, projDir
+}
+
+// TestStartRefusesStaleApproval (F-0318 crit. 6, 3): a start over a spec that
+// differs from the approved one is refused before anything is written — no
+// state change, no work opened — naming the reason and the re-approve command.
+// A spec edited back to the approved text (A→B→A) starts.
+func TestStartRefusesStaleApproval(t *testing.T) {
+	repoDir, projDir := approvedWithPlan(t)
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", approvedSpecA+"\nCritério novo.\n"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+
+	_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil)
+	if !errors.Is(err, ErrApprovalStale) {
+		t.Fatalf("start err = %v, want ErrApprovalStale", err)
+	}
+	for _, want := range []string{"spec changed since approval", "cerne feature approve F-0001"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not name %q", err, want)
+		}
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateApproved {
+		t.Fatalf("state = %s after a refused start, want approved", f.State)
+	}
+	if works, _ := store.LoadAllWorks(repoDir); len(works) != 0 {
+		t.Fatalf("a refused start opened works: %+v", works)
+	}
+
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", approvedSpecA); err != nil {
+		t.Fatalf("edit back: %v", err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("A→B→A start: %v", err)
+	}
+}
+
+// TestStartPropagationSkipsStaleEpic (F-0318 crit. 6): a child's start pulls
+// its ready epic along (propagateStartToAncestors) — never one whose approval
+// went stale, or the propagation would be a way around the start gate.
+func TestStartPropagationSkipsStaleEpic(t *testing.T) {
+	repoDir, projDir := approvedWithPlan(t)
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", approvedSpecA+"\nCritério novo.\n"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0002", Title: "Filha", State: domain.StateApproved, Parent: "F-0001"}); err != nil {
+		t.Fatal(err)
+	}
+	writeFeatureDoc(t, repoDir, "F-0002", "plan.md", "# Plano\n\n## Tarefas\n\nPlano real da filha.\n")
+	commitBackend(t, repoDir)
+
+	out, err := TransitionFeature(repoDir, projDir, "F-0002", domain.ActionStart, "", "", nil)
+	if err != nil {
+		t.Fatalf("child start: %v", err)
+	}
+	if len(out.Propagated) != 0 {
+		t.Fatalf("propagated = %v, want the stale epic left approved", out.Propagated)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateApproved {
+		t.Fatalf("epic state = %s, want approved", f.State)
 	}
 }

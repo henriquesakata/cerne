@@ -13,6 +13,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/telemetry"
@@ -41,6 +42,10 @@ type TransitionOutcome struct {
 	// approve event; "" for every other action.
 	Bar string
 }
+
+// ErrApprovalStale is the start refusal for an approved feature whose spec
+// differs from the version its last approve accepted (F-0318).
+var ErrApprovalStale = errors.New("spec changed since approval")
 
 // eventTypes maps each lifecycle action to the event type it appends.
 var eventTypes = map[domain.Action]string{
@@ -118,6 +123,15 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				return "", fmt.Errorf("feature %s (--by) not found in backend", by)
 			} else if err != nil {
 				return "", err
+			}
+		}
+
+		// Stale-approval gate (F-0318): the spec to implement is the one a human
+		// approved. Refused before the parallel guard and any write, so a refused
+		// start opens no work; --force does not cross it.
+		if action == domain.ActionStart {
+			if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+				return "", fmt.Errorf("%w: %s — a human re-approves it with 'cerne feature approve %s' (or 'cerne feature revert %s' sends it back to the Backlog)", ErrApprovalStale, id, id, id)
 			}
 		}
 
@@ -357,6 +371,9 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 		}
 		if err := domain.CheckGate(parent.ID, domain.ActionStart, docs); err != nil {
 			break // epic not ready (no real plan): don't force it, leave it to lint
+		}
+		if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, parent); stale {
+			break // the start gate refuses a stale approval (F-0318): so does this
 		}
 		newState, err := domain.Transition(parent.State, domain.ActionStart)
 		if err != nil {
