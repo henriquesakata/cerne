@@ -20,6 +20,21 @@ func CacheDir(projectID string) (string, error) {
 	return filepath.Join(root, "cerne", projectID), nil
 }
 
+// ConfigDir returns the user-level cerne config directory, shared by every
+// project and process of this user: <os.UserConfigDir()>/cerne. The env var
+// CERNE_CONFIG_DIR, when set, replaces it whole so tests stay hermetic. It
+// holds global state such as the model catalog (F-0311).
+func ConfigDir() (string, error) {
+	if dir := os.Getenv("CERNE_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
+	root, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "cerne"), nil
+}
+
 // IndexPath returns the project's local search index database path:
 // <CacheDir(projectID)>/index.db — a sibling of the repo/ clone, never
 // inside it, so the index is rebuildable without dirtying the backend.
