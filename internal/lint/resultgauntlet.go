@@ -18,6 +18,11 @@ import (
 // (F-0272) set the pattern, and flagging pre-convention history is noise.
 var resultGauntletSince = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 
+// resultGauntletStrictSince is the cutoff of the content reader (F-0304):
+// features completed before it also pass on the legacy per-line predicate,
+// since barra and a quote in every round are stricter than what it demanded.
+var resultGauntletStrictSince = time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+
 var (
 	gauntletHeadingRe = regexp.MustCompile(`(?m)^\s*##\s+Gauntlet\s*$`)
 	nextHeadingRe     = regexp.MustCompile(`(?m)^\s*##\s`)
@@ -50,11 +55,12 @@ func gauntletSection(result []byte) (string, bool) {
 	return string(body), true
 }
 
-// gauntletRecorded reports whether the section carries at least one cited
+// legacyGauntletRecorded is the pre-F-0304 per-line predicate, kept verbatim
+// for features completed before resultGauntletStrictSince. It reports whether the section carries at least one cited
 // verdict — the verdict word and the quote on the same line, so a stray quote
 // elsewhere in the section cannot vouch for an unquoted verdict — or a
 // recorded exemption.
-func gauntletRecorded(section string) bool {
+func legacyGauntletRecorded(section string) bool {
 	if exemptionRe.MatchString(section) {
 		return true
 	}
@@ -88,7 +94,8 @@ func resultGauntletFindings(repoDir string, features []store.Feature, events []d
 		section, has := gauntletSection(result)
 		detail := "sem seção \"## Gauntlet\""
 		if has {
-			if detail = parseGauntlet(section).problem(); detail == "" {
+			detail = parseGauntlet(section).problem()
+			if detail == "" || (!completedAfter(events, f.ID, resultGauntletStrictSince) && legacyGauntletRecorded(section)) {
 				continue
 			}
 		}

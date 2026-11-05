@@ -203,3 +203,48 @@ func TestGauntletProblemOrder(t *testing.T) {
 		t.Fatalf("bar problem must not mention rounds: %q", got)
 	}
 }
+
+// Criterion 7: grandfathering through the strict cutoff.
+func TestGauntletGrandfather(t *testing.T) {
+	before := resultGauntletStrictSince.Add(-24 * time.Hour)
+	after := resultGauntletStrictSince.Add(24 * time.Hour)
+	noBar := "## Gauntlet\nRodada 1 \u2014 **vit\u00f3ria**: \"cita\"\n"
+	noBarNFD := "## Gauntlet\nRodada 1 \u2014 vito\u0301ria: \u201ccita\u201d\n"
+	noRoundBar := "## Gauntlet\n- **vit\u00f3ria** \u2014 juiz: \"cita\"\n"
+	cases := []struct {
+		name   string
+		at     time.Time
+		result string
+		want   string
+	}{
+		{"legacy-only record before cutoff", before, noBar, ""},
+		{"legacy-only nfd before cutoff", before, noBarNFD, ""},
+		{"legacy-only implicit round before cutoff", before, noRoundBar, ""},
+		{"legacy-only record after cutoff", after, noBar, `sem linha "Barra:"`},
+		{"legacy-only nfd after cutoff", after, noBarNFD, `sem linha "Barra:"`},
+		{"legacy-only implicit round after cutoff", after, noRoundBar, `sem linha "Barra:"`},
+		{"before cutoff, legacy fails too", before, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vit\u00f3ria\n", "rodada 1 sem citação do juiz"},
+		{"complete record after cutoff", after, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vit\u00f3ria: \"cita\"\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			f := store.Feature{ID: "F-0001", Title: "t", State: domain.StateImplemented}
+			if err := store.SaveFeature(dir, f); err != nil {
+				t.Fatal(err)
+			}
+			writeDoc(t, dir, "content/features/F-0001/result.md", tc.result)
+			events := []domain.Event{{EntityID: "F-0001", Type: "feature.completed", At: tc.at}}
+			got := resultGauntletFindings(dir, []store.Feature{f}, events)
+			if tc.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("want clean, got %v", got)
+				}
+				return
+			}
+			if len(got) != 1 || !strings.Contains(got[0].Detail, tc.want) {
+				t.Fatalf("want finding with %q, got %v", tc.want, got)
+			}
+		})
+	}
+}
