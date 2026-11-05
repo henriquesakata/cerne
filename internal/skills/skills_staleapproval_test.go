@@ -25,4 +25,17 @@ func TestCerneAuthoringDocumentsStaleApproval(t *testing.T) {
 	if strings.Contains(c, "Refused past `candidate`: an approved spec changes on the feature page") {
 		t.Error("skill still says feature spec refuses an approved feature")
 	}
+	// The normal path is the authoring loop; the Backlog chat is not presented
+	// as one (it reaches an approved spec only from a refine conversation that
+	// already existed).
+	if !strings.Contains(c, "edit `.docs/current/features/F-NNNN-<slug>/spec.md` and `cerne push`") {
+		t.Error("skill does not name .docs/ + cerne push as the normal path for an approved spec")
+	}
+	if strings.Contains(c, "the feature page, the Backlog chat) — no revert") {
+		t.Error("skill presents the Backlog chat as a normal path for an approved spec")
+	}
+	// Criterion 14: an approval from before F-0318 records its baseline.
+	if !strings.Contains(c, "records the current spec as its baseline") {
+		t.Error("skill does not say a legacy approval records its baseline on the next approve")
+	}
 }
