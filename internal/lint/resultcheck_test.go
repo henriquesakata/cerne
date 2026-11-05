@@ -138,7 +138,8 @@ func TestCheckResultRefusesPlaceholders(t *testing.T) {
 
 // Every "## Gauntlet" section is read and one complete record is enough: a
 // template copy or a narrative section above the real record must not hide it
-// (critic F-0303 A2). With none complete, the first section's problem is told.
+// (critic F-0303 A2). With none complete, the last section's problem is told:
+// the template puts the record last, and copies or narrative sit above it.
 func TestCheckResultReadsEveryGauntletSection(t *testing.T) {
 	const cites = "critério 1 e critério 2\n\n"
 	codeCopy := "## O que mudou\n\n```markdown\n## Gauntlet\n<!-- guia -->\n```\n\n"
@@ -153,10 +154,10 @@ func TestCheckResultReadsEveryGauntletSection(t *testing.T) {
 			}
 		})
 	}
-	dir, f := writeResultFixture(t, domain.StateInDevelopment, checkSpec, cites+"## Gauntlet\nRodada 1 — vitória: \"x\"\n\n## Gauntlet\nBarra: R-0008\n")
+	dir, f := writeResultFixture(t, domain.StateInDevelopment, checkSpec, cites+"## O que mudou\n\n```\n## Gauntlet\n```\n\n## Gauntlet\nBarra: R-0008\nRodada 1 — vitória\n")
 	got := CheckResult(dir, f)
-	if len(got) != 1 || !strings.Contains(got[0].Detail, `sem linha "Barra:"`) {
-		t.Fatalf("want the first section's problem, got %+v", got)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "rodada 1 sem citação do juiz") {
+		t.Fatalf("want the last section's problem (the record, not the copy above it), got %+v", got)
 	}
 }
 

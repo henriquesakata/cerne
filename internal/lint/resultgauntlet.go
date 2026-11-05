@@ -123,16 +123,15 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	}
 	// Every section is read and one complete record is enough: a template
 	// copy or a narrative section above the record must not hide it. With none
-	// complete, the first section's problem is the one told.
+	// complete, the last section's problem is told — the template puts the
+	// record last, and copies or narrative sit above it.
 	detail := "sem seção \"## Gauntlet\""
-	for i, section := range gauntletSections(stripHTMLComments(result)) {
+	for _, section := range gauntletSections(stripHTMLComments(result)) {
 		p := parseGauntlet(section).problem()
 		if p == "" || (legacy && legacyGauntletRecorded(section)) {
 			return nil
 		}
-		if i == 0 {
-			detail = p
-		}
+		detail = p
 	}
 	return []Finding{{
 		Rule:   RuleResultMissingGauntlet,
