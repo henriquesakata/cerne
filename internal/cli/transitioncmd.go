@@ -151,14 +151,21 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	}
 	// Approving a feature scaffolds its plan stub; starting scaffolds its result
 	// stub: point the author at the doc the next gate will require. A
-	// re-approval (F-0318) reopens the start instead.
-	switch {
-	case action == domain.ActionApprove && out.Baseline:
-		fmt.Fprintf(cmd.OutOrStdout(), "Approval baseline recorded: the current spec is now the approved version — 'cerne feature start %s' is open again.\n", id)
-	case action == domain.ActionApprove && out.From == domain.StateApproved:
-		fmt.Fprintf(cmd.OutOrStdout(), "Approval renewed: the current spec is now the approved version — 'cerne feature start %s' is open again.\n", id)
-	case action == domain.ActionApprove:
-		fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
+	// re-approval or a baseline record (F-0318) says so, and says the start is
+	// open only when its document gate would pass.
+	if action == domain.ActionApprove {
+		switch {
+		case out.Baseline:
+			fmt.Fprintln(cmd.OutOrStdout(), "Approval baseline recorded: the current spec is now the approved version.")
+		case out.From == domain.StateApproved:
+			fmt.Fprintln(cmd.OutOrStdout(), "Approval renewed: the current spec is now the approved version.")
+		}
+		docs, err := app.FeatureDocSet(ctx.repoDir, id)
+		if out.From == domain.StateApproved && err == nil && domain.CheckGate(id, domain.ActionStart, docs) == nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "Next step: 'cerne feature start %s' is open again.\n", id)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
+		}
 	}
 	if action == domain.ActionStart {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: when done, fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'.\n", id, id)

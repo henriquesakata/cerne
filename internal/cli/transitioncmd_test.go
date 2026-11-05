@@ -554,10 +554,44 @@ func TestReapproveIsHumanGated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("human re-approve: %v\n%s", err, out)
 	}
-	for _, want := range []string{id + ": approved → approved", "Approval renewed", "cerne feature start " + id} {
+	for _, want := range []string{id + ": approved → approved", "Approval renewed: the current spec is now the approved version."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("re-approve output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestReapproveNextStepIsTruthful (F-0318 crit. 7): after a re-approval the
+// hint only says start is open when the start gate would pass — with the plan
+// still the stub it keeps pointing at the plan.
+func TestReapproveNextStepIsTruthful(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v\n%s", err, out)
+	}
+	reapprove := func(body string) string {
+		t.Helper()
+		writeDoc(t, repoDir, id, "spec.md", realDoc(id, body))
+		commitBackend(t, repoDir)
+		out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+		if err != nil {
+			t.Fatalf("re-approve: %v\n%s", err, out)
+		}
+		return out
+	}
+
+	out := reapprove("Problema real, versão B.")
+	if !strings.Contains(out, "fill in the plan") || strings.Contains(out, "is open again") {
+		t.Fatalf("stub plan: want the plan hint and no 'start is open':\n%s", out)
+	}
+
+	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Plano real."))
+	out = reapprove("Problema real, versão C.")
+	if !strings.Contains(out, "'cerne feature start "+id+"' is open again") || strings.Contains(out, "fill in the plan") {
+		t.Fatalf("real plan: want 'start is open' and no plan hint:\n%s", out)
 	}
 }
 
@@ -582,7 +616,7 @@ func TestApproveRecordsBaselineCLI(t *testing.T) {
 		t.Fatalf("check (%v) does not report an approvable baseline:\n%s", err, out)
 	}
 	out, err = execCerne(t, "feature", "approve", id, "--dir", projDir)
-	if err != nil || !strings.Contains(out, "Approval baseline recorded: the current spec is now the approved version") {
+	if err != nil || !strings.Contains(out, "Approval baseline recorded: the current spec is now the approved version.") || !strings.Contains(out, "fill in the plan") {
 		t.Fatalf("baseline approve (%v):\n%s", err, out)
 	}
 	if _, err := os.Stat(store.ApprovedSpecPath(repoDir, id)); err != nil {
