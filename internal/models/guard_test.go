@@ -16,7 +16,7 @@ var modelID = regexp.MustCompile(`\b(claude-[a-z]+-\d|claude-\d|gpt-\d|gemini-\d
 
 // TestNoLiteralModelIDsOutsideCatalog: criterion 1 — every surface reads the
 // catalog; only the embedded baseline may name a model. Scans the Go tree and
-// the UI sources (tests and the built dist excluded).
+// the UI sources (tests, testdata fixtures and the built dist excluded).
 func TestNoLiteralModelIDsOutsideCatalog(t *testing.T) {
 	roots := []string{"..", "../../cmd", "../../ui/src"}
 	var hits []string
@@ -27,7 +27,7 @@ func TestNoLiteralModelIDsOutsideCatalog(t *testing.T) {
 			}
 			name := d.Name()
 			if d.IsDir() {
-				if name == "node_modules" || name == "dist" || path == filepath.Join("..", "models") {
+				if name == "node_modules" || name == "dist" || name == "testdata" || path == filepath.Join("..", "models") {
 					return filepath.SkipDir
 				}
 				return nil
