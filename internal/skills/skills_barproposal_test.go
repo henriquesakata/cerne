@@ -16,6 +16,7 @@ func TestCerneAuthoringBarIsAProposal(t *testing.T) {
 		"the human's approve is its acceptance",
 		"cerne feature approve F-NNNN --check",
 		"spec-missing-bar",
+		"fix the hard impediments it lists; leave open clarifications for the human, with the approve request",
 	} {
 		if !strings.Contains(c, want) {
 			t.Errorf("skill missing %q", want)
@@ -24,6 +25,8 @@ func TestCerneAuthoringBarIsAProposal(t *testing.T) {
 	for _, gone := range []string{
 		"needs the human's explicit acceptance before it enters the spec",
 		"quote the human's confirming words",
+		"until it reports approvable",
+		"getting a clean `cerne feature approve F-NNNN --check`",
 	} {
 		if strings.Contains(c, gone) {
 			t.Errorf("skill still carries the old protocol %q", gone)

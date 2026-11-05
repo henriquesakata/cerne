@@ -27,6 +27,12 @@ func TestHookLifecycleReminderOnFeatureNew(t *testing.T) {
 	if check < 0 || ask < 0 || check > ask {
 		t.Fatalf("reminder does not send the agent to --check before asking a human:\n%s", out)
 	}
+	// Open clarifications are the human's (F-0175): the agent fixes only the
+	// hard impediments.
+	if !strings.Contains(out, "fix the hard impediments it lists; leave open clarifications for the human, with the approve request") ||
+		strings.Contains(out, "until it reports approvable") {
+		t.Fatalf("reminder does not leave open clarifications to the human:\n%s", out)
+	}
 }
 
 // TestHookLifecycleReminderOnFeatureStart (F-0170 crit. 2): a confirmed
