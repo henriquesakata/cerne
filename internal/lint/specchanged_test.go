@@ -137,7 +137,8 @@ func TestSpecChangedCandidateUnaffected(t *testing.T) {
 }
 
 // TestSpecChangedFindings pins the rule's scope and its way out: only features
-// approved right now, and the detail names the re-approve and the revert.
+// approved right now, and the detail — English, like the neighbouring rules
+// (F-0124) — names the blocked start, the re-approve and the revert.
 func TestSpecChangedFindings(t *testing.T) {
 	repoDir := t.TempDir()
 	writeSpecs(t, repoDir, "F-0001", "A\n", "B\n")
@@ -153,7 +154,7 @@ func TestSpecChangedFindings(t *testing.T) {
 	if len(got) != 1 || got[0].Entity != "F-0001" || got[0].Rule != RuleSpecChangedAfterApproval {
 		t.Fatalf("findings = %+v, want a single spec-changed-after-approval on F-0001", got)
 	}
-	for _, cmd := range []string{"cerne feature approve F-0001", "cerne feature revert F-0001"} {
+	for _, cmd := range []string{"spec changed since its approval", "start is blocked", "cerne feature approve F-0001", "cerne feature revert F-0001"} {
 		if !strings.Contains(got[0].Detail, cmd) {
 			t.Errorf("detail %q does not name %q", got[0].Detail, cmd)
 		}

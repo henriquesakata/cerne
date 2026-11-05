@@ -78,7 +78,7 @@ func specChangedFindings(repoDir string, features []store.Feature) []Finding {
 			Rule:   RuleSpecChangedAfterApproval,
 			Entity: f.ID,
 			File:   "content/features/" + f.ID + "/spec.md",
-			Detail: fmt.Sprintf("spec editada depois da aprovação (%s) — o start fica bloqueado até um humano reaprovar com 'cerne feature approve %s', ou devolva ao backlog com 'cerne feature revert %s'", f.Title, f.ID, f.ID),
+			Detail: fmt.Sprintf("spec changed since its approval (%s) — start is blocked until a human re-approves it with 'cerne feature approve %s', or 'cerne feature revert %s' sends it back to the Backlog", f.Title, f.ID, f.ID),
 		})
 	}
 	return out
