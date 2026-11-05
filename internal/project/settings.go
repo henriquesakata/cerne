@@ -221,11 +221,12 @@ func editTOMLFile(path, table, key string, value any) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
-	path, mode, err := writeTarget(path)
+	// Write to the symlink's target; messages keep the path the user gave.
+	target, mode, err := writeTarget(path)
 	if err != nil {
 		return false, err
 	}
-	lock := path + ".lock"
+	lock := target + ".lock"
 	deadline := time.Now().Add(configLockTimeout)
 	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	for errors.Is(err, fs.ErrExist) && time.Now().Before(deadline) {
@@ -249,7 +250,7 @@ func editTOMLFile(path, table, key string, value any) (bool, error) {
 		return false, err
 	}
 
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(target)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return false, err
 	}
@@ -266,7 +267,7 @@ func editTOMLFile(path, table, key string, value any) (bool, error) {
 	if err := f.Close(); err != nil {
 		return false, err
 	}
-	if err := os.Rename(lock, path); err != nil {
+	if err := os.Rename(lock, target); err != nil {
 		return false, err
 	}
 	renamed = true

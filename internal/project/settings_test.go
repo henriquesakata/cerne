@@ -417,8 +417,8 @@ func TestConfigWritersRefuseAHeldLock(t *testing.T) {
 		"unset":    func() error { return UnsetSetting(projDir, "graph.enabled", ScopeProject) },
 		"llm mode": func() error { return SetLLMMode(projDir, "claude-cli") },
 	} {
-		if err := write(); !errors.Is(err, ErrConfigBusy) {
-			t.Errorf("%s under a held lock: err = %v, want ErrConfigBusy", name, err)
+		if err := write(); !errors.Is(err, ErrConfigBusy) || !strings.HasPrefix(err.Error(), filepath.Dir(host)) && !strings.HasPrefix(err.Error(), projDir) {
+			t.Errorf("%s under a held lock: err = %v, want ErrConfigBusy naming the given path", name, err)
 		}
 	}
 	for p, want := range before {
@@ -434,8 +434,10 @@ func TestConfigWritersRefuseAHeldLock(t *testing.T) {
 	if err := os.WriteFile(host, []byte("graph.enabled = true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetSetting(projDir, "graph.enabled", ScopeHost, "false"); !errors.Is(err, ErrConfigLayout) {
-		t.Fatalf("err = %v, want ErrConfigLayout", err)
+	// Messages name the path the user knows, not its symlink-resolved form
+	// (t.TempDir sits under /var -> /private/var on macOS).
+	if err := SetSetting(projDir, "graph.enabled", ScopeHost, "false"); !errors.Is(err, ErrConfigLayout) || !strings.HasPrefix(err.Error(), host+": ") {
+		t.Fatalf("err = %v, want ErrConfigLayout naming %s", err, host)
 	}
 	if _, err := os.Stat(host + ".lock"); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("refused write left its lock behind (%v)", err)
