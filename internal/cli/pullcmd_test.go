@@ -645,8 +645,23 @@ func TestPullAndErrataMessagesNameRealPaths(t *testing.T) {
 		t.Fatalf("pull --scope: %v\n%s", err, out)
 	}
 	_, errata := lint.Correction(domain.StateDone, "<id>", "result")
-	if !strings.Contains(out, "'"+errata+"'") || !strings.Contains(out, "'cerne show <id>'") || strings.Contains(out, "'cerne errata") {
-		t.Fatalf("pull hint should name %q and 'cerne show <id>', never 'cerne errata':\n%s", errata, out)
+	_, amend := lint.Correction(domain.StateImplemented, "<id>", "result")
+	for _, want := range []string{"'" + errata + "'", "'" + amend + "'", "'cerne show <id>'"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("pull hint should name %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "'cerne errata") || strings.Contains(out, "matched no feature") {
+		t.Fatalf("pull hint wrong for a scope that matched features:\n%s", out)
+	}
+
+	// A module no feature has: say so, instead of blaming implemented features.
+	out, err = execCerne(t, "pull", "--scope", "zzz", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull --scope zzz: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "the scope matched no feature") || strings.Contains(out, "implemented features") {
+		t.Fatalf("no-match scope message wrong:\n%s", out)
 	}
 
 	out, err = execCerne(t, "feature", "errata", "F-0001", "Correção.", "--dir", projDir)

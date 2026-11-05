@@ -322,7 +322,19 @@ func TestMessagesNameExistingCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pull: %v\n%s", err, out)
 	}
-	add("pull", out)
+	add("pull, no feature in module", out)
+	// A module that has features, all closed: the other branch of the hint.
+	f, _ := store.LoadFeature(repoDir, ids[domain.StateImplemented])
+	f.Module = "finance"
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	out, err = execCerne(t, "pull", "--scope", "finance", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	add("pull, closed features", out)
 	out, err = execCerne(t, "feature", "errata", ids[domain.StateDone], "nota", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("errata: %v\n%s", err, out)
