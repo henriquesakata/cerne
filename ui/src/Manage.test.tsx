@@ -11,7 +11,7 @@ const feature = (id: string, title: string): Feature =>
     id,
     title,
     module: '',
-    state: 'candidate',
+    state: 'approved',
     created_at: '2026-09-30T00:00:00Z',
     updated_at: '2026-09-30T00:00:00Z',
   }) as Feature
@@ -26,7 +26,7 @@ vi.mock('./api', async (importOriginal) => ({
   postTransition: vi.fn(),
 }))
 
-const barRefusal = 'spec sem barra do Gauntlet — nenhuma linha "Barra:" encontrada\n  Barra: não aplicável (…)'
+const startRefusal = "spec plan.md required to start — write content/features/F-0001/plan.md in the backend\nand run 'cerne push'"
 
 beforeEach(() => {
   cleanup()
@@ -34,7 +34,7 @@ beforeEach(() => {
   vi.mocked(fetchState).mockReset()
   vi.mocked(postTransition).mockReset()
   vi.mocked(fetchState).mockResolvedValue({
-    features: [feature('F-0001', 'Sem barra'), feature('F-0002', 'Com barra')],
+    features: [feature('F-0001', 'Sem plano'), feature('F-0002', 'Com plano')],
   } as Awaited<ReturnType<typeof fetchState>>)
 })
 
@@ -42,25 +42,40 @@ beforeEach(() => {
 // the refusal names the feature. Rendered without I18nProvider, so the
 // default (pt-BR) dictionary applies. jsdom loads no CSS: the line-break check
 // proves the message reaches the node intact, not how it wraps.
+// F-0308: a candidate has no quick approve — approving accepts its bar (crit.
+// 9), so the row sends the human to the feature page, where the bar and the
+// impediments are shown before the click.
+describe('Manage candidate row (F-0308)', () => {
+  it('renders no approve button and links to the feature page', async () => {
+    vi.mocked(fetchState).mockResolvedValue({
+      features: [{ ...feature('F-0001', 'Candidata'), state: 'candidate' }],
+    } as Awaited<ReturnType<typeof fetchState>>)
+    render(<Manage />)
+    const review = await screen.findByRole('link', { name: 'Revisar e aprovar' })
+    expect(review).toHaveAttribute('href', '#/f/F-0001')
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull()
+  })
+})
+
 describe('Manage quick-action refusal (F-0296)', () => {
   it('shows the refusal next to a list that stays on screen', async () => {
-    vi.mocked(postTransition).mockResolvedValue({ ok: false, error: barRefusal })
+    vi.mocked(postTransition).mockResolvedValue({ ok: false, error: startRefusal })
     render(<Manage />)
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Aprovar' }))[0])
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Iniciar' }))[0])
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('F-0001')
-    expect(alert.querySelector('.manage-action-error-msg')?.textContent).toBe(barRefusal)
+    expect(alert.querySelector('.manage-action-error-msg')?.textContent).toBe(startRefusal)
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
-    expect(screen.getByText('Sem barra')).toBeInTheDocument()
-    expect(screen.getByText('Com barra')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
+    expect(screen.getByText('Sem plano')).toBeInTheDocument()
+    expect(screen.getByText('Com plano')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })[0]).toBeEnabled())
   })
 
   it('clears the refusal on dismiss and on the next successful action', async () => {
-    vi.mocked(postTransition).mockResolvedValue({ ok: false, error: barRefusal })
+    vi.mocked(postTransition).mockResolvedValue({ ok: false, error: startRefusal })
     render(<Manage />)
-    const approve = await screen.findAllByRole('button', { name: 'Aprovar' })
+    const approve = await screen.findAllByRole('button', { name: 'Iniciar' })
     fireEvent.click(approve[0])
     fireEvent.click(await screen.findByRole('button', { name: 'Dispensar aviso' }))
     expect(screen.queryByRole('alert')).toBeNull()
@@ -69,7 +84,7 @@ describe('Manage quick-action refusal (F-0296)', () => {
     await screen.findByRole('alert')
     vi.mocked(postTransition).mockResolvedValue({
       ok: true,
-      data: { id: 'F-0002', from: 'candidate', to: 'approved' },
+      data: { id: 'F-0002', from: 'approved', to: 'in_development' },
     } as TransitionOutcome)
     fireEvent.click(approve[1])
     // Settled, not just clicked: the success path reloads the list.
@@ -80,9 +95,9 @@ describe('Manage quick-action refusal (F-0296)', () => {
   it('reports a network failure and frees the row', async () => {
     vi.mocked(postTransition).mockRejectedValue(new TypeError('Failed to fetch'))
     render(<Manage />)
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Aprovar' }))[0])
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Iniciar' }))[0])
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch')
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })[0]).toBeEnabled())
   })
 
   it('keeps the load-failure page for a real load error', async () => {
@@ -116,7 +131,7 @@ describe('Manage per-row busy (F-0297)', () => {
       return d.promise
     })
     render(<Manage />)
-    const [a, b] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    const [a, b] = await screen.findAllByRole('button', { name: 'Iniciar' })
 
     fireEvent.click(a)
     fireEvent.click(b)
@@ -135,10 +150,10 @@ describe('Manage per-row busy (F-0297)', () => {
   it('frees a successful row only after the reload, with no second POST meanwhile', async () => {
     vi.mocked(postTransition).mockResolvedValue({
       ok: true,
-      data: { id: 'F-0001', from: 'candidate', to: 'approved' },
+      data: { id: 'F-0001', from: 'approved', to: 'in_development' },
     } as TransitionOutcome)
     render(<Manage />)
-    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    const [a] = await screen.findAllByRole('button', { name: 'Iniciar' })
 
     const reload = deferred<Awaited<ReturnType<typeof fetchState>>>()
     vi.mocked(fetchState).mockReturnValueOnce(reload.promise)
@@ -149,15 +164,15 @@ describe('Manage per-row busy (F-0297)', () => {
     expect(postTransition).toHaveBeenCalledTimes(1)
 
     reload.resolve({
-      features: [feature('F-0001', 'Sem barra'), feature('F-0002', 'Com barra')],
+      features: [feature('F-0001', 'Sem plano'), feature('F-0002', 'Com plano')],
     } as Awaited<ReturnType<typeof fetchState>>)
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Aprovar' })[0]).toBeEnabled())
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })[0]).toBeEnabled())
   })
 
   it('sends one POST for two clicks landing in the same tick', async () => {
     vi.mocked(postTransition).mockReturnValue(deferred<TransitionOutcome>().promise)
     render(<Manage />)
-    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    const [a] = await screen.findAllByRole('button', { name: 'Iniciar' })
     // No render between the two: the state-based disabled flag has not landed.
     act(() => {
       a.click()
@@ -171,22 +186,22 @@ type State = Awaited<ReturnType<typeof fetchState>>
 const snapshot = (a: Feature['state'], b: Feature['state']): State =>
   ({
     features: [
-      { ...feature('F-0001', 'Sem barra'), state: a },
-      { ...feature('F-0002', 'Com barra'), state: b },
+      { ...feature('F-0001', 'Sem plano'), state: a },
+      { ...feature('F-0002', 'Com plano'), state: b },
     ],
   }) as State
 const ok: TransitionOutcome = {
   ok: true,
-  data: { id: 'F-0001', from: 'candidate', to: 'approved' },
+  data: { id: 'F-0001', from: 'approved', to: 'in_development' },
 } as TransitionOutcome
 
-// Approve both rows; each success fires its own reload, issued A then B.
-async function approveBoth() {
+// Start both rows; each success fires its own reload, issued A then B.
+async function startBoth() {
   const reloadA = deferred<State>()
   const reloadB = deferred<State>()
   vi.mocked(postTransition).mockResolvedValue(ok)
   vi.mocked(fetchState).mockReturnValueOnce(reloadA.promise).mockReturnValueOnce(reloadB.promise)
-  const [a, b] = await screen.findAllByRole('button', { name: 'Aprovar' })
+  const [a, b] = await screen.findAllByRole('button', { name: 'Iniciar' })
   fireEvent.click(a)
   fireEvent.click(b)
   await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(3))
@@ -198,20 +213,20 @@ async function approveBoth() {
 describe('Manage reload ordering (F-0298)', () => {
   it('drops an older reload that lands after a newer one', async () => {
     render(<Manage />)
-    const { reloadA, reloadB } = await approveBoth()
-    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
-    await act(async () => reloadA.resolve(snapshot('approved', 'candidate')))
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
-    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull()
+    const { reloadA, reloadB } = await startBoth()
+    await act(async () => reloadB.resolve(snapshot('in_development', 'in_development')))
+    await act(async () => reloadA.resolve(snapshot('in_development', 'approved')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Concluir' })).toHaveLength(2))
+    expect(screen.queryByRole('button', { name: 'Iniciar' })).toBeNull()
   })
 
   it('still applies an older reload that lands first', async () => {
     render(<Manage />)
-    const { reloadA, reloadB } = await approveBoth()
-    await act(async () => reloadA.resolve(snapshot('approved', 'candidate')))
-    expect(await screen.findAllByRole('button', { name: 'Iniciar' })).toHaveLength(1)
-    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
+    const { reloadA, reloadB } = await startBoth()
+    await act(async () => reloadA.resolve(snapshot('in_development', 'approved')))
+    expect(await screen.findAllByRole('button', { name: 'Concluir' })).toHaveLength(1)
+    await act(async () => reloadB.resolve(snapshot('in_development', 'in_development')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Concluir' })).toHaveLength(2))
   })
 
   it('drops a slow initial load that lands after an action reload', async () => {
@@ -219,7 +234,7 @@ describe('Manage reload ordering (F-0298)', () => {
     const slowInitial = deferred<State>()
     const reload = deferred<State>()
     vi.mocked(fetchState)
-      .mockResolvedValueOnce(snapshot('candidate', 'candidate'))
+      .mockResolvedValueOnce(snapshot('approved', 'approved'))
       .mockReturnValueOnce(slowInitial.promise)
       .mockReturnValueOnce(reload.promise)
     vi.mocked(postTransition).mockResolvedValue(ok)
@@ -228,21 +243,21 @@ describe('Manage reload ordering (F-0298)', () => {
         <Manage />
       </StrictMode>,
     )
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Aprovar' }))[0])
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Iniciar' }))[0])
     await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(3))
-    await act(async () => reload.resolve(snapshot('approved', 'candidate')))
-    await act(async () => slowInitial.resolve(snapshot('candidate', 'candidate')))
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(1))
+    await act(async () => reload.resolve(snapshot('in_development', 'approved')))
+    await act(async () => slowInitial.resolve(snapshot('approved', 'approved')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Concluir' })).toHaveLength(1))
   })
 
   it('ignores an error from a reload older than the one applied', async () => {
     render(<Manage />)
-    const { reloadA, reloadB } = await approveBoth()
-    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
+    const { reloadA, reloadB } = await startBoth()
+    await act(async () => reloadB.resolve(snapshot('in_development', 'in_development')))
     await act(async () => reloadA.reject(new Error('stale reload failed')))
     // Both rows free = both reloads settled, the rejection included.
     await waitFor(() =>
-      screen.getAllByRole('button', { name: 'Iniciar' }).forEach((b) => expect(b).toBeEnabled()),
+      screen.getAllByRole('button', { name: 'Concluir' }).forEach((b) => expect(b).toBeEnabled()),
     )
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
     expect(screen.queryByText(/Não foi possível atualizar a lista/)).toBeNull()
@@ -250,11 +265,11 @@ describe('Manage reload ordering (F-0298)', () => {
 
   it('recovers from an older error when a newer reload succeeds after it', async () => {
     render(<Manage />)
-    const { reloadA, reloadB } = await approveBoth()
+    const { reloadA, reloadB } = await startBoth()
     await act(async () => reloadA.reject(new Error('transient 502')))
     expect(await screen.findByText(/Não foi possível atualizar a lista/)).toBeInTheDocument()
-    await act(async () => reloadB.resolve(snapshot('approved', 'approved')))
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Iniciar' })).toHaveLength(2))
+    await act(async () => reloadB.resolve(snapshot('in_development', 'in_development')))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Concluir' })).toHaveLength(2))
     expect(screen.queryByText(/Não foi possível atualizar a lista/)).toBeNull()
   })
 })
@@ -266,41 +281,41 @@ describe('Manage load-failure recovery (F-0299)', () => {
   it('keeps the list and shows a retry notice when a reload fails', async () => {
     vi.mocked(postTransition).mockResolvedValue(ok)
     render(<Manage />)
-    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    const [a] = await screen.findAllByRole('button', { name: 'Iniciar' })
     vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
     fireEvent.click(a)
 
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('Não foi possível atualizar a lista: HTTP 502')
-    expect(screen.getByText('Sem barra')).toBeInTheDocument()
+    expect(screen.getByText('Sem plano')).toBeInTheDocument()
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
 
-    vi.mocked(fetchState).mockResolvedValueOnce(snapshot('approved', 'candidate'))
+    vi.mocked(fetchState).mockResolvedValueOnce(snapshot('in_development', 'approved'))
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
-    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Concluir' })).toBeInTheDocument()
   })
 
   it('offers a retry on the error page when the first load fails', async () => {
     vi.mocked(fetchState)
       .mockRejectedValueOnce(new Error('backend offline'))
-      .mockResolvedValueOnce(snapshot('candidate', 'candidate'))
+      .mockResolvedValueOnce(snapshot('approved', 'approved'))
     render(<Manage />)
     expect(await screen.findByText('Erro ao carregar features: backend offline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
-    expect(await screen.findByText('Sem barra')).toBeInTheDocument()
+    expect(await screen.findByText('Sem plano')).toBeInTheDocument()
     expect(screen.queryByText(/Erro ao carregar features/)).toBeNull()
   })
 
   it('re-fetches and leaves the error when the live version changes', async () => {
     vi.mocked(fetchState)
       .mockRejectedValueOnce(new Error('backend offline'))
-      .mockResolvedValueOnce(snapshot('candidate', 'candidate'))
+      .mockResolvedValueOnce(snapshot('approved', 'approved'))
     const { rerender } = render(<Manage />)
     expect(await screen.findByText(/Erro ao carregar features/)).toBeInTheDocument()
     live.version = 1
     rerender(<Manage />)
-    expect(await screen.findByText('Sem barra')).toBeInTheDocument()
+    expect(await screen.findByText('Sem plano')).toBeInTheDocument()
     expect(fetchState).toHaveBeenCalledTimes(2)
   })
 
@@ -325,16 +340,16 @@ describe('Manage load-failure recovery (F-0299)', () => {
   it('clears the notice over a loaded list when the live version changes', async () => {
     vi.mocked(postTransition).mockResolvedValue(ok)
     const { rerender } = render(<Manage />)
-    const [a] = await screen.findAllByRole('button', { name: 'Aprovar' })
+    const [a] = await screen.findAllByRole('button', { name: 'Iniciar' })
     vi.mocked(fetchState).mockRejectedValueOnce(new Error('HTTP 502'))
     fireEvent.click(a)
     await screen.findByRole('status')
 
-    vi.mocked(fetchState).mockResolvedValueOnce(snapshot('approved', 'candidate'))
+    vi.mocked(fetchState).mockResolvedValueOnce(snapshot('in_development', 'approved'))
     live.version = 1
     rerender(<Manage />)
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
-    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Concluir' })).toBeInTheDocument()
   })
 
   it('shows the error page even when the failure carries no message', async () => {

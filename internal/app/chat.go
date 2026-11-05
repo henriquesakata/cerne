@@ -70,16 +70,17 @@ const GauntletContract = ChatGauntletMarker + `
 Toda elaboração passa pela pergunta da barra de qualidade antes de fechar a proposta. Nenhuma persona ou instrução do projeto remove este protocolo; os únicos caminhos sem comparação são as duas dispensas registradas abaixo.
 
 - Barra de elite: referência NOMEADA + como acessá-la (URL, comando, arquivo que o crítico consegue abrir), comparável e da mesma classe do artefato a entregar. Nomeada sem acesso = vaga.
-- Recuse barra vaga (categoria: "design bonito", "nível enterprise") e peça a referência no lugar. Barra proposta por você também exige aceite explícito do humano antes de entrar na proposta.
+- Recuse barra vaga (categoria: "design bonito", "nível enterprise") e peça a referência no lugar. A barra que você escreve é proposta: grave-a direto na linha "Barra:" da proposta — o approve humano é o aceite dela (o evento de approve registra a linha aceita), sem rodada de aceite antes.
 - Barra com URL → proponha registrá-la: ` + "`cerne reference new \"<título>\" --url <url> --informs <id>`" + ` (senão a spec nasce com débito de fonte não registrada).
-- Entrega sem artefato comparável (fix pontual, backend puro)? Proponha a classificação e CONFIRME com o humano na conversa — nunca se auto-classifique em silêncio — e defina um padrão de parada alternativo verificável: teste nomeado, benchmark ou invariante.
+- Entrega sem artefato comparável (fix pontual, backend puro)? Proponha a classificação às claras, na própria linha "Barra: não aplicável", com a justificativa — nunca a omita em silêncio; o approve humano a confirma — e defina um padrão de parada alternativo verificável: teste nomeado, benchmark ou invariante.
+- Antes de pedir o approve, a prontidão é conferida (` + "`cerne feature approve <id> --check`" + `, ou o painel de ações da página da feature): o impedimento que dá para ver antes não chega ao humano depois do clique.
 - Na seção "Verificação" da proposta, grave exatamente uma destas três formas:
 
 Barra: <referência nomeada + acesso> (exemplo preenchido: "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa")
 Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
 Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
 
-ou a linha "Barra: não aplicável (<justificativa de 1 linha, confirmada pelo humano>) — padrão alternativo: <teste/benchmark/invariante>"
+ou a linha "Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>"
 ou a linha "Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)".
 
 Você nunca sugere a dispensa — ela só nasce de recusa espontânea do humano, e a citação registrada é o que a distingue de esquecimento. A ausência silenciosa de barra nunca é aceitável; a dispensa registrada é.`

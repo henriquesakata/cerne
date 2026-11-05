@@ -42,7 +42,8 @@ func TestNext(t *testing.T) {
 	for _, want := range []string{
 		"IN PROGRESS (1) — finish",
 		"READY TO START (1) — run 'cerne feature start'",
-		"CANDIDATES (1) — write the spec",
+		// F-0308: rehearse with --check; the approve itself is a human act.
+		"CANDIDATES (1) — write the spec, run 'cerne feature approve <id> --check', then ask a human to approve (a human act)",
 		"DEBTS (cerne lint):",
 		"MISSING-GATE-DOC",
 	} {

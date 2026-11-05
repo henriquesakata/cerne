@@ -6,8 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 )
@@ -16,30 +14,12 @@ import (
 // names no Gauntlet bar (F-0545). It is enforced in the shared transition core,
 // so CLI and UI approve alike (F-0295), and is deliberately NOT bypassed by
 // --force: a silent absence of a bar is the exact failure this gate exists to stop.
-var ErrSpecMissingBar = errors.New("spec sem barra do Gauntlet")
-
-// The three literal forms a spec may carry (cerne-authoring skill, F-0270).
-// Accent alternations tolerate NFC, NFD (darwin paste) and the bare unaccented
-// spelling, mirroring the lint-side mention matching.
-var (
-	htmlCommentRe        = regexp.MustCompile(`(?s)<!--.*?-->`)
-	barLineRe            = regexp.MustCompile(`(?m)^\s*Barra:\s*(.*)$`)
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel\s*\(\s*[^)]+\)`)
-	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*[^)]+\)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel`)
-	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
-)
-
-const barForms = `a spec precisa de uma das três formas literais (seção ## Verificação):
-  Barra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>
-  Barra: não aplicável (<justificativa de 1 linha, confirmada pelo humano>) — padrão alternativo: <teste/benchmark/invariante>
-  Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)
-Protocolo Gauntlet: skill cerne-authoring — a barra é da mesma classe do que se entrega, e barra proposta pelo agente exige aceite humano explícito.`
+var ErrSpecMissingBar = errors.New("spec has no valid Gauntlet bar")
 
 // CheckSpecBar refuses when the feature's spec names no Gauntlet bar in one of
 // the three literal forms (F-0545 crit. 1). A missing spec passes — doc
-// presence is the document gate's concern. Guide comments in the template
-// contain the forms as examples, so HTML comments are stripped before scanning.
+// presence is the document gate's concern. The predicate is doccheck.SpecBar,
+// shared with the lint rule and the approve readiness (F-0308).
 func CheckSpecBar(repoDir, id string) error {
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -53,31 +33,10 @@ func CheckSpecBar(repoDir, id string) error {
 	if !doccheck.HasRealContent(data) {
 		return nil
 	}
-	body := htmlCommentRe.ReplaceAllString(string(data), "")
-	matches := barLineRe.FindAllStringSubmatch(body, -1)
-	if len(matches) == 0 {
-		return fmt.Errorf("%w — nenhuma linha \"Barra:\" encontrada; %s", ErrSpecMissingBar, barForms)
+	if _, err := doccheck.SpecBar(data); err != nil {
+		// One line (F-0308 crit. 11): the three literal forms are taught by the
+		// check, not repeated in every refusal.
+		return fmt.Errorf("%w: %v — run 'cerne feature approve %s --check' for the accepted forms", ErrSpecMissingBar, err, id)
 	}
-	// Any valid line satisfies the gate — a malformed leftover (e.g. template
-	// residue) must not veto a valid bar written further down. When none is
-	// valid, the first failure is the one reported, with its teaching message.
-	var firstInvalid error
-	for _, m := range matches {
-		value := strings.TrimSpace(m[1])
-		var err error
-		switch {
-		case value == "":
-			err = fmt.Errorf("%w — \"Barra:\" sem valor; %s", ErrSpecMissingBar, barForms)
-		case naoAplicavelPrefixRe.MatchString(value) && !naoAplicavelRe.MatchString(value):
-			err = fmt.Errorf("%w — \"Barra: não aplicável\" exige justificativa entre parênteses, confirmada pelo humano; %s", ErrSpecMissingBar, barForms)
-		case dispensadaPrefixRe.MatchString(value) && !dispensadaRe.MatchString(value):
-			err = fmt.Errorf("%w — \"Barra: dispensada por decisão humana\" exige a citação da fala entre parênteses; %s", ErrSpecMissingBar, barForms)
-		default:
-			return nil
-		}
-		if firstInvalid == nil {
-			firstInvalid = err
-		}
-	}
-	return firstInvalid
+	return nil
 }

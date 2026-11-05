@@ -257,6 +257,11 @@ type featureDetailResponse struct {
 	// PlanRoastRounds is the same list for the plan critiques (F-0275), kept
 	// separate so a plan round never reads as a spec round.
 	PlanRoastRounds []roastRound `json:"plan_roast_rounds"`
+	// ApproveReadiness lists what stops a candidate's approve, and Bar is the
+	// bar line the approve would accept (F-0308) — candidates only, so the page
+	// tells before the click; both omitted when empty.
+	ApproveReadiness []app.ApproveImpediment `json:"approve_readiness,omitempty"`
+	Bar              string                  `json:"bar,omitempty"`
 }
 
 type featureDocs struct {
@@ -382,7 +387,18 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds, PlanRoastRounds: planRounds})
+	var readiness []app.ApproveImpediment
+	var bar string
+	if f.State == domain.StateCandidate {
+		if readiness, err = app.ApproveReadiness(repoDir, id); err == nil {
+			bar, err = app.AcceptedBar(repoDir, id)
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

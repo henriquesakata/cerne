@@ -200,3 +200,16 @@ func TestBodyHasUnknownFieldRule(t *testing.T) {
 		}
 	}
 }
+
+// TestStubBarFormsNeedNoPriorConfirmation (F-0308): the "não aplicável"
+// justification is a one-line proposal the human approve confirms — the
+// template no longer asks for it to be confirmed beforehand.
+func TestStubBarFormsNeedNoPriorConfirmation(t *testing.T) {
+	s := spectmpl.Stub("t")
+	if !strings.Contains(s, "aplicável (<justificativa de 1 linha>)") {
+		t.Fatalf("stub lacks the one-line justification form:\n%s", s)
+	}
+	if strings.Contains(s, "justificativa confirmada") {
+		t.Fatalf("stub still asks for a confirmed justification:\n%s", s)
+	}
+}

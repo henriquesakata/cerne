@@ -21,11 +21,12 @@ const STATE_ORDER: FeatureState[] = [
 
 // The single no-form "advance" transition available from each state, if any.
 // Reject/supersede need a reason (and a successor), so they happen on the
-// feature page where that form already lives.
+// feature page where that form already lives. A candidate has none: approving
+// accepts its bar (F-0308 crit. 9), so it happens on the feature page, where
+// the bar and the impediments are shown before the click.
 const QUICK_ADVANCE: Partial<
-  Record<FeatureState, { action: TransitionAction }>
+  Record<FeatureState, { action: 'start' | 'complete' | 'accept' }>
 > = {
-  candidate: { action: 'approve' },
   approved: { action: 'start' },
   in_development: { action: 'complete' },
   // Accept é o gate humano (F-0131) — a UI é interação humana por definição.
@@ -140,8 +141,13 @@ export default function Manage() {
                   <div className="manage-actions">
                     {adv && (
                       <button disabled={busy.has(f.id)} onClick={() => quick(f, adv.action)}>
-                        {t.manage.quickActionLabels[adv.action as 'approve' | 'start' | 'complete' | 'accept']}
+                        {t.manage.quickActionLabels[adv.action]}
                       </button>
+                    )}
+                    {f.state === 'candidate' && (
+                      <a className="manage-review" href={`#/f/${encodeURIComponent(f.id)}`}>
+                        {t.manage.reviewAndApprove}
+                      </a>
                     )}
                     {closeable && (
                       <a className="manage-close" href={`#/f/${encodeURIComponent(f.id)}`}>
