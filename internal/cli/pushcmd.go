@@ -15,9 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newPushCmd() *cobra.Command {
@@ -77,7 +79,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if err := checkContextUntouched(docsDir, manifest); err != nil {
 		return err
 	}
-	docs, err := collectChangedDocs(docsDir, manifest)
+	docs, err := collectChangedDocs(ctx.repoDir, docsDir, manifest)
 	if err != nil {
 		return err
 	}
@@ -223,8 +225,12 @@ func checkContextUntouched(docsDir string, manifest map[string]string) error {
 // collectChangedDocs walks .docs/current/** and returns every tracked *.md
 // whose content no longer matches the docs.lock manifest, mapped back to its
 // backend path via the cerne_id frontmatter. Files in the manifest but
-// missing on disk are ignored (deletion is not a push operation).
-func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc, error) {
+// missing on disk are ignored (deletion is not a push operation). A changed
+// document of a feature past the live states — read in the cache clone at
+// repoDir — refuses the whole collection with app.ErrFeatureFrozen and the
+// state's path (F-0305): between `complete` and the next pull the docs are
+// still tracked, and push must not be the write that skips the boundary.
+func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]pushedDoc, error) {
 	currentDir := filepath.Join(docsDir, "current")
 	if _, err := os.Stat(currentDir); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -264,6 +270,18 @@ func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc
 		if err != nil {
 			return err
 		}
+		if strings.HasPrefix(rel, "current/features/") {
+			// ponytail: state read in the local cache clone before the push; its reconcile
+			// fetches inside the lock but does not re-check state, so a complete made
+			// elsewhere and not yet fetched slips through. Re-check there if that matters.
+			f, err := store.LoadFeature(repoDir, id)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if err == nil && !domain.TitleEditable(f.State) {
+				return frozenDocError(id, f.State, rel)
+			}
+		}
 		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: body, sum: sum})
 		return nil
 	})
@@ -271,6 +289,18 @@ func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc
 		return nil, err
 	}
 	return docs, nil
+}
+
+// frozenDocError is push's refusal of a changed .docs/<rel> of a closed
+// feature: the state's path (app.DocFixPath) plus how to unblock. The local
+// copy stays changed until deleted — pull keeps re-applying it as an unsent
+// edit — so the refusal says to delete it; an amend reads it first (its
+// frontmatter names the same cerne_id), so no edit is lost.
+func frozenDocError(id string, s domain.FeatureState, rel string) error {
+	local := ".docs/" + rel
+	fix := strings.Replace(app.DocFixPath(id, strings.TrimSuffix(path.Base(rel), ".md"), s), "<result.md>", local, 1)
+	return fmt.Errorf("%w: %s (%s), %s — %s, then delete the local copy %s — a closed feature's .docs edits are never sent",
+		app.ErrFeatureFrozen, id, s, rel, fix, local)
 }
 
 // acceptableNewDoc reports whether rel is a net-new plan.md/result.md authored

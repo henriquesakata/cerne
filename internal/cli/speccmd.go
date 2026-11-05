@@ -48,7 +48,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	f, err := store.LoadFeature(ctx.repoDir, id)
+	f, err := app.CheckDocWritable(ctx.repoDir, id, "spec") // a closed feature's documents are history (F-0305)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("feature %s not found in the backend", id)
@@ -78,6 +78,9 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
+		if _, err := app.CheckDocWritable(ctx.repoDir, id, "spec"); err != nil {
+			return "", err // closed while the provider was drafting
+		}
 		if err := app.WriteStampedDraft(specPath(ctx.repoDir, id), id, body); err != nil {
 			return "", err
 		}

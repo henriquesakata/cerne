@@ -147,6 +147,9 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 		result = nil // gate doc coverage is missing-gate-doc's job; here absence = zero evidence
 	}
 	mentions := resultMentions(stripHTMLComments(result))
+	for n := range resultMentions(errataText(repoDir, f)) { // the errata completes what the result lacks (F-0305)
+		mentions[n] = true
+	}
 	var missing []string
 	for _, n := range criteria {
 		if !mentions[n] {
@@ -164,8 +167,22 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 	}}
 }
 
-// CheckResult returns the result-record findings of ONE feature, ignoring its
-// state and the adoption cutoffs: result-missing-evidence and
+// errataText returns the feature's errata without HTML comments, for the
+// result presence rules (F-0305) — only once the feature is past the live
+// states: while live the result itself is the document to fix, and the
+// complete gate must not be opened by an erratum. Unreadable or absent errata
+// is no errata.
+func errataText(repoDir string, f store.Feature) []byte {
+	if domain.TitleEditable(f.State) {
+		return nil
+	}
+	er, _ := store.LoadErrata(repoDir, f.ID)
+	return stripHTMLComments([]byte(er))
+}
+
+// CheckResult returns the result-record findings of ONE feature, ignoring the
+// adoption cutoffs and its state — except that the errata counts only once the
+// feature is closed (errataText): result-missing-evidence and
 // result-missing-gauntlet, in RuleOrder. It reads only the strict Gauntlet
 // reader (no legacy tolerance) — the gate at `complete` (F-0303).
 func CheckResult(repoDir string, f store.Feature) []Finding {

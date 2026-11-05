@@ -26,6 +26,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newFeatureCapabilityCmd(&dir))
 	cmd.AddCommand(newFeatureRenameCmd(&dir))
 	cmd.AddCommand(newFeatureSpecCmd(&dir))
+	cmd.AddCommand(newFeatureAmendCmd(&dir))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
@@ -112,6 +113,49 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	return nil
+}
+
+func newFeatureAmendCmd(dir *string) *cobra.Command {
+	var file, reason string
+	cmd := &cobra.Command{
+		Use:   "amend <id>",
+		Short: "Replace the result of an implemented feature, with a reason (before the accept)",
+		Long: "Replaces the whole result.md of an IMPLEMENTED feature — the correction window between 'complete' and the " +
+			"human 'accept' (F-0305), which then reads the amended result. Start from the stored one: " +
+			"'cerne show <id> --doc result > result.md'. The new result must pass the result checks (evidence per " +
+			"criterion, Gauntlet record); the reason goes on the feature.doc_edited event. Only the result: spec and " +
+			"plan, and anything after the accept, are corrected with 'cerne feature errata'.",
+		Example: "  cerne feature amend F-0001 --file result.md --reason \"criterion 2 had no evidence\"\n" +
+			"  cat result.md | cerne feature amend F-0001 --reason \"<why>\"",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFeatureAmend(cmd, *dir, args[0], file, reason)
+		},
+	}
+	cmd.Flags().StringVar(&file, "file", "", "file with the full result body (defaults to piped stdin)")
+	cmd.Flags().StringVar(&reason, "reason", "", "why the result is amended (required; recorded on the event)")
+	return cmd
+}
+
+func runFeatureAmend(cmd *cobra.Command, dir, id, file, reason string) error {
+	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	f, changed, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, reason)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s result unchanged — nothing to amend.\n", f.ID)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s result amended (%s) — already synced. Read it with 'cerne show %s --doc result'.\n", f.ID, f.State, f.ID)
 	return nil
 }
 

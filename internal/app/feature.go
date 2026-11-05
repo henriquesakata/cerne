@@ -47,10 +47,43 @@ var ErrParentNotCommitted = errors.New("the parent feature is not committed yet 
 // (implemented/rejected/superseded): its title is frozen history.
 var ErrTitleFrozen = errors.New("the feature's title is frozen")
 
-// ErrFeatureFrozen is returned by SetFeature for a feature past the live
-// states (implemented/done/rejected/superseded, domain.TitleEditable's
-// definition of terminal): owner/priority are mutable data, not history.
+// ErrFeatureFrozen is returned for a feature past the live states
+// (implemented/done/rejected/superseded, domain.TitleEditable's definition of
+// terminal): by SetFeature (owner/priority), and by every document write of the
+// feature — SaveFeatureDoc and the draft commands (CheckDocWritable) and
+// `cerne push` (F-0305), whose refusal names the state's path (DocFixPath).
 var ErrFeatureFrozen = errors.New("the feature is closed")
+
+// DocFixPath names how a document of feature id in state s is corrected
+// (F-0305): through .docs/ and push while live; `feature amend` for the result
+// of an implemented feature, before the accept; an erratum otherwise.
+func DocFixPath(id, doc string, s domain.FeatureState) string {
+	switch {
+	case domain.TitleEditable(s):
+		return "edit it under .docs/ ('cerne pull') and run 'cerne push'"
+	case s == domain.StateImplemented && doc == "result":
+		return fmt.Sprintf("correct it with 'cerne feature amend %s --file <result.md> --reason \"<why>\"'", id)
+	default:
+		return fmt.Sprintf("append an erratum with 'cerne feature errata %s --file <errata.md>'", id)
+	}
+}
+
+// CheckDocWritable loads feature id and returns it when its document doc may be
+// written — only while the feature is live (domain.TitleEditable). Past that it
+// returns ErrFeatureFrozen wrapped, naming the state's path (DocFixPath). The
+// one rule every whole-document write routes through (F-0305): SaveFeatureDoc
+// and the draft commands, which call it again inside the backend lock because
+// their provider call runs outside it.
+func CheckDocWritable(repoDir, id, doc string) (store.Feature, error) {
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	if !domain.TitleEditable(f.State) {
+		return f, fmt.Errorf("%w: %s (%s) — %s", ErrFeatureFrozen, id, f.State, DocFixPath(id, doc, f.State))
+	}
+	return f, nil
+}
 
 // ErrDuplicateTitle is returned when creating a feature whose normalized title
 // (domain.NormalizeTitle, the F-0045 rule) matches a live feature: the usual
@@ -484,14 +517,17 @@ func SetFeature(repoDir, projDir, id, owner, priority string, setOwner, setPrior
 // (doc ∈ spec|plan|result) to content/features/<id>/<doc>.md, then commits,
 // pushes and refreshes the docs.lock snapshot. A byte-identical write is a
 // successful no-op (like SaveArtifact). ErrUnknownDoc for an invalid doc name;
-// store.ErrNotFound (wrapped) when the feature does not exist.
+// store.ErrNotFound (wrapped) when the feature does not exist; ErrFeatureFrozen
+// (wrapped, naming the state's path) past the live states — F-0072's boundary,
+// moved by F-0305: the result of an implemented feature changes only through
+// AmendFeatureResult, which carries a reason; later, only errata.
 func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 	filename, ok := featureDocFilenames[doc]
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		f, err := store.LoadFeature(repoDir, id)
+		f, err := CheckDocWritable(repoDir, id, doc)
 		if err != nil {
 			return "", err
 		}
@@ -564,6 +600,105 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, 
 		return store.Feature{}, err
 	}
 	return f, nil
+}
+
+// ErrAmendNotImplemented is returned by AmendFeatureResult for a feature that is
+// not implemented; the message names the path of its state (DocFixPath).
+var ErrAmendNotImplemented = errors.New("only the result of an implemented feature can be amended")
+
+// AmendFeatureResult replaces the result.md of an IMPLEMENTED feature, with the
+// reason on the event (F-0305): the correction window between `complete` and
+// the human `accept`, which then reads the amended result. ErrAmendNotImplemented
+// for any other state, re-read inside the lock; ErrResultIncomplete when the new
+// result fails the result checks — the mutation's error resets the clone, so
+// the previous result stays. A blank reason or body is refused before the
+// backend is touched. A body equal to the stored result is a successful no-op
+// (changed false: no write, no event, no commit), like SaveFeatureDoc's
+// byte-identical write — after the state check. Returns the feature as stored
+// (state unchanged).
+func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feature, changed bool, err error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return store.Feature{}, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
+	}
+	if strings.TrimSpace(body) == "" {
+		return store.Feature{}, false, errors.New("empty result body: pass the full result via --file <result.md> or on stdin")
+	}
+	content, err := amendedResult(id, body)
+	if err != nil {
+		return store.Feature{}, false, err
+	}
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if f, err = store.LoadFeature(repoDir, id); err != nil {
+			return "", err
+		}
+		if f.State != domain.StateImplemented {
+			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPath(id, "result", f.State))
+		}
+		path := FeatureDocPath(repoDir, id, "result.md")
+		// Detected here, not by captureChanges: the event below is itself a change.
+		if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
+			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return "", err
+		}
+		if err := CheckResultRecord(repoDir, f); err != nil {
+			return "", err // an amend does not trade one debt for another
+		}
+		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
+			"doc":    "result",
+			"state":  string(f.State),
+			"reason": reason,
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: amend %s/result.md", id), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return f, false, nil // the stored result is already this body
+	}
+	if err != nil {
+		return store.Feature{}, false, err
+	}
+	return f, true, nil
+}
+
+// amendedResult is the stored form of an amend body, under ONE cerne_id
+// frontmatter: the body's own block when it already names id (what
+// `cerne show --doc result` prints, extra keys kept; a quoted id is stored
+// unquoted, as every cerne_id reader expects), cerne's stamp when the body has
+// no block. A block naming another id is refused — it is another document —
+// and so is a '---' opening with no cerne_id (a frontmatter without it, or a
+// horizontal rule), which cerne cannot tell apart.
+func amendedResult(id, body string) (string, error) {
+	body = strings.TrimSpace(strings.TrimPrefix(body, "\ufeff"))
+	lines := strings.Split(body, "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
+		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
+	}
+	end := 1
+	for end < len(lines) && strings.TrimSpace(lines[end]) != "---" {
+		end++
+	}
+	for i := 1; i < end; i++ {
+		v, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), "cerne_id:")
+		got := strings.Trim(strings.TrimSpace(v), `"'`)
+		if !ok || got == "" {
+			continue
+		}
+		if got != id {
+			return "", fmt.Errorf("the body's frontmatter names cerne_id %q, not %s — is it another feature's result?", got, id)
+		}
+		if end == len(lines) {
+			return "", fmt.Errorf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc result'", id)
+		}
+		lines[i] = "cerne_id: " + id
+		return strings.Join(lines, "\n") + "\n", nil
+	}
+	return "", fmt.Errorf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc result' or drop the block", id)
 }
 
 // loadCandidate loads a feature and asserts it is still a candidate — the

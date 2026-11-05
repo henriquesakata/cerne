@@ -35,7 +35,7 @@ func stagedLintRoot(repoDir, projDir string) (string, func(), error) {
 		cleanup()
 		return "", nil, err
 	}
-	docs, err := collectChangedDocs(docsDir, manifest)
+	docs, err := collectChangedDocs(repoDir, docsDir, manifest)
 	if err != nil {
 		cleanup()
 		return "", nil, err

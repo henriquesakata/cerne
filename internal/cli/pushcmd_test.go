@@ -3,12 +3,14 @@ package cli
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -443,5 +445,105 @@ func TestPushDryRunReportsAndDoesNotPush(t *testing.T) {
 	}
 	if !strings.Contains(out2, "Sent: 1 document(s)") {
 		t.Fatalf("real push should send the still-pending edit:\n%s", out2)
+	}
+}
+
+// TestPushRefusesChangedDocOfFrozenFeature (F-0305 crit. 7): between the
+// complete and the next pull the result is still tracked in .docs/; an edit to
+// it is refused by push, push --dry-run and lint --staged alike, naming the
+// state's path, with nothing sent. The untouched tracked docs pass silently.
+func TestPushRefusesChangedDocOfFrozenFeature(t *testing.T) {
+	projDir, repoDir, id := startedFeature(t)
+	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Entregue."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
+		t.Fatalf("complete: %v\noutput: %s", err, out)
+	}
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil || !strings.Contains(out, "Nothing to send.") {
+		t.Fatalf("clean .docs/ of a frozen feature: err %v\n%s", err, out)
+	}
+	resultBackend := filepath.Join(repoDir, "content", "features", id, "result.md")
+	before, _ := os.ReadFile(resultBackend)
+	headBefore, _ := gitback.HeadSHA(repoDir)
+	mustWrite(t, filepath.Join(projDir, ".docs", "current", "features", "F-0001-feature-a", "result.md"), realDoc(id, "Reescrito depois do complete."))
+
+	for _, args := range [][]string{{"push"}, {"push", "--dry-run"}, {"lint", "--staged"}} {
+		_, err := execCerne(t, append(args, "--dir", projDir)...)
+		if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), "cerne feature amend "+id) {
+			t.Fatalf("%v: err = %v, want ErrFeatureFrozen naming 'cerne feature amend %s'", args, err, id)
+		}
+	}
+	if after, _ := os.ReadFile(resultBackend); string(after) != string(before) {
+		t.Fatal("backend result.md changed")
+	}
+	if h, _ := gitback.HeadSHA(repoDir); h != headBefore {
+		t.Fatalf("backend HEAD moved: %s -> %s", headBefore, h)
+	}
+
+	// Accepted (done), the same edit points at the errata instead.
+	if out, err := execCerne(t, "feature", "accept", id, "--dir", projDir); err != nil {
+		t.Fatalf("accept: %v\noutput: %s", err, out)
+	}
+	_, err := execCerne(t, "push", "--dir", projDir)
+	if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), "cerne feature errata "+id) {
+		t.Fatalf("done: err = %v, want ErrFeatureFrozen naming 'cerne feature errata %s'", err, id)
+	}
+	t.Logf("push refusal (done): %v", err)
+	if after, _ := os.ReadFile(resultBackend); string(after) != string(before) {
+		t.Fatal("backend result.md changed after accept")
+	}
+}
+
+// TestPushRefusalOfClosedDocUnblocks (F-0305): the refusal tells how to get
+// out — amend from the local copy itself (no edit lost), then delete it — and
+// following it unblocks push for good: a pull does not resurrect the copy.
+func TestPushRefusalOfClosedDocUnblocks(t *testing.T) {
+	projDir, repoDir, id := startedFeature(t)
+	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Entregue."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
+		t.Fatalf("complete: %v\noutput: %s", err, out)
+	}
+	rel := ".docs/current/features/F-0001-feature-a/result.md"
+	local := filepath.Join(projDir, filepath.FromSlash(rel))
+	mustWrite(t, local, realDoc(id, "Reescrito depois do complete."))
+
+	_, err := execCerne(t, "push", "--dir", projDir)
+	for _, want := range []string{
+		"cerne feature amend " + id + " --file " + rel,
+		"then delete the local copy " + rel,
+	} {
+		if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), want) {
+			t.Fatalf("push: err = %v, want ErrFeatureFrozen containing %q", err, want)
+		}
+	}
+	t.Logf("push refusal (implemented): %v", err)
+
+	if out, err := execCerne(t, "feature", "amend", id, "--file", local, "--reason", "reescrito", "--dir", projDir); err != nil {
+		t.Fatalf("amend from the local copy: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md")); !strings.Contains(string(got), "Reescrito depois do complete.") {
+		t.Fatalf("amend lost the edit:\n%s", got)
+	}
+	if err := os.Remove(local); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range [][]string{{"push"}, {"pull"}, {"push"}} {
+		out, err := execCerne(t, append(step, "--dir", projDir)...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", step, err, out)
+		}
+		if step[0] == "push" && !strings.Contains(out, "Nothing to send.") {
+			t.Fatalf("%v: want Nothing to send., got:\n%s", step, out)
+		}
+		if _, err := os.Stat(local); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("after %v the local copy is back (stat err %v)", step, err)
+		}
 	}
 }

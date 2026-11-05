@@ -169,3 +169,127 @@ func TestCheckResultCommentMarkersInCode(t *testing.T) {
 		t.Fatalf("rules = %v, want none", got)
 	}
 }
+
+func addErrata(t *testing.T, dir string, entries ...string) {
+	t.Helper()
+	for _, e := range entries {
+		if err := store.AppendErrata(dir, "F-0001", e, "ator", time.Unix(0, 0).UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+const goodGauntlet = "## Gauntlet\n\nBarra: x\n\nRodada 1 — vitória: \"ok\"\n"
+const badGauntlet = "## Gauntlet\n\nBarra: x\n\nRodada 1 — vitória\n"
+
+func TestResultEvidenceReadsErrata(t *testing.T) {
+	spec := "## Objetivo e critérios de aceitação\n\n1. a\n2. b\n3. c\n"
+	dir, f := writeResultFixture(t, domain.StateImplemented, spec, "critérios 1 e 2\n")
+	if got := evidenceFinding(dir, f); len(got) != 1 {
+		t.Fatalf("want a finding before errata, got %+v", got)
+	}
+	addErrata(t, dir, "critério 3 provado\n")
+	if got := evidenceFinding(dir, f); len(got) != 0 {
+		t.Fatalf("want no finding, got %+v", got)
+	}
+}
+
+func TestResultGauntletReadsErrata(t *testing.T) {
+	for name, entries := range map[string][]string{
+		"complete":         {goodGauntlet},
+		"incomplete first": {badGauntlet, goodGauntlet},
+		"complete first":   {goodGauntlet, badGauntlet},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n\n"+badGauntlet)
+			if got := gauntletFinding(dir, f, false); len(got) != 1 {
+				t.Fatalf("want a finding before errata, got %+v", got)
+			}
+			addErrata(t, dir, entries...)
+			if got := gauntletFinding(dir, f, false); len(got) != 0 {
+				t.Fatalf("want no finding, got %+v", got)
+			}
+		})
+	}
+}
+
+func TestResultRulesErrataWithoutEvidence(t *testing.T) {
+	dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1\n")
+	addErrata(t, dir, "outro assunto\n", badGauntlet, "<!-- critério 2 -->\n"+"<!--\n"+goodGauntlet+"-->\n")
+	got := CheckResult(dir, f)
+	if len(got) != 2 || got[0].Rule != RuleResultMissingEvidence || got[1].Rule != RuleResultMissingGauntlet {
+		t.Fatalf("want both findings, got %+v", got)
+	}
+}
+
+// TestResultRulesErrataOnlyOnceClosed: while the feature is live its result is
+// still the document to fix, so an erratum does not settle the record — the
+// complete gate must not be passed by `feature errata` (F-0305 crit. 1-2 scope
+// the errata to the closed states). The same errata on implemented clears.
+func TestResultRulesErrataOnlyOnceClosed(t *testing.T) {
+	for _, tc := range []struct {
+		state domain.FeatureState
+		want  int
+	}{
+		{domain.StateInDevelopment, 2},
+		{domain.StateImplemented, 0},
+		{domain.StateDone, 0},
+	} {
+		t.Run(string(tc.state), func(t *testing.T) {
+			dir, f := writeResultFixture(t, tc.state, checkSpec, "critério 1\n")
+			addErrata(t, dir, "critério 2 provado\n\n"+goodGauntlet)
+			if got := CheckResult(dir, f); len(got) != tc.want {
+				t.Fatalf("want %d findings, got %+v", tc.want, got)
+			}
+		})
+	}
+}
+
+// TestResultGauntletDetailNamesTheResult: the finding's File is result.md, so
+// its detail is the result's own problem — an incomplete errata section can
+// vouch (when complete) but never author the detail (F-0305). With no section
+// in the result, the detail says so.
+func TestResultGauntletDetailNamesTheResult(t *testing.T) {
+	noBar := "## Gauntlet\n\nRodada 1 — vitória: \"ok\"\n"
+	for _, tc := range []struct{ name, result, want string }{
+		{"result section", "critério 1 e critério 2\n\n" + badGauntlet, "rodada 1 sem citação do juiz"},
+		{"no result section", "critério 1 e critério 2\n", `sem seção "## Gauntlet"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, tc.result)
+			addErrata(t, dir, noBar)
+			got := gauntletFinding(dir, f, false)
+			if len(got) != 1 || !strings.Contains(got[0].Detail, "result.md "+tc.want) {
+				t.Fatalf("want one finding with detail %q, got %+v", tc.want, got)
+			}
+		})
+	}
+}
+
+// TestResultGauntletErrataHeldToStrictReader: the legacy predicate vouches only
+// for the result's own sections — an erratum is written now, so a legacy-only
+// record in it does not clear the finding, while the same record in the result
+// of a pre-cutoff feature still does (judge finding, F-0305).
+func TestResultGauntletErrataHeldToStrictReader(t *testing.T) {
+	legacyOnly := "## Gauntlet\n\nRodada 1 — vitória: \"ok\"\n"
+	dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n")
+	addErrata(t, dir, legacyOnly)
+	if got := gauntletFinding(dir, f, true); len(got) != 1 {
+		t.Fatalf("legacy-only erratum: want one finding, got %+v", got)
+	}
+	dir, f = writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n\n"+legacyOnly)
+	if got := gauntletFinding(dir, f, true); len(got) != 0 {
+		t.Fatalf("legacy-only result before the cutoff: want no finding, got %+v", got)
+	}
+}
+
+// TestResultGauntletErrataEntriesDoNotJoin: an errata entry ends at the next
+// entry's "## errata" heading, so a Barra in one entry and a cited round in the
+// next never add up to one record (judge finding, F-0305).
+func TestResultGauntletErrataEntriesDoNotJoin(t *testing.T) {
+	dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, "critério 1 e critério 2\n")
+	addErrata(t, dir, "## Gauntlet\n\nBarra: x\n", "Rodada 1 — vitória: \"ok\" — VEREDITO: A\n")
+	if got := gauntletFinding(dir, f, false); len(got) != 1 {
+		t.Fatalf("want one finding, got %+v", got)
+	}
+}
