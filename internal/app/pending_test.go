@@ -157,3 +157,58 @@ func TestCreatePendingRefusesSimilarOpenSameOrigin(t *testing.T) {
 		t.Fatal("a forced creation must record guard=forced")
 	}
 }
+
+// Crit. 8: resolve moves an open pending to resolved and stamps closed_at; a
+// terminal pending refuses; once closed it no longer blocks a similar title.
+func TestResolvePendingClosesIt(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ResolvePending(repoDir, projDir, p.ID)
+	if err != nil {
+		t.Fatalf("ResolvePending: %v", err)
+	}
+	if got.State != domain.PendingResolved || got.ClosedAt == nil {
+		t.Fatalf("resolved = %+v, want resolved with closed_at", got)
+	}
+	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingResolved || stored.ClosedAt == nil {
+		t.Fatalf("persisted = %+v, want resolved with closed_at", stored)
+	}
+	if _, err := ResolvePending(repoDir, projDir, p.ID); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("resolve twice err = %v, want ErrInvalidTransition", err)
+	}
+	if _, err := ResolvePending(repoDir, projDir, "P-0999"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown id err = %v, want ErrNotFound", err)
+	}
+	if _, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", f.ID, nil, nil, false); err != nil {
+		t.Fatalf("a resolved pending must not block a similar title: %v", err)
+	}
+}
+
+// Crit. 9: drop needs a reason and persists it.
+func TestDropPendingRequiresReason(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DropPending(repoDir, projDir, p.ID, "  "); !errors.Is(err, ErrPendingReasonRequired) {
+		t.Fatalf("blank reason err = %v, want ErrPendingReasonRequired", err)
+	}
+	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingOpen {
+		t.Fatalf("a refused drop changed the state to %s", stored.State)
+	}
+	got, err := DropPending(repoDir, projDir, p.ID, "não vale o custo")
+	if err != nil {
+		t.Fatalf("DropPending: %v", err)
+	}
+	stored, _ := store.LoadPending(repoDir, p.ID)
+	if got.State != domain.PendingDropped || stored.State != domain.PendingDropped ||
+		stored.Reason != "não vale o custo" || stored.ClosedAt == nil {
+		t.Fatalf("dropped = %+v, want dropped with reason and closed_at", stored)
+	}
+}
