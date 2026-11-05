@@ -164,9 +164,9 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	return nil
 }
 
-// errNotApprovable is the non-zero exit of an approve --check that found
-// impediments.
-var errNotApprovable = errors.New("not approvable")
+// errCheckImpediments is the non-zero exit of an approve --check whose list
+// is not empty — hard impediments, or only open clarifications for a human.
+var errCheckImpediments = errors.New("approve check found impediments")
 
 // barForms are the three literal bar forms (cerne-authoring skill, F-0270),
 // taught by the check instead of every refusal (F-0308 crit. 11). They stay
@@ -177,42 +177,70 @@ const barForms = `The spec's Verificação section needs one of the three litera
   Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)
 `
 
-// runApproveCheck prints every impediment to approving id — or, when there is
-// none, the bar the approve would accept — and returns errNotApprovable when
-// the list is not empty. It only reads the backend clone.
+// runApproveCheck prints every impediment to approving id and returns
+// errCheckImpediments while the list is not empty (crit. 3). Hard impediments
+// are the agent's to fix; open clarifications are questions for the human
+// (F-0175), never for the agent to answer — so with only those left the check
+// says there is no hard impediment and shows the bar the approve would accept.
+// It only reads the backend clone.
 func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 	imps, err := app.ApproveReadiness(ctx.repoDir, id)
 	if err != nil {
 		return err
 	}
-	if len(imps) == 0 {
+	var hard, soft []app.ApproveImpediment
+	for _, im := range imps {
+		if im.Hard {
+			hard = append(hard, im)
+		} else {
+			soft = append(soft, im)
+		}
+	}
+	if len(hard) > 0 {
+		fmt.Fprintf(w, "Check: %s is not approvable yet — %d impediment(s) (nothing approved, nothing written):\n", id, len(imps))
+		barProblem := false
+		for _, im := range imps {
+			suffix := ""
+			if !im.Hard {
+				suffix = " (for a human to answer; the CLI approve refuses it without --force, the UI does not)"
+			}
+			fmt.Fprintf(w, "  - %s: %s%s\n", im.Code, im.Message, suffix)
+			barProblem = barProblem || im.Code == app.ImpedimentBarMissing || im.Code == app.ImpedimentBarMalformed
+		}
+		if barProblem {
+			fmt.Fprint(w, "\n"+barForms)
+		}
+		fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
+	} else {
+		head := "is approvable"
+		if len(soft) > 0 {
+			head = "has no hard impediment"
+		}
+		fmt.Fprintf(w, "Check: %s %s (nothing approved, nothing written).\n", id, head)
+		if len(soft) > 0 {
+			fmt.Fprintf(w, "%d open clarification(s) for a human to answer — the CLI approve refuses them without --force; the UI does not:\n", len(soft))
+			for _, im := range soft {
+				fmt.Fprintf(w, "  - %s: %s\n", im.Code, im.Message)
+			}
+		}
 		bar, err := app.AcceptedBar(ctx.repoDir, id)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "Check: %s is approvable (nothing approved, nothing written).\nApproving accepts its bar:\n  %s\n", id, bar)
-		if app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()) != nil {
-			fmt.Fprintf(w, "Next: ask a human to run 'cerne feature approve %s'.\n", id)
-		} else {
-			fmt.Fprintf(w, "Next: cerne feature approve %s\n", id)
-		}
-		return nil
+		fmt.Fprintf(w, "Approving accepts its bar:\n  %s\n", bar)
 	}
-	fmt.Fprintf(w, "Check: %s is not approvable yet — %d impediment(s) (nothing approved, nothing written):\n", id, len(imps))
-	barProblem := false
-	for _, im := range imps {
-		suffix := ""
-		if !im.Hard {
-			suffix = " (the CLI refuses it; --force crosses it)"
-		}
-		fmt.Fprintf(w, "  - %s: %s%s\n", im.Code, im.Message, suffix)
-		barProblem = barProblem || im.Code == app.ImpedimentBarMissing || im.Code == app.ImpedimentBarMalformed
+	if len(soft) > 0 {
+		fmt.Fprintf(w, "Do not answer them yourself: leave the questions for the human, with the approve request: 'cerne clarify list %s'.\n", id)
 	}
-	if barProblem {
-		fmt.Fprint(w, "\n"+barForms)
+	if len(imps) > 0 {
+		return fmt.Errorf("%w: %s has %d (%d hard)", errCheckImpediments, id, len(imps), len(hard))
 	}
-	fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
-	return fmt.Errorf("%w: %s has %d impediment(s)", errNotApprovable, id, len(imps))
+	if app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()) != nil {
+		fmt.Fprintf(w, "Next: ask a human to run 'cerne feature approve %s'.\n", id)
+	} else {
+		fmt.Fprintf(w, "Next: cerne feature approve %s\n", id)
+	}
+	return nil
 }
 
 // printApproveReadiness ends a spec write with the candidate's approve
@@ -239,10 +267,17 @@ func printApproveReadiness(w io.Writer, repoDir, id string) {
 		return
 	}
 	var codes []string
+	hard := false
 	for _, im := range imps {
+		hard = hard || im.Hard
 		if !slices.Contains(codes, im.Code) {
 			codes = append(codes, im.Code)
 		}
 	}
-	fmt.Fprintf(w, "Approve readiness: not approvable — %s; details: 'cerne feature approve %s --check'\n", strings.Join(codes, ", "), id)
+	verdict := "not approvable — " + strings.Join(codes, ", ")
+	if !hard {
+		// Only open clarifications: questions for a human, not the agent (F-0175).
+		verdict = "no hard impediment — open-clarification pending for a human"
+	}
+	fmt.Fprintf(w, "Approve readiness: %s; details: 'cerne feature approve %s --check'\n", verdict, id)
 }

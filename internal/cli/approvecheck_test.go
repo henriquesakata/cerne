@@ -25,8 +25,8 @@ func TestApproveCheckListsWithoutTransition(t *testing.T) {
 	head, _ := gitback.HeadSHA(origin)
 	events, _ := store.ReadEvents(repoDir)
 	out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
-	if !errors.Is(err, errNotApprovable) {
-		t.Fatalf("check err = %v, want errNotApprovable\noutput: %s", err, out)
+	if !errors.Is(err, errCheckImpediments) {
+		t.Fatalf("check err = %v, want errCheckImpediments\noutput: %s", err, out)
 	}
 	for _, want := range []string{
 		"bar-missing", `no "Barra:" line`,
@@ -95,5 +95,40 @@ func TestApproveConfirmationPrintsBar(t *testing.T) {
 	}
 	if !strings.Contains(out, "Accepted bar: Barra: fixture de teste — referência nomeada") {
 		t.Fatalf("approve confirmation does not name the accepted bar:\n%s", out)
+	}
+}
+
+// TestApproveCheckSoftOnly (F-0308, F-0175): open clarifications are questions
+// for the human, never for the agent to answer — with only those left, the
+// check says there is no hard impediment, tells to leave the questions for
+// the human with the approve request, and keeps the non-zero exit (the exit
+// follows the list, crit. 3); the edit-and-push footer is for hard ones only.
+func TestApproveCheckSoftOnly(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature com pergunta", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real. [ESCLARECER: pública ou privada?]"))
+	commitBackend(t, repoDir)
+	t.Setenv("CERNE_ACTOR", "agent")
+
+	out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+	if !errors.Is(err, errCheckImpediments) {
+		t.Fatalf("check err = %v, want errCheckImpediments\noutput: %s", err, out)
+	}
+	for _, want := range []string{
+		"no hard impediment",
+		"1 open clarification(s) for a human to answer",
+		"the CLI approve refuses them without --force; the UI does not",
+		"pública ou privada?",
+		"Barra: fixture de teste — referência nomeada",
+		"leave the questions for the human, with the approve request: 'cerne clarify list " + id + "'",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("soft-only check output missing %q:\n%s", want, out)
+		}
+	}
+	for _, gone := range []string{"not approvable", "'cerne push', and check again"} {
+		if strings.Contains(out, gone) {
+			t.Fatalf("soft-only check output carries %q:\n%s", gone, out)
+		}
 	}
 }

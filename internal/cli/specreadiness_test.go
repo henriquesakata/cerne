@@ -82,6 +82,20 @@ func TestFeatureSpecPrintsReadiness(t *testing.T) {
 	}
 }
 
+// With only open clarifications left, the readiness line does not call the
+// candidate "not approvable": the questions are for a human (F-0175).
+func TestReadinessSoftOnly(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	id := newFeature(t, projDir, "Feature com pergunta", 1)
+	out, err := execCerne(t, "feature", "spec", id, "--file", writeSpecFile(t, realDoc(id, "Problema real. [ESCLARECER: pública ou privada?]")), "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature spec: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Approve readiness: no hard impediment — open-clarification pending for a human") || strings.Contains(out, "not approvable") {
+		t.Fatalf("soft-only readiness line is wrong:\n%s", out)
+	}
+}
+
 // Readiness only speaks of a candidate: past candidacy (a task is born
 // approved) there is nothing to approve, and the line is not printed at all.
 func TestPrintApproveReadinessSilentPastCandidacy(t *testing.T) {
