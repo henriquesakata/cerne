@@ -55,12 +55,19 @@ func TestBuildChatSystemPromptGauntlet(t *testing.T) {
 		"nunca sugere a dispensa",              // opt-out is human-initiated, never agent-solicited
 		"modo spec do Kiro",                    // one filled-in positive example anchors the format
 		"Barra: não aplicável",                 // the confirmed-classification marker (criterion 4)
-		"CONFIRME com o humano",                // self-classification is never silent
+		"o approve humano é o aceite",          // the agent's bar is a proposal; approve accepts it (F-0308)
+		"feature approve <id> --check",         // readiness is checked before asking for the approve
 		"padrão de parada alternativo",         // no comparable artifact → alternative stop standard
 		"proposta sem isso está incompleta",    // the binding line next to the proposal template
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing gauntlet instruction %q:\n%s", want, prompt)
+		}
+	}
+	// F-0308 crit. 10: no acceptance round-trip before the bar enters the proposal.
+	for _, gone := range []string{"exige aceite explícito do humano antes de entrar na proposta", "CONFIRME com o humano"} {
+		if strings.Contains(prompt, gone) {
+			t.Fatalf("prompt still carries the old protocol %q", gone)
 		}
 	}
 	// The protocol governs elaboration: it must come after the conduction block

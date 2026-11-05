@@ -41,3 +41,20 @@ func TestRegisterReminderScriptMatchesGoRules(t *testing.T) {
 		}
 	}
 }
+
+// TestRegisterRulesBarIsAProposal (F-0308 crit. 10): the GAUNTLET rule says the
+// agent's Barra: line is a proposal, the human approve is its acceptance, and
+// the check comes before the approve request — in both session-start copies.
+func TestRegisterRulesBarIsAProposal(t *testing.T) {
+	body, err := os.ReadFile("assets/cerne-register-reminder.sh")
+	if err != nil {
+		t.Fatalf("read asset: %v", err)
+	}
+	for name, text := range map[string]string{"RegisterRules": RegisterRules, "cerne-register-reminder.sh": string(body)} {
+		for _, want := range []string{"is a proposal", "the human approve is its acceptance", "cerne feature approve <id> --check"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing %q", name, want)
+			}
+		}
+	}
+}
