@@ -434,26 +434,40 @@ func SetLLMMode(dir, mode string) error {
 // the decoded config plus the directory containing it. ErrNoProject when no
 // .cernerc exists up to the filesystem root.
 func LoadConfig(startDir string) (Config, string, error) {
-	dir, err := filepath.Abs(startDir)
+	dir, err := findConfigDir(startDir)
 	if err != nil {
 		return Config{}, "", err
 	}
+	path := filepath.Join(dir, configFilename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, "", err
+	}
+	var c Config
+	if err := toml.Unmarshal(data, &c); err != nil {
+		return Config{}, "", fmt.Errorf("%s: %w", path, err)
+	}
+	return c, dir, nil
+}
+
+// findConfigDir walks up from startDir to the directory holding a .cernerc,
+// without decoding it. ErrNoProject when none exists up to the root.
+func findConfigDir(startDir string) (string, error) {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
 	for {
-		path := filepath.Join(dir, configFilename)
-		data, err := os.ReadFile(path)
+		_, err := os.Stat(filepath.Join(dir, configFilename))
 		if err == nil {
-			var c Config
-			if err := toml.Unmarshal(data, &c); err != nil {
-				return Config{}, "", fmt.Errorf("%s: %w", path, err)
-			}
-			return c, dir, nil
+			return dir, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return Config{}, "", err
+			return "", err
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return Config{}, "", fmt.Errorf("%w: no %s from %s up to filesystem root", ErrNoProject, configFilename, startDir)
+			return "", fmt.Errorf("%w: no %s from %s up to filesystem root", ErrNoProject, configFilename, startDir)
 		}
 		dir = parent
 	}

@@ -83,10 +83,7 @@ func TestResolveSettings(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			projDir, hostDir := settingsFixture(t, tc.project, tc.host, tc.noProject)
-			view, err := ResolveSettings(projDir)
-			if err != nil {
-				t.Fatalf("ResolveSettings: %v", err)
-			}
+			view := ResolveSettings(projDir)
 			got := findSetting(t, view, "mindmap.enabled")
 			if got.Value != tc.wantValue || got.Origin != tc.wantOrigin {
 				t.Errorf("mindmap.enabled = %v from %s, want %v from %s", got.Value, got.Origin, tc.wantValue, tc.wantOrigin)
@@ -108,22 +105,75 @@ func TestResolveSettings(t *testing.T) {
 	}
 }
 
-// TestResolveSettingsRejectsBadStoredValue: a stored value of the wrong type
-// is a named error citing the file and the key, never a silent default.
-func TestResolveSettingsRejectsBadStoredValue(t *testing.T) {
-	bad := "[mindmap]\nenabled = \"no\"\n"
-	for _, tc := range []struct{ name, project, host, file string }{
-		{"project", bad, "", ".cernerc"},
-		{"host", "", bad, "settings.toml"},
-	} {
+// TestResolveSettingsIsolatesBadValues (critic C3): a stored value outside
+// the key's type affects that key only. It is reported on the key, with its
+// scope, file and raw text, and the key falls through to the next valid
+// scope, then the default; every other key resolves as usual. A bad value in
+// a scope the winner outranks is still reported, never masked.
+func TestResolveSettingsIsolatesBadValues(t *testing.T) {
+	cases := []struct {
+		name, project, host  string
+		key                  string
+		wantValue            bool
+		wantOrigin, badScope string
+	}{
+		{"bad host value, default wins", "", "[wiki]\nenabled = \"no\"\n", "wiki.enabled", true, OriginDefault, ScopeHost},
+		{"bad project value, host wins", "[wiki]\nenabled = \"no\"\n", "[wiki]\nenabled = false\n", "wiki.enabled", false, ScopeHost, ScopeProject},
+		{"bad host value under a project value", "[wiki]\nenabled = true\n", "[wiki]\nenabled = 1\n", "wiki.enabled", true, ScopeProject, ScopeHost},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, hostDir := settingsFixture(t, "[mindmap]\nenabled = false\n"+tc.project, tc.host, false)
+			view := ResolveSettings(projDir)
+			got := findSetting(t, view, tc.key)
+			if got.Value != tc.wantValue || got.Origin != tc.wantOrigin {
+				t.Errorf("%s = %v from %s, want %v from %s", tc.key, got.Value, got.Origin, tc.wantValue, tc.wantOrigin)
+			}
+			files := map[string]string{ScopeProject: filepath.Join(projDir, ".cernerc"), ScopeHost: filepath.Join(hostDir, "settings.toml")}
+			if len(got.Invalid) != 1 || got.Invalid[0].Scope != tc.badScope || got.Invalid[0].File != files[tc.badScope] ||
+				got.Invalid[0].Raw == "" || !strings.Contains(got.Invalid[0].Error, ErrInvalidSettingValue.Error()) {
+				t.Errorf("%s invalid = %+v, want one %s problem with file, raw and error", tc.key, got.Invalid, tc.badScope)
+			}
+			if m := findSetting(t, view, "mindmap.enabled"); m.Value != false || m.Origin != ScopeProject || len(m.Invalid) != 0 {
+				t.Errorf("unrelated mindmap.enabled = %+v, want false from project, clean", m)
+			}
+			if len(view.Errors) != 0 {
+				t.Errorf("file-level errors = %+v, want none", view.Errors)
+			}
+		})
+	}
+}
+
+// TestResolveSettingsSkipsUnreadableFile (critic C2/C3): a malformed file
+// empties its scope for every key and is reported once, file-level; the other
+// scope still resolves. A .cernerc that is valid TOML but does not fit the
+// Config struct is no settings problem at all.
+func TestResolveSettingsSkipsUnreadableFile(t *testing.T) {
+	cases := []struct {
+		name, project, host string
+		badScope            string
+		wantMindmap         bool
+		wantOrigin          string
+	}{
+		{"malformed host", "[mindmap]\nenabled = false\n", "[x", ScopeHost, false, ScopeProject},
+		{"malformed project", "[mindmap\n", "[mindmap]\nenabled = false\n", ScopeProject, false, ScopeHost},
+		{"typed-invalid .cernerc", "okf = \"yes\"\n[mindmap]\nenabled = false\n", "", "", false, ScopeProject},
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
-			_, err := ResolveSettings(projDir)
-			if !errors.Is(err, ErrInvalidSettingValue) {
-				t.Fatalf("err = %v, want ErrInvalidSettingValue", err)
+			view := ResolveSettings(projDir)
+			if m := findSetting(t, view, "mindmap.enabled"); m.Value != tc.wantMindmap || m.Origin != tc.wantOrigin {
+				t.Errorf("mindmap.enabled = %v from %s, want %v from %s", m.Value, m.Origin, tc.wantMindmap, tc.wantOrigin)
 			}
-			if !strings.Contains(err.Error(), tc.file) || !strings.Contains(err.Error(), "mindmap.enabled") {
-				t.Errorf("err = %q, want it to cite %s and mindmap.enabled", err, tc.file)
+			if tc.badScope == "" {
+				if len(view.Errors) != 0 {
+					t.Errorf("errors = %+v, want none", view.Errors)
+				}
+				return
+			}
+			if len(view.Errors) != 1 || view.Errors[0].Scope != tc.badScope || view.Errors[0].File != view.Files[tc.badScope] || view.Errors[0].Error == "" {
+				t.Errorf("errors = %+v, want one %s file-level problem", view.Errors, tc.badScope)
 			}
 		})
 	}
@@ -172,10 +222,7 @@ func TestSetSettingHostLeavesRepoUntouched(t *testing.T) {
 	if err != nil || string(host) != "[wiki]\nenabled = false\n" {
 		t.Errorf("host settings.toml = %q (%v), want [wiki] enabled = false", host, err)
 	}
-	view, err := ResolveSettings(projDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	view := ResolveSettings(projDir)
 	if got := findSetting(t, view, "wiki.enabled"); got.Value != false || got.Origin != ScopeHost {
 		t.Errorf("wiki.enabled = %v from %s, want false from host", got.Value, got.Origin)
 	}
@@ -250,10 +297,7 @@ func TestUnsetSettingRestoresLowerScope(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(hostDir, "settings.toml")); string(got) != host {
 		t.Errorf("host file changed: %q", got)
 	}
-	view, err := ResolveSettings(projDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	view := ResolveSettings(projDir)
 	if got := findSetting(t, view, "mindmap.enabled"); got.Value != false || got.Origin != ScopeHost {
 		t.Errorf("mindmap.enabled = %v from %s, want false from host", got.Value, got.Origin)
 	}

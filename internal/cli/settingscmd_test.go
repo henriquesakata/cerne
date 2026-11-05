@@ -193,3 +193,53 @@ func TestSettingsUnset(t *testing.T) {
 		t.Errorf("mindmap.enabled = %v from %s, want false from host", m.Value, m.Origin)
 	}
 }
+
+// TestSettingsListSurvivesBadHostFile (critic C3): a bad stored value or a
+// malformed host file prints the table plus one warning per problem, exit 0.
+func TestSettingsListSurvivesBadHostFile(t *testing.T) {
+	for _, tc := range []struct{ name, host, warn string }{
+		{"bad value", "[wiki]\nenabled = \"no\"\n", `wiki.enabled = "no"`},
+		{"malformed", "[x", "host scope"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, hostDir := settingsProject(t, "[mindmap]\nenabled = false\n")
+			if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte(tc.host), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := execCerne(t, "settings", "list", "--dir", projDir)
+			if err != nil {
+				t.Fatalf("list: %v\n%s", err, out)
+			}
+			var warnings []string
+			for _, l := range strings.Split(out, "\n") {
+				if strings.HasPrefix(l, "warning: ") {
+					warnings = append(warnings, l)
+				}
+			}
+			if !strings.Contains(out, "mindmap.enabled") || len(warnings) != 1 || !strings.Contains(warnings[0], tc.warn) ||
+				!strings.Contains(warnings[0], filepath.Join(hostDir, "settings.toml")) {
+				t.Errorf("want the table and one warning naming %q and the file:\n%s", tc.warn, out)
+			}
+		})
+	}
+}
+
+// TestSettingsGetFailsOnlyForItsOwnBadValue: get exits non-zero only when the
+// key's own value is invalid in the scope that would win, naming the file
+// and the raw value; any other key (or a bad value the winner outranks) reads.
+func TestSettingsGetFailsOnlyForItsOwnBadValue(t *testing.T) {
+	projDir, hostDir := settingsProject(t, "[mindmap]\nenabled = \"no\"\n[wiki]\nenabled = true\n")
+	if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte("[mindmap]\nenabled = false\n[wiki]\nenabled = \"off\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := execCerne(t, "settings", "get", "mindmap.enabled", "--dir", projDir)
+	if !errors.Is(err, project.ErrInvalidSettingValue) || !strings.Contains(err.Error(), filepath.Join(projDir, ".cernerc")) || !strings.Contains(err.Error(), `"no"`) {
+		t.Errorf("get mindmap.enabled: err = %v, want ErrInvalidSettingValue naming .cernerc and \"no\"", err)
+	}
+	for key, want := range map[string]string{"graph.enabled": "true", "wiki.enabled": "true"} {
+		out, err := execCerne(t, "settings", "get", key, "--dir", projDir)
+		if err != nil || !strings.HasPrefix(out, want+"\n") {
+			t.Errorf("get %s = %q (%v), want %s", key, out, err, want)
+		}
+	}
+}

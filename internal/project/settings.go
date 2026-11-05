@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,18 +51,32 @@ type Setting struct {
 }
 
 // ResolvedSetting is a Setting with its effective value and the scope it came
-// from: ScopeProject, ScopeHost or OriginDefault.
+// from: ScopeProject, ScopeHost or OriginDefault. Invalid lists the stored
+// values of this key the resolution skipped, in any scope.
 type ResolvedSetting struct {
 	Setting
-	Value  any    `json:"value"`
-	Origin string `json:"origin"`
+	Value   any              `json:"value"`
+	Origin  string           `json:"origin"`
+	Invalid []SettingProblem `json:"invalid,omitempty"`
+}
+
+// SettingProblem is what the resolution skipped instead of failing: a stored
+// value outside the key's type (Raw is its TOML text) or a whole scope file it
+// could not read.
+type SettingProblem struct {
+	Scope string `json:"scope"`
+	File  string `json:"file"`
+	Raw   string `json:"raw,omitempty"`
+	Error string `json:"error"`
 }
 
 // SettingsView is every declared setting resolved for one project, plus the
-// file behind each scope (keyed by scope; no project key outside a project).
+// file behind each scope (keyed by scope; no project key outside a project)
+// and the scope files that could not be read.
 type SettingsView struct {
 	Settings []ResolvedSetting `json:"settings"`
 	Files    map[string]string `json:"files"`
+	Errors   []SettingProblem  `json:"errors,omitempty"`
 }
 
 // settingsRegistry is the one place a setting is declared: the CLI, the
@@ -85,43 +100,51 @@ var settingsRegistry = []Setting{
 }
 
 // ResolveSettings resolves every declared setting for the project at (or
-// above) projDir: project > host > default. No .cernerc leaves the project
+// above) projDir: project > host > default. It never fails as a whole: an
+// unreadable scope file is reported once in Errors and leaves that scope
+// empty; a stored value outside the key's type is reported on that key, which
+// falls through to the next valid scope. No .cernerc leaves the project
 // scope empty; an absent host file leaves the host scope empty.
-func ResolveSettings(projDir string) (SettingsView, error) {
+func ResolveSettings(projDir string) SettingsView {
+	scopes := []string{ScopeProject, ScopeHost}
 	view := SettingsView{Files: map[string]string{}}
 	layers := map[string]map[string]any{}
-	for _, scope := range []string{ScopeProject, ScopeHost} {
+	for _, scope := range scopes {
 		path, err := settingsFile(projDir, scope)
 		if scope == ScopeProject && errors.Is(err, ErrNoProject) {
 			continue
 		}
-		if err != nil {
-			return SettingsView{}, err
+		if err == nil {
+			view.Files[scope] = path
+			layers[scope], err = readTOMLFile(path)
 		}
-		m, err := readTOMLFile(path)
 		if err != nil {
-			return SettingsView{}, err
+			view.Errors = append(view.Errors, SettingProblem{Scope: scope, File: path, Error: err.Error()})
 		}
-		view.Files[scope], layers[scope] = path, m
 	}
 	for _, s := range settingsRegistry {
 		r := ResolvedSetting{Setting: s, Value: s.Default, Origin: OriginDefault}
-		for _, scope := range []string{ScopeProject, ScopeHost} {
-			table, key, _ := strings.Cut(s.ID, ".")
+		table, key, _ := strings.Cut(s.ID, ".")
+		for _, scope := range scopes {
 			tbl, _ := layers[scope][table].(map[string]any)
 			v, ok := tbl[key]
-			if !ok {
-				continue
+			_, isBool := v.(bool)
+			switch {
+			case !ok:
+			case !isBool:
+				raw := fmt.Sprint(v)
+				if str, isStr := v.(string); isStr {
+					raw = strconv.Quote(str)
+				}
+				r.Invalid = append(r.Invalid, SettingProblem{Scope: scope, File: view.Files[scope], Raw: raw,
+					Error: fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, s.Type)})
+			case r.Origin == OriginDefault:
+				r.Value, r.Origin = v, scope
 			}
-			if _, isBool := v.(bool); !isBool {
-				return SettingsView{}, fmt.Errorf("%s: %s = %v: %w: want %s", view.Files[scope], s.ID, v, ErrInvalidSettingValue, s.Type)
-			}
-			r.Value, r.Origin = v, scope
-			break
 		}
 		view.Settings = append(view.Settings, r)
 	}
-	return view, nil
+	return view
 }
 
 // SetSetting writes raw ("true"/"false") as id's value in scope: the
@@ -235,8 +258,9 @@ func editTOMLFile(path, table, key string, value any) error {
 	return nil
 }
 
-// settingsFile returns the file behind scope: the .cernerc LoadConfig finds
-// from projDir, or <ConfigDir>/settings.toml.
+// settingsFile returns the file behind scope: the .cernerc found from
+// projDir (not decoded: settings read it generically), or
+// <ConfigDir>/settings.toml.
 func settingsFile(projDir, scope string) (string, error) {
 	if scope == ScopeHost {
 		dir, err := ConfigDir()
@@ -245,7 +269,7 @@ func settingsFile(projDir, scope string) (string, error) {
 		}
 		return filepath.Join(dir, hostSettingsFilename), nil
 	}
-	_, dir, err := LoadConfig(projDir)
+	dir, err := findConfigDir(projDir)
 	if err != nil {
 		return "", err
 	}
@@ -263,7 +287,7 @@ func readTOMLFile(path string) (map[string]any, error) {
 		return nil, err
 	}
 	if err := toml.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, err
 	}
 	return m, nil
 }

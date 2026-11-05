@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -32,10 +33,7 @@ func newSettingsListCmd(dir *string) *cobra.Command {
 		Short: "List every setting with its value, default and origin scope",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			view, err := project.ResolveSettings(*dir)
-			if err != nil {
-				return err
-			}
+			view := project.ResolveSettings(*dir)
 			out := cmd.OutOrStdout()
 			if asJSON {
 				enc := json.NewEncoder(out)
@@ -54,6 +52,7 @@ func newSettingsListCmd(dir *string) *cobra.Command {
 					fmt.Fprintf(out, "%s: %s\n", scope, f)
 				}
 			}
+			printSettingProblems(cmd.ErrOrStderr(), view, "")
 			return nil
 		},
 	}
@@ -68,10 +67,19 @@ func newSettingsGetCmd(dir *string) *cobra.Command {
 		Short: "Print a setting's effective value",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := resolvedSetting(*dir, args[0])
+			view := project.ResolveSettings(*dir)
+			s, err := findResolved(view, args[0])
 			if err != nil {
 				return err
 			}
+			// Fail only when this key's own value is broken in a scope that
+			// outranks the one it fell back to: the user's value did not take.
+			for _, p := range s.Invalid {
+				if scopeRank[p.Scope] < scopeRank[s.Origin] {
+					return fmt.Errorf("%s = %s in %s scope (%s): %w: want %s", s.ID, p.Raw, p.Scope, p.File, project.ErrInvalidSettingValue, s.Type)
+				}
+			}
+			defer printSettingProblems(cmd.ErrOrStderr(), view, s.ID)
 			if showOrigin {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\t", s.Origin)
 			}
@@ -93,10 +101,7 @@ func newSettingsSetCmd(dir *string) *cobra.Command {
 			if err := project.SetSetting(*dir, args[0], scope, args[1]); err != nil {
 				return err
 			}
-			s, file, err := writtenSetting(*dir, args[0], scope)
-			if err != nil {
-				return err
-			}
+			s, file := writtenSetting(*dir, args[0], scope)
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "set %s = %s in %s scope (%s)\n", args[0], args[1], scope, file)
 			if s.Origin != scope {
@@ -121,10 +126,7 @@ func newSettingsUnsetCmd(dir *string) *cobra.Command {
 			if err := project.UnsetSetting(*dir, args[0], scope); err != nil {
 				return err
 			}
-			s, file, err := writtenSetting(*dir, args[0], scope)
-			if err != nil {
-				return err
-			}
+			s, file := writtenSetting(*dir, args[0], scope)
 			fmt.Fprintf(cmd.OutOrStdout(), "unset %s from %s scope (%s)\neffective: %v (%s)\n", args[0], scope, file, s.Value, s.Origin)
 			return nil
 		},
@@ -134,23 +136,32 @@ func newSettingsUnsetCmd(dir *string) *cobra.Command {
 	return cmd
 }
 
+// scopeRank orders the origins by precedence.
+var scopeRank = map[string]int{project.ScopeProject: 0, project.ScopeHost: 1, project.OriginDefault: 2}
+
 // writtenSetting re-resolves id after a write and returns it with the file
 // behind scope.
-func writtenSetting(dir, id, scope string) (project.ResolvedSetting, string, error) {
-	view, err := project.ResolveSettings(dir)
-	if err != nil {
-		return project.ResolvedSetting{}, "", err
-	}
-	s, err := findResolved(view, id)
-	return s, view.Files[scope], err
+func writtenSetting(dir, id, scope string) (project.ResolvedSetting, string) {
+	view := project.ResolveSettings(dir)
+	s, _ := findResolved(view, id) // the write already validated id
+	return s, view.Files[scope]
 }
 
-func resolvedSetting(dir, id string) (project.ResolvedSetting, error) {
-	view, err := project.ResolveSettings(dir)
-	if err != nil {
-		return project.ResolvedSetting{}, err
+// printSettingProblems writes one warning per problem the resolution skipped:
+// each scope file it could not read, and the bad stored values of key id (of
+// every key when id is empty).
+func printSettingProblems(w io.Writer, view project.SettingsView, id string) {
+	for _, e := range view.Errors {
+		fmt.Fprintf(w, "warning: %s scope ignored (%s): %s\n", e.Scope, e.File, e.Error)
 	}
-	return findResolved(view, id)
+	for _, s := range view.Settings {
+		if id != "" && s.ID != id {
+			continue
+		}
+		for _, p := range s.Invalid {
+			fmt.Fprintf(w, "warning: %s = %s in %s scope ignored (%s): %s\n", s.ID, p.Raw, p.Scope, p.File, p.Error)
+		}
+	}
 }
 
 func findResolved(view project.SettingsView, id string) (project.ResolvedSetting, error) {

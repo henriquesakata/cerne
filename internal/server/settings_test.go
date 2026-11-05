@@ -46,10 +46,7 @@ func TestSettingsEndpointServesRegistry(t *testing.T) {
 	if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &got); rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	want, err := project.ResolveSettings(projDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	want := project.ResolveSettings(projDir)
 	if len(got.Settings) != len(want.Settings) {
 		t.Fatalf("served %d settings, registry declares %d", len(got.Settings), len(want.Settings))
 	}
@@ -195,5 +192,33 @@ func TestSettingsPutBusyIsConflict(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(hostDir, "settings.toml")); err == nil {
 		t.Errorf("settings.toml written despite the held lock")
+	}
+}
+
+// TestSettingsEndpointReportsProblems (critic C3): a bad stored value or a
+// malformed scope file is reported in the view, never a failed GET.
+func TestSettingsEndpointReportsProblems(t *testing.T) {
+	for _, tc := range []struct{ name, host string }{
+		{"bad value", "[wiki]\nenabled = \"no\"\n"},
+		{"malformed", "[x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, hostDir := settingsBackend(t, "[mindmap]\nenabled = false\n")
+			if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte(tc.host), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var view project.SettingsView
+			rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &view)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+			}
+			problems := len(view.Errors)
+			for _, s := range view.Settings {
+				problems += len(s.Invalid)
+			}
+			if problems != 1 || resolvedByID(view)["mindmap.enabled"].Value != false {
+				t.Errorf("view = %s, want mindmap false and exactly one reported problem", rec.Body.String())
+			}
+		})
 	}
 }

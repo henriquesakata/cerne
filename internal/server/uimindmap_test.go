@@ -42,6 +42,22 @@ func TestUIMultiProjectInfoMindmapFromHostScope(t *testing.T) {
 	}
 }
 
+// TestUIMultiProjectInfoMindmapSurvivesBadHostFile (critic C2): a typo in the
+// per-user file, on another key or as broken TOML, never brings back a tab
+// the project turned off.
+func TestUIMultiProjectInfoMindmapSurvivesBadHostFile(t *testing.T) {
+	for _, host := range []string{"[wiki]\nenabled = \"no\"\n", "[x"} {
+		hostDir := t.TempDir()
+		t.Setenv("CERNE_CONFIG_DIR", hostDir)
+		if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte(host), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if byPID := mindmapFlags(t, "", "[mindmap]\nenabled = false\n"); byPID["proj-b"].Mindmap {
+			t.Errorf("host %q: proj-b ([mindmap] enabled = false) mindmap = true, want false", host)
+		}
+	}
+}
+
 // mindmapFlags registers two projects in a local ui — each gets a .cernerc
 // ending in its extra, or none when extra is "" — and returns GET
 // /api/projects by pid.

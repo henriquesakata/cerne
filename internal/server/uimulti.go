@@ -163,16 +163,13 @@ type projectInfo struct {
 }
 
 // mindmapEnabled resolves mindmap.enabled for projDir (project > host >
-// default). Fail-open: unreadable settings keep the tab enabled (the default).
+// default). A bad value or unreadable file elsewhere does not touch it; an
+// invalid mindmap value falls through to the next scope, then the default.
 func mindmapEnabled(projDir string) bool {
 	if projDir == "" {
 		return true
 	}
-	view, err := project.ResolveSettings(projDir)
-	if err != nil {
-		return true
-	}
-	for _, s := range view.Settings {
+	for _, s := range project.ResolveSettings(projDir).Settings {
 		if s.ID == "mindmap.enabled" {
 			return s.Value != false
 		}

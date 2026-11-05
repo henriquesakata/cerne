@@ -9,14 +9,11 @@ import (
 )
 
 // handleSettingsGet serves the settings registry resolved for projDir
-// (F-0314): every key's declaration, effective value and winning scope.
+// (F-0314): every key's declaration, effective value and winning scope, plus
+// the problems the resolution skipped. Always 200: a bad file is data the
+// settings screen shows so the user can fix it.
 func handleSettingsGet(w http.ResponseWriter, projDir string) {
-	view, err := project.ResolveSettings(projDir)
-	if err != nil {
-		writeSettingsError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, project.ResolveSettings(projDir))
 }
 
 // handleSettingsPut writes {"scope", "value"} for key id and answers with the
