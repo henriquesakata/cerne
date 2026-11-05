@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
-import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions, type ModelEntry, type Note } from './api'
+import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
 const streamChat = vi.fn<
@@ -30,6 +30,7 @@ const registerChatNote = vi.fn<
   ) => Promise<{ ok: true; note: Note } | { ok: false; error: string }>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
+const fetchFeature = vi.fn<(id: string) => Promise<FeatureDetail>>()
 const setPreferredProvider = vi.fn<(p: string) => Promise<void>>()
 
 // CATALOG (F-0311): o catálogo como o servidor o serve — correntes, legados
@@ -69,6 +70,7 @@ vi.mock('./api', async (importOriginal) => ({
   registerChatNote: (title: string, body: string, facets: string[], components: string[], informs?: string[]) =>
     registerChatNote(title, body, facets, components, informs),
   fetchLLMOptions: () => fetchLLMOptions(),
+  fetchFeature: (id: string) => fetchFeature(id),
   setPreferredProvider: (p: string) => setPreferredProvider(p),
 }))
 
@@ -82,6 +84,8 @@ beforeEach(() => {
   registerChatCandidate.mockReset()
   registerChatNote.mockReset()
   fetchLLMOptions.mockReset()
+  fetchFeature.mockReset()
+  fetchFeature.mockRejectedValue(new Error('not mocked'))
   fetchLLMOptions.mockResolvedValue(opts({ models: [], defaultModel: '', providers: [] }))
   setPreferredProvider.mockReset()
   setPreferredProvider.mockResolvedValue()
@@ -888,6 +892,15 @@ describe('BacklogChat — refino de candidata (F-0256)', () => {
         expect.any(Function),
       ),
     )
+  })
+
+  // F-0318 critério 5: a conversa de refino descobre o estado do alvo e, se
+  // ele já está aprovado, o painel avisa antes do clique.
+  it('F-0318: refino de feature aprovada avisa que atualizar vence a aprovação', async () => {
+    fetchFeature.mockResolvedValue({ feature: { ...feature('F-0010'), state: 'approved' } } as FeatureDetail)
+    renderChat({ featureId: 'F-0010', messages: [{ role: 'assistant', content: proposal }] })
+    expect(await screen.findByText(/vence a aprovação/i)).toBeInTheDocument()
+    expect(fetchFeature).toHaveBeenCalledWith('F-0010')
   })
 
   it('critérios 2/3/4: confirmar atualiza a candidata em vez de registrar uma nova', async () => {

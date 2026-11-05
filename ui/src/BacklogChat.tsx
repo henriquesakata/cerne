@@ -8,6 +8,7 @@ import {
   type UIEvent,
 } from 'react'
 import {
+  fetchFeature,
   fetchLLMOptions,
   registerChatCandidate,
   registerChatNote,
@@ -803,6 +804,19 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // escreveu no bloco — a linha "feature:" dele serve para marcar a revisão,
   // não para escolher em qual entidade gravar.
   const refineId = conversation.featureId ?? ''
+  // F-0318: o alvo do refino pode já estar aprovado (o chat regrava a spec,
+  // e isso vence a aprovação) — o painel precisa saber para avisar.
+  const [refineApproved, setRefineApproved] = useState(false)
+  useEffect(() => {
+    if (!refineId) return
+    let alive = true
+    fetchFeature(refineId)
+      .then((d) => alive && setRefineApproved(d.feature.state === 'approved'))
+      .catch(() => alive && setRefineApproved(false))
+    return () => {
+      alive = false
+    }
+  }, [refineId])
 
   // linkTo (F-0264): grava a spec corrente na candidata escolhida no clique —
   // mesmo caminho da F-0256 (UpdateCandidateSpec), sem cunhar nada.
@@ -1041,6 +1055,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           revisions={revisions.map((r) => r.proposal)}
           registering={registering}
           refining={refineId !== ''}
+          approvedTarget={refineApproved}
           onRegister={confirmRegister}
           onQuote={appendQuote}
         />
