@@ -288,8 +288,13 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 // readiness in one line (F-0308 crit. 5): approvable with the bar it would
 // accept, or the impediment codes and the check that details them. Past
 // candidacy (a task is born approved) there is nothing to approve: it prints
-// nothing.
+// nothing — unless the write staled the approval (F-0318), whose re-approve
+// has the same readiness. An approval with no baseline yet is not staled by a
+// write, so it stays silent too.
 func printApproveReadiness(w io.Writer, repoDir, id string) {
+	if f, err := store.LoadFeature(repoDir, id); err == nil && app.ApprovalBaselineMissing(repoDir, f) {
+		return
+	}
 	imps, err := app.ApproveReadiness(repoDir, id)
 	if errors.Is(err, domain.ErrInvalidTransition) {
 		return
