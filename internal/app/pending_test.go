@@ -260,7 +260,7 @@ func TestPromotePendingToFeature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature")
+	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature", false)
 	if err != nil {
 		t.Fatalf("PromotePending: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestPromotePendingToTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, task, err := PromotePending(repoDir, projDir, p.ID, "task")
+	got, task, err := PromotePending(repoDir, projDir, p.ID, "task", false)
 	if err != nil {
 		t.Fatalf("PromotePending: %v", err)
 	}
@@ -321,16 +321,38 @@ func TestPromotePendingRefusesClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromotePending(repoDir, projDir, p.ID, "epic"); !errors.Is(err, ErrPendingPromoteKind) {
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "epic", false); !errors.Is(err, ErrPendingPromoteKind) {
 		t.Fatalf("--as epic err = %v, want ErrPendingPromoteKind", err)
 	}
 	if _, err := ResolvePending(repoDir, projDir, p.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature"); !errors.Is(err, domain.ErrInvalidTransition) {
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", false); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("promote of a resolved pending err = %v, want ErrInvalidTransition", err)
 	}
 	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 {
 		t.Fatalf("refused promotions created entities: %d features, want only the origin", len(fs))
+	}
+}
+
+// A debt often reads like its origin, so the F-0147 guard of the created entity
+// can refuse the promotion; --force is the same conscious override there, and
+// the refused attempt leaves the pending open.
+func TestPromotePendingGuardAndForce(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := pendingOrigin(t, repoDir, projDir, "Lint de envelhecimento", nil, nil)
+	p, err := CreatePending(repoDir, projDir, "Lint de envelhecimento com limiar configurável", "", f.ID, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", false); !errors.Is(err, ErrSimilarExists) {
+		t.Fatalf("err = %v, want ErrSimilarExists", err)
+	}
+	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingOpen {
+		t.Fatalf("a refused promotion changed the pending to %s", stored.State)
+	}
+	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature", true)
+	if err != nil || got.PromotedTo != created.ID {
+		t.Fatalf("forced promote = %+v, %v", got, err)
 	}
 }

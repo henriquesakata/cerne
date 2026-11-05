@@ -206,6 +206,7 @@ func newPendingDropCmd(dir *string) *cobra.Command {
 
 func newPendingPromoteCmd(dir *string) *cobra.Command {
 	var as string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "promote <id>",
 		Short: "Turn an open pending into a feature or task (open -> promoted), linked both ways",
@@ -218,7 +219,7 @@ func newPendingPromoteCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p, f, err := app.PromotePending(ctx.repoDir, ctx.projDir, args[0], as)
+			p, f, err := app.PromotePending(ctx.repoDir, ctx.projDir, args[0], as, force)
 			if err != nil {
 				return err
 			}
@@ -227,5 +228,6 @@ func newPendingPromoteCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&as, "as", "", "feature or task (required)")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the created entity's duplicate-registration guard (F-0147)")
 	return cmd
 }

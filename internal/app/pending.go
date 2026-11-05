@@ -114,11 +114,13 @@ func DropPending(repoDir, projDir, id, reason string) (store.Pending, error) {
 // its title, tags, the origin's module and the body as the spec's context. The
 // spec carries "**Origem:** pendência [[P-NNNN]] (de <origin>)" — the link
 // back, an id wiki-link — and the pending moves to promoted with promoted_to.
+// force is the created entity's duplicate-guard override (F-0147): a debt
+// often reads like its origin.
 //
 // ponytail: two mutations, not one transaction. If the second fails, the
 // entity exists without promoted_to; the error names it, a retry hits the
 // duplicate guard on the created title, and 'cerne pending resolve' closes it.
-func PromotePending(repoDir, projDir, id, as string) (store.Pending, store.Feature, error) {
+func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending, store.Feature, error) {
 	if as != "feature" && as != "task" {
 		return store.Pending{}, store.Feature{}, fmt.Errorf("%w: %q", ErrPendingPromoteKind, as)
 	}
@@ -141,7 +143,7 @@ func PromotePending(repoDir, projDir, id, as string) (store.Pending, store.Featu
 	if p.Body != "" {
 		context += "\n\n" + p.Body
 	}
-	f, err := create(repoDir, projDir, p.Title, origin.Module, parent, p.Facets, p.Components, spectmpl.StubWithContext(p.Title, context), false, "", "")
+	f, err := create(repoDir, projDir, p.Title, origin.Module, parent, p.Facets, p.Components, spectmpl.StubWithContext(p.Title, context), force, "", "")
 	if err != nil {
 		return store.Pending{}, store.Feature{}, err
 	}
