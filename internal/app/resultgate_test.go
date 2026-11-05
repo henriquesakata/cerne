@@ -17,7 +17,7 @@ import (
 const (
 	gateSpecNumbered = "# Spec\n\n## Objetivo e critérios de aceitação\n\n1. um\n2. dois\n3. três\n4. quatro\n" + testBarTail
 	gateSpecPlain    = "# Spec\n\nConteúdo real da spec, sem critérios numerados.\n" + testBarTail
-	gateGauntletOK   = "\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	gateGauntletOK   = testGauntletTail
 	gateGauntletNA   = "\n## Gauntlet\n\nBarra: não aplicável (fixture de teste)\n"
 	gateCite1234     = "Provas: critério 1, critério 2, critério 3, critério 4.\n"
 )
@@ -43,8 +43,9 @@ func resultBody(cites, tail string) string {
 
 func TestCompleteRefusesResultWithoutGauntletRecord(t *testing.T) {
 	cases := map[string]string{
-		"no section":              resultBody(gateCite1234, ""),
-		"section without verdict": resultBody(gateCite1234, "\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória\n"),
+		"no section":               resultBody(gateCite1234, ""),
+		"section without citation": resultBody(gateCite1234, "\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória\n"),
+		"section without verdict":  resultBody(gateCite1234, "\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1: \"fixture\"\n"),
 	}
 	for name, result := range cases {
 		t.Run(name, func(t *testing.T) {
