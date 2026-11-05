@@ -22,6 +22,8 @@ func ValidStates(kind string) ([]string, bool) {
 		return []string{string(NoteActive), string(NoteSuperseded)}, true
 	case "work":
 		return []string{string(WorkActive), string(WorkDone), string(WorkAbandoned)}, true
+	case "pending":
+		return []string{string(PendingOpen), string(PendingResolved), string(PendingDropped), string(PendingPromoted)}, true
 	}
 	return nil, false
 }
