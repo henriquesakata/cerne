@@ -154,17 +154,23 @@ func TestSettingsSetRejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestSettingsGet: the bare value, or "origin<TAB>value" with --show-origin
-// (git config --show-origin parity); an unknown key is a named error.
+// TestSettingsGet: the bare value; --show-origin prefixes "file:<path>" (or
+// "default"), --show-scope the scope, both "<scope>\t<origin>", as git config
+// --show-scope --show-origin does. An unknown key is a named error.
 func TestSettingsGet(t *testing.T) {
 	projDir, _ := settingsProject(t, "[mindmap]\nenabled = false\n")
+	file := "file:" + filepath.Join(projDir, ".cernerc")
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
 		{[]string{"mindmap.enabled"}, "false\n"},
-		{[]string{"mindmap.enabled", "--show-origin"}, "project\tfalse\n"},
+		{[]string{"mindmap.enabled", "--show-origin"}, file + "\tfalse\n"},
+		{[]string{"mindmap.enabled", "--show-scope"}, "project\tfalse\n"},
+		{[]string{"mindmap.enabled", "--show-scope", "--show-origin"}, "project\t" + file + "\tfalse\n"},
 		{[]string{"graph.enabled", "--show-origin"}, "default\ttrue\n"},
+		{[]string{"graph.enabled", "--show-scope"}, "default\ttrue\n"},
+		{[]string{"graph.enabled", "--show-scope", "--show-origin"}, "default\tdefault\ttrue\n"},
 	} {
 		out, err := execCerne(t, append([]string{"settings", "get", "--dir", projDir}, tc.args...)...)
 		if err != nil || out != tc.want {

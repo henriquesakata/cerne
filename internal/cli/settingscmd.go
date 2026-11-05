@@ -61,7 +61,7 @@ func newSettingsListCmd(dir *string) *cobra.Command {
 }
 
 func newSettingsGetCmd(dir *string) *cobra.Command {
-	var showOrigin bool
+	var showOrigin, showScope bool
 	cmd := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Print a setting's effective value",
@@ -80,14 +80,24 @@ func newSettingsGetCmd(dir *string) *cobra.Command {
 				}
 			}
 			defer printSettingProblems(cmd.ErrOrStderr(), view, s.ID)
-			if showOrigin {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t", s.Origin)
+			// git config's layout: --show-scope, then --show-origin, then the value.
+			out := cmd.OutOrStdout()
+			if showScope {
+				fmt.Fprintf(out, "%s\t", s.Origin)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), s.Value)
+			if showOrigin {
+				origin := project.OriginDefault
+				if f, ok := view.Files[s.Origin]; ok {
+					origin = "file:" + f
+				}
+				fmt.Fprintf(out, "%s\t", origin)
+			}
+			fmt.Fprintln(out, s.Value)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&showOrigin, "show-origin", false, "prefix the value with the scope it came from")
+	cmd.Flags().BoolVar(&showOrigin, "show-origin", false, `prefix the value with the file it came from ("file:<path>", or "default")`)
+	cmd.Flags().BoolVar(&showScope, "show-scope", false, "prefix the value with the scope it came from (project, host or default)")
 	return cmd
 }
 
