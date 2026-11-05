@@ -1,10 +1,12 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/app"
@@ -52,7 +54,7 @@ func TestFeatureDetailSpecChangedAfterApproval(t *testing.T) {
 }
 
 // TestStaleApprovalOneSourceOfTruth (F-0318 crit. 4, 3): lint, the feature
-// payload and the start gate read one fact. Approved over A, edited to B, all
+// payload, the board payload and the start gate read one fact. Approved over A, edited to B, all
 // three accuse it; edited back to A — with edit events after the approval in
 // the log — none does.
 func TestStaleApprovalOneSourceOfTruth(t *testing.T) {
@@ -82,6 +84,13 @@ func TestStaleApprovalOneSourceOfTruth(t *testing.T) {
 		if rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got); rec.Code != http.StatusOK {
 			t.Fatalf("detail status %d", rec.Code)
 		}
+		var state struct {
+			StaleApprovals []string `json:"stale_approvals"`
+		}
+		doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &state)
+		if board := slices.Contains(state.StaleApprovals, "F-0001"); board != got.SpecChanged {
+			t.Fatalf("board stale %v disagrees with the feature payload %v", board, got.SpecChanged)
+		}
 		return finding, got.SpecChanged
 	}
 
@@ -101,5 +110,68 @@ func TestStaleApprovalOneSourceOfTruth(t *testing.T) {
 	_, startErr = app.TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil)
 	if finding || payload || startErr != nil {
 		t.Fatalf("A→B→A: lint %v, payload %v, start %v — want none to accuse it", finding, payload, startErr)
+	}
+}
+
+// TestFeatureDetailCarriesApprovedSpec (F-0318 crit. 9, 7): a stale approval's
+// payload carries the approved text — the page diffs it against the live spec
+// — and the re-approve's readiness, so the button tells before the click.
+// A clean approval carries neither.
+func TestFeatureDetailCarriesApprovedSpec(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Editada após aprovar", domain.StateApproved)
+	seedFeature(t, repoDir, "F-0002", "Aprovada intacta", domain.StateApproved)
+	writeApprovedCopy(t, repoDir, "F-0001", realDoc("F-0001", "Versão aprovada."))
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Versão editada."))
+	writeApprovedCopy(t, repoDir, "F-0002", realDoc("F-0002", "Versão aprovada."))
+	writeDoc(t, repoDir, "F-0002", "spec.md", realDoc("F-0002", "Versão aprovada."))
+
+	var got struct {
+		ApprovedSpec     *string                 `json:"approved_spec"`
+		Bar              string                  `json:"bar"`
+		ApproveReadiness []app.ApproveImpediment `json:"approve_readiness"`
+	}
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
+	if got.ApprovedSpec == nil || *got.ApprovedSpec != realDoc("F-0001", "Versão aprovada.") {
+		t.Fatalf("F-0001 approved_spec = %v, want the approved copy", got.ApprovedSpec)
+	}
+	if got.Bar == "" {
+		t.Fatalf("F-0001 bar = %q, want the bar the re-approve would accept", got.Bar)
+	}
+
+	got.ApprovedSpec, got.Bar = nil, ""
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0002", "", &got)
+	if got.ApprovedSpec != nil || got.Bar != "" {
+		t.Fatalf("F-0002 approved_spec = %v, bar = %q, want neither on a clean approval", got.ApprovedSpec, got.Bar)
+	}
+}
+
+// TestStateCarriesStaleApprovals (F-0318 crit. 8, 4): the board payload lists
+// the features whose approval went stale — the kanban badges them from the
+// same function every other surface reads — and is never null.
+func TestStateCarriesStaleApprovals(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Editada após aprovar", domain.StateApproved)
+	seedFeature(t, repoDir, "F-0002", "Aprovada intacta", domain.StateApproved)
+	seedFeature(t, repoDir, "F-0003", "Legada, sem cópia", domain.StateApproved)
+	writeApprovedCopy(t, repoDir, "F-0001", "A\n")
+	writeDoc(t, repoDir, "F-0001", "spec.md", "A\nB\n")
+	writeApprovedCopy(t, repoDir, "F-0002", "A\n")
+	writeDoc(t, repoDir, "F-0002", "spec.md", "A\n")
+	writeDoc(t, repoDir, "F-0003", "spec.md", "B\n")
+
+	var got struct {
+		StaleApprovals []string `json:"stale_approvals"`
+	}
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/state", "", &got)
+	if len(got.StaleApprovals) != 1 || got.StaleApprovals[0] != "F-0001" {
+		t.Fatalf("stale_approvals = %v, want [F-0001]", got.StaleApprovals)
+	}
+
+	empty, emptyProj := newBackend(t)
+	var raw map[string]json.RawMessage
+	doJSON(t, New(empty, emptyProj, ""), http.MethodGet, "/api/state", "", &raw)
+	if string(raw["stale_approvals"]) != "[]" {
+		t.Fatalf("stale_approvals = %s, want [] when none", raw["stale_approvals"])
 	}
 }

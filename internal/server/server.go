@@ -126,6 +126,10 @@ type stateResponse struct {
 	// every request — never persisted. Only entities with active work; always
 	// present, never null.
 	ActiveWork map[string][]activeWorkItem `json:"active_work"`
+	// StaleApprovals lists the approved features whose spec differs from the
+	// approved one (F-0318), so the board badges them. Derived on every
+	// request through lint.SpecChangedAfterApproval; always present, never null.
+	StaleApprovals []string `json:"stale_approvals"`
 }
 
 // activeWorkItem is one active W-item referencing a feature: enough to badge
@@ -209,6 +213,12 @@ func handleState(w http.ResponseWriter, repoDir string) {
 	if proj.Modules == nil {
 		proj.Modules = []string{} // contract: modules is always a list
 	}
+	stale := []string{}
+	for _, f := range features {
+		if changed, _, _ := lint.SpecChangedAfterApproval(repoDir, f); changed {
+			stale = append(stale, f.ID)
+		}
+	}
 	writeJSON(w, http.StatusOK, stateResponse{
 		Project:            proj,
 		Features:           features,
@@ -219,6 +229,7 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		Capabilities:       capabilities,
 		OpenClarifications: countOpenClarifications(repoDir),
 		ActiveWork:         activeWorkByRef(repoDir),
+		StaleApprovals:     stale,
 	})
 }
 
@@ -251,6 +262,9 @@ type featureDetailResponse struct {
 	// from the copy its last approve kept (F-0262, by content since F-0318) —
 	// the page warns the approval is stale.
 	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
+	// ApprovedSpec is the approved text a stale approval diverged from (F-0318),
+	// for the page to diff against docs.spec; omitted when not stale.
+	ApprovedSpec *string `json:"approved_spec,omitempty"`
 	// RoastRounds lists the persisted adversarial spec critiques (F-0271/
 	// F-0277), newest first; empty when no roast ran yet. The report body is
 	// fetched per round via GET /artifacts/{id}/{name}.
@@ -259,8 +273,9 @@ type featureDetailResponse struct {
 	// separate so a plan round never reads as a spec round.
 	PlanRoastRounds []roastRound `json:"plan_roast_rounds"`
 	// ApproveReadiness lists what stops a candidate's approve, and Bar is the
-	// bar line the approve would accept (F-0308) — candidates only, so the page
-	// tells before the click; both omitted when empty.
+	// bar line the approve would accept (F-0308) — candidates and stale
+	// approvals (the re-approve, F-0318) only, so the page tells before the
+	// click; both omitted when empty.
 	ApproveReadiness []app.ApproveImpediment `json:"approve_readiness,omitempty"`
 	Bar              string                  `json:"bar,omitempty"`
 }
@@ -369,7 +384,12 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	specChanged, _, _ := lint.SpecChangedAfterApproval(repoDir, f)
+	specChanged, approvedSpec, _ := lint.SpecChangedAfterApproval(repoDir, f)
+	var approved *string
+	if specChanged {
+		s := string(approvedSpec)
+		approved = &s
+	}
 	planRounds, err := planRoastRounds(repoDir, id, docs.Spec, docs.Plan)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -382,7 +402,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	}
 	var readiness []app.ApproveImpediment
 	var bar string
-	if f.State == domain.StateCandidate {
+	if f.State == domain.StateCandidate || specChanged {
 		if readiness, err = app.ApproveReadiness(repoDir, id); err == nil {
 			bar, err = app.AcceptedBar(repoDir, id)
 		}
@@ -391,7 +411,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovedSpec: approved, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
