@@ -219,6 +219,7 @@ var (
 	kindNote      = entityKind{"note", `retire it with 'cerne note retire %[1]s --reason "re-registered"'`}
 	kindDecision  = entityKind{"decision", "to replace it, re-run with --force and then supersede %[1]s with the new decision (cerne decision substituir %[1]s --by <the new id> --reason …)"}
 	kindReference = entityKind{"reference", `retire it with 'cerne reference retire %[1]s --reason "re-registered"'`}
+	kindPending   = entityKind{"pending", `drop it with 'cerne pending drop %[1]s --reason "re-registered"'`}
 )
 
 // guardEntity is guardRegistration for the creation verbs of note, decision and
@@ -294,6 +295,23 @@ func sharedSignals(id string, a, b tagSet) string {
 		return ""
 	}
 	return fmt.Sprintf("%s has %s", id, strings.Join(parts, " and "))
+}
+
+// guardPending scopes the guard to the OPEN pendings of the same origin
+// (F-0322): the same debt registered twice against one delivery is the retry
+// duplicate; a similar title on another origin is a different debt.
+func guardPending(repoDir, title, from string, force bool) (bool, error) {
+	pendings, err := store.LoadAllPendings(repoDir)
+	if err != nil {
+		return false, err
+	}
+	var matches []SimilarMatch
+	for _, p := range pendings {
+		if p.State == domain.PendingOpen && p.From == from && dupmatch.SimilarTitles(title, p.Title) {
+			matches = append(matches, SimilarMatch{ID: p.ID, State: string(p.State), Title: p.Title})
+		}
+	}
+	return guardEntity(kindPending, matches, "", force)
 }
 
 func guardNote(repoDir, title string, tags tagSet, force bool) (bool, error) {
