@@ -307,7 +307,7 @@ func TestMessagesNameExistingCommands(t *testing.T) {
 		}
 		for _, doc := range []string{"spec", "plan", "result"} {
 			if !domain.TitleEditable(state) {
-				add("push block "+string(state)+" "+doc, frozenDocError("current/features/"+id+"-x/"+doc+".md", id, state).Error())
+				add("push block "+string(state)+" "+doc, frozenBlock("current/features/"+id+"-x/"+doc+".md", id, state))
 			}
 			add("write refusal "+string(state)+" "+doc, app.DocFixPhrase(id, doc, state))
 			if _, err := app.CheckDocWritable(repoDir, id, doc); err != nil {
@@ -335,5 +335,25 @@ func TestMessagesNameExistingCommands(t *testing.T) {
 	}
 	if len(missing) != 0 {
 		t.Fatalf("messages name commands that do not exist: %v", missing)
+	}
+}
+
+// Two frozen documents are refused once, each with its own block, in walk order —
+// the second blocker must not surface only after the first is fixed.
+func TestPushNamesEveryFrozenDocument(t *testing.T) {
+	projDir, ids := closedFeaturesProject(t, domain.StateImplemented, domain.StateRejected)
+	a, b := ids[domain.StateImplemented], ids[domain.StateRejected]
+	relA := recreate(t, projDir, a+"-feature", "result", realDoc(a, "x"))
+	relB := recreate(t, projDir, b+"-feature", "spec", realDoc(b, "y"))
+	for _, args := range pushEntrypoints {
+		_, err := execCerne(t, append(args, "--dir", projDir)...)
+		if !errors.Is(err, app.ErrFeatureFrozen) {
+			t.Fatalf("%v: err = %v, want ErrFeatureFrozen", args, err)
+		}
+		msg := err.Error()
+		ia, ib := strings.Index(msg, "frozen document: "+relA), strings.Index(msg, "frozen document: "+relB)
+		if ia < 0 || ib < 0 || ia > ib {
+			t.Fatalf("%v: want both blocks in walk order:\n%s", args, msg)
+		}
 	}
 }

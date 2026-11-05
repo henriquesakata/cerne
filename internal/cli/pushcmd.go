@@ -239,6 +239,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		return nil, err
 	}
 	var docs []pushedDoc
+	var frozen []string // every frozen document's block: one refusal names them all
 	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -261,8 +262,9 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		case tracked && sum == want:
 			return nil // tracked and unchanged
 		case !tracked && !acceptableNewDoc(rel, manifest):
-			if err := untrackedFrozenError(repoDir, rel, body); err != nil {
-				return err
+			if block, ok := untrackedFrozenBlock(repoDir, rel, body); ok {
+				frozen = append(frozen, block)
+				return nil
 			}
 			return fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
 		}
@@ -283,7 +285,8 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 				return err
 			}
 			if err == nil && !domain.TitleEditable(f.State) {
-				return frozenDocError(rel, id, f.State)
+				frozen = append(frozen, frozenBlock(rel, id, f.State))
+				return nil
 			}
 		}
 		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: body, sum: sum})
@@ -292,22 +295,25 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	if err != nil {
 		return nil, err
 	}
+	if len(frozen) > 0 {
+		return nil, fmt.Errorf("%w: %s", app.ErrFeatureFrozen, strings.Join(frozen, "\n"))
+	}
 	return docs, nil
 }
 
 // frozenDirIDRe takes the feature id off the front of a materialized folder name.
 var frozenDirIDRe = regexp.MustCompile(`^([A-Z]+-\d+)(?:-|$)`)
 
-// untrackedFrozenError explains an untracked .docs/<rel> that belongs to a
+// untrackedFrozenBlock explains an untracked .docs/<rel> that belongs to a
 // closed feature — the file an agent recreates by hand after a pull that did
 // not materialize it (F-0307). The id comes from the cerne_id frontmatter, else
 // from the folder name; the state from the cache clone, with no fetch, so a
 // stale state only misleads the hint. nil when rel is not a spec/plan/result of
-// a known closed feature: the caller keeps its untracked-file phrase.
-func untrackedFrozenError(repoDir, rel string, body []byte) error {
+// a known closed feature: the caller keeps its untracked-file phrase (ok false).
+func untrackedFrozenBlock(repoDir, rel string, body []byte) (string, bool) {
 	doc := strings.TrimSuffix(path.Base(rel), ".md")
 	if !strings.HasPrefix(rel, "current/features/") || (doc != "spec" && doc != "plan" && doc != "result") {
-		return nil
+		return "", false
 	}
 	id := parseCerneID(body)
 	if id == "" {
@@ -316,22 +322,22 @@ func untrackedFrozenError(repoDir, rel string, body []byte) error {
 		}
 	}
 	if id == "" {
-		return nil
+		return "", false
 	}
 	f, err := store.LoadFeature(repoDir, id)
 	if err != nil || domain.TitleEditable(f.State) {
-		return nil
+		return "", false
 	}
-	return frozenDocError(rel, id, f.State)
+	return frozenBlock(rel, id, f.State), true
 }
 
-// frozenDocError is push's refusal of a .docs/<rel> of a closed feature, tracked
+// frozenBlock is push's refusal of a .docs/<rel> of a closed feature, tracked
 // and changed or recreated untracked alike: the state, the correction the table
 // gives (lint.Correction), how to read the text and how to unblock. The local
 // copy blocks every push until removed — pull never re-materializes it — so the
 // block says to remove it; an amend reads it first (--file may point at it), so
 // no edit is lost. Nothing is deleted for the user.
-func frozenDocError(rel, id string, s domain.FeatureState) error {
+func frozenBlock(rel, id string, s domain.FeatureState) string {
 	doc := strings.TrimSuffix(path.Base(rel), ".md")
 	local := ".docs/" + rel
 	kind, cmd := lint.Correction(s, id, doc)
@@ -343,8 +349,8 @@ func frozenDocError(rel, id string, s domain.FeatureState) error {
 	if kind == lint.CorrectByAmend {
 		unblock = "remove " + local + " (it blocks every push until removed; the amend reads it, so run that first)"
 	}
-	return fmt.Errorf("%w: frozen document: %s — %s is %s and 'cerne pull' does not materialize it.\n  correct it: %s\n  read it:    cerne show %s --doc %s\n  unblock:    %s",
-		app.ErrFeatureFrozen, rel, id, s, fix, id, doc, unblock)
+	return fmt.Sprintf("frozen document: %s — %s is %s and 'cerne pull' does not materialize it.\n  correct it: %s\n  read it:    cerne show %s --doc %s\n  unblock:    %s",
+		rel, id, s, fix, id, doc, unblock)
 }
 
 // acceptableNewDoc reports whether rel is a net-new plan.md/result.md authored
