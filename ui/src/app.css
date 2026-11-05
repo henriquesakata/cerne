@@ -827,6 +827,10 @@ h2 {
 .chat-menu-item:hover { background: var(--surface-2); }
 .chat-menu-item:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .chat-menu-item-key { color: var(--faint); font-variant-numeric: tabular-nums; }
+/* F-0311: o provedor acompanha o rótulo de cada modelo, mais discreto */
+.chat-menu-item-provider { margin-left: 0.25rem; color: var(--faint); font-size: 0.75rem; }
+/* submenu de modelos anteriores: abre dentro do mesmo popup, sob um divisor */
+.chat-menu-sublist { margin-top: 0.2rem; padding-top: 0.2rem; border-top: 1px solid var(--border); }
 
 /* Controles junto ao compositor, em linha (F-0239): rótulo e select no mesmo
    eixo, como as chips de contexto da referência — não rótulo empilhado sobre

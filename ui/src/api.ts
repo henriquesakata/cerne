@@ -873,15 +873,59 @@ export async function fetchLLMMode(): Promise<LLMMode> {
   return ((await r.json()) as { mode: LLMMode }).mode
 }
 
-// LLMOptions (F-0218) é o payload completo de GET /api/config/llm: modo +
-// as listas conhecidas de modelo/esforço que alimentam o seletor do chat.
-export type LLMOptions = { mode: LLMMode; models: string[]; efforts: string[] }
+// ModelEntry (F-0311) é uma entrada do catálogo global de modelos: o seletor
+// do chat só filtra e reconcilia o que o servidor serve — nunca lista modelo
+// próprio. efforts é a matriz: só esses níveis valem para o modelo.
+export type ModelVisibility = 'current' | 'legacy' | 'delisted'
+export type ModelEntry = {
+  id: string
+  label: string
+  provider: string
+  efforts?: string[]
+  default_effort?: string
+  visibility: ModelVisibility
+}
+
+// LLMOptions (F-0218/F-0311) é o payload de GET /api/config/llm: modo, o
+// catálogo resolvido com seu default e os provedores já configurados no
+// projeto, mais o preferido (global, persistido).
+export type LLMOptions = {
+  mode: LLMMode
+  models: ModelEntry[]
+  defaultModel: string
+  providers: string[]
+  preferredProvider: string
+}
 
 export async function fetchLLMOptions(): Promise<LLMOptions> {
   const r = await fetch(`${base()}/config/llm`)
   if (!r.ok) throw new Error(await errorMessage(r))
-  const j = (await r.json()) as { mode: LLMMode; models?: string[]; efforts?: string[] }
-  return { mode: j.mode, models: j.models ?? [], efforts: j.efforts ?? [] }
+  const j = (await r.json()) as {
+    mode: LLMMode
+    models?: ModelEntry[]
+    default_model?: string
+    providers?: string[]
+    preferred_provider?: string
+  }
+  return {
+    mode: j.mode,
+    models: j.models ?? [],
+    defaultModel: j.default_model ?? '',
+    providers: j.providers ?? [],
+    preferredProvider: j.preferred_provider ?? '',
+  }
+}
+
+// setPreferredProvider (F-0311 critério 16) grava a escolha no catálogo global:
+// sobrevive a reinício e vale para todos os projetos. Só aceita provedor que o
+// projeto já alcança — cadastrar provedor não é desta superfície.
+export async function setPreferredProvider(provider: string): Promise<void> {
+  const r = await fetch(`${base()}/config/models/provider`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
 }
 
 // setLLMMode grava o modo no .cernerc; o servidor relê a config a cada

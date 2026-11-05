@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
-import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions, type Note } from './api'
+import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
 const streamChat = vi.fn<
@@ -30,6 +30,27 @@ const registerChatNote = vi.fn<
   ) => Promise<{ ok: true; note: Note } | { ok: false; error: string }>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
+const setPreferredProvider = vi.fn<(p: string) => Promise<void>>()
+
+// CATALOG (F-0311): o catálogo como o servidor o serve — correntes, legados
+// (submenu), um delistado (nunca ofertado) e um segundo provedor.
+const CATALOG: ModelEntry[] = [
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', provider: 'anthropic', efforts: ['low', 'medium', 'high'], default_effort: 'medium', visibility: 'current' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', provider: 'anthropic', efforts: ['low', 'high'], default_effort: 'high', visibility: 'current' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', provider: 'anthropic', efforts: ['low', 'medium', 'high', 'max'], default_effort: 'high', visibility: 'legacy' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', provider: 'anthropic', visibility: 'legacy' },
+  { id: 'claude-gone-1', label: 'Claude Gone 1', provider: 'anthropic', efforts: ['low'], visibility: 'delisted' },
+  { id: 'vendor-x-1', label: 'Vendor X 1', provider: 'vendor', efforts: ['fast'], default_effort: 'fast', visibility: 'current' },
+]
+
+const opts = (patch: Partial<LLMOptions> = {}): LLMOptions => ({
+  mode: 'byo-key',
+  models: CATALOG,
+  defaultModel: 'claude-opus-5-5',
+  providers: ['anthropic'],
+  preferredProvider: '',
+  ...patch,
+})
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -48,6 +69,7 @@ vi.mock('./api', async (importOriginal) => ({
   registerChatNote: (title: string, body: string, facets: string[], components: string[], informs?: string[]) =>
     registerChatNote(title, body, facets, components, informs),
   fetchLLMOptions: () => fetchLLMOptions(),
+  setPreferredProvider: (p: string) => setPreferredProvider(p),
 }))
 
 let nextConvId = 0
@@ -60,7 +82,9 @@ beforeEach(() => {
   registerChatCandidate.mockReset()
   registerChatNote.mockReset()
   fetchLLMOptions.mockReset()
-  fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], efforts: [] })
+  fetchLLMOptions.mockResolvedValue(opts({ models: [], defaultModel: '', providers: [] }))
+  setPreferredProvider.mockReset()
+  setPreferredProvider.mockResolvedValue()
   nextConvId += 1
 })
 
@@ -113,7 +137,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   })
 
   it('nasce desabilitado com orientação quando o projeto não tem [llm] configurado (critério 5)', async () => {
-    fetchLLMOptions.mockResolvedValue({ mode: 'delegation', models: [], efforts: [] })
+    fetchLLMOptions.mockResolvedValue(opts({ mode: 'delegation', models: [], defaultModel: '', providers: [] }))
     renderChat()
 
     await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument())
@@ -453,20 +477,16 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   })
 
   it('critério 5: seletor de modelo/esforço envia a escolha selecionada na chamada', async () => {
-    fetchLLMOptions.mockResolvedValue({
-      mode: 'byo-key',
-      models: ['claude-opus-5', 'claude-sonnet-5'],
-      efforts: ['low', 'high'],
-    })
+    fetchLLMOptions.mockResolvedValue(opts())
     streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
     renderChat()
 
-    await screen.findByText('claude-opus-5')
+    await screen.findByText('Claude Opus 5.5')
     // F-0241: seleção pelo menu, não por change num <select>
     fireEvent.click(screen.getByLabelText(/modelo/i))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /claude-opus-5/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Claude Sonnet 5\.5/ }))
     fireEvent.click(screen.getByLabelText(/esfor/i))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /high/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /low/ }))
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -474,57 +494,141 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     await waitFor(() =>
       expect(streamChat).toHaveBeenCalledWith(
         [{ role: 'user', content: 'Oi' }],
-        { model: 'claude-opus-5', effort: 'high' },
+        { model: 'claude-sonnet-5-5', effort: 'low' },
         expect.any(Function),
       ),
     )
   })
 
   it('F-0219: a conversa recebida com modelo/esforço já salvos pré-seleciona o seletor', async () => {
-    fetchLLMOptions.mockResolvedValue({
-      mode: 'byo-key',
-      models: ['claude-opus-5', 'claude-sonnet-5'],
-      efforts: ['low', 'high'],
-    })
-    renderChat({ model: 'claude-opus-5', effort: 'high' })
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat({ model: 'claude-sonnet-5-5', effort: 'low' })
 
-    await screen.findByText('claude-opus-5')
-    // F-0241: o seletor virou botão + menu (o <select> nativo não renderiza
-    // marca de selecionado nem dígito de atalho), então o valor corrente é o
-    // texto do gatilho, não a `value` de um combobox. A garantia é a mesma.
-    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-opus-5')
-    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('high')
+    // F-0241: o seletor virou botão + menu, então o valor corrente é o texto
+    // do gatilho; F-0311: o gatilho mostra o rótulo, nunca o id cru.
+    await waitFor(() => expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Claude Sonnet 5.5'))
+    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('low')
   })
 
-  it('F-0241: sem seleção salva, model e effort nascem com o padrão preferido', async () => {
-    fetchLLMOptions.mockResolvedValue({
-      mode: 'byo-key',
-      models: ['claude-sonnet-5', 'claude-opus-5'],
-      efforts: ['low', 'medium', 'high'],
-    })
+  it('F-0311: sem seleção salva, model e effort nascem do default do catálogo', async () => {
+    fetchLLMOptions.mockResolvedValue(opts())
     renderChat({ model: '', effort: '' })
 
-    // preferência é opus/high, mesmo não sendo os primeiros da lista
-    await waitFor(() =>
-      expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-opus-5'),
-    )
-    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('high')
+    await waitFor(() => expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Claude Opus 5.5'))
+    // o esforço default declarado do modelo, não um palpite global
+    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('medium')
   })
 
   it('F-0241: escolher no menu troca o valor e fecha', async () => {
-    fetchLLMOptions.mockResolvedValue({
-      mode: 'byo-key',
-      models: ['claude-opus-5', 'claude-sonnet-5'],
-      efforts: ['low', 'high'],
-    })
-    renderChat({ model: 'claude-opus-5', effort: 'high' })
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat({ model: 'claude-opus-5-5', effort: 'high' })
 
-    await screen.findByText('claude-opus-5')
+    await screen.findByText('Claude Opus 5.5')
     fireEvent.click(screen.getByLabelText(/modelo/i))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /claude-sonnet-5/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Claude Sonnet 5\.5/ }))
 
-    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-sonnet-5')
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Claude Sonnet 5.5')
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
+  const openModels = async () => {
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/modelo/i))
+  }
+
+  it('critérios 8 e 10: correntes no primeiro nível, legados só no submenu, delistados em lugar nenhum', async () => {
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat()
+    await openModels()
+
+    const first = screen.getAllByRole('menuitemradio').map((el) => el.textContent)
+    expect(first).toHaveLength(2)
+    expect(first[0]).toMatch(/Claude Opus 5\.5/)
+    expect(first[1]).toMatch(/Claude Sonnet 5\.5/)
+    expect(screen.queryByText('Claude Opus 5')).toBeNull()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /modelos anteriores/i }))
+    const legacy = within(screen.getByRole('menu', { name: /modelos anteriores/i }))
+    expect(legacy.getByRole('menuitemradio', { name: /Claude Opus 5\b(?!\.)/ })).toBeInTheDocument()
+    expect(legacy.getByRole('menuitemradio', { name: /Claude Haiku 4\.5/ })).toBeInTheDocument()
+    expect(screen.queryByText('Claude Gone 1')).toBeNull()
+  })
+
+  it('critério 9: um legado escolhido no submenu é seleção válida, com os esforços declarados dele', async () => {
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat()
+    await openModels()
+    fireEvent.click(screen.getByRole('menuitem', { name: /modelos anteriores/i }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Claude Opus 5\b(?!\.)/ }))
+
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent(/^Claude Opus 5$/)
+    fireEvent.click(screen.getByLabelText(/esfor/i))
+    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent?.replace(/[✓\d]+$/, ''))).toEqual([
+      'low',
+      'medium',
+      'high',
+      'max',
+    ])
+  })
+
+  it('critério 11: cada entrada mostra rótulo e provedor, nunca o id cru', async () => {
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat()
+    await openModels()
+
+    for (const item of screen.getAllByRole('menuitemradio')) {
+      expect(item).toHaveTextContent(/Anthropic/)
+    }
+    expect(screen.queryByText(/claude-opus-5-5|claude-sonnet-5-5/)).toBeNull()
+  })
+
+  it('critérios 12 e 13: o esforço segue o modelo — fora da matriz cai no default declarado, sem seleção vazia', async () => {
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await openModels()
+    // Sonnet 5.5 não aceita "medium": a seleção vira o default dele, sem erro
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Claude Sonnet 5\.5/ }))
+    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('high')
+
+    fireEvent.click(screen.getByLabelText(/esfor/i))
+    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent?.replace(/[✓\d]+$/, ''))).toEqual(['low', 'high'])
+    expect(screen.queryByRole('menuitemradio', { name: /medium/ })).toBeNull()
+  })
+
+  it('critérios 14 e 15: o seletor de provedor lista os configurados e restringe a lista de modelos', async () => {
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'vendor'] }))
+    renderChat()
+    await screen.findByText('Claude Opus 5.5')
+
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent?.replace(/[✓\d]+$/, ''))).toEqual([
+      'Anthropic',
+      'Vendor',
+    ])
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Vendor/ }))
+
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Vendor X 1')
+    expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('fast')
+    fireEvent.click(screen.getByLabelText(/modelo/i))
+    expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([expect.stringMatching(/Vendor X 1/)])
+  })
+
+  it('critério 16: a escolha de provedor é persistida e volta como seleção inicial', async () => {
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'vendor'] }))
+    const first = renderChat()
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Vendor/ }))
+    expect(setPreferredProvider).toHaveBeenCalledWith('vendor')
+    first.unmount()
+
+    // "Reinício": o servidor devolve a preferência gravada no arquivo global.
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'vendor'], preferredProvider: 'vendor' }))
+    renderChat()
+    await waitFor(() => expect(screen.getByLabelText(/provedor/i)).toHaveTextContent('Vendor'))
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Vendor X 1')
   })
 })
 
@@ -561,18 +665,19 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
     vi.useFakeTimers()
     try {
       streamChat.mockReturnValue(new Promise(() => {}))
-      fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['medium'] })
+      fetchLLMOptions.mockResolvedValue(opts())
       renderChat({ model: 'claude-opus-5', effort: 'medium' })
 
       await vi.waitFor(() =>
-        expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('claude-opus-5'),
+        expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Claude Opus 5'),
       )
       fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
       fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
       await vi.advanceTimersByTimeAsync(83_000)
       expect(screen.getByText(/1m23s/)).toBeInTheDocument()
-      expect(screen.getByText(/claude-opus-5\/medium/)).toBeInTheDocument()
+      // F-0311: o indicador nomeia o modelo pelo rótulo do catálogo
+      expect(screen.getByText(/Claude Opus 5\/medium/)).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }
@@ -626,7 +731,7 @@ describe('BacklogChat (F-0248): sair da tela com resposta em voo', () => {
 
     writeChats([{ id: 'c-nav', title: '', updatedAt: 0, messages: [], model: '', effort: '' }], 'c-nav')
     const first = render(<Harness />)
-    await act(async () => resolveOpts({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['high'] }))
+    await act(async () => resolveOpts(opts()))
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Preciso de X' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
@@ -640,7 +745,7 @@ describe('BacklogChat (F-0248): sair da tela com resposta em voo', () => {
     fetchLLMOptions.mockImplementation(() => new Promise((r) => (resolveOpts = r)))
     render(<Harness />)
     await act(async () => resolveStream({ answered: true, reply: 'resposta completa do agente' }))
-    await act(async () => resolveOpts({ mode: 'byo-key', models: ['claude-opus-5'], efforts: ['high'] }))
+    await act(async () => resolveOpts(opts()))
 
     await waitFor(() => expect(screen.getByText('resposta completa do agente')).toBeInTheDocument())
     expect(getConversation('c-nav')?.messages).toEqual([

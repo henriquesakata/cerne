@@ -61,7 +61,7 @@ beforeEach(() => {
   streamChat.mockReset()
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
-  fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], efforts: [] })
+  fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], defaultModel: '', providers: [], preferredProvider: '' })
 })
 
 describe('Backlog (F-0202)', () => {
