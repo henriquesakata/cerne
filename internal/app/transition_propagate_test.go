@@ -256,7 +256,7 @@ func TestPropagateCycleTerminates(t *testing.T) {
 		t.Fatalf("SaveFeature b: %v", err)
 	}
 
-	started, err := propagateStartToAncestors(repoDir, a.ID)
+	started, _, err := propagateStartToAncestors(repoDir, a.ID)
 	if err != nil {
 		t.Fatalf("propagateStartToAncestors: %v", err)
 	}

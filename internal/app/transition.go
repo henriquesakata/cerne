@@ -342,8 +342,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			// that is ready (approved, with a real plan) starts in the same commit,
 			// so the epic never lags its own decomposition. Bundled inside the same
 			// critical section — all or nothing, no mid-state commit.
-			if propagated, err = propagateStartToAncestors(repoDir, id); err != nil {
+			var staleNote string
+			if propagated, staleNote, err = propagateStartToAncestors(repoDir, id); err != nil {
 				return "", err
+			}
+			if staleNote != "" {
+				warnings = append(warnings, staleNote)
 			}
 		}
 		// Completing a child conducts the epic closure (F-0214, close-side
@@ -384,15 +388,15 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 // no change. Mutations persist to the store and are committed by the caller's
 // critical section (MutateAndSnapshot), so the child start and every propagated
 // epic land in one commit. Returns the ancestors it started, nearest-first
-// (empty when none).
+// (empty when none), and — when the walk stopped at an epic whose approval is
+// stale (F-0318) — the line that says so, for the caller to print.
 // A visited set guards against a cyclic parent link so a corrupt graph cannot
 // loop forever.
-func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
+func propagateStartToAncestors(repoDir, childID string) (started []string, staleNote string, err error) {
 	cur, err := store.LoadFeature(repoDir, childID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	var started []string
 	visited := map[string]bool{childID: true}
 	for cur.Parent != "" {
 		if visited[cur.Parent] {
@@ -404,20 +408,21 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 			break // dangling parent: lint's parent-not-found reports it
 		}
 		if err != nil {
-			return started, err
+			return started, "", err
 		}
 		if parent.State != domain.StateApproved {
 			break // candidate needs approval; in_development/terminal: nothing to do
 		}
 		docs, err := FeatureDocSet(repoDir, parent.ID)
 		if err != nil {
-			return started, err
+			return started, "", err
 		}
 		if err := domain.CheckGate(parent.ID, domain.ActionStart, docs); err != nil {
 			break // epic not ready (no real plan): don't force it, leave it to lint
 		}
 		if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, parent); stale {
-			break // the start gate refuses a stale approval (F-0318): so does this
+			// The start gate refuses a stale approval (F-0318): so does this, out loud.
+			return started, fmt.Sprintf("epic %s was not started along with %s: spec changed since approval — a human re-approves it with 'cerne feature approve %s'", parent.ID, childID, parent.ID), nil
 		}
 		newState, err := domain.Transition(parent.State, domain.ActionStart)
 		if err != nil {
@@ -426,19 +431,19 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 		parent.State = newState
 		parent.UpdatedAt = time.Now().UTC()
 		if err := store.SaveFeature(repoDir, parent); err != nil {
-			return started, err
+			return started, "", err
 		}
 		ev := domain.NewEvent(parent.ID, "feature.started", map[string]string{"via": childID}, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
-			return started, err
+			return started, "", err
 		}
 		if err := writeResultStub(repoDir, parent.ID, parent.Title); err != nil {
-			return started, err
+			return started, "", err
 		}
 		started = append(started, parent.ID)
 		cur = parent
 	}
-	return started, nil
+	return started, "", nil
 }
 
 // scaffoldEpicCloseIfReady checks whether parentID's children are all

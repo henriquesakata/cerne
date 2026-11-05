@@ -150,7 +150,9 @@ func TestStartRefusesStaleApproval(t *testing.T) {
 
 // TestStartPropagationSkipsStaleEpic (F-0318 crit. 6): a child's start pulls
 // its ready epic along (propagateStartToAncestors) — never one whose approval
-// went stale, or the propagation would be a way around the start gate.
+// went stale, or the propagation would be a way around the start gate — and
+// says why it left the epic behind. The child itself starts: it has its own
+// approval.
 func TestStartPropagationSkipsStaleEpic(t *testing.T) {
 	repoDir, projDir := approvedWithPlan(t)
 	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec", approvedSpecA+"\nCritério novo.\n"); err != nil {
@@ -168,6 +170,12 @@ func TestStartPropagationSkipsStaleEpic(t *testing.T) {
 	}
 	if len(out.Propagated) != 0 {
 		t.Fatalf("propagated = %v, want the stale epic left approved", out.Propagated)
+	}
+	// The skip is said, not silent: one line naming the epic, the reason and
+	// the way out (the CLI prints Warnings).
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "epic F-0001") ||
+		!strings.Contains(out.Warnings[0], "spec changed since approval") || !strings.Contains(out.Warnings[0], "cerne feature approve F-0001") {
+		t.Fatalf("warnings = %q, want one line naming epic F-0001, the stale approval and the re-approve", out.Warnings)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateApproved {
 		t.Fatalf("epic state = %s, want approved", f.State)
