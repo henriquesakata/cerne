@@ -2346,6 +2346,7 @@ h2 {
 .manage-actions button:disabled { opacity: 0.6; cursor: default; }
 .manage-close { font-size: 0.82rem; color: var(--faint); text-decoration: none; }
 .manage-close:hover { color: var(--muted); text-decoration: underline; }
+.manage-review { font-size: 0.82rem; }
 
 /* recusa de ação rápida (F-0296) e falha de recarga de qualquer tela
    (.load-notice, F-0300): acima do conteúdo, sem substituí-lo; pre-wrap mantém quebras e recuo da mensagem do gate */

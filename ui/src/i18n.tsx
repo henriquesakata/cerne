@@ -431,8 +431,8 @@ const ptBR = {
     all: 'Todas',
     close: 'Encerrar…',
     emptyFilter: 'Nenhuma feature neste filtro.',
+    reviewAndApprove: 'Revisar e aprovar',
     quickActionLabels: {
-      approve: 'Aprovar',
       start: 'Iniciar',
       complete: 'Concluir',
       accept: 'Aceitar',
@@ -1172,8 +1172,8 @@ const en: Messages = {
     all: 'All',
     close: 'Close…',
     emptyFilter: 'No feature in this filter.',
+    reviewAndApprove: 'Review and approve',
     quickActionLabels: {
-      approve: 'Approve',
       start: 'Start',
       complete: 'Complete',
       accept: 'Accept',
