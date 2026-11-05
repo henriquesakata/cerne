@@ -246,3 +246,31 @@ describe('Kanban — falha de carga (F-0300)', () => {
     await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
   })
 })
+
+// F-0318 critério 8: aprovação vencida ganha badge próprio no card, distinto
+// do card aprovado limpo; a lista vem do servidor (stale_approvals).
+describe('Kanban — badge de aprovação vencida (F-0318)', () => {
+  it('só a feature vencida ganha o badge', async () => {
+    payload = {
+      ...state(),
+      features: [feature('F-0001', { state: 'approved' }), feature('F-0002', { state: 'approved' })],
+      stale_approvals: ['F-0001'],
+    }
+    render(<Kanban />)
+
+    const badge = await waitFor(() => {
+      const el = cardOf('F-0001')?.querySelector('.badge-stale')
+      expect(el).toBeInTheDocument()
+      return el as HTMLElement
+    })
+    expect(badge).toHaveAttribute('title', expect.stringMatching(/reaprov/i))
+    expect(cardOf('F-0002')?.querySelector('.badge-stale')).toBeNull()
+  })
+
+  it('servidor antigo sem o campo: nenhum badge', async () => {
+    payload = { ...state(), features: [feature('F-0001', { state: 'approved' })] }
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+    expect(cardOf('F-0001')?.querySelector('.badge-stale')).toBeNull()
+  })
+})

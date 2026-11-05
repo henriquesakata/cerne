@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import Markdown from './Markdown'
+import { lineDiff } from './lineDiff'
 import { correctMarker, countOpen, resolveMarker } from './clarify'
 import { appendAssistantToFeatureChat } from './useBacklogChats'
 import ErrataSection from './ErrataSection'
@@ -396,6 +397,8 @@ export default function FeaturePage({ id }: { id: string }) {
               id={f.id}
               state={f.state}
               staleApproval={detail.spec_changed_after_approval}
+              approvedSpec={detail.approved_spec}
+              currentSpec={detail.docs.spec}
               readiness={detail.approve_readiness}
               bar={detail.bar}
               onRefresh={load}
@@ -964,6 +967,8 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
     { action: 'supersede', form: 'supersede' },
   ],
   approved: [
+    // Reaprovar (F-0318): só aparece com a aprovação vencida.
+    { action: 'approve', form: 'none' },
     { action: 'start', form: 'none' },
     // Revert é o desfazer deliberado da aprovação (F-0169): devolve ao Backlog
     // com razão registrada.
@@ -988,6 +993,8 @@ function ActionsPanel({
   id,
   state,
   staleApproval,
+  approvedSpec,
+  currentSpec = '',
   readiness = [],
   bar,
   onDone,
@@ -996,6 +1003,8 @@ function ActionsPanel({
   id: string
   state: FeatureState
   staleApproval: boolean
+  approvedSpec?: string
+  currentSpec?: string
   readiness?: ApproveImpediment[]
   bar?: string
   onDone: (r: TransitionResult) => void
@@ -1012,7 +1021,10 @@ function ActionsPanel({
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const actions = ACTIONS_BY_STATE[state]
+  // F-0318: em approved, o approve é o Reaprovar — só com a aprovação vencida.
+  const actions = ACTIONS_BY_STATE[state].filter(
+    (a) => !(state === 'approved' && a.action === 'approve' && !staleApproval),
+  )
   if (actions.length === 0) {
     return (
       <section className="actions">
@@ -1054,8 +1066,23 @@ function ActionsPanel({
   return (
     <section className="actions">
       <h2>{t.feature.actions}</h2>
-      {staleApproval && <p className="form-error">{t.feature.staleApproval}</p>}
-      {state === 'candidate' && (bar || readiness.length > 0) && (
+      {staleApproval && (
+        // F-0318 critério 9: o aviso da F-0262 vira o título do delta — só as
+        // linhas alteradas desde a aprovação, sem reler a spec inteira.
+        <div className="approval-delta">
+          <p className="form-error">{t.feature.staleApproval}</p>
+          <pre className="proposal-draft-diff">
+            {lineDiff(approvedSpec ?? '', currentSpec)
+              .filter((l) => l.kind !== 'same')
+              .map((l, i) => (
+                <span key={i} className={`diff-${l.kind}`}>
+                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
+                </span>
+              ))}
+          </pre>
+        </div>
+      )}
+      {(state === 'candidate' || staleApproval) && (bar || readiness.length > 0) && (
         <div className="approve-readiness">
           {bar && (
             <p className="approve-bar">
@@ -1089,13 +1116,23 @@ function ActionsPanel({
         {actions.map((a) => (
           <button
             key={a.action}
-            disabled={busy || (a.action === 'approve' && blocked)}
-            title={a.action === 'approve' && blocked ? t.feature.approveBlocked : undefined}
+            disabled={
+              busy || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
+            }
+            title={
+              a.action === 'approve' && blocked
+                ? t.feature.approveBlocked
+                : a.action === 'start' && staleApproval
+                  ? t.kanban.staleApprovalTitle
+                  : undefined
+            }
             onClick={() =>
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
           >
-            {t.feature.actionLabels[a.action]}
+            {state === 'approved' && a.action === 'approve'
+              ? t.feature.reapprove
+              : t.feature.actionLabels[a.action]}
           </button>
         ))}
       </div>

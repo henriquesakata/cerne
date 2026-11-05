@@ -610,6 +610,10 @@ h2 {
 .diff-add { background: color-mix(in srgb, green 18%, transparent); }
 .diff-del { background: color-mix(in srgb, red 18%, transparent); text-decoration: line-through; }
 
+/* F-0318: delta desde a aprovação no painel de ações — o mesmo diff por
+   linha, só com as linhas alteradas. */
+.approval-delta .proposal-draft-diff { max-height: 20rem; overflow-y: auto; }
+
 /* Card de nota proposta (F-0249): mesmo vocabulário visual do rascunho, mas
    inline na transcrição — a nota é episódica e não tem revisões versionadas. */
 .note-proposal {
@@ -1007,6 +1011,9 @@ h2 {
 .badge-clarify { background: var(--purple-bg); color: var(--purple); border-color: var(--purple-border); }
 /* F-0202: colisão entre agentes — quem mais está nessa feature agora. */
 .badge-work { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+/* F-0318: aprovação vencida — bloqueia o Iniciar, então tem a cor de erro,
+   distinta de todo aviso informativo do card. */
+.badge-stale { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border-color: var(--danger); }
 .card-parent {
   display: block;
   margin-top: 0.2rem;

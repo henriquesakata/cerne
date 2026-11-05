@@ -173,6 +173,10 @@ export default function Kanban() {
   // de open_clarifications). Servidor antigo não manda o campo.
   const activeWork = state.active_work ?? {}
   const activeWorkFor = (id: string) => activeWork[id] ?? []
+  // F-0318: aprovação vencida (spec mudou desde a aprovação), servida junto do
+  // state. Servidor antigo não manda o campo — ausência é "nenhuma vencida".
+  const staleApprovals = new Set(state.stale_approvals ?? [])
+  const isStale = (id: string) => staleApprovals.has(id)
 
   const closed = state.features.filter((f) => isClosed(f.state)).length
 
@@ -277,6 +281,7 @@ export default function Kanban() {
           childrenByParent={childrenByParent}
           isEpic={isEpic}
           isBehind={isBehind}
+          isStale={isStale}
           pendingClarify={pendingClarify}
           activeWorkFor={activeWorkFor}
           showClosed={showClosed}
@@ -287,6 +292,7 @@ export default function Kanban() {
           features={state.features}
           isEpic={isEpic}
           isBehind={isBehind}
+          isStale={isStale}
           pendingClarify={pendingClarify}
           activeWorkFor={activeWorkFor}
           showClosed={showClosed}
@@ -313,6 +319,7 @@ function Columns({
   features,
   isEpic,
   isBehind,
+  isStale,
   pendingClarify,
   activeWorkFor,
   showClosed,
@@ -321,6 +328,7 @@ function Columns({
   features: Feature[]
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
+  isStale: (id: string) => boolean
   pendingClarify: (id: string) => number
   activeWorkFor: (id: string) => { id: string; actor: string }[]
   showClosed: boolean
@@ -362,6 +370,7 @@ function Columns({
                       feature={f}
                       isEpic={isEpic(f.id)}
                       isBehind={isBehind(f.id)}
+                      stale={isStale(f.id)}
                       pending={pendingClarify(f.id)}
                       activeWork={activeWorkFor(f.id)}
                       rolledUp={rolled.get(f.id) ?? 0}
@@ -385,6 +394,7 @@ function EpicBoard({
   childrenByParent,
   isEpic,
   isBehind,
+  isStale,
   pendingClarify,
   activeWorkFor,
   showClosed,
@@ -394,6 +404,7 @@ function EpicBoard({
   childrenByParent: Map<string, Feature[]>
   isEpic: (id: string) => boolean
   isBehind: (id: string) => boolean
+  isStale: (id: string) => boolean
   pendingClarify: (id: string) => number
   activeWorkFor: (id: string) => { id: string; actor: string }[]
   showClosed: boolean
@@ -450,7 +461,8 @@ function EpicBoard({
                         feature={f}
                         isEpic={isEpic(f.id)}
                         isBehind={isBehind(f.id)}
-                        pending={pendingClarify(f.id)}
+                        stale={isStale(f.id)}
+                      pending={pendingClarify(f.id)}
                         activeWork={activeWorkFor(f.id)}
                       />
                     ))}
@@ -477,6 +489,7 @@ function EpicBoard({
                       key={f.id}
                       feature={f}
                       isEpic={false}
+                      stale={isStale(f.id)}
                       pending={pendingClarify(f.id)}
                       activeWork={activeWorkFor(f.id)}
                     />
@@ -496,6 +509,7 @@ function Card({
   feature,
   isEpic,
   isBehind = false,
+  stale = false,
   pending = 0,
   activeWork = [],
   rolledUp = 0,
@@ -503,6 +517,7 @@ function Card({
   feature: Feature
   isEpic: boolean
   isBehind?: boolean
+  stale?: boolean
   pending?: number
   activeWork?: { id: string; actor: string }[]
   rolledUp?: number
@@ -535,6 +550,11 @@ function Card({
             title={t.kanban.childInDevTitle}
           >
             {t.kanban.childInDev}
+          </span>
+        )}
+        {stale && (
+          <span className="badge badge-stale" title={t.kanban.staleApprovalTitle}>
+            {t.kanban.staleApproval}
           </span>
         )}
         {pending > 0 && (

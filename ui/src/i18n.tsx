@@ -202,6 +202,8 @@ const ptBR = {
     epicBadge: 'épico',
     taskBadge: 'task',
     childInDev: 'filho em dev',
+    staleApproval: 'aprovação vencida',
+    staleApprovalTitle: 'A spec mudou desde a aprovação — reaprove antes de iniciar',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -399,7 +401,8 @@ const ptBR = {
     } satisfies Record<TransitionAction, string>,
     actions: 'Ações',
     staleApproval:
-      'A spec mudou depois de aprovada: a aprovação está desatualizada. Reaprove ou reverta ao Backlog.',
+      'A spec mudou desde a aprovação: a aprovação venceu e o Iniciar fica bloqueado até reaprovar (ou reverta ao Backlog). Mudou isto:',
+    reapprove: 'Reaprovar',
     closed: 'Encerrada.',
     supersededByField: 'Substituída por (ID)',
     reasonRequired: 'Motivo (obrigatório)',
@@ -954,6 +957,8 @@ const en: Messages = {
     epicBadge: 'epic',
     taskBadge: 'task',
     childInDev: 'child in dev',
+    staleApproval: 'approval stale',
+    staleApprovalTitle: 'The spec changed since approval — re-approve before starting',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -1144,7 +1149,8 @@ const en: Messages = {
     },
     actions: 'Actions',
     staleApproval:
-      'The spec changed after approval: the approval is out of date. Re-approve it or revert to the Backlog.',
+      'The spec changed since approval: the approval is stale and Start is blocked until it is re-approved (or revert to the Backlog). What changed:',
+    reapprove: 'Re-approve',
     closed: 'Closed.',
     supersededByField: 'Superseded by (ID)',
     reasonRequired: 'Reason (required)',
