@@ -27,6 +27,9 @@ func seedDeliveryFeature(t *testing.T, repoDir, id string, state domain.FeatureS
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		body := "# Doc\n\n## Conteúdo real\n\nCorpo real do documento, não um stub.\n"
+		if doc == "result.md" {
+			body += "\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n" // complete result gate (F-0303)
+		}
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatalf("WriteFile %s: %v", doc, err)
 		}

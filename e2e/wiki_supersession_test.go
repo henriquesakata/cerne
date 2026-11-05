@@ -60,7 +60,7 @@ func TestCompileResolvesSupersessionThenLintClean(t *testing.T) {
 	mustCerne(t, "feature", "start", "F-0001", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 	writeDoc(t, filepath.Join(feat, "result.md"), "F-0001",
-		"# Resultado\n\n## Resultado\n\nEntregue.\n\n## Aceitação\n\n1. ATENDIDO — boleto gerado e testado.\n")
+		"# Resultado\n\n## Resultado\n\nEntregue.\n\n## Aceitação\n\n1. ATENDIDO — boleto gerado e testado.\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n")
 	mustCerne(t, "push", "--dir", proj)
 	mustCerne(t, "feature", "complete", "F-0001", "--dir", proj)
 
