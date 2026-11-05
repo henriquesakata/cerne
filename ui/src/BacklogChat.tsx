@@ -249,6 +249,10 @@ function MenuSelect({
 // correntes no primeiro nível (com dígito de atalho), legados agrupados num
 // submenu que abre dentro do mesmo popup, delistados fora (quem chama já os
 // filtrou). Cada entrada mostra rótulo e provedor, nunca o id cru.
+//
+// Teclado (C12): setas andam entre os itens do nível aberto, Enter escolhe,
+// → ou Enter em "Modelos anteriores" abre o submenu, ← ou Escape voltam ao
+// primeiro nível; escolher devolve o foco ao gatilho.
 function ModelMenu({
   value,
   entries,
@@ -266,6 +270,19 @@ function ModelMenu({
   const [legacyOpen, setLegacyOpen] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const subTriggerRef = useRef<HTMLButtonElement>(null)
+  const subListRef = useRef<HTMLDivElement>(null)
+  // focusSub: o submenu acabou de abrir pelo teclado — foca o primeiro legado
+  // assim que ele existir no DOM.
+  const focusSub = useRef(false)
+
+  useEffect(() => {
+    if (legacyOpen && focusSub.current) {
+      focusSub.current = false
+      subListRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    }
+  }, [legacyOpen])
 
   useEffect(() => {
     if (!open) return
@@ -285,16 +302,67 @@ function ModelMenu({
   const pick = (id: string) => {
     onSelect(id)
     setOpen(false)
+    triggerRef.current?.focus()
+  }
+  const openLegacy = () => {
+    focusSub.current = true
+    setLegacyOpen(true)
+  }
+  const closeLegacy = () => {
+    setLegacyOpen(false)
+    subTriggerRef.current?.focus()
+  }
+  // levelItems: os botões do nível aberto, na ordem da tela.
+  const levelItems = () => {
+    const level = legacyOpen ? subListRef.current : listRef.current
+    return Array.from(level?.children ?? []).filter((el): el is HTMLButtonElement => el instanceof HTMLButtonElement)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      if (legacyOpen) setLegacyOpen(false)
-      else setOpen(false)
-      return
+    const active = document.activeElement
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        e.preventDefault()
+        const items = levelItems()
+        if (items.length === 0) return
+        const i = items.indexOf(active as HTMLButtonElement)
+        const next = e.key === 'ArrowDown' ? (i + 1) % items.length : i <= 0 ? items.length - 1 : i - 1
+        items[next].focus()
+        return
+      }
+      case 'ArrowRight':
+        if (active === subTriggerRef.current) {
+          e.preventDefault()
+          openLegacy()
+        }
+        return
+      case 'ArrowLeft':
+        if (legacyOpen) {
+          e.preventDefault()
+          closeLegacy()
+        }
+        return
+      case 'Enter':
+        // preventDefault: o botão nativo não dispara um segundo clique.
+        if (active === subTriggerRef.current) {
+          e.preventDefault()
+          openLegacy()
+        } else if (active instanceof HTMLButtonElement && listRef.current?.contains(active)) {
+          e.preventDefault()
+          active.click()
+        }
+        return
+      case 'Escape':
+        if (legacyOpen) closeLegacy()
+        else {
+          setOpen(false)
+          triggerRef.current?.focus()
+        }
+        return
     }
     const n = Number(e.key)
-    if (Number.isInteger(n) && n >= 1 && n <= current.length) pick(current[n - 1].id)
+    if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, current.length)) pick(current[n - 1].id)
   }
 
   const item = (e: ModelEntry, key: string) => (
@@ -319,6 +387,7 @@ function ModelMenu({
   return (
     <span className="chat-menu" ref={wrapRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="chat-menu-trigger"
         aria-haspopup="menu"
@@ -341,6 +410,7 @@ function ModelMenu({
           {legacy.length > 0 && (
             <>
               <button
+                ref={subTriggerRef}
                 type="button"
                 role="menuitem"
                 aria-haspopup="menu"
@@ -354,7 +424,7 @@ function ModelMenu({
                 </span>
               </button>
               {legacyOpen && (
-                <div className="chat-menu-sublist" role="menu" aria-label={legacyLabel}>
+                <div className="chat-menu-sublist" role="menu" aria-label={legacyLabel} ref={subListRef}>
                   {legacy.map((e) => item(e, ''))}
                 </div>
               )}

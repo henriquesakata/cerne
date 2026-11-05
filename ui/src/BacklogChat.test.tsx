@@ -663,6 +663,83 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
   })
 })
 
+describe('BacklogChat — teclado do menu de modelos (C12, paridade com o /model)', () => {
+  const open = async () => {
+    fetchLLMOptions.mockResolvedValue(opts())
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/modelo/i))
+    return screen.getAllByRole('menu')[0]
+  }
+  const focused = () => document.activeElement?.textContent ?? ''
+
+  it('ArrowDown/ArrowUp andam entre os itens do primeiro nível', async () => {
+    const menu = await open()
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(focused()).toMatch(/^Claude Opus 5\.5/)
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(focused()).toMatch(/^Claude Sonnet 5\.5/)
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(focused()).toMatch(/^Modelos anteriores/)
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    expect(focused()).toMatch(/^Claude Sonnet 5\.5/)
+  })
+
+  it('Enter escolhe o item em foco e o foco volta ao gatilho', async () => {
+    const menu = await open()
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'Enter' })
+    const trigger = screen.getByLabelText(/modelo/i)
+    expect(trigger).toHaveTextContent('Claude Sonnet 5.5')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('ArrowRight em "Modelos anteriores" abre o submenu e foca o primeiro legado', async () => {
+    const menu = await open()
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'ArrowRight' })
+    expect(screen.getByRole('menu', { name: /modelos anteriores/i })).toBeInTheDocument()
+    expect(focused()).toMatch(/^Claude Opus 5 /)
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(focused()).toMatch(/^Claude Haiku 4\.5/)
+  })
+
+  it('Enter em "Modelos anteriores" também abre o submenu', async () => {
+    const menu = await open()
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'Enter' })
+    expect(screen.getByRole('menu', { name: /modelos anteriores/i })).toBeInTheDocument()
+    expect(focused()).toMatch(/^Claude Opus 5 /)
+  })
+
+  it('ArrowLeft e Escape no submenu voltam ao primeiro nível', async () => {
+    const menu = await open()
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'ArrowRight' })
+    fireEvent.keyDown(menu, { key: 'ArrowLeft' })
+    expect(screen.queryByRole('menu', { name: /modelos anteriores/i })).toBeNull()
+    expect(focused()).toMatch(/^Modelos anteriores/)
+
+    fireEvent.keyDown(menu, { key: 'ArrowRight' })
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: /modelos anteriores/i })).toBeNull()
+    expect(screen.getAllByRole('menu')).toHaveLength(1)
+    expect(focused()).toMatch(/^Modelos anteriores/)
+  })
+
+  it('escolher um legado pelo teclado também devolve o foco ao gatilho', async () => {
+    const menu = await open()
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'ArrowRight' })
+    fireEvent.keyDown(menu, { key: 'Enter' })
+    const trigger = screen.getByLabelText(/modelo/i)
+    expect(trigger).toHaveTextContent(/^Claude Opus 5$/)
+    expect(document.activeElement).toBe(trigger)
+  })
+})
+
 describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () => {
   it('critério 1: desmonta durante a requisição → a resposta é gravada e aparece ao remontar', async () => {
     let resolve!: (v: ChatAnswer) => void
