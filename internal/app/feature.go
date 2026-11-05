@@ -50,8 +50,8 @@ var ErrTitleFrozen = errors.New("the feature's title is frozen")
 // ErrFeatureFrozen is returned for a feature past the live states
 // (implemented/done/rejected/superseded, domain.TitleEditable's definition of
 // terminal): by SetFeature (owner/priority), and by every document write of the
-// feature — SaveFeatureDoc and `cerne push` (F-0305), whose refusal names the
-// state's path (DocFixPath).
+// feature — SaveFeatureDoc and the draft commands (CheckDocWritable) and
+// `cerne push` (F-0305), whose refusal names the state's path (DocFixPath).
 var ErrFeatureFrozen = errors.New("the feature is closed")
 
 // DocFixPath names how a document of feature id in state s is corrected
@@ -66,6 +66,23 @@ func DocFixPath(id, doc string, s domain.FeatureState) string {
 	default:
 		return fmt.Sprintf("append an erratum with 'cerne feature errata %s --file <errata.md>'", id)
 	}
+}
+
+// CheckDocWritable loads feature id and returns it when its document doc may be
+// written — only while the feature is live (domain.TitleEditable). Past that it
+// returns ErrFeatureFrozen wrapped, naming the state's path (DocFixPath). The
+// one rule every whole-document write routes through (F-0305): SaveFeatureDoc
+// and the draft commands, which call it again inside the backend lock because
+// their provider call runs outside it.
+func CheckDocWritable(repoDir, id, doc string) (store.Feature, error) {
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	if !domain.TitleEditable(f.State) {
+		return f, fmt.Errorf("%w: %s (%s) — %s", ErrFeatureFrozen, id, f.State, DocFixPath(id, doc, f.State))
+	}
+	return f, nil
 }
 
 // ErrDuplicateTitle is returned when creating a feature whose normalized title
@@ -510,12 +527,9 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		f, err := store.LoadFeature(repoDir, id)
+		f, err := CheckDocWritable(repoDir, id, doc)
 		if err != nil {
 			return "", err
-		}
-		if !domain.TitleEditable(f.State) {
-			return "", fmt.Errorf("%w: %s (%s) — %s", ErrFeatureFrozen, id, f.State, DocFixPath(id, doc, f.State))
 		}
 		path := FeatureDocPath(repoDir, id, filename)
 		// The event below is itself a change, so the byte-identical no-op has to be

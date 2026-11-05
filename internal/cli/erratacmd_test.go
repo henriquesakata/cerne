@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -120,6 +126,75 @@ func TestNoCommandRewritesConcludedBody(t *testing.T) {
 	for state, id := range seedResultFeatures(t, repoDir, domain.StateDone, domain.StateRejected, domain.StateSuperseded) {
 		t.Run(string(state), func(t *testing.T) {
 			assertAmendRefused(t, projDir, repoDir, id, "cerne feature errata "+id)
+		})
+	}
+}
+
+// TestDraftCommandsRefuseClosedFeature: spec/plan/result draft are document
+// writes too (F-0305) — past the live states each refuses with ErrFeatureFrozen
+// and the state's path, even in delegation mode, so no prompt and no "write it
+// and push" hint is printed, and the backend stays put. A live feature still
+// gets the prompt.
+func TestDraftCommandsRefuseClosedFeature(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	ids := seedResultFeatures(t, repoDir, domain.StateInDevelopment, domain.StateImplemented,
+		domain.StateDone, domain.StateRejected, domain.StateSuperseded)
+	head0, _ := gitback.HeadSHA(origin)
+	for _, doc := range []string{"spec", "plan", "result"} {
+		for state, id := range ids {
+			out, err := execCerne(t, doc, "draft", id, "--dir", projDir)
+			if state == domain.StateInDevelopment {
+				if err != nil || !strings.Contains(out, "run 'cerne push'") {
+					t.Fatalf("%s draft %s (%s): err = %v, want the prompt:\n%s", doc, id, state, err, out)
+				}
+				continue
+			}
+			want := app.DocFixPath(id, doc, state)
+			if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), want) {
+				t.Fatalf("%s draft %s (%s): err = %v, want ErrFeatureFrozen naming %q", doc, id, state, err, want)
+			}
+			if strings.Contains(out, "- id: "+id) || strings.Contains(out, "run 'cerne push'") {
+				t.Fatalf("%s draft %s (%s) printed the prompt:\n%s", doc, id, state, out)
+			}
+		}
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
+// TestDraftRechecksStateInsideTheLock: the provider call sits outside the
+// backend lock, so a feature closed while the model was drafting is refused
+// inside it — the drafted text never lands (F-0305).
+func TestDraftRechecksStateInsideTheLock(t *testing.T) {
+	for _, doc := range []string{"spec", "plan", "result"} {
+		t.Run(doc, func(t *testing.T) {
+			projDir, origin, repoDir := setupProject(t)
+			id := seedResultFeatures(t, repoDir, domain.StateInDevelopment)[domain.StateInDevelopment]
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				f, _ := store.LoadFeature(repoDir, id)
+				f.State = domain.StateImplemented // a `complete` landing mid-draft
+				if err := store.SaveFeature(repoDir, f); err != nil {
+					t.Error(err)
+				}
+				commitBackend(t, repoDir)
+				_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"## Rascunho\n\n`+strings.Repeat("Texto que nunca deve chegar ao backend. ", 8)+`"}]}`)
+			}))
+			defer srv.Close()
+			t.Setenv("TEST_BYO_KEY", "sk-byo")
+			enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+			_, err := execCerne(t, doc, "draft", id, "--dir", projDir)
+			if !errors.Is(err, app.ErrFeatureFrozen) {
+				t.Fatalf("err = %v, want ErrFeatureFrozen", err)
+			}
+			got, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", id, doc+".md"))
+			if strings.Contains(string(got), "nunca deve chegar") {
+				t.Fatalf("drafted text written:\n%s", got)
+			}
+			head, _ := gitback.HeadSHA(origin)
+			if local, _ := gitback.HeadSHA(repoDir); local != head {
+				t.Fatalf("clone %s ahead of origin %s", local, head)
+			}
 		})
 	}
 }

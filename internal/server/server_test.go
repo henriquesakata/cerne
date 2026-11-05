@@ -1042,6 +1042,23 @@ func TestFeatureDocPutRefusesFrozen(t *testing.T) {
 			}
 		})
 	}
+	// The amend reaches only the result: the spec of an implemented feature is
+	// corrected by errata, and the refusal says so.
+	t.Run("spec of implemented", func(t *testing.T) {
+		specPath := filepath.Join(repoDir, "content", "features", "F-0002", "spec.md")
+		before, _ := os.ReadFile(specPath)
+		var got map[string]string
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0002/docs/spec", realDoc("F-0002", "Spec reescrita."), &got)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(got["error"], "cerne feature errata F-0002") || strings.Contains(got["error"], "amend") {
+			t.Fatalf("error = %q, want the errata path and no amend", got["error"])
+		}
+		if after, _ := os.ReadFile(specPath); string(after) != string(before) {
+			t.Fatalf("spec.md changed:\n%s", after)
+		}
+	})
 	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evsBefore) {
 		t.Fatalf("events = %d, want %d (a refused PUT appends nothing)", len(evs), len(evsBefore))
 	}
