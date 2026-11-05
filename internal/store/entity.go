@@ -152,6 +152,7 @@ const (
 	notesSubdir        = "entities/notes"
 	historicalsSubdir  = "entities/historicals"
 	worksSubdir        = "entities/works"
+	pendingsSubdir     = "entities/pendings"
 	capabilitiesSubdir = "entities/capabilities"
 )
 
@@ -291,6 +292,43 @@ func LoadWork(backendDir, id string) (Work, error) {
 // F-0130.
 func LoadAllWorks(backendDir string) ([]Work, error) {
 	return loadAllEntities[Work](backendDir, worksSubdir)
+}
+
+// Pending is the persisted form of a pending (F-0322): a known delivery debt
+// of a concrete feature, task or epic (From, mandatory). Body is short context
+// kept in the JSON, not a content document. ClosedAt is stamped by resolve,
+// drop and promote; Reason is mandatory for dropped; PromotedTo holds the
+// feature/task id a promote created.
+type Pending struct {
+	ID         string              `json:"id"`
+	Title      string              `json:"title"`
+	Body       string              `json:"body,omitempty"`
+	From       string              `json:"from"`
+	State      domain.PendingState `json:"state"`
+	Facets     []string            `json:"facets,omitempty"`
+	Components []string            `json:"components,omitempty"`
+	CreatedAt  time.Time           `json:"created_at"`
+	UpdatedAt  time.Time           `json:"updated_at"`
+	ClosedAt   *time.Time          `json:"closed_at,omitempty"`
+	Reason     string              `json:"reason,omitempty"`
+	PromotedTo string              `json:"promoted_to,omitempty"`
+}
+
+// SavePending writes the pending to entities/pendings/<ID>.json, creating the
+// subdir on demand (a backend initialized before F-0322 works unchanged).
+func SavePending(backendDir string, p Pending) error {
+	return saveEntity(backendDir, pendingsSubdir, p.ID, p)
+}
+
+// LoadPending reads one pending by id; ErrNotFound when the file is missing.
+func LoadPending(backendDir, id string) (Pending, error) {
+	return loadEntity[Pending](backendDir, pendingsSubdir, id)
+}
+
+// LoadAllPendings returns all pendings sorted by ID ascending; empty (not an
+// error) when entities/pendings/ is absent.
+func LoadAllPendings(backendDir string) ([]Pending, error) {
+	return loadAllEntities[Pending](backendDir, pendingsSubdir)
 }
 
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.
