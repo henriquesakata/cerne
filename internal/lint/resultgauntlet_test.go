@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -27,10 +28,10 @@ func TestResultGauntletFindings(t *testing.T) {
 		{"verdict recorded is clean", domain.StateImplemented, after, recorded, ""},
 		{"exemption recorded is clean", domain.StateImplemented, after, exempt, ""},
 		{"nfd verdict is clean", domain.StateDone, after, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vito\u0301ria: \u201ccita\u00e7a\u0303o\u201d\n", ""},
-		{"quote on another line does not vouch", domain.StateImplemented, after, "## Gauntlet\nBarra: \"refer\u00eancia\"\nRodada 1 \u2014 vit\u00f3ria\n", "sem veredito citado"},
+		{"quote on another line does not vouch", domain.StateImplemented, after, "## Gauntlet\nBarra: \"refer\u00eancia\"\nRodada 1 \u2014 vit\u00f3ria\n", "rodada 1 sem citação do juiz"},
 		{"no section flags", domain.StateImplemented, after, "## Resultado\n\nfeito\n", "sem seção"},
-		{"section without cited verdict flags", domain.StateImplemented, after, emptySection, "sem veredito citado"},
-		{"verdict without quote flags", domain.StateImplemented, after, "## Gauntlet\nBarra: x\nRodada 1 — vitória\n", "sem veredito citado"},
+		{"section without cited verdict flags", domain.StateImplemented, after, emptySection, "sem linha \"Barra:\""},
+		{"verdict without quote flags", domain.StateImplemented, after, "## Gauntlet\nBarra: x\nRodada 1 — vitória\n", "rodada 1 sem citação do juiz"},
 		{"completed before cutoff is grandfathered", domain.StateImplemented, before, "## Resultado\n\nfeito\n", ""},
 		{"live states are ignored", domain.StateInDevelopment, after, "## Resultado\n\nfeito\n", ""},
 	}
@@ -77,5 +78,128 @@ func TestResultGauntletMissingDoc(t *testing.T) {
 	got := resultGauntletFindings(dir, []store.Feature{f}, events)
 	if len(got) != 1 || !strings.Contains(got[0].Detail, "sem seção") {
 		t.Fatalf("want one 'sem seção' finding, got %v", got)
+	}
+}
+
+// gauntletProblem runs the round reader on a section body.
+func gauntletProblem(section string) string { return parseGauntlet(section).problem() }
+
+func readFixture(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, has := gauntletSection(b)
+	if !has {
+		t.Fatalf("%s has no Gauntlet section", name)
+	}
+	return section
+}
+
+type gauntletCase struct {
+	name    string
+	section string
+	want    string // "" = clean, else substring of problem()
+}
+
+func runGauntletCases(t *testing.T, cases []gauntletCase) {
+	t.Helper()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := gauntletProblem(tc.section)
+			if tc.want == "" && got != "" || tc.want != "" && !strings.Contains(got, tc.want) {
+				t.Fatalf("problem() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Criterion 1: heading round + judge quote in the paragraph below (T-0032).
+func TestGauntletHeadingRounds(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"t0032 original fixture", readFixture(t, "gauntlet-t0032-original.md"), ""},
+		{"heading, quote below, literal verdict", "Barra: x\n### Rodada 1\nJuiz: \"cita\" \u2014 VEREDITO: B.\n", ""},
+		{"fechamento heading stays inside last round", "Barra: x\n### Rodada 1 \u2014 vit\u00f3ria\n### Fechamento\nJuiz: \"cita\"\n", ""},
+		{"rodada mention mid-sentence opens no block", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"cita\"\nver a rodada 2 depois\n", ""},
+	})
+}
+
+// Criterion 2: list, bold, plain line and table row (T-0033 + skill template).
+func TestGauntletRoundLayouts(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"t0033 fixture", readFixture(t, "gauntlet-t0033.md"), ""},
+		{"bold list item", "- **Barra:** x\n- **Rodada 1 \u2014 vit\u00f3ria.** Juiz: \"cita\"\n", ""},
+		{"plain line", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"cita\"\n", ""},
+		{"numbered list", "Barra: x\n1. Rodada 1 \u2014 empate: \u201ccita\u201d\n", ""},
+		{"table row", "Barra: x\n| Rodada 1 | vit\u00f3ria | \"x\" |\n", ""},
+		{"blockquote", "> Barra: x\n> Rodada 1 \u2014 vit\u00f3ria: \u00abcita\u00bb\n", ""},
+		{"skill template", "Barra: x\nMétodo: y\nRodada 1 \u2014 vit\u00f3ria: \"cita\"\nAchados do crítico: 2 \u2014 corrigidos 1; refutados 1 com file:line\n", ""},
+		{"no anchor: implicit round", "- **Barra:** x\n- **vit\u00f3ria** \u2014 juiz: \"cita\"\n", ""},
+		{"two rounds, both complete", "Barra: x\nRodada 1 \u2014 derrota: \"a\"\nRodada 2 \u2014 vit\u00f3ria: \"b\"\n", ""},
+	})
+}
+
+// Criterion 3.
+func TestGauntletRoundWithoutQuote(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"quote only on the Barra line", "Barra: \"ref\"\nRodada 1 \u2014 vit\u00f3ria\n", "rodada 1 sem citação do juiz"},
+		{"quote only in round 1", "Barra: x\nRodada 1 \u2014 derrota: \"a\"\nRodada 2 \u2014 vit\u00f3ria\n", "rodada 2 sem citação do juiz"},
+		{"quote only in Achados (NFC)", "Barra: x\nRodada 1 \u2014 vit\u00f3ria\nAchados do cr\u00edtico: 1 \u2014 \"x\"\n", "rodada 1 sem citação do juiz"},
+		{"quote only in Achados (NFD)", "Barra: x\nRodada 1 \u2014 vit\u00f3ria\nAchados do cri\u0301tico: 1 \u2014 \"x\"\n", "rodada 1 sem citação do juiz"},
+		{"empty quote pair", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"  \"\n", "rodada 1 sem citação do juiz"},
+		{"lone quote char", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: 5\" tela\n", "rodada 1 sem citação do juiz"},
+		{"table: citation only in the next row", "Barra: x\n| Rodada 1 | vit\u00f3ria |\n| Rodada 2 | vit\u00f3ria | \"y\" |\n", "rodada 1 sem citação do juiz"},
+		{"only Barra, no round", "Barra: x\n", "rodada sem citação do juiz"},
+		{"implicit round: quote only on Barra", "Barra: \"x\"\nvit\u00f3ria sem citar\n", "rodada sem citação do juiz"},
+	})
+}
+
+// Criterion 4.
+func TestGauntletRoundWithoutVerdict(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"quote, no verdict", "Barra: x\nRodada 1: \"cita\"\n", "rodada 1 sem veredito"},
+		{"verdict only in other round", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2: \"b\"\n", "rodada 2 sem veredito"},
+		{"literal EMPATE + quote", "Barra: x\nRodada 1: \"cita\"\nVEREDITO: EMPATE\n", ""},
+		{"literal A, lowercase prefix", "Barra: x\nRodada 1: \"cita\"\nveredito: a\n", ""},
+		{"VEREDITO: C is no verdict", "Barra: x\nRodada 1: \"cita\"\nVEREDITO: C\n", "rodada 1 sem veredito"},
+	})
+}
+
+// Criterion 5.
+func TestGauntletMissingBar(t *testing.T) {
+	complete := "Rodada 1 \u2014 vit\u00f3ria: \"cita\"\n"
+	runGauntletCases(t, []gauntletCase{
+		{"no Barra line", complete, `sem linha "Barra:"`},
+		{"empty Barra", "Barra:\n" + complete, `sem linha "Barra:"`},
+		{"bold Barra without value", "**Barra:**\n" + complete, `sem linha "Barra:"`},
+		{"bold list Barra with value", "- **Barra:** x\n" + complete, ""},
+		{"quoted Barra", "> Barra: x\n" + complete, ""},
+		{"Barra mid-sentence is no Barra line", "ver Barra: x\n" + complete, `sem linha "Barra:"`},
+	})
+}
+
+// Criterion 6.
+func TestGauntletExemptions(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"n\u00e3o aplic\u00e1vel NFC", "Barra: n\u00e3o aplic\u00e1vel (corretivo de uma linha)\n", ""},
+		{"n\u00e3o aplic\u00e1vel NFD", "Barra: na\u0303o aplica\u0301vel (x)\n", ""},
+		{"dispensada NFC", "Barra: dispensada por decis\u00e3o humana (\"segue\")\n", ""},
+		{"dispensada NFD", "Barra: dispensada por decisa\u0303o humana (x)\n", ""},
+		{"bold list exemption", "- **Barra:** n\u00e3o aplic\u00e1vel (x)\n", ""},
+		{"exemption with rounds incomplete", "Barra: dispensada por decis\u00e3o humana (x)\nRodada 1 \u2014 vit\u00f3ria\n", ""},
+		{"exemption without parenthesis is no exemption", "Barra: n\u00e3o aplic\u00e1vel\n", "rodada sem citação do juiz"},
+	})
+}
+
+// Criterion 8.
+func TestGauntletProblemOrder(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"no bar and incomplete round: bar only", "Rodada 1 \u2014 vit\u00f3ria\n", `sem linha "Barra:"`},
+		{"quote before verdict", "Barra: x\nRodada 1\n", "rodada 1 sem citação do juiz"},
+		{"first incomplete round named", "Barra: x\nRodada 1: \"a\" VEREDITO: A\nRodada 2: \"b\"\nRodada 3\n", "rodada 2 sem veredito"},
+	})
+	if got := gauntletProblem("Rodada 1 \u2014 vit\u00f3ria\n"); strings.Contains(got, "rodada") {
+		t.Fatalf("bar problem must not mention rounds: %q", got)
 	}
 }

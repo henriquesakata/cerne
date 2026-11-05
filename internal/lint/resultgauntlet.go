@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,14 @@ var resultGauntletSince = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 var (
 	gauntletHeadingRe = regexp.MustCompile(`(?m)^\s*##\s+Gauntlet\s*$`)
 	nextHeadingRe     = regexp.MustCompile(`(?m)^\s*##\s`)
+	// Leading markdown markers of a line: heading, list, quote, table, "N." and
+	// emphasis delimiters.
+	lineMarkersRe = regexp.MustCompile(`^(?:[\s#>*_|-]|\d+\.\s)*`)
+	roundAnchorRe = regexp.MustCompile(`(?i)^Rodada\s+(\d+)\b`)
+	barLineRe     = regexp.MustCompile(`(?i)^Barra:[\s*_]*([^\s*_].*)$`)
+	criticLineRe  = regexp.MustCompile(`(?i)^Achados do cr(?:í|i\x{0301}|i)tico`)
+	verdictLitRe  = regexp.MustCompile(`(?i)VEREDITO:\s*(?:A|B|EMPATE)\b`)
+	quoteRe       = regexp.MustCompile(`"[^"]*\S[^"]*"|“[^”]*\S[^”]*”|«[^»]*\S[^»]*»`)
 	// A cited verdict: vitória/derrota/empate (NFC or NFD accents), which the
 	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
 	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
@@ -77,19 +86,101 @@ func resultGauntletFindings(repoDir string, features []store.Feature, events []d
 			result = nil // absence of the doc is missing-gate-doc's job; here absence = no record
 		}
 		section, has := gauntletSection(result)
-		if has && gauntletRecorded(section) {
-			continue
-		}
-		detail := "result.md sem seção \"## Gauntlet\""
+		detail := "sem seção \"## Gauntlet\""
 		if has {
-			detail = "result.md com \"## Gauntlet\" sem veredito citado"
+			if detail = parseGauntlet(section).problem(); detail == "" {
+				continue
+			}
 		}
 		out = append(out, Finding{
 			Rule:   RuleResultMissingGauntlet,
 			Entity: f.ID,
 			File:   filepath.ToSlash(resultPath),
-			Detail: fmt.Sprintf("%s (%s) — registre o loop: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title),
+			Detail: fmt.Sprintf("result.md %s (%s) — registre o loop: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title),
 		})
 	}
 	return out
+}
+
+type gauntletRound struct {
+	n       int  // 0 = implicit round (section without a "Rodada N" anchor)
+	verdict bool // VEREDITO: A|B|EMPATE, or an outcome word
+	quote   bool // a quoted span with content inside the round's block
+}
+
+type gauntletRecord struct {
+	exempt bool   // one of the two literal exemptions
+	bar    string // value of the Barra: line, "" when missing
+	rounds []gauntletRound
+}
+
+// parseGauntlet reads the body of ONE "## Gauntlet" section by content: the
+// Barra line and, per round, a verdict and a quoted citation, whatever the
+// markdown layout (heading, list, bold, table row).
+func parseGauntlet(section string) gauntletRecord {
+	var rec gauntletRecord
+	blocks := []*strings.Builder{}
+	var nums []int
+	var cur *strings.Builder // nil = outside any round block
+	anchored := false
+	implicit := &strings.Builder{}
+	inImplicit := true
+	for _, line := range strings.Split(section, "\n") {
+		s := lineMarkersRe.ReplaceAllString(line, "")
+		if m := barLineRe.FindStringSubmatch(s); m != nil && rec.bar == "" {
+			rec.bar = m[1]
+			rec.exempt = exemptionRe.MatchString("Barra: " + m[1])
+			continue
+		}
+		if criticLineRe.MatchString(s) {
+			cur, inImplicit = nil, false
+			continue
+		}
+		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			cur, inImplicit, anchored = &strings.Builder{}, false, true
+			blocks, nums = append(blocks, cur), append(nums, n)
+		}
+		if cur != nil {
+			cur.WriteString(line + "\n")
+		} else if inImplicit {
+			implicit.WriteString(line + "\n")
+		}
+	}
+	if !anchored {
+		blocks, nums = []*strings.Builder{implicit}, []int{0}
+	}
+	for i, b := range blocks {
+		text := b.String()
+		rec.rounds = append(rec.rounds, gauntletRound{
+			n:       nums[i],
+			verdict: verdictLitRe.MatchString(text) || verdictRe.MatchString(text),
+			quote:   quoteRe.MatchString(text),
+		})
+	}
+	return rec
+}
+
+// problem returns "" for a complete record, else the first missing piece:
+// the Barra line, then the first incomplete round (citation before verdict).
+func (r gauntletRecord) problem() string {
+	if r.exempt {
+		return ""
+	}
+	if r.bar == "" {
+		return `sem linha "Barra:"`
+	}
+	for _, rd := range r.rounds {
+		name := "rodada"
+		if rd.n > 0 {
+			name = fmt.Sprintf("rodada %d", rd.n)
+		}
+		if !rd.quote {
+			return name + " sem citação do juiz"
+		}
+		if !rd.verdict {
+			return name + " sem veredito"
+		}
+	}
+	return ""
 }
