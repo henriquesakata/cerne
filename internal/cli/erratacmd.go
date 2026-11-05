@@ -49,6 +49,6 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file string) error
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ erratum appended to %s — already synced. Run 'cerne pull' to materialize.\n", id)
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ erratum appended to %s — already synced. Read it with 'cerne show %s'.\n", id, id)
 	return nil
 }

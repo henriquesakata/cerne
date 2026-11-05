@@ -14,6 +14,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -34,7 +35,7 @@ func TestPullScopeImplementedExplainsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pull --scope: %v\n%s", err, out)
 	}
-	for _, want := range []string{"don't materialize content", "cerne show", "cerne errata"} {
+	for _, want := range []string{"don't materialize content", "cerne show", "cerne feature errata"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pull --scope no-op output missing %q:\n%s", want, out)
 		}
@@ -622,5 +623,52 @@ func TestPullSyncSkillsFailOpen(t *testing.T) {
 	}
 	if !strings.Contains(out, "Materialized:") {
 		t.Fatalf("pull output missing materialization summary:\n%s", out)
+	}
+}
+
+// F-0307 crit. 6: the empty-scope hint and the errata confirmation name
+// commands that exist, and do not send the reader to 'cerne pull' for an
+// erratum the materializer never copies.
+func TestPullAndErrataMessagesNameRealPaths(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "finance")
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Boletos", Module: "finance", State: domain.StateImplemented, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	writeBackendDoc(t, repoDir, "content/features/F-0001/spec.md", realDoc("F-0001", "Boletos entregue."))
+	if _, err := gitback.CommitAndPush(repoDir, "seed implemented"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execCerne(t, "pull", "--scope", "finance", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull --scope: %v\n%s", err, out)
+	}
+	_, errata := lint.Correction(domain.StateDone, "<id>", "result")
+	_, amend := lint.Correction(domain.StateImplemented, "<id>", "result")
+	for _, want := range []string{"'" + errata + "'", "'" + amend + "'", "'cerne show <id>'"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("pull hint should name %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "'cerne errata") || strings.Contains(out, "matched no feature") {
+		t.Fatalf("pull hint wrong for a scope that matched features:\n%s", out)
+	}
+
+	// A module no feature has: say so, instead of blaming implemented features.
+	out, err = execCerne(t, "pull", "--scope", "zzz", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull --scope zzz: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "the scope matched no feature") || strings.Contains(out, "implemented features") {
+		t.Fatalf("no-match scope message wrong:\n%s", out)
+	}
+
+	out, err = execCerne(t, "feature", "errata", "F-0001", "Correção.", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("errata: %v\n%s", err, out)
+	}
+	if want := "erratum appended to F-0001 — already synced. Read it with 'cerne show F-0001'."; !strings.Contains(out, want) || strings.Contains(out, "cerne pull") {
+		t.Fatalf("errata confirmation = %q, want %q and no 'cerne pull'", out, want)
 	}
 }

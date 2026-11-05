@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -153,9 +154,16 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, file, reason string) error {
 	}
 	if !changed {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s result unchanged — nothing to amend.\n", f.ID)
-		return nil
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s result amended (%s) — already synced. Read it with 'cerne show %s --doc result'.\n", f.ID, f.State, f.ID)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s result amended (%s) — already synced. Read it with 'cerne show %s --doc result'.\n", f.ID, f.State, f.ID)
+	// An amend read from the .docs/ copy leaves that copy behind: push refuses it
+	// until it is removed, so say so (F-0307).
+	if abs, err := filepath.Abs(file); file != "" && err == nil {
+		if rel, err := filepath.Rel(filepath.Join(ctx.projDir, ".docs"), abs); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			fmt.Fprintf(cmd.OutOrStdout(), "Next: remove .docs/%s now — the local copy keeps blocking 'cerne push' until it is gone.\n", filepath.ToSlash(rel))
+		}
+	}
 	return nil
 }
 

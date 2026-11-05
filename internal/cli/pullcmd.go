@@ -13,11 +13,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/skills"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newPullCmd() *cobra.Command {
@@ -170,9 +173,23 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	// materializes nothing usually means the module's features are implemented
 	// (concluded entities don't materialize — they are history).
 	if scope != "" && nFeatures == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(),
-			"No feature in module %q materialized: implemented features don't materialize content (they become history). "+
-				"Use 'cerne show <id>' to read one, or 'cerne errata <id>' to annotate/correct it.\n", scope)
+		matched := 0
+		if all, err := store.LoadAllFeatures(ctx.repoDir); err == nil {
+			for _, f := range all {
+				if f.Module == scope {
+					matched++
+				}
+			}
+		}
+		if matched == 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "No feature in module %q — the scope matched no feature. Check the module name ('cerne status' lists the features).\n", scope)
+		} else {
+			_, amend := lint.Correction(domain.StateImplemented, "<id>", "result")
+			_, errata := lint.Correction(domain.StateDone, "<id>", "result")
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"No feature in module %q materialized: its %d feature(s) are implemented or closed, and those don't materialize content (they become history). "+
+					"Use 'cerne show <id>' to read one; correct an implemented feature's result with '%s', anything else with '%s'.\n", scope, matched, amend, errata)
+		}
 	}
 	// Skill-sync step (F-0178): the generated skills are a derived convenience —
 	// a failure here warns and never fails a pull that materialized fine.

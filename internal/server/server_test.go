@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -1012,10 +1014,17 @@ func TestFeatureDocPutRefusesFrozen(t *testing.T) {
 		state domain.FeatureState
 		path  string
 	}{
-		{"F-0002", domain.StateImplemented, "cerne feature amend F-0002"},
-		{"F-0003", domain.StateDone, "cerne feature errata F-0003"},
-		{"F-0004", domain.StateRejected, "cerne feature errata F-0004"},
-		{"F-0005", domain.StateSuperseded, "cerne feature errata F-0005"},
+		{"F-0002", domain.StateImplemented, ""},
+		{"F-0003", domain.StateDone, ""},
+		{"F-0004", domain.StateRejected, ""},
+		{"F-0005", domain.StateSuperseded, ""},
+	}
+	for i := range frozen { // the state's path, read from the one correction table (F-0307)
+		kind, cmd := lint.Correction(frozen[i].state, frozen[i].id, "result")
+		frozen[i].path = cmd
+		if kind == lint.CorrectNone {
+			frozen[i].path = app.NoCorrectionNote(frozen[i].id)
+		}
 	}
 	for _, f := range frozen {
 		seedFeature(t, repoDir, f.id, "Congelada", f.state)
@@ -1052,8 +1061,8 @@ func TestFeatureDocPutRefusesFrozen(t *testing.T) {
 		if rec.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 		}
-		if !strings.Contains(got["error"], "cerne feature errata F-0002") || strings.Contains(got["error"], "amend") {
-			t.Fatalf("error = %q, want the errata path and no amend", got["error"])
+		if _, errata := lint.Correction(domain.StateImplemented, "F-0002", "spec"); !strings.Contains(got["error"], errata) || strings.Contains(got["error"], "amend") {
+			t.Fatalf("error = %q, want the errata path %q and no amend", got["error"], errata)
 		}
 		if after, _ := os.ReadFile(specPath); string(after) != string(before) {
 			t.Fatalf("spec.md changed:\n%s", after)

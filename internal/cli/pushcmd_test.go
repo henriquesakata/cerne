@@ -13,6 +13,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -472,8 +473,10 @@ func TestPushRefusesChangedDocOfFrozenFeature(t *testing.T) {
 
 	for _, args := range [][]string{{"push"}, {"push", "--dry-run"}, {"lint", "--staged"}} {
 		_, err := execCerne(t, append(args, "--dir", projDir)...)
-		if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), "cerne feature amend "+id) {
-			t.Fatalf("%v: err = %v, want ErrFeatureFrozen naming 'cerne feature amend %s'", args, err, id)
+		_, amend := lint.Correction(domain.StateImplemented, id, "result")
+		amend, _, _ = strings.Cut(amend, " <result.md>") // the push block names the local copy there
+		if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), amend) {
+			t.Fatalf("%v: err = %v, want ErrFeatureFrozen naming %q", args, err, amend)
 		}
 	}
 	if after, _ := os.ReadFile(resultBackend); string(after) != string(before) {
@@ -488,8 +491,8 @@ func TestPushRefusesChangedDocOfFrozenFeature(t *testing.T) {
 		t.Fatalf("accept: %v\noutput: %s", err, out)
 	}
 	_, err := execCerne(t, "push", "--dir", projDir)
-	if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), "cerne feature errata "+id) {
-		t.Fatalf("done: err = %v, want ErrFeatureFrozen naming 'cerne feature errata %s'", err, id)
+	if _, errata := lint.Correction(domain.StateDone, id, "result"); !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), errata) {
+		t.Fatalf("done: err = %v, want ErrFeatureFrozen naming %q", err, errata)
 	}
 	t.Logf("push refusal (done): %v", err)
 	if after, _ := os.ReadFile(resultBackend); string(after) != string(before) {
@@ -517,7 +520,7 @@ func TestPushRefusalOfClosedDocUnblocks(t *testing.T) {
 	_, err := execCerne(t, "push", "--dir", projDir)
 	for _, want := range []string{
 		"cerne feature amend " + id + " --file " + rel,
-		"then delete the local copy " + rel,
+		"unblock:    remove " + rel,
 	} {
 		if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), want) {
 			t.Fatalf("push: err = %v, want ErrFeatureFrozen containing %q", err, want)

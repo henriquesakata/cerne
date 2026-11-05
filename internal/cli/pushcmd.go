@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -238,6 +239,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		return nil, err
 	}
 	var docs []pushedDoc
+	var frozen []string // every frozen document's block: one refusal names them all
 	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -260,6 +262,10 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		case tracked && sum == want:
 			return nil // tracked and unchanged
 		case !tracked && !acceptableNewDoc(rel, manifest):
+			if block, ok := untrackedFrozenBlock(repoDir, rel, body); ok {
+				frozen = append(frozen, block)
+				return nil
+			}
 			return fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
 		}
 		id := parseCerneID(body)
@@ -279,7 +285,8 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 				return err
 			}
 			if err == nil && !domain.TitleEditable(f.State) {
-				return frozenDocError(id, f.State, rel)
+				frozen = append(frozen, frozenBlock(rel, id, f.State))
+				return nil
 			}
 		}
 		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: body, sum: sum})
@@ -288,19 +295,68 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	if err != nil {
 		return nil, err
 	}
+	if len(frozen) > 0 {
+		return nil, fmt.Errorf("%w: %s", app.ErrFeatureFrozen, strings.Join(frozen, "\n"))
+	}
 	return docs, nil
 }
 
-// frozenDocError is push's refusal of a changed .docs/<rel> of a closed
-// feature: the state's path (app.DocFixPath) plus how to unblock. The local
-// copy stays changed until deleted — pull keeps re-applying it as an unsent
-// edit — so the refusal says to delete it; an amend reads it first (its
-// frontmatter names the same cerne_id), so no edit is lost.
-func frozenDocError(id string, s domain.FeatureState, rel string) error {
+// frozenDirIDRe takes the feature id off the front of a materialized folder name.
+var frozenDirIDRe = regexp.MustCompile(`^([A-Z]+-\d+)(?:-|$)`)
+
+// untrackedFrozenBlock explains an untracked .docs/<rel> that belongs to a
+// closed feature — the file an agent recreates by hand after a pull that did
+// not materialize it (F-0307). The id comes from the cerne_id frontmatter, else
+// from the folder name; the state from the cache clone, with no fetch, so a
+// stale state only misleads the hint. nil when rel is not a spec/plan/result of
+// a known closed feature: the caller keeps its untracked-file phrase (ok false).
+func untrackedFrozenBlock(repoDir, rel string, body []byte) (string, bool) {
+	doc := strings.TrimSuffix(path.Base(rel), ".md")
+	if !strings.HasPrefix(rel, "current/features/") || (doc != "spec" && doc != "plan" && doc != "result") {
+		return "", false
+	}
+	id := parseCerneID(body)
+	if id == "" {
+		if m := frozenDirIDRe.FindStringSubmatch(path.Base(path.Dir(rel))); m != nil {
+			id = m[1]
+		}
+	}
+	if id == "" {
+		return "", false
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil || domain.TitleEditable(f.State) {
+		return "", false
+	}
+	return frozenBlock(rel, id, f.State), true
+}
+
+// frozenBlock is push's refusal of a .docs/<rel> of a closed feature, tracked
+// and changed or recreated untracked alike: the state, the correction the table
+// gives (lint.Correction), how to read the text and how to unblock. The local
+// copy blocks every push until removed — pull never re-materializes it — so the
+// block says to remove it; an amend reads it first (--file may point at it), so
+// no edit is lost. Nothing is deleted for the user.
+func frozenBlock(rel, id string, s domain.FeatureState) string {
+	doc := strings.TrimSuffix(path.Base(rel), ".md")
 	local := ".docs/" + rel
-	fix := strings.Replace(app.DocFixPath(id, strings.TrimSuffix(path.Base(rel), ".md"), s), "<result.md>", local, 1)
-	return fmt.Errorf("%w: %s (%s), %s — %s, then delete the local copy %s — a closed feature's .docs edits are never sent",
-		app.ErrFeatureFrozen, id, s, rel, fix, local)
+	kind, cmd := lint.Correction(s, id, doc)
+	fix := strings.Replace(cmd, "<result.md>", local, 1)
+	if kind == lint.CorrectNone {
+		fix = app.NoCorrectionNote(id)
+	}
+	unblock := "remove " + local + " (it blocks every push until removed)"
+	if kind == lint.CorrectByAmend {
+		unblock = "remove " + local + " (it blocks every push until removed; the amend reads it, so run that first)"
+	}
+	// `show --doc` has no errata document: where the path is an erratum (or none),
+	// plain `show <id>` is the read that includes it.
+	read := "cerne show " + id
+	if kind == lint.CorrectByAmend {
+		read += " --doc " + doc
+	}
+	return fmt.Sprintf("frozen document: %s — %s is %s and 'cerne pull' does not materialize it.\n  correct it: %s\n  read it:    %s\n  unblock:    %s",
+		rel, id, s, fix, read, unblock)
 }
 
 // acceptableNewDoc reports whether rel is a net-new plan.md/result.md authored
