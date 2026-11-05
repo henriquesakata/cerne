@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -321,6 +322,10 @@ func (r showResult) renderText(w io.Writer) {
 	case store.Pending:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		fmt.Fprintf(w, "from: %s\n", e.From)
+		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
+		if e.ClosedAt != nil {
+			fmt.Fprintf(w, "closed: %s\n", e.ClosedAt.Format(time.DateOnly))
+		}
 		if len(e.Facets) > 0 {
 			fmt.Fprintf(w, "facets: %s\n", strings.Join(e.Facets, ", "))
 		}

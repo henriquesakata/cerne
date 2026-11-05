@@ -132,7 +132,11 @@ func runPendingList(cmd *cobra.Command, dir, state, from, component, module stri
 	}
 	now := time.Now().UTC()
 	for _, p := range shown {
-		fmt.Fprintf(w, "%s  %s  %s  %s\n", p.ID, pendingAge(now, p), p.From, p.Title)
+		line := fmt.Sprintf("%s  %s  %s  %s", p.ID, pendingAge(now, p), p.From, p.Title)
+		if p.PromotedTo != "" {
+			line += "  → " + p.PromotedTo
+		}
+		fmt.Fprintln(w, line)
 	}
 	if len(shown) == 0 {
 		fmt.Fprintf(w, "No %s pendings.\n", state)

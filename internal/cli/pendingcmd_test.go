@@ -185,7 +185,8 @@ func TestShowPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("show P-0001: %v\n%s", err, out)
 	}
-	for _, want := range []string{"P-0001  pending  [open]  Tratar o caso Y", "from: F-0001", "components: lint", "o caso Y ficou de fora"} {
+	today := time.Now().UTC().Format("2006-01-02")
+	for _, want := range []string{"P-0001  pending  [open]  Tratar o caso Y", "from: F-0001", "created: " + today, "components: lint", "o caso Y ficou de fora"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("show P-0001 lacks %q:\n%s", want, out)
 		}
@@ -379,8 +380,12 @@ func TestPendingPromoteCmd(t *testing.T) {
 		t.Fatalf("pending = %+v, want promoted_to F-0002", p)
 	}
 	out, err = execCerne(t, "show", "P-0001", "--dir", projDir)
-	if err != nil || !strings.Contains(out, "promoted to: F-0002") {
-		t.Fatalf("show P-0001 lacks the forward link: %v\n%s", err, out)
+	if err != nil || !strings.Contains(out, "promoted to: F-0002") || !strings.Contains(out, "closed: "+time.Now().UTC().Format("2006-01-02")) {
+		t.Fatalf("show P-0001 lacks the forward link or the closed date: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "pending", "list", "--state", "promoted", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "P-0001  0d  F-0001  Configurar o limiar  → F-0002") {
+		t.Fatalf("pending list --state promoted lacks the target: %v\n%s", err, out)
 	}
 }
 
