@@ -588,6 +588,75 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, 
 	return f, nil
 }
 
+// ErrAmendNotImplemented is returned by AmendFeatureResult for a feature that is
+// not implemented; the message names the path of its state (DocFixPath).
+var ErrAmendNotImplemented = errors.New("only the result of an implemented feature can be amended")
+
+// AmendFeatureResult replaces the result.md of an IMPLEMENTED feature, with the
+// reason on the event (F-0305): the correction window between `complete` and
+// the human `accept`, which then reads the amended result. ErrAmendNotImplemented
+// for any other state, re-read inside the lock; ErrResultIncomplete when the new
+// result fails the result checks — the mutation's error resets the clone, so
+// the previous result stays. A blank reason or body is refused before the
+// backend is touched. Returns the feature as stored (state unchanged).
+func AmendFeatureResult(repoDir, projDir, id, body, reason string) (store.Feature, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return store.Feature{}, errors.New("an amend needs a reason: pass --reason \"<why>\"")
+	}
+	if strings.TrimSpace(body) == "" {
+		return store.Feature{}, errors.New("empty result body: pass the full result via --file <result.md> or on stdin")
+	}
+	content, err := amendedResult(id, body)
+	if err != nil {
+		return store.Feature{}, err
+	}
+	var f store.Feature
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if f, err = store.LoadFeature(repoDir, id); err != nil {
+			return "", err
+		}
+		if f.State != domain.StateImplemented {
+			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPath(id, "result", f.State))
+		}
+		if err := os.WriteFile(FeatureDocPath(repoDir, id, "result.md"), []byte(content), 0o644); err != nil {
+			return "", err
+		}
+		if err := CheckResultRecord(repoDir, f); err != nil {
+			return "", err // an amend does not trade one debt for another
+		}
+		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
+			"doc":    "result",
+			"state":  string(f.State),
+			"reason": reason,
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: amend %s/result.md", id), nil
+	})
+	if err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
+// amendedResult is the stored form of an amend body, under ONE cerne_id
+// frontmatter: the body's own block when it already names id (what
+// `cerne show --doc result` prints, extra keys kept), cerne's stamp otherwise.
+// A block naming anything else is refused — it is another document.
+func amendedResult(id, body string) (string, error) {
+	body = strings.TrimSpace(strings.TrimPrefix(body, "\ufeff"))
+	if first, _, _ := strings.Cut(body, "\n"); strings.TrimSpace(first) != "---" {
+		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
+	}
+	if got := doccheck.FrontmatterValue([]byte(body), "cerne_id"); got != id {
+		return "", fmt.Errorf("the body's frontmatter names cerne_id %q, not %s — is it another feature's result?", got, id)
+	}
+	return body + "\n", nil
+}
+
 // loadCandidate loads a feature and asserts it is still a candidate — the
 // precondition shared by the chat's refine turn (BuildRefineBlock) and its
 // write (UpdateCandidateSpec).

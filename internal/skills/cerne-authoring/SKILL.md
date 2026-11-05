@@ -158,7 +158,7 @@ Achados do crítico: <n> — corrigidos <…>; refutados <… com file:line>; ac
 
 The quoted verdict is what makes the record checkable at the human `accept` gate: a Gauntlet section with no quoted verdict per round and no disposition per finding cannot be told apart from a loop that never ran.
 
-`cerne feature complete` itself refuses a result whose record the lint would flag (a numbered criterion never cited, or no valid `## Gauntlet`), and `--force` does not cross it. Fix the result while the doc is still editable: once the feature is `implemented` the result is frozen out of `.docs/`.
+`cerne feature complete` itself refuses a result whose record the lint would flag (a numbered criterion never cited, or no valid `## Gauntlet`), and `--force` does not cross it. Fix the result while the doc is still editable: once the feature is `implemented` the result is frozen out of `.docs/` — until the `accept` it changes only through `cerne feature amend` (see **Errata** below).
 
 A critic-only pass (no judge) goes on the `Achados do crítico` line, never on a `Rodada N` line — a `Rodada N` line must carry the judge's quoted verdict.
 
@@ -298,7 +298,16 @@ Closing requires the facilitator capability and a structured **minutes** JSON (`
 
 ## Errata (correcting a concluded, immutable entity)
 
-A concluded entity — an `implemented` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead:
+A concluded entity — a `done`/`rejected`/`superseded` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead.
+
+**One window before that (F-0305): the result of an `implemented` feature, before the human `accept`.** `implemented` is "awaiting validation" and the FSM has no way back, so a result found wrong in validation is corrected in place, with a reason:
+
+```
+cerne show F-0008 --doc result > result.md    # edit it
+cerne feature amend F-0008 --file result.md --reason "<why>"
+```
+
+The amend replaces only `result.md` (never spec or plan), records the reason on a `feature.doc_edited` event, and is refused when the new result fails the result checks (evidence per criterion, Gauntlet record). Any other state refuses it and names its path: `.docs/` + `cerne push` while live, errata from `accept` on. A changed document of a feature past the live states is refused by `cerne push` and by the feature page alike — once the feature leaves development, `.docs/` edits no longer reach it. For everything else, errata:
 
 ```
 cerne <kind> errata <id> "<text>"             # kind: feature | decision | runbook | note
@@ -308,7 +317,7 @@ cerne note errata N-0003 "<text>"
 cerne runbook errata RB-0002 "<text>"
 ```
 
-The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). There is **no** edit/rewrite command — errata is the only correction path, by design: annotate, never rewrite.
+The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). The result rules count it too: a `critério N` cited in an errata entry clears `result-missing-evidence` for that N, and a complete `## Gauntlet` section in any entry clears `result-missing-gauntlet` — the path for a result debt found after the accept. There is **no** edit/rewrite command — past the accept, errata is the only correction path, by design: annotate, never rewrite.
 
 One tolerance is automatic: an errata may **name what its own entity superseded** (e.g. F-0001's errata saying "this feature replaced F-0002") without `cerne lint` raising `ref-to-superseded` — that supersession record is legitimate history, and since the errata is immutable it cannot carry the `lint:ok-superseded` marker used in authored docs. This holds only for the errata's *own* predecessor: a stale reference to some **other** superseded entity in an errata is still flagged — clear it by appending a correcting entry that points at the successor.
 

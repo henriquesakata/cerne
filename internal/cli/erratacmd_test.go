@@ -98,8 +98,12 @@ func TestShowJSONIncludesErrata(t *testing.T) {
 	}
 }
 
-// TestNoCommandRewritesConcludedBody pins crit. 5 at the surface level: errata is
-// the only correction path, so no command anywhere may rewrite an entity's body.
+// TestNoCommandRewritesConcludedBody pins F-0072 crit. 5 at the surface level: no
+// command rewrites the body of a concluded entity — errata is the correction
+// path. F-0305 moved the boundary for features from implemented to done, by the
+// product owner's decision recorded in the F-0305 spec: `feature amend` replaces
+// the result of an implemented feature (before the accept), so the table below
+// proves it refuses done, rejected and superseded with the file intact.
 func TestNoCommandRewritesConcludedBody(t *testing.T) {
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
@@ -111,6 +115,13 @@ func TestNoCommandRewritesConcludedBody(t *testing.T) {
 		}
 	}
 	walk(Root())
+
+	projDir, _, repoDir := setupProject(t)
+	for state, id := range seedResultFeatures(t, repoDir, domain.StateDone, domain.StateRejected, domain.StateSuperseded) {
+		t.Run(string(state), func(t *testing.T) {
+			assertAmendRefused(t, projDir, repoDir, id, "cerne feature errata "+id)
+		})
+	}
 }
 
 func hasSubcommand(root *cobra.Command, parent, child string) bool {
