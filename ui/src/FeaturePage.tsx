@@ -1057,7 +1057,9 @@ function ActionsPanel({
           )}
           {readiness.length > 0 && (
             <>
-              <p className="approve-readiness-title">{t.feature.approveImpediments}</p>
+              <p className="approve-readiness-title">
+                {blocked ? t.feature.approveImpediments : t.feature.approvePending}
+              </p>
               <ul>
                 {readiness.map((r, i) => (
                   <li key={i} className={r.hard ? 'impediment-hard' : 'impediment-soft'}>

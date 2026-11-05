@@ -163,6 +163,7 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     render(<FeaturePage id="F-0221" />)
     const approve = await screen.findByRole('button', { name: 'Aprovar' })
     expect(approve).toBeDisabled()
+    expect(screen.getByText('O que impede a aprovação:')).toBeInTheDocument()
     expect(screen.getByText(/Spec sem linha "Barra:"/)).toBeInTheDocument()
     expect(screen.getByText(/Esclarecimento aberto: qual o limite\?/)).toBeInTheDocument()
     // Rejeitar segue disponível: o impedimento só bloqueia o approve.
@@ -179,6 +180,9 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     const approve = await screen.findByRole('button', { name: 'Aprovar' })
     expect(approve).toBeEnabled()
     expect(screen.getByText(/Esclarecimento aberto: qual o limite\?/)).toBeInTheDocument()
+    // Nada impede o clique na UI (F-0175): o título não diz "impede".
+    expect(screen.getByText('Pendente antes de aprovar:')).toBeInTheDocument()
+    expect(screen.queryByText('O que impede a aprovação:')).not.toBeInTheDocument()
   })
 
   it('mostra a barra junto ao Aprovar: aprovar é aceitá-la', async () => {

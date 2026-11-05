@@ -404,6 +404,7 @@ const ptBR = {
     confirmAction: (label: string) => `Confirmar ${label.toLowerCase()}`,
     approveBar: 'Aprovar é aceitar esta barra:',
     approveImpediments: 'O que impede a aprovação:',
+    approvePending: 'Pendente antes de aprovar:',
     approveBlocked: 'Resolva os impedimentos marcados antes de aprovar.',
     impediment: (code: ApproveImpediment['code'], message: string) =>
       ({
@@ -1144,6 +1145,7 @@ const en: Messages = {
     confirmAction: (label: string) => `Confirm ${label.toLowerCase()}`,
     approveBar: 'Approving accepts this bar:',
     approveImpediments: 'What stops the approval:',
+    approvePending: 'Pending before approving:',
     approveBlocked: 'Resolve the marked impediments before approving.',
     impediment: (code: ApproveImpediment['code'], message: string) =>
       ({
