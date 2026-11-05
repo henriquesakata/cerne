@@ -6,6 +6,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,22 +42,38 @@ type TransitionOutcome struct {
 	// Bar is the bar line an approve accepted (F-0308), also recorded on the
 	// approve event; "" for every other action.
 	Bar string
+	// Baseline is true when an approve on an approved feature recorded its
+	// first approved copy (F-0318 crit. 14: approved before the copy existed)
+	// rather than renewing a stale one.
+	Baseline bool
 }
 
 // ErrApprovalStale is the start refusal for an approved feature whose spec
 // differs from the version its last approve accepted (F-0318).
 var ErrApprovalStale = errors.New("spec changed since approval")
 
-// ErrNothingToReapprove refuses approving an approved feature whose spec is
-// still the version approved (F-0318) — or that has no approved copy at all.
-// It wraps domain.ErrInvalidTransition: to every caller that asks "can this be
+// ErrNothingToReapprove refuses approving an approved feature whose approved
+// copy exists and still holds the spec's content (F-0318). It wraps
+// domain.ErrInvalidTransition: to every caller that asks "can this be
 // approved?", an approved feature with nothing to renew answers as before.
 var ErrNothingToReapprove = fmt.Errorf("%w: nothing to re-approve", domain.ErrInvalidTransition)
 
-// checkReapprove returns ErrNothingToReapprove for an approved feature whose
-// approval is not stale; nil for any other feature.
-func checkReapprove(repoDir string, f store.Feature) error {
+// ApprovalBaselineMissing reports an approved feature with no approved copy —
+// approved before F-0318. Never stale (crit. 14); its next approve records the
+// copy.
+func ApprovalBaselineMissing(repoDir string, f store.Feature) bool {
 	if f.State != domain.StateApproved {
+		return false
+	}
+	_, err := os.Stat(store.ApprovedSpecPath(repoDir, f.ID))
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// checkReapprove returns ErrNothingToReapprove for an approved feature whose
+// approval is not stale; nil for any other feature, and for an approved one
+// with no copy yet, whose approve records the baseline.
+func checkReapprove(repoDir string, f store.Feature) error {
+	if f.State != domain.StateApproved || ApprovalBaselineMissing(repoDir, f) {
 		return nil
 	}
 	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); !stale {
@@ -112,6 +129,7 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
 	var out TransitionOutcome
 	var title string
+	var baseline bool
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
 		return out, err
 	}
@@ -152,6 +170,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err := checkReapprove(repoDir, f); err != nil {
 				return "", err
 			}
+			baseline = ApprovalBaselineMissing(repoDir, f)
 		}
 		if action == domain.ActionStart {
 			if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
@@ -346,7 +365,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, Baseline: baseline}
 		return msg, nil
 	})
 	if err != nil {

@@ -188,8 +188,8 @@ func TestReapproveRefreshesApprovedSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-approve: %v", err)
 	}
-	if out.From != domain.StateApproved || out.To != domain.StateApproved {
-		t.Fatalf("outcome = %s → %s, want approved → approved", out.From, out.To)
+	if out.From != domain.StateApproved || out.To != domain.StateApproved || out.Baseline {
+		t.Fatalf("outcome = %+v, want approved → approved, a renewal (not a baseline)", out)
 	}
 	if got, _ := os.ReadFile(store.ApprovedSpecPath(repoDir, "F-0001")); string(got) != specB {
 		t.Fatalf("approved copy = %q, want the re-approved spec", got)
@@ -203,26 +203,50 @@ func TestReapproveRefreshesApprovedSpec(t *testing.T) {
 	}
 }
 
-// TestReapproveRefusedWhenNotStale (F-0318 crit. 7, 14): there is nothing to
-// re-approve while the spec is the approved version — nor for a feature
-// approved before F-0318, with no copy. The readiness the approve --check and
-// the page read refuses alike, as an invalid transition, so every "nothing to
-// approve here" caller keeps reading it as before.
+// TestReapproveRefusedWhenNotStale (F-0318 crit. 7): there is nothing to
+// re-approve while the spec is the approved version. The readiness the approve
+// --check and the page read refuses alike, as an invalid transition, so every
+// "nothing to approve here" caller keeps reading it as before.
 func TestReapproveRefusedWhenNotStale(t *testing.T) {
 	repoDir, projDir, _ := approveFixture(t)
-	seedFeatureInState(t, repoDir, "F-0002", domain.StateApproved, "spec.md") // legacy: no copy
-
-	for _, id := range []string{"F-0001", "F-0002"} {
-		_, err := TransitionFeature(repoDir, projDir, id, domain.ActionApprove, "", "", nil)
-		if !errors.Is(err, ErrNothingToReapprove) || !errors.Is(err, domain.ErrInvalidTransition) {
-			t.Fatalf("%s: re-approve err = %v, want ErrNothingToReapprove (an invalid transition)", id, err)
-		}
-		if _, err := ApproveReadiness(repoDir, id); !errors.Is(err, ErrNothingToReapprove) {
-			t.Fatalf("%s: readiness err = %v, want ErrNothingToReapprove", id, err)
-		}
+	_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+	if !errors.Is(err, ErrNothingToReapprove) || !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("re-approve err = %v, want ErrNothingToReapprove (an invalid transition)", err)
 	}
-	if _, err := os.Stat(store.ApprovedSpecPath(repoDir, "F-0002")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("a refused re-approve wrote a copy: %v", err)
+	if _, err := ApproveReadiness(repoDir, "F-0001"); !errors.Is(err, ErrNothingToReapprove) {
+		t.Fatalf("readiness err = %v, want ErrNothingToReapprove", err)
+	}
+}
+
+// TestApproveRecordsLegacyBaseline (F-0318 crit. 14): a feature approved
+// before F-0318 has no approved copy — never stale, never blocked — and its
+// next approve, on the approved feature itself, records the current spec as
+// the baseline instead of being refused: the readiness reads it as
+// approvable, the outcome says it was a baseline, and from then on the
+// comparison holds (nothing to re-approve until the spec changes).
+func TestApproveRecordsLegacyBaseline(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md") // legacy: no copy
+	if !ApprovalBaselineMissing(repoDir, store.Feature{ID: "F-0001", State: domain.StateApproved}) {
+		t.Fatal("legacy approval not reported as missing its baseline")
+	}
+	if imps, err := ApproveReadiness(repoDir, "F-0001"); err != nil || len(imps) != 0 {
+		t.Fatalf("readiness = %v, %v, want approvable", imps, err)
+	}
+
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+	if err != nil {
+		t.Fatalf("baseline approve: %v", err)
+	}
+	if out.From != domain.StateApproved || out.To != domain.StateApproved || !out.Baseline {
+		t.Fatalf("outcome = %+v, want approved → approved, baseline", out)
+	}
+	spec, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
+	if got, err := os.ReadFile(store.ApprovedSpecPath(repoDir, "F-0001")); err != nil || string(got) != string(spec) {
+		t.Fatalf("baseline copy = %q, %v, want the current spec", got, err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); !errors.Is(err, ErrNothingToReapprove) {
+		t.Fatalf("approve after the baseline err = %v, want ErrNothingToReapprove", err)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // transitionSpec wires one lifecycle subcommand to its domain action.
@@ -152,6 +153,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	// stub: point the author at the doc the next gate will require. A
 	// re-approval (F-0318) reopens the start instead.
 	switch {
+	case action == domain.ActionApprove && out.Baseline:
+		fmt.Fprintf(cmd.OutOrStdout(), "Approval baseline recorded: the current spec is now the approved version — 'cerne feature start %s' is open again.\n", id)
 	case action == domain.ActionApprove && out.From == domain.StateApproved:
 		fmt.Fprintf(cmd.OutOrStdout(), "Approval renewed: the current spec is now the approved version — 'cerne feature start %s' is open again.\n", id)
 	case action == domain.ActionApprove:
@@ -244,6 +247,10 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 			head = "has no hard impediment"
 		}
 		fmt.Fprintf(w, "Check: %s %s (nothing approved, nothing written).\n", id, head)
+		// F-0318 crit. 14: approved before the copy existed — the approve records it.
+		if f, err := store.LoadFeature(ctx.repoDir, id); err == nil && app.ApprovalBaselineMissing(ctx.repoDir, f) {
+			fmt.Fprintf(w, "No approved version is recorded for %s yet: approving records the current spec as its approved version (the baseline later edits are compared with).\n", id)
+		}
 		if len(soft) > 0 {
 			fmt.Fprintf(w, "%d open clarification(s) for a human to answer — the CLI approve refuses them without --force; the UI does not:\n", len(soft))
 			for _, im := range soft {

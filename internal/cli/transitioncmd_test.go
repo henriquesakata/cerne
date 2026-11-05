@@ -560,3 +560,32 @@ func TestReapproveIsHumanGated(t *testing.T) {
 		}
 	}
 }
+
+// TestApproveRecordsBaselineCLI (F-0318 crit. 14): on an approved feature with
+// no approved copy (approved before F-0318) the check calls it approvable and
+// says the baseline will be recorded; the human approve records it and says so.
+func TestApproveRecordsBaselineCLI(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v\n%s", err, out)
+	}
+	if err := os.RemoveAll(filepath.Dir(store.ApprovedSpecPath(repoDir, id))); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+
+	out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+	if err != nil || !strings.Contains(out, id+" is approvable") || !strings.Contains(out, "records the current spec as its approved version") {
+		t.Fatalf("check (%v) does not report an approvable baseline:\n%s", err, out)
+	}
+	out, err = execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err != nil || !strings.Contains(out, "Approval baseline recorded: the current spec is now the approved version") {
+		t.Fatalf("baseline approve (%v):\n%s", err, out)
+	}
+	if _, err := os.Stat(store.ApprovedSpecPath(repoDir, id)); err != nil {
+		t.Fatalf("no baseline copy: %v", err)
+	}
+}
