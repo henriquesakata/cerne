@@ -260,7 +260,7 @@ func TestPromotePendingToFeature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature", false)
+	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature", "", false)
 	if err != nil {
 		t.Fatalf("PromotePending: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestPromotePendingToTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, task, err := PromotePending(repoDir, projDir, p.ID, "task", false)
+	got, task, err := PromotePending(repoDir, projDir, p.ID, "task", "", false)
 	if err != nil {
 		t.Fatalf("PromotePending: %v", err)
 	}
@@ -321,13 +321,13 @@ func TestPromotePendingRefusesClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromotePending(repoDir, projDir, p.ID, "epic", false); !errors.Is(err, ErrPendingPromoteKind) {
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "epic", "", false); !errors.Is(err, ErrPendingPromoteKind) {
 		t.Fatalf("--as epic err = %v, want ErrPendingPromoteKind", err)
 	}
 	if _, err := ResolvePending(repoDir, projDir, p.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", false); !errors.Is(err, domain.ErrInvalidTransition) {
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", "", false); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("promote of a resolved pending err = %v, want ErrInvalidTransition", err)
 	}
 	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 {
@@ -345,13 +345,13 @@ func TestPromotePendingGuardAndForce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", false); !errors.Is(err, ErrSimilarExists) {
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", "", false); !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
 	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingOpen {
 		t.Fatalf("a refused promotion changed the pending to %s", stored.State)
 	}
-	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature", true)
+	got, created, err := PromotePending(repoDir, projDir, p.ID, "feature", "", true)
 	if err != nil || got.PromotedTo != created.ID {
 		t.Fatalf("forced promote = %+v, %v", got, err)
 	}
@@ -371,7 +371,7 @@ func TestPromotePendingAsTaskRefusesClosedOrigin(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := backendHead(t, repoDir)
-			_, _, err = PromotePending(repoDir, projDir, p.ID, "task", false)
+			_, _, err = PromotePending(repoDir, projDir, p.ID, "task", "", false)
 			if !errors.Is(err, ErrPendingOriginClosed) || !strings.Contains(err.Error(), "--as feature") {
 				t.Fatalf("err = %v, want ErrPendingOriginClosed pointing at --as feature", err)
 			}
@@ -460,5 +460,24 @@ func TestMarkPromotedReportsHowToRecover(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err.Error(), want)
 		}
+	}
+}
+
+// In a project with 2+ modules the created entity needs one: inherited from
+// the origin by default, and module overrides it — the way out when the origin
+// has none.
+func TestPromotePendingModule(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t, "core", "web")
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateCandidate, "spec.md")
+	p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", "F-0001", nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := PromotePending(repoDir, projDir, p.ID, "feature", "", false); err == nil || !strings.Contains(err.Error(), "--module is required") {
+		t.Fatalf("origin without module: err = %v, want the module requirement", err)
+	}
+	_, created, err := PromotePending(repoDir, projDir, p.ID, "feature", "web", false)
+	if err != nil || created.Module != "web" {
+		t.Fatalf("promote --module web = %+v, %v; want module web", created, err)
 	}
 }

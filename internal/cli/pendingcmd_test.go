@@ -359,3 +359,16 @@ func TestPendingShowAliasesShow(t *testing.T) {
 		t.Fatal("pending show must refuse a non-P- id")
 	}
 }
+
+// --module on promote overrides the module inherited from the origin.
+func TestPendingPromoteModuleFlag(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "core", "web")
+	newOriginFeature(t, projDir, "Origem", "--module", "core")
+	pendingNew(t, projDir, "Tratar o caso Y", "--from", "F-0001")
+	if out, err := execCerne(t, "pending", "promote", "P-0001", "--as", "feature", "--module", "web", "--dir", projDir); err != nil {
+		t.Fatalf("promote --module: %v\n%s", err, out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Module != "web" {
+		t.Fatalf("F-0002 module = %q, want web", f.Module)
+	}
+}

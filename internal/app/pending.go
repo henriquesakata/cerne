@@ -136,14 +136,15 @@ func DropPending(repoDir, projDir, id, reason string) (store.Pending, error) {
 // its title, tags, the origin's module and the body as the spec's context. The
 // spec carries "**Origem:** pendência [[P-NNNN]] (de <origin>)" — the link
 // back, an id wiki-link — and the pending moves to promoted with promoted_to.
-// force is the created entity's duplicate-guard override (F-0147): a debt
-// often reads like its origin.
+// module overrides the inherited one (needed when the project requires a
+// module and the origin has none). force is the created entity's
+// duplicate-guard override (F-0147): a debt often reads like its origin.
 //
 // ponytail: two mutations, not one transaction (the second re-checks the
 // pending inside the lock). If it fails, the entity exists without
 // promoted_to; markPromoted's error names it and says how to recover. One
 // transaction would need the feature core to run inside this lock.
-func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending, store.Feature, error) {
+func PromotePending(repoDir, projDir, id, as, module string, force bool) (store.Pending, store.Feature, error) {
 	if as != "feature" && as != "task" {
 		return store.Pending{}, store.Feature{}, fmt.Errorf("%w: %q", ErrPendingPromoteKind, as)
 	}
@@ -158,6 +159,9 @@ func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending,
 	if err != nil {
 		return store.Pending{}, store.Feature{}, err
 	}
+	if module = strings.TrimSpace(module); module == "" {
+		module = origin.Module
+	}
 	create, parent := CreateFeatureWithSpec, ""
 	if as == "task" {
 		if origin.State == domain.StateImplemented || origin.State == domain.StateDone {
@@ -169,7 +173,7 @@ func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending,
 	if p.Body != "" {
 		context += "\n\n" + p.Body
 	}
-	f, err := create(repoDir, projDir, p.Title, origin.Module, parent, p.Facets, p.Components, spectmpl.StubWithContext(p.Title, context), force, "", "")
+	f, err := create(repoDir, projDir, p.Title, module, parent, p.Facets, p.Components, spectmpl.StubWithContext(p.Title, context), force, "", "")
 	if err != nil {
 		return store.Pending{}, store.Feature{}, err
 	}
