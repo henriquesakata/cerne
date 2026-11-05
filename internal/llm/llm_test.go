@@ -18,17 +18,6 @@ func TestResolveMode(t *testing.T) {
 	}
 }
 
-// TestKnownModelsAndEfforts: F-0218 criterion 5 — the chat model/effort
-// selector is served from these lists, never hardcoded in the UI.
-func TestKnownModelsAndEfforts(t *testing.T) {
-	if len(KnownModels) == 0 {
-		t.Fatal("KnownModels is empty")
-	}
-	if len(KnownEfforts) == 0 {
-		t.Fatal("KnownEfforts is empty")
-	}
-}
-
 func TestFakeComplete(t *testing.T) {
 	f := &Fake{Reply: "resposta"}
 	got, err := f.Complete(context.Background(), "prompt-x")

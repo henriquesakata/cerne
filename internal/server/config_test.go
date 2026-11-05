@@ -1,10 +1,17 @@
 package server
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/models"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 // TestLLMConfigGetDefault: with a .cernerc that has no [llm] block, the mode
@@ -26,28 +33,56 @@ func TestLLMConfigGetDefault(t *testing.T) {
 	}
 }
 
-// TestLLMConfigGetServesModelsAndEfforts: F-0218 criterion 5 — GET carries
-// the known model/effort options so the Backlog chat selector never
-// hardcodes them, even in delegation (the selector itself stays hidden then).
-func TestLLMConfigGetServesModelsAndEfforts(t *testing.T) {
+// TestLLMConfigGetServesCatalog: F-0218 criterion 5 / F-0311 criterion 1 —
+// GET carries the resolved model catalog (label, provider, per-model efforts
+// and default, visibility) so the chat selector never hardcodes a model.
+func TestLLMConfigGetServesCatalog(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b"}); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 	var got struct {
-		Mode    string   `json:"mode"`
-		Models  []string `json:"models"`
-		Efforts []string `json:"efforts"`
+		Models       []models.Entry `json:"models"`
+		DefaultModel string         `json:"default_model"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/config/llm", "", &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
-	if len(got.Models) == 0 {
-		t.Fatalf("models = %v, want non-empty", got.Models)
+	base := models.Baseline()
+	if len(got.Models) != len(base.Entries) || got.DefaultModel != base.DefaultModel {
+		t.Fatalf("served %d models (default %q), want the baseline %d (%q)", len(got.Models), got.DefaultModel, len(base.Entries), base.DefaultModel)
 	}
-	if len(got.Efforts) == 0 {
-		t.Fatalf("efforts = %v, want non-empty", got.Efforts)
+	for _, e := range got.Models {
+		if e.Label == "" || e.Provider == "" || e.Visibility == "" {
+			t.Fatalf("entry served without label/provider/visibility: %+v", e)
+		}
+	}
+}
+
+// TestLLMConfigMalformedCatalogServesBaseline: criterion 3 — a malformed
+// global catalog never breaks the page: the baseline is served and the reason
+// lands in the structured log.
+func TestLLMConfigMalformedCatalogServesBaseline(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, models.FileName), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	prev := telemetry.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { telemetry.SetLogger(prev) })
+
+	repoDir, projDir := newBackend(t)
+	var got struct {
+		Models []models.Entry `json:"models"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/config/llm", "", &got)
+	if rec.Code != http.StatusOK || len(got.Models) != len(models.Baseline().Entries) {
+		t.Fatalf("status %d, %d models; want 200 with the baseline", rec.Code, len(got.Models))
+	}
+	if !strings.Contains(logs.String(), "level=WARN") || !strings.Contains(logs.String(), "malformed") {
+		t.Fatalf("log = %q, want a WARN naming the malformed file", logs.String())
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gitlab.com/rockt/cerne/internal/models"
 )
 
 func TestLoadConfigLLMMode(t *testing.T) {
@@ -68,7 +70,7 @@ func TestLoadConfigLLMByoKeyRoundTrip(t *testing.T) {
 // fields and that explicit values survive.
 func TestLLMConfigWithDefaults(t *testing.T) {
 	got := LLMConfig{Mode: "byo-key"}.WithDefaults()
-	want := LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: "claude-opus-4-8",
+	want := LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: models.Baseline().DefaultModel,
 		KeyEnv: "CERNE_LLM_API_KEY", BaseURL: "https://api.anthropic.com", MaxTokens: 8000,
 		ClaudeBin: "claude"}
 	if got != want {

@@ -20,6 +20,12 @@ var logger = loggerHandle{}
 type loggerHandle struct{}
 
 func (loggerHandle) Info(msg string, args ...any) { loggerV.Load().Info(msg, args...) }
+func (loggerHandle) Warn(msg string, args ...any) { loggerV.Load().Warn(msg, args...) }
+
+// Info and Warn emit one structured line on the process logger (F-0149) for
+// events outside an Op — e.g. the model catalog falling back to its baseline.
+func Info(msg string, args ...any) { logger.Info(msg, args...) }
+func Warn(msg string, args ...any) { logger.Warn(msg, args...) }
 
 // SetLogger replaces the op logger (used by servers and tests).
 func SetLogger(l *slog.Logger) *slog.Logger {

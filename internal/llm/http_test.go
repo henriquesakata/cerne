@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/models"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -187,8 +188,9 @@ func TestNewProviderAppliesDefaults(t *testing.T) {
 	if _, err := prov.Complete(context.Background(), "p"); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if gotModel != "claude-opus-4-8" {
-		t.Fatalf("default model = %v, want claude-opus-4-8", gotModel)
+	// F-0311: the default model is the catalog's, not a literal here.
+	if want := models.Baseline().DefaultModel; gotModel != want {
+		t.Fatalf("default model = %v, want %v", gotModel, want)
 	}
 }
 

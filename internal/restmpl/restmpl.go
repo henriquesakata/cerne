@@ -13,7 +13,15 @@
 // rationale and its sources are registered in the cerne backend as references.
 package restmpl
 
-import "strings"
+import (
+	"strings"
+
+	"gitlab.com/rockt/cerne/internal/models"
+)
+
+// exampleModel is the model id the stamp example shows — the catalog's default,
+// so the example never names a model the catalog has retired (F-0311).
+var exampleModel = models.Baseline().DefaultModel
 
 // Sections are the canonical result sections, in template order.
 var Sections = []string{
@@ -32,7 +40,7 @@ var Sections = []string{
 // scaffolded result reads as a stub (the feature complete gate stays closed)
 // until a section is filled. The [ESCLARECER: token is the same ambiguity marker
 // the rest of the family uses (spectmpl.AmbiguityMarker), asserted by the tests.
-const Body = `<!-- COMO USAR: este é o registro do que a feature ENTREGOU (não o que planejou). Mostre EVIDÊNCIA —
+var Body = `<!-- COMO USAR: este é o registro do que a feature ENTREGOU (não o que planejou). Mostre EVIDÊNCIA —
 número de testes, arquivo:linha, saída de comando — não afirmação ("pronto" sem prova não vale). A Aceitação
 é binária e 1:1 com os critérios da spec. Preencha cada seção e remova estas linhas-guia. Marque qualquer
 incerteza com [ESCLARECER: pergunta específica]. Dimensione pelo trabalho: entrega pequena tem seções curtas
@@ -42,8 +50,8 @@ incerteza com [ESCLARECER: pergunta específica]. Dimensione pelo trabalho: entr
 Spec: link para a spec que esta entrega fecha (../<id>/spec.md) — a fonte dos critérios.
 Data: AAAA-MM-DD — quando entregou.
 Agente: quem implementou, autodeclarado — "<id do modelo> · esforço <nível na escala do seu harness,
-ex.: low/medium/high>"; ex.: "claude-opus-5 · esforço high". Sem agente: "humano". Não sabe um dos
-dois? marque só ele ("claude-opus-5 · esforço desconhecido") — nunca palpite. É registro histórico:
+ex.: low/medium/high>"; ex.: "` + exampleModel + ` · esforço high". Sem agente: "humano". Não sabe um dos
+dois? marque só ele ("` + exampleModel + ` · esforço desconhecido") — nunca palpite. É registro histórico:
 o id concreto do modelo que rodou, não uma categoria genérica. -->
 
 ## Resultado

@@ -271,7 +271,7 @@ export function continueList(
 
 // Preferências de padrão (F-0241). Regex, não id literal: a lista vem do
 // servidor e varia por projeto — casar por nome sobrevive a versionamento
-// ("claude-opus-5" hoje, outro amanhã).
+// (o id de hoje, outro amanhã).
 const PREFERRED_MODEL = /opus/i
 const PREFERRED_EFFORT = /^high$/i
 
