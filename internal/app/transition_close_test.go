@@ -16,7 +16,7 @@ import (
 
 func mustComplete(t *testing.T, repoDir, projDir, id string) TransitionOutcome {
 	t.Helper()
-	if err := SaveFeatureDoc(repoDir, projDir, id, "result", realDoc(id)); err != nil {
+	if err := SaveFeatureDoc(repoDir, projDir, id, "result", realDoc(id)+testGauntletTail); err != nil {
 		t.Fatalf("save result %s: %v", id, err)
 	}
 	out, err := TransitionFeature(repoDir, projDir, id, domain.ActionComplete, "", "", nil)
