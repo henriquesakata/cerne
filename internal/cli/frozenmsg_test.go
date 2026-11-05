@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -144,4 +145,118 @@ func wantFix(state domain.FeatureState, id, doc string) string {
 		return app.NoCorrectionNote(id)
 	}
 	return cmd
+}
+
+const (
+	evidenceMark = "sem evidência do(s) critério(s)"
+	gauntletMark = "result.md sem " // "sem seção "## Gauntlet"", "sem veredito…": the rule's own opening
+)
+
+// lintLine returns the lint output line of the rule's finding ("" when absent).
+func lintLine(out, mark string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, mark) && strings.Contains(l, " — ") {
+			return l
+		}
+	}
+	return ""
+}
+
+// F-0307 crit. 2: following the lint message works — the command the detail
+// names, run with a file in the form it describes, clears the finding.
+func TestFollowingTheLintMessageClearsIt(t *testing.T) {
+	spec := "## Objetivo e critérios de aceitação\n\n1. a\n2. b\n"
+	good := "critério 1 provado. critério 2 provado.\n"
+	cmdRe := regexp.MustCompile(`'(cerne feature (?:amend|errata) [^']*)'`)
+	// A closed feature in debt: the result rewritten straight in the backend, as the dogfood did.
+	closedWithDebt := func(t *testing.T, accept bool, resultBody string) (projDir, repoDir, id string) {
+		projDir, repoDir, id = startedFeature(t)
+		writeDoc(t, repoDir, id, "spec.md", realDoc(id, spec))
+		writeDoc(t, repoDir, id, "result.md", realDoc(id, good))
+		commitBackend(t, repoDir)
+		if out, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
+			t.Fatalf("complete: %v\n%s", err, out)
+		}
+		if accept {
+			if out, err := execCerne(t, "feature", "accept", id, "--dir", projDir); err != nil {
+				t.Fatalf("accept: %v\n%s", err, out)
+			}
+		}
+		writeDoc(t, repoDir, id, "result.md", resultBody)
+		commitBackend(t, repoDir)
+		return
+	}
+	run := func(t *testing.T, projDir, id, line string, file, reason string) {
+		t.Helper()
+		m := cmdRe.FindStringSubmatch(line)
+		if m == nil {
+			t.Fatalf("no command in the detail: %q", line)
+		}
+		cmdline := strings.NewReplacer("<result.md>", file, "<errata.md>", file, "<why>", reason).Replace(m[1])
+		args := regexpSplit(cmdline)
+		out, err := execCerne(t, append(args[1:], "--dir", projDir)...)
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", cmdline, err, out)
+		}
+	}
+	write := func(t *testing.T, content string) string {
+		p := filepath.Join(t.TempDir(), "doc.md")
+		mustWrite(t, p, content)
+		return p
+	}
+
+	t.Run("done, missing evidence", func(t *testing.T) {
+		projDir, _, id := closedWithDebt(t, true, "Result sem prova.\n\n## Gauntlet\n\nBarra: fixture — ref\nRodada 1 — vitória: \"fixture\"\n")
+		out, _ := execCerne(t, "lint", "--feature", id, "--dir", projDir)
+		line := lintLine(out, evidenceMark)
+		if line == "" {
+			t.Fatalf("expected the evidence finding:\n%s", out)
+		}
+		run(t, projDir, id, line, write(t, "Errata: critério 1 provado por X; critério 2 provado por Y.\n"), "")
+		if out, _ := execCerne(t, "lint", "--feature", id, "--dir", projDir); lintLine(out, evidenceMark) != "" {
+			t.Fatalf("finding survived the erratum:\n%s", out)
+		}
+	})
+	t.Run("done, missing gauntlet", func(t *testing.T) {
+		projDir, _, id := closedWithDebt(t, true, "critério 1 provado. critério 2 provado.\n")
+		out, _ := execCerne(t, "lint", "--feature", id, "--dir", projDir)
+		line := lintLine(out, gauntletMark)
+		if line == "" {
+			t.Fatalf("expected the gauntlet finding:\n%s", out)
+		}
+		run(t, projDir, id, line, write(t, "Registro tardio.\n\n## Gauntlet\n\nBarra: fixture — ref\nRodada 1 — vitória: \"fixture\"\n"), "")
+		if out, _ := execCerne(t, "lint", "--feature", id, "--dir", projDir); lintLine(out, gauntletMark) != "" {
+			t.Fatalf("finding survived the erratum:\n%s", out)
+		}
+	})
+	t.Run("implemented, both findings, amend", func(t *testing.T) {
+		projDir, _, id := closedWithDebt(t, false, "Result sem nada.\n")
+		out, _ := execCerne(t, "lint", "--feature", id, "--dir", projDir)
+		for _, mark := range []string{evidenceMark, gauntletMark} {
+			line := lintLine(out, mark)
+			if line == "" {
+				t.Fatalf("expected the %q finding:\n%s", mark, out)
+			}
+			if !strings.Contains(line, "feature implemented:") || !strings.Contains(line, "cerne feature amend "+id) {
+				t.Fatalf("detail should name the amend of an implemented feature: %q", line)
+			}
+		}
+		run(t, projDir, id, lintLine(out, evidenceMark), write(t, realDoc(id, good)), "fecha o débito")
+		if out, _ := execCerne(t, "lint", "--feature", id, "--dir", projDir); lintLine(out, evidenceMark) != "" || lintLine(out, gauntletMark) != "" {
+			t.Fatalf("findings survived the amend:\n%s", out)
+		}
+	})
+}
+
+// regexpSplit splits a command line on spaces, keeping a "double quoted" span whole.
+func regexpSplit(s string) []string {
+	var out []string
+	for _, m := range regexp.MustCompile(`"([^"]*)"|\S+`).FindAllStringSubmatch(s, -1) {
+		if m[0][0] == '"' {
+			out = append(out, m[1])
+		} else {
+			out = append(out, m[0])
+		}
+	}
+	return out
 }
