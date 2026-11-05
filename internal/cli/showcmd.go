@@ -13,11 +13,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // ErrUnknownIDPrefix is returned by `cerne show` when a cerne_id's prefix maps
-// to no known entity kind (F/D/R/N/RB/H).
+// to no known entity kind (F/D/R/N/RB/H/C/P).
 var ErrUnknownIDPrefix = errors.New("unknown cerne_id prefix")
 
 // ErrNoSuchDoc is returned by `cerne show --doc` when the requested document
@@ -47,8 +48,8 @@ func newShowCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
-		Short: "Show any entity (feature, decision, reference, note, runbook, historical) by id",
-		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-) and prints the metadata plus the entity's " +
+		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending) by id",
+		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
 			"already-implemented features that are not materialized in '.docs/'. Use --doc to print a single " +
 			"feature document raw (spec|plan|result), and --json for machine output.",
@@ -79,6 +80,22 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 	}
 	if body := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er)))); body != "" {
 		res.content = append(res.content, showDoc{name: "errata", body: body})
+	}
+	if res.kind == "feature" {
+		// Backlink (F-0322): the delivery lists the debts it left open.
+		pendings, err := store.LoadAllPendings(ctx.repoDir)
+		if err != nil {
+			return err
+		}
+		var lines []string
+		for _, p := range pendings {
+			if p.From == id && p.State == domain.PendingOpen {
+				lines = append(lines, p.ID+"  "+p.Title)
+			}
+		}
+		if len(lines) > 0 {
+			res.content = append(res.content, showDoc{name: "pending", body: strings.Join(lines, "\n")})
+		}
 	}
 	w := cmd.OutOrStdout()
 	if doc != "" {
@@ -141,6 +158,8 @@ func kindForID(id string) (string, bool) {
 		return "historical", true
 	case "C":
 		return "capability", true
+	case "P":
+		return "pending", true
 	}
 	return "", false
 }
@@ -195,6 +214,16 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 			return showResult{}, fmt.Errorf("capability %s: %w", id, err)
 		}
 		return showResult{kind, c, nil}, nil
+	case "pending":
+		p, err := store.LoadPending(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("pending %s: %w", id, err)
+		}
+		var content []showDoc
+		if p.Body != "" {
+			content = []showDoc{{"", p.Body}}
+		}
+		return showResult{kind, p, content}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }
@@ -285,6 +314,21 @@ func (r showResult) renderText(w io.Writer) {
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		if e.Parent != "" {
 			fmt.Fprintf(w, "parent: %s\n", e.Parent)
+		}
+		if e.Reason != "" {
+			fmt.Fprintf(w, "reason: %s\n", e.Reason)
+		}
+	case store.Pending:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		fmt.Fprintf(w, "from: %s\n", e.From)
+		if len(e.Facets) > 0 {
+			fmt.Fprintf(w, "facets: %s\n", strings.Join(e.Facets, ", "))
+		}
+		if len(e.Components) > 0 {
+			fmt.Fprintf(w, "components: %s\n", strings.Join(e.Components, ", "))
+		}
+		if e.PromotedTo != "" {
+			fmt.Fprintf(w, "promoted to: %s\n", e.PromotedTo)
 		}
 		if e.Reason != "" {
 			fmt.Fprintf(w, "reason: %s\n", e.Reason)

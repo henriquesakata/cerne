@@ -168,3 +168,55 @@ func TestPendingDropNeedsReason(t *testing.T) {
 		t.Fatalf("pending = %+v, want dropped with the reason", p)
 	}
 }
+
+// Crit. 5: show resolves a P- id, in text and --json.
+func TestShowPending(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newOriginFeature(t, projDir, "Origem", "--component", "lint")
+	out, err := execCerneStdin(t, "o caso Y ficou de fora\n", "pending", "new", "Tratar o caso Y", "--from", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pending new: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "show", "P-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show P-0001: %v\n%s", err, out)
+	}
+	for _, want := range []string{"P-0001  pending  [open]  Tratar o caso Y", "from: F-0001", "components: lint", "o caso Y ficou de fora"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("show P-0001 lacks %q:\n%s", want, out)
+		}
+	}
+	out, err = execCerne(t, "show", "P-0001", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show --json: %v\n%s", err, out)
+	}
+	var doc struct {
+		Kind   string        `json:"kind"`
+		Entity store.Pending `json:"entity"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || doc.Kind != "pending" || doc.Entity.From != "F-0001" {
+		t.Fatalf("show --json = %+v, %v; want kind pending from F-0001\n%s", doc, err, out)
+	}
+}
+
+// Crit. 6: show of the origin lists its OPEN pendings (id + title), text and json.
+func TestShowFeatureListsOpenPendings(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newOriginFeature(t, projDir, "Origem")
+	pendingNew(t, projDir, "Débito aberto", "--from", "F-0001")
+	pendingNew(t, projDir, "Débito pago", "--from", "F-0001")
+	if out, err := execCerne(t, "pending", "resolve", "P-0002", "--dir", projDir); err != nil {
+		t.Fatalf("resolve: %v\n%s", err, out)
+	}
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show F-0001: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "## pending\nP-0001  Débito aberto") || strings.Contains(out, "P-0002") {
+		t.Fatalf("show F-0001 must list only the open P-0001:\n%s", out)
+	}
+	out, err = execCerne(t, "show", "F-0001", "--json", "--dir", projDir)
+	if err != nil || !strings.Contains(out, `"name": "pending"`) || !strings.Contains(out, "P-0001  Débito aberto") {
+		t.Fatalf("show --json lacks the pending backlink: %v\n%s", err, out)
+	}
+}
