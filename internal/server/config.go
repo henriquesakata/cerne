@@ -135,7 +135,7 @@ func handleLLMConfigGet(w http.ResponseWriter, projDir string) {
 }
 
 // handleLLMConfigPut sets the [llm] mode in .cernerc, preserving every other
-// config field (project_id/backend/default_scope and the other [llm] fields).
+// line of the file (F-0314: comments, order and tables Config does not model).
 // It writes only the mode — never a secret. The /api/ask handler reloads the
 // config per request, so the change takes effect on the next question.
 func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) {
@@ -149,7 +149,7 @@ func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) 
 			errorBody(`invalid mode (expected "delegation", "claude-cli" or "byo-key")`))
 		return
 	}
-	cfg, dir, err := project.LoadConfig(projDir)
+	_, dir, err := project.LoadConfig(projDir)
 	if errors.Is(err, project.ErrNoProject) {
 		// Serve/multiproject mode: no .cernerc in projDir — seed a minimal one
 		// from the docs.lock backend so the mode (and the ask LLM config) persist
@@ -159,14 +159,13 @@ func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) 
 			writeJSON(w, http.StatusInternalServerError, errorBody(lerr.Error()))
 			return
 		}
-		cfg = project.Config{Backend: lock.Backend}
-		dir = projDir
-	} else if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
+		err = project.SaveConfig(projDir, project.Config{Backend: lock.Backend, LLM: project.LLMConfig{Mode: req.Mode}})
+	} else if err == nil {
+		// An existing .cernerc is the team's file: edit the one line, never
+		// re-render it (comments and unmodeled tables would be lost).
+		err = project.SetLLMMode(dir, req.Mode)
 	}
-	cfg.LLM.Mode = req.Mode
-	if err := project.SaveConfig(dir, cfg); err != nil {
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}

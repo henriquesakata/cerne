@@ -368,7 +368,8 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 
 // SaveConfig writes <dir>/.cernerc as TOML. The [llm] block is omitted when it
 // is the zero value, so a fresh project doesn't carry an empty table the user
-// would collide with when adding their own [llm] config.
+// would collide with when adding their own [llm] config. It writes a whole
+// file; edit an existing one via SetSetting/SetLLMMode.
 func SaveConfig(dir string, c Config) error {
 	type wire struct {
 		ProjectID                string              `toml:"project_id"`
@@ -434,6 +435,12 @@ func SaveConfig(dir string, c Config) error {
 		return err
 	}
 	return writeFileAtomic(dir, configFilename, data)
+}
+
+// SetLLMMode sets [llm] mode in <dir>/.cernerc by editing that one line, so
+// comments and tables Config does not model survive (F-0314).
+func SetLLMMode(dir, mode string) error {
+	return editTOMLFile(filepath.Join(dir, configFilename), "llm", "mode", mode)
 }
 
 // LoadConfig walks up from startDir until a .cernerc is found and returns
