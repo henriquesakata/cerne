@@ -288,8 +288,9 @@ func TestGauntletCriticBlockEnds(t *testing.T) {
 // R5, R7, R9.
 func TestGauntletHeaderEdges(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"R5a: Saída carrying the verdict literal stays a round line", "Barra: x\nRodada 1: \"c\"\nSaída: VEREDITO: A\n", ""},
-		{"R5b: Método carrying the verdict literal stays a round line", "Barra: x\nRodada 1: \"c\"\nMétodo: juiz cego, VEREDITO: B\n", ""},
+		{"E-0003 shape: exemption citing child verdicts", "Barra: n\u00e3o aplic\u00e1vel (x); padr\u00e3o alternativo cumprido: filha \"VEREDITO: B\"\n", ""},
+		{"accepted limit (R5): Sa\u00edda carrying the literal is still consumed", "Barra: x\nRodada 1: \"c\"\nSa\u00edda: VEREDITO: A\n", "rodada 1 sem veredito"},
+		{"accepted limit (R5): M\u00e9todo listing the literals is consumed", "Barra: x\nRodada 1: \"c\"\nM\u00e9todo: juiz responde VEREDITO: A, B ou EMPATE\n", "rodada 1 sem veredito"},
 		{"R7: emphasised Método/Saída are consumed", "Barra: x\n**Método**: y \"vitória\"\n**Saída**: derrota\n", "rodada sem citação do juiz"},
 		{"R9: NBSP inside the exemption", "Barra: n\u00e3o\u00a0aplic\u00e1vel (x)\n", ""},
 		{"R9: NBSP after the colon", "Barra:\u00a0n\u00e3o aplic\u00e1vel (x)\n", ""},

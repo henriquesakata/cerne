@@ -141,19 +141,17 @@ func parseGauntlet(section string) gauntletRecord {
 	emphasis := strings.NewReplacer("*", "", "_", "", "\u00a0", " ")
 	for _, line := range strings.Split(section, "\n") {
 		s := lineMarkersRe.ReplaceAllString(line, "")
-		// Bar and header lines are consumed first, even inside a critic block,
-		// unless they carry the verdict literal (then they are round text).
-		if !verdictLitRe.MatchString(line) {
-			if m := barLineRe.FindStringSubmatch(s); m != nil {
-				if rec.bar == "" {
-					rec.bar = m[1]
-				}
-				rec.exempt = rec.exempt || exemptionRe.MatchString("Barra: "+emphasis.Replace(m[1]))
-				continue
+		// Bar and header lines are consumed first, even inside a critic block
+		// and even when they cite a verdict (accepted limit).
+		if m := barLineRe.FindStringSubmatch(s); m != nil {
+			if rec.bar == "" {
+				rec.bar = m[1]
 			}
-			if headerLineRe.MatchString(s) {
-				continue
-			}
+			rec.exempt = rec.exempt || exemptionRe.MatchString("Barra: "+emphasis.Replace(m[1]))
+			continue
+		}
+		if headerLineRe.MatchString(s) {
+			continue
 		}
 		list := listItemRe.MatchString(line)
 		if critic { // Achados block: excluded from every round until it ends
