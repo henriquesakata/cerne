@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -23,7 +25,8 @@ const lifecycleSeq = "  # lifecycle: new → approve → start → complete"
 
 var transitionSpecs = []transitionSpec{
 	{"approve", "Approve a candidate feature (requires a real spec)", domain.ActionApprove,
-		"  # gate: the spec must be filled in (not the stub) and pushed\n" +
+		"  # gate: the spec must be filled in (not the stub), name its bar, and be pushed\n" +
+			"  cerne feature approve <id> --check   # rehearsal: lists every impediment, writes nothing\n" +
 			"  cerne push && cerne feature approve <id>\n" + lifecycleSeq},
 	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject, ""},
 	{"start", "Start development (requires a real plan)", domain.ActionStart,
@@ -45,14 +48,14 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(transitionSpecs))
 	for _, ts := range transitionSpecs {
 		var by, reason, commit, mr string
-		var force bool
+		var force, check bool
 		cmd := &cobra.Command{
 			Use:     ts.use + " <id>",
 			Short:   ts.short,
 			Example: ts.example,
 			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force)
+				return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force, check)
 			},
 		}
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
@@ -60,12 +63,15 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
 		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL (complete only)")
 		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
+		if ts.action == domain.ActionApprove {
+			cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
+		}
 		cmds = append(cmds, cmd)
 	}
 	return cmds
 }
 
-func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason, commit, mr string, force bool) error {
+func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason, commit, mr string, force, check bool) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
 	if err := app.ValidateTransitionFlags(action, by, reason); err != nil {
@@ -87,6 +93,12 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			return err
 		}
 		delivery = &d
+	}
+	// The approve rehearsal (F-0308 crit. 3) reads, never writes, so it comes
+	// before the human gate: the agent that may not approve is exactly the one
+	// that needs to know what still stops the human.
+	if check {
+		return runApproveCheck(cmd.OutOrStdout(), ctx, id)
 	}
 	// Approve is the start-of-flow human gate (F-0131 crit. 9): checked here,
 	// in the CLI, rather than inside app.TransitionFeature — the server/UI path
@@ -123,6 +135,10 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	// Approving is accepting the proposed bar (F-0308 crit. 9): say which.
+	if out.Bar != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Accepted bar: %s\n", out.Bar)
+	}
 	// Starting a child pulls its ready ancestor epics into development too:
 	// report them so the author sees the board moved without a second command.
 	for _, epic := range out.Propagated {
@@ -144,4 +160,55 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintf(cmd.OutOrStdout(), "↳ epic %s ready to close: fill content/features/%s/result.md and run 'cerne feature complete %s'\n", epic, epic, epic)
 	}
 	return nil
+}
+
+// errNotApprovable is the non-zero exit of an approve --check that found
+// impediments.
+var errNotApprovable = errors.New("not approvable")
+
+// barForms are the three literal bar forms (cerne-authoring skill, F-0270),
+// taught by the check instead of every refusal (F-0308 crit. 11). They stay
+// pt-BR: they are text written inside the spec.
+const barForms = `The spec's Verificação section needs one of the three literal forms:
+  Barra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>
+  Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>
+  Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)
+`
+
+// runApproveCheck prints every impediment to approving id — or, when there is
+// none, the bar the approve would accept — and returns errNotApprovable when
+// the list is not empty. It only reads the backend clone.
+func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
+	imps, err := app.ApproveReadiness(ctx.repoDir, id)
+	if err != nil {
+		return err
+	}
+	if len(imps) == 0 {
+		bar, err := app.AcceptedBar(ctx.repoDir, id)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "Check: %s is approvable (nothing approved, nothing written).\nApproving accepts its bar:\n  %s\n", id, bar)
+		if app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()) != nil {
+			fmt.Fprintf(w, "Next: ask a human to run 'cerne feature approve %s'.\n", id)
+		} else {
+			fmt.Fprintf(w, "Next: cerne feature approve %s\n", id)
+		}
+		return nil
+	}
+	fmt.Fprintf(w, "Check: %s is not approvable yet — %d impediment(s) (nothing approved, nothing written):\n", id, len(imps))
+	barProblem := false
+	for _, im := range imps {
+		suffix := ""
+		if !im.Hard {
+			suffix = " (the CLI refuses it; --force crosses it)"
+		}
+		fmt.Fprintf(w, "  - %s: %s%s\n", im.Code, im.Message, suffix)
+		barProblem = barProblem || im.Code == app.ImpedimentBarMissing || im.Code == app.ImpedimentBarMalformed
+	}
+	if barProblem {
+		fmt.Fprint(w, "\n"+barForms)
+	}
+	fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
+	return fmt.Errorf("%w: %s has %d impediment(s)", errNotApprovable, id, len(imps))
 }
