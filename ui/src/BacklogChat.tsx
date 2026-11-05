@@ -824,8 +824,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
         setRegistering(false)
         if (!res.ok) {
           setError(res.error)
-          // Só candidata: atualizar spec fora de candidate é decisão de outra
-          // superfície (F-0262), não do chat (crit. 5).
+          // Só candidata: vincular uma proposta avulsa a uma feature aprovada
+          // reescreveria a spec e venceria a aprovação (F-0318) num clique de
+          // deduplicação. O chat só regrava aprovada numa conversa de refino.
           setDupCandidates((res.matches ?? []).filter((m) => m.state === 'candidate'))
           return
         }

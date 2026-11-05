@@ -554,9 +554,10 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
-		// The write is otherwise invisible to the rules — the backend commit is not
-		// queryable by lint (F-0262). state is the state at write time: that is what
-		// makes a post-approval spec edit distinguishable from any other edit.
+		// The audit trail of the write (F-0262): the backend commit is not
+		// queryable by lint or stats. state is the state at write time. Whether an
+		// approval went stale is decided by content since F-0318, not by this
+		// event (lint.SpecChangedAfterApproval).
 		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
 			"doc":   doc,
 			"state": string(f.State),
