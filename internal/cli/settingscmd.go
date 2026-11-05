@@ -53,6 +53,15 @@ func newSettingsListCmd(dir *string) *cobra.Command {
 					fmt.Fprintf(out, "%s: %s\n", scope, f)
 				}
 			}
+			// The values a higher scope shadows (git config --list --show-scope
+			// shows every one): what changes if the winner is unset.
+			for _, s := range view.Settings {
+				for _, scope := range []string{project.ScopeProject, project.ScopeHost} {
+					if v, ok := s.Stored[scope]; ok && scope != s.Origin {
+						fmt.Fprintf(out, "overridden: %s = %v in %s scope (%s) — %s wins\n", s.ID, v, scope, view.Files[scope], s.Origin)
+					}
+				}
+			}
 			printSettingProblems(cmd.ErrOrStderr(), view, "")
 			return nil
 		},

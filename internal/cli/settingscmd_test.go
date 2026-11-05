@@ -317,3 +317,30 @@ func TestSettingsUnsetAbsentFails(t *testing.T) {
 		t.Errorf(".cernerc changed:\n%s", after)
 	}
 }
+
+// TestSettingsListShowsOverridden: after the table, one line per value a
+// higher scope overrides; --json carries the same through "stored".
+func TestSettingsListShowsOverridden(t *testing.T) {
+	projDir, hostDir := settingsProject(t, "[mindmap]\nenabled = true\n")
+	host := filepath.Join(hostDir, "settings.toml")
+	if err := os.WriteFile(host, []byte("[mindmap]\nenabled = false\n[wiki]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "settings", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, out)
+	}
+	var overridden []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "overridden: ") {
+			overridden = append(overridden, l)
+		}
+	}
+	want := "overridden: mindmap.enabled = false in host scope (" + host + ") — project wins"
+	if len(overridden) != 1 || overridden[0] != want {
+		t.Errorf("overridden lines = %q, want only %q", overridden, want)
+	}
+	if m := settingsJSON(t, projDir)["mindmap.enabled"]; m.Stored[project.ScopeProject] != true || m.Stored[project.ScopeHost] != false {
+		t.Errorf("--json stored = %v, want project true and host false", m.Stored)
+	}
+}
