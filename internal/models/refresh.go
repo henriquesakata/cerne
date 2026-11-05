@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"maps"
 	"time"
 )
 
@@ -66,11 +65,6 @@ func Apply(layer Catalog, provider string, listed []Entry, now time.Time) (Catal
 		out.Entries = append(out.Entries, Entry{ID: l.ID, Label: label, Provider: provider, Visibility: Current})
 		d.Added = append(d.Added, l.ID)
 	}
-	out.Listed = maps.Clone(layer.Listed)
-	if out.Listed == nil {
-		out.Listed = map[string]bool{}
-	}
-	out.Listed[provider] = true
 	out.UpdatedAt = now
 	return out, d
 }

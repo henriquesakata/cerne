@@ -47,16 +47,16 @@ type Entry struct {
 	Visibility    string   `json:"visibility,omitempty"`
 }
 
-// Catalog is a whole layer or the resolved catalog. UpdatedAt and Listed are
-// written by the refresh (the 24h window reads UpdatedAt; Listed marks that a
-// provider listed successfully at least once). PreferredProvider is the chat's
-// provider choice, global like the catalog itself.
+// Catalog is a whole layer or the resolved catalog. UpdatedAt is written by
+// the refresh (the 24h window reads it). PreferredProvider is the chat's
+// provider choice, global like the catalog itself. Criterion 6 (no listing →
+// the baseline is the authority) needs no flag: delisting only ever happens
+// inside a successful listing.
 type Catalog struct {
-	UpdatedAt         time.Time       `json:"updated_at,omitzero"`
-	Listed            map[string]bool `json:"listed,omitempty"`
-	PreferredProvider string          `json:"preferred_provider,omitempty"`
-	DefaultModel      string          `json:"default_model,omitempty"`
-	Entries           []Entry         `json:"entries"`
+	UpdatedAt         time.Time `json:"updated_at,omitzero"`
+	PreferredProvider string    `json:"preferred_provider,omitempty"`
+	DefaultModel      string    `json:"default_model,omitempty"`
+	Entries           []Entry   `json:"entries"`
 }
 
 //go:embed baseline.json
@@ -199,7 +199,6 @@ func merge(base, layer Catalog) Catalog {
 		}
 	}
 	out.UpdatedAt = layer.UpdatedAt
-	out.Listed = layer.Listed
 	out.PreferredProvider = layer.PreferredProvider
 	if layer.DefaultModel != "" {
 		out.DefaultModel = layer.DefaultModel

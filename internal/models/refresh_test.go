@@ -37,8 +37,8 @@ func TestRefreshAddsAsCurrent(t *testing.T) {
 	if !ok || got.Visibility != Current || got.Label != "Claude New 9" || got.Provider != "anthropic" {
 		t.Fatalf("added entry = %+v", got)
 	}
-	if !cat.Listed["anthropic"] || !cat.UpdatedAt.Equal(now) {
-		t.Fatalf("listing not stamped: listed=%v updated=%v", cat.Listed, cat.UpdatedAt)
+	if !cat.UpdatedAt.Equal(now) {
+		t.Fatalf("listing not stamped: updated=%v", cat.UpdatedAt)
 	}
 }
 
@@ -86,9 +86,6 @@ func TestRefreshNeverDemotes(t *testing.T) {
 // nothing is delisted; and a listing of one provider never delists another's.
 func TestNoListingKeepsBaselineAuthority(t *testing.T) {
 	cat, _ := Load(t.TempDir())
-	if len(cat.Listed) != 0 {
-		t.Fatalf("listed = %v, want none", cat.Listed)
-	}
 	var current, legacy int
 	for _, e := range cat.Entries {
 		switch e.Visibility {
