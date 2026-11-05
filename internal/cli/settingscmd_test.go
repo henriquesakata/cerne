@@ -146,6 +146,10 @@ func TestSettingsSetRejectsInvalid(t *testing.T) {
 	if !strings.Contains(err.Error(), "wiki.enabled") || !strings.Contains(err.Error(), "true or false") {
 		t.Errorf("err = %q, want the key and the accepted values", err)
 	}
+	if _, err := execCerne(t, "settings", "set", "wiki.enabled", "false", "--scope", "global", "--dir", projDir); err == nil ||
+		err.Error() != `unknown scope "global" (allowed: project, host)` {
+		t.Errorf("--scope global: err = %v, want the unknown-scope message", err)
+	}
 	if _, err := execCerne(t, "settings", "set", "wiki.enabled", "false", "--dir", projDir); err == nil {
 		t.Errorf("set without --scope succeeded, want it required")
 	}
@@ -177,8 +181,9 @@ func TestSettingsGet(t *testing.T) {
 			t.Errorf("get %v = %q (%v), want %q", tc.args, out, err, tc.want)
 		}
 	}
-	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) {
-		t.Errorf("unknown key: err = %v, want ErrUnknownSetting", err)
+	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
+		!strings.Contains(err.Error(), "known: graph.enabled, mindmap.enabled, wiki.enabled") {
+		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
 
@@ -295,5 +300,20 @@ func TestSettingsSetUnsetLeavesNoDiff(t *testing.T) {
 	}
 	if diff := runGit(t, projDir, "diff"); diff != "" {
 		t.Errorf("git diff after set+unset:\n%s", diff)
+	}
+}
+
+// TestSettingsUnsetAbsentFails (critic C11): unset of a key the scope does
+// not hold exits non-zero and says so, like git config --unset; nothing is
+// written.
+func TestSettingsUnsetAbsentFails(t *testing.T) {
+	projDir, _ := settingsProject(t, "")
+	before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+	_, err := execCerne(t, "settings", "unset", "wiki.enabled", "--scope", "project", "--dir", projDir)
+	if !errors.Is(err, project.ErrSettingNotSet) || err.Error() != "nothing to unset: wiki.enabled is not set in project scope" {
+		t.Errorf("err = %v, want the nothing-to-unset refusal", err)
+	}
+	if after, _ := os.ReadFile(filepath.Join(projDir, ".cernerc")); string(after) != string(before) {
+		t.Errorf(".cernerc changed:\n%s", after)
 	}
 }

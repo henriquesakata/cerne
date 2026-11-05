@@ -135,6 +135,11 @@ func TestSettingsDeleteUnsetsScope(t *testing.T) {
 	if m := resolvedByID(view)["mindmap.enabled"]; m.Value != false || m.Origin != project.ScopeHost {
 		t.Errorf("mindmap.enabled = %v from %s, want false from host", m.Value, m.Origin)
 	}
+	// A key the scope does not hold is a 200 no-op, unlike the CLI's exit 1:
+	// the UI's "unset" toggle is idempotent.
+	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=project", "", &view); rec.Code != http.StatusOK {
+		t.Errorf("absent key: status %d, want 200 no-op", rec.Code)
+	}
 	var body map[string]string
 	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/nope.enabled?scope=host", "", &body); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown key: status %d, want 404", rec.Code)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -184,5 +185,9 @@ func findResolved(view project.SettingsView, id string) (project.ResolvedSetting
 			return s, nil
 		}
 	}
-	return project.ResolvedSetting{}, fmt.Errorf("%w %q", project.ErrUnknownSetting, id)
+	ids := make([]string, len(view.Settings))
+	for i, s := range view.Settings {
+		ids[i] = s.ID
+	}
+	return project.ResolvedSetting{}, fmt.Errorf("%w %q (known: %s)", project.ErrUnknownSetting, id, strings.Join(ids, ", "))
 }

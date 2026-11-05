@@ -35,9 +35,12 @@ func handleSettingsPut(w http.ResponseWriter, r *http.Request, projDir, id strin
 	handleSettingsGet(w, projDir)
 }
 
-// handleSettingsDelete removes key id from ?scope= and answers with the new view.
+// handleSettingsDelete removes key id from ?scope= and answers with the new
+// view.
 func handleSettingsDelete(w http.ResponseWriter, r *http.Request, projDir, id string) {
-	if err := project.UnsetSetting(projDir, id, r.URL.Query().Get("scope")); err != nil {
+	// A key the scope does not hold is a no-op here (the CLI says so and
+	// exits 1): the UI's unset is idempotent.
+	if err := project.UnsetSetting(projDir, id, r.URL.Query().Get("scope")); err != nil && !errors.Is(err, project.ErrSettingNotSet) {
 		writeConfigError(w, err)
 		return
 	}

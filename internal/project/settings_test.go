@@ -314,8 +314,10 @@ func TestUnsetSettingRestoresLowerScope(t *testing.T) {
 	}
 }
 
-// TestUnsetSettingAbsentIsNoop: unsetting a key no scope file holds writes
-// nothing (no host file or dir appears); unknown keys and scopes are refused.
+// TestUnsetSettingAbsentIsNoop (critic C11): unsetting a key a scope does
+// not hold is ErrSettingNotSet and writes nothing (no host file or dir
+// appears), in a missing file and in one that lacks the key; unknown keys
+// and scopes are refused.
 func TestUnsetSettingAbsentIsNoop(t *testing.T) {
 	projDir, _ := settingsFixture(t, "", "", false)
 	hostDir := filepath.Join(t.TempDir(), "absent")
@@ -323,8 +325,8 @@ func TestUnsetSettingAbsentIsNoop(t *testing.T) {
 	before := snapshotDir(t, projDir)
 
 	for _, scope := range []string{ScopeProject, ScopeHost} {
-		if err := UnsetSetting(projDir, "wiki.enabled", scope); err != nil {
-			t.Fatalf("UnsetSetting %s: %v", scope, err)
+		if err := UnsetSetting(projDir, "wiki.enabled", scope); !errors.Is(err, ErrSettingNotSet) {
+			t.Fatalf("UnsetSetting %s: err = %v, want ErrSettingNotSet", scope, err)
 		}
 	}
 	if after := snapshotDir(t, projDir); !maps.Equal(before, after) {
@@ -336,8 +338,8 @@ func TestUnsetSettingAbsentIsNoop(t *testing.T) {
 	if err := UnsetSetting(projDir, "nope.enabled", ScopeHost); !errors.Is(err, ErrUnknownSetting) {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting", err)
 	}
-	if err := UnsetSetting(projDir, "wiki.enabled", "global"); !errors.Is(err, ErrSettingScope) {
-		t.Errorf("undeclared scope: err = %v, want ErrSettingScope", err)
+	if err := UnsetSetting(projDir, "wiki.enabled", "global"); !errors.Is(err, ErrSettingScope) || err.Error() != `unknown scope "global" (allowed: project, host)` {
+		t.Errorf("undeclared scope: err = %v, want ErrSettingScope reading unknown scope", err)
 	}
 }
 

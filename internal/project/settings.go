@@ -30,7 +30,9 @@ const hostSettingsFilename = "settings.toml"
 var (
 	ErrUnknownSetting      = errors.New("unknown setting")
 	ErrInvalidSettingValue = errors.New("invalid setting value")
-	ErrSettingScope        = errors.New("scope not allowed for setting")
+	ErrSettingScope        = errors.New("unknown scope")
+	// ErrSettingNotSet: an unset of a key the scope's file does not hold.
+	ErrSettingNotSet = errors.New("nothing to unset")
 	// ErrConfigBusy: another writer held the file's lock past
 	// configLockTimeout. Nothing was written.
 	ErrConfigBusy = errors.New("config file is locked by another writer")
@@ -164,12 +166,13 @@ func SetSetting(projDir, id, scope, raw string) error {
 		return err
 	}
 	table, key, _ := strings.Cut(id, ".")
-	return editTOMLFile(path, table, key, raw == "true")
+	_, err = editTOMLFile(path, table, key, raw == "true")
+	return err
 }
 
 // UnsetSetting removes id from scope's file, handing the key back to the next
-// scope down (host, then the default). The table header stays; a key the file
-// does not hold is a no-op that writes nothing.
+// scope down (host, then the default). A key the file does not hold is
+// ErrSettingNotSet, and nothing is written.
 func UnsetSetting(projDir, id, scope string) error {
 	if err := checkDeclared(id, scope); err != nil {
 		return err
@@ -179,7 +182,11 @@ func UnsetSetting(projDir, id, scope string) error {
 		return err
 	}
 	table, key, _ := strings.Cut(id, ".")
-	return editTOMLFile(path, table, key, nil)
+	removed, err := editTOMLFile(path, table, key, nil)
+	if err == nil && !removed {
+		return fmt.Errorf("%w: %s is not set in %s scope", ErrSettingNotSet, id, scope)
+	}
+	return err
 }
 
 // checkDeclared refuses an id the registry does not declare, or a scope the
@@ -194,29 +201,29 @@ func checkDeclared(id, scope string) error {
 		return fmt.Errorf("%w %q (known: %s)", ErrUnknownSetting, id, strings.Join(ids, ", "))
 	}
 	if scopes := settingsRegistry[i].Scopes; !slices.Contains(scopes, scope) {
-		return fmt.Errorf("%s: %w: %q (allowed: %s)", id, ErrSettingScope, scope, strings.Join(scopes, ", "))
+		return fmt.Errorf("%w %q (allowed: %s)", ErrSettingScope, scope, strings.Join(scopes, ", "))
 	}
 	return nil
 }
 
 // editTOMLFile applies editTOML to the file at path (absent = empty) under
-// git's lockfile discipline: <path>.lock, created O_EXCL, is the lock and
+// git's lockfile discipline, and reports whether it wrote: <path>.lock, created O_EXCL, is the lock and
 // receives the new content, then is renamed over the file. Writers in this
 // process (the ui) and in others (the CLI) serialize instead of losing
 // updates; one still blocked after configLockTimeout gets ErrConfigBusy and
 // writes nothing. A foreign lock is never removed: a crashed writer's stale
 // lock is the user's to delete, as with git. No change skips the write. Like
 // writeFileAtomic, it writes through a symlink and keeps the file's mode.
-func editTOMLFile(path, table, key string, value any) error {
+func editTOMLFile(path, table, key string, value any) (bool, error) {
 	if _, err := os.Stat(path); value == nil && errors.Is(err, fs.ErrNotExist) {
-		return nil // removing from a missing file: nothing to lock or create
+		return false, nil // removing from a missing file: nothing to lock or create
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return false, err
 	}
 	path, mode, err := writeTarget(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	lock := path + ".lock"
 	deadline := time.Now().Add(configLockTimeout)
@@ -226,10 +233,10 @@ func editTOMLFile(path, table, key string, value any) error {
 		f, err = os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	}
 	if errors.Is(err, fs.ErrExist) {
-		return fmt.Errorf("%s: %w; if no cerne is running, remove %s", path, ErrConfigBusy, lock)
+		return false, fmt.Errorf("%s: %w; if no cerne is running, remove %s", path, ErrConfigBusy, lock)
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	renamed := false
 	defer func() {
@@ -239,31 +246,31 @@ func editTOMLFile(path, table, key string, value any) error {
 		}
 	}()
 	if err := f.Chmod(mode); err != nil {
-		return err
+		return false, err
 	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+		return false, err
 	}
 	out, err := editTOML(raw, table, key, value)
 	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	if bytes.Equal(out, raw) {
-		return nil
+		return false, nil
 	}
 	if _, err := f.Write(out); err != nil {
-		return err
+		return false, err
 	}
 	if err := f.Close(); err != nil {
-		return err
+		return false, err
 	}
 	if err := os.Rename(lock, path); err != nil {
-		return err
+		return false, err
 	}
 	renamed = true
-	return nil
+	return true, nil
 }
 
 // settingsFile returns the file behind scope: the .cernerc found from

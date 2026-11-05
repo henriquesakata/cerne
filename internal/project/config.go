@@ -431,7 +431,8 @@ func SaveConfig(dir string, c Config) error {
 // SetLLMMode sets [llm] mode in <dir>/.cernerc by editing that one line, so
 // comments and tables Config does not model survive (F-0314).
 func SetLLMMode(dir, mode string) error {
-	return editTOMLFile(filepath.Join(dir, configFilename), "llm", "mode", mode)
+	_, err := editTOMLFile(filepath.Join(dir, configFilename), "llm", "mode", mode)
+	return err
 }
 
 // LoadConfig walks up from startDir until a .cernerc is found and returns
