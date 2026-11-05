@@ -217,9 +217,14 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 
 // printApproveReadiness ends a spec write with the candidate's approve
 // readiness in one line (F-0308 crit. 5): approvable with the bar it would
-// accept, or the impediment codes and the check that details them.
+// accept, or the impediment codes and the check that details them. Past
+// candidacy (a task is born approved) there is nothing to approve: it prints
+// nothing.
 func printApproveReadiness(w io.Writer, repoDir, id string) {
 	imps, err := app.ApproveReadiness(repoDir, id)
+	if errors.Is(err, domain.ErrInvalidTransition) {
+		return
+	}
 	if err != nil {
 		fmt.Fprintf(w, "Approve readiness: unknown (%v)\n", err)
 		return

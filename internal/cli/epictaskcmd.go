@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -138,10 +137,7 @@ func runFeatureLikeNew(cmd *cobra.Command, dir, title, module, parent, facet, co
 	}
 	if hasBody {
 		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (%s) with spec — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
-		// A task is born approved: readiness only speaks of a candidate.
-		if f.State == domain.StateCandidate {
-			printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
-		}
+		printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (%s) with its context seeded into the spec. Next step: complete the spec ('cerne pull' materializes the draft).\n", f.ID, f.State)

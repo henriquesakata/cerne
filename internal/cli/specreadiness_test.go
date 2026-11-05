@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func writeSpecFile(t *testing.T, body string) string {
@@ -73,5 +76,19 @@ func TestFeatureSpecPrintsReadiness(t *testing.T) {
 	}
 	if !strings.Contains(out, "Approve readiness: approvable") {
 		t.Fatalf("feature spec output lacks the approvable readiness:\n%s", out)
+	}
+}
+
+// Readiness only speaks of a candidate: past candidacy (a task is born
+// approved) there is nothing to approve, and the line is not printed at all.
+func TestPrintApproveReadinessSilentPastCandidacy(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "T-0001", Title: "t", State: domain.StateApproved}); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	printApproveReadiness(&b, repoDir, "T-0001")
+	if b.Len() != 0 {
+		t.Fatalf("readiness printed past candidacy: %q", b.String())
 	}
 }
