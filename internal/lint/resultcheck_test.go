@@ -244,3 +244,24 @@ func TestResultRulesErrataOnlyOnceClosed(t *testing.T) {
 		})
 	}
 }
+
+// TestResultGauntletDetailNamesTheResult: the finding's File is result.md, so
+// its detail is the result's own problem — an incomplete errata section can
+// vouch (when complete) but never author the detail (F-0305). With no section
+// in the result, the detail says so.
+func TestResultGauntletDetailNamesTheResult(t *testing.T) {
+	noBar := "## Gauntlet\n\nRodada 1 — vitória: \"ok\"\n"
+	for _, tc := range []struct{ name, result, want string }{
+		{"result section", "critério 1 e critério 2\n\n" + badGauntlet, "rodada 1 sem citação do juiz"},
+		{"no result section", "critério 1 e critério 2\n", `sem seção "## Gauntlet"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, tc.result)
+			addErrata(t, dir, noBar)
+			got := gauntletFinding(dir, f, false)
+			if len(got) != 1 || !strings.Contains(got[0].Detail, "result.md "+tc.want) {
+				t.Fatalf("want one finding with detail %q, got %+v", tc.want, got)
+			}
+		})
+	}
+}

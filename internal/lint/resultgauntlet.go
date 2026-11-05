@@ -128,13 +128,17 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	detail := "sem seção \"## Gauntlet\""
 	// The errata entries' Gauntlet sections count like the result's once the
 	// feature is closed (F-0305); an entry ends at the next "## errata" heading.
-	sections := append(gauntletSections(stripHTMLComments(result)), gauntletSections(errataText(repoDir, f))...)
-	for _, section := range sections {
+	// They can only vouch: the finding's File is result.md, so the detail is
+	// always the result's own problem.
+	own := gauntletSections(stripHTMLComments(result))
+	for i, section := range append(own, gauntletSections(errataText(repoDir, f))...) {
 		p := parseGauntlet(section).problem()
 		if p == "" || (legacy && legacyGauntletRecorded(section)) {
 			return nil
 		}
-		detail = p
+		if i < len(own) {
+			detail = p
+		}
 	}
 	return []Finding{{
 		Rule:   RuleResultMissingGauntlet,
