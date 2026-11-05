@@ -60,7 +60,7 @@ export default function App() {
 function Routed({ hash }: { hash: string }) {
   const { t } = useT()
   const { projects, activePid } = useProjects()
-  // [ui] mindmap = false: a rota também morre — cai no dashboard (F-0187).
+  // mindmap.enabled = false: a rota também morre — cai no dashboard (F-0187).
   const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
   const feature = /^#\/f\/(.+)$/.exec(hash)
   if (feature) return <FeaturePage key={feature[1]} id={decodeURIComponent(feature[1])} />

@@ -78,7 +78,7 @@ export default function Nav({ hash }: { hash: string }) {
 function NavLinks({ active, hash }: { active: string; hash: string }) {
   const { t, lang } = useT()
   const { projects, activePid } = useProjects()
-  // [ui] mindmap = false no projeto ativo esconde o item (F-0187); flag
+  // mindmap.enabled = false no projeto ativo esconde o item (F-0187/F-0314); flag
   // ausente (servidor antigo) fica ligado.
   const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
   const links = useMemo(

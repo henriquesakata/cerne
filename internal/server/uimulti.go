@@ -154,25 +154,30 @@ type registryEntry struct {
 }
 
 // projectInfo is the public shape of a registered project (GET /api/projects).
-// Mindmap carries the project's [ui] mindmap preference (F-0187): false hides
-// the tab in the UI; an unreadable/absent .cernerc yields the default (true).
+// Mindmap carries the project's effective mindmap.enabled setting (F-0187,
+// served by the settings registry since F-0314): false hides the tab in the UI.
 type projectInfo struct {
 	PID     string `json:"pid"`
 	Name    string `json:"name"`
 	Mindmap bool   `json:"mindmap"`
 }
 
-// mindmapEnabled reads projDir's .cernerc [ui] mindmap preference. Fail-open:
-// an unreadable or absent config keeps the tab enabled (the default).
+// mindmapEnabled resolves mindmap.enabled for projDir (project > host >
+// default). Fail-open: unreadable settings keep the tab enabled (the default).
 func mindmapEnabled(projDir string) bool {
 	if projDir == "" {
 		return true
 	}
-	cfg, _, err := project.LoadConfig(projDir)
+	view, err := project.ResolveSettings(projDir)
 	if err != nil {
 		return true
 	}
-	return cfg.UI.MindmapEnabled()
+	for _, s := range view.Settings {
+		if s.ID == "mindmap.enabled" {
+			return s.Value != false
+		}
+	}
+	return true
 }
 
 // registry holds the registered projects and starts/stops the per-project

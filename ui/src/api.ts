@@ -228,7 +228,7 @@ async function errorMessage(r: Response): Promise<string> {
 // O painel serve N projetos sob /api/projects/{pid}/*. activePid é o projeto
 // selecionado; o LiveProvider chama setApiProject antes de disparar os
 // refetches, então toda chamada de dados abaixo usa base() com o pid corrente.
-// mindmap: preferência [ui] do projeto (F-0187); ausente (servidor antigo) = ligado.
+// mindmap: setting mindmap.enabled efetivo do projeto (F-0187/F-0314); ausente (servidor antigo) = ligado.
 export type ProjectInfo = { pid: string; name: string; mindmap?: boolean }
 
 let activePid = ''
