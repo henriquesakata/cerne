@@ -23,10 +23,13 @@ import (
 // spec/plan/result lifecycle set.
 var ErrUnknownDoc = errors.New("documento de feature desconhecido")
 
-// ErrNotCandidate is returned by the Backlog chat's refine path (F-0256) for a
-// feature past candidacy: once approved, the spec is a committed contract and
-// changing it goes through the gated flow, not a chat confirmation.
-var ErrNotCandidate = errors.New("the feature is no longer a candidate")
+// ErrNotCandidate is returned by the Backlog chat's refine path (F-0256) and
+// 'cerne feature spec' for a feature past approval: in development the spec is
+// the contract being built, not a chat draft; the refusal names the state's
+// path (DocFixPhrase). An approved spec stays open to the chat (F-0318, revoking
+// F-0262's chat restriction for approved only) — rewriting it stales the
+// approval like any other write.
+var ErrNotCandidate = errors.New("the feature is past approval")
 
 // ErrParentNotFound is returned when a feature's parent (epic) does not exist.
 var ErrParentNotFound = errors.New("parent feature (epic) not found")
@@ -552,9 +555,10 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
-		// The write is otherwise invisible to the rules — the backend commit is not
-		// queryable by lint (F-0262). state is the state at write time: that is what
-		// makes a post-approval spec edit distinguishable from any other edit.
+		// The audit trail of the write (F-0262): the backend commit is not
+		// queryable by lint or stats. state is the state at write time. Whether an
+		// approval went stale is decided by content since F-0318, not by this
+		// event (lint.SpecChangedAfterApproval).
 		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
 			"doc":   doc,
 			"state": string(f.State),
@@ -570,14 +574,16 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 	return err
 }
 
-// UpdateCandidateSpec rewrites a candidate's spec.md from the body the user
-// confirmed in the Backlog chat (F-0256), through the same gated write path as
-// the registration: cerne_id restamped by writeSpecBody, commit+push+snapshot
-// by MutateAndSnapshot. It is the ONLY chat-driven write to an existing entity,
-// and it deliberately touches nothing but the document — no state transition
-// (approve stays a human gate, F-0131), no retitle. Past candidacy it refuses
-// with ErrNotCandidate; the state is re-read inside the lock, so a concurrent
-// approve cannot be raced. Returns the feature as stored.
+// UpdateCandidateSpec rewrites a candidate's — or an approved feature's (F-0318)
+// — spec.md from the body the user confirmed in the Backlog chat (F-0256),
+// through the same gated write path as the registration: cerne_id restamped by
+// writeSpecBody, commit+push+snapshot by MutateAndSnapshot. It is the ONLY
+// chat-driven write to an existing entity, and it deliberately touches nothing
+// but the document — no state transition (approve stays a human gate, F-0131),
+// no retitle. On an approved feature a different spec stales the approval
+// (lint.SpecChangedAfterApproval). Past approval it refuses with
+// ErrNotCandidate; the state is re-read inside the lock, so a concurrent start
+// cannot be raced. Returns the feature as stored.
 func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, error) {
 	f, err := loadCandidate(repoDir, id)
 	if err != nil {
@@ -710,16 +716,16 @@ func amendedResult(id, body string) (string, error) {
 	return "", fmt.Errorf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc result' or drop the block", id)
 }
 
-// loadCandidate loads a feature and asserts it is still a candidate — the
-// precondition shared by the chat's refine turn (BuildRefineBlock) and its
-// write (UpdateCandidateSpec).
+// loadCandidate loads a feature and asserts its spec is still open to the chat
+// — candidate or approved (F-0318) — the precondition shared by the chat's
+// refine turn (BuildRefineBlock) and its write (UpdateCandidateSpec).
 func loadCandidate(repoDir, id string) (store.Feature, error) {
 	f, err := store.LoadFeature(repoDir, id)
 	if err != nil {
 		return store.Feature{}, err
 	}
-	if f.State != domain.StateCandidate {
-		return store.Feature{}, fmt.Errorf("%w: %s is %s", ErrNotCandidate, id, f.State)
+	if f.State != domain.StateCandidate && f.State != domain.StateApproved {
+		return store.Feature{}, fmt.Errorf("%w: %s is %s — %s", ErrNotCandidate, id, f.State, DocFixPhrase(id, "spec", f.State))
 	}
 	return f, nil
 }

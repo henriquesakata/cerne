@@ -14,6 +14,14 @@ func errataPath(repoDir, id string) string {
 	return filepath.Join(repoDir, "content", "errata", id+".md")
 }
 
+// ApprovedSpecPath is the backend path of the spec as feature id's last approve
+// saw it (F-0318), byte for byte: content/approved/<id>/spec.md. It lives
+// outside content/features/ on purpose — lint, the materializer and the index
+// read only the live documents, never this copy.
+func ApprovedSpecPath(repoDir, id string) string {
+	return filepath.Join(repoDir, "content", "approved", id, "spec.md")
+}
+
 // LoadErrata reads an entity's errata document (content/errata/<id>.md). A
 // missing file is "no errata", not an error — most entities have none.
 func LoadErrata(repoDir, id string) (string, error) {

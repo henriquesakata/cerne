@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/lint"
 )
 
 func newFeatureCmd() *cobra.Command {
@@ -81,11 +82,12 @@ func newFeatureSpecCmd(dir *string) *cobra.Command {
 	var file string
 	cmd := &cobra.Command{
 		Use:   "spec <id>",
-		Short: "Rewrite a candidate's spec from a file or stdin",
-		Long: "Replaces the whole spec.md of a candidate — the same gated write the Backlog chat performs on " +
-			"confirmation (F-0256), now reachable from the CLI so an agent can update a feature it did not just create. " +
-			"Touches the document only: no state transition, no retitle. Past candidacy it is refused — an approved " +
-			"spec changes through the feature page, with the audit trail of F-0262.",
+		Short: "Rewrite a candidate's or an approved feature's spec from a file or stdin",
+		Long: "Replaces the whole spec.md of a candidate or an approved feature — the same gated write the Backlog " +
+			"chat performs on confirmation (F-0256), now reachable from the CLI so an agent can update a feature it did " +
+			"not just create. Touches the document only: no state transition, no retitle. On an approved feature a spec " +
+			"that differs from the approved one stales the approval: 'cerne feature start' is refused until a human " +
+			"re-approves (F-0318). Past approval it is refused.",
 		Example: "  cerne feature spec F-0001 --file spec.md\n" +
 			"  cat spec.md | cerne feature spec F-0001",
 		Args: cobra.ExactArgs(1),
@@ -114,6 +116,9 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale {
+		fmt.Fprintln(cmd.OutOrStdout(), approvalStaleLine(f.ID))
+	}
 	printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
 	return nil
 }

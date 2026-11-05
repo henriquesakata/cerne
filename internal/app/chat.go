@@ -333,8 +333,9 @@ Isto não afrouxa a FRONTEIRA DE PAPEL: você continua sem implementar nada. O q
 // id instead of a new candidate. It is rebuilt on every turn (the caller reads
 // from the store, never from a conversation snapshot), which is how a spec that
 // moved under a resumed conversation shows up on the next turn — criterion 6.
-// Refusals live here, not only in the UI: ErrNotCandidate past candidacy,
-// store.ErrNotFound for an unknown id.
+// Refusals live here, not only in the UI: ErrNotCandidate past approval
+// (F-0318 opened approved specs to the chat), store.ErrNotFound for an unknown
+// id.
 func BuildRefineBlock(repoDir, id string) (string, error) {
 	f, err := loadCandidate(repoDir, id)
 	if err != nil {
@@ -370,6 +371,11 @@ func BuildRefineBlock(repoDir, id string) (string, error) {
 	fmt.Fprintf(&b, "- Ao propor uma mudança, reemita o bloco ```%s INTEIRO com a spec completa já revisada — a UI substitui o documento, não aplica patch.\n", chatProposalFence)
 	fmt.Fprintf(&b, "- Marque o bloco como revisão: inclua a linha \"feature: %s\" junto das demais linhas de metadado.\n", f.ID)
 	fmt.Fprintf(&b, "- A confirmação do usuário na UI grava a spec revisada em %s. O estado continua %s: refinar não aprova, não inicia e não renomeia nada.\n", f.ID, f.State)
+	if f.State == domain.StateApproved {
+		// F-0318: the chat may rewrite an approved spec, and the human must know
+		// what the click costs before confirming it.
+		b.WriteString("- Esta feature já está APROVADA: gravar uma spec diferente da aprovada vence a aprovação — o início fica bloqueado até um humano reaprovar. Diga isso ao usuário antes de ele confirmar.\n")
+	}
 	b.WriteString("- Sem a confirmação explícita do usuário, nada é gravado — não afirme que gravou.\n")
 	return b.String(), nil
 }

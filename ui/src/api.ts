@@ -119,6 +119,9 @@ export type StateResponse = {
   // F-0202: W-itens ativos por entidade referenciada (--ref), para o badge de
   // colisão entre agentes. Ausente em servidor antigo.
   active_work?: Record<string, { id: string; actor: string }[]>
+  // F-0318: features aprovadas cuja spec difere da aprovada (aprovação
+  // vencida), para o badge do card. Ausente em servidor antigo.
+  stale_approvals?: string[]
 }
 
 export type FeatureDocs = {
@@ -158,9 +161,16 @@ export type FeatureDetail = {
   informed_by: Reference[] // external sources that motivated this feature
   children: Feature[] // features that decompose this one (epic view)
   errata: string // correções aditivas (F-0163); "" quando não há
-  // spec editada em approved depois da última aprovação (F-0262): a aprovação
-  // não fala mais do texto atual.
+  // spec difere da versão aprovada (F-0262, por conteúdo desde a F-0318): a
+  // aprovação venceu — o start fica bloqueado até reaprovar.
   spec_changed_after_approval: boolean
+  // F-0318: o que a comparação leu, só quando vencida — corpo aprovado e corpo
+  // atual já normalizados (sem frontmatter, CRLF, BOM nem espaço no fim); a
+  // página diffa estes dois, nunca o docs.spec cru.
+  approval_delta?: { approved: string; current: string }
+  // F-0318 crit. 14: aprovada antes da versão aprovada existir — nunca vence;
+  // o approve grava a linha de base. Ausente em servidor antigo.
+  approval_baseline_missing?: boolean
   // rodadas persistidas do roast adversarial da spec (F-0271/F-0277), mais
   // recente primeiro; o corpo de cada rodada é buscado sob demanda via
   // fetchArtifactText ao abrir o modal de leitura.
@@ -168,8 +178,9 @@ export type FeatureDetail = {
   // rodadas do roast do PLANO (F-0275), lista própria sob o mesmo modelo —
   // uma rodada de plano nunca se confunde com uma de spec.
   plan_roast_rounds: RoastRound[]
-  // F-0308, só para candidatas (omitidos quando vazios): o que impede o
-  // approve e a linha da barra que o approve aceita.
+  // F-0308, só para candidatas e aprovações vencidas (o reaprovar, F-0318;
+  // omitidos quando vazios): o que impede o approve e a linha da barra que o
+  // approve aceita.
   approve_readiness?: ApproveImpediment[]
   bar?: string
 }
@@ -199,6 +210,8 @@ export type TransitionResult = {
   id: string
   from: FeatureState
   to: FeatureState
+  // F-0318: approve numa aprovada — renovou a vencida ou gravou a linha de base.
+  approval?: 'renewed' | 'baseline'
 }
 
 async function errorMessage(r: Response): Promise<string> {

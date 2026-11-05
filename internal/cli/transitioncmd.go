@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // transitionSpec wires one lifecycle subcommand to its domain action.
@@ -26,10 +27,12 @@ type transitionSpec struct {
 const lifecycleSeq = "  # lifecycle: new → approve → start → complete"
 
 var transitionSpecs = []transitionSpec{
-	{"approve", "Approve a candidate feature (requires a real spec)", domain.ActionApprove,
+	{"approve", "Approve a candidate, or re-approve an approved feature whose spec changed (requires a real spec)", domain.ActionApprove,
 		"  # gate: the spec must be filled in (not the stub), name its bar, and be pushed\n" +
 			"  cerne feature approve <id> --check   # rehearsal: lists every impediment, writes nothing\n" +
-			"  cerne push && cerne feature approve <id>\n" + lifecycleSeq},
+			"  cerne push && cerne feature approve <id>\n" +
+			"  # an approved spec edited since its approval blocks the start until re-approved:\n" +
+			"  cerne feature approve <id>           # renews the approval with the current spec\n" + lifecycleSeq},
 	{"reject", "Reject a candidate feature (requires --reason)", domain.ActionReject, ""},
 	{"start", "Start development (requires a real plan)", domain.ActionStart,
 		"  # gate: the plan must be filled in (not the stub) and pushed\n" +
@@ -147,9 +150,22 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintf(cmd.OutOrStdout(), "  ↳ epic %s started along with it (a child entered development)\n", epic)
 	}
 	// Approving a feature scaffolds its plan stub; starting scaffolds its result
-	// stub: point the author at the doc the next gate will require.
+	// stub: point the author at the doc the next gate will require. A
+	// re-approval or a baseline record (F-0318) says so, and says the start is
+	// open only when its document gate would pass.
 	if action == domain.ActionApprove {
-		fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
+		switch {
+		case out.Baseline:
+			fmt.Fprintln(cmd.OutOrStdout(), "Approval baseline recorded: the current spec is now the approved version.")
+		case out.From == domain.StateApproved:
+			fmt.Fprintln(cmd.OutOrStdout(), "Approval renewed: the current spec is now the approved version.")
+		}
+		docs, err := app.FeatureDocSet(ctx.repoDir, id)
+		if out.From == domain.StateApproved && err == nil && domain.CheckGate(id, domain.ActionStart, docs) == nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "Next step: 'cerne feature start %s' is open again.\n", id)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
+		}
 	}
 	if action == domain.ActionStart {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: when done, fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'.\n", id, id)
@@ -238,6 +254,10 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 			head = "has no hard impediment"
 		}
 		fmt.Fprintf(w, "Check: %s %s (nothing approved, nothing written).\n", id, head)
+		// F-0318 crit. 14: approved before the copy existed — the approve records it.
+		if f, err := store.LoadFeature(ctx.repoDir, id); err == nil && app.ApprovalBaselineMissing(ctx.repoDir, f) {
+			fmt.Fprintf(w, "No approved version is recorded for %s yet: approving records the current spec as its approved version (the baseline later edits are compared with).\n", id)
+		}
 		if len(soft) > 0 {
 			fmt.Fprintf(w, "%d open clarification(s) for a human to answer — the CLI approve refuses them without --force; the UI does not:\n", len(soft))
 			for _, im := range soft {
@@ -268,8 +288,13 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 // readiness in one line (F-0308 crit. 5): approvable with the bar it would
 // accept, or the impediment codes and the check that details them. Past
 // candidacy (a task is born approved) there is nothing to approve: it prints
-// nothing.
+// nothing — unless the write staled the approval (F-0318), whose re-approve
+// has the same readiness. An approval with no baseline yet is not staled by a
+// write, so it stays silent too.
 func printApproveReadiness(w io.Writer, repoDir, id string) {
+	if f, err := store.LoadFeature(repoDir, id); err == nil && app.ApprovalBaselineMissing(repoDir, f) {
+		return
+	}
 	imps, err := app.ApproveReadiness(repoDir, id)
 	if errors.Is(err, domain.ErrInvalidTransition) {
 		return

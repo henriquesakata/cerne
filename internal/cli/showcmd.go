@@ -15,6 +15,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -37,6 +38,9 @@ type showResult struct {
 	kind    string
 	entity  any
 	content []showDoc
+	// approvalStale is set for features only (F-0318): whether the approval
+	// went stale (lint.SpecChangedAfterApproval).
+	approvalStale *bool
 }
 
 type showDoc struct {
@@ -81,6 +85,10 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 	}
 	if body := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er)))); body != "" {
 		res.content = append(res.content, showDoc{name: "errata", body: body})
+	}
+	if f, ok := res.entity.(store.Feature); ok {
+		stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f)
+		res.approvalStale = &stale
 	}
 	if res.kind == "feature" {
 		// Backlink (F-0322): the delivery lists the debts it left open.
@@ -178,43 +186,43 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if err != nil {
 			return showResult{}, fmt.Errorf("feature %s: %w", id, err)
 		}
-		return showResult{kind, f, featureContent(repoDir, id)}, nil
+		return showResult{kind, f, featureContent(repoDir, id), nil}, nil
 	case "decision":
 		d, err := store.LoadDecision(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("decision %s: %w", id, err)
 		}
-		return showResult{kind, d, singleContent(repoDir, "decisions", id)}, nil
+		return showResult{kind, d, singleContent(repoDir, "decisions", id), nil}, nil
 	case "reference":
 		r, err := store.LoadReference(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("reference %s: %w", id, err)
 		}
-		return showResult{kind, r, singleContent(repoDir, "references", id)}, nil
+		return showResult{kind, r, singleContent(repoDir, "references", id), nil}, nil
 	case "note":
 		n, err := store.LoadNote(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("note %s: %w", id, err)
 		}
-		return showResult{kind, n, singleContent(repoDir, "notes", id)}, nil
+		return showResult{kind, n, singleContent(repoDir, "notes", id), nil}, nil
 	case "runbook":
 		rb, err := store.LoadRunbook(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("runbook %s: %w", id, err)
 		}
-		return showResult{kind, rb, singleContent(repoDir, "runbooks", id)}, nil
+		return showResult{kind, rb, singleContent(repoDir, "runbooks", id), nil}, nil
 	case "historical":
 		h, err := store.LoadHistorical(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("historical %s: %w", id, err)
 		}
-		return showResult{kind, h, nil}, nil
+		return showResult{kind, h, nil, nil}, nil
 	case "capability":
 		c, err := store.LoadCapability(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("capability %s: %w", id, err)
 		}
-		return showResult{kind, c, nil}, nil
+		return showResult{kind, c, nil, nil}, nil
 	case "pending":
 		p, err := store.LoadPending(repoDir, id)
 		if err != nil {
@@ -224,7 +232,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if p.Body != "" {
 			content = []showDoc{{"", p.Body}}
 		}
-		return showResult{kind, p, content}, nil
+		return showResult{kind, p, content, nil}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }
@@ -271,6 +279,9 @@ func (r showResult) renderText(w io.Writer) {
 		}
 		if e.Parent != "" {
 			fmt.Fprintf(w, "epic: %s\n", e.Parent)
+		}
+		if r.approvalStale != nil && *r.approvalStale {
+			fmt.Fprintln(w, approvalStaleLine(e.ID))
 		}
 		if e.DeliveryCommitURL != "" {
 			fmt.Fprintf(w, "delivery commit: %s\n", e.DeliveryCommitURL)
@@ -360,9 +371,10 @@ func writeSuccession(w io.Writer, supersededBy, reason string) {
 }
 
 type showJSON struct {
-	Kind    string        `json:"kind"`
-	Entity  any           `json:"entity"`
-	Content []showDocJSON `json:"content,omitempty"`
+	Kind          string        `json:"kind"`
+	Entity        any           `json:"entity"`
+	Content       []showDocJSON `json:"content,omitempty"`
+	ApprovalStale *bool         `json:"approval_stale,omitempty"` // features only (F-0318)
 }
 
 type showDocJSON struct {
@@ -375,5 +387,11 @@ func (r showResult) toJSON() showJSON {
 	for _, d := range r.content {
 		docs = append(docs, showDocJSON{d.name, d.body})
 	}
-	return showJSON{r.kind, r.entity, docs}
+	return showJSON{r.kind, r.entity, docs, r.approvalStale}
+}
+
+// approvalStaleLine is how show and next flag a stale approval (F-0318): the
+// reason and the way out, on one line.
+func approvalStaleLine(id string) string {
+	return "approval: stale — spec changed since approval (re-approve: cerne feature approve " + id + ")"
 }

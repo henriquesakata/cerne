@@ -29,14 +29,16 @@ type ApproveImpediment struct {
 	Hard    bool   `json:"hard"`
 }
 
-// ApproveReadiness returns every impediment to approving candidate id: the
+// ApproveReadiness returns every impediment to approving candidate id — or
+// re-approving an approved one whose approval went stale (F-0318): the
 // document gate, then the bar gate (both hard: the shared core refuses them on
 // every surface), then one per open clarification (soft: only the CLI refuses
 // them, and it checks them first, before the core). It composes the same
 // predicates the gates run —
 // domain.CheckGate over FeatureDocSet, doccheck.SpecBar, clarify.Open — so an
-// empty hard list is exactly an approve the core accepts. A missing feature or
-// one past candidacy is an error, the approve's own refusal.
+// empty hard list is exactly an approve the core accepts. A missing feature, one
+// past approval or an approved one with nothing to renew is an error, the
+// approve's own refusal.
 func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -46,6 +48,9 @@ func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
 		return nil, err
 	}
 	if _, err := domain.Transition(f.State, domain.ActionApprove); err != nil {
+		return nil, err
+	}
+	if err := checkReapprove(repoDir, f); err != nil {
 		return nil, err
 	}
 	docs, err := FeatureDocSet(repoDir, id)

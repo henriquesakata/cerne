@@ -19,7 +19,9 @@ func TestFeatureTransitions(t *testing.T) {
 		{"complete in-dev", StateInDevelopment, ActionComplete, StateImplemented, false},
 		{"reject candidate", StateCandidate, ActionReject, StateRejected, false},
 		{"supersede implemented (Bills case)", StateImplemented, ActionSupersede, StateSuperseded, false},
-		{"cannot approve twice", StateApproved, ActionApprove, "", true},
+		// F-0318: re-approving renews a stale approval; whether there is
+		// anything to renew is the core's call, not the pure FSM's.
+		{"re-approve approved", StateApproved, ActionApprove, StateApproved, false},
 		{"cannot start candidate", StateCandidate, ActionStart, "", true},
 		{"cannot supersede rejected", StateRejected, ActionSupersede, "", true},
 		{"cannot reject implemented", StateImplemented, ActionReject, "", true},

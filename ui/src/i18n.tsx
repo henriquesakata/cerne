@@ -202,6 +202,8 @@ const ptBR = {
     epicBadge: 'épico',
     taskBadge: 'task',
     childInDev: 'filho em dev',
+    staleApproval: 'aprovação vencida',
+    staleApprovalTitle: 'A spec mudou desde a aprovação — reaprove antes de iniciar',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -260,6 +262,8 @@ const ptBR = {
     expand: 'Expandir',
     inPanel: (version: number) => `Proposta v${version} — no painel do rascunho.`,
     stale: (latest: number) => `Versão antiga: só a v${latest} pode ser registrada.`,
+    approvedTarget:
+      'Esta feature já está aprovada: atualizar a spec vence a aprovação, e o Iniciar fica bloqueado até um humano reaprovar.',
   },
   noteProposal: {
     title: 'Nota proposta',
@@ -399,7 +403,13 @@ const ptBR = {
     } satisfies Record<TransitionAction, string>,
     actions: 'Ações',
     staleApproval:
-      'A spec mudou depois de aprovada: a aprovação está desatualizada. Reaprove ou reverta ao Backlog.',
+      'A spec mudou desde a aprovação: a aprovação venceu e o Iniciar fica bloqueado até reaprovar (ou reverta ao Backlog). Mudou isto:',
+    reapprove: 'Reaprovar',
+    approvalRenewed: 'Aprovação renovada',
+    recordBaseline: 'Gravar linha de base',
+    recordBaselineTitle:
+      'Aprovada antes de a versão aprovada ser registrada: grava a spec atual como a aprovada, contra a qual as próximas edições são comparadas',
+    baselineRecorded: 'Linha de base da aprovação gravada',
     closed: 'Encerrada.',
     supersededByField: 'Substituída por (ID)',
     reasonRequired: 'Motivo (obrigatório)',
@@ -954,6 +964,8 @@ const en: Messages = {
     epicBadge: 'epic',
     taskBadge: 'task',
     childInDev: 'child in dev',
+    staleApproval: 'approval stale',
+    staleApprovalTitle: 'The spec changed since approval — re-approve before starting',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -1010,6 +1022,8 @@ const en: Messages = {
     expand: 'Expand',
     inPanel: (version: number) => `Proposal v${version} — in the draft panel.`,
     stale: (latest: number) => `Older version: only v${latest} can be registered.`,
+    approvedTarget:
+      'This feature is already approved: updating the spec stales the approval, and Start is blocked until a human re-approves it.',
   },
   noteProposal: {
     title: 'Proposed note',
@@ -1144,7 +1158,13 @@ const en: Messages = {
     },
     actions: 'Actions',
     staleApproval:
-      'The spec changed after approval: the approval is out of date. Re-approve it or revert to the Backlog.',
+      'The spec changed since approval: the approval is stale and Start is blocked until it is re-approved (or revert to the Backlog). What changed:',
+    reapprove: 'Re-approve',
+    approvalRenewed: 'Approval renewed',
+    recordBaseline: 'Record baseline',
+    recordBaselineTitle:
+      'Approved before the approved version was recorded: records the current spec as the approved one, which later edits are compared with',
+    baselineRecorded: 'Approval baseline recorded',
     closed: 'Closed.',
     supersededByField: 'Superseded by (ID)',
     reasonRequired: 'Reason (required)',

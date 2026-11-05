@@ -49,6 +49,9 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 		ActionSupersede: StateSuperseded,
 	},
 	StateApproved: {
+		// Re-approval (F-0318): renews an approval whose spec changed; the
+		// core refuses it while there is nothing to renew.
+		ActionApprove:   StateApproved,
 		ActionStart:     StateInDevelopment,
 		ActionSupersede: StateSuperseded,
 		ActionRevert:    StateCandidate,

@@ -134,17 +134,123 @@ describe('FeaturePage revert action (F-0262)', () => {
   })
 
   it('avisa quando a spec mudou depois da aprovação', async () => {
-    payload = { ...detail('approved'), spec_changed_after_approval: true }
+    payload = { ...detail('approved'), spec_changed_after_approval: true, approval_delta: { approved: '', current: '' } }
     render(<FeaturePage id="F-0221" />)
-    await waitFor(() =>
-      expect(screen.getByText(/aprovação está desatualizada/i)).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText(/aprovação venceu/i)).toBeInTheDocument())
 
     cleanup()
     payload = detail('approved')
     render(<FeaturePage id="F-0221" />)
     await waitFor(() => expect(screen.getByText('Reverter')).toBeInTheDocument())
-    expect(screen.queryByText(/aprovação está desatualizada/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/aprovação venceu/i)).not.toBeInTheDocument()
+  })
+})
+
+// F-0318: aprovação vencida mostra só o delta desde a aprovação (critério 9),
+// absorve o aviso da F-0262 numa mensagem só, bloqueia o Iniciar e oferece o
+// Reaprovar (critério 7); aprovação limpa não mostra nada disso.
+describe('FeaturePage aprovação vencida (F-0318)', () => {
+  const stale = (): FeatureDetail => ({
+    ...detail('approved'),
+    spec_changed_after_approval: true,
+    approval_delta: {
+      approved: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta\n3. QUANDO excede',
+      current: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta e cita\n3. QUANDO excede\n4. QUANDO repete',
+    },
+    docs: { spec: '# Spec\n\n1. QUANDO envia\n2. QUANDO comenta e cita\n3. QUANDO excede\n4. QUANDO repete\n', plan: '', result: '' },
+    docs_real: { spec: true, plan: false, result: false },
+  })
+
+  it('diff só com as linhas alteradas, adições e remoções distinguíveis', async () => {
+    payload = stale()
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(container.querySelector('.approval-delta')).toBeInTheDocument())
+    const delta = container.querySelector('.approval-delta') as HTMLElement
+    expect([...delta.querySelectorAll('.diff-del')].map((e) => e.textContent)).toEqual([
+      '- 2. QUANDO comenta',
+    ])
+    expect([...delta.querySelectorAll('.diff-add')].map((e) => e.textContent)).toEqual([
+      '+ 2. QUANDO comenta e cita',
+      '+ 4. QUANDO repete',
+    ])
+    expect(delta).not.toHaveTextContent('QUANDO envia')
+    expect(delta.querySelector('.diff-same')).toBeNull()
+    // Uma mensagem só: o aviso da F-0262 virou o título do bloco.
+    expect(screen.getAllByText(/aprovação venceu/i)).toHaveLength(1)
+  })
+
+  // C3: o delta vem dos textos que o servidor comparou (approval_delta, já
+  // normalizados), nunca do docs.spec cru — senão CRLF, frontmatter OKF ou
+  // espaço no fim viravam pares −/+ idênticos a olho nu.
+  it('diff lê o approval_delta normalizado, não o docs.spec cru', async () => {
+    payload = {
+      ...stale(),
+      approval_delta: { approved: 'A\nB', current: 'A\nB.' },
+      docs: { spec: '---\r\ntype: spec\r\ntimestamp: "x"\r\n---\r\n\r\nA  \r\nB.\r\n', plan: '', result: '' },
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(container.querySelector('.approval-delta')).toBeInTheDocument())
+    const lines = [...(container.querySelector('.approval-delta pre') as HTMLElement).children].map(
+      (e) => `${e.className}|${e.textContent}`,
+    )
+    expect(lines).toEqual(['diff-del|- B', 'diff-add|+ B.'])
+  })
+
+  it('Iniciar bloqueado e Reaprovar envia o approve', async () => {
+    payload = stale()
+    render(<FeaturePage id="F-0221" />)
+    const reapprove = await screen.findByRole('button', { name: 'Reaprovar' })
+    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeDisabled()
+    fireEvent.click(reapprove)
+    await waitFor(() =>
+      expect(postTransition).toHaveBeenCalledWith('F-0221', {
+        action: 'approve',
+        by: undefined,
+        reason: undefined,
+      }),
+    )
+  })
+
+  // C10: o aviso depois de reaprovar diz o que aconteceu, não "Aprovada → Aprovada".
+  it('Reaprovar mostra "Aprovação renovada"', async () => {
+    payload = stale()
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'F-0221', from: 'approved', to: 'approved', approval: 'renewed' },
+    })
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reaprovar' }))
+    expect(await screen.findByText('Aprovação renovada')).toBeInTheDocument()
+    expect(screen.queryByText(/Aprovada → Aprovada/)).not.toBeInTheDocument()
+  })
+
+  // Critério 14: aprovação anterior à F-0318 (sem versão aprovada) nunca vence;
+  // o botão grava a linha de base, e o aviso diz isso.
+  it('aprovação legada: Gravar linha de base envia o approve e avisa', async () => {
+    payload = { ...detail('approved'), approval_baseline_missing: true }
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'F-0221', from: 'approved', to: 'approved', approval: 'baseline' },
+    })
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const record = await screen.findByRole('button', { name: 'Gravar linha de base' })
+    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeEnabled()
+    expect(container.querySelector('.approval-delta')).toBeNull()
+    fireEvent.click(record)
+    await waitFor(() =>
+      expect(postTransition).toHaveBeenCalledWith('F-0221', { action: 'approve', by: undefined, reason: undefined }),
+    )
+    expect(await screen.findByText('Linha de base da aprovação gravada')).toBeInTheDocument()
+  })
+
+  it('aprovação limpa: sem delta, sem Reaprovar, Iniciar livre', async () => {
+    payload = detail('approved')
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const start = await screen.findByRole('button', { name: 'Iniciar' })
+    expect(start).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Reaprovar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Gravar linha de base' })).not.toBeInTheDocument()
+    expect(container.querySelector('.approval-delta')).toBeNull()
   })
 })
 

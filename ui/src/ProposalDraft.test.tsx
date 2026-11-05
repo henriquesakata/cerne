@@ -153,3 +153,21 @@ describe('ProposalDraft (F-0255)', () => {
     expect(screen.getByText(/Falta exportação/)).toBeInTheDocument()
   })
 })
+
+// F-0318 critério 5: o chat pode regravar a spec de uma feature aprovada, e o
+// clique de confirmação vence a aprovação — a UI diz isso antes do clique, não
+// só a prosa do agente.
+describe('ProposalDraft — alvo aprovado (F-0318)', () => {
+  it('refino de feature aprovada avisa que atualizar vence a aprovação', () => {
+    render(
+      <ProposalDraft revisions={[rev()]} registering={false} refining approvedTarget onRegister={vi.fn()} onQuote={vi.fn()} />,
+    )
+    expect(screen.getByText(/vence a aprovação/i)).toHaveTextContent(/Iniciar fica bloqueado até um humano reaprovar/i)
+    expect(screen.getByRole('button', { name: /atualizar spec/i })).toBeEnabled()
+  })
+
+  it('refino de candidata não avisa', () => {
+    render(<ProposalDraft revisions={[rev()]} registering={false} refining onRegister={vi.fn()} onQuote={vi.fn()} />)
+    expect(screen.queryByText(/vence a aprovação/i)).not.toBeInTheDocument()
+  })
+})

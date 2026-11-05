@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -101,6 +103,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	for i, d := range docs {
 		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
 	}
+	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)
 	head, conflicts, err := app.ReconcileCommitPushMutate(
 		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,
@@ -125,8 +128,34 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Sent: %d document(s) (snapshot %s).\n", len(docs), shortSHA(head))
+	// A push that leaves an approved feature stale says so (F-0318): the
+	// comparison is the one every surface reads, so a format-only push or a
+	// revert to the approved text prints nothing.
+	staleAfter := pushedSpecStaleness(ctx.repoDir, docs)
+	for _, id := range slices.Sorted(maps.Keys(staleAfter)) {
+		if staleAfter[id] && !staleBefore[id] {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: approval is now stale — spec changed since approval; a human re-approves with 'cerne feature approve %s' (start is blocked until then)\n", id, id)
+		}
+	}
 	maybeCompileOnPush(cmd, ctx)
 	return nil
+}
+
+// pushedSpecStaleness maps the feature of each spec in docs to whether its
+// approval is stale in the backend clone right now (lint.SpecChangedAfterApproval).
+func pushedSpecStaleness(repoDir string, docs []pushedDoc) map[string]bool {
+	out := map[string]bool{}
+	for _, d := range docs {
+		rest, ok := strings.CutPrefix(d.backendRel, "content/features/")
+		id, isSpec := strings.CutSuffix(rest, "/spec.md")
+		if !ok || !isSpec || strings.Contains(id, "/") {
+			continue
+		}
+		if f, err := store.LoadFeature(repoDir, id); err == nil {
+			out[id], _, _ = lint.SpecChangedAfterApproval(repoDir, f)
+		}
+	}
+	return out
 }
 
 // maybeCompileOnPush (F-0117) recompiles the dirty wiki pages after a

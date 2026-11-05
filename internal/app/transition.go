@@ -6,6 +6,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/telemetry"
@@ -40,6 +42,44 @@ type TransitionOutcome struct {
 	// Bar is the bar line an approve accepted (F-0308), also recorded on the
 	// approve event; "" for every other action.
 	Bar string
+	// Baseline is true when an approve on an approved feature recorded its
+	// first approved copy (F-0318 crit. 14: approved before the copy existed)
+	// rather than renewing a stale one.
+	Baseline bool
+}
+
+// ErrApprovalStale is the start refusal for an approved feature whose spec
+// differs from the version its last approve accepted (F-0318).
+var ErrApprovalStale = errors.New("spec changed since approval")
+
+// ErrNothingToReapprove refuses approving an approved feature whose approved
+// copy exists and still holds the spec's content (F-0318). It wraps
+// domain.ErrInvalidTransition: to every caller that asks "can this be
+// approved?", an approved feature with nothing to renew answers as before.
+var ErrNothingToReapprove = fmt.Errorf("%w: nothing to re-approve", domain.ErrInvalidTransition)
+
+// ApprovalBaselineMissing reports an approved feature with no approved copy —
+// approved before F-0318. Never stale (crit. 14); its next approve records the
+// copy.
+func ApprovalBaselineMissing(repoDir string, f store.Feature) bool {
+	if f.State != domain.StateApproved {
+		return false
+	}
+	_, err := os.Stat(store.ApprovedSpecPath(repoDir, f.ID))
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// checkReapprove returns ErrNothingToReapprove for an approved feature whose
+// approval is not stale; nil for any other feature, and for an approved one
+// with no copy yet, whose approve records the baseline.
+func checkReapprove(repoDir string, f store.Feature) error {
+	if f.State != domain.StateApproved || ApprovalBaselineMissing(repoDir, f) {
+		return nil
+	}
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); !stale {
+		return fmt.Errorf("%w: %s is approved and its spec is the approved version", ErrNothingToReapprove, f.ID)
+	}
+	return nil
 }
 
 // eventTypes maps each lifecycle action to the event type it appends.
@@ -89,6 +129,7 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
 	var out TransitionOutcome
 	var title string
+	var baseline bool
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
 		return out, err
 	}
@@ -118,6 +159,22 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				return "", fmt.Errorf("feature %s (--by) not found in backend", by)
 			} else if err != nil {
 				return "", err
+			}
+		}
+
+		// Stale-approval gate (F-0318): the spec to implement is the one a human
+		// approved, and a re-approval needs something to renew. Refused before the
+		// parallel guard and any write, so a refused start opens no work; --force
+		// does not cross it.
+		if action == domain.ActionApprove {
+			if err := checkReapprove(repoDir, f); err != nil {
+				return "", err
+			}
+			baseline = ApprovalBaselineMissing(repoDir, f)
+		}
+		if action == domain.ActionStart {
+			if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+				return "", fmt.Errorf("%w: %s — a human re-approves it with 'cerne feature approve %s' (or 'cerne feature revert %s' sends it back to the Backlog)", ErrApprovalStale, id, id, id)
 			}
 		}
 
@@ -250,8 +307,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Approving a candidate opens the plan phase: scaffold the plan stub from the
 		// canonical template so it is committed alongside the approval (mirrors the
 		// spec stub written at create time). No-op if a real plan already exists.
+		// Every approve — a re-approval too — keeps the spec it accepted.
 		if action == domain.ActionApprove {
 			if err := writePlanStub(repoDir, id, f.Title); err != nil {
+				return "", err
+			}
+			if err := keepApprovedSpec(repoDir, id); err != nil {
 				return "", err
 			}
 		}
@@ -281,8 +342,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			// that is ready (approved, with a real plan) starts in the same commit,
 			// so the epic never lags its own decomposition. Bundled inside the same
 			// critical section — all or nothing, no mid-state commit.
-			if propagated, err = propagateStartToAncestors(repoDir, id); err != nil {
+			var staleNote string
+			if propagated, staleNote, err = propagateStartToAncestors(repoDir, id); err != nil {
 				return "", err
+			}
+			if staleNote != "" {
+				warnings = append(warnings, staleNote)
 			}
 		}
 		// Completing a child conducts the epic closure (F-0214, close-side
@@ -304,7 +369,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, Baseline: baseline}
 		return msg, nil
 	})
 	if err != nil {
@@ -323,15 +388,15 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 // no change. Mutations persist to the store and are committed by the caller's
 // critical section (MutateAndSnapshot), so the child start and every propagated
 // epic land in one commit. Returns the ancestors it started, nearest-first
-// (empty when none).
+// (empty when none), and — when the walk stopped at an epic whose approval is
+// stale (F-0318) — the line that says so, for the caller to print.
 // A visited set guards against a cyclic parent link so a corrupt graph cannot
 // loop forever.
-func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
+func propagateStartToAncestors(repoDir, childID string) (started []string, staleNote string, err error) {
 	cur, err := store.LoadFeature(repoDir, childID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	var started []string
 	visited := map[string]bool{childID: true}
 	for cur.Parent != "" {
 		if visited[cur.Parent] {
@@ -343,17 +408,21 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 			break // dangling parent: lint's parent-not-found reports it
 		}
 		if err != nil {
-			return started, err
+			return started, "", err
 		}
 		if parent.State != domain.StateApproved {
 			break // candidate needs approval; in_development/terminal: nothing to do
 		}
 		docs, err := FeatureDocSet(repoDir, parent.ID)
 		if err != nil {
-			return started, err
+			return started, "", err
 		}
 		if err := domain.CheckGate(parent.ID, domain.ActionStart, docs); err != nil {
 			break // epic not ready (no real plan): don't force it, leave it to lint
+		}
+		if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, parent); stale {
+			// The start gate refuses a stale approval (F-0318): so does this, out loud.
+			return started, fmt.Sprintf("epic %s was not started along with %s: spec changed since approval — a human re-approves it with 'cerne feature approve %s'", parent.ID, childID, parent.ID), nil
 		}
 		newState, err := domain.Transition(parent.State, domain.ActionStart)
 		if err != nil {
@@ -362,19 +431,19 @@ func propagateStartToAncestors(repoDir, childID string) ([]string, error) {
 		parent.State = newState
 		parent.UpdatedAt = time.Now().UTC()
 		if err := store.SaveFeature(repoDir, parent); err != nil {
-			return started, err
+			return started, "", err
 		}
 		ev := domain.NewEvent(parent.ID, "feature.started", map[string]string{"via": childID}, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
-			return started, err
+			return started, "", err
 		}
 		if err := writeResultStub(repoDir, parent.ID, parent.Title); err != nil {
-			return started, err
+			return started, "", err
 		}
 		started = append(started, parent.ID)
 		cur = parent
 	}
-	return started, nil
+	return started, "", nil
 }
 
 // scaffoldEpicCloseIfReady checks whether parentID's children are all
@@ -408,6 +477,21 @@ func scaffoldEpicCloseIfReady(repoDir, parentID string) (string, error) {
 		return "", err
 	}
 	return parent.ID, nil
+}
+
+// keepApprovedSpec copies feature id's spec, byte for byte, to
+// store.ApprovedSpecPath (F-0318): the version this approve accepted, committed
+// with it, against which every later write is compared.
+func keepApprovedSpec(repoDir, id string) error {
+	data, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md"))
+	if err != nil {
+		return err
+	}
+	path := store.ApprovedSpecPath(repoDir, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 // ValidateTransitionFlags enforces which flags each action accepts:

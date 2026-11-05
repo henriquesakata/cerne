@@ -758,12 +758,12 @@ func TestChatRefineLoadsCurrentSpec(t *testing.T) {
 	}
 }
 
-// TestChatRefineRefusesNonCandidate (F-0256 criterion 5): past candidacy the
-// refusal is the server's, not the UI's — a direct API call gets 422 and the
-// provider is never even asked.
+// TestChatRefineRefusesNonCandidate (F-0256 criterion 5, moved past approval
+// by F-0318): in development the refusal is the server's, not the UI's — a
+// direct API call gets 422 and the provider is never even asked.
 func TestChatRefineRefusesNonCandidate(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
-	seedFeature(t, repoDir, "F-0002", "Aprovada", domain.StateApproved)
+	seedFeature(t, repoDir, "F-0002", "Em desenvolvimento", domain.StateInDevelopment)
 	seedSpec(t, repoDir, "F-0002", "## Problema\n\nContrato aprovado.\n")
 
 	var gotPrompt string
@@ -821,11 +821,12 @@ func TestChatRegisterUpdate(t *testing.T) {
 	}
 }
 
-// TestChatRegisterUpdateRefusals (F-0256 criterion 5): an unknown id is 404, a
-// feature past candidacy is 422, and neither touches the backend.
+// TestChatRegisterUpdateRefusals (F-0256 criterion 5, moved past approval by
+// F-0318): an unknown id is 404, a feature in development is 422, and neither
+// touches the backend.
 func TestChatRegisterUpdateRefusals(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
-	seedFeature(t, repoDir, "F-0002", "Aprovada", domain.StateApproved)
+	seedFeature(t, repoDir, "F-0002", "Em desenvolvimento", domain.StateInDevelopment)
 	seedSpec(t, repoDir, "F-0002", "## Problema\n\nContrato aprovado.\n")
 	h := New(repoDir, projDir, "proj-chat-upd-bad")
 
@@ -836,9 +837,9 @@ func TestChatRegisterUpdateRefusals(t *testing.T) {
 		t.Fatalf("unknown id status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
 	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-0002","title":"Aprovada","spec_body":"## Problema\n\nBurlado.\n"}`, &got)
+		`{"feature_id":"F-0002","title":"Em desenvolvimento","spec_body":"## Problema\n\nBurlado.\n"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("approved status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+		t.Fatalf("in_development status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
 	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0002", "spec.md"))
 	if err != nil || !strings.Contains(string(spec), "Contrato aprovado.") {

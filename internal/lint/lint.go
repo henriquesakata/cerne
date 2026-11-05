@@ -313,7 +313,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	if err != nil {
 		return nil, err
 	}
-	findings = append(findings, specChangedFindings(features, events)...)
+	findings = append(findings, specChangedFindings(repoDir, features)...)
 	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
 	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
 	findings = append(findings, duplicateLiveFindings(notes, decisions, references, events)...)

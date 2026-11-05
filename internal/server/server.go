@@ -126,6 +126,10 @@ type stateResponse struct {
 	// every request — never persisted. Only entities with active work; always
 	// present, never null.
 	ActiveWork map[string][]activeWorkItem `json:"active_work"`
+	// StaleApprovals lists the approved features whose spec differs from the
+	// approved one (F-0318), so the board badges them. Derived on every
+	// request through lint.SpecChangedAfterApproval; always present, never null.
+	StaleApprovals []string `json:"stale_approvals"`
 }
 
 // activeWorkItem is one active W-item referencing a feature: enough to badge
@@ -209,6 +213,12 @@ func handleState(w http.ResponseWriter, repoDir string) {
 	if proj.Modules == nil {
 		proj.Modules = []string{} // contract: modules is always a list
 	}
+	stale := []string{}
+	for _, f := range features {
+		if changed, _, _ := lint.SpecChangedAfterApproval(repoDir, f); changed {
+			stale = append(stale, f.ID)
+		}
+	}
 	writeJSON(w, http.StatusOK, stateResponse{
 		Project:            proj,
 		Features:           features,
@@ -219,6 +229,7 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		Capabilities:       capabilities,
 		OpenClarifications: countOpenClarifications(repoDir),
 		ActiveWork:         activeWorkByRef(repoDir),
+		StaleApprovals:     stale,
 	})
 }
 
@@ -247,9 +258,18 @@ type featureDetailResponse struct {
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
 	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
 	Errata      string            `json:"errata"`      // additive corrections (F-0163); "" when none
-	// SpecChangedAfterApproval is true when the spec was edited while approved,
-	// after the last approval (F-0262) — the page warns the approval is stale.
+	// SpecChangedAfterApproval is true when an approved feature's spec differs
+	// from the copy its last approve kept (F-0262, by content since F-0318) —
+	// the page warns the approval is stale.
 	SpecChangedAfterApproval bool `json:"spec_changed_after_approval"`
+	// ApprovalDelta is what a stale approval compared (F-0318): the approved and
+	// the live spec bodies, normalized by lint.SpecChangedAfterApproval, for the
+	// page to diff; omitted when not stale.
+	ApprovalDelta *approvalDelta `json:"approval_delta,omitempty"`
+	// ApprovalBaselineMissing flags an approved feature with no approved copy
+	// (approved before F-0318): never stale, and its approve records the
+	// baseline (crit. 14).
+	ApprovalBaselineMissing bool `json:"approval_baseline_missing,omitempty"`
 	// RoastRounds lists the persisted adversarial spec critiques (F-0271/
 	// F-0277), newest first; empty when no roast ran yet. The report body is
 	// fetched per round via GET /artifacts/{id}/{name}.
@@ -258,10 +278,16 @@ type featureDetailResponse struct {
 	// separate so a plan round never reads as a spec round.
 	PlanRoastRounds []roastRound `json:"plan_roast_rounds"`
 	// ApproveReadiness lists what stops a candidate's approve, and Bar is the
-	// bar line the approve would accept (F-0308) — candidates only, so the page
-	// tells before the click; both omitted when empty.
+	// bar line the approve would accept (F-0308) — candidates and stale
+	// approvals (the re-approve, F-0318) only, so the page tells before the
+	// click; both omitted when empty.
 	ApproveReadiness []app.ApproveImpediment `json:"approve_readiness,omitempty"`
 	Bar              string                  `json:"bar,omitempty"`
+}
+
+type approvalDelta struct {
+	Approved string `json:"approved"`
+	Current  string `json:"current"`
 }
 
 type featureDocs struct {
@@ -368,14 +394,10 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	specChanged := false
-	if f.State == domain.StateApproved {
-		events, err := store.ReadEvents(repoDir)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-			return
-		}
-		specChanged = lint.SpecChangedAfterApproval(events, id)
+	specChanged, approvedSpec, currentSpec := lint.SpecChangedAfterApproval(repoDir, f)
+	var delta *approvalDelta
+	if specChanged {
+		delta = &approvalDelta{string(approvedSpec), string(currentSpec)}
 	}
 	planRounds, err := planRoastRounds(repoDir, id, docs.Spec, docs.Plan)
 	if err != nil {
@@ -389,7 +411,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	}
 	var readiness []app.ApproveImpediment
 	var bar string
-	if f.State == domain.StateCandidate {
+	if f.State == domain.StateCandidate || specChanged {
 		if readiness, err = app.ApproveReadiness(repoDir, id); err == nil {
 			bar, err = app.AcceptedBar(repoDir, id)
 		}
@@ -398,7 +420,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -1236,11 +1258,19 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	resp := map[string]string{
 		"id":   out.ID,
 		"from": string(out.From),
 		"to":   string(out.To),
-	})
+	}
+	// An approve on an approved feature (F-0318) says what it did, so the page
+	// does not just read "approved → approved".
+	if out.Baseline {
+		resp["approval"] = "baseline"
+	} else if out.From == domain.StateApproved && domain.Action(req.Action) == domain.ActionApprove {
+		resp["approval"] = "renewed"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // spaHandler serves the embedded ui/dist tree; any path that is not an

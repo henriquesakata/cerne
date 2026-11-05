@@ -32,11 +32,21 @@ type Props = {
   // atualiza a spec dela, não registra outra. Prometer "registrar candidata"
   // aqui seria mentir sobre o que a confirmação faz.
   refining?: boolean
+  // approvedTarget (F-0318): a feature refinada já está aprovada — atualizar a
+  // spec vence a aprovação, e o painel diz isso antes do clique.
+  approvedTarget?: boolean
   onRegister: (proposal: ParsedProposal) => void
   onQuote: (quote: string) => void
 }
 
-export default function ProposalDraft({ revisions, registering, refining = false, onRegister, onQuote }: Props) {
+export default function ProposalDraft({
+  revisions,
+  registering,
+  refining = false,
+  approvedTarget = false,
+  onRegister,
+  onQuote,
+}: Props) {
   const [selected, setSelected] = useState(revisions.length - 1)
   const [showDiff, setShowDiff] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -149,6 +159,7 @@ export default function ProposalDraft({ revisions, registering, refining = false
           </QuoteComment>
 
           {stale && <p className="proposal-draft-stale">{t.proposalDraft.stale(revisions.length)}</p>}
+          {refining && approvedTarget && <p className="form-error">{t.proposalDraft.approvedTarget}</p>}
           <button
             type="button"
             className="proposal-draft-register"
