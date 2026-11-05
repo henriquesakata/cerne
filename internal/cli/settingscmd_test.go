@@ -271,3 +271,23 @@ func TestSettingsWriteReportsItsOwnResult(t *testing.T) {
 		})
 	}
 }
+
+// TestSettingsSetUnsetLeavesNoDiff (critic C6): on a committed .cernerc, set
+// then unset leaves git diff empty.
+func TestSettingsSetUnsetLeavesNoDiff(t *testing.T) {
+	projDir, _ := settingsProject(t, "")
+	runGit(t, projDir, "init", "-q")
+	runGit(t, projDir, "add", ".cernerc")
+	runGit(t, projDir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+	for _, args := range [][]string{
+		{"settings", "set", "wiki.enabled", "false", "--scope", "project", "--dir", projDir},
+		{"settings", "unset", "wiki.enabled", "--scope", "project", "--dir", projDir},
+	} {
+		if out, err := execCerne(t, args...); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+	if diff := runGit(t, projDir, "diff"); diff != "" {
+		t.Errorf("git diff after set+unset:\n%s", diff)
+	}
+}

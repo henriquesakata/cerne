@@ -20,7 +20,10 @@ var ErrConfigLayout = errors.New("unsupported config layout")
 // editTOML sets key in [table] of raw, or removes it when value is nil,
 // touching only that line: it replaces the value token in place, inserts the
 // key right after an existing header, appends the table at the end, or drops
-// the key's line (the header stays). Comments, order, indentation and line
+// the key's line. Removing the last key of a bare table (no other key, no
+// comment in it, above it or on its header) drops the header and the blank
+// line before it too, so set then unset gives the file back byte for byte, as
+// git config --unset does. Comments, order, indentation and line
 // endings survive. The result is verified to decode to raw's document with
 // only that key changed; any other outcome is ErrConfigLayout (F-0106's
 // splice-with-safety-net, applied to TOML).
@@ -71,6 +74,15 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	switch {
 	case value == nil && i >= 0:
 		lines = slices.Delete(lines, i, i+1)
+		if len(tbl) == 0 && bareSection(lines, h, table) {
+			// Undo what set's append wrote: the header and its blank separator.
+			from := h
+			if h > 0 && strings.TrimSpace(lines[h-1]) == "" {
+				from = h - 1
+			}
+			lines = slices.Delete(lines, from, h+1)
+			delete(want, table)
+		}
 	case i >= 0:
 		body := strings.TrimRight(lines[i], "\r\n")
 		m := keyLine.FindStringSubmatch(body)
@@ -96,6 +108,21 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 		return nil, layoutErr
 	}
 	return []byte(text), nil
+}
+
+// bareSection reports whether the section opened by lines[h] is a plain
+// "[table]" header, with no comment on or right above it, and holds only blank
+// lines.
+func bareSection(lines []string, h int, table string) bool {
+	if strings.TrimSpace(lines[h]) != "["+table+"]" || h > 0 && strings.HasPrefix(strings.TrimSpace(lines[h-1]), "#") {
+		return false
+	}
+	for j := h + 1; j < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[j]), "["); j++ {
+		if strings.TrimSpace(lines[j]) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // keyLineIndex returns the index of key's line in the section opened by

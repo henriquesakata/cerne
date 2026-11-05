@@ -285,7 +285,7 @@ func snapshotDir(t *testing.T, dir string) map[string]string {
 // back to the host scope as one removed line; the host file is untouched.
 func TestUnsetSettingRestoresLowerScope(t *testing.T) {
 	host := "[mindmap]\nenabled = false\n"
-	projDir, hostDir := settingsFixture(t, "[mindmap]\nenabled = true\n", host, false)
+	projDir, hostDir := settingsFixture(t, "[mindmap]\n# team choice\nenabled = true\n", host, false)
 	before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
 
 	if err := UnsetSetting(projDir, "mindmap.enabled", ScopeProject); err != nil {
@@ -427,5 +427,38 @@ func TestConfigWritersRefuseAHeldLock(t *testing.T) {
 	}
 	if _, err := os.Stat(host + ".lock"); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("refused write left its lock behind (%v)", err)
+	}
+}
+
+// TestSetThenUnsetRestoresFile (critic C6): set then unset of a key the file
+// did not hold gives the file back byte for byte, like git config --unset.
+func TestSetThenUnsetRestoresFile(t *testing.T) {
+	for name, content := range map[string]string{"plain": baseCernerc, "commented": editFixture, "CRLF": crlf(editFixture)} {
+		for _, scope := range []string{ScopeProject, ScopeHost} {
+			t.Run(name+"/"+scope, func(t *testing.T) {
+				projDir, hostDir := settingsFixture(t, "", "", true)
+				writeCernerc(t, projDir, content)
+				path := map[string]string{ScopeProject: filepath.Join(projDir, ".cernerc"), ScopeHost: filepath.Join(hostDir, "settings.toml")}[scope]
+				if scope == ScopeHost {
+					if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, id := range []string{"wiki.enabled", "graph.enabled"} {
+					if err := SetSetting(projDir, id, scope, "false"); err != nil {
+						t.Fatalf("set %s: %v", id, err)
+					}
+				}
+				for _, id := range []string{"graph.enabled", "wiki.enabled"} {
+					if err := UnsetSetting(projDir, id, scope); err != nil {
+						t.Fatalf("unset %s: %v", id, err)
+					}
+				}
+				if got, _ := os.ReadFile(path); string(got) != content {
+					removed, added := changedLines(content, string(got))
+					t.Errorf("file after set+unset differs: -%q +%q", removed, added)
+				}
+			})
+		}
 	}
 }

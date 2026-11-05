@@ -106,9 +106,15 @@ func TestEditTOMLRemove(t *testing.T) {
 		name, in, table, key, want string
 		wantErrorIs                error
 	}{
-		{"removes the line only", editFixture, "mindmap", "enabled",
-			strings.Replace(editFixture, "    enabled = true   # keep me\n", "", 1), nil},
-		{"CRLF", crlf(editFixture), "llm", "mode", crlf(strings.Replace(editFixture, "mode = \"delegation\" # x\n", "", 1)), nil},
+		{"last key of a bare table drops the header and its separator", editFixture, "mindmap", "enabled",
+			strings.Replace(editFixture, "\n[mindmap]\n    enabled = true   # keep me\n", "", 1), nil},
+		{"bare table at the start of the file", "[wiki]\nenabled = false\n", "wiki", "enabled", "", nil},
+		{"other keys keep the header", "[wiki]\nenabled = true\nother = 1\n", "wiki", "enabled", "[wiki]\nother = 1\n", nil},
+		{"a comment inside keeps the header", "a = 1\n\n[wiki]\n# why\nenabled = true\n", "wiki", "enabled", "a = 1\n\n[wiki]\n# why\n", nil},
+		{"a comment above keeps the header", "a = 1\n\n# toggle\n[wiki]\nenabled = true\n", "wiki", "enabled", "a = 1\n\n# toggle\n[wiki]\n", nil},
+		{"a header comment keeps the header", "a = 1\n\n[wiki] # note\nenabled = true\n", "wiki", "enabled", "a = 1\n\n[wiki] # note\n", nil},
+		{"bare table between tables", "[a]\nx = 1\n\n[wiki]\nenabled = true\n\n[b]\ny = 2\n", "wiki", "enabled", "[a]\nx = 1\n\n[b]\ny = 2\n", nil},
+		{"CRLF", crlf(editFixture), "component_paths", "lint", crlf(strings.Replace(editFixture, "lint = [\"internal/lint/**\"]\n", "", 1)), nil},
 		{"absent key", editFixture, "llm", "provider", editFixture, nil},
 		{"absent table", editFixture, "graph", "enabled", editFixture, nil},
 		{"empty input", "", "graph", "enabled", "", nil},
