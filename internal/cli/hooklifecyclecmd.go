@@ -67,7 +67,7 @@ func runHookLifecycleReminder(cmd *cobra.Command) {
 			return
 		}
 		id := m[1]
-		msg = fmt.Sprintf("cerne: %s registered as a candidate. Write its real spec NOW, in this same turn — `cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push` — then ask a human to run `cerne feature approve %s` and STOP. Do not implement an unapproved feature.", id, id, id)
+		msg = fmt.Sprintf("cerne: %s registered as a candidate. Write its real spec NOW, in this same turn — `cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push` — then run `cerne feature approve %s --check` and fix what it lists until it reports approvable; only then ask a human to run `cerne feature approve %s` (approving accepts the `Barra:` line you proposed) and STOP. Do not implement an unapproved feature.", id, id, id, id)
 	case featureStartRe.MatchString(ti.Command):
 		if !strings.Contains(response, "in_development") {
 			return

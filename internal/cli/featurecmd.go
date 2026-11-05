@@ -114,6 +114,7 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
 	return nil
 }
 

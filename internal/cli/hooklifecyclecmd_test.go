@@ -22,6 +22,11 @@ func TestHookLifecycleReminderOnFeatureNew(t *testing.T) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
+	// F-0308 crit. 6: the rehearsal comes before asking a human for the approve.
+	check, ask := strings.Index(out, "cerne feature approve F-0042 --check"), strings.Index(out, "ask a human")
+	if check < 0 || ask < 0 || check > ask {
+		t.Fatalf("reminder does not send the agent to --check before asking a human:\n%s", out)
+	}
 }
 
 // TestHookLifecycleReminderOnFeatureStart (F-0170 crit. 2): a confirmed

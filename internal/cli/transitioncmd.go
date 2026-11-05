@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -211,4 +213,31 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 	}
 	fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
 	return fmt.Errorf("%w: %s has %d impediment(s)", errNotApprovable, id, len(imps))
+}
+
+// printApproveReadiness ends a spec write with the candidate's approve
+// readiness in one line (F-0308 crit. 5): approvable with the bar it would
+// accept, or the impediment codes and the check that details them.
+func printApproveReadiness(w io.Writer, repoDir, id string) {
+	imps, err := app.ApproveReadiness(repoDir, id)
+	if err != nil {
+		fmt.Fprintf(w, "Approve readiness: unknown (%v)\n", err)
+		return
+	}
+	if len(imps) == 0 {
+		bar, err := app.AcceptedBar(repoDir, id)
+		if err != nil {
+			fmt.Fprintf(w, "Approve readiness: unknown (%v)\n", err)
+			return
+		}
+		fmt.Fprintf(w, "Approve readiness: approvable — approving accepts %s\n", bar)
+		return
+	}
+	var codes []string
+	for _, im := range imps {
+		if !slices.Contains(codes, im.Code) {
+			codes = append(codes, im.Code)
+		}
+	}
+	fmt.Fprintf(w, "Approve readiness: not approvable — %s; details: 'cerne feature approve %s --check'\n", strings.Join(codes, ", "), id)
 }
