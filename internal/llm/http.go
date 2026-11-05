@@ -10,8 +10,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
+	"gitlab.com/rockt/cerne/internal/models"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -156,6 +158,13 @@ func (p *httpProvider) post(ctx context.Context, body messagesRequest) (*http.Re
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	return p.send(req, "Messages")
+}
+
+// send sets the Anthropic API auth headers on req and returns a 2xx response;
+// any other status becomes an error naming api, the code and a truncated body.
+// The caller owns closing the body on success.
+func (p *httpProvider) send(req *http.Request, api string) (*http.Response, error) {
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", anthropicVersion)
 
@@ -166,9 +175,81 @@ func (p *httpProvider) post(ctx context.Context, body messagesRequest) (*http.Re
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("Anthropic Messages API returned status %d: %s", resp.StatusCode, truncate(respBody, maxErrBodyBytes))
+		return nil, fmt.Errorf("Anthropic %s API returned status %d: %s", api, resp.StatusCode, truncate(respBody, maxErrBodyBytes))
 	}
 	return resp, nil
+}
+
+// ErrNoListing: the configured mode has no way to list the provider's models
+// (delegation reaches no provider; claude-cli rides the Claude Code
+// subscription, which exposes no listing). The catalog keeps its baseline.
+var ErrNoListing = errors.New("this LLM mode cannot list the provider's models")
+
+// ErrEmptyListing: the provider answered with no model at all — treated as a
+// failure, never as "every model vanished".
+var ErrEmptyListing = errors.New("the provider listed no models")
+
+// PickProvider chooses whom the catalog refresh queries (F-0311 criterion
+// 17): the persisted preference while the project still reaches it, else the
+// only configured provider, else nobody.
+func PickProvider(preferred string, configured []string) string {
+	if slices.Contains(configured, preferred) {
+		return preferred
+	}
+	if len(configured) == 1 {
+		return configured[0]
+	}
+	return ""
+}
+
+// modelsListResponse is the subset of GET /v1/models we read.
+type modelsListResponse struct {
+	Data []struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+	} `json:"data"`
+}
+
+// ListModels asks the provider which models it serves (F-0311): GET
+// /v1/models with the Messages API auth headers. Only byo-key "anthropic" can;
+// any other mode is ErrNoListing and a missing key ErrAPIKeyMissing, both
+// without touching the network. One page of up to 1000 models.
+func ListModels(ctx context.Context, cfg project.LLMConfig) ([]models.Entry, error) {
+	cfg = cfg.WithDefaults()
+	if mode := ResolveMode(cfg.Mode); mode == ModeDelegation || mode == ModeClaudeCLI {
+		return nil, fmt.Errorf("%w (mode %s)", ErrNoListing, mode)
+	}
+	if cfg.Provider != providerAnthropic {
+		return nil, fmt.Errorf("%w (provider %q)", ErrNoListing, cfg.Provider)
+	}
+	key := os.Getenv(cfg.KeyEnv)
+	if key == "" {
+		return nil, fmt.Errorf("%w: set the %s environment variable", ErrAPIKeyMissing, cfg.KeyEnv)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.BaseURL+"/v1/models?limit=1000", nil)
+	if err != nil {
+		return nil, err
+	}
+	p := &httpProvider{apiKey: key, httpClient: http.DefaultClient}
+	resp, err := p.send(req, "Models")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var parsed modelsListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("unreadable models listing: %w", err)
+	}
+	out := make([]models.Entry, 0, len(parsed.Data))
+	for _, m := range parsed.Data {
+		if m.ID != "" {
+			out = append(out, models.Entry{ID: m.ID, Label: m.DisplayName})
+		}
+	}
+	if len(out) == 0 {
+		return nil, ErrEmptyListing
+	}
+	return out, nil
 }
 
 // Complete performs one Messages API call and returns the concatenated text of
