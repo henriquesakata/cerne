@@ -94,27 +94,34 @@ func resultGauntletFindings(repoDir string, features []store.Feature, events []d
 		if !completedAfter(events, f.ID, resultGauntletSince) {
 			continue
 		}
-		resultPath := filepath.Join("content", "features", f.ID, "result.md")
-		result, err := os.ReadFile(filepath.Join(repoDir, resultPath))
-		if err != nil {
-			result = nil // absence of the doc is missing-gate-doc's job; here absence = no record
-		}
-		section, has := gauntletSection(result)
-		detail := "sem seção \"## Gauntlet\""
-		if has {
-			detail = parseGauntlet(section).problem()
-			if detail == "" || (!completedAfter(events, f.ID, resultGauntletStrictSince) && legacyGauntletRecorded(section)) {
-				continue
-			}
-		}
-		out = append(out, Finding{
-			Rule:   RuleResultMissingGauntlet,
-			Entity: f.ID,
-			File:   filepath.ToSlash(resultPath),
-			Detail: fmt.Sprintf("result.md %s (%s) — registre o loop: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title),
-		})
+		legacy := !completedAfter(events, f.ID, resultGauntletStrictSince)
+		out = append(out, gauntletFinding(repoDir, f, legacy)...)
 	}
 	return out
+}
+
+// gauntletFinding is the per-feature result-missing-gauntlet check, shared by
+// the lint loop and CheckResult. legacy lets the pre-F-0304 predicate vouch.
+func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
+	resultPath := filepath.Join("content", "features", f.ID, "result.md")
+	result, err := os.ReadFile(filepath.Join(repoDir, resultPath))
+	if err != nil {
+		result = nil // absence of the doc is missing-gate-doc's job; here absence = no record
+	}
+	section, has := gauntletSection(result)
+	detail := "sem seção \"## Gauntlet\""
+	if has {
+		detail = parseGauntlet(section).problem()
+		if detail == "" || (legacy && legacyGauntletRecorded(section)) {
+			return nil
+		}
+	}
+	return []Finding{{
+		Rule:   RuleResultMissingGauntlet,
+		Entity: f.ID,
+		File:   filepath.ToSlash(resultPath),
+		Detail: fmt.Sprintf("result.md %s (%s) — registre o loop: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title),
+	}}
 }
 
 type gauntletRound struct {
