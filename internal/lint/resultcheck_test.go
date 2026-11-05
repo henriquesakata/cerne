@@ -221,3 +221,26 @@ func TestResultRulesErrataWithoutEvidence(t *testing.T) {
 		t.Fatalf("want both findings, got %+v", got)
 	}
 }
+
+// TestResultRulesErrataOnlyOnceClosed: while the feature is live its result is
+// still the document to fix, so an erratum does not settle the record — the
+// complete gate must not be passed by `feature errata` (F-0305 crit. 1-2 scope
+// the errata to the closed states). The same errata on implemented clears.
+func TestResultRulesErrataOnlyOnceClosed(t *testing.T) {
+	for _, tc := range []struct {
+		state domain.FeatureState
+		want  int
+	}{
+		{domain.StateInDevelopment, 2},
+		{domain.StateImplemented, 0},
+		{domain.StateDone, 0},
+	} {
+		t.Run(string(tc.state), func(t *testing.T) {
+			dir, f := writeResultFixture(t, tc.state, checkSpec, "critério 1\n")
+			addErrata(t, dir, "critério 2 provado\n\n"+goodGauntlet)
+			if got := CheckResult(dir, f); len(got) != tc.want {
+				t.Fatalf("want %d findings, got %+v", tc.want, got)
+			}
+		})
+	}
+}

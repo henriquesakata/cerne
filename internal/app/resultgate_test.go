@@ -169,3 +169,18 @@ func TestResultGateParityWithLint(t *testing.T) {
 		})
 	}
 }
+
+// TestCompleteGateIgnoresErrataWhileLive: the complete gate charges the result
+// while it is still editable, so an erratum carrying the missing criteria and a
+// complete Gauntlet section does not open it — fix the result itself (F-0305).
+func TestCompleteGateIgnoresErrataWhileLive(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedCompletable(t, repoDir, gateSpecNumbered, resultBody("Provas: critério 1, critério 2.\n", ""))
+	if _, err := AddErrata(repoDir, projDir, "F-0001", "Provas: critério 3, critério 4.\n"+gateGauntletOK, "dev"); err != nil {
+		t.Fatalf("AddErrata: %v", err)
+	}
+	_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
+	if !errors.Is(err, ErrResultIncomplete) {
+		t.Fatalf("err = %v, want ErrResultIncomplete", err)
+	}
+}
