@@ -93,18 +93,35 @@ func TestApproveReadinessClarificationMessageIsTheQuestion(t *testing.T) {
 	}
 }
 
-// Readiness answers for a candidate only: a missing feature or one past
-// candidacy is an error, the same refusal the approve itself gives.
+// Readiness answers only where an approve can land: a missing feature, one past
+// approval, or an approved one whose approved copy still holds its spec (F-0318:
+// nothing to re-approve) is an error, the same refusal the approve itself
+// gives. An approved feature with a stale or a missing copy is approvable
+// again (re-approve, baseline) — see approvedspec_test.go.
 func TestApproveReadinessRefusesNonCandidate(t *testing.T) {
 	repoDir := t.TempDir()
 	if _, err := ApproveReadiness(repoDir, "F-0009"); err == nil || !strings.Contains(err.Error(), "F-0009") {
 		t.Fatalf("missing feature err = %v, want one naming F-0009", err)
 	}
-	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateApproved}); err != nil {
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateInDevelopment}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ApproveReadiness(repoDir, "F-0001"); !errors.Is(err, domain.ErrInvalidTransition) {
-		t.Fatalf("approved feature err = %v, want ErrInvalidTransition", err)
+		t.Fatalf("in_development feature err = %v, want ErrInvalidTransition", err)
+	}
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0002", Title: "t", State: domain.StateApproved}); err != nil {
+		t.Fatal(err)
+	}
+	writeSpecFixture(t, repoDir, "F-0002", "# t\n\nProblema real.\n")
+	copyPath := store.ApprovedSpecPath(repoDir, "F-0002")
+	if err := os.MkdirAll(filepath.Dir(copyPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(copyPath, []byte("# t\n\nProblema real.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApproveReadiness(repoDir, "F-0002"); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("approved feature with nothing to renew err = %v, want ErrInvalidTransition", err)
 	}
 }
 
