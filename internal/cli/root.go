@@ -42,6 +42,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newRunbookCmd())
 	root.AddCommand(newNoteCmd())
 	root.AddCommand(newWorkCmd())
+	root.AddCommand(newPendingCmd())
 	root.AddCommand(newCapabilityCmd())
 	root.AddCommand(newReferenceCmd())
 	root.AddCommand(newRetireCmd())
