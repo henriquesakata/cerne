@@ -1,10 +1,12 @@
 package project
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -21,8 +23,12 @@ const (
 
 const hostSettingsFilename = "settings.toml"
 
-// ErrInvalidSettingValue: a value outside the setting's declared type.
-var ErrInvalidSettingValue = errors.New("invalid setting value")
+// Refusals of a settings read or write (F-0314).
+var (
+	ErrUnknownSetting      = errors.New("unknown setting")
+	ErrInvalidSettingValue = errors.New("invalid setting value")
+	ErrSettingScope        = errors.New("scope not allowed for setting")
+)
 
 // Setting is one declared configuration key. ID is "table.key", the TOML
 // address in both scopes (git config's section.key, R-0043).
@@ -108,6 +114,65 @@ func ResolveSettings(projDir string) (SettingsView, error) {
 		view.Settings = append(view.Settings, r)
 	}
 	return view, nil
+}
+
+// SetSetting writes raw ("true"/"false") as id's value in scope: the
+// project's .cernerc or the host settings.toml, editing only that key's line.
+// Key, scope and value are validated before any file is read, so a refusal
+// writes nothing.
+//
+// ponytail: read-modify-write with no lock, the last writer wins; add a flock if CLI and UI really edit concurrently.
+func SetSetting(projDir, id, scope, raw string) error {
+	if err := checkDeclared(id, scope); err != nil {
+		return err
+	}
+	// Every declared setting is a bool; a new type adds its parse here.
+	if raw != "true" && raw != "false" {
+		return fmt.Errorf("%s: %w %q: want true or false", id, ErrInvalidSettingValue, raw)
+	}
+	path, err := settingsFile(projDir, scope)
+	if err != nil {
+		return err
+	}
+	table, key, _ := strings.Cut(id, ".")
+	return editTOMLFile(path, table, key, raw == "true")
+}
+
+// checkDeclared refuses an id the registry does not declare, or a scope the
+// setting does not allow.
+func checkDeclared(id, scope string) error {
+	i := slices.IndexFunc(settingsRegistry, func(s Setting) bool { return s.ID == id })
+	if i < 0 {
+		ids := make([]string, len(settingsRegistry))
+		for j, s := range settingsRegistry {
+			ids[j] = s.ID
+		}
+		return fmt.Errorf("%w %q (known: %s)", ErrUnknownSetting, id, strings.Join(ids, ", "))
+	}
+	if scopes := settingsRegistry[i].Scopes; !slices.Contains(scopes, scope) {
+		return fmt.Errorf("%s: %w: %q (allowed: %s)", id, ErrSettingScope, scope, strings.Join(scopes, ", "))
+	}
+	return nil
+}
+
+// editTOMLFile applies editTOML to the file at path (absent = empty),
+// creating its directory, and skips the write when nothing changes.
+func editTOMLFile(path, table, key string, value any) error {
+	raw, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	out, err := editTOML(raw, table, key, value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if bytes.Equal(out, raw) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return writeFileAtomic(filepath.Dir(path), filepath.Base(path), out)
 }
 
 // settingsFile returns the file behind scope: the .cernerc LoadConfig finds

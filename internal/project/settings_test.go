@@ -2,6 +2,7 @@ package project
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -123,4 +124,108 @@ func TestResolveSettingsRejectsBadStoredValue(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSetSettingProjectMinimalDiff pins F-0314 criterion 4: a project write
+// lands in .cernerc as one changed line; order, comments, indentation and
+// every other key come out byte-identical, and the host file is not created.
+func TestSetSettingProjectMinimalDiff(t *testing.T) {
+	projDir, hostDir := settingsFixture(t, "", "", true)
+	writeCernerc(t, projDir, editFixture)
+
+	if err := SetSetting(projDir, "mindmap.enabled", ScopeProject, "false"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, added := changedLines(editFixture, string(got))
+	if len(removed) != 1 || len(added) != 1 || added[0] != "    enabled = false   # keep me\n" {
+		t.Errorf("diff = -%q +%q, want exactly the enabled line changed", removed, added)
+	}
+	if _, err := os.Stat(filepath.Join(hostDir, "settings.toml")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("project write touched the host file: %v", err)
+	}
+}
+
+// TestSetSettingHostLeavesRepoUntouched pins F-0314 criterion 5: a host write
+// goes to <CERNE_CONFIG_DIR>/settings.toml (creating the dir) and changes
+// nothing in the project directory.
+func TestSetSettingHostLeavesRepoUntouched(t *testing.T) {
+	projDir, _ := settingsFixture(t, "", "", true)
+	writeCernerc(t, projDir, editFixture)
+	hostDir := filepath.Join(t.TempDir(), "absent", "cerne")
+	t.Setenv("CERNE_CONFIG_DIR", hostDir)
+	before := snapshotDir(t, projDir)
+
+	if err := SetSetting(projDir, "wiki.enabled", ScopeHost, "false"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if after := snapshotDir(t, projDir); !maps.Equal(before, after) {
+		t.Errorf("project dir changed: before %v, after %v", before, after)
+	}
+	host, err := os.ReadFile(filepath.Join(hostDir, "settings.toml"))
+	if err != nil || string(host) != "[wiki]\nenabled = false\n" {
+		t.Errorf("host settings.toml = %q (%v), want [wiki] enabled = false", host, err)
+	}
+	view, err := ResolveSettings(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findSetting(t, view, "wiki.enabled"); got.Value != false || got.Origin != ScopeHost {
+		t.Errorf("wiki.enabled = %v from %s, want false from host", got.Value, got.Origin)
+	}
+}
+
+// TestSetSettingRefusesInvalid pins F-0314 criterion 6: an unknown key, a
+// value outside the type, a scope outside the declared ones or a layout the
+// editor cannot rewrite is a named sentinel, and neither file changes.
+func TestSetSettingRefusesInvalid(t *testing.T) {
+	cases := []struct {
+		name, project, id, scope, raw string
+		noProject                     bool
+		want                          error
+	}{
+		{"unknown key", "", "nope.enabled", ScopeProject, "false", false, ErrUnknownSetting},
+		{"yes", "", "wiki.enabled", ScopeProject, "yes", false, ErrInvalidSettingValue},
+		{"1", "", "wiki.enabled", ScopeHost, "1", false, ErrInvalidSettingValue},
+		{"quoted JSON string", "", "wiki.enabled", ScopeHost, `"false"`, false, ErrInvalidSettingValue},
+		{"undeclared scope", "", "wiki.enabled", "global", "false", false, ErrSettingScope},
+		{"dotted layout", "wiki.enabled = true\n", "wiki.enabled", ScopeProject, "false", false, ErrConfigLayout},
+		{"no project", "", "wiki.enabled", ScopeProject, "false", true, ErrNoProject},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			host := "[graph]\nenabled = true # mine\n"
+			projDir, hostDir := settingsFixture(t, tc.project, host, tc.noProject)
+			before := snapshotDir(t, projDir)
+
+			err := SetSetting(projDir, tc.id, tc.scope, tc.raw)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			if after := snapshotDir(t, projDir); !maps.Equal(before, after) {
+				t.Errorf("project dir changed on refusal")
+			}
+			if got, _ := os.ReadFile(filepath.Join(hostDir, "settings.toml")); string(got) != host {
+				t.Errorf("host file changed on refusal: %q", got)
+			}
+		})
+	}
+}
+
+// snapshotDir maps each regular file name in dir to its content.
+func snapshotDir(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := map[string]string{}
+	for _, e := range entries {
+		data, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		snap[e.Name()] = string(data)
+	}
+	return snap
 }
