@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/plantmpl"
 	"gitlab.com/rockt/cerne/internal/restmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
@@ -51,21 +52,23 @@ var ErrTitleFrozen = errors.New("the feature's title is frozen")
 // (implemented/done/rejected/superseded, domain.TitleEditable's definition of
 // terminal): by SetFeature (owner/priority), and by every document write of the
 // feature — SaveFeatureDoc and the draft commands (CheckDocWritable) and
-// `cerne push` (F-0305), whose refusal names the state's path (DocFixPath).
+// `cerne push` (F-0305), whose refusal names the state's path (DocFixPhrase).
 var ErrFeatureFrozen = errors.New("the feature is closed")
 
-// DocFixPath names how a document of feature id in state s is corrected
-// (F-0305): through .docs/ and push while live; `feature amend` for the result
-// of an implemented feature, before the accept; an erratum otherwise.
-func DocFixPath(id, doc string, s domain.FeatureState) string {
-	switch {
-	case domain.TitleEditable(s):
-		return "edit it under .docs/ ('cerne pull') and run 'cerne push'"
-	case s == domain.StateImplemented && doc == "result":
-		return fmt.Sprintf("correct it with 'cerne feature amend %s --file <result.md> --reason \"<why>\"'", id)
-	default:
-		return fmt.Sprintf("append an erratum with 'cerne feature errata %s --file <errata.md>'", id)
+// DocFixPhrase renders, in English, how document doc of feature id in state s
+// is corrected — the sentence every closed-feature refusal carries (F-0305).
+// The path itself comes from lint.Correction, the one table (F-0307).
+func DocFixPhrase(id, doc string, s domain.FeatureState) string {
+	kind, cmd := lint.Correction(s, id, doc)
+	switch kind {
+	case lint.CorrectByPush:
+		return "edit it under .docs/ ('cerne pull') and run '" + cmd + "'"
+	case lint.CorrectByAmend:
+		return "correct it with '" + cmd + "'"
+	case lint.CorrectByErrata:
+		return "append an erratum with '" + cmd + "'"
 	}
+	return NoCorrectionNote(id)
 }
 
 // NoCorrectionNote is the sentence for a document no command changes
@@ -76,7 +79,7 @@ func NoCorrectionNote(id string) string {
 
 // CheckDocWritable loads feature id and returns it when its document doc may be
 // written — only while the feature is live (domain.TitleEditable). Past that it
-// returns ErrFeatureFrozen wrapped, naming the state's path (DocFixPath). The
+// returns ErrFeatureFrozen wrapped, naming the state's path (DocFixPhrase). The
 // one rule every whole-document write routes through (F-0305): SaveFeatureDoc
 // and the draft commands, which call it again inside the backend lock because
 // their provider call runs outside it.
@@ -86,7 +89,7 @@ func CheckDocWritable(repoDir, id, doc string) (store.Feature, error) {
 		return store.Feature{}, err
 	}
 	if !domain.TitleEditable(f.State) {
-		return f, fmt.Errorf("%w: %s (%s) — %s", ErrFeatureFrozen, id, f.State, DocFixPath(id, doc, f.State))
+		return f, fmt.Errorf("%w: %s (%s) — %s", ErrFeatureFrozen, id, f.State, DocFixPhrase(id, doc, f.State))
 	}
 	return f, nil
 }
@@ -609,7 +612,7 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, 
 }
 
 // ErrAmendNotImplemented is returned by AmendFeatureResult for a feature that is
-// not implemented; the message names the path of its state (DocFixPath).
+// not implemented; the message names the path of its state (DocFixPhrase).
 var ErrAmendNotImplemented = errors.New("only the result of an implemented feature can be amended")
 
 // AmendFeatureResult replaces the result.md of an IMPLEMENTED feature, with the
@@ -640,7 +643,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 			return "", err
 		}
 		if f.State != domain.StateImplemented {
-			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPath(id, "result", f.State))
+			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPhrase(id, "result", f.State))
 		}
 		path := FeatureDocPath(repoDir, id, "result.md")
 		// Detected here, not by captureChanges: the event below is itself a change.

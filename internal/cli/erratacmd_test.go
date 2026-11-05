@@ -149,7 +149,7 @@ func TestDraftCommandsRefuseClosedFeature(t *testing.T) {
 				}
 				continue
 			}
-			want := app.DocFixPath(id, doc, state)
+			want := wantFix(state, id, doc)
 			if !errors.Is(err, app.ErrFeatureFrozen) || !strings.Contains(err.Error(), want) {
 				t.Fatalf("%s draft %s (%s): err = %v, want ErrFeatureFrozen naming %q", doc, id, state, err, want)
 			}

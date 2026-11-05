@@ -134,3 +134,14 @@ func TestPushUntrackedMessageUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// wantFix is the command (or the no-command note) the correction table gives a
+// document in a state: what a refusal must name, read from the one source
+// instead of a literal repeated in the test (F-0307 crit. 8).
+func wantFix(state domain.FeatureState, id, doc string) string {
+	kind, cmd := lint.Correction(state, id, doc)
+	if kind == lint.CorrectNone {
+		return app.NoCorrectionNote(id)
+	}
+	return cmd
+}

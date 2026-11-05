@@ -68,10 +68,7 @@ func TestAmendRefusesOtherStates(t *testing.T) {
 	ids := seedResultFeatures(t, repoDir, domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment,
 		domain.StateDone, domain.StateRejected, domain.StateSuperseded)
 	for state, id := range ids {
-		want := "cerne push"
-		if !domain.TitleEditable(state) {
-			want = "cerne feature errata " + id
-		}
+		want := wantFix(state, id, "result")
 		err := assertAmendRefused(t, projDir, repoDir, id, want)
 		if state == domain.StateDone {
 			t.Logf("amend refusal (done): %v", err)
