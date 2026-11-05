@@ -29,7 +29,7 @@ var (
 	// Leading markdown markers of a line: heading, list, quote, table, "N." and
 	// emphasis delimiters.
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s#>*_|-]|\d+\.\s)*`)
-	roundAnchorRe = regexp.MustCompile(`(?i)^Rodada\s+(\d+)\b`)
+	roundAnchorRe = regexp.MustCompile(`^Rodada\s+(\d+)\b`)
 	barLineRe     = regexp.MustCompile(`(?i)^Barra:[\s*_]*([^\s*_].*)$`)
 	criticLineRe  = regexp.MustCompile(`(?i)^Achados do cr(?:í|i\x{0301}|i)tico`)
 	verdictLitRe  = regexp.MustCompile(`(?i)VEREDITO:\s*(?:A|B|EMPATE)\b`)
@@ -145,8 +145,17 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {
 			n, _ := strconv.Atoi(m[1])
-			cur, inImplicit, anchored = &strings.Builder{}, false, true
-			blocks, nums = append(blocks, cur), append(nums, n)
+			inImplicit, anchored = false, true
+			cur = nil
+			for i, k := range nums { // same number = same round
+				if k == n {
+					cur = blocks[i]
+				}
+			}
+			if cur == nil {
+				cur = &strings.Builder{}
+				blocks, nums = append(blocks, cur), append(nums, n)
+			}
 		}
 		if cur != nil {
 			cur.WriteString(line + "\n")

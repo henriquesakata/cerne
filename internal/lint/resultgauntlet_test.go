@@ -204,6 +204,19 @@ func TestGauntletProblemOrder(t *testing.T) {
 	}
 }
 
+// Same round number = one round; the anchor is the capitalised literal.
+func TestGauntletMergedRounds(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"later heading of the same round", "Barra: x\nRodada 2 \u2014 vit\u00f3ria: \"x\"\n### Rodada 2 \u2014 correções\ncommits abc\n", ""},
+		{"builder line + judge line", "Barra: x\nRodada 2 (15:50) \u2014 fix builder de contexto novo\nRodada 2 \u2014 juiz cego \u2014 vit\u00f3ria: \"x\"\n", ""},
+		{"disposition after Achados merges", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2 \u2014 vit\u00f3ria: \"b\"\nAchados do crítico: 2\n- Rodada 2 \u2192 `.cernerc` ileg\u00edvel\n", ""},
+		{"lowercase wrapped prose opens no round", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\n  rodada 2 aberta com crítico novo.\n", ""},
+		{"uppercase RODADA is no anchor", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRODADA 2 sem nada\n", ""},
+		{"incomplete numbered round still flags", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2 \u2014 correções\n### Rodada 2 \u2014 notas\n", "rodada 2 sem citação do juiz"},
+		{"merged round, quote but no verdict", "Barra: x\nRodada 2: \"q\"\nRodada 2 \u2014 notas\n", "rodada 2 sem veredito"},
+	})
+}
+
 // Criterion 7: grandfathering through the strict cutoff.
 func TestGauntletGrandfather(t *testing.T) {
 	before := resultGauntletStrictSince.Add(-24 * time.Hour)
