@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -178,5 +179,50 @@ func TestStateCarriesStaleApprovals(t *testing.T) {
 	doJSON(t, New(empty, emptyProj, ""), http.MethodGet, "/api/state", "", &raw)
 	if string(raw["stale_approvals"]) != "[]" {
 		t.Fatalf("stale_approvals = %s, want [] when none", raw["stale_approvals"])
+	}
+}
+
+// TestLegacyApprovalIsValid (F-0318 crit. 14): a backend from before F-0318 —
+// a feature approved with no approved copy, its spec edited while approved
+// (the feature.doc_edited events after the approval that lit F-0262's rule) —
+// is a valid approval on every surface: lint clean, payload flag false, start
+// allowed. A missing baseline is never a divergence.
+func TestLegacyApprovalIsValid(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Aprovada antes da F-0318", domain.StateApproved)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Editada depois de aprovar."))
+	writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "Plano real."))
+	base := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	for _, e := range []domain.Event{
+		{ID: "e1", At: base, EntityID: "F-0001", Type: "feature.approved", Actor: "u"},
+		{ID: "e2", At: base.Add(time.Minute), EntityID: "F-0001", Type: "feature.doc_edited",
+			Payload: map[string]string{"doc": "spec", "state": "approved"}, Actor: "u"},
+		{ID: "e3", At: base.Add(2 * time.Minute), EntityID: "F-0001", Type: "feature.doc_edited",
+			Payload: map[string]string{"doc": "spec", "state": "approved"}, Actor: "u"},
+	} {
+		if err := store.AppendEvent(repoDir, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitBackend(t, repoDir)
+
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Rule == lint.RuleSpecChangedAfterApproval {
+			t.Fatalf("legacy approval raised %+v", f)
+		}
+	}
+	var got struct {
+		SpecChanged bool `json:"spec_changed_after_approval"`
+	}
+	doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &got)
+	if got.SpecChanged {
+		t.Fatal("legacy approval: spec_changed_after_approval = true")
+	}
+	if _, err := app.TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("legacy approval start: %v", err)
 	}
 }
