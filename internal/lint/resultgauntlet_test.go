@@ -264,6 +264,9 @@ func TestGauntletCriticBlock(t *testing.T) {
 		{"critic ends at heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n### Fechamento\nJuiz: \"c\"\n", ""},
 		{"list item after blank stays critic", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n\n- item \"q\"\n", "rodada 1 sem citação do juiz"},
 		{"critic verdict word does not count", "Barra: x\nRodada 1: \"c\"\nAchados do crítico: 1 — empate\n", "rodada 1 sem veredito"},
+		{"dense layout: non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1 — corrigido\nRodada 2 — crítico, sem juiz\n", "rodada 2 sem citação do juiz"},
+		{"T-0040 shape", "Barra: x\nRodada 1 — derrota: \"VEREDITO: B\"\nAchados do crítico: 7 — \"VEREDITO DO CRÍTICO: 1 HIGH\"\nRodada 2 — derrota: \"VEREDITO: A\"\nAchados do crítico: 8 — corrigidos 7\nRodada 4 do crítico, sobre as correções (sem juiz): \"VEREDITO DO CRÍTICO: 0 HIGH\"\nAchados do crítico: 6 — corrigidos 4\nEncerramento perdendo por decisão humana: \"Encerrar\"\n", "rodada 4 sem veredito"},
+		{"bold non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1\n**Rodada 2 — notas**\n", "rodada 2 sem citação do juiz"},
 		{"F-0275 shape", "Barra: x\nRodada 1 — vitória: \"VEREDITO: A\" — \"a\"\nRodada 2 — vitória: \"VEREDITO: B\" — \"b\"\nAchados do crítico: 8 — corrigidos 5\n```\n\n**Achados do crítico de contexto fresco (rodada 1):**\n\n- **Corrigidos (5):** (1) x\n- **Refutado (1):** (6) \"campo sem enum\"\n\n**Lacunas apontadas pelos juízes:**\n\n- Rodada 2 → `.cernerc` ilegível\n\n**Nota de método:** a rodada 2 apontou\n", ""},
 	})
 }
@@ -291,8 +294,7 @@ func TestGauntletHeaderLinesAndImplicitParagraph(t *testing.T) {
 		{"NFD Metodo", "Barra: x\nRodada 1 — vitória\nMétodo: \"cego\"\n", "rodada 1 sem citação do juiz"},
 		{"Saida inside a round", "Barra: x\nRodada 1: \"c\"\nsaída: empate\n", "rodada 1 sem veredito"},
 		{"single list item stays clean", "Barra: x\n- **vitória** — juiz: \"x\"\n", ""},
-		{"verdict and quote in different paragraphs", "Barra: x\nvitória no eixo\n\njuiz disse \"x\"\n", "rodada sem veredito"},
-		{"both in the second paragraph", "Barra: x\nnota\n\nvitória — juiz: \"x\"\n", ""},
+		{"implicit round reads the whole block", "Barra: x\nvitória no eixo\n\njuiz disse \"x\"\n", ""},
 	})
 }
 

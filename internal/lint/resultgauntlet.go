@@ -35,7 +35,6 @@ var (
 	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da):`)
 	criticLineRe  = regexp.MustCompile(`(?i)^Achados? do cr(?:í|i\x{0301}|i)tico`)
 	listItemRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
-	paragraphRe   = regexp.MustCompile(`\n\s*\n`)
 	codeSpanRe    = regexp.MustCompile("`[^`\n]*`")
 	verdictLitRe  = regexp.MustCompile(`(?i:veredito):\s*(?:A|B|EMPATE)\b`)
 	quoteRe       = regexp.MustCompile(`["“”][^"“”]*[^\s"“”][^"“”]*["“”]|«[^»]*[^\s»][^»]*»`)
@@ -144,7 +143,8 @@ func parseGauntlet(section string) gauntletRecord {
 			case trim == "":
 				prevBlank = true
 				continue
-			case strings.HasPrefix(trim, "#"), prevBlank && !listItemRe.MatchString(line):
+			case strings.HasPrefix(trim, "#"), prevBlank && !listItemRe.MatchString(line),
+				roundAnchorRe.MatchString(lineMarkersRe.ReplaceAllString(line, "")) && !listItemRe.MatchString(line):
 				critic = false
 			default:
 				continue
@@ -185,15 +185,8 @@ func parseGauntlet(section string) gauntletRecord {
 			implicit.WriteString(line + "\n")
 		}
 	}
-	if len(blocks) == 0 { // implicit round: one paragraph must hold both
-		rd := gauntletRound{}
-		for _, para := range paragraphRe.Split(implicit.String(), -1) {
-			v, q := gauntletVerdict(para), gauntletQuote(para)
-			rd.quote = rd.quote || q
-			rd.verdict = rd.verdict || v && q
-		}
-		rec.rounds = []gauntletRound{rd}
-		return rec
+	if len(blocks) == 0 { // no anchor: the section itself is the one round
+		blocks, nums = []*strings.Builder{implicit}, []int{0}
 	}
 	for i, b := range blocks {
 		text := b.String()
