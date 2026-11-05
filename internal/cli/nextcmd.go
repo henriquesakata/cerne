@@ -157,10 +157,10 @@ func runNext(cmd *cobra.Command, dir string) error {
 		fmt.Fprintf(out, "OPEN PENDINGS (%d) — resolve, drop or promote: 'cerne pending resolve|drop|promote <id>'\n", len(open))
 		now := time.Now().UTC()
 		for _, p := range open[:min(len(open), nextPendingCap)] {
-			fmt.Fprintf(out, "%s  %s  %s  %s\n", p.ID, pendingAge(now, p), p.From, p.Title)
+			fmt.Fprintf(out, "  %s  %s  %s  %s\n", p.ID, pendingAge(now, p), p.From, p.Title)
 		}
 		if rest := len(open) - nextPendingCap; rest > 0 {
-			fmt.Fprintf(out, "… and %d more ('cerne pending list')\n", rest)
+			fmt.Fprintf(out, "  … and %d more ('cerne pending list')\n", rest)
 		}
 		fmt.Fprintln(out)
 	}

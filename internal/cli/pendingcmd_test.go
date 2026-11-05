@@ -242,7 +242,7 @@ func TestNextShowsOpenPendings(t *testing.T) {
 	}
 	pendingNew(t, projDir, "Débito novo", "--from", "F-0001")
 	out := next()
-	if !strings.Contains(out, "OPEN PENDINGS (1)") || !strings.Contains(out, "P-0001  0d  F-0001  Débito novo") {
+	if !strings.Contains(out, "OPEN PENDINGS (1)") || !strings.Contains(out, "\n  P-0001  0d  F-0001  Débito novo") {
 		t.Fatalf("next lacks the open pending block:\n%s", out)
 	}
 	if d := strings.Index(out, "DEBTS"); d >= 0 && strings.Index(out, "OPEN PENDINGS") > d {
