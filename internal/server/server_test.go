@@ -1002,6 +1002,56 @@ func TestFeatureDocPutUnknownFeature(t *testing.T) {
 	}
 }
 
+// TestFeatureDocPutRefusesFrozen (F-0305 crit. 6): the feature page writes only
+// while the feature is live; past it the PUT is a 422 naming the state's path,
+// with the document and the event log untouched.
+func TestFeatureDocPutRefusesFrozen(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	frozen := []struct {
+		id    string
+		state domain.FeatureState
+		path  string
+	}{
+		{"F-0002", domain.StateImplemented, "cerne feature amend F-0002"},
+		{"F-0003", domain.StateDone, "cerne feature errata F-0003"},
+		{"F-0004", domain.StateRejected, "cerne feature errata F-0004"},
+		{"F-0005", domain.StateSuperseded, "cerne feature errata F-0005"},
+	}
+	for _, f := range frozen {
+		seedFeature(t, repoDir, f.id, "Congelada", f.state)
+		writeDoc(t, repoDir, f.id, "result.md", realDoc(f.id, "Result original."))
+	}
+	seedFeature(t, repoDir, "F-0006", "Viva", domain.StateInDevelopment)
+	commitBackend(t, repoDir)
+	evsBefore, _ := store.ReadEvents(repoDir)
+
+	for _, f := range frozen {
+		t.Run(string(f.state), func(t *testing.T) {
+			var got map[string]string
+			rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/"+f.id+"/docs/result", realDoc(f.id, "Reescrito."), &got)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(got["error"], f.path) {
+				t.Fatalf("error = %q, want the state's path %q", got["error"], f.path)
+			}
+			t.Logf("422: %s", got["error"])
+			data, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", f.id, "result.md"))
+			if string(data) != realDoc(f.id, "Result original.") {
+				t.Fatalf("result.md changed:\n%s", data)
+			}
+		})
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evsBefore) {
+		t.Fatalf("events = %d, want %d (a refused PUT appends nothing)", len(evs), len(evsBefore))
+	}
+
+	var ok map[string]bool
+	if rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0006/docs/result", realDoc("F-0006", "Vivo."), &ok); rec.Code != http.StatusOK {
+		t.Fatalf("in_development status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // F-0195: the board needs to see a pending clarification without opening the
 // feature, so /state carries a per-entity count of open markers.
 func TestStateIncludesOpenClarificationCounts(t *testing.T) {

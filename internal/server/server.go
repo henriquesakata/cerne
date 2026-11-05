@@ -1055,6 +1055,8 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
+	case errors.Is(err, app.ErrFeatureFrozen):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error())) // F-0305: names the state's path
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	default:

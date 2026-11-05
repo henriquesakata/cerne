@@ -15,9 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func newPushCmd() *cobra.Command {
@@ -77,7 +79,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if err := checkContextUntouched(docsDir, manifest); err != nil {
 		return err
 	}
-	docs, err := collectChangedDocs(docsDir, manifest)
+	docs, err := collectChangedDocs(ctx.repoDir, docsDir, manifest)
 	if err != nil {
 		return err
 	}
@@ -223,8 +225,12 @@ func checkContextUntouched(docsDir string, manifest map[string]string) error {
 // collectChangedDocs walks .docs/current/** and returns every tracked *.md
 // whose content no longer matches the docs.lock manifest, mapped back to its
 // backend path via the cerne_id frontmatter. Files in the manifest but
-// missing on disk are ignored (deletion is not a push operation).
-func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc, error) {
+// missing on disk are ignored (deletion is not a push operation). A changed
+// document of a feature past the live states — read in the cache clone at
+// repoDir — refuses the whole collection with app.ErrFeatureFrozen and the
+// state's path (F-0305): between `complete` and the next pull the docs are
+// still tracked, and push must not be the write that skips the boundary.
+func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]pushedDoc, error) {
 	currentDir := filepath.Join(docsDir, "current")
 	if _, err := os.Stat(currentDir); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -263,6 +269,18 @@ func collectChangedDocs(docsDir string, manifest map[string]string) ([]pushedDoc
 		backendRel, err := backendRelPath(rel, id)
 		if err != nil {
 			return err
+		}
+		if strings.HasPrefix(rel, "current/features/") {
+			// ponytail: state read in the local cache clone; a complete made elsewhere and
+			// not yet fetched slips through until the clone refreshes.
+			f, err := store.LoadFeature(repoDir, id)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if err == nil && !domain.TitleEditable(f.State) {
+				doc := strings.TrimSuffix(path.Base(rel), ".md")
+				return fmt.Errorf("%w: %s (%s), %s — %s", app.ErrFeatureFrozen, id, f.State, rel, app.DocFixPath(id, doc, f.State))
+			}
 		}
 		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: body, sum: sum})
 		return nil

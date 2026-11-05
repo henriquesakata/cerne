@@ -47,10 +47,26 @@ var ErrParentNotCommitted = errors.New("the parent feature is not committed yet 
 // (implemented/rejected/superseded): its title is frozen history.
 var ErrTitleFrozen = errors.New("the feature's title is frozen")
 
-// ErrFeatureFrozen is returned by SetFeature for a feature past the live
-// states (implemented/done/rejected/superseded, domain.TitleEditable's
-// definition of terminal): owner/priority are mutable data, not history.
+// ErrFeatureFrozen is returned for a feature past the live states
+// (implemented/done/rejected/superseded, domain.TitleEditable's definition of
+// terminal): by SetFeature (owner/priority), and by every document write of the
+// feature — SaveFeatureDoc and `cerne push` (F-0305), whose refusal names the
+// state's path (DocFixPath).
 var ErrFeatureFrozen = errors.New("the feature is closed")
+
+// DocFixPath names how a document of feature id in state s is corrected
+// (F-0305): through .docs/ and push while live; `feature amend` for the result
+// of an implemented feature, before the accept; an erratum otherwise.
+func DocFixPath(id, doc string, s domain.FeatureState) string {
+	switch {
+	case domain.TitleEditable(s):
+		return "edit it under .docs/ ('cerne pull') and run 'cerne push'"
+	case s == domain.StateImplemented && doc == "result":
+		return fmt.Sprintf("correct it with 'cerne feature amend %s --file <result.md> --reason \"<why>\"'", id)
+	default:
+		return fmt.Sprintf("append an erratum with 'cerne feature errata %s --file <errata.md>'", id)
+	}
+}
 
 // ErrDuplicateTitle is returned when creating a feature whose normalized title
 // (domain.NormalizeTitle, the F-0045 rule) matches a live feature: the usual
@@ -484,7 +500,10 @@ func SetFeature(repoDir, projDir, id, owner, priority string, setOwner, setPrior
 // (doc ∈ spec|plan|result) to content/features/<id>/<doc>.md, then commits,
 // pushes and refreshes the docs.lock snapshot. A byte-identical write is a
 // successful no-op (like SaveArtifact). ErrUnknownDoc for an invalid doc name;
-// store.ErrNotFound (wrapped) when the feature does not exist.
+// store.ErrNotFound (wrapped) when the feature does not exist; ErrFeatureFrozen
+// (wrapped, naming the state's path) past the live states — F-0072's boundary,
+// moved by F-0305: the result of an implemented feature changes only through
+// AmendFeatureResult, which carries a reason; later, only errata.
 func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 	filename, ok := featureDocFilenames[doc]
 	if !ok {
@@ -494,6 +513,9 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		f, err := store.LoadFeature(repoDir, id)
 		if err != nil {
 			return "", err
+		}
+		if !domain.TitleEditable(f.State) {
+			return "", fmt.Errorf("%w: %s (%s) — %s", ErrFeatureFrozen, id, f.State, DocFixPath(id, doc, f.State))
 		}
 		path := FeatureDocPath(repoDir, id, filename)
 		// The event below is itself a change, so the byte-identical no-op has to be
