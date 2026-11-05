@@ -13,8 +13,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/index"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/materialize"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/skills"
@@ -170,9 +172,10 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	// materializes nothing usually means the module's features are implemented
 	// (concluded entities don't materialize — they are history).
 	if scope != "" && nFeatures == 0 {
+		_, errata := lint.Correction(domain.StateDone, "<id>", "result")
 		fmt.Fprintf(cmd.OutOrStdout(),
 			"No feature in module %q materialized: implemented features don't materialize content (they become history). "+
-				"Use 'cerne show <id>' to read one, or 'cerne errata <id>' to annotate/correct it.\n", scope)
+				"Use 'cerne show <id>' to read one, or '%s' to annotate/correct it.\n", scope, errata)
 	}
 	// Skill-sync step (F-0178): the generated skills are a derived convenience —
 	// a failure here warns and never fails a pull that materialized fine.
