@@ -152,3 +152,32 @@ func TestSpecMissingBarMessageOneLine(t *testing.T) {
 		t.Fatalf("refusal %q does not point at %q", msg, want)
 	}
 }
+
+// TestApproveEventCarriesBar (F-0308 crit. 8): approving is accepting the
+// proposed bar, so the approve event records the accepted bar line — the
+// human's acceptance becomes data with an actor, not a sentence in a chat.
+func TestApproveEventCarriesBar(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedCandidateSpec(t, repoDir, "F-0001", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nMétodo: comparação cega\n")
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	const want = "Barra: cerne push --dry-run — ensaio com gate"
+	if out.Bar != want {
+		t.Fatalf("outcome bar = %q, want %q", out.Bar, want)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range evs {
+		if ev.EntityID == "F-0001" && ev.Type == "feature.approved" {
+			if ev.Payload["bar"] != want {
+				t.Fatalf("approve payload = %+v, want bar %q", ev.Payload, want)
+			}
+			return
+		}
+	}
+	t.Fatal("no feature.approved event")
+}

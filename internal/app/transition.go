@@ -37,6 +37,9 @@ type TransitionOutcome struct {
 	// work of the same actor on this feature that no session binding can be
 	// attributed to. Printed by the caller; empty for the common case.
 	Warnings []string
+	// Bar is the bar line an approve accepted (F-0308), also recorded on the
+	// approve event; "" for every other action.
+	Bar string
 }
 
 // eventTypes maps each lifecycle action to the event type it appends.
@@ -207,6 +210,20 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			}
 			payload["guard"] = "forced"
 		}
+		// Approving is accepting the proposed bar (F-0308 crit. 8): the line the
+		// gate just validated goes on the event, with the actor.
+		var bar string
+		if action == domain.ActionApprove {
+			if bar, err = AcceptedBar(repoDir, id); err != nil {
+				return "", err
+			}
+			if bar != "" {
+				if payload == nil {
+					payload = map[string]string{}
+				}
+				payload["bar"] = bar
+			}
+		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
 			return "", err
 		}
@@ -287,7 +304,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar}
 		return msg, nil
 	})
 	if err != nil {

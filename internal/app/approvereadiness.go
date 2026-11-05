@@ -73,3 +73,17 @@ func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
 	}
 	return out, nil
 }
+
+// AcceptedBar returns the valid bar line of feature id's spec — the one an
+// approve accepts (F-0308) — or "" when the spec is missing or names none.
+func AcceptedBar(repoDir, id string) (string, error) {
+	spec, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	bar, _ := doccheck.SpecBar(spec)
+	return bar, nil
+}
