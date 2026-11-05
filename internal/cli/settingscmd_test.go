@@ -344,3 +344,29 @@ func TestSettingsListShowsOverridden(t *testing.T) {
 		t.Errorf("--json stored = %v, want project true and host false", m.Stored)
 	}
 }
+
+// TestSettingsGetAll: --all prints every scope's value in precedence order,
+// like git config --get-all --show-scope; a key no scope sets prints its
+// default.
+func TestSettingsGetAll(t *testing.T) {
+	projDir, hostDir := settingsProject(t, "[mindmap]\nenabled = true\n")
+	host := filepath.Join(hostDir, "settings.toml")
+	if err := os.WriteFile(host, []byte("[mindmap]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"mindmap.enabled", "--all"}, "true\nfalse\n"},
+		{[]string{"mindmap.enabled", "--all", "--show-scope"}, "project\ttrue\nhost\tfalse\n"},
+		{[]string{"mindmap.enabled", "--all", "--show-scope", "--show-origin"},
+			"project\tfile:" + filepath.Join(projDir, ".cernerc") + "\ttrue\nhost\tfile:" + host + "\tfalse\n"},
+		{[]string{"graph.enabled", "--all", "--show-scope"}, "default\ttrue\n"},
+	} {
+		out, err := execCerne(t, append([]string{"settings", "get", "--dir", projDir}, tc.args...)...)
+		if err != nil || out != tc.want {
+			t.Errorf("get %v = %q (%v), want %q", tc.args, out, err, tc.want)
+		}
+	}
+}
