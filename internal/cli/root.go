@@ -75,6 +75,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newHookCmd())
 	root.AddCommand(newHarnessCmd())
 	root.AddCommand(newModelsCmd())
+	root.AddCommand(newSettingsCmd())
 	root.AddCommand(newGuardCmd())
 	root.AddCommand(newLockCmd())
 	root.AddCommand(newRoomCmd())
