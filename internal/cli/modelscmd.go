@@ -66,12 +66,15 @@ func runModelsRefresh(cmd *cobra.Command, dir string, force bool) error {
 	if err != nil {
 		return fmt.Errorf("models refresh failed, catalog unchanged: %w", err)
 	}
-	fmt.Fprintf(out, "catalog refreshed: %d added, %d delisted\n", len(diff.Added), len(diff.Delisted))
+	fmt.Fprintf(out, "catalog refreshed: %d added, %d delisted, %d relisted\n", len(diff.Added), len(diff.Delisted), len(diff.Relisted))
 	for _, id := range diff.Added {
 		fmt.Fprintf(out, "  + %s\n", id)
 	}
 	for _, id := range diff.Delisted {
 		fmt.Fprintf(out, "  - %s\n", id)
+	}
+	for _, id := range diff.Relisted {
+		fmt.Fprintf(out, "  ~ %s (relisted)\n", id)
 	}
 	return nil
 }

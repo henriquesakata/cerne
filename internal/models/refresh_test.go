@@ -178,3 +178,52 @@ func TestRefreshWritesTheLayer(t *testing.T) {
 		t.Fatal("still fresh past the window")
 	}
 }
+
+// TestRefreshRelistsWhatReappears: C1 — visibility follows the listing both
+// ways: a model a later listing brings back leaves delisted and resolves to
+// its baseline/hand visibility again; the diff names it. A transient partial
+// listing never hides a model for good.
+func TestRefreshRelistsWhatReappears(t *testing.T) {
+	dir := t.TempDir()
+	all := listedAll("anthropic")
+	gone := all[0] // a baseline current entry
+	hand := all[1] // demoted to legacy by hand
+	body := `{"entries":[{"id":"` + hand.ID + `","visibility":"legacy"}]}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withNew := append(append([]Entry(nil), all...), Entry{ID: "claude-new-9", Label: "Claude New 9"})
+	refreshWith(t, dir, withNew)
+
+	// A partial listing drops three: a baseline entry, a hand-demoted one and
+	// one the refresh itself added.
+	partial := []Entry{}
+	for _, e := range all {
+		if e.ID != gone.ID && e.ID != hand.ID {
+			partial = append(partial, e)
+		}
+	}
+	cat, diff := refreshWith(t, dir, partial)
+	if len(diff.Delisted) != 3 {
+		t.Fatalf("partial listing diff = %+v, want 3 delisted", diff)
+	}
+	for _, id := range []string{gone.ID, hand.ID, "claude-new-9"} {
+		if e, _ := cat.Find(id); e.Visibility != Delisted {
+			t.Fatalf("%s = %q after the partial listing, want delisted", id, e.Visibility)
+		}
+	}
+
+	cat, diff = refreshWith(t, dir, withNew)
+	if !slices.Equal(diff.Relisted, []string{gone.ID, hand.ID, "claude-new-9"}) || len(diff.Added)+len(diff.Delisted) != 0 {
+		t.Fatalf("relisting diff = %+v, want the three relisted and nothing else", diff)
+	}
+	want := map[string]string{gone.ID: Current, hand.ID: Legacy, "claude-new-9": Current}
+	for id, vis := range want {
+		if e, _ := cat.Find(id); e.Visibility != vis {
+			t.Fatalf("%s = %q after relisting, want %q", id, e.Visibility, vis)
+		}
+	}
+	if _, again := refreshWith(t, dir, withNew); !again.Empty() {
+		t.Fatalf("repeat listing changed the catalog: %+v", again)
+	}
+}

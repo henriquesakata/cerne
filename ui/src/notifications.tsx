@@ -118,11 +118,12 @@ export function entityHref(id: string): string | null {
 // modelsNotice (F-0311 critério 22) leva o refresh do catálogo de modelos —
 // global, fora do log de eventos do projeto — para o formato de uma entrada do
 // sino: id estável por refresh (dedupe na reconexão do SSE, que reenvia o
-// último) e o resumo dos ids adicionados (+) e delistados (−).
+// último) e o resumo dos ids adicionados (+), delistados (−) e relistados (~).
 export function modelsNotice(c: ModelsChange): LifecycleEvent {
   const parts = [
     c.added.length > 0 ? `+ ${c.added.join(', ')}` : '',
     c.delisted.length > 0 ? `− ${c.delisted.join(', ')}` : '',
+    c.relisted && c.relisted.length > 0 ? `~ ${c.relisted.join(', ')}` : '',
   ].filter(Boolean)
   return {
     id: `models-${c.at}`,

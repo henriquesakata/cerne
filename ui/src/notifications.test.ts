@@ -159,6 +159,10 @@ describe('modelsNotice', () => {
     expect(windowEvents([n, n], NOW)).toEqual([n])
   })
 
+  it('C1: nomeia também os relistados', () => {
+    expect(modelsNotice({ at: 'x', added: [], delisted: [], relisted: ['m-volta'] }).payload?.excerpt).toBe('~ m-volta')
+  })
+
   it('só o lado que mudou aparece', () => {
     expect(modelsNotice({ at: 'x', added: [], delisted: ['m-1'] }).payload?.excerpt).toBe('− m-1')
     expect(modelsNotice({ at: 'x', added: ['m-2'], delisted: [] }).payload?.excerpt).toBe('+ m-2')

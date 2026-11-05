@@ -84,7 +84,7 @@ func TestModelsRefreshForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("models refresh --force: %v\n%s", err, out)
 	}
-	for _, want := range []string{"1 added, 1 delisted", "+ claude-new-9", "- " + gone} {
+	for _, want := range []string{"1 added, 1 delisted, 0 relisted", "+ claude-new-9", "- " + gone} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -136,4 +136,24 @@ func TestModelsRefreshFailure(t *testing.T) {
 			t.Fatalf("err = %v, hits = %d, output %q; want a quiet no-op", err, hits.Load(), out)
 		}
 	})
+}
+
+// TestModelsRefreshRelists: C1 — a model an earlier listing had delisted and
+// this one lists again is reported as relisted.
+func TestModelsRefreshRelists(t *testing.T) {
+	projDir, configDir, _, _ := modelsFixture(t, "byo-key", http.StatusOK)
+	back := models.Baseline().Entries[0].ID
+	body := `{"entries":[{"id":"` + back + `","unlisted":true}]}`
+	if err := os.WriteFile(filepath.Join(configDir, models.FileName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "models", "refresh", "--force", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("models refresh --force: %v\n%s", err, out)
+	}
+	for _, want := range []string{"1 relisted", "~ " + back} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
 }

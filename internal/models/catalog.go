@@ -46,6 +46,11 @@ type Entry struct {
 	Efforts       []string `json:"efforts,omitempty"`
 	DefaultEffort string   `json:"default_effort,omitempty"`
 	Visibility    string   `json:"visibility,omitempty"`
+	// Unlisted is the refresh's mark that the provider's last listing lacked
+	// this model: it resolves to delisted while set, and a listing that brings
+	// the model back clears it — so the baseline/hand visibility underneath is
+	// never overwritten by availability (C1). Never served: merge folds it.
+	Unlisted bool `json:"unlisted,omitempty"`
 }
 
 // Catalog is a whole layer or the resolved catalog. UpdatedAt is written by
@@ -266,8 +271,13 @@ func merge(base, layer Catalog) Catalog {
 		if e.Visibility != "" {
 			cur.Visibility = e.Visibility
 		}
+		cur.Unlisted = e.Unlisted
 	}
 	for i := range out.Entries {
+		if out.Entries[i].Unlisted {
+			out.Entries[i].Visibility = Delisted
+			out.Entries[i].Unlisted = false
+		}
 		if out.Entries[i].Visibility == "" {
 			out.Entries[i].Visibility = Current
 		}

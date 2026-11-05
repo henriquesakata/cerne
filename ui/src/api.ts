@@ -1008,7 +1008,7 @@ export async function fetchGraph(): Promise<Graph> {
 // que fecha o canal; o EventSource reconecta sozinho.
 // ModelsChange (F-0311) é o evento "models" do SSE: um refresh do catálogo
 // global de modelos que mudou algo — já aplicado, só avisado (D-0005).
-export type ModelsChange = { at: string; added: string[]; delisted: string[] }
+export type ModelsChange = { at: string; added: string[]; delisted: string[]; relisted?: string[] }
 
 export function subscribeLive(handlers: {
   onChange: (pid: string) => void
@@ -1019,7 +1019,12 @@ export function subscribeLive(handlers: {
   es.addEventListener('models', (e) => {
     try {
       const c = JSON.parse(String((e as MessageEvent).data)) as Partial<ModelsChange>
-      handlers.onModels?.({ at: c.at ?? '', added: c.added ?? [], delisted: c.delisted ?? [] })
+      handlers.onModels?.({
+        at: c.at ?? '',
+        added: c.added ?? [],
+        delisted: c.delisted ?? [],
+        relisted: c.relisted ?? [],
+      })
     } catch {
       // evento ilegível: o sino só fica quieto
     }
