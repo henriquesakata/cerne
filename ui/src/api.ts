@@ -168,6 +168,9 @@ export type FeatureDetail = {
   // atual já normalizados (sem frontmatter, CRLF, BOM nem espaço no fim); a
   // página diffa estes dois, nunca o docs.spec cru.
   approval_delta?: { approved: string; current: string }
+  // F-0318 crit. 14: aprovada antes da versão aprovada existir — nunca vence;
+  // o approve grava a linha de base. Ausente em servidor antigo.
+  approval_baseline_missing?: boolean
   // rodadas persistidas do roast adversarial da spec (F-0271/F-0277), mais
   // recente primeiro; o corpo de cada rodada é buscado sob demanda via
   // fetchArtifactText ao abrir o modal de leitura.
@@ -207,6 +210,8 @@ export type TransitionResult = {
   id: string
   from: FeatureState
   to: FeatureState
+  // F-0318: approve numa aprovada — renovou a vencida ou gravou a linha de base.
+  approval?: 'renewed' | 'baseline'
 }
 
 async function errorMessage(r: Response): Promise<string> {

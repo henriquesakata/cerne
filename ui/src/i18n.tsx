@@ -403,6 +403,11 @@ const ptBR = {
     staleApproval:
       'A spec mudou desde a aprovação: a aprovação venceu e o Iniciar fica bloqueado até reaprovar (ou reverta ao Backlog). Mudou isto:',
     reapprove: 'Reaprovar',
+    approvalRenewed: 'Aprovação renovada',
+    recordBaseline: 'Gravar linha de base',
+    recordBaselineTitle:
+      'Aprovada antes de a versão aprovada ser registrada: grava a spec atual como a aprovada, contra a qual as próximas edições são comparadas',
+    baselineRecorded: 'Linha de base da aprovação gravada',
     closed: 'Encerrada.',
     supersededByField: 'Substituída por (ID)',
     reasonRequired: 'Motivo (obrigatório)',
@@ -1151,6 +1156,11 @@ const en: Messages = {
     staleApproval:
       'The spec changed since approval: the approval is stale and Start is blocked until it is re-approved (or revert to the Backlog). What changed:',
     reapprove: 'Re-approve',
+    approvalRenewed: 'Approval renewed',
+    recordBaseline: 'Record baseline',
+    recordBaselineTitle:
+      'Approved before the approved version was recorded: records the current spec as the approved one, which later edits are compared with',
+    baselineRecorded: 'Approval baseline recorded',
     closed: 'Closed.',
     supersededByField: 'Superseded by (ID)',
     reasonRequired: 'Reason (required)',

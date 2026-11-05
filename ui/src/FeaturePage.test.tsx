@@ -211,12 +211,45 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
     )
   })
 
+  // C10: o aviso depois de reaprovar diz o que aconteceu, não "Aprovada → Aprovada".
+  it('Reaprovar mostra "Aprovação renovada"', async () => {
+    payload = stale()
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'F-0221', from: 'approved', to: 'approved', approval: 'renewed' },
+    })
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reaprovar' }))
+    expect(await screen.findByText('Aprovação renovada')).toBeInTheDocument()
+    expect(screen.queryByText(/Aprovada → Aprovada/)).not.toBeInTheDocument()
+  })
+
+  // Critério 14: aprovação anterior à F-0318 (sem versão aprovada) nunca vence;
+  // o botão grava a linha de base, e o aviso diz isso.
+  it('aprovação legada: Gravar linha de base envia o approve e avisa', async () => {
+    payload = { ...detail('approved'), approval_baseline_missing: true }
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'F-0221', from: 'approved', to: 'approved', approval: 'baseline' },
+    })
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const record = await screen.findByRole('button', { name: 'Gravar linha de base' })
+    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeEnabled()
+    expect(container.querySelector('.approval-delta')).toBeNull()
+    fireEvent.click(record)
+    await waitFor(() =>
+      expect(postTransition).toHaveBeenCalledWith('F-0221', { action: 'approve', by: undefined, reason: undefined }),
+    )
+    expect(await screen.findByText('Linha de base da aprovação gravada')).toBeInTheDocument()
+  })
+
   it('aprovação limpa: sem delta, sem Reaprovar, Iniciar livre', async () => {
     payload = detail('approved')
     const { container } = render(<FeaturePage id="F-0221" />)
     const start = await screen.findByRole('button', { name: 'Iniciar' })
     expect(start).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Reaprovar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Gravar linha de base' })).not.toBeInTheDocument()
     expect(container.querySelector('.approval-delta')).toBeNull()
   })
 })

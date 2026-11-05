@@ -398,11 +398,20 @@ export default function FeaturePage({ id }: { id: string }) {
               state={f.state}
               staleApproval={detail.spec_changed_after_approval}
               approvalDelta={detail.approval_delta}
+              baselineMissing={detail.approval_baseline_missing === true}
               readiness={detail.approve_readiness}
               bar={detail.bar}
               onRefresh={load}
               onDone={(r: TransitionResult) => {
-                setNotice(`${t.state[r.from]} → ${t.state[r.to]}`)
+                // F-0318: approve numa aprovada diz o que fez — "Aprovada →
+                // Aprovada" não diz nada.
+                setNotice(
+                  r.approval === 'baseline'
+                    ? t.feature.baselineRecorded
+                    : r.approval === 'renewed'
+                      ? t.feature.approvalRenewed
+                      : `${t.state[r.from]} → ${t.state[r.to]}`,
+                )
                 load()
               }}
             />
@@ -993,6 +1002,7 @@ function ActionsPanel({
   state,
   staleApproval,
   approvalDelta,
+  baselineMissing = false,
   readiness = [],
   bar,
   onDone,
@@ -1002,6 +1012,7 @@ function ActionsPanel({
   state: FeatureState
   staleApproval: boolean
   approvalDelta?: { approved: string; current: string }
+  baselineMissing?: boolean
   readiness?: ApproveImpediment[]
   bar?: string
   onDone: (r: TransitionResult) => void
@@ -1018,9 +1029,10 @@ function ActionsPanel({
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // F-0318: em approved, o approve é o Reaprovar — só com a aprovação vencida.
+  // F-0318: em approved, o approve é o Reaprovar (aprovação vencida) ou o
+  // Gravar linha de base (aprovação anterior à versão aprovada, crit. 14).
   const actions = ACTIONS_BY_STATE[state].filter(
-    (a) => !(state === 'approved' && a.action === 'approve' && !staleApproval),
+    (a) => !(state === 'approved' && a.action === 'approve' && !staleApproval && !baselineMissing),
   )
   if (actions.length === 0) {
     return (
@@ -1121,14 +1133,18 @@ function ActionsPanel({
                 ? t.feature.approveBlocked
                 : a.action === 'start' && staleApproval
                   ? t.kanban.staleApprovalTitle
-                  : undefined
+                  : state === 'approved' && a.action === 'approve' && baselineMissing
+                    ? t.feature.recordBaselineTitle
+                    : undefined
             }
             onClick={() =>
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
           >
             {state === 'approved' && a.action === 'approve'
-              ? t.feature.reapprove
+              ? baselineMissing
+                ? t.feature.recordBaseline
+                : t.feature.reapprove
               : t.feature.actionLabels[a.action]}
           </button>
         ))}
