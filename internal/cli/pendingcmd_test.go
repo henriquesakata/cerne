@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -410,5 +412,40 @@ func TestPendingPromoteModuleFlag(t *testing.T) {
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Module != "web" {
 		t.Fatalf("F-0002 module = %q, want web", f.Module)
+	}
+}
+
+// push --dry-run is a pre-push gate with the lint's exit policy: only advisory
+// findings pass, advisory plus blocking fails.
+func TestPushDryRunAdvisoryPolicy(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem", "--facet", "code")
+	pendingNew(t, projDir, "Débito velho", "--from", "F-0001")
+	ageInBackend(t, repoDir, "P-0001", false)
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	specPath := filepath.Join(projDir, ".docs", "current", "features", "F-0001-origem", "spec.md")
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, specPath, string(data)+"\nMais contexto.\n")
+
+	out, err := execCerne(t, "push", "--dry-run", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "STALE-PENDING (1) (warning)") || !strings.Contains(out, "all advisory") {
+		t.Fatalf("dry-run with only an advisory finding must pass: %v\n%s", err, out)
+	}
+
+	old := time.Now().UTC().Add(-48 * time.Hour)
+	w := store.Work{ID: "W-0001", Title: "Esquecida", State: domain.WorkActive, Actor: "a@b", CreatedAt: old, UpdatedAt: old}
+	if err := store.SaveWork(repoDir, w); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "stale work"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "push", "--dry-run", "--dir", projDir); err == nil || err.Error() != "1 problem(s) found" {
+		t.Fatalf("dry-run with advisory + blocking: err = %v, want '1 problem(s) found'\n%s", err, out)
 	}
 }
