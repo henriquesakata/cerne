@@ -229,3 +229,56 @@ func snapshotDir(t *testing.T, dir string) map[string]string {
 	}
 	return snap
 }
+
+// TestUnsetSettingRestoresLowerScope: removing the project value hands the key
+// back to the host scope as one removed line; the host file is untouched.
+func TestUnsetSettingRestoresLowerScope(t *testing.T) {
+	host := "[mindmap]\nenabled = false\n"
+	projDir, hostDir := settingsFixture(t, "[mindmap]\nenabled = true\n", host, false)
+	before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+
+	if err := UnsetSetting(projDir, "mindmap.enabled", ScopeProject); err != nil {
+		t.Fatalf("UnsetSetting: %v", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+	if removed, added := changedLines(string(before), string(after)); len(removed) != 1 || len(added) != 0 || removed[0] != "enabled = true\n" {
+		t.Errorf("diff = -%q +%q, want exactly the enabled line removed", removed, added)
+	}
+	if got, _ := os.ReadFile(filepath.Join(hostDir, "settings.toml")); string(got) != host {
+		t.Errorf("host file changed: %q", got)
+	}
+	view, err := ResolveSettings(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findSetting(t, view, "mindmap.enabled"); got.Value != false || got.Origin != ScopeHost {
+		t.Errorf("mindmap.enabled = %v from %s, want false from host", got.Value, got.Origin)
+	}
+}
+
+// TestUnsetSettingAbsentIsNoop: unsetting a key no scope file holds writes
+// nothing (no host file or dir appears); unknown keys and scopes are refused.
+func TestUnsetSettingAbsentIsNoop(t *testing.T) {
+	projDir, _ := settingsFixture(t, "", "", false)
+	hostDir := filepath.Join(t.TempDir(), "absent")
+	t.Setenv("CERNE_CONFIG_DIR", hostDir)
+	before := snapshotDir(t, projDir)
+
+	for _, scope := range []string{ScopeProject, ScopeHost} {
+		if err := UnsetSetting(projDir, "wiki.enabled", scope); err != nil {
+			t.Fatalf("UnsetSetting %s: %v", scope, err)
+		}
+	}
+	if after := snapshotDir(t, projDir); !maps.Equal(before, after) {
+		t.Errorf("project dir changed by a no-op unset")
+	}
+	if _, err := os.Stat(hostDir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("no-op host unset created %s (%v)", hostDir, err)
+	}
+	if err := UnsetSetting(projDir, "nope.enabled", ScopeHost); !errors.Is(err, ErrUnknownSetting) {
+		t.Errorf("unknown key: err = %v, want ErrUnknownSetting", err)
+	}
+	if err := UnsetSetting(projDir, "wiki.enabled", "global"); !errors.Is(err, ErrSettingScope) {
+		t.Errorf("undeclared scope: err = %v, want ErrSettingScope", err)
+	}
+}

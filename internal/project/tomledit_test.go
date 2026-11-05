@@ -98,3 +98,38 @@ func changedLines(a, b string) (onlyA, onlyB []string) {
 	}
 	return la[p : len(la)-s], lb[p : len(lb)-s]
 }
+
+// TestEditTOMLRemove: a nil value removes the key's line and nothing else
+// (the table header stays); an absent key or table is a byte-identical no-op.
+func TestEditTOMLRemove(t *testing.T) {
+	cases := []struct {
+		name, in, table, key, want string
+		wantErrorIs                error
+	}{
+		{"removes the line only", editFixture, "mindmap", "enabled",
+			strings.Replace(editFixture, "    enabled = true   # keep me\n", "", 1), nil},
+		{"CRLF", crlf(editFixture), "llm", "mode", crlf(strings.Replace(editFixture, "mode = \"delegation\" # x\n", "", 1)), nil},
+		{"absent key", editFixture, "llm", "provider", editFixture, nil},
+		{"absent table", editFixture, "graph", "enabled", editFixture, nil},
+		{"empty input", "", "graph", "enabled", "", nil},
+		{"dotted root key", baseCernerc + "mindmap.enabled = true\n", "mindmap", "enabled", "", ErrConfigLayout},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := editTOML([]byte(tc.in), tc.table, tc.key, nil)
+			if tc.wantErrorIs != nil {
+				if !errors.Is(err, tc.wantErrorIs) {
+					t.Fatalf("err = %v, want %v", err, tc.wantErrorIs)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("editTOML: %v", err)
+			}
+			if string(got) != tc.want {
+				removed, added := changedLines(tc.want, string(got))
+				t.Errorf("output differs from want: want-only %q, got-only %q", removed, added)
+			}
+		})
+	}
+}

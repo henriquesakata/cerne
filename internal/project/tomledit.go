@@ -17,9 +17,10 @@ import (
 // edits it by hand.
 var ErrConfigLayout = errors.New("unsupported config layout")
 
-// editTOML sets key in [table] of raw, touching only that line: it replaces
-// the value token in place, inserts the key right after an existing header,
-// or appends the table at the end. Comments, order, indentation and line
+// editTOML sets key in [table] of raw, or removes it when value is nil,
+// touching only that line: it replaces the value token in place, inserts the
+// key right after an existing header, appends the table at the end, or drops
+// the key's line (the header stays). Comments, order, indentation and line
 // endings survive. The result is verified to decode to raw's document with
 // only that key changed; any other outcome is ErrConfigLayout (F-0106's
 // splice-with-safety-net, applied to TOML).
@@ -30,7 +31,7 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	if err := toml.Unmarshal(raw, &want); err != nil {
 		return nil, err
 	}
-	layoutErr := fmt.Errorf("%w: cannot safely set [%s] %s; edit the file by hand", ErrConfigLayout, table, key)
+	layoutErr := fmt.Errorf("%w: cannot safely edit [%s] %s; edit the file by hand", ErrConfigLayout, table, key)
 	tbl, ok := want[table].(map[string]any)
 	if !ok {
 		if _, exists := want[table]; exists {
@@ -39,15 +40,22 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 		tbl = map[string]any{}
 		want[table] = tbl
 	}
-	tbl[key] = value
 	var lit string
 	switch v := value.(type) {
+	case nil:
+		if _, has := tbl[key]; !has {
+			return raw, nil
+		}
+		delete(tbl, key)
 	case bool:
 		lit = strconv.FormatBool(v)
 	case string:
 		lit = strconv.Quote(v)
 	default:
 		return nil, fmt.Errorf("editTOML: unsupported value type %T", value)
+	}
+	if value != nil {
+		tbl[key] = value
 	}
 
 	text := string(raw)
@@ -59,17 +67,29 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	header := regexp.MustCompile(`^\[` + regexp.QuoteMeta(table) + `\]\s*(#.*)?$`)
 	keyLine := regexp.MustCompile(`^(\s*` + regexp.QuoteMeta(key) + `\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^\s#]+)(.*)$`)
 	h := slices.IndexFunc(lines, func(l string) bool { return header.MatchString(strings.TrimSpace(l)) })
-	if h < 0 {
+	i := keyLineIndex(lines, h, keyLine)
+	switch {
+	case value == nil && i >= 0:
+		lines = slices.Delete(lines, i, i+1)
+	case i >= 0:
+		body := strings.TrimRight(lines[i], "\r\n")
+		m := keyLine.FindStringSubmatch(body)
+		lines[i] = m[1] + lit + m[3] + lines[i][len(body):]
+	case value != nil && h >= 0:
+		if !strings.HasSuffix(lines[h], "\n") {
+			lines[h] += nl
+		}
+		lines = slices.Insert(lines, h+1, key+" = "+lit+nl)
+	case value != nil:
 		if text != "" {
 			if !strings.HasSuffix(text, "\n") {
 				text += nl
 			}
 			text += nl
 		}
-		text += "[" + table + "]" + nl + key + " = " + lit + nl
-	} else {
-		text = editSection(lines, h, keyLine, key+" = "+lit, lit, nl)
+		lines = []string{text, "[" + table + "]" + nl, key + " = " + lit + nl}
 	}
+	text = strings.Join(lines, "")
 
 	got := map[string]any{}
 	if err := toml.Unmarshal([]byte(text), &got); err != nil || !reflect.DeepEqual(got, want) {
@@ -78,18 +98,16 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	return []byte(text), nil
 }
 
-// editSection replaces the value token of the key line in the section opened
-// by lines[h], or inserts line right after the header when the key is absent.
-func editSection(lines []string, h int, keyLine *regexp.Regexp, line, lit, nl string) string {
+// keyLineIndex returns the index of key's line in the section opened by
+// lines[h] (which ends at the next header), or -1.
+func keyLineIndex(lines []string, h int, keyLine *regexp.Regexp) int {
+	if h < 0 {
+		return -1
+	}
 	for i := h + 1; i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), "["); i++ {
-		body := strings.TrimRight(lines[i], "\r\n")
-		if m := keyLine.FindStringSubmatch(body); m != nil {
-			lines[i] = m[1] + lit + m[3] + lines[i][len(body):]
-			return strings.Join(lines, "")
+		if keyLine.MatchString(strings.TrimRight(lines[i], "\r\n")) {
+			return i
 		}
 	}
-	if !strings.HasSuffix(lines[h], "\n") {
-		lines[h] += nl
-	}
-	return strings.Join(slices.Insert(lines, h+1, line+nl), "")
+	return -1
 }

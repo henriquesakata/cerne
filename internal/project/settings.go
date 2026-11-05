@@ -138,6 +138,21 @@ func SetSetting(projDir, id, scope, raw string) error {
 	return editTOMLFile(path, table, key, raw == "true")
 }
 
+// UnsetSetting removes id from scope's file, handing the key back to the next
+// scope down (host, then the default). The table header stays; a key the file
+// does not hold is a no-op that writes nothing.
+func UnsetSetting(projDir, id, scope string) error {
+	if err := checkDeclared(id, scope); err != nil {
+		return err
+	}
+	path, err := settingsFile(projDir, scope)
+	if err != nil {
+		return err
+	}
+	table, key, _ := strings.Cut(id, ".")
+	return editTOMLFile(path, table, key, nil)
+}
+
 // checkDeclared refuses an id the registry does not declare, or a scope the
 // setting does not allow.
 func checkDeclared(id, scope string) error {
