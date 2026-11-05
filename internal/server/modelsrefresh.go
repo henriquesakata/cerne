@@ -24,6 +24,7 @@ var (
 // startCatalogRefresh launches the opportunistic catalog refresh in the
 // background under the server's ctx: it never holds the boot nor the first
 // render (criterion 21), and shutting the server down cancels the listing.
+// hub announces a change to the pages; nil (serve has no live stream) logs it.
 func startCatalogRefresh(ctx context.Context, hub *multiHub, projDir string) {
 	catalogRefreshOnce.Do(func() {
 		done := make(chan struct{})
@@ -33,6 +34,15 @@ func startCatalogRefresh(ctx context.Context, hub *multiHub, projDir string) {
 			refreshCatalogAtBoot(ctx, hub, projDir)
 		}()
 	})
+}
+
+// StartCatalogRefresh is the `cerne serve` boot hook (criterion 18): the same
+// once-per-process refresh as the ui, with projDir's [llm] (the serve
+// process's own config) picking the provider. Serve projects get their
+// .cernerc per request, so the process's own config is the only one known at
+// boot; without an [llm] there it is a silent no-op (criterion 17).
+func StartCatalogRefresh(ctx context.Context, projDir string) {
+	startCatalogRefresh(ctx, nil, projDir)
 }
 
 // modelsChange is the "models" live event: what a refresh applied (D-0005:
@@ -58,6 +68,10 @@ func refreshCatalogAtBoot(ctx context.Context, hub *multiHub, projDir string) {
 		telemetry.Warn("model catalog refresh failed; keeping the current catalog", "error", err.Error())
 		return
 	case diff.Empty():
+		return
+	}
+	if hub == nil {
+		telemetry.Info("model catalog refreshed", "added", diff.Added, "delisted", diff.Delisted, "relisted", diff.Relisted)
 		return
 	}
 	data, _ := json.Marshal(modelsChange{At: now.UTC(), Diff: diff})

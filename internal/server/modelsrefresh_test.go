@@ -26,6 +26,7 @@ import (
 // project aimed at a fake /v1/models, and the count of listing calls.
 type bootEnv struct {
 	configDir string
+	projDirs  map[string]string
 	hits      atomic.Int32
 	resolve   Resolver
 	ctx       context.Context
@@ -67,6 +68,7 @@ func newBootEnv(t *testing.T, mode string, handler http.HandlerFunc) *bootEnv {
 		}
 		projDirs[name] = dir
 	}
+	env.projDirs = projDirs
 	env.resolve = func(dir string) (string, string, string, string, error) {
 		p, ok := projDirs[dir]
 		if !ok {
@@ -346,5 +348,38 @@ func TestBootRefreshKeepsConcurrentPreference(t *testing.T) {
 	}
 	if _, ok := cat.Find("claude-new-9"); !ok {
 		t.Fatal("the refresh result was not applied")
+	}
+}
+
+// TestServeBootRefresh: C4 / criterion 18 — `cerne serve` runs the same boot
+// refresh as the ui (its own [llm] picks the provider), sharing the
+// once-per-process gate; with no live stream, the applied diff is logged.
+func TestServeBootRefresh(t *testing.T) {
+	env := newBootEnv(t, "byo-key", serveListing(listing("", "claude-new-9")))
+	var logs bytes.Buffer
+	prev := telemetry.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { telemetry.SetLogger(prev) })
+
+	StartCatalogRefresh(env.ctx, env.projDirs["A"])
+	waitRefresh(t)
+	if env.hits.Load() != 1 {
+		t.Fatalf("listing calls = %d, want 1", env.hits.Load())
+	}
+	cat, _ := models.Load(env.configDir)
+	if _, ok := cat.Find("claude-new-9"); !ok {
+		t.Fatal("serve boot refresh did not apply the listing")
+	}
+	if !strings.Contains(logs.String(), "model catalog refreshed") || !strings.Contains(logs.String(), "claude-new-9") {
+		t.Fatalf("applied diff not logged:\n%s", logs.String())
+	}
+
+	env.writeStamp(t, 48*time.Hour)
+	StartCatalogRefresh(env.ctx, env.projDirs["A"])
+	if _, err := NewUIMulti(env.ctx, env.resolve, 0, "A"); err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	waitRefresh(t)
+	if env.hits.Load() != 1 {
+		t.Fatalf("listing calls = %d after more boots in the same process, want still 1", env.hits.Load())
 	}
 }

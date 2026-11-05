@@ -631,6 +631,21 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
     expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([expect.stringMatching(/Vendor X 1/)])
   })
 
+  it('C4: sem rota de preferência (cerne serve), a escolha vale na sessão e nada quebra na tela', async () => {
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'vendor'] }))
+    setPreferredProvider.mockRejectedValue(new Error('route not found'))
+    renderChat()
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Vendor/ }))
+
+    await waitFor(() => expect(setPreferredProvider).toHaveBeenCalledWith('vendor'))
+    expect(screen.getByLabelText(/provedor/i)).toHaveTextContent('Vendor')
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Vendor X 1')
+    expect(screen.queryByText(/route not found/)).toBeNull()
+    expect(document.querySelector('.backlog-chat-error')).toBeNull()
+  })
+
   it('critério 16: a escolha de provedor é persistida e volta como seleção inicial', async () => {
     fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'vendor'] }))
     const first = renderChat()
