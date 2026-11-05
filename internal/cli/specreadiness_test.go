@@ -45,16 +45,19 @@ func TestFeatureNewPrintsReadiness(t *testing.T) {
 	}
 }
 
-// A context-only creation writes no spec body: there is no readiness to tell
-// yet — the reminder sends the agent to write the spec first.
-func TestFeatureNewWithContextPrintsNoReadiness(t *testing.T) {
+// A context-only creation seeds a written spec (the Problem section carries
+// the context), which 'cerne lint' and --check already read as written: its
+// readiness is printed too — no bar yet, so not approvable.
+func TestFeatureNewWithContextPrintsReadiness(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	out, err := execCerne(t, "feature", "new", "Só contexto", "--context", "porque sim", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("feature new: %v\noutput: %s", err, out)
 	}
-	if strings.Contains(out, "Approve readiness") {
-		t.Fatalf("context-only creation printed a readiness line:\n%s", out)
+	for _, want := range []string{"Approve readiness: not approvable", "bar-missing", "cerne feature approve F-0001 --check"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("context-only creation output missing %q:\n%s", want, out)
+		}
 	}
 }
 

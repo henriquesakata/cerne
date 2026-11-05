@@ -141,5 +141,7 @@ func runFeatureLikeNew(cmd *cobra.Command, dir, title, module, parent, facet, co
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (%s) with its context seeded into the spec. Next step: complete the spec ('cerne pull' materializes the draft).\n", f.ID, f.State)
+	// The seeded spec is already a written one for lint and --check (F-0308).
+	printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
 	return nil
 }
