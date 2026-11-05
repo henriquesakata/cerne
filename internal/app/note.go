@@ -27,11 +27,14 @@ type NoteOutcome struct {
 // docs.lock snapshot in projDir. An empty body yields a scaffold that reads as a
 // stub (doccheck.HasRealContent false) until the author fills it.
 //
+// A live note with a similar title refuses the creation (F-0324, same guard as
+// feature new); force overrides it and records guard=forced on note.created.
+//
 // durable (F-0249) marks the note as reviewed-durable at birth, so lint's
 // stale-note never flags it: knowledge that does not expire with a feature
 // (domain vocabulary, rejected scope) would otherwise need a second KeepNote —
 // a whole extra commit+push to set one bool.
-func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string, durable bool) (store.Note, error) {
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string, durable, force bool) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("the note title cannot be empty")
@@ -48,6 +51,11 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 	var n store.Note
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateInforms(repoDir, informs)
+		if err != nil {
+			return "", err
+		}
+		// Duplicate guard (F-0324): before the id mint and any write.
+		forced, err := guardNote(repoDir, title, tagSet{normFacets, normComponents, cleaned}, force)
 		if err != nil {
 			return "", err
 		}
@@ -73,7 +81,11 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 		if err := writeNoteBody(repoDir, id, title, body); err != nil {
 			return "", err
 		}
-		ev := domain.NewEvent(id, "note.created", map[string]string{"title": title}, EventActor())
+		payload := map[string]string{"title": title}
+		if forced {
+			payload["guard"] = "forced"
+		}
+		ev := domain.NewEvent(id, "note.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}

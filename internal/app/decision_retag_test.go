@@ -11,7 +11,7 @@ import (
 // mkTaggedDecision: an active decision with the given tags (helper for retag tests).
 func mkTaggedDecision(t *testing.T, repoDir, projDir string, facets, components []string) store.Decision {
 	t.Helper()
-	d, err := CreateDecision(repoDir, projDir, "Decisão", "corpo", facets, components)
+	d, err := CreateDecision(repoDir, projDir, "Decisão", "corpo", facets, components, true) // fixture helper: several same-titled decisions on purpose
 	if err != nil {
 		t.Fatalf("CreateDecision: %v", err)
 	}

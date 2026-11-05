@@ -404,7 +404,11 @@ func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir str
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("at least one component is required: an untagged note is born as lint debt (untagged-live)"))
 		return
 	}
-	n, err := app.CreateNote(repoDir, projDir, req.Title, req.Body, req.Informs, req.Facets, req.Components, true)
+	n, err := app.CreateNote(repoDir, projDir, req.Title, req.Body, req.Informs, req.Facets, req.Components, true, false)
+	if errors.Is(err, app.ErrSimilarExists) {
+		writeJSON(w, http.StatusConflict, dupConflictBody(err)) // F-0324: same 409 shape as the feature routes
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return

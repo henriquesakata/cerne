@@ -25,6 +25,7 @@ func newReferenceCmd() *cobra.Command {
 	cmd.AddCommand(newReferenceNewCmd(&dir))
 	cmd.AddCommand(newReferenceListCmd(&dir))
 	cmd.AddCommand(newReferenceRetagCmd(&dir))
+	cmd.AddCommand(newReferenceRetireCmd(&dir))
 	return cmd
 }
 
@@ -65,8 +66,42 @@ func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, set
 	return nil
 }
 
+func newReferenceRetireCmd(dir *string) *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "retire <id>",
+		Short: "Retire a reference (current -> obsolete; --reason required)",
+		Long: "Moves a current reference to obsolete: the source stays searchable as history but leaves the " +
+			"current state. Use it for a duplicate (same URL registered twice) or a source that no longer holds.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferenceRetire(cmd, *dir, args[0], reason)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
+	return cmd
+}
+
+func runReferenceRetire(cmd *cobra.Command, dir, id, reason string) error {
+	// Fail fast before touching origin, like note retire.
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("--reason is required")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	out, err := app.RetireReference(ctx.repoDir, ctx.projDir, id, reason)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s retired: %s → %s\n", out.ID, out.From, out.To)
+	return nil
+}
+
 func newReferenceNewCmd(dir *string) *cobra.Command {
 	var url, informs, file, facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register an external source (article/doc) as a reference",
@@ -75,10 +110,10 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
 			"(F-/D-/RB-/N-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
 			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
-			"comma-separated.",
+			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component)
+			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component, force)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
@@ -86,11 +121,12 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source")
 	_ = cmd.MarkFlagRequired("url")
 	return cmd
 }
 
-func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string) error {
+func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string, force bool) error {
 	content, err := readReferenceContent(cmd, file)
 	if err != nil {
 		return err
@@ -99,7 +135,7 @@ func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, 
 	if err != nil {
 		return err
 	}
-	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component))
+	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component), force)
 	if err != nil {
 		return err
 	}

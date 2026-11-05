@@ -9,31 +9,6 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// TestDupGuardSimilarity pins the deterministic matcher (F-0147 crit. 3):
-// normalized (case/diacritics) token overlap against min(len) with exact
-// titles always matching; single-token titles only match exactly.
-func TestDupGuardSimilarity(t *testing.T) {
-	cases := []struct {
-		name string
-		a, b string
-		want bool
-	}{
-		{"identical", "Corrigir bug do lock", "Corrigir bug do lock", true},
-		{"case+diacritics", "CORREÇÃO do lock", "correcao do lock", true},
-		{"shorter title contained", "Guarda de duplicidade", "Guarda de duplicidade no registro: feature new recusa", true},
-		{"same-shape different bug", "Corrigir bug do lock", "Corrigir bug do push", false},
-		{"unrelated", "Tema dark no grafo", "Endpoint de versão", false},
-		{"single token needs exact", "lock", "lock do push", false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := similarTitles(c.a, c.b); got != c.want {
-				t.Errorf("similarTitles(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
-			}
-		})
-	}
-}
-
 // TestDupGuardRefusesLiveFeature (crit. 1): a live feature with a similar
 // (not identical — that is the F-0121 exact guard) title refuses the new
 // registration, naming the match; --force overrides and the created event

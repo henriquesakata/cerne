@@ -22,8 +22,10 @@ func ReferenceDocPath(repoDir, id string) string {
 // informs target (F-/D-) exists, allocates the next R- id, persists the entity
 // with URL/External/Informs, writes the pasted content as the reference's
 // content doc (indexed, so ask can cite it), appends reference.created, and
-// commits+pushes the backend refreshing the docs.lock snapshot in projDir.
-func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string) (store.Reference, error) {
+// commits+pushes the backend refreshing the docs.lock snapshot in projDir. A
+// live reference with the same normalized URL refuses the creation (F-0324);
+// force overrides it and records guard=forced on reference.created.
+func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string, force bool) (store.Reference, error) {
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	if title == "" {
@@ -44,6 +46,12 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	var r store.Reference
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateInforms(repoDir, informs)
+		if err != nil {
+			return "", err
+		}
+		// Duplicate guard (F-0324): a reference is its source, so only a live
+		// reference with the same normalized URL collides (never the title).
+		forced, err := guardReference(repoDir, url, tagSet{normFacets, normComponents, cleaned}, force)
 		if err != nil {
 			return "", err
 		}
@@ -70,7 +78,11 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		if err := writeReferenceDoc(repoDir, id, title, content); err != nil {
 			return "", err
 		}
-		ev := domain.NewEvent(id, "reference.created", map[string]string{"url": url, "source": "external"}, EventActor())
+		payload := map[string]string{"url": url, "source": "external"}
+		if forced {
+			payload["guard"] = "forced"
+		}
+		ev := domain.NewEvent(id, "reference.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
@@ -210,6 +222,53 @@ func ReferencesInforming(repoDir, entityID string) ([]store.Reference, error) {
 				break
 			}
 		}
+	}
+	return out, nil
+}
+
+// ReferenceOutcome reports a reference transition that was applied and synced.
+type ReferenceOutcome struct {
+	ID   string
+	From domain.ReferenceState
+	To   domain.ReferenceState
+}
+
+// RetireReference moves a current reference to obsolete (history, still
+// searchable) — the remedy for a duplicate or a dead source (F-0324), parity
+// with note retire. The reason is required and recorded on reference.obsoleted;
+// an already-obsolete reference refuses with domain.ErrInvalidTransition.
+func RetireReference(repoDir, projDir, id, reason string) (ReferenceOutcome, error) {
+	var out ReferenceOutcome
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return out, fmt.Errorf("--reason is required")
+	}
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		r, err := store.LoadReference(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("reference %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		to, err := domain.TransitionReference(r.State, domain.ActionObsolete)
+		if err != nil {
+			return "", err
+		}
+		out = ReferenceOutcome{ID: id, From: r.State, To: to}
+		r.State = to
+		r.UpdatedAt = time.Now().UTC()
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "reference.obsoleted", map[string]string{"reason": reason}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: retire %s", id), nil
+	})
+	if err != nil {
+		return ReferenceOutcome{}, err
 	}
 	return out, nil
 }

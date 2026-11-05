@@ -12,7 +12,7 @@ import (
 func mkTaggedReference(t *testing.T, repoDir, projDir string, facets, components []string) store.Reference {
 	t.Helper()
 	r, err := CreateExternalReference(repoDir, projDir,
-		"Artigo", "https://example.com/x", "# corpo", nil, facets, components)
+		"Artigo", "https://example.com/x", "# corpo", nil, facets, components, true) // fixture helper: several same-URL references on purpose
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
@@ -107,12 +107,12 @@ func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 // TestRetagReferencePreservesURLInforms: retag touches only tags, not URL/External/Informs/body.
 func TestRetagReferencePreservesURLInforms(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	d, err := CreateDecision(repoDir, projDir, "Decisão", "corpo", nil, nil)
+	d, err := CreateDecision(repoDir, projDir, "Decisão", "corpo", nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateDecision: %v", err)
 	}
 	r, err := CreateExternalReference(repoDir, projDir,
-		"Artigo", "https://example.com/ssh", "# corpo", []string{d.ID}, []string{"code"}, nil)
+		"Artigo", "https://example.com/ssh", "# corpo", []string{d.ID}, []string{"code"}, nil, false)
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}

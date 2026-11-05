@@ -15,7 +15,7 @@ func TestCreateExternalReferenceWithTags(t *testing.T) {
 	r, err := CreateExternalReference(repoDir, projDir,
 		"Artigo SSH no Gitea", "https://example.com/ssh",
 		"# SSH\n\nConfiguração de known_hosts.", nil,
-		[]string{"Infra", "INFRA", "code"}, []string{"Gitea", "KPack"})
+		[]string{"Infra", "INFRA", "code"}, []string{"Gitea", "KPack"}, false)
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestCreateExternalReferenceWithTags(t *testing.T) {
 func TestCreateExternalReferenceInvalidFacet(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	_, err := CreateExternalReference(repoDir, projDir, "T", "http://x", "c", nil,
-		[]string{"prod"}, nil)
+		[]string{"prod"}, nil, false)
 	if !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want errors.Is ErrUnknownFacet", err)
 	}
