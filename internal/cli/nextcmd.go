@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 	"unicode/utf8"
@@ -165,6 +166,8 @@ func runNext(cmd *cobra.Command, dir string) error {
 		fmt.Fprintln(out)
 	}
 
+	// A stale pending is already in OPEN PENDINGS with its age: not twice.
+	findings = slices.DeleteFunc(findings, func(f lint.Finding) bool { return f.Rule == lint.RuleStalePending })
 	if len(findings) > 0 {
 		printed = true
 		fmt.Fprintln(out, "DEBTS (cerne lint):")

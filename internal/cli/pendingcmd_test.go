@@ -245,9 +245,6 @@ func TestNextShowsOpenPendings(t *testing.T) {
 	if !strings.Contains(out, "OPEN PENDINGS (1)") || !strings.Contains(out, "\n  P-0001  0d  F-0001  Débito novo") {
 		t.Fatalf("next lacks the open pending block:\n%s", out)
 	}
-	if d := strings.Index(out, "DEBTS"); d >= 0 && strings.Index(out, "OPEN PENDINGS") > d {
-		t.Fatalf("the pendings block must come before DEBTS:\n%s", out)
-	}
 	if out, err := execCerne(t, "pending", "resolve", "P-0001", "--dir", projDir); err != nil {
 		t.Fatalf("resolve: %v\n%s", err, out)
 	}
@@ -300,8 +297,9 @@ func TestLintAdvisoryKeepsExitCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lint with only an advisory finding must exit 0: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "STALE-PENDING (1) (warning)") || !strings.Contains(out, "P-0001 open for") {
-		t.Fatalf("lint output lacks the warning section:\n%s", out)
+	if !strings.Contains(out, "STALE-PENDING (1) (warning)") || !strings.Contains(out, "P-0001 open for") ||
+		!strings.Contains(out, "Total: 1 problem(s), all advisory — lint passes.") {
+		t.Fatalf("lint output lacks the warning section or the advisory total:\n%s", out)
 	}
 	if out, err := execCerne(t, "lint", "--feature", "F-0001", "--dir", projDir); err != nil || !strings.Contains(out, "P-0001") {
 		t.Fatalf("lint --feature on the origin must show the finding and exit 0: %v\n%s", err, out)
@@ -315,8 +313,50 @@ func TestLintAdvisoryKeepsExitCode(t *testing.T) {
 	if _, err := gitback.CommitAndPush(repoDir, "stale work"); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := execCerne(t, "lint", "--dir", projDir); err == nil {
-		t.Fatalf("an advisory plus a blocking finding must still fail lint:\n%s", out)
+	out, err = execCerne(t, "lint", "--dir", projDir)
+	if err == nil || err.Error() != "1 problem(s) found" || !strings.Contains(out, "Total: 2 problem(s), 1 advisory.") {
+		t.Fatalf("advisory + blocking: err = %v, want '1 problem(s) found' and a total naming the advisory one:\n%s", err, out)
+	}
+}
+
+// ageInBackend commits a pending older than StalePendingAfter and, when
+// staleWork, a forgotten active work (a blocking stale-work finding).
+func ageInBackend(t *testing.T, repoDir, id string, staleWork bool) {
+	t.Helper()
+	p, _ := store.LoadPending(repoDir, id)
+	p.CreatedAt = time.Now().UTC().Add(-lint.StalePendingAfter - 26*time.Hour)
+	if err := store.SavePending(repoDir, p); err != nil {
+		t.Fatal(err)
+	}
+	if staleWork {
+		old := time.Now().UTC().Add(-48 * time.Hour)
+		w := store.Work{ID: "W-0001", Title: "Esquecida", State: domain.WorkActive, Actor: "a@b", CreatedAt: old, UpdatedAt: old}
+		if err := store.SaveWork(repoDir, w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "age "+id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A stale pending shows once in next — in OPEN PENDINGS, with its age — not
+// again under DEBTS; and the pendings block comes before the lint debts.
+func TestNextShowsStalePendingOnceBeforeDebts(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem", "--facet", "code")
+	pendingNew(t, projDir, "Débito velho", "--from", "F-0001")
+	ageInBackend(t, repoDir, "P-0001", true)
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\n%s", err, out)
+	}
+	p, d := strings.Index(out, "OPEN PENDINGS"), strings.Index(out, "DEBTS")
+	if p < 0 || d < 0 || p > d || !strings.Contains(out, "STALE-WORK") {
+		t.Fatalf("want OPEN PENDINGS before a DEBTS block holding STALE-WORK:\n%s", out)
+	}
+	if strings.Contains(out, "STALE-PENDING") || strings.Count(out, "P-0001") != 1 {
+		t.Fatalf("the stale pending must show once, in OPEN PENDINGS only:\n%s", out)
 	}
 }
 

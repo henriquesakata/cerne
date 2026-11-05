@@ -209,6 +209,18 @@ func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string
 		}
 		fmt.Fprintln(w)
 	}
+	advisory := 0
+	for _, f := range findings {
+		if lint.Advisory(f.Rule) {
+			advisory++
+		}
+	}
+	switch {
+	case advisory == len(findings):
+		totalSuffix += ", all advisory — lint passes"
+	case advisory > 0:
+		totalSuffix += fmt.Sprintf(", %d advisory", advisory)
+	}
 	fmt.Fprintf(w, "Total: %d problem(s)%s.\n", len(findings), totalSuffix)
 }
 
