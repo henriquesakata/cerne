@@ -18,22 +18,27 @@ import (
 // (F-0272) set the pattern, and flagging pre-convention history is noise.
 var resultGauntletSince = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 
-// resultGauntletStrictSince is the cutoff of the content reader (F-0304):
-// features completed before it also pass on the legacy per-line predicate,
-// since barra and a quote in every round are stricter than what it demanded.
-var resultGauntletStrictSince = time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+// resultGauntletStrictSince is the cutoff of the content reader (F-0304), in
+// UTC: features completed before it also pass on the legacy per-line
+// predicate, since barra and a quote in every round are stricter than what it
+// demanded.
+var resultGauntletStrictSince = time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
 
 var (
 	gauntletHeadingRe = regexp.MustCompile(`(?m)^\s*##\s+Gauntlet\s*$`)
 	nextHeadingRe     = regexp.MustCompile(`(?m)^\s*##\s`)
-	// Leading markdown markers of a line: heading, list, quote, table, "N." and
-	// emphasis delimiters.
-	lineMarkersRe = regexp.MustCompile(`^(?:[\s#>*_|-]|\d+\.\s)*`)
-	roundAnchorRe = regexp.MustCompile(`^Rodada\s+(\d+)\b`)
-	barLineRe     = regexp.MustCompile(`(?i)^Barra(?:[ \t(][^:\n]{0,39})?:[\s*_]*([^\s*_].*)$`)
-	criticLineRe  = regexp.MustCompile(`(?i)^Achados do cr(?:í|i\x{0301}|i)tico`)
-	verdictLitRe  = regexp.MustCompile(`(?i)VEREDITO:\s*(?:A|B|EMPATE)\b`)
-	quoteRe       = regexp.MustCompile(`"[^"]*\S[^"]*"|“[^”]*\S[^”]*”|«[^»]*\S[^»]*»`)
+	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
+	// and emphasis delimiters (NBSP counts as space).
+	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
+	roundAnchorRe = regexp.MustCompile(`^Rodada[\s\x{00A0}]+(\d+)\b`)
+	barLineRe     = regexp.MustCompile(`(?i)^Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[\s*_]*([^\s*_].*)$`)
+	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da):`)
+	criticLineRe  = regexp.MustCompile(`(?i)^Achados? do cr(?:í|i\x{0301}|i)tico`)
+	listItemRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
+	paragraphRe   = regexp.MustCompile(`\n\s*\n`)
+	codeSpanRe    = regexp.MustCompile("`[^`\n]*`")
+	verdictLitRe  = regexp.MustCompile(`(?i:veredito):\s*(?:A|B|EMPATE)\b`)
+	quoteRe       = regexp.MustCompile(`["“”][^"“”]*[^\s"“”][^"“”]*["“”]|«[^»]*[^\s»][^»]*»`)
 	// A cited verdict: vitória/derrota/empate (NFC or NFD accents), which the
 	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
 	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
@@ -126,26 +131,43 @@ type gauntletRecord struct {
 // markdown layout (heading, list, bold, table row).
 func parseGauntlet(section string) gauntletRecord {
 	var rec gauntletRecord
-	blocks := []*strings.Builder{}
+	var blocks []*strings.Builder
 	var nums []int
 	var cur *strings.Builder // nil = outside any round block
-	anchored := false
 	implicit := &strings.Builder{}
-	inImplicit := true
+	critic, prevBlank := false, false
+	emphasis := strings.NewReplacer("*", "", "_", "")
 	for _, line := range strings.Split(section, "\n") {
+		if critic { // Achados block: excluded from every round
+			trim := strings.TrimSpace(line)
+			switch {
+			case trim == "":
+				prevBlank = true
+				continue
+			case strings.HasPrefix(trim, "#"), prevBlank && !listItemRe.MatchString(line):
+				critic = false
+			default:
+				continue
+			}
+		}
+		prevBlank = false
 		s := lineMarkersRe.ReplaceAllString(line, "")
-		if m := barLineRe.FindStringSubmatch(s); m != nil && rec.bar == "" {
-			rec.bar = m[1]
-			rec.exempt = exemptionRe.MatchString("Barra: " + m[1])
+		if m := barLineRe.FindStringSubmatch(s); m != nil {
+			if rec.bar == "" {
+				rec.bar = m[1]
+			}
+			rec.exempt = rec.exempt || exemptionRe.MatchString("Barra: "+emphasis.Replace(m[1]))
+			continue
+		}
+		if headerLineRe.MatchString(s) {
 			continue
 		}
 		if criticLineRe.MatchString(s) {
-			cur, inImplicit = nil, false
+			critic = true
 			continue
 		}
 		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {
 			n, _ := strconv.Atoi(m[1])
-			inImplicit, anchored = false, true
 			cur = nil
 			for i, k := range nums { // same number = same round
 				if k == n {
@@ -159,22 +181,33 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 		if cur != nil {
 			cur.WriteString(line + "\n")
-		} else if inImplicit {
+		} else {
 			implicit.WriteString(line + "\n")
 		}
 	}
-	if !anchored {
-		blocks, nums = []*strings.Builder{implicit}, []int{0}
+	if len(blocks) == 0 { // implicit round: one paragraph must hold both
+		rd := gauntletRound{}
+		for _, para := range paragraphRe.Split(implicit.String(), -1) {
+			v, q := gauntletVerdict(para), gauntletQuote(para)
+			rd.quote = rd.quote || q
+			rd.verdict = rd.verdict || v && q
+		}
+		rec.rounds = []gauntletRound{rd}
+		return rec
 	}
 	for i, b := range blocks {
 		text := b.String()
-		rec.rounds = append(rec.rounds, gauntletRound{
-			n:       nums[i],
-			verdict: verdictLitRe.MatchString(text) || verdictRe.MatchString(text),
-			quote:   quoteRe.MatchString(text),
-		})
+		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text)})
 	}
 	return rec
+}
+
+func gauntletVerdict(text string) bool {
+	return verdictLitRe.MatchString(text) || verdictRe.MatchString(text)
+}
+
+func gauntletQuote(text string) bool {
+	return quoteRe.MatchString(codeSpanRe.ReplaceAllString(text, ""))
 }
 
 // problem returns "" for a complete record, else the first missing piece:
