@@ -131,4 +131,10 @@ func TestFeatureAmendCommand(t *testing.T) {
 	if !strings.Contains(string(got), "Result emendado.") {
 		t.Fatalf("result not replaced:\n%s", got)
 	}
+
+	// The same body again is a no-op, and says so.
+	out, err = execCerne(t, "feature", "amend", id, "--file", amendFile(t, id), "--reason", "de novo", "--dir", projDir)
+	if want := id + " result unchanged — nothing to amend."; err != nil || !strings.Contains(out, want) || strings.Contains(out, "amended") {
+		t.Fatalf("identical amend: err %v, output = %q, want %q", err, out, want)
+	}
 }

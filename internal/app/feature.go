@@ -612,20 +612,22 @@ var ErrAmendNotImplemented = errors.New("only the result of an implemented featu
 // for any other state, re-read inside the lock; ErrResultIncomplete when the new
 // result fails the result checks — the mutation's error resets the clone, so
 // the previous result stays. A blank reason or body is refused before the
-// backend is touched. Returns the feature as stored (state unchanged).
-func AmendFeatureResult(repoDir, projDir, id, body, reason string) (store.Feature, error) {
+// backend is touched. A body equal to the stored result is a successful no-op
+// (changed false: no write, no event, no commit), like SaveFeatureDoc's
+// byte-identical write — after the state check. Returns the feature as stored
+// (state unchanged).
+func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feature, changed bool, err error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return store.Feature{}, errors.New("an amend needs a reason: pass --reason \"<why>\"")
+		return store.Feature{}, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
 	}
 	if strings.TrimSpace(body) == "" {
-		return store.Feature{}, errors.New("empty result body: pass the full result via --file <result.md> or on stdin")
+		return store.Feature{}, false, errors.New("empty result body: pass the full result via --file <result.md> or on stdin")
 	}
 	content, err := amendedResult(id, body)
 	if err != nil {
-		return store.Feature{}, err
+		return store.Feature{}, false, err
 	}
-	var f store.Feature
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
 		if f, err = store.LoadFeature(repoDir, id); err != nil {
@@ -634,7 +636,12 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (store.Featur
 		if f.State != domain.StateImplemented {
 			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPath(id, "result", f.State))
 		}
-		if err := os.WriteFile(FeatureDocPath(repoDir, id, "result.md"), []byte(content), 0o644); err != nil {
+		path := FeatureDocPath(repoDir, id, "result.md")
+		// Detected here, not by captureChanges: the event below is itself a change.
+		if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
+			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
 		if err := CheckResultRecord(repoDir, f); err != nil {
@@ -650,10 +657,13 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (store.Featur
 		}
 		return fmt.Sprintf("cerne: amend %s/result.md", id), nil
 	})
-	if err != nil {
-		return store.Feature{}, err
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return f, false, nil // the stored result is already this body
 	}
-	return f, nil
+	if err != nil {
+		return store.Feature{}, false, err
+	}
+	return f, true, nil
 }
 
 // amendedResult is the stored form of an amend body, under ONE cerne_id

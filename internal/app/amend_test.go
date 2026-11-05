@@ -25,9 +25,9 @@ func TestAmendReplacesResultWithEvent(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented, "spec.md", "result.md")
 	head0, _ := gitback.HeadSHA(origin)
 
-	f, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "critério 2 sem prova")
-	if err != nil {
-		t.Fatalf("AmendFeatureResult: %v", err)
+	f, changed, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "critério 2 sem prova")
+	if err != nil || !changed {
+		t.Fatalf("AmendFeatureResult: changed %v, err %v", changed, err)
 	}
 	if f.State != domain.StateImplemented {
 		t.Fatalf("state = %s, want implemented", f.State)
@@ -52,7 +52,7 @@ func TestAmendReplacesResultWithEvent(t *testing.T) {
 
 	// What `cerne show --doc result` prints comes back with its frontmatter: kept, not doubled.
 	shown := "---\ncerne_id: F-0001\nimported_from: docs/x/\n---\n\n" + amendedBody + "\nSegunda emenda.\n"
-	if _, err := AmendFeatureResult(repoDir, projDir, "F-0001", shown, "segunda emenda"); err != nil {
+	if _, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", shown, "segunda emenda"); err != nil {
 		t.Fatalf("amend with frontmatter: %v", err)
 	}
 	got, _ = os.ReadFile(FeatureDocPath(repoDir, "F-0001", "result.md"))
@@ -61,7 +61,7 @@ func TestAmendReplacesResultWithEvent(t *testing.T) {
 	}
 
 	// Another feature's document is refused, not restamped.
-	if _, err := AmendFeatureResult(repoDir, projDir, "F-0001", strings.Replace(shown, "F-0001", "F-0002", 1), "arquivo errado"); err == nil {
+	if _, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", strings.Replace(shown, "F-0001", "F-0002", 1), "arquivo errado"); err == nil {
 		t.Fatal("amend accepted a body whose frontmatter names F-0002")
 	}
 }
@@ -77,7 +77,7 @@ func TestAmendRefusesResultInDebt(t *testing.T) {
 	evsBefore, _ := store.ReadEvents(repoDir)
 	head0, _ := gitback.HeadSHA(origin)
 
-	_, err := AmendFeatureResult(repoDir, projDir, "F-0001", "# Resultado\n\nSem registro do Gauntlet.\n", "trocar o result")
+	_, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", "# Resultado\n\nSem registro do Gauntlet.\n", "trocar o result")
 	if !errors.Is(err, ErrResultIncomplete) {
 		t.Fatalf("err = %v, want ErrResultIncomplete", err)
 	}
@@ -89,6 +89,36 @@ func TestAmendRefusesResultInDebt(t *testing.T) {
 	}
 	if h, _ := gitback.HeadSHA(origin); h != head0 {
 		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
+// TestAmendIdenticalIsNoOp: an amend whose body equals the stored result writes
+// nothing, appends no event and makes no commit (like SaveFeatureDoc's
+// byte-identical write) — and still refuses a closed feature first.
+func TestAmendIdenticalIsNoOp(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented, "spec.md", "result.md")
+	if _, _, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "primeira"); err != nil {
+		t.Fatalf("first amend: %v", err)
+	}
+	evsBefore, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	f, changed, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "de novo")
+	if err != nil || changed || f.ID != "F-0001" {
+		t.Fatalf("identical amend: f %s, changed %v, err %v — want a successful no-op", f.ID, changed, err)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evsBefore) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evsBefore))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateDone, "spec.md", "result.md")
+	stored, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0002", "result.md"))
+	if _, _, err := AmendFeatureResult(repoDir, projDir, "F-0002", string(stored), "igual"); !errors.Is(err, ErrAmendNotImplemented) {
+		t.Fatalf("done, identical body: err = %v, want ErrAmendNotImplemented", err)
 	}
 }
 

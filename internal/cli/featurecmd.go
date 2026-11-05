@@ -147,9 +147,13 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, file, reason string) error {
 	if err != nil {
 		return err
 	}
-	f, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, reason)
+	f, changed, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, reason)
 	if err != nil {
 		return err
+	}
+	if !changed {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s result unchanged — nothing to amend.\n", f.ID)
+		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s result amended (%s) — already synced. Read it with 'cerne show %s --doc result'.\n", f.ID, f.State, f.ID)
 	return nil
