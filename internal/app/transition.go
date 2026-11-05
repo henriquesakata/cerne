@@ -254,6 +254,9 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err := writePlanStub(repoDir, id, f.Title); err != nil {
 				return "", err
 			}
+			if err := keepApprovedSpec(repoDir, id); err != nil {
+				return "", err
+			}
 		}
 		// Leaving development ends the auto-registered activity (F-0146): the
 		// same commit that records the transition closes the auto work.
@@ -408,6 +411,21 @@ func scaffoldEpicCloseIfReady(repoDir, parentID string) (string, error) {
 		return "", err
 	}
 	return parent.ID, nil
+}
+
+// keepApprovedSpec copies feature id's spec, byte for byte, to
+// store.ApprovedSpecPath (F-0318): the version this approve accepted, committed
+// with it, against which every later write is compared.
+func keepApprovedSpec(repoDir, id string) error {
+	data, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md"))
+	if err != nil {
+		return err
+	}
+	path := store.ApprovedSpecPath(repoDir, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 // ValidateTransitionFlags enforces which flags each action accepts:
