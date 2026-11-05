@@ -17,20 +17,27 @@ import (
 )
 
 // nextGroup pairs an active feature state with its work-queue header and the
-// action that advances it.
+// action that advances it. queue names the group in --json; stale selects the
+// approved features whose approval went stale (F-0318) — their start is
+// refused, so they are never READY TO START.
 type nextGroup struct {
 	state  domain.FeatureState
+	stale  bool
+	queue  string
 	header string
 	action string
 }
 
 // nextGroups is the work-queue order of cerne next: what to finish, then what
-// to start, then what to specify. Implemented/terminal states are omitted.
+// to start, then what waits on a human approve, then what to specify.
+// Implemented/terminal states are omitted.
 var nextGroups = []nextGroup{
-	{domain.StateInDevelopment, "IN PROGRESS", "finish and run 'cerne feature complete'"},
-	{domain.StateApproved, "READY TO START", "run 'cerne feature start'"},
+	{domain.StateInDevelopment, false, "in_progress", "IN PROGRESS", "finish and run 'cerne feature complete'"},
+	{domain.StateApproved, false, "ready_to_start", "READY TO START", "run 'cerne feature start'"},
+	// F-0318: the spec changed since approval; start is refused until a human re-approves.
+	{domain.StateApproved, true, "awaiting_reapproval", "WAITING FOR RE-APPROVAL", "start is blocked: ask a human to run 'cerne feature approve <id>' (a human act)"},
 	// F-0308: rehearse with --check; the approve itself is a human act (F-0131).
-	{domain.StateCandidate, "CANDIDATES", "write the spec, run 'cerne feature approve <id> --check', then ask a human to approve (a human act)"},
+	{domain.StateCandidate, false, "candidates", "CANDIDATES", "write the spec, run 'cerne feature approve <id> --check', then ask a human to approve (a human act)"},
 }
 
 // nextPendingCap bounds the open-pendings block of cerne next; the rest is
@@ -71,6 +78,7 @@ type nextFeature struct {
 }
 
 type nextGroupJSON struct {
+	Queue    string              `json:"queue"`
 	State    domain.FeatureState `json:"state"`
 	Action   string              `json:"action"`
 	Features []nextFeature       `json:"features"`
@@ -115,13 +123,15 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	for _, g := range nextGroups {
 		var fs []nextFeature
 		for _, f := range features {
-			if f.State == g.state {
-				stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f)
+			if f.State != g.state {
+				continue
+			}
+			if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale == g.stale {
 				fs = append(fs, nextFeature{f, stale})
 			}
 		}
 		if len(fs) > 0 {
-			q.Groups = append(q.Groups, nextGroupJSON{g.state, g.action, fs, g.header})
+			q.Groups = append(q.Groups, nextGroupJSON{g.queue, g.state, g.action, fs, g.header})
 		}
 	}
 

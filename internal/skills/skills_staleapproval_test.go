@@ -17,6 +17,7 @@ func TestCerneAuthoringDocumentsStaleApproval(t *testing.T) {
 		"re-approves",
 		"`approval: stale`",
 		"`approval_stale`",
+		"WAITING FOR RE-APPROVAL",
 	} {
 		if !strings.Contains(c, sub) {
 			t.Errorf("skill missing %q", sub)

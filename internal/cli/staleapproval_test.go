@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -54,9 +55,25 @@ func TestShowStaleApproval(t *testing.T) {
 	}
 }
 
-// TestNextStaleApproval (F-0318 crit. 10): next flags the stale approval on
-// the feature's own line in READY TO START — not again among the debts — and
-// as approval_stale in --json, so the agent sees the block before the start.
+// section returns next's text block that opens with header, up to the blank
+// line closing it ("" when absent).
+func section(out, header string) string {
+	i := strings.Index(out, header)
+	if i < 0 {
+		return ""
+	}
+	block := out[i:]
+	if j := strings.Index(block, "\n\n"); j > 0 {
+		block = block[:j]
+	}
+	return block
+}
+
+// TestNextStaleApproval (F-0318 crit. 10): next never lists a stale approval
+// under READY TO START, whose action is the start it refuses. It gets its own
+// section, with the human gates, naming the re-approve, and keeps the
+// per-feature stale line — not repeated among the debts. --json mirrors it as
+// its own queue, each feature carrying approval_stale.
 func TestNextStaleApproval(t *testing.T) {
 	projDir := staleFixture(t)
 
@@ -64,15 +81,20 @@ func TestNextStaleApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("next: %v", err)
 	}
-	ready := out[strings.Index(out, "READY TO START"):]
-	if i := strings.Index(ready, "\n\n"); i > 0 {
-		ready = ready[:i]
+	ready := section(out, "READY TO START")
+	if !strings.Contains(ready, "READY TO START (1)") || !strings.Contains(ready, "F-0002") || strings.Contains(ready, "F-0001") {
+		t.Fatalf("READY TO START must hold F-0002 only:\n%s", out)
 	}
-	if !strings.Contains(ready, "F-0001") || !strings.Contains(ready, staleLine) || strings.Count(ready, "approval: stale") != 1 {
-		t.Fatalf("READY TO START does not flag F-0001 (only):\n%s", out)
+	waiting := section(out, "WAITING FOR RE-APPROVAL")
+	if !strings.Contains(waiting, "WAITING FOR RE-APPROVAL (1)") || !strings.Contains(waiting, "cerne feature approve <id>") ||
+		!strings.Contains(waiting, "F-0001") || !strings.Contains(waiting, staleLine) {
+		t.Fatalf("no WAITING FOR RE-APPROVAL section holding F-0001 with its stale line:\n%s", out)
 	}
-	if strings.Contains(out, "SPEC-CHANGED-AFTER-APPROVAL") {
-		t.Fatalf("the stale approval is repeated among the debts:\n%s", out)
+	if strings.Index(out, "READY TO START") > strings.Index(out, "WAITING FOR RE-APPROVAL") {
+		t.Fatalf("the re-approval section belongs with the human gates, after READY TO START:\n%s", out)
+	}
+	if strings.Count(out, "approval: stale") != 1 || strings.Contains(out, "SPEC-CHANGED-AFTER-APPROVAL") {
+		t.Fatalf("the stale approval must be said once, on its line:\n%s", out)
 	}
 
 	out, err = execCerne(t, "next", "--json", "--dir", projDir)
@@ -81,6 +103,7 @@ func TestNextStaleApproval(t *testing.T) {
 	}
 	var got struct {
 		Groups []struct {
+			Queue    string `json:"queue"`
 			State    string `json:"state"`
 			Features []struct {
 				ID            string `json:"id"`
@@ -91,17 +114,14 @@ func TestNextStaleApproval(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("next --json: %v\n%s", err, out)
 	}
-	stale := map[string]bool{}
+	byQueue := map[string][]string{}
 	for _, g := range got.Groups {
-		if g.State != "approved" {
-			continue
-		}
 		for _, f := range g.Features {
-			stale[f.ID] = f.ApprovalStale
+			byQueue[g.Queue] = append(byQueue[g.Queue], fmt.Sprintf("%s:%s:%v", f.ID, g.State, f.ApprovalStale))
 		}
 	}
-	if len(stale) != 2 || !stale["F-0001"] || stale["F-0002"] {
-		t.Fatalf("approved group approval_stale = %v, want F-0001 true, F-0002 false:\n%s", stale, out)
+	if fmt.Sprint(byQueue["ready_to_start"]) != "[F-0002:approved:false]" || fmt.Sprint(byQueue["awaiting_reapproval"]) != "[F-0001:approved:true]" {
+		t.Fatalf("queues = %v, want ready_to_start [F-0002] and awaiting_reapproval [F-0001 stale]:\n%s", byQueue, out)
 	}
 }
 
