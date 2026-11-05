@@ -101,7 +101,8 @@ func newSettingsSetCmd(dir *string) *cobra.Command {
 			if err := project.SetSetting(*dir, args[0], scope, args[1]); err != nil {
 				return err
 			}
-			s, file := writtenSetting(*dir, args[0], scope)
+			s, file, warn := writtenSetting(cmd, *dir, args[0], scope)
+			defer warn()
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "set %s = %s in %s scope (%s)\n", args[0], args[1], scope, file)
 			if s.Origin != scope {
@@ -126,7 +127,8 @@ func newSettingsUnsetCmd(dir *string) *cobra.Command {
 			if err := project.UnsetSetting(*dir, args[0], scope); err != nil {
 				return err
 			}
-			s, file := writtenSetting(*dir, args[0], scope)
+			s, file, warn := writtenSetting(cmd, *dir, args[0], scope)
+			defer warn()
 			fmt.Fprintf(cmd.OutOrStdout(), "unset %s from %s scope (%s)\neffective: %v (%s)\n", args[0], scope, file, s.Value, s.Origin)
 			return nil
 		},
@@ -139,12 +141,14 @@ func newSettingsUnsetCmd(dir *string) *cobra.Command {
 // scopeRank orders the origins by precedence.
 var scopeRank = map[string]int{project.ScopeProject: 0, project.ScopeHost: 1, project.OriginDefault: 2}
 
-// writtenSetting re-resolves id after a write and returns it with the file
-// behind scope.
-func writtenSetting(dir, id, scope string) (project.ResolvedSetting, string) {
+// writtenSetting re-resolves id after a write that landed and returns it with
+// the file behind scope, plus warn, which prints what the re-read tripped on
+// (an unreadable scope file, a bad value of id) to stderr: the write's own
+// result stands.
+func writtenSetting(cmd *cobra.Command, dir, id, scope string) (project.ResolvedSetting, string, func()) {
 	view := project.ResolveSettings(dir)
 	s, _ := findResolved(view, id) // the write already validated id
-	return s, view.Files[scope]
+	return s, view.Files[scope], func() { printSettingProblems(cmd.ErrOrStderr(), view, id) }
 }
 
 // printSettingProblems writes one warning per problem the resolution skipped:

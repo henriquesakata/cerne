@@ -222,3 +222,23 @@ func TestSettingsEndpointReportsProblems(t *testing.T) {
 		})
 	}
 }
+
+// TestSettingsWriteSucceedsDespiteBadHostFile (critic C4): a write that
+// landed is 200 with the new view, whatever else the re-read finds.
+func TestSettingsWriteSucceedsDespiteBadHostFile(t *testing.T) {
+	for _, host := range []string{"[wiki]\nenabled = \"no\"\n", "[x"} {
+		h, _, hostDir := settingsBackend(t, "")
+		if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte(host), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var view project.SettingsView
+		rec := doJSON(t, h, http.MethodPut, "/api/settings/graph.enabled", `{"scope":"project","value":false}`, &view)
+		if g := resolvedByID(view)["graph.enabled"]; rec.Code != http.StatusOK || g.Value != false || g.Origin != project.ScopeProject {
+			t.Errorf("host %q: PUT status %d, graph.enabled %v from %s; want 200, false from project", host, rec.Code, g.Value, g.Origin)
+		}
+		rec = doJSON(t, h, http.MethodDelete, "/api/settings/graph.enabled?scope=project", "", &view)
+		if g := resolvedByID(view)["graph.enabled"]; rec.Code != http.StatusOK || g.Origin != project.OriginDefault {
+			t.Errorf("host %q: DELETE status %d, graph.enabled from %s; want 200, default", host, rec.Code, g.Origin)
+		}
+	}
+}

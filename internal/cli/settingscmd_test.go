@@ -243,3 +243,31 @@ func TestSettingsGetFailsOnlyForItsOwnBadValue(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsWriteReportsItsOwnResult (critic C4): a write that landed
+// reports success even when the re-read finds problems elsewhere; a scope
+// file the re-read could not read becomes a warning, never the write's error.
+func TestSettingsWriteReportsItsOwnResult(t *testing.T) {
+	for _, tc := range []struct{ name, host, warn string }{
+		{"bad host value", "[wiki]\nenabled = \"no\"\n", ""},
+		{"malformed host file", "[x", "warning: host scope ignored"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, hostDir := settingsProject(t, "")
+			if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte(tc.host), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := execCerne(t, "settings", "set", "mindmap.enabled", "false", "--scope", "project", "--dir", projDir)
+			if err != nil || !strings.Contains(out, "set mindmap.enabled = false in project scope") || !strings.Contains(out, tc.warn) {
+				t.Errorf("set = %q (%v), want success plus %q", out, err, tc.warn)
+			}
+			if data, _ := os.ReadFile(filepath.Join(projDir, ".cernerc")); !strings.Contains(string(data), "enabled = false") {
+				t.Errorf(".cernerc lacks the write:\n%s", data)
+			}
+			out, err = execCerne(t, "settings", "unset", "mindmap.enabled", "--scope", "project", "--dir", projDir)
+			if err != nil || !strings.Contains(out, "unset mindmap.enabled from project scope") || !strings.Contains(out, tc.warn) {
+				t.Errorf("unset = %q (%v), want success plus %q", out, err, tc.warn)
+			}
+		})
+	}
+}
