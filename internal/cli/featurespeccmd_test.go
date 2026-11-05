@@ -79,7 +79,8 @@ func TestFeatureSpecFromFile(t *testing.T) {
 	}
 }
 
-// TestFeatureSpecRefusals pins the guards: past candidacy (criterion 2), empty
+// TestFeatureSpecRefusals pins the guards: past approval (criterion 2, moved
+// by F-0318), empty
 // body (criterion 3) and unknown id named in the error (criterion 11).
 func TestFeatureSpecRefusals(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
@@ -107,13 +108,17 @@ func TestFeatureSpecRefusals(t *testing.T) {
 		}
 	})
 
-	t.Run("not candidate", func(t *testing.T) {
+	t.Run("in development", func(t *testing.T) {
 		// The creation-seeded spec has no Gauntlet bar; give it one so the
 		// approve below exercises ErrNotCandidate, not the bar gate (F-0545).
+		// An approved spec is open to the verb since F-0318; in development not.
 		writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Spec aprovável."))
+		writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "Plano real."))
 		commitBackend(t, repoDir)
-		if out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir); err != nil {
-			t.Fatalf("approve: %v\noutput: %s", err, out)
+		for _, action := range []string{"approve", "start"} {
+			if out, err := execCerne(t, "feature", action, "F-0001", "--dir", projDir); err != nil {
+				t.Fatalf("%s: %v\noutput: %s", action, err, out)
+			}
 		}
 		pipeStdinBody(t, specBody)
 		_, err := execCerne(t, "feature", "spec", "F-0001", "--dir", projDir)
@@ -122,7 +127,7 @@ func TestFeatureSpecRefusals(t *testing.T) {
 		}
 		got, _ := os.ReadFile(app.FeatureDocPath(repoDir, "F-0001", "spec.md"))
 		if strings.Contains(string(got), "Versão revisada") {
-			t.Fatal("approved spec must not be rewritten by the verb")
+			t.Fatal("a spec in development must not be rewritten by the verb")
 		}
 	})
 }

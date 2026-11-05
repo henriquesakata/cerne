@@ -567,19 +567,15 @@ func TestBuildRefineBlock(t *testing.T) {
 	}
 }
 
-// TestBuildRefineBlockNotCandidate (F-0256 criterion 5): past candidacy the
-// chat does not refine — the refusal lives in the core, not only in the UI.
+// TestBuildRefineBlockNotCandidate (F-0256 criterion 5, moved past approval by
+// F-0318): in development the chat does not refine — the refusal lives in the
+// core, not only in the UI.
 func TestBuildRefineBlockNotCandidate(t *testing.T) {
-	repoDir, projDir, _ := newFeatureBackend(t)
-	f, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
-		"## Problema\n\nAprovada."+testBarTail, false, "", "")
-	if err != nil {
-		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	repoDir, projDir := approvedWithPlan(t)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("start: %v", err)
 	}
-	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	if _, err := BuildRefineBlock(repoDir, f.ID); !errors.Is(err, ErrNotCandidate) {
+	if _, err := BuildRefineBlock(repoDir, "F-0001"); !errors.Is(err, ErrNotCandidate) {
 		t.Fatalf("err = %v, want ErrNotCandidate", err)
 	}
 	if _, err := BuildRefineBlock(repoDir, "F-9999"); !errors.Is(err, store.ErrNotFound) {

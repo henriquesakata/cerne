@@ -225,3 +225,57 @@ func TestReapproveRefusedWhenNotStale(t *testing.T) {
 		t.Fatalf("a refused re-approve wrote a copy: %v", err)
 	}
 }
+
+// TestChatUpdatesApprovedSpec (F-0318 crit. 5): the Backlog chat refines and
+// rewrites an approved feature's spec — F-0262's chat restriction revoked for
+// approved only — and the write follows criteria 2 and 3: a different spec
+// stales the approval, the approved text written back does not.
+func TestChatUpdatesApprovedSpec(t *testing.T) {
+	repoDir, projDir, _ := approveFixture(t)
+	block, err := BuildRefineBlock(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("refine turn on approved: %v", err)
+	}
+	if !strings.Contains(block, "reaprovar") {
+		t.Errorf("refine block does not warn that a new spec stales the approval:\n%s", block)
+	}
+
+	f, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão do chat.\n"+testBarTail)
+	if err != nil {
+		t.Fatalf("chat write on approved: %v", err)
+	}
+	if f.State != domain.StateApproved {
+		t.Fatalf("state = %s, want approved unchanged", f.State)
+	}
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); !stale {
+		t.Fatal("a different spec from the chat did not stale the approval")
+	}
+
+	body := strings.TrimPrefix(approvedSpecA, "---\ncerne_id: F-0001\n---\n\n")
+	if f, err = UpdateCandidateSpec(repoDir, projDir, "F-0001", body); err != nil {
+		t.Fatalf("chat write back: %v", err)
+	}
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+		t.Fatal("the approved text written back by the chat is still stale")
+	}
+}
+
+// TestChatStillRefusesInDevelopment (F-0318 crit. 5, 12): the chat's reach
+// stops at approved — in development the spec is no longer the chat's to
+// rewrite, on the turn and on the write.
+func TestChatStillRefusesInDevelopment(t *testing.T) {
+	repoDir, projDir := approvedWithPlan(t)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
+	if _, err := BuildRefineBlock(repoDir, "F-0001"); !errors.Is(err, ErrNotCandidate) {
+		t.Fatalf("refine err = %v, want ErrNotCandidate", err)
+	}
+	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
+		t.Fatalf("write err = %v, want ErrNotCandidate", err)
+	}
+	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
+		t.Fatalf("spec.md changed on a refused write: %q", got)
+	}
+}

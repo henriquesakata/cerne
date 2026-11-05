@@ -499,25 +499,6 @@ func TestSaveFeatureDocEmitsEvent(t *testing.T) {
 	}
 }
 
-// TestUpdateCandidateSpecRefusesApproved pins F-0256's chat-surface gate, kept
-// deliberately asymmetric with the manual editor by F-0262's design decision.
-func TestUpdateCandidateSpecRefusesApproved(t *testing.T) {
-	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
-		t.Fatalf("CreateFeature: %v", err)
-	}
-	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "spec",
-		"---\ncerne_id: F-0001\n---\n\n# Spec real\n\nProblema, objetivo, critérios.\n"+testBarTail); err != nil {
-		t.Fatalf("SaveFeatureDoc: %v", err)
-	}
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "novo corpo"); !errors.Is(err, ErrNotCandidate) {
-		t.Fatalf("err = %v, want ErrNotCandidate", err)
-	}
-}
-
 func TestSaveFeatureDocErrors(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := CreateFeature(repoDir, projDir, "Feature", "", "", nil, nil); err != nil {
@@ -999,17 +980,14 @@ func TestUpdateCandidateSpec(t *testing.T) {
 	}
 }
 
-// TestUpdateCandidateSpecRefusals (F-0256 criterion 5): past candidacy the spec
-// is an approved contract — the chat write path refuses it, and nothing on disk
-// changes. An unknown id is store.ErrNotFound, like every other doc write.
+// TestUpdateCandidateSpecRefusals (F-0256 criterion 5, moved past approval by
+// F-0318): in development the spec is the contract being built — the chat
+// write path refuses it, and nothing on disk changes. An unknown id is
+// store.ErrNotFound, like every other doc write.
 func TestUpdateCandidateSpecRefusals(t *testing.T) {
-	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
-		"## Problema\n\nAprovada."+testBarTail, false, "", ""); err != nil {
-		t.Fatalf("CreateFeatureWithSpec: %v", err)
-	}
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
-		t.Fatalf("approve: %v", err)
+	repoDir, projDir := approvedWithPlan(t)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+		t.Fatalf("start: %v", err)
 	}
 	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
 
