@@ -27,7 +27,10 @@ var resultGauntletStrictSince = time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
 
 var (
 	gauntletHeadingRe = regexp.MustCompile(`(?m)^\s*##\s+Gauntlet\s*$`)
-	nextHeadingRe     = regexp.MustCompile(`(?m)^\s*##\s`)
+	// HTML comments are template scaffold (doccheck reads them so), never
+	// record: the result template's Gauntlet guide carries the literal forms.
+	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
+	nextHeadingRe = regexp.MustCompile(`(?m)^\s*##\s`)
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
@@ -108,7 +111,7 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	if err != nil {
 		result = nil // absence of the doc is missing-gate-doc's job; here absence = no record
 	}
-	section, has := gauntletSection(result)
+	section, has := gauntletSection(htmlCommentRe.ReplaceAll(result, nil))
 	detail := "sem seção \"## Gauntlet\""
 	if has {
 		detail = parseGauntlet(section).problem()

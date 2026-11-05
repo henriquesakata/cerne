@@ -46,3 +46,48 @@ func TestCheckResultCleanRecord(t *testing.T) {
 		t.Fatalf("want no findings, got %+v", got)
 	}
 }
+
+// An HTML comment is template scaffold, never record: a Barra line written
+// above the template's leftover Gauntlet guide (whose literal forms carry a
+// verdict word and a quote) must not pass as a judged round, and a citation
+// inside a comment is not evidence.
+func TestCheckResultIgnoresHTMLComments(t *testing.T) {
+	guide := "<!-- Linha de cada rodada: Rodada N — <vitória|derrota|empate>: \"<citação curta do veredito do juiz>\" -->\n"
+	cases := map[string]struct {
+		result string
+		want   []string
+	}{
+		"bar over leftover guide": {
+			result: "critério 1 e critério 2\n\n## Gauntlet\n" + guide + "Barra: x\n",
+			want:   []string{RuleResultMissingGauntlet},
+		},
+		"whole round inside a comment": {
+			result: "critério 1 e critério 2\n\n## Gauntlet\nBarra: x\n<!--\nRodada 1 — vitória: \"ok\"\n-->\n",
+			want:   []string{RuleResultMissingGauntlet},
+		},
+		"citation inside a comment": {
+			result: "critério 1 <!-- critério 2 -->\n\n## Gauntlet\nBarra: x\nRodada 1 — vitória: \"ok\"\n",
+			want:   []string{RuleResultMissingEvidence},
+		},
+		"exemption inside a comment": {
+			result: "critério 1 e critério 2\n\n## Gauntlet\n<!-- Barra: não aplicável (x) -->\n",
+			want:   []string{RuleResultMissingGauntlet},
+		},
+		"record outside, guide left in place": {
+			result: "critério 1 e critério 2\n\n## Gauntlet\n" + guide + "Barra: x\nRodada 1 — vitória: \"ok\"\n",
+			want:   nil,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir, f := writeResultFixture(t, domain.StateInDevelopment, checkSpec, tc.result)
+			var got []string
+			for _, fi := range CheckResult(dir, f) {
+				got = append(got, fi.Rule)
+			}
+			if len(got) != len(tc.want) || (len(got) > 0 && got[0] != tc.want[0]) {
+				t.Fatalf("rules = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

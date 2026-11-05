@@ -146,7 +146,7 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 	if err != nil {
 		result = nil // gate doc coverage is missing-gate-doc's job; here absence = zero evidence
 	}
-	mentions := resultMentions(result)
+	mentions := resultMentions(htmlCommentRe.ReplaceAll(result, nil))
 	var missing []string
 	for _, n := range criteria {
 		if !mentions[n] {
