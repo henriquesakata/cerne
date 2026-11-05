@@ -47,6 +47,14 @@ func TestBuildResultDraftPrompt(t *testing.T) {
 			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
 		}
 	}
+	// F-0303: the Gauntlet section is transcribed from the real loop record,
+	// never invented — no record means an open clarification marker, which the
+	// complete gate then refuses (no Barra line).
+	for _, want := range []string{"Gauntlet", "nunca invente", "veredito", "dispensa", spectmpl.AmbiguityMarker + " registro do Gauntlet"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing the Gauntlet rule %q:\n%s", want, prompt)
+		}
+	}
 	// F-0279: the drafting agent stamps which model and effort implemented the
 	// feature, and writes "desconhecido" instead of guessing.
 	for _, want := range []string{"**Agente:**", "·", "esforço", "humano", "desconhecido"} {
