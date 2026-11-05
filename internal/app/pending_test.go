@@ -356,3 +356,34 @@ func TestPromotePendingGuardAndForce(t *testing.T) {
 		t.Fatalf("forced promote = %+v, %v", got, err)
 	}
 }
+
+// A pending is usually registered when its feature closes, so the origin is
+// often implemented/done: --as task there would file an approved task under a
+// closed parent (epic-open-children). It refuses, pointing at --as feature,
+// with nothing written.
+func TestPromotePendingAsTaskRefusesClosedOrigin(t *testing.T) {
+	for _, state := range []domain.FeatureState{domain.StateImplemented, domain.StateDone} {
+		t.Run(string(state), func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, "F-0001", state, "spec.md", "plan.md", "result.md")
+			p, err := CreatePending(repoDir, projDir, "Tratar o caso Y", "", "F-0001", nil, nil, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := backendHead(t, repoDir)
+			_, _, err = PromotePending(repoDir, projDir, p.ID, "task", false)
+			if !errors.Is(err, ErrPendingOriginClosed) || !strings.Contains(err.Error(), "--as feature") {
+				t.Fatalf("err = %v, want ErrPendingOriginClosed pointing at --as feature", err)
+			}
+			if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingOpen {
+				t.Fatalf("pending state = %s, want open", stored.State)
+			}
+			if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 {
+				t.Fatalf("%d features, want only the origin", len(fs))
+			}
+			if after := backendHead(t, repoDir); after != before {
+				t.Fatalf("backend HEAD moved %s -> %s", before, after)
+			}
+		})
+	}
+}

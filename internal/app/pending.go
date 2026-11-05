@@ -24,6 +24,11 @@ var ErrPendingReasonRequired = errors.New("--reason is required to drop a pendin
 // a feature or a task.
 var ErrPendingPromoteKind = errors.New("--as must be feature or task")
 
+// ErrPendingOriginClosed is returned by PromotePending --as task when the
+// origin is implemented or done: a task filed under a closed parent leaves an
+// epic with open children.
+var ErrPendingOriginClosed = errors.New("the origin is closed (implemented/done): a task cannot be filed under it — promote with --as feature")
+
 // CreatePending mints an open pending (P-) in the backend clone at repoDir.
 // from is mandatory and must be an existing feature/task/epic. Tags are
 // normalized; an axis whose flag was not given inherits the origin's tags. A
@@ -137,6 +142,9 @@ func PromotePending(repoDir, projDir, id, as string, force bool) (store.Pending,
 	}
 	create, parent := CreateFeatureWithSpec, ""
 	if as == "task" {
+		if origin.State == domain.StateImplemented || origin.State == domain.StateDone {
+			return store.Pending{}, store.Feature{}, fmt.Errorf("%w: %s is %s", ErrPendingOriginClosed, origin.ID, origin.State)
+		}
 		create, parent = CreateTaskWithSpec, p.From
 	}
 	context := fmt.Sprintf("**Origem:** pendência [[%s]] (de %s)", p.ID, p.From)
