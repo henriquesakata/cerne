@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/lint"
 )
 
 func newFeatureCmd() *cobra.Command {
@@ -115,6 +116,9 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale {
+		fmt.Fprintln(cmd.OutOrStdout(), approvalStaleLine(f.ID))
+	}
 	printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
 	return nil
 }
