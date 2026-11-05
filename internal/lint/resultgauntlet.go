@@ -32,8 +32,9 @@ var (
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
 	roundAnchorRe = regexp.MustCompile(`^Rodada[\s\x{00A0}]+(\d+)\b`)
 	barLineRe     = regexp.MustCompile(`(?i)^Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[\s*_]*([^\s*_].*)$`)
-	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da):`)
+	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da)[*_]*:`)
 	criticLineRe  = regexp.MustCompile(`(?i)^Achados? do cr(?:í|i\x{0301}|i)tico`)
+	headingRe     = regexp.MustCompile(`^\s*#{1,6}(\s|$)`)
 	listItemRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
 	codeSpanRe    = regexp.MustCompile("`[^`\n]*`")
 	verdictLitRe  = regexp.MustCompile(`(?i:veredito):\s*(?:A|B|EMPATE)\b`)
@@ -77,8 +78,10 @@ func legacyGauntletRecorded(section string) bool {
 }
 
 // resultGauntletFindings flags implemented/done features (completed after the
-// cutoff) whose result.md has no "## Gauntlet" record: the section with at
-// least one cited verdict, or a recorded exemption (F-0545 crit. 2) — the
+// cutoff) whose result.md has no complete "## Gauntlet" record: the section
+// with a Barra line (or a recorded exemption, F-0545 crit. 2) and, in every
+// round, a verdict and a quoted citation of the judge (F-0304). Before
+// resultGauntletStrictSince the legacy per-line predicate also vouches. The
 // sibling of result-missing-evidence, charging the loop instead of the
 // criteria.
 func resultGauntletFindings(repoDir string, features []store.Feature, events []domain.Event) []Finding {
@@ -134,36 +137,38 @@ func parseGauntlet(section string) gauntletRecord {
 	var nums []int
 	var cur *strings.Builder // nil = outside any round block
 	implicit := &strings.Builder{}
-	critic, prevBlank := false, false
-	emphasis := strings.NewReplacer("*", "", "_", "")
+	critic, criticList, criticIndent := false, false, 0
+	emphasis := strings.NewReplacer("*", "", "_", "", "\u00a0", " ")
 	for _, line := range strings.Split(section, "\n") {
-		if critic { // Achados block: excluded from every round
-			trim := strings.TrimSpace(line)
-			switch {
-			case trim == "":
-				prevBlank = true
+		s := lineMarkersRe.ReplaceAllString(line, "")
+		// Bar and header lines are consumed first, even inside a critic block,
+		// unless they carry the verdict literal (then they are round text).
+		if !verdictLitRe.MatchString(line) {
+			if m := barLineRe.FindStringSubmatch(s); m != nil {
+				if rec.bar == "" {
+					rec.bar = m[1]
+				}
+				rec.exempt = rec.exempt || exemptionRe.MatchString("Barra: "+emphasis.Replace(m[1]))
 				continue
-			case strings.HasPrefix(trim, "#"), prevBlank && !listItemRe.MatchString(line),
-				roundAnchorRe.MatchString(lineMarkersRe.ReplaceAllString(line, "")) && !listItemRe.MatchString(line):
+			}
+			if headerLineRe.MatchString(s) {
+				continue
+			}
+		}
+		list := listItemRe.MatchString(line)
+		if critic { // Achados block: excluded from every round until it ends
+			anchor := roundAnchorRe.MatchString(s)
+			switch {
+			case headingRe.MatchString(line), anchor && !list,
+				anchor && criticList && len(line)-len(strings.TrimLeft(line, " \t")) <= criticIndent:
 				critic = false
 			default:
 				continue
 			}
 		}
-		prevBlank = false
-		s := lineMarkersRe.ReplaceAllString(line, "")
-		if m := barLineRe.FindStringSubmatch(s); m != nil {
-			if rec.bar == "" {
-				rec.bar = m[1]
-			}
-			rec.exempt = rec.exempt || exemptionRe.MatchString("Barra: "+emphasis.Replace(m[1]))
-			continue
-		}
-		if headerLineRe.MatchString(s) {
-			continue
-		}
 		if criticLineRe.MatchString(s) {
-			critic = true
+			critic, criticList = true, list
+			criticIndent = len(line) - len(strings.TrimLeft(line, " \t"))
 			continue
 		}
 		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {

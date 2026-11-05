@@ -259,8 +259,8 @@ func TestGauntletCriticBlock(t *testing.T) {
 		{"A: anchor inside critic mode reopens nothing", "Barra: x\nRodada 2 — vitória\nAchados do crítico: 1\n- Rodada 2 → \"lock stale…\"\n", "rodada 2 sem citação do juiz"},
 		{"B: anchor in critic mode does not anchor", "Barra: x\n- **vitória** — juiz: \"x\"\nAchados do crítico: 1\n- Rodada 1 → refutado\n", ""},
 		{"singular Achado", "Barra: x\nRodada 1 — vitória\nAchado do crítico: \"x\"\n", "rodada 1 sem citação do juiz"},
-		{"NFD critico", "Barra: x\nRodada 1 — vitória\nAchados do crítico: \"x\" empate\n", "rodada 1 sem citação do juiz"},
-		{"C3: judge paragraph after critic paragraph", "Barra: x\n### Rodada 1\n**Achados do crítico:** 2 — corrigidos\n\n**Juiz** (A = nosso): \"hierarquia clara\" — VEREDITO: A\n", ""},
+		{"NFD critico", "Barra: x\nRodada 1 — vitória\nAchados do cri\u0301tico: \"x\" empate\n", "rodada 1 sem citação do juiz"},
+		{"C3: judge paragraph after the Achados line is critic text", "Barra: x\n### Rodada 1\n**Achados do crítico:** 2 — corrigidos\n\n**Juiz** (A = nosso): \"hierarquia clara\" — VEREDITO: A\n", "rodada 1 sem citação do juiz"},
 		{"critic ends at heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n### Fechamento\nJuiz: \"c\"\n", ""},
 		{"list item after blank stays critic", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n\n- item \"q\"\n", "rodada 1 sem citação do juiz"},
 		{"critic verdict word does not count", "Barra: x\nRodada 1: \"c\"\nAchados do crítico: 1 — empate\n", "rodada 1 sem veredito"},
@@ -268,6 +268,31 @@ func TestGauntletCriticBlock(t *testing.T) {
 		{"T-0040 shape", "Barra: x\nRodada 1 — derrota: \"VEREDITO: B\"\nAchados do crítico: 7 — \"VEREDITO DO CRÍTICO: 1 HIGH\"\nRodada 2 — derrota: \"VEREDITO: A\"\nAchados do crítico: 8 — corrigidos 7\nRodada 4 do crítico, sobre as correções (sem juiz): \"VEREDITO DO CRÍTICO: 0 HIGH\"\nAchados do crítico: 6 — corrigidos 4\nEncerramento perdendo por decisão humana: \"Encerrar\"\n", "rodada 4 sem veredito"},
 		{"bold non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1\n**Rodada 2 — notas**\n", "rodada 2 sem citação do juiz"},
 		{"F-0275 shape", "Barra: x\nRodada 1 — vitória: \"VEREDITO: A\" — \"a\"\nRodada 2 — vitória: \"VEREDITO: B\" — \"b\"\nAchados do crítico: 8 — corrigidos 5\n```\n\n**Achados do crítico de contexto fresco (rodada 1):**\n\n- **Corrigidos (5):** (1) x\n- **Refutado (1):** (6) \"campo sem enum\"\n\n**Lacunas apontadas pelos juízes:**\n\n- Rodada 2 → `.cernerc` ilegível\n\n**Nota de método:** a rodada 2 apontou\n", ""},
+	})
+}
+
+// Critic block (reviewer R1-R4, R6): it ends only at an ATX heading, a
+// non-list round anchor, or a sibling list-item anchor of a list-item Achados.
+func TestGauntletCriticBlockEnds(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"R1: sibling list-item anchor ends a list-item Achados", "Barra: x\n- **Rodada 1 — derrota.** Juiz: \"B\" — VEREDITO: B\n- **Achados do crítico:** 3\n- **Rodada 2 — vitória.**\n", "rodada 2 sem citação do juiz"},
+		{"nested list-item anchor stays critic", "Barra: x\n- **Rodada 1 — vitória.** \"a\"\n- **Achados do crítico:** 3\n  - Rodada 2 → \"lock stale\"\n", ""},
+		{"R2: numbered disposition with quote on continuation", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n1. corrigido (x)\n\n   \"lock stale\" no arquivo\n", "rodada 1 sem citação do juiz"},
+		{"R3: Achados heading, blank, table with quote", "Barra: x\nRodada 1 — vitória\n### Achados do crítico\n\n| # | \"q\" |\n", "rodada 1 sem citação do juiz"},
+		{"R4: #1 is not a heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n#2 \"x\"\n", "rodada 1 sem citação do juiz"},
+		{"a real heading still ends it", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n## x\n", "rodada 1 sem citação do juiz"},
+		{"R6: Barra right after Achados is the bar", "Rodada 1 — vitória: \"c\"\nAchados do crítico: 1\nBarra: x\n", ""},
+	})
+}
+
+// R5, R7, R9.
+func TestGauntletHeaderEdges(t *testing.T) {
+	runGauntletCases(t, []gauntletCase{
+		{"R5a: Saída carrying the verdict literal stays a round line", "Barra: x\nRodada 1: \"c\"\nSaída: VEREDITO: A\n", ""},
+		{"R5b: Método carrying the verdict literal stays a round line", "Barra: x\nRodada 1: \"c\"\nMétodo: juiz cego, VEREDITO: B\n", ""},
+		{"R7: emphasised Método/Saída are consumed", "Barra: x\n**Método**: y \"vitória\"\n**Saída**: derrota\n", "rodada sem citação do juiz"},
+		{"R9: NBSP inside the exemption", "Barra: n\u00e3o\u00a0aplic\u00e1vel (x)\n", ""},
+		{"R9: NBSP after the colon", "Barra:\u00a0n\u00e3o aplic\u00e1vel (x)\n", ""},
 	})
 }
 
@@ -287,11 +312,11 @@ func TestGauntletVerdictLiteralCase(t *testing.T) {
 	})
 }
 
-// C6: Método/Saída header lines are consumed; implicit round = one paragraph.
-func TestGauntletHeaderLinesAndImplicitParagraph(t *testing.T) {
+// C6: Método/Saída header lines are consumed; the implicit round reads the whole block.
+func TestGauntletHeaderLinesAndImplicitRound(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
 		{"header lines do not feed the implicit round", "Barra: x\nMétodo: y \"vitória\"\nSaída: vencer; derrota abre nova rodada\n\nO crítico disse \"foi ruim\".\n", "rodada sem veredito"},
-		{"NFD Metodo", "Barra: x\nRodada 1 — vitória\nMétodo: \"cego\"\n", "rodada 1 sem citação do juiz"},
+		{"NFD Metodo", "Barra: x\nRodada 1 — vitória\nMe\u0301todo: \"cego\"\n", "rodada 1 sem citação do juiz"},
 		{"Saida inside a round", "Barra: x\nRodada 1: \"c\"\nsaída: empate\n", "rodada 1 sem veredito"},
 		{"single list item stays clean", "Barra: x\n- **vitória** — juiz: \"x\"\n", ""},
 		{"implicit round reads the whole block", "Barra: x\nvitória no eixo\n\njuiz disse \"x\"\n", ""},
@@ -303,8 +328,8 @@ func TestGauntletMarkersAndSpaces(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
 		{"N) numbering", "Barra: x\nRodada 1 — vitória: \"a\"\n1) Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
 		{"plus bullet", "Barra: x\nRodada 1 — vitória: \"a\"\n+ Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
-		{"NBSP before number", "Barra: x\nRodada 1 — vitória: \"a\"\nRodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
-		{"leading NBSP", "Barra: x\nRodada 1 — vitória: \"a\"\n  Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
+		{"NBSP before number", "Barra: x\nRodada 1 — vitória: \"a\"\nRodada\u00a02 — vitória\n", "rodada 2 sem citação do juiz"},
+		{"leading NBSP", "Barra: x\nRodada 1 — vitória: \"a\"\n\u00a0\u00a0Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
 	})
 }
 
