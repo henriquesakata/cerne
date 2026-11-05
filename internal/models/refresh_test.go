@@ -227,3 +227,33 @@ func TestRefreshRelistsWhatReappears(t *testing.T) {
 		t.Fatalf("repeat listing changed the catalog: %+v", again)
 	}
 }
+
+// TestBaselineClassifiesTheRealListing: C2 — the vendor's real listing
+// (collected 2026-11-05) holds older ids the baseline must pre-classify as
+// legacy, or the first refresh drops them on the top level as current. A
+// listing equal to the real one adds nothing and the top level stays the
+// four current entries.
+func TestBaselineClassifiesTheRealListing(t *testing.T) {
+	older := []string{"claude-opus-4-7", "claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929"}
+	base := Baseline()
+	for _, id := range older {
+		e, ok := base.Find(id)
+		if !ok || e.Visibility != Legacy || e.Label == "" || e.Label == id || len(e.Efforts) != 0 {
+			t.Fatalf("baseline %s = %+v (found %v), want a labelled legacy entry without efforts", id, e, ok)
+		}
+	}
+	real := listedAll("anthropic")
+	cat, diff := refreshWith(t, t.TempDir(), real)
+	if !diff.Empty() {
+		t.Fatalf("a listing equal to the real one changed the catalog: %+v", diff)
+	}
+	var current []string
+	for _, e := range cat.Entries {
+		if e.Visibility == Current {
+			current = append(current, e.ID)
+		}
+	}
+	if want := []string{"claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}; !slices.Equal(current, want) {
+		t.Fatalf("top level = %v, want %v", current, want)
+	}
+}
