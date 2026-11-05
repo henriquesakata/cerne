@@ -11,6 +11,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // closedFeaturesProject seeds one feature per state in the backend and pulls, so the
@@ -259,4 +260,80 @@ func regexpSplit(s string) []string {
 		}
 	}
 	return out
+}
+
+var quotedCommandRe = regexp.MustCompile(`(?:'|:\s+)cerne((?: [a-z][a-z-]*)+)`)
+
+// missingCommands returns every quoted or block-line `cerne <words>` in text (up to the first
+// flag, <placeholder>, id or quote) that is not a command of cli.Root().
+func missingCommands(text string) (missing []string, found int) {
+	for _, m := range quotedCommandRe.FindAllStringSubmatch(text, -1) {
+		found++
+		words := strings.Fields(m[1])
+		c, rest, err := Root().Find(words)
+		if err != nil || len(rest) != 0 || c.CommandPath() != "cerne "+strings.Join(words, " ") {
+			missing = append(missing, "cerne"+m[1])
+		}
+	}
+	return missing, found
+}
+
+// F-0307 crit. 7: every `cerne …` command the messages of this feature name
+// exists in the command tree — the lint details, the push block, the pull hint,
+// the errata confirmation and F-0305's write refusals, rendered, not copied.
+func TestMessagesNameExistingCommands(t *testing.T) {
+	t.Run("detects a command that does not exist", func(t *testing.T) {
+		if missing, found := missingCommands("Use 'cerne show <id>' or 'cerne errata F-0001' to fix"); found != 2 || len(missing) != 1 || missing[0] != "cerne errata" {
+			t.Fatalf("missing = %v of %d, want [cerne errata] of 2", missing, found)
+		}
+	})
+
+	projDir, _, repoDir := setupProject(t, "finance")
+	states := []domain.FeatureState{domain.StateInDevelopment, domain.StateImplemented, domain.StateDone, domain.StateRejected, domain.StateSuperseded}
+	ids := seedResultFeatures(t, repoDir, states...)
+	var rendered []string
+	add := func(what, text string) {
+		rendered = append(rendered, text)
+		t.Logf("%s: %s", what, text)
+	}
+
+	for _, state := range states {
+		id := ids[state]
+		writeDoc(t, repoDir, id, "spec.md", "## Objetivo e critérios de aceitação\n\n1. a\n")
+		writeDoc(t, repoDir, id, "result.md", "sem prova\n")
+		f, _ := store.LoadFeature(repoDir, id)
+		for _, fd := range lint.CheckResult(repoDir, f) { // both rules, in each state
+			add(fd.Rule+" "+string(state), fd.Detail)
+		}
+		for _, doc := range []string{"spec", "plan", "result"} {
+			if !domain.TitleEditable(state) {
+				add("push block "+string(state)+" "+doc, frozenDocError("current/features/"+id+"-x/"+doc+".md", id, state).Error())
+			}
+			add("write refusal "+string(state)+" "+doc, app.DocFixPhrase(id, doc, state))
+			if _, err := app.CheckDocWritable(repoDir, id, doc); err != nil {
+				add("CheckDocWritable "+string(state)+" "+doc, err.Error())
+			}
+		}
+		if _, _, err := app.AmendFeatureResult(repoDir, projDir, id, realDoc(id, "critério 1."), "porque"); err != nil {
+			add("amend "+string(state), err.Error())
+		}
+	}
+	out, err := execCerne(t, "pull", "--scope", "finance", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	add("pull", out)
+	out, err = execCerne(t, "feature", "errata", ids[domain.StateDone], "nota", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("errata: %v\n%s", err, out)
+	}
+	add("errata", out)
+
+	missing, found := missingCommands(strings.Join(rendered, "\n"))
+	if found < 20 {
+		t.Fatalf("only %d command mentions found; the extraction is broken", found)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("messages name commands that do not exist: %v", missing)
+	}
 }
