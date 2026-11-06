@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -79,17 +80,18 @@ func CreateIdea(repoDir, projDir, text string, facets, components []string) (sto
 }
 
 // ListIdeas returns the ideas newest first (ties: higher id first): active
-// only unless all; search keeps those whose text contains the term, case- and
-// accent-insensitively.
+// only unless all; search keeps those whose text contains every word of it, in
+// any order, case- and accent-insensitively.
 func ListIdeas(repoDir string, all bool, search string) ([]store.Idea, error) {
 	ideas, err := store.LoadAllIdeas(repoDir)
 	if err != nil {
 		return nil, err
 	}
-	term := slug.Fold(strings.TrimSpace(search))
+	words := strings.Fields(slug.Fold(search))
 	out := ideas[:0]
 	for _, i := range ideas {
-		if (all || i.State == domain.IdeaActive) && strings.Contains(slug.Fold(i.Text), term) {
+		text := slug.Fold(i.Text)
+		if (all || i.State == domain.IdeaActive) && !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) }) {
 			out = append(out, i)
 		}
 	}

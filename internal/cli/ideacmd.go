@@ -98,7 +98,7 @@ func newIdeaListCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "include dropped and promoted ideas")
-	cmd.Flags().StringVar(&search, "search", "", "only ideas whose text contains this term (case- and accent-insensitive)")
+	cmd.Flags().StringVar(&search, "search", "", "only ideas whose text contains every word of this term, in any order (case- and accent-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
 }

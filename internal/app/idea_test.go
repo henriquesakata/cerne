@@ -286,3 +286,29 @@ func TestIdeaIDValidatedBeforeAnyPath(t *testing.T) {
 		t.Fatalf("DropIdea(i-0001) = %+v, %v; want I-0001 dropped", got, err)
 	}
 }
+
+// C7: --search matches when every word is present, in any order, folding case
+// and accents — a subject is several words, not one phrase.
+func TestListIdeasSearchEveryWord(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	for _, text := range []string{"zebraquux plain", "Ação rápida — émoji", "só zebraquux"} {
+		if _, err := CreateIdea(repoDir, projDir, text, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for term, want := range map[string][]string{
+		"plain zebraquux": {"I-0001"},
+		"rapida EMOJI":    {"I-0002"},
+		"zebraquux":       {"I-0003", "I-0001"},
+		"zebraquux nada":  nil,
+	} {
+		got, err := ListIdeas(repoDir, false, term)
+		var ids []string
+		for _, i := range got {
+			ids = append(ids, i.ID)
+		}
+		if err != nil || !slices.Equal(ids, want) {
+			t.Fatalf("search %q = %v, %v; want %v", term, ids, err, want)
+		}
+	}
+}
