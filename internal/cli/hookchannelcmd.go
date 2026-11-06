@@ -3,9 +3,14 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/project"
 )
 
 // Channel contact-point plumbing (F-0325), run by the SessionStart and
@@ -37,9 +42,29 @@ func runHookChannel(cmd *cobra.Command, point string) {
 	if err != nil {
 		return
 	}
-	if point == "session-start" {
-		exportSession(in.SessionID)
+	if point != "session-start" {
+		return
 	}
+	exportSession(in.SessionID)
+	cfg, _, err := project.LoadConfig(in.CWD)
+	if err != nil {
+		return
+	}
+	fmt.Fprint(cmd.OutOrStdout(), channelBlock(cfg.ProjectID, in.SessionID, true))
+}
+
+// channelBlock is session sess's pending channel block for the project, ""
+// when there is nothing to deliver or on any error (fail-open, N-0021).
+func channelBlock(projectID, sess string, consume bool) string {
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		return ""
+	}
+	block, err := app.ChannelInject(cacheDir, filepath.Join(cacheDir, "repo"), sess, consume, time.Now().UTC())
+	if err != nil {
+		return ""
+	}
+	return block
 }
 
 // exportSession appends `export CERNE_SESSION=<id>` to CLAUDE_ENV_FILE, which
