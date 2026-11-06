@@ -103,6 +103,17 @@ func handleFlowStats(w http.ResponseWriter, repoDir string) {
 	writeJSON(w, http.StatusOK, m)
 }
 
+// handleProcessPerf returns the process panel (F-0321): cost per delivered
+// feature, quality guard and change-marker verdicts (app.ProcessPerf).
+func handleProcessPerf(w http.ResponseWriter, repoDir string) {
+	r, err := app.ProcessPerf(repoDir, time.Now().UTC())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, r)
+}
+
 // handleGraph returns the deterministic entity relationship graph
 // (nodes + edges) projected from the backend by app.BuildGraph.
 func handleGraph(w http.ResponseWriter, repoDir string) {
