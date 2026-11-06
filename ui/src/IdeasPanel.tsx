@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { createIdea, dropIdea, fetchIdeas, promoteIdea, SimilarExists, type DupMatch, type Idea } from './api'
 import { useT } from './i18n'
-import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
+import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 // A submission keeps the fields as typed (raw), so success clears only what
 // was not edited while it was in flight (C4).
@@ -119,8 +119,22 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
           />
         </details>
       </form>
-      {failed && <Notice message={t.ideas.captureError(failed.error)} onRetry={() => send(failed.sub)} busy={sending} />}
-      {actionError && <p className="status error">{t.ideas.actionError(actionError)}</p>}
+      {/* C12: errors are announced (role="alert"), not only painted. */}
+      {failed && (
+        <div className="load-notice">
+          <p className="form-error" role="alert">
+            {t.ideas.captureError(failed.error)}
+          </p>
+          <button type="button" aria-disabled={sending || undefined} onClick={sending ? undefined : () => send(failed.sub)}>
+            {sending ? t.common.retrying : t.common.retry}
+          </button>
+        </div>
+      )}
+      {actionError && (
+        <p className="status error" role="alert">
+          {t.ideas.actionError(actionError)}
+        </p>
+      )}
       {load.data === null ? (
         <LoadPending load={load} message={t.ideas.loadError} />
       ) : (
@@ -136,7 +150,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                 </span>
                 <span className="ideas-actions">
                   {choosing === i.id && (
-                    <select aria-label={t.ideas.module} value={module} onChange={(e) => setModule(e.target.value)}>
+                    <select aria-label={t.ideas.moduleOf(i.id)} value={module} onChange={(e) => setModule(e.target.value)}>
                       {modules.map((m) => (
                         <option key={m} value={m}>
                           {m}
@@ -144,12 +158,18 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                       ))}
                     </select>
                   )}
-                  <button type="button" disabled={busy !== null} onClick={() => promote(i)}>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    aria-label={choosing === i.id ? t.ideas.confirmPromoteOf(i.id) : t.ideas.promoteOf(i.id)}
+                    onClick={() => promote(i)}
+                  >
                     {choosing === i.id ? t.ideas.confirm : t.ideas.promote}
                   </button>
                   <button
                     type="button"
                     disabled={busy !== null}
+                    aria-label={t.ideas.dropOf(i.id)}
                     onClick={() => {
                       setDropping(i.id)
                       setReason('')
@@ -162,12 +182,17 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                   <span className="ideas-drop">
                     <input
                       type="text"
-                      aria-label={t.ideas.dropReason}
+                      aria-label={t.ideas.dropReasonOf(i.id)}
                       placeholder={t.ideas.dropReason}
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                     />
-                    <button type="button" disabled={busy !== null} onClick={() => act(i.id, () => dropIdea(i.id, reason.trim()))}>
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      aria-label={t.ideas.dropConfirmOf(i.id)}
+                      onClick={() => act(i.id, () => dropIdea(i.id, reason.trim()))}
+                    >
                       {t.ideas.dropConfirm}
                     </button>
                     <button type="button" onClick={() => setDropping(null)}>
@@ -185,7 +210,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                         </li>
                       ))}
                     </ul>
-                    <button type="button" disabled={busy !== null} onClick={() => promoteAs(i, true)}>
+                    <button type="button" disabled={busy !== null} aria-label={t.ideas.promoteAnywayOf(i.id)} onClick={() => promoteAs(i, true)}>
                       {t.ideas.promoteAnyway}
                     </button>
                     <button type="button" onClick={() => setSimilar(null)}>
