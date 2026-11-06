@@ -177,7 +177,7 @@ func TestProcessCostVerdictBootstrap(t *testing.T) {
 		code        string
 	}{
 		{"40% down", 12e6, "melhorou", "cost"},
-		{"no change", 20e6, "inconclusivo", "no_detectable_difference"},
+		{"no change", 20e6, "inconclusivo", "within_noise"},
 		// The log-mirror of −40% (×1/0.6, +67%): a plain +40% is a smaller
 		// log shift, and with this e^±1 dispersion at n=30 its interval is
 		// 0.90–2.12 — honestly within noise, as the rule should say.
@@ -201,9 +201,9 @@ func TestProcessCostVerdictBootstrap(t *testing.T) {
 					t.Fatalf("ci = %v, want wholly above 1", m.CostRatioCI)
 				}
 			default:
-				// C15: low power is not "no effect" — the reason names the
-				// range the interval cannot tell apart, and the sample sizes.
-				if !(lo < 1 && 1 < hi) || !strings.HasPrefix(m.Reason, "no detectable difference: median ratio") ||
+				// crit. 10's literal reason, then (C15) what the interval
+				// cannot tell apart, with the sample sizes: low power is not "no effect".
+				if !(lo < 1 && 1 < hi) || !strings.HasPrefix(m.Reason, "difference within noise: median ratio") ||
 					!strings.Contains(m.Reason, "changes in that range are not distinguishable with n=30 before, n=30 after") {
 					t.Fatalf("ci = %v reason %q, want 1 inside and what the interval cannot distinguish", m.CostRatioCI, m.Reason)
 				}
@@ -263,12 +263,12 @@ func TestProcessReturnedGuard(t *testing.T) {
 	assertReason(t, m)
 
 	m = build(half, func(i int) bool { return i < 5 }, none)
-	if m.Returned != "inconclusivo" || m.ReturnedDiffCI != nil || m.Verdict != "inconclusivo" || m.Code != "no_detectable_difference" {
+	if m.Returned != "inconclusivo" || m.ReturnedDiffCI != nil || m.Verdict != "inconclusivo" || m.Code != "within_noise" {
 		t.Fatalf("thin guard = returned %s ci %v final %s/%s, want inconclusivo, no veto", m.Returned, m.ReturnedDiffCI, m.Verdict, m.Code)
 	}
 
 	m = build(sixth, all, sixth)
-	if m.Returned != "ok" || m.Verdict != "inconclusivo" || m.Code != "no_detectable_difference" {
+	if m.Returned != "ok" || m.Verdict != "inconclusivo" || m.Code != "within_noise" {
 		t.Fatalf("equal returns = returned %s final %s/%s, want ok and no veto", m.Returned, m.Verdict, m.Code)
 	}
 	assertReason(t, m)

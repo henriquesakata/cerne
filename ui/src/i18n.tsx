@@ -132,7 +132,7 @@ const ptBR = {
       small_sample: (b: number, a: number, need: number) => `amostra pequena (n=${b} antes, n=${a} depois; ${need} por lado necessárias)`,
       window_cut: (side: string, by: string, from: string, to: string, n: number) =>
         `janela ${side} cortada por ${by}: ${from} → ${to} (n=${n}) — este marco não pode ter veredito`,
-      no_detectable_difference: (lo: string, hi: string, b: number, a: number) =>
+      within_noise: (lo: string, hi: string, b: number, a: number) =>
         `sem diferença detectável: IC 90% ${lo}–${hi} — efeitos nessa faixa não são distinguíveis com n=${b} antes, n=${a} depois`,
       cost: (r: string, lo: string, hi: string, dir: string, pct: number) => `razão das medianas ${r} (IC 90% ${lo}–${hi}): custo ${dir} ${pct}%`,
       quality_guard: (guards: string, r: string, lo: string, hi: string) =>
@@ -1102,8 +1102,8 @@ const en: Messages = {
       small_sample: (b: number, a: number, need: number) => `small sample (n=${b} before, n=${a} after; ${need} per side needed)`,
       window_cut: (side: string, by: string, from: string, to: string, n: number) =>
         `${side} window cut at ${by}: ${from} → ${to} (n=${n}) — this marker cannot get a verdict`,
-      no_detectable_difference: (lo: string, hi: string, b: number, a: number) =>
-        `no detectable difference: 90% CI ${lo}–${hi} — changes in that range are not distinguishable with n=${b} before, n=${a} after`,
+      within_noise: (lo: string, hi: string, b: number, a: number) =>
+        `difference within noise: 90% CI ${lo}–${hi} — changes in that range are not distinguishable with n=${b} before, n=${a} after`,
       cost: (r: string, lo: string, hi: string, dir: string, pct: number) => `median ratio ${r} (90% CI ${lo}–${hi}): cost ${dir} ${pct}%`,
       quality_guard: (guards: string, r: string, lo: string, hi: string) =>
         `quality guard: ${guards} vetoes the cost gain (median ratio ${r}, 90% CI ${lo}–${hi})`,

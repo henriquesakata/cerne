@@ -35,7 +35,7 @@ const mk = (id: string, extra: Partial<ProcessMarker>): ProcessMarker => ({
   before: side(30),
   after: side(30),
   verdict: 'inconclusivo',
-  code: 'no_detectable_difference',
+  code: 'within_noise',
   reason: 'reason in English',
   guarded: true,
   cost: 'inconclusivo',

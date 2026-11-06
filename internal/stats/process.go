@@ -102,7 +102,7 @@ type MarkerReport struct {
 	Before         Side      `json:"before"`
 	After          Side      `json:"after"`
 	Verdict        string    `json:"verdict"` // melhorou | piorou | inconclusivo
-	Code           string    `json:"code"`    // small_sample | window_cut | no_detectable_difference | cost | quality_guard | quality_worse_cost_flat | quality_better_cost_flat | cost_and_quality_worse
+	Code           string    `json:"code"`    // small_sample | window_cut | within_noise | cost | quality_guard | quality_worse_cost_flat | quality_better_cost_flat | cost_and_quality_worse
 	Reason         string    `json:"reason"`
 	Guarded        bool      `json:"guarded"`            // both guards evaluated: neither pending nor too thin (C9)
 	CutSide        string    `json:"cut_side,omitempty"` // window_cut: the side the neighbouring marker cut short
@@ -270,10 +270,10 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 		m.Verdict, m.Code = improved, "quality_better_cost_flat"
 		m.Reason = "quality better, no detectable cost difference: " + strings.Join(better, "; ") + "; " + costText + joinNotes(notes)
 	default:
-		// C15: an interval straddling 1 is low power, not "no effect": say
-		// which range it cannot tell apart, with the sample sizes.
-		m.Verdict, m.Code = inconclusive, "no_detectable_difference"
-		m.Reason = fmt.Sprintf("no detectable difference: %s — changes in that range are not distinguishable with n=%d before, n=%d after",
+		// crit. 10's literal reason, then (C15) which range the interval
+		// cannot tell apart, with the sample sizes: low power, not "no effect".
+		m.Verdict, m.Code = inconclusive, "within_noise"
+		m.Reason = fmt.Sprintf("difference within noise: %s — changes in that range are not distinguishable with n=%d before, n=%d after",
 			costText, b.N, a.N) + joinNotes(notes)
 	}
 }

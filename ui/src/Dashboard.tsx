@@ -479,8 +479,8 @@ function processReasonText(m: ProcessMarker, report: ProcessReport, t: Messages,
       const s = m[cut]
       return R.window_cut(d.processSideName[cut], s.cut_by ?? '', fmtWhen(s.from, lang), fmtWhen(s.to, lang), s.n)
     }
-    case 'no_detectable_difference':
-      return R.no_detectable_difference(num(ci[0]), num(ci[1]), m.before.n, m.after.n)
+    case 'within_noise':
+      return R.within_noise(num(ci[0]), num(ci[1]), m.before.n, m.after.n)
     case 'cost':
       return R.cost(num(ratio), num(ci[0]), num(ci[1]), ratio < 1 ? d.processDown : d.processUp, pct)
     case 'quality_guard':

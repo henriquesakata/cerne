@@ -347,7 +347,7 @@ export type ProcessMarker = {
   code:
     | 'small_sample'
     | 'window_cut'
-    | 'no_detectable_difference'
+    | 'within_noise'
     | 'cost'
     | 'quality_guard'
     | 'quality_worse_cost_flat'
