@@ -154,6 +154,7 @@ type gauntletRound struct {
 	n       int  // 0 = implicit round (section without a "Rodada N" anchor)
 	verdict bool // VEREDITO: A|B|EMPATE, or an outcome word
 	quote   bool // a quoted span with content inside the round's block
+	defeat  bool // the first outcome word on a "Rodada N" line is derrota
 }
 
 type gauntletRecord struct {
@@ -169,6 +170,7 @@ func parseGauntlet(section string) gauntletRecord {
 	var rec gauntletRecord
 	var blocks []*strings.Builder
 	var nums []int
+	var defeats []bool
 	var cur *strings.Builder // nil = outside any round block
 	implicit := &strings.Builder{}
 	critic, criticList, criticIndent := false, false, 0
@@ -215,15 +217,17 @@ func parseGauntlet(section string) gauntletRecord {
 		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {
 			n, _ := strconv.Atoi(m[1])
 			cur = nil
-			for i, k := range nums { // same number = same round
-				if k == n {
-					cur = blocks[i]
-				}
-			}
-			if cur == nil {
+			i := slices.Index(nums, n) // same number = same round
+			if i >= 0 {
+				cur = blocks[i]
+			} else {
 				cur = &strings.Builder{}
-				blocks, nums = append(blocks, cur), append(nums, n)
+				blocks, nums, defeats = append(blocks, cur), append(nums, n), append(defeats, false)
+				i = len(nums) - 1
 			}
+			// The group is vitória, derrota or empate: only derrota starts with d.
+			v := verdictRe.FindStringSubmatch(s)
+			defeats[i] = defeats[i] || (v != nil && strings.EqualFold(v[1][:1], "d"))
 		}
 		if cur != nil {
 			cur.WriteString(line + "\n")
@@ -232,13 +236,35 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 	}
 	if len(blocks) == 0 { // no anchor: the section itself is the one round
-		blocks, nums = []*strings.Builder{implicit}, []int{0}
+		blocks, nums, defeats = []*strings.Builder{implicit}, []int{0}, []bool{false}
 	}
 	for i, b := range blocks {
 		text := b.String()
-		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text)})
+		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text), defeat: defeats[i]})
 	}
 	return rec
+}
+
+// GauntletRounds reads a result's own "## Gauntlet" record for the process
+// panel's returns guard (F-0321), with the same parser as
+// result-missing-gauntlet: hasGauntlet is false with no section or a recorded
+// exemption (out of the guard, never zero returns); derrotas counts the
+// distinct rounds whose "Rodada N" line opens with a derrota verdict.
+func GauntletRounds(result []byte) (hasGauntlet bool, derrotas int) {
+	sections := gauntletSections(stripHTMLComments(result))
+	defeated := map[int]bool{}
+	for _, section := range sections {
+		rec := parseGauntlet(section)
+		if rec.exempt {
+			return false, 0
+		}
+		for _, r := range rec.rounds {
+			if r.defeat {
+				defeated[r.n] = true
+			}
+		}
+	}
+	return len(sections) > 0, len(defeated)
 }
 
 func gauntletVerdict(text string) bool {

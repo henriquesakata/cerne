@@ -399,3 +399,33 @@ func TestGauntletGrandfather(t *testing.T) {
 		})
 	}
 }
+
+// TestGauntletRoundsCountsDefeats pins F-0321's criteria 4-5: a result's
+// returns are its distinct rounds whose "Rodada N" line opens with derrota —
+// read by the same parser as result-missing-gauntlet — and an exemption or no
+// section is out of the guard, never zero returns.
+func TestGauntletRoundsCountsDefeats(t *testing.T) {
+	cases := []struct {
+		name     string
+		result   string
+		has      bool
+		derrotas int
+	}{
+		{"two defeats and a win", "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\nRodada 2 — derrota: \"b\"\nRodada 3 — vitória: \"c\"\n", true, 2},
+		{"same round on two lines", "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\nRodada 1 — derrota: \"a de novo\"\n", true, 1},
+		{"first verdict word decides", "## Gauntlet\n\nBarra: x\nRodada 1 — vitória: \"a derrota do outro\"\n", true, 0},
+		{"critic findings never count", "## Gauntlet\n\nBarra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1\n- Rodada 2 → a derrota que o crítico citou\n", true, 0},
+		{"scaffold comment never counts", "## Gauntlet\n\nBarra: x\n<!-- Rodada 1 — derrota -->\nRodada 1 — vitória: \"a\"\n", true, 0},
+		{"not applicable", "## Gauntlet\n\nBarra: não aplicável (sem barra comparável)\n", false, 0},
+		{"human waiver", "## Gauntlet\n\nBarra: dispensada por decisão humana (D-0001)\n", false, 0},
+		{"no section", "## Resultado\n\nfeito\n", false, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			has, n := GauntletRounds([]byte(tc.result))
+			if has != tc.has || n != tc.derrotas {
+				t.Fatalf("GauntletRounds = (%v, %d), want (%v, %d)", has, n, tc.has, tc.derrotas)
+			}
+		})
+	}
+}
