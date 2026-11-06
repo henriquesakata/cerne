@@ -868,16 +868,18 @@ const ptBR = {
     } satisfies Record<SettingScope | 'default', string>,
     // Títulos e descrições do registro chegam em inglês (D-0006); a tradução é
     // indexada pelo texto-fonte (estilo gettext): texto novo ou alterado no
-    // servidor cai no inglês, nunca numa tradução velha.
+    // servidor cai no inglês, nunca numa tradução velha. Chaves SEMPRE entre
+    // aspas: TestSettingsRegistryHasPtBRCatalog (internal/project) as casa
+    // contra o registro Go e falha quando uma tradução falta.
     text: {
       'Channel name': 'Nome no canal',
       "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.":
         'Seu nome no canal permanente do projeto, nas mensagens enviadas pela UI. Vazio usa o seu nome de usuário do sistema.',
-      Graph: 'Grafo',
+      'Graph': 'Grafo',
       'Shows the Graph tab in the UI. Off hides it.': 'Mostra a aba Grafo na UI. Desligado a esconde.',
-      Mindmap: 'Mapa mental',
+      'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
-      Wiki: 'Wiki',
+      'Wiki': 'Wiki',
       'Not wired yet (F-0316): off will stop compiling the wiki on push and counting its debt as pending work. Today it changes nothing.':
         'Ainda não ligado (F-0316): desligado deixará de compilar a wiki no push e de contar a dívida dela como trabalho pendente. Hoje não muda nada.',
     } as Record<string, string>,

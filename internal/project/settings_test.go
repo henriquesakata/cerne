@@ -699,3 +699,31 @@ func TestSetSettingStringValue(t *testing.T) {
 		t.Errorf("host file = %q, want %q", after, before)
 	}
 }
+
+// TestSettingsRegistryHasPtBRCatalog (F-0315, critic C12): the settings
+// screen translates a key's title and description through a pt-BR catalog
+// keyed by the English source text (ui/src/i18n.tsx, settings.text). A
+// registry text with no entry there silently falls back to English in the
+// pt-BR UI, so a registry change and its translation land together.
+func TestSettingsRegistryHasPtBRCatalog(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "ui", "src", "i18n.tsx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt, _, ok := strings.Cut(string(src), "export type Messages")
+	if !ok {
+		t.Fatal("i18n.tsx: no `export type Messages` after the pt-BR dictionary")
+	}
+	_, catalog, ok := strings.Cut(pt, "    text: {")
+	if !ok {
+		t.Fatal("i18n.tsx: no settings `text: {` catalog in the pt-BR dictionary")
+	}
+	catalog, _, _ = strings.Cut(catalog, "} as Record<string, string>")
+	for _, s := range settingsRegistry {
+		for _, text := range []string{s.Title, s.Description} {
+			if !strings.Contains(catalog, "'"+text+"':") && !strings.Contains(catalog, `"`+text+`":`) {
+				t.Errorf("%s: no pt-BR entry for %q in ui/src/i18n.tsx settings.text (quote the key)", s.ID, text)
+			}
+		}
+	}
+}
