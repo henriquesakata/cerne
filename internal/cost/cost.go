@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -55,9 +56,10 @@ type Report struct {
 	First                     string              `json:"first,omitempty"`
 	Last                      string              `json:"last,omitempty"`
 	Unattributed              Counters            `json:"unattributed"`
-	Entities                  map[string]Counters `json:"entities,omitempty"` // project view (id == "")
-	Children                  *Rollup             `json:"children,omitempty"` // epic: its children's anchors
-	Total                     *Counters           `json:"total,omitempty"`    // epic: own + children
+	Entities                  map[string]Counters `json:"entities,omitempty"`      // project view (id == "")
+	OtherHarness              []string            `json:"other_harness,omitempty"` // project view: sessions left out, bound under another harness
+	Children                  *Rollup             `json:"children,omitempty"`      // epic: its children's anchors
+	Total                     *Counters           `json:"total,omitempty"`         // epic: own + children
 }
 
 // Inputs locate what Compute reads.
@@ -194,8 +196,13 @@ func own(in Inputs, id string) (Report, error) {
 	}
 	if len(other) > 0 {
 		sort.Strings(other)
-		return Report{ID: id, ByModel: map[string]Counters{}},
-			fmt.Errorf("%w; bound under another harness: %s", ErrUnsupportedHarness, strings.Join(other, ", "))
+		if id != "" {
+			return Report{ID: id, ByModel: map[string]Counters{}},
+				fmt.Errorf("%w; bound under another harness: %s", ErrUnsupportedHarness, strings.Join(other, ", "))
+		}
+		// The project view leaves them out, named, instead of failing whole.
+		r.OtherHarness = other
+		scope = slices.DeleteFunc(scope, func(s string) bool { return slices.Contains(other, s) })
 	}
 	for _, sess := range scope {
 		bs := bySess[sess]

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -126,7 +127,13 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if err != nil {
 		return
 	}
-	_ = app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, id)
+	// The cost ledger trusts the delivering contract first: only a Claude Code
+	// payload can be a claude-code bind, and only under its CLAUDECODE marker.
+	harness := cost.CurrentHarness()
+	if format != "claude" {
+		harness = "other"
+	}
+	_ = app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, harness, id)
 }
 
 func newHookWorkGateCmd() *cobra.Command {

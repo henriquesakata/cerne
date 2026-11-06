@@ -256,6 +256,27 @@ func TestHookBindWorkBindsEpicAndTaskStart(t *testing.T) {
 	}
 }
 
+// TestHookBindWorkHarnessFromFormat (F-0309 C9): a bind delivered under a
+// non-Claude --format records harness "other" even with CLAUDECODE=1 inherited;
+// under --format claude the CLAUDECODE check still decides.
+func TestHookBindWorkHarnessFromFormat(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	for _, format := range []string{"codex", "claude"} {
+		stdin := hookJSON(t, "sess-"+format, projDir, "Bash",
+			map[string]any{"command": "cerne feature start F-0002"},
+			map[string]any{"stdout": "F-0002: approved → in_development"})
+		if out, err := execCerneStdin(t, stdin, "hook", "bind-work", "--format", format); err != nil {
+			t.Fatalf("%s: %v\n%s", format, err, out)
+		}
+	}
+	raw, _ := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "costbind.ndjson"))
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], `"harness":"other"`) || !strings.Contains(lines[1], `"harness":"claude-code"`) {
+		t.Fatalf("ledger =\n%s", raw)
+	}
+}
+
 // TestHookWorkGateDenyHint (F-0170 crit. 4): with [gates] work_gate_hint set,
 // the deny reason carries the project's suffix; without it, the reason stays
 // free of any hint separator.

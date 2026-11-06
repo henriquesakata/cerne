@@ -195,6 +195,9 @@ func renderCost(out io.Writer, r cost.Report) {
 		fmt.Fprintln(out, "Window: — (no attributed message)")
 	}
 	fmt.Fprintf(out, "Unattributed (messages in these sessions outside any binding): %s\n", fmtCounters(r.Unattributed))
+	if len(r.OtherHarness) > 0 {
+		fmt.Fprintf(out, "Left out (bound under another harness; cost reads Claude Code transcripts only): %s\n", strings.Join(r.OtherHarness, ", "))
+	}
 	if r.ID == "" {
 		a, u := r.Counters, r.Unattributed
 		fmt.Fprintf(out, "Total (attributed + unattributed): %s\n", fmtCounters(cost.Counters{Input: a.Input + u.Input,

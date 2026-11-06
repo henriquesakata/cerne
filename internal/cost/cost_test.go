@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -288,6 +289,26 @@ func TestComputeRefusesNonClaudeHarness(t *testing.T) {
 	}
 	if r.Counters != (Counters{}) || r.Messages != 0 || r.Unattributed != (Counters{}) {
 		t.Fatalf("partial report leaked: %+v", r)
+	}
+}
+
+// TestComputeProjectViewExcludesOtherHarness (C9): the project view leaves out
+// and names the sessions bound under another harness instead of failing; an
+// entity scope holding one still refuses (crit. 13).
+func TestComputeProjectViewExcludesOtherHarness(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s", tmsg{ts: at(2), id: "a", req: "r", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	if err := AppendBind(in.CacheDir, Bind{Session: "s2", Entity: "F-0002", Harness: "other", TS: at(1)}); err != nil {
+		t.Fatal(err)
+	}
+	r := compute(t, in, "")
+	if r.Entities["F-0001"] != cc(1, 1, 1, 1) || !reflect.DeepEqual(r.OtherHarness, []string{"s2"}) || r.Sessions != 1 {
+		t.Fatalf("project = %+v, want F-0001 counted, s2 excluded and named", r)
+	}
+	if _, err := Compute(in, "F-0002"); !errors.Is(err, ErrUnsupportedHarness) {
+		t.Fatalf("entity scope err = %v, want ErrUnsupportedHarness", err)
 	}
 }
 

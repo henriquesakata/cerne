@@ -46,13 +46,13 @@ func safeSessionID(sess string) error {
 // BindSession records that session sess is working under entity id (a W- work
 // or F- feature), overwriting any previous binding for the session.
 func BindSession(cacheDir, sess, id string) error {
-	return BindSessionAgent(cacheDir, sess, "", id)
+	return BindSessionAgent(cacheDir, sess, "", cost.CurrentHarness(), id)
 }
 
 // BindSessionAgent is BindSession from inside subagent agent ("" for the main
-// thread): the binding file is the session's, the cost ledger line also
-// carries the agent (F-0309).
-func BindSessionAgent(cacheDir, sess, agent, id string) error {
+// thread) under harness: the binding file is the session's, the cost ledger
+// line also carries the agent and the harness (F-0309).
+func BindSessionAgent(cacheDir, sess, agent, harness, id string) error {
 	if err := safeSessionID(sess); err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func BindSessionAgent(cacheDir, sess, agent, id string) error {
 	if err := os.WriteFile(filepath.Join(dir, sess), []byte(id+"\n"), 0o644); err != nil {
 		return err
 	}
-	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: cost.CurrentHarness(), TS: time.Now().UTC()})
+	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, TS: time.Now().UTC()})
 }
 
 // CurrentBinding resolves the binding for session sess against the backend
