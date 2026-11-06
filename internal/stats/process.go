@@ -87,6 +87,7 @@ type MarkerReport struct {
 	Code           string    `json:"code"`    // small_sample | within_noise | cost | quality_guard
 	Reason         string    `json:"reason"`
 	Guarded        bool      `json:"guarded"`            // both guards evaluated: neither pending nor too thin (C9)
+	CutSide        string    `json:"cut_side,omitempty"` // window_cut: the side the neighbouring marker cut short
 	Cost           string    `json:"cost,omitempty"`     // n >= 8 only
 	Returned       string    `json:"returned,omitempty"` // ok | piorou | inconclusivo
 	Escaped        string    `json:"escaped,omitempty"`  // ok | piorou | pending
@@ -162,6 +163,21 @@ func ComputeProcess(samples []ProcessSample, markers []Marker, excludedNoCost in
 // any worse guard vetoes; else noise; else the cost verdict.
 func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 	b, a := m.Before, m.After
+	for _, s := range []struct {
+		name string
+		side Side
+	}{{"before", b}, {"after", a}} {
+		// A side cut by the neighbouring marker is closed: it can never fill
+		// up, so the reason says no verdict is possible instead of asking to
+		// wait (C3). Markers are never merged — crit. 7 cuts, it does not join.
+		if s.side.N < minSample && s.side.CutBy != "" {
+			m.Verdict, m.Code, m.CutSide = inconclusive, "window_cut", s.name
+			m.Reason = fmt.Sprintf("%s window cut at %s: %s → %s UTC (%s, n=%d) — this marker cannot get a verdict",
+				s.name, s.side.CutBy, s.side.From.UTC().Format("2006-01-02 15:04"), s.side.To.UTC().Format("2006-01-02 15:04"),
+				span(s.side.To.Sub(s.side.From)), s.side.N)
+			return
+		}
+	}
 	if b.N < minSample || a.N < minSample {
 		m.Verdict, m.Code = inconclusive, "small_sample"
 		m.Reason = fmt.Sprintf("small sample (n=%d before, n=%d after; %d per side needed)", b.N, a.N, minSample)
@@ -237,6 +253,14 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 		m.Verdict, m.Code = inconclusive, "within_noise"
 		m.Reason = "difference within noise: " + costText + joinNotes(notes)
 	}
+}
+
+// span renders a window's length: "2h8m" under two days, else whole days.
+func span(d time.Duration) string {
+	if d >= 48*time.Hour {
+		return fmt.Sprintf("%.0f days", d.Hours()/24)
+	}
+	return strings.TrimSuffix(d.Round(time.Minute).String(), "0s")
 }
 
 func joinNotes(notes []string) string {

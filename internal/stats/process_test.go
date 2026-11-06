@@ -480,3 +480,22 @@ func TestProcessUnguardedVerdictIsQualified(t *testing.T) {
 		t.Fatalf("guarded = %s guarded %v, want melhorou guarded=true", m.Verdict, m.Guarded)
 	}
 }
+
+// TestProcessWindowCutHasItsOwnReason pins C3: markers 2h apart cut each
+// other's facing window to 2h, which can never hold 8 deliveries — the reason
+// says so, naming the neighbour and the real window, never "wait for data".
+func TestProcessWindowCutHasItsOwnReason(t *testing.T) {
+	a, b := at(30), at(30).Add(2*time.Hour+8*time.Minute)
+	samples := append(spread(20e6, 10, at(2)), spread(12e6, 10, b)...)
+	r := ComputeProcess(samples, []Marker{marker("D-0061", a), marker("D-0062", b)}, 0, mature)
+	m := r.Markers[0]
+	if m.Verdict != "inconclusivo" || m.Code != "window_cut" || m.CutSide != "after" ||
+		!strings.Contains(m.Reason, "after window cut at D-0062: 2026-02-04 00:00 → 2026-02-04 02:08 UTC (2h8m, n=0)") ||
+		!strings.Contains(m.Reason, "cannot get a verdict") || strings.Contains(m.Reason, "needed") {
+		t.Fatalf("D-0061 = %s/%s side %q %q, want window_cut on after, naming D-0062 and the 2h window", m.Verdict, m.Code, m.CutSide, m.Reason)
+	}
+	if m := r.Markers[1]; m.Code != "window_cut" || m.CutSide != "before" || !strings.Contains(m.Reason, "before window cut at D-0061") {
+		t.Fatalf("D-0062 = %s side %q %q, want window_cut on before, naming D-0061", m.Code, m.CutSide, m.Reason)
+	}
+	assertReason(t, m)
+}
