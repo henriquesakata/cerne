@@ -434,6 +434,29 @@ func TestHookWorkGateChannelSilent(t *testing.T) {
 	}
 }
 
+// breakChannelRead makes the channel's message log unreadable in a way that
+// also holds for root — CI runs as root, where chmod 000 does not stop a read:
+// the log path becomes a directory. The returned func restores the log.
+func breakChannelRead(t *testing.T, chDir string) func() {
+	t.Helper()
+	log := filepath.Join(chDir, "messages.jsonl")
+	if err := os.Rename(log, log+".aside"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(log, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		if err := os.Remove(log); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(log+".aside", log); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // TestHookWorkGateChannelFailOpen (crit. 19, N-0021): a corrupt, unreadable or
 // locked channel never breaks the Edit — exit 0, nothing printed.
 func TestHookWorkGateChannelFailOpen(t *testing.T) {
@@ -457,13 +480,9 @@ func TestHookWorkGateChannelFailOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.Chmod(chDir, 0o000); err != nil {
-		t.Fatal(err)
-	}
+	restore := breakChannelRead(t, chDir)
 	run("unreadable")
-	if err := os.Chmod(chDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	restore()
 
 	if err := os.WriteFile(filepath.Join(chDir, "messages.jsonl"), []byte("garbage{\n\x00\x01"), 0o644); err != nil {
 		t.Fatal(err)
