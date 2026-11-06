@@ -120,6 +120,10 @@ func exportSession(sess string) {
 // session's pending channel block and a blank line. Only CERNE_SESSION names
 // the session — a human's terminal has none, so it never consumes anyone's
 // watermark — and any failure prints nothing.
+// Known limit (critic C7): a subagent shares its parent's CERNE_SESSION and
+// the CLI cannot tell it runs in one, so `next`/`status --active`/`msg read`
+// inside a subagent consume the parent's watermark; only the SubagentStart
+// hook peeks.
 func printChannelLead(out io.Writer, projectID string) {
 	if block := channelBlock(projectID, os.Getenv("CERNE_SESSION"), true); block != "" {
 		fmt.Fprintln(out, block)
