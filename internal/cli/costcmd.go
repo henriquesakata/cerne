@@ -34,7 +34,9 @@ func newCostCmd() *cobra.Command {
 			"each message to the binding in force at its timestamp (the bind hook records one ledger line " +
 			"per 'cerne work start' / 'cerne feature start'). Messages of those sessions outside any binding " +
 			"are reported as unattributed, never dropped; subagent (sidechain) tokens are included and shown " +
-			"apart. Without <id>, the project view per entity. Tokens only — no monetary value. Not " +
+			"apart; a subagent message follows the subagent's own binding when it has one, otherwise the " +
+			"main thread's binding in force at the subagent's first message. A binding ends when its work " +
+			"or feature closes. Without <id>, the project view per entity. Tokens only — no monetary value. Not " +
 			"'cerne savings', which measures the reading an agent is spared. An id with children (an epic) also " +
 			"sums their stamped anchors and names the children without one. --json for structured output. " +
 			"--stamp, after 'cerne feature complete' and before the human accept, writes the cost into the " +
