@@ -154,6 +154,7 @@ const (
 	worksSubdir        = "entities/works"
 	pendingsSubdir     = "entities/pendings"
 	capabilitiesSubdir = "entities/capabilities"
+	ideasSubdir        = "entities/ideas"
 )
 
 // SaveFeature writes the feature to entities/features/<ID>.json.
@@ -329,6 +330,40 @@ func LoadPending(backendDir, id string) (Pending, error) {
 // error) when entities/pendings/ is absent.
 func LoadAllPendings(backendDir string) ([]Pending, error) {
 	return loadAllEntities[Pending](backendDir, pendingsSubdir)
+}
+
+// Idea is the persisted form of an idea (F-0312): raw material nobody has
+// evaluated yet — text and optional tags, no spec, no gates. ClosedAt is
+// stamped by drop and promote; Reason (optional) by drop; PromotedTo holds
+// the candidate a promote created.
+type Idea struct {
+	ID         string           `json:"id"`
+	Text       string           `json:"text"`
+	State      domain.IdeaState `json:"state"`
+	Facets     []string         `json:"facets,omitempty"`
+	Components []string         `json:"components,omitempty"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+	ClosedAt   *time.Time       `json:"closed_at,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
+	PromotedTo string           `json:"promoted_to,omitempty"`
+}
+
+// SaveIdea writes the idea to entities/ideas/<ID>.json, creating the subdir
+// on demand.
+func SaveIdea(backendDir string, i Idea) error {
+	return saveEntity(backendDir, ideasSubdir, i.ID, i)
+}
+
+// LoadIdea reads one idea by id; ErrNotFound when the file is missing.
+func LoadIdea(backendDir, id string) (Idea, error) {
+	return loadEntity[Idea](backendDir, ideasSubdir, id)
+}
+
+// LoadAllIdeas returns all ideas sorted by ID ascending; empty (not an error)
+// when entities/ideas/ is absent.
+func LoadAllIdeas(backendDir string) ([]Idea, error) {
+	return loadAllEntities[Idea](backendDir, ideasSubdir)
 }
 
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.

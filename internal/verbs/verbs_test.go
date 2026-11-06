@@ -103,3 +103,16 @@ func TestAffectedIDsListsEveryEntity(t *testing.T) {
 		t.Fatalf("affectedIDs = %v, want [F-0004 P-0001]", got)
 	}
 }
+
+// TestAffectedIDsSeesIdeaEvents (F-0312 crit. 9): idea.* stays out of the
+// funnel log, but the chat channel still names the idea a call captured.
+func TestAffectedIDsSeesIdeaEvents(t *testing.T) {
+	repo := t.TempDir()
+	e := domain.NewEvent("I-0001", "idea.created", map[string]string{"tool_call": "n1"}, "agent")
+	if err := store.AppendEvent(repo, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := affectedIDs(repo, "n1"); !slices.Equal(got, []string{"I-0001"}) {
+		t.Fatalf("affectedIDs = %v, want [I-0001]", got)
+	}
+}

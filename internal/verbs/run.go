@@ -271,7 +271,7 @@ func affectedIDs(repoDir, call string) []string {
 	if repoDir == "" {
 		return nil
 	}
-	evs, err := store.ReadEvents(repoDir)
+	evs, err := store.ReadAllEvents(repoDir)
 	if err != nil {
 		return nil
 	}
