@@ -312,6 +312,56 @@ export async function fetchFlowStats(): Promise<FlowMetrics> {
   return (await r.json()) as FlowMetrics
 }
 
+// Painel de desempenho do processo (F-0321) — espelho de stats.ProcessReport.
+// Os vereditos são os literais da spec; a UI só os rotula.
+export type ProcessVerdict = 'melhorou' | 'piorou' | 'inconclusivo'
+export type ProcessGuard = 'ok' | 'piorou' | 'inconclusivo' | 'pending'
+
+export type ProcessSide = {
+  from: string
+  to: string
+  cut_by?: string
+  n: number
+  median: number
+  p25: number
+  p75: number
+  raw_median: { input: number; cache_creation: number; cache_read: number; output: number }
+  with_gauntlet: number
+  returned_share: number
+  escaped_share: number
+}
+
+export type ProcessMarker = {
+  id: string
+  title: string
+  at: string
+  before: ProcessSide
+  after: ProcessSide
+  verdict: ProcessVerdict
+  code: 'small_sample' | 'within_noise' | 'cost' | 'quality_guard'
+  reason: string
+  cost?: ProcessVerdict
+  returned?: ProcessGuard
+  escaped?: ProcessGuard
+  cost_ratio_ci?: number[]
+  returned_diff_ci?: number[]
+  escaped_diff_ci?: number[]
+}
+
+export type ProcessReport = {
+  reason?: string
+  weeks: { week: string; start: string; median: number; n: number }[]
+  markers: ProcessMarker[]
+  excluded_no_cost: number
+  excluded_no_gauntlet: number
+}
+
+export async function fetchProcessPerf(): Promise<ProcessReport> {
+  const r = await fetch(`${base()}/process-perf`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as ProcessReport
+}
+
 // Atividade de agentes (F-0130): work-in-progress compartilhado no backend.
 export type WorkState = 'active' | 'done' | 'abandoned'
 

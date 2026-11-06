@@ -1851,6 +1851,15 @@ h2 {
    49 caracteres era esticado pela altura do vizinho (F-0233). */
 .dash-band { min-height: 0; }
 
+/* .dash-process (F-0321): série semanal em SVG inline e a tabela de marcos. */
+.dash-process svg { width: 100%; height: auto; display: block; }
+.dash-process circle { fill: var(--accent); }
+.dash-process line { stroke: var(--muted); }
+.dash-process text { fill: var(--muted); font-size: 11px; }
+.dash-process table { width: 100%; border-collapse: collapse; }
+.dash-process th,
+.dash-process td { text-align: left; padding: 4px 8px; vertical-align: top; border-top: 1px solid var(--border-soft); }
+
 .dash-stats {
   display: flex;
   flex-wrap: wrap;
