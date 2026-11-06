@@ -171,7 +171,9 @@ const processGolden = `{
   ],
   "excluded_no_cost": 1,
   "excluded_epic": 0,
-  "excluded_no_gauntlet": 1
+  "excluded_no_gauntlet": 1,
+  "min_sample": 8,
+  "guard_level": 0.975
 }
 `
 

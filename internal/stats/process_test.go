@@ -593,3 +593,11 @@ func TestProcessSideCoverage(t *testing.T) {
 		t.Fatalf("after = unattributed median %v coverage %v, want 150 / 0.667", a.UnattributedMedian, a.Coverage)
 	}
 }
+
+// TestProcessReportCarriesItsRule: the card states the n a side needs (C19)
+// and the guards' level from the report, never from a copy of the constants.
+func TestProcessReportCarriesItsRule(t *testing.T) {
+	if r := ComputeProcess(nil, nil, mature); r.MinSample != 8 || r.GuardLevel != 0.975 {
+		t.Fatalf("report = min_sample %d guard_level %v, want 8 / 0.975", r.MinSample, r.GuardLevel)
+	}
+}

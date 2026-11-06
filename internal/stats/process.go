@@ -131,6 +131,8 @@ type ProcessReport struct {
 	ExcludedNoCost     int            `json:"excluded_no_cost"`
 	ExcludedEpic       int            `json:"excluded_epic"`
 	ExcludedNoGauntlet int            `json:"excluded_no_gauntlet"` // samples out of the returns guard
+	MinSample          int            `json:"min_sample"`           // deliveries a side needs before any verdict
+	GuardLevel         float64        `json:"guard_level"`          // two-sided level of each guard's interval
 }
 
 // ComputeProcess builds the process panel from every delivery (excluded ones
@@ -153,7 +155,7 @@ func ComputeProcess(samples []ProcessSample, markers []Marker, now time.Time) Pr
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
-	r := ProcessReport{Weeks: weeks(ss), Markers: make([]MarkerReport, 0, len(ms))}
+	r := ProcessReport{Weeks: weeks(ss), Markers: make([]MarkerReport, 0, len(ms)), MinSample: minSample, GuardLevel: guardLevel}
 	all := side(ss, time.Time{}, time.Time{}, "", now)
 	r.ExcludedNoCost, r.ExcludedEpic, r.ExcludedNoGauntlet = all.ExcludedNoCost, all.ExcludedEpic, all.ExcludedNoGauntlet
 	if all.N == 0 {
