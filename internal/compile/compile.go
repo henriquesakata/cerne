@@ -216,6 +216,33 @@ func Dirty(repoDir string, pages []Page, force bool) ([]Page, error) {
 	return dirty, nil
 }
 
+// Compilable keeps the pages worth compiling: those with at least one
+// source, optionally restricted to a single module by scope.
+func Compilable(pages []Page, scope string) []Page {
+	var out []Page
+	for _, p := range pages {
+		if len(p.Sources) == 0 {
+			continue
+		}
+		if scope != "" && p.Name != scope {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// Stale is the wiki's freshness signal (F-0316): the pages a plain
+// `cerne compile` would recompile — compilable and Dirty — so it empties
+// exactly when that compile finishes.
+func Stale(repoDir string) ([]Page, error) {
+	pages, err := Pages(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	return Dirty(repoDir, Compilable(pages, ""), false)
+}
+
 // maxSourceExcerptChars bounds each source's content in the synthesis prompt so
 // a page aggregating many entities (e.g. the cross-cutting project page) stays
 // within one LLM call. It bounds only the PROMPT text — InputHash still hashes
