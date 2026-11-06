@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"gitlab.com/rockt/cerne/internal/compile"
 )
 
 // backdateLock ages the lock file by d, standing in for a holder that has not
@@ -40,14 +42,14 @@ func TestCompileLockCoalescesAndStealsStale(t *testing.T) {
 
 	// A run longer than the window is normal — one page is a whole LLM call —
 	// so the holder proves it is alive by touching the lock between pages.
-	backdateLock(t, path, compileStaleAfter+time.Minute)
+	backdateLock(t, path, compile.LockStaleAfter+time.Minute)
 	held.touch()
 	if _, ok := tryCompileLock(repoDir); ok {
 		t.Fatalf("a touched lock was stolen from a live holder")
 	}
 
 	// A holder that died mid-synthesis must not wedge the wiki forever.
-	backdateLock(t, path, compileStaleAfter+time.Minute)
+	backdateLock(t, path, compile.LockStaleAfter+time.Minute)
 	stolen, ok := tryCompileLock(repoDir)
 	if !ok {
 		t.Fatalf("stale lock was not stolen")

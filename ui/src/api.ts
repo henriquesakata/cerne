@@ -578,6 +578,9 @@ export type LintFinding = {
   entity?: string
   file?: string
   detail: string
+  // Consultivo (F-0322, F-0316): aparece, mas nunca bloqueia nem conta como
+  // dívida aberta.
+  advisory?: boolean
 }
 
 export async function fetchLint(): Promise<LintFinding[]> {
@@ -859,10 +862,25 @@ export async function registerChatNote(
 
 export type WikiPageRef = { name: string; rel: string }
 
-export async function fetchWikiIndex(): Promise<WikiPageRef[]> {
+// stale/needs_provider só vêm com a wiki desligada (F-0316): as páginas que
+// envelheceram e se o navegador não tem provedor para recompilá-las.
+export type WikiIndex = { pages: WikiPageRef[]; stale?: string[]; needs_provider?: boolean }
+
+export async function fetchWikiIndex(): Promise<WikiIndex> {
   const r = await fetch(`${base()}/wiki`)
   if (!r.ok) throw new Error(await errorMessage(r))
-  return ((await r.json()) as { pages: WikiPageRef[] }).pages
+  return (await r.json()) as WikiIndex
+}
+
+export type WikiCompileResult = { compiled: boolean; needs_provider?: boolean; busy?: boolean }
+
+// recompileWiki roda `cerne compile` no servidor até o fim (F-0316). 409 é
+// outra compilação já em andamento: nada rodou, mas também nada falhou.
+export async function recompileWiki(): Promise<WikiCompileResult> {
+  const r = await fetch(`${base()}/wiki/compile`, { method: 'POST' })
+  if (r.status === 409) return { compiled: false, busy: true }
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as WikiCompileResult
 }
 
 export type WikiPage = { rel: string; body: string }

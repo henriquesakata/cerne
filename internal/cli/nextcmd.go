@@ -118,6 +118,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {
@@ -175,9 +176,10 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	sort.SliceStable(q.OpenPendings, func(i, j int) bool { return q.OpenPendings[i].CreatedAt.Before(q.OpenPendings[j].CreatedAt) })
 
 	// A stale pending is already in OPEN PENDINGS with its age, and a stale
-	// approval on its feature's line (F-0318): not twice.
+	// approval on its feature's line (F-0318): not twice. Wiki debt with the
+	// wiki off is nobody's work (F-0316): lint still shows it.
 	findings = slices.DeleteFunc(findings, func(f lint.Finding) bool {
-		return f.Rule == lint.RuleStalePending || f.Rule == lint.RuleSpecChangedAfterApproval
+		return f.Rule == lint.RuleStalePending || f.Rule == lint.RuleSpecChangedAfterApproval || f.Downgraded
 	})
 	for _, f := range findings {
 		q.Debts = append(q.Debts, nextFinding{f.Rule, f.Entity, f.File, f.Detail})

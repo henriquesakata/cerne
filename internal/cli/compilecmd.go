@@ -63,7 +63,7 @@ func runCompile(cmd *cobra.Command, dir, scope string, force, ingest bool) error
 	if err != nil {
 		return err
 	}
-	pages = compilablePages(pages, scope)
+	pages = compile.Compilable(pages, scope)
 
 	// byo-key: one-phase synchronous synthesis via the configured Provider.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
@@ -124,7 +124,7 @@ func compileSynchronous(cmd *cobra.Command, ctx projCtx, pages []compile.Page, s
 				if err != nil {
 					return err
 				}
-				pages = compilablePages(fresh, scope)
+				pages = compile.Compilable(fresh, scope)
 			}
 			stop := op.Phase("compile")
 			batch, err := compileDirtyPages(cmd.Context(), ctx, pages, force && len(done) == 0, lock)
@@ -216,7 +216,7 @@ func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page,
 			return nil, err
 		}
 		done = append(done, p)
-		lock.touch() // a whole run outlives compileStaleAfter; a single page must not
+		lock.touch() // a whole run outlives compile.LockStaleAfter; a single page must not
 	}
 	if len(done) > 0 {
 		if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
@@ -243,22 +243,6 @@ func reportModulelessSkipped(cmd *cobra.Command, repoDir string) error {
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"%d feature(s) without a module are left out of the wiki (see CONTEXT.md / cerne search); assign modules to synthesize them.\n", n)
 	return nil
-}
-
-// compilablePages keeps the pages worth compiling: those with at least one
-// source, optionally restricted to a single module by scope.
-func compilablePages(pages []compile.Page, scope string) []compile.Page {
-	var out []compile.Page
-	for _, p := range pages {
-		if len(p.Sources) == 0 {
-			continue
-		}
-		if scope != "" && p.Name != scope {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
 }
 
 // pendingRelDir is the project-relative directory (forward-slash, portable)

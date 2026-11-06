@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -214,6 +215,51 @@ func Dirty(repoDir string, pages []Page, force bool) ([]Page, error) {
 		}
 	}
 	return dirty, nil
+}
+
+// Compilable keeps the pages worth compiling: those with at least one
+// source, optionally restricted to a single module by scope.
+func Compilable(pages []Page, scope string) []Page {
+	var out []Page
+	for _, p := range pages {
+		if len(p.Sources) == 0 {
+			continue
+		}
+		if scope != "" && p.Name != scope {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// Stale is the wiki's freshness signal (F-0316): the pages a plain
+// `cerne compile` would recompile — compilable and Dirty — so it empties
+// exactly when that compile finishes.
+func Stale(repoDir string) ([]Page, error) {
+	pages, err := Pages(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	return Dirty(repoDir, Compilable(pages, ""), false)
+}
+
+// LockPath is the single-flight compile lock (F-0286). It sits NEXT TO the
+// backend clone (repoDir is <cache>/<id>/repo), never inside a worktree.
+func LockPath(repoDir string) string { return repoDir + ".compile.lock" }
+
+// LockStaleAfter bounds ONE page's synthesis, not a whole run: the holder
+// touches the lock after every page. A wiki page is a full LLM call and
+// routinely takes minutes, so this window is far wider than gitback's — but a
+// crashed holder still frees the wiki within it instead of wedging the project.
+const LockStaleAfter = 30 * time.Minute
+
+// Running reports whether a live compile holds the lock: it exists and its
+// holder touched it within LockStaleAfter — a lock a new compile would neither
+// take nor steal (F-0316's busy probe).
+func Running(repoDir string) bool {
+	info, err := os.Stat(LockPath(repoDir))
+	return err == nil && time.Since(info.ModTime()) < LockStaleAfter
 }
 
 // maxSourceExcerptChars bounds each source's content in the synthesis prompt so

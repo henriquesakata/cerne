@@ -87,6 +87,28 @@ var advisoryRules = map[string]bool{RuleStalePending: true}
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
 
+// wikiDebtRules are the wiki's own debt: downgraded while wiki.enabled is off
+// (F-0316). Since F-0090 wiki-source-unknown is the only one emitted.
+var wikiDebtRules = map[string]bool{RuleWikiSourceUnknown: true}
+
+// DowngradeWikiDebt stamps the wiki debt in findings Downgraded when the wiki
+// is off. Derived per run from the effective setting, never stored: with the
+// wiki back on the same findings block again with no reconciliation.
+func DowngradeWikiDebt(findings []Finding, wikiOn bool) {
+	if wikiOn {
+		return
+	}
+	for i := range findings {
+		if wikiDebtRules[findings[i].Rule] {
+			findings[i].Downgraded = true
+		}
+	}
+}
+
+// Blocking reports whether f fails a lint gate: neither an advisory rule
+// (F-0322) nor wiki debt downgraded by a disabled wiki (F-0316).
+func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
+
 // RuleOrder is the deterministic report order of the lint rules.
 var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar}
 
@@ -128,6 +150,9 @@ type Finding struct {
 	Entity string // entity ID the finding is about ("" for orphan files)
 	File   string // rel slash path of the offending file ("" when entity-level)
 	Detail string // human-readable pt-BR detail
+	// Downgraded: wiki debt while wiki.enabled is off (F-0316) — advisory,
+	// outside cerne next.
+	Downgraded bool
 }
 
 // minTitleNeedleLen guards against noisy title matches (e.g. "One").

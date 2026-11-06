@@ -3,21 +3,29 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/ask"
+	"gitlab.com/rockt/cerne/internal/compile"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -865,9 +873,14 @@ type wikiPageRef struct {
 }
 
 // wikiIndexResponse is the GET /api/wiki payload: the compiled pages that exist
-// on disk, so the human browses what `cerne compile` actually produced.
+// on disk, so the human browses what `cerne compile` actually produced. With
+// wiki.enabled off (F-0316) Stale lists the pages a compile would rewrite —
+// the stale banner — and NeedsProvider says the browser cannot recompile them
+// (delegation), so the banner shows the command instead of a button.
 type wikiIndexResponse struct {
-	Pages []wikiPageRef `json:"pages"`
+	Pages         []wikiPageRef `json:"pages"`
+	Stale         []string      `json:"stale,omitempty"`
+	NeedsProvider bool          `json:"needs_provider,omitempty"`
 }
 
 // wikiPageResponse is the GET /api/wiki/<rel> payload: the synthesis body with
@@ -895,8 +908,12 @@ func safeWikiRel(rel string) bool {
 // handleWikiIndex lists the compiled pages under content/wiki/ — the top-level
 // pages (project/decisions/references) and the nested modules/ pages — so the
 // human can browse the synthesis. An absent wiki dir is an empty list, not an
-// error.
-func handleWikiIndex(w http.ResponseWriter, repoDir string) {
+// error. Staleness is computed only with the wiki off — the stale banner is
+// the off state's signal (F-0316 criteria 6 and 8). With the wiki on nothing
+// here reports it: compile_on_push is opt-in and off by default, so freshness
+// is whoever runs `cerne compile` (or opts in), and the index does not pay for
+// hashing every source.
+func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 	wikiDir := filepath.Join(repoDir, "content", "wiki")
 	pages := []wikiPageRef{}
 	entries, err := os.ReadDir(wikiDir)
@@ -932,7 +949,177 @@ func handleWikiIndex(w http.ResponseWriter, repoDir string) {
 		}
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Rel < pages[j].Rel })
-	writeJSON(w, http.StatusOK, wikiIndexResponse{Pages: pages})
+	resp := wikiIndexResponse{Pages: pages}
+	// A wiki no compile ever produced is not stale (C4): the page's own "no
+	// page compiled yet" state already says what to do.
+	if on, _ := project.WikiEnabled(projDir); !on && len(pages) > 0 {
+		// A staleness error never hides the wiki (F-0316 crit. 9): no banner.
+		stale, _ := compile.Stale(repoDir)
+		for _, p := range stale {
+			resp.Stale = append(resp.Stale, p.Rel)
+		}
+		if len(resp.Stale) > 0 {
+			resp.NeedsProvider = !callableLLM(projDir)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// sameOriginJSON guards a state-changing route against the cross-site POST a
+// browser sends without a preflight (C7, F-0316): an Origin that is not this
+// server's, or a body type other than JSON (a form or text/plain post), is
+// refused. No Origin and no body type — the CLI, curl — passes.
+func sameOriginJSON(r *http.Request) bool {
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		if err != nil || u.Host != r.Host {
+			return false
+		}
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != "application/json" {
+			return false
+		}
+	}
+	return true
+}
+
+// callableLLM reports whether projDir's [llm] can synthesize for a human in
+// the browser: a readable .cernerc whose mode is not delegation.
+func callableLLM(projDir string) bool {
+	cfg, _, err := project.LoadConfig(projDir)
+	return err == nil && llm.ResolveMode(cfg.LLM.Mode) != llm.ModeDelegation
+}
+
+// wikiCompileResponse is the POST /api/wiki/compile payload (F-0316). Busy
+// (with 409) means a compile was already running and this request ran none.
+type wikiCompileResponse struct {
+	Compiled      bool `json:"compiled"`
+	NeedsProvider bool `json:"needs_provider,omitempty"`
+	Busy          bool `json:"busy,omitempty"`
+}
+
+// wikiCompiling holds the backends with an on-demand recompile in flight in
+// this process: a second tab (or a click after navigating back) is busy at
+// once, before the child would find the lock and exit 0 having done nothing.
+var wikiCompiling sync.Map
+
+// wikiCompileTimeout bounds one on-demand recompile: a hung provider must not
+// pin the request, the button and the compile lock forever.
+// ponytail: one fixed 10 min for every project; a setting if real wikis
+// outgrow it.
+const wikiCompileTimeout = 10 * time.Minute
+
+// errWikiCompileTimeout: the recompile was killed at its deadline.
+var errWikiCompileTimeout = errors.New("wiki compile timed out")
+
+// wikiCompileRunner runs `cerne compile --dir projDir` to completion (or its
+// deadline) and returns its combined output. A var so tests fake it — under
+// go test the executable is the test binary (compilebg.go).
+var wikiCompileRunner = func(repoDir, projDir string) ([]byte, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return runBounded(wikiCompileCmd(exe, projDir), wikiCompileTimeout, compile.LockPath(repoDir))
+}
+
+// runBounded runs c (started by wikiCompileCmd, so it leads its own process
+// group) and returns its combined output. Past timeout it kills the whole
+// group and answers errWikiCompileTimeout; the compile lock the killed run
+// held — the pid it wrote is c's — is removed, since a SIGKILLed holder never
+// releases it and the retry would be busy until the lock went stale.
+func runBounded(c *exec.Cmd, timeout time.Duration, lockPath string) ([]byte, error) {
+	var out bytes.Buffer
+	c.Stdout, c.Stderr = &out, &out
+	// A process gone but its pipe held open (a grandchild the kill missed)
+	// must not hold Wait either.
+	c.WaitDelay = time.Second
+	if err := c.Start(); err != nil {
+		return nil, err
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		return out.Bytes(), err
+	case <-time.After(timeout):
+		killGroup(c.Process)
+		<-done
+		if data, err := os.ReadFile(lockPath); err == nil && strings.TrimSpace(string(data)) == strconv.Itoa(c.Process.Pid) {
+			_ = os.Remove(lockPath)
+		}
+		return out.Bytes(), fmt.Errorf("%w after %s", errWikiCompileTimeout, timeout)
+	}
+}
+
+// wikiCompileCmd is the on-demand compile child. Neither the request nor the
+// server owns its life: not CommandContext (a closed tab must not kill a run
+// holding the compile lock), and in its own process group (a Ctrl-C on
+// `cerne ui` must not either — the lock would stay held until it goes stale).
+func wikiCompileCmd(exe, projDir string) *exec.Cmd {
+	c := exec.Command(exe, "compile", "--dir", projDir)
+	c.Dir = projDir
+	c.SysProcAttr = ownProcessGroup()
+	return c
+}
+
+// handleWikiCompile is the on-demand recompile behind the stale banner
+// (F-0316): the whole CLI path (single-flight lock, provenance, commit+push).
+// Delegation has no provider to synthesize for the browser, so it runs nothing
+// and answers needs_provider. A compile already running — here or in another
+// process holding the compile lock — answers 409 busy and runs nothing. A
+// failure answers the last line the compile printed, so the banner can show
+// why and offer a retry.
+func handleWikiCompile(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
+	if !callableLLM(projDir) {
+		writeJSON(w, http.StatusOK, wikiCompileResponse{NeedsProvider: true})
+		return
+	}
+	if _, inFlight := wikiCompiling.LoadOrStore(repoDir, true); inFlight {
+		writeJSON(w, http.StatusConflict, wikiCompileResponse{Busy: true})
+		return
+	}
+	defer wikiCompiling.Delete(repoDir)
+	// ponytail: a compile that takes the lock between this probe and the
+	// child's own try makes the child exit 0 having run nothing — a window of
+	// milliseconds; a distinct "already running" exit status closes it if it
+	// ever shows up.
+	if compile.Running(repoDir) {
+		writeJSON(w, http.StatusConflict, wikiCompileResponse{Busy: true})
+		return
+	}
+	out, err := wikiCompileRunner(repoDir, projDir)
+	if err != nil {
+		telemetry.Warn("wiki compile failed", "project", projDir, "error", err.Error(), "output", string(out))
+		writeJSON(w, http.StatusInternalServerError, errorBody(wikiCompileError(out, err)))
+		return
+	}
+	writeJSON(w, http.StatusOK, wikiCompileResponse{Compiled: true})
+}
+
+// maxWikiCompileErrorRunes caps the failure the browser gets: the compile's
+// last line can carry a provider's whole raw response (the server log keeps it).
+const maxWikiCompileErrorRunes = 300
+
+// wikiCompileError is the one-line cause of a failed recompile for the
+// banner: the compile's last output line ("Error: " dropped), or err itself
+// when there is none or the run was killed at its deadline, capped.
+func wikiCompileError(out []byte, err error) string {
+	msg := err.Error()
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "" && !errors.Is(err, errWikiCompileTimeout) {
+		msg = strings.TrimPrefix(last, "Error: ")
+	}
+	msg = strings.Join(strings.Fields(msg), " ")
+	if r := []rune(msg); len(r) > maxWikiCompileErrorRunes {
+		msg = string(r[:maxWikiCompileErrorRunes-1]) + "…"
+	}
+	return msg
 }
 
 // handleWikiPage serves one compiled page body (frontmatter stripped) by its
@@ -951,12 +1138,15 @@ func handleWikiPage(w http.ResponseWriter, repoDir, rel string) {
 }
 
 // lintFinding is one lint problem in the API's snake_case contract,
-// projected from lint.Finding (which carries no JSON tags).
+// projected from lint.Finding (which carries no JSON tags). Advisory marks a
+// finding that never blocks — an advisory rule (F-0322) or wiki debt with the
+// wiki off (F-0316) — so no surface counts it as open work.
 type lintFinding struct {
-	Rule   string `json:"rule"`
-	Entity string `json:"entity,omitempty"`
-	File   string `json:"file,omitempty"`
-	Detail string `json:"detail"`
+	Rule     string `json:"rule"`
+	Entity   string `json:"entity,omitempty"`
+	File     string `json:"file,omitempty"`
+	Detail   string `json:"detail"`
+	Advisory bool   `json:"advisory,omitempty"`
 }
 
 // lintResponse is the GET /api/lint payload; findings come already ordered
@@ -985,9 +1175,14 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	// A copy: the findings may be the cache's, and the downgrade is this
+	// request's wiki.enabled, never a stamp left on them.
+	findings = slices.Clone(findings)
+	wikiOn, _ := project.WikiEnabled(projDir)
+	lint.DowngradeWikiDebt(findings, wikiOn)
 	out := make([]lintFinding, len(findings))
 	for i, f := range findings {
-		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail}
+		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail, Advisory: !lint.Blocking(f)}
 	}
 	writeJSON(w, http.StatusOK, lintResponse{Findings: out, Stale: stale})
 }

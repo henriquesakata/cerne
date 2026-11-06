@@ -27,6 +27,11 @@ describe('gateCounts', () => {
     })
   })
 
+  it('achado consultivo não é dívida aberta (F-0316, P-0002)', () => {
+    const findings = [{ rule: 'broken-link' }, { rule: 'stale-pending', advisory: true }, { rule: 'wiki-source-unknown', advisory: true }]
+    expect(gateCounts([], findings)).toEqual({ approve: 0, accept: 0, lint: 1, total: 1 })
+  })
+
   it('zera quando nada aguarda — o estado vazio da faixa', () => {
     expect(gateCounts([f('F-1', 'done'), f('F-2', 'in_development')], [])).toEqual({
       approve: 0,

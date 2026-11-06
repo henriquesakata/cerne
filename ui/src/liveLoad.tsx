@@ -116,14 +116,19 @@ export function LoadPending<T>({
 // layout that could not be computed uses it too. The lock is aria-disabled,
 // not disabled (F-0302): a disabled button leaves the focus order, and the
 // keyboard user who just pressed it is thrown back to the top of the document.
+// autoFocus hands the focus to the retry when the notice replaces the control
+// the user just pressed (F-0316): that control unmounts, and the focus would
+// otherwise fall to <body>.
 export function Notice({
   message,
   onRetry,
   busy = false,
+  autoFocus = false,
 }: {
   message: string
   onRetry: () => void
   busy?: boolean
+  autoFocus?: boolean
 }) {
   const { t } = useT()
   // Two notices may be up at once, their retries named alike: each button is
@@ -162,6 +167,7 @@ export function Notice({
       <button
         ref={retry}
         type="button"
+        autoFocus={autoFocus}
         aria-describedby={id}
         aria-disabled={busy || undefined}
         onClick={busy ? undefined : onRetry}

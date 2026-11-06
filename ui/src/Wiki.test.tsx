@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Wiki, { WikiPageView } from './Wiki'
-import { fetchWikiIndex, fetchWikiPage } from './api'
+import { fetchWikiIndex, fetchWikiPage, recompileWiki } from './api'
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
-  fetchWikiIndex: vi.fn(async () => [{ name: 'gitback', rel: 'modules/gitback' }]),
+  fetchWikiIndex: vi.fn(async () => ({ pages: [{ name: 'gitback', rel: 'modules/gitback' }] })),
   fetchWikiPage: vi.fn(async () => ({ rel: 'modules/gitback', body: 'Camada de git do cerne.' })),
+  recompileWiki: vi.fn(async () => ({ compiled: true })),
 }))
 
 // Versão ao vivo controlável (F-0300): a wiki NÃO re-busca quando ela muda.
@@ -57,5 +58,114 @@ describe('WikiPageView — falha de carga (F-0300)', () => {
     live.version = 1
     rerender(<WikiPageView rel="modules/gitback" />)
     expect(fetchWikiPage).not.toHaveBeenCalled()
+  })
+})
+
+// F-0316: com a wiki desligada, o índice diz quais páginas envelheceram; a
+// página avisa e recompila sob demanda, sem nunca esconder o que já existe.
+describe('Wiki — desatualizada (F-0316)', () => {
+  const pages = [{ name: 'gitback', rel: 'modules/gitback' }]
+  const banner = 'Wiki desatualizada: 1 página(s) compilada(s) antes da última mudança das fontes.'
+
+  beforeEach(() => {
+    vi.mocked(recompileWiki).mockClear()
+    vi.mocked(fetchWikiIndex).mockClear()
+  })
+
+  it('avisa, recompila e o aviso some ao fim (critérios 6 e 7)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    render(<Wiki />)
+    expect(await screen.findByText(banner)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Recompilar' }))
+    expect(recompileWiki).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByText(banner)).not.toBeInTheDocument())
+    expect(screen.getByText('gitback')).toBeInTheDocument()
+  })
+
+  it('sem defasagem não há aviso (critério 8)', async () => {
+    render(<Wiki />)
+    expect(await screen.findByText('gitback')).toBeInTheDocument()
+    expect(screen.queryByText(/Wiki desatualizada/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Recompilar' })).not.toBeInTheDocument()
+  })
+
+  it('com aviso, a lista de páginas continua navegável (critério 9)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    render(<Wiki />)
+    expect(await screen.findByText(banner)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'gitback' })).toHaveAttribute('href', '#/wiki/modules/gitback')
+  })
+
+  it('falha mantém conteúdo e aviso, mostra o erro e tenta de novo (critério 10)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    expect(await screen.findByText('Falha ao recompilar a wiki: boom')).toBeInTheDocument()
+    expect(screen.getByText(banner)).toBeInTheDocument()
+    expect(screen.getByText('gitback')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(recompileWiki).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(screen.queryByText(banner)).not.toBeInTheDocument())
+  })
+
+  it('compilação já em andamento: avisa e oferece nova tentativa, sem recarregar (C2)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockResolvedValueOnce({ compiled: false, busy: true })
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    expect(
+      await screen.findByText('Compilação em andamento — tente de novo quando ela terminar.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(banner)).toBeInTheDocument()
+    expect(fetchWikiIndex).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(recompileWiki).toHaveBeenCalledTimes(2)
+  })
+
+  it('um segundo clique durante a recompilação não dispara outra (C8)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    let finish = (_: { compiled: boolean }) => {}
+    vi.mocked(recompileWiki).mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    const running = await screen.findByRole('button', { name: 'Recompilando…' })
+    expect(running).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(running)
+    expect(recompileWiki).toHaveBeenCalledTimes(1)
+    finish({ compiled: true })
+    await waitFor(() => expect(screen.queryByText(banner)).not.toBeInTheDocument())
+  })
+
+  it('na falha o foco vai para o "Tentar de novo", não cai no body (C5, F-0302)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
+    render(<Wiki />)
+    const recompile = await screen.findByRole('button', { name: 'Recompilar' })
+    recompile.focus()
+    fireEvent.click(recompile)
+    await screen.findByText('Falha ao recompilar a wiki: boom')
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toHaveFocus()
+  })
+
+  it('o erro fica ao lado do aviso, nunca aninhado nele, e o aviso tem um só estilo (C10)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    const error = await screen.findByText('Falha ao recompilar a wiki: boom')
+    const bannerBox = screen.getByText(banner).closest('[role="status"]')
+    expect(bannerBox).toHaveClass('ask-notice')
+    expect(bannerBox).not.toContainElement(error)
+    expect(error.closest('[role="status"]')?.parentElement?.closest('[role="status"]')).toBeNull()
+  })
+
+  it('em delegação mostra o comando, sem botão', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'], needs_provider: true })
+    render(<Wiki />)
+    expect(await screen.findByText(banner)).toBeInTheDocument()
+    expect(screen.getByText('cerne compile', { selector: '.ask-notice code' })).toBeInTheDocument()
+    expect(screen.getByText(banner).closest('[role="status"]')).toHaveClass('ask-notice')
+    expect(screen.queryByRole('button', { name: 'Recompilar' })).not.toBeInTheDocument()
   })
 })

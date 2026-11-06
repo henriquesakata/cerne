@@ -2373,7 +2373,8 @@ h2 {
 .manage-action-error .manage-action-error-msg { margin: 0.35rem 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .load-notice .form-error { margin: 0 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .manage-action-error button,
-.load-notice button {
+.load-notice button,
+.ask-notice button {
   font: inherit;
   font-size: 0.82rem;
   padding: 0.2rem 0.6rem;
@@ -2383,7 +2384,8 @@ h2 {
   cursor: pointer;
 }
 /* travado durante a tentativa (F-0302): aria-disabled mantém o foco no botão */
-.load-notice button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+.load-notice button[aria-disabled="true"],
+.ask-notice button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
 /* o <main> recebe o foco quando o aviso some depois da tentativa (F-0302):
    foco programático num contêiner fora da ordem de tab, sem contorno — só
    enquanto dura essa entrega (o tabindex sai no blur) */

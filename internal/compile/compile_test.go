@@ -497,3 +497,59 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+// TestStale pins the freshness signal behind F-0316's banner (criteria 6 and
+// 8): exactly the pages `cerne compile` would recompile — missing or with an
+// old input hash — and never a page with no sources.
+func TestStale(t *testing.T) {
+	dir := seedBackend(t, "core", "empty")
+	addFeature(t, dir, "F-0001", "core", domain.StateApproved, "# F-0001\n\nspec.\n")
+	stale := func() []string {
+		t.Helper()
+		pages, err := Stale(dir)
+		if err != nil {
+			t.Fatalf("Stale: %v", err)
+		}
+		return pageRels(pages)
+	}
+
+	if got := stale(); !equalStrings(got, []string{"modules/core"}) {
+		t.Fatalf("never compiled: Stale = %v, want [modules/core] (the sourceless page never)", got)
+	}
+	pages, err := Pages(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, _ := pageByName(pages, "core")
+	writeCompiled(t, dir, core)
+	if got := stale(); len(got) != 0 {
+		t.Fatalf("compiled with the current hash: Stale = %v, want none", got)
+	}
+	addFeature(t, dir, "F-0001", "core", domain.StateApproved, "# F-0001\n\nEDITED.\n")
+	if got := stale(); !equalStrings(got, []string{"modules/core"}) {
+		t.Fatalf("source changed after the compile: Stale = %v, want [modules/core]", got)
+	}
+}
+
+// TestRunning pins the busy probe the on-demand recompile asks before running
+// (F-0316): a live holder's lock is running; no lock, or one its holder has
+// not touched within LockStaleAfter (a new compile would steal it), is not.
+func TestRunning(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	if Running(repoDir) {
+		t.Fatal("no lock: Running = true")
+	}
+	if err := os.WriteFile(LockPath(repoDir), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !Running(repoDir) {
+		t.Fatal("fresh lock: Running = false")
+	}
+	old := time.Now().Add(-LockStaleAfter - time.Minute)
+	if err := os.Chtimes(LockPath(repoDir), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if Running(repoDir) {
+		t.Fatal("stale lock: Running = true")
+	}
+}

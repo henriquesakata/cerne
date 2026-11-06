@@ -70,11 +70,42 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 	// Critic C9: a key nothing consumes yet must not claim an effect. When
 	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
 	// list change together.
-	unwired := map[string]bool{"graph.enabled": true, "wiki.enabled": true}
+	unwired := map[string]bool{"graph.enabled": true}
 	for id, s := range byID {
 		if got := strings.HasPrefix(s.Description, "Not wired yet"); got != unwired[id] {
 			t.Errorf("%s description %q: says not wired = %v, want %v", id, s.Description, got, unwired[id])
 		}
+	}
+}
+
+// TestWikiEnabled pins the one read of wiki.enabled every F-0316 consumer
+// shares: project > host > default, an invalid value or an unreadable scope
+// file falling through — and never silently: the warning names the scope, the
+// file and the value used instead.
+func TestWikiEnabled(t *testing.T) {
+	cases := []struct {
+		name, project, host string
+		want                bool
+		warn                string // "" = none; %p = the project .cernerc, %h = the host settings.toml
+	}{
+		{"nothing set", "", "", true, ""},
+		{"project off", "[wiki]\nenabled = false\n", "", false, ""},
+		{"host off", "", "[wiki]\nenabled = false\n", false, ""},
+		{"project on over host off", "[wiki]\nenabled = true\n", "[wiki]\nenabled = false\n", true, ""},
+		{"invalid project over host off", "[wiki]\nenabled = \"talvez\"\n", "[wiki]\nenabled = false\n", false,
+			"warning: wiki.enabled invalid in project scope (%p); using host false"},
+		{"malformed host file", "", "[wiki]\nenabled = false\n[graph\n", true,
+			"warning: wiki.enabled unreadable in host scope (%h); using default true"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, hostDir := settingsFixture(t, tc.project, tc.host, false)
+			want := strings.NewReplacer("%p", filepath.Join(projDir, ".cernerc"), "%h", filepath.Join(hostDir, "settings.toml")).Replace(tc.warn)
+			got, warn := WikiEnabled(projDir)
+			if got != tc.want || warn != want {
+				t.Errorf("WikiEnabled = %v, %q; want %v, %q", got, warn, tc.want, want)
+			}
+		})
 	}
 }
 
