@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 // newFeatureDeliverCmd is the post-hoc delivery capture (F-0179): the
@@ -48,5 +49,5 @@ func newFeatureDeliverCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url")
 	cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }

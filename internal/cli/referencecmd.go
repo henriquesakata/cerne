@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newReferenceCmd() *cobra.Command {
@@ -79,7 +80,7 @@ func newReferenceRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runReferenceRetire(cmd *cobra.Command, dir, id, reason string) error {

@@ -17,6 +17,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newDecisionCmd() *cobra.Command {
@@ -220,7 +221,7 @@ func newDecisionSubstituirCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the decision that supersedes")
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runDecisionSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {

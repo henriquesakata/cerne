@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 // transitionSpec wires one lifecycle subcommand to its domain action.
@@ -71,7 +72,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		if ts.action == domain.ActionApprove {
 			cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
 		}
-		cmds = append(cmds, cmd)
+		cmds = append(cmds, verbs.MarkLifecycle(cmd)) // every transition is lifecycle (F-0323)
 	}
 	return cmds
 }

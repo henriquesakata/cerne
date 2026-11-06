@@ -11,6 +11,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newCapabilityCmd() *cobra.Command {
@@ -115,7 +116,7 @@ func newCapabilityRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why the capability is being retired (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 // newFeatureCapabilityCmd is the feature-side link: 'cerne feature capability

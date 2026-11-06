@@ -15,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/runtmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newRunbookCmd() *cobra.Command {
@@ -192,7 +193,7 @@ func newRunbookSubstituirCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the runbook that supersedes")
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runRunbookSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
@@ -228,7 +229,7 @@ func newRunbookRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runRunbookRetire(cmd *cobra.Command, dir, id, reason string) error {

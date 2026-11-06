@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newNoteCmd() *cobra.Command {
@@ -309,7 +310,7 @@ func newNoteRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
@@ -410,7 +411,7 @@ func newNoteSubstituirCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the note that supersedes (optional; empty = just retire)")
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession/retirement (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runNoteSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
