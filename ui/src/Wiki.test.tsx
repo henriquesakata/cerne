@@ -123,6 +123,20 @@ describe('Wiki — desatualizada (F-0316)', () => {
     expect(recompileWiki).toHaveBeenCalledTimes(2)
   })
 
+  it('um segundo clique durante a recompilação não dispara outra (C8)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    let finish = (_: { compiled: boolean }) => {}
+    vi.mocked(recompileWiki).mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    const running = await screen.findByRole('button', { name: 'Recompilando…' })
+    expect(running).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(running)
+    expect(recompileWiki).toHaveBeenCalledTimes(1)
+    finish({ compiled: true })
+    await waitFor(() => expect(screen.queryByText(banner)).not.toBeInTheDocument())
+  })
+
   it('na falha o foco vai para o "Tentar de novo", não cai no body (C5, F-0302)', async () => {
     vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
     vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
