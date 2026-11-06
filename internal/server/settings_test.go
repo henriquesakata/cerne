@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/project"
 )
@@ -179,6 +181,91 @@ func TestSettingsRouteLocalOnly(t *testing.T) {
 	doMP(t, serve, http.MethodPut, "/api/projects/proj-a", regBody(t, seedBareBackend(t, "Projeto A")), mpSecret, nil)
 	if rec := doMP(t, serve, http.MethodGet, "/api/projects/proj-a/settings", "", mpSecret, nil); rec.Code != http.StatusNotFound {
 		t.Errorf("serve /settings: status %d, want 404", rec.Code)
+	}
+}
+
+// TestSettingsWriteAnnouncesProjects pins F-0315 criteria 6 and 7 live: a
+// landed settings write (set or unset) announces a projects refresh on the
+// SSE stream, so every browser tab re-reads /api/projects and its tab gates
+// without a server restart; a refused write announces nothing.
+func TestSettingsWriteAnnouncesProjects(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	repoA, projA, _ := newGitBackendNoClean(t)
+	if err := os.WriteFile(filepath.Join(projA, ".cernerc"), []byte("project_id = \"proj-a\"\nbackend = \"x\"\ndefault_scope = \"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(dir string) (string, string, string, string, error) {
+		if dir == "A" {
+			return repoA, projA, "proj-a", "Projeto A", nil
+		}
+		return "", "", "", "", fmt.Errorf("dir desconhecido: %s", dir)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ui, err := NewUIMulti(ctx, resolve, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	srv := httptest.NewServer(ui)
+	defer srv.Close()
+
+	sctx, scancel := context.WithCancel(context.Background())
+	defer scancel()
+	req, _ := http.NewRequestWithContext(sctx, http.MethodGet, srv.URL+"/api/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/stream: %v", err)
+	}
+	defer resp.Body.Close()
+	events := make(chan string, 8)
+	go func() {
+		br := bufio.NewReader(resp.Body)
+		for {
+			d, err := readSSEData(br)
+			if err != nil {
+				return
+			}
+			events <- d
+		}
+	}()
+	if got := waitEvent(t, events); got != "" {
+		t.Fatalf("connect frame data = %q, want empty (projects event)", got)
+	}
+	graph := func() bool {
+		var list projectsList
+		getJSON(t, srv.URL+"/api/projects", &list)
+		return list.Projects[0].Graph
+	}
+
+	var view project.SettingsView
+	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/settings/graph.enabled", `{"scope":"project","value":false}`, &view); rec.Code != http.StatusOK {
+		t.Fatalf("PUT: status %d %s", rec.Code, rec.Body.String())
+	}
+	if got := waitEvent(t, events); got != "" {
+		t.Fatalf("after PUT: event data = %q, want a projects event", got)
+	}
+	if graph() {
+		t.Errorf("after PUT graph.enabled=false: /api/projects graph = true")
+	}
+
+	if rec := doJSON(t, ui, http.MethodDelete, "/api/projects/proj-a/settings/graph.enabled?scope=project", "", &view); rec.Code != http.StatusOK {
+		t.Fatalf("DELETE: status %d %s", rec.Code, rec.Body.String())
+	}
+	if got := waitEvent(t, events); got != "" {
+		t.Fatalf("after DELETE: event data = %q, want a projects event", got)
+	}
+	if !graph() {
+		t.Errorf("after DELETE graph.enabled: /api/projects graph = false")
+	}
+
+	var body map[string]string
+	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/settings/graph.enabled", `{"scope":"project","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
+		t.Fatalf("refused PUT: status %d, want 400", rec.Code)
+	}
+	select {
+	case e := <-events:
+		t.Errorf("refused write announced %q", e)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 

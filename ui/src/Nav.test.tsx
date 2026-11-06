@@ -56,4 +56,22 @@ describe('Nav', () => {
     render(<Nav hash="#/" />)
     expect(screen.getAllByText('Mapa mental').length).toBeGreaterThan(0)
   })
+
+  // F-0315 critérios 6/7: graph.enabled governa a aba Grafo como mindmap governa a sua.
+  it('esconde o item Grafo quando o projeto ativo desliga graph', () => {
+    mockProjects = [{ pid: 'p1', name: 'P1', graph: false }]
+    render(<Nav hash="#/" />)
+    expect(screen.queryByText('Grafo')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Mapa mental').length).toBeGreaterThan(0)
+  })
+
+  it('mostra o item Grafo com graph ligado ou ausente (servidor antigo)', () => {
+    mockProjects = [{ pid: 'p1', name: 'P1', graph: true }]
+    render(<Nav hash="#/" />)
+    expect(screen.getAllByText('Grafo').length).toBeGreaterThan(0)
+    cleanup()
+    mockProjects = [{ pid: 'p1', name: 'P1' }]
+    render(<Nav hash="#/" />)
+    expect(screen.getAllByText('Grafo').length).toBeGreaterThan(0)
+  })
 })

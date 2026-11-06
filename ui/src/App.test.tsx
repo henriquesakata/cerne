@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import '@testing-library/jest-dom/vitest'
 import App from './App'
 import { search } from './api'
-import type { StateResponse } from './api'
+import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
   project: { name: 'Projeto Demo', modules: [] },
@@ -20,6 +20,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchState: vi.fn(async () => state),
   fetchProjects: vi.fn(async () => []),
   search: vi.fn(async () => []),
+  fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
 }))
 
 // Os providers viram passthrough: o alvo aqui é o roteador e a montagem
@@ -28,8 +29,13 @@ vi.mock('./live', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./live')>()),
   LiveProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useLiveVersion: () => 0,
-  useProjects: () => ({ projects: [], activePid: '' }),
+  useProjects: () => ({ projects: mockProjects, activePid: 'p1' }),
 }))
+
+let mockProjects: ProjectInfo[] = []
+
+// O Grafo real puxa React Flow; aqui basta saber se a rota o monta.
+vi.mock('./Graph', () => ({ default: () => <p>grafo montado</p> }))
 
 vi.mock('./notifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./notifications')>()),
@@ -44,7 +50,10 @@ class NoopResizeObserver {
 }
 globalThis.ResizeObserver ??= NoopResizeObserver as unknown as typeof ResizeObserver
 
-beforeEach(() => vi.mocked(search).mockClear())
+beforeEach(() => {
+  vi.mocked(search).mockClear()
+  mockProjects = []
+})
 afterEach(cleanup)
 
 describe('App — palette e rota de busca (F-0196)', () => {
@@ -72,5 +81,49 @@ describe('App — palette e rota de busca (F-0196)', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument())
     expect(search).not.toHaveBeenCalled()
+  })
+})
+
+describe('App — rota de Settings (F-0315)', () => {
+  it('#/settings monta a tela e a engrenagem da nav fica marcada como página atual', async () => {
+    window.location.hash = '#/settings'
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Configurações' })).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'Configurações' })
+    expect(link).toHaveAttribute('href', '#/settings')
+    expect(link).toHaveAttribute('aria-current', 'page')
+    // Settings não é seção de LINKS: nenhum link de seção fica ativo por fallback.
+    expect(screen.getByRole('link', { name: 'Dashboard' })).not.toHaveClass('active')
+  })
+})
+
+describe('App — rota do Grafo governada por graph.enabled (F-0315)', () => {
+  it('com graph desligado, #/graph cai no dashboard e não monta o Grafo', async () => {
+    mockProjects = [{ pid: 'p1', name: 'P1', graph: false }]
+    window.location.hash = '#/graph'
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('main')).toBeInTheDocument())
+    expect(screen.queryByText('grafo montado')).toBeNull()
+  })
+
+  it('com graph ligado, #/graph monta o Grafo', async () => {
+    mockProjects = [{ pid: 'p1', name: 'P1', graph: true }]
+    window.location.hash = '#/graph'
+    render(<App />)
+    expect(await screen.findByText('grafo montado')).toBeInTheDocument()
+  })
+})
+
+describe('App — deep link para uma aba desligada vira #/ (F-0315, crítica C15)', () => {
+  it.each([
+    ['#/graph', { graph: false }],
+    ['#/mindmap', { mindmap: false }],
+  ])('%s com a chave off troca o hash por #/ e a nav marca o Dashboard', async (hash, gate) => {
+    mockProjects = [{ pid: 'p1', name: 'P1', ...gate }]
+    window.location.hash = hash
+    render(<App />)
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('active'))
   })
 })

@@ -12,6 +12,7 @@ import type {
   GraphEdgeType,
   GraphKind,
   LLMMode,
+  SettingScope,
   TransitionAction,
 } from './api'
 
@@ -47,6 +48,7 @@ const ptBR = {
     themeDark: 'Tema escuro',
     language: 'Idioma',
     versionTitle: 'Versão do cerne',
+    settings: 'Configurações',
   },
   notif: {
     aria: 'Notificações',
@@ -178,6 +180,7 @@ const ptBR = {
     copy: 'Copiar',
     copied: 'Copiado!',
     copyBlock: 'Copiar bloco de código',
+    copyFailed: 'Não foi possível copiar — selecione o texto',
   },
   kanban: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -810,8 +813,77 @@ const ptBR = {
     loading: 'Carregando…',
     useProjectsError: 'useProjects deve ser usado dentro de LiveProvider',
     bootError: (e: string) => `Erro ao carregar projetos: ${e}`,
+    refreshError: (e: string) => `Não foi possível atualizar a lista de projetos: ${e}`,
     retry: 'Tentar de novo',
     noProjects: 'Nenhum projeto registrado.',
+  },
+  settings: {
+    title: 'Configurações',
+    project: 'Projeto',
+    search: 'Buscar configurações',
+    count: (shown: number, total: number) => {
+      const noun = total === 1 ? 'configuração' : 'configurações'
+      return shown === total ? `${total} ${noun}` : `${shown} de ${total} ${noun}`
+    },
+    noMatch: (q: string) => `Nenhuma configuração corresponde a “${q}”.`,
+    modified: 'Modificado',
+    modifiedTitle: (scope: string) => `Definido em ${scope}`,
+    effective: (v: string, from: string) => `Efetivo: ${v}, de ${from}`,
+    effectiveDefault: (v: string) => `Efetivo: ${v} (padrão)`,
+    defaultValue: (v: string) => `Padrão: ${v}`,
+    on: 'ligado',
+    off: 'desligado',
+    empty: '(vazio)',
+    hostGlobal: 'global do host',
+    hostGlobalTitle: 'Vale para todos os projetos deste host (settings.toml, fora de qualquer repositório).',
+    readOnly: 'Sem editor para este tipo na tela: edite no arquivo.',
+    loadError: (e: string) => `Erro ao carregar as configurações: ${e}`,
+    fileError: (file: string, e: string) => `Não foi possível ler ${file}: ${e}`,
+    scopeGroup: 'Escopo de edição',
+    global: 'global',
+    scopeHint: {
+      project: 'Grava no .cernerc do projeto, que é versionado: lembre de commitar.',
+      host: 'Grava no settings.toml deste host: vale para todos os projetos dele, fora de qualquer repositório.',
+    } satisfies Record<SettingScope, string>,
+    alsoModifiedIn: (scope: string) => `Também modificado em ${scope}`,
+    overriddenBy: (scope: string) => `Sobrescrito por ${scope}`,
+    editIn: (scope: string) => `Editar em ${scope}`,
+    writesTo: (scope: string) => `Grava em ${scope}`,
+    reset: 'Redefinir neste escopo',
+    resetIn: (scope: string) => `Redefinir em ${scope}`,
+    writeError: (e: string) => `Não foi possível gravar: ${e}`,
+    // Recusas conhecidas do servidor (F-0314), pelo status (crítica C17).
+    refusals: {
+      busy: (lock: string) =>
+        `O arquivo está travado por outra escrita. Tente de novo em instantes; se nenhum cerne estiver rodando, apague ${lock}.`,
+      layout: 'Não é possível editar este valor com segurança no arquivo: corrija-o à mão.',
+      invalid: 'O servidor recusou o valor ou o escopo desta configuração.',
+    },
+    file: 'Arquivo:',
+    copyFailed: 'Não foi possível copiar — selecione o caminho',
+    invalid: (scope: string, file: string, raw: string) => `Valor inválido em ${scope} (${file}): ${raw} — ignorado.`,
+    removeInvalid: 'Remover valor inválido',
+    scopes: {
+      project: 'Projeto',
+      host: 'Host',
+    } satisfies Record<SettingScope, string>,
+    // Títulos e descrições do registro chegam em inglês (D-0006); a tradução é
+    // indexada pelo texto-fonte (estilo gettext): texto novo ou alterado no
+    // servidor cai no inglês, nunca numa tradução velha. Chaves SEMPRE entre
+    // aspas: TestSettingsRegistryHasPtBRCatalog (internal/project) as casa
+    // contra o registro Go e falha quando uma tradução falta.
+    text: {
+      'Channel name': 'Nome no canal',
+      "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.":
+        'Seu nome no canal permanente do projeto, nas mensagens enviadas pela UI. Vazio usa o seu nome de usuário do sistema.',
+      'Graph': 'Grafo',
+      'Shows the Graph tab in the UI. Off hides it.': 'Mostra a aba Grafo na UI. Desligado a esconde.',
+      'Mindmap': 'Mapa mental',
+      'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
+      'Wiki': 'Wiki',
+      "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.":
+        "Desligado, para o compile_on_push e transforma a dívida de lint da wiki em achados informativos, fora do 'cerne next'; a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
+    } as Record<string, string>,
   },
 }
 
@@ -845,6 +917,7 @@ const en: Messages = {
     themeDark: 'Dark theme',
     language: 'Language',
     versionTitle: 'cerne version',
+    settings: 'Settings',
   },
   notif: {
     aria: 'Notifications',
@@ -974,6 +1047,7 @@ const en: Messages = {
     copy: 'Copy',
     copied: 'Copied!',
     copyBlock: 'Copy code block',
+    copyFailed: 'Could not copy — select the text',
   },
   kanban: {
     loadError: (e: string) => `Failed to load state: ${e}`,
@@ -1597,8 +1671,60 @@ const en: Messages = {
     loading: 'Loading…',
     useProjectsError: 'useProjects must be used inside LiveProvider',
     bootError: (e: string) => `Failed to load projects: ${e}`,
+    refreshError: (e: string) => `Could not refresh the project list: ${e}`,
     retry: 'Try again',
     noProjects: 'No projects registered.',
+  },
+  settings: {
+    title: 'Settings',
+    project: 'Project',
+    search: 'Search settings',
+    count: (shown: number, total: number) => {
+      const noun = total === 1 ? 'setting' : 'settings'
+      return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`
+    },
+    noMatch: (q: string) => `No setting matches “${q}”.`,
+    modified: 'Modified',
+    modifiedTitle: (scope: string) => `Set in ${scope}`,
+    effective: (v: string, from: string) => `Effective: ${v}, from ${from}`,
+    effectiveDefault: (v: string) => `Effective: ${v} (default)`,
+    defaultValue: (v: string) => `Default: ${v}`,
+    on: 'on',
+    off: 'off',
+    empty: '(empty)',
+    hostGlobal: 'host-global',
+    hostGlobalTitle: 'Applies to every project on this host (settings.toml, outside any repository).',
+    readOnly: 'No editor for this type on screen: edit it in the file.',
+    loadError: (e: string) => `Could not load the settings: ${e}`,
+    fileError: (file: string, e: string) => `Could not read ${file}: ${e}`,
+    scopeGroup: 'Editing scope',
+    global: 'global',
+    scopeHint: {
+      project: "Writes to the project's .cernerc, which is versioned: remember to commit it.",
+      host: "Writes to this host's settings.toml: applies to every project on it, outside any repository.",
+    },
+    alsoModifiedIn: (scope: string) => `Also modified in ${scope}`,
+    overriddenBy: (scope: string) => `Overridden by ${scope}`,
+    editIn: (scope: string) => `Edit in ${scope}`,
+    writesTo: (scope: string) => `Writes to ${scope}`,
+    reset: 'Reset in this scope',
+    resetIn: (scope: string) => `Reset in ${scope}`,
+    writeError: (e: string) => `Could not save: ${e}`,
+    refusals: {
+      busy: (lock: string) =>
+        `The file is locked by another writer. Try again in a moment; if no cerne is running, remove ${lock}.`,
+      layout: 'This value cannot be edited safely in the file: fix it by hand.',
+      invalid: "The server refused this setting's value or scope.",
+    },
+    file: 'File:',
+    copyFailed: 'Could not copy — select the path',
+    invalid: (scope: string, file: string, raw: string) => `Invalid value in ${scope} (${file}): ${raw} — ignored.`,
+    removeInvalid: 'Remove invalid value',
+    scopes: {
+      project: 'Project',
+      host: 'Host',
+    },
+    text: {},
   },
 }
 

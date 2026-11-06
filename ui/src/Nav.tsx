@@ -52,6 +52,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/history')) return '#/history'
   if (hash.startsWith('#/activity')) return '#/activity'
   if (hash.startsWith('#/stats')) return '#/stats'
+  if (hash.startsWith('#/settings')) return '#/settings' // engrenagem, fora de LINKS
   return '#/' // dashboard (tela inicial, F-0132)
 }
 
@@ -65,6 +66,7 @@ export default function Nav({ hash }: { hash: string }) {
       </span>
       <NavLinks active={active} hash={hash} />
       <ProjectSelector />
+      <SettingsLink active={active === '#/settings'} />
       <NotificationBell />
       <LangToggle />
       <ThemeToggle />
@@ -78,12 +80,15 @@ export default function Nav({ hash }: { hash: string }) {
 function NavLinks({ active, hash }: { active: string; hash: string }) {
   const { t, lang } = useT()
   const { projects, activePid } = useProjects()
-  // mindmap.enabled = false no projeto ativo esconde o item (F-0187/F-0314); flag
-  // ausente (servidor antigo) fica ligado.
-  const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
+  // graph.enabled (F-0315) / mindmap.enabled (F-0187/F-0314) = false no projeto
+  // ativo esconde o item; flag ausente (servidor antigo) fica ligado. O valor
+  // chega pelo /api/projects, relido no evento SSE "projects" de uma escrita.
+  const info = projects.find((p) => p.pid === activePid)
+  const off = { graph: info?.graph === false, mindmap: info?.mindmap === false }
   const links = useMemo(
-    () => LINKS.filter((l) => l.key !== 'mindmap' || mindmapOn),
-    [mindmapOn],
+    () => LINKS.filter((l) => !off[l.key as keyof typeof off]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [off.graph, off.mindmap],
   )
   const containerRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
@@ -234,6 +239,23 @@ function NavVersion() {
     <span className="nav-version" title={t.nav.versionTitle}>
       {v}
     </span>
+  )
+}
+
+// Engrenagem das configurações do projeto ativo (F-0315): no cluster da direita,
+// como na barra (VS Code), e não em LINKS, onde cairia quase sempre no "Mais".
+function SettingsLink({ active }: { active: boolean }) {
+  const { t } = useT()
+  return (
+    <a
+      href="#/settings"
+      className={active ? 'theme-toggle settings-link active' : 'theme-toggle settings-link'}
+      title={t.nav.settings}
+      aria-label={t.nav.settings}
+      aria-current={active ? 'page' : undefined}
+    >
+      ⚙
+    </a>
   )
 }
 

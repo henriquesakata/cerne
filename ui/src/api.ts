@@ -228,8 +228,9 @@ async function errorMessage(r: Response): Promise<string> {
 // O painel serve N projetos sob /api/projects/{pid}/*. activePid é o projeto
 // selecionado; o LiveProvider chama setApiProject antes de disparar os
 // refetches, então toda chamada de dados abaixo usa base() com o pid corrente.
-// mindmap: setting mindmap.enabled efetivo do projeto (F-0187/F-0314); ausente (servidor antigo) = ligado.
-export type ProjectInfo = { pid: string; name: string; mindmap?: boolean }
+// graph/mindmap: settings graph.enabled (F-0315) e mindmap.enabled (F-0187/F-0314)
+// efetivos do projeto; ausente (servidor antigo) = ligado.
+export type ProjectInfo = { pid: string; name: string; graph?: boolean; mindmap?: boolean }
 
 let activePid = ''
 export function setApiProject(pid: string): void {
@@ -969,6 +970,69 @@ export async function setLLMMode(mode: LLMMode): Promise<LLMMode> {
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { mode: LLMMode }).mode
+}
+
+// ---- settings (F-0314/F-0315) ----
+// Espelho de internal/project/settings.go: o registro resolvido para o projeto
+// ativo. value/default seguem o type da chave; stored guarda o valor válido de
+// cada escopo que define a chave, mesmo o que outro escopo sobrescreve.
+
+export type SettingScope = 'project' | 'host'
+
+export type SettingProblem = { scope: SettingScope; file: string; raw?: string; error: string }
+
+export type ResolvedSetting = {
+  id: string
+  title: string
+  type: string
+  default: unknown
+  scopes: SettingScope[]
+  description: string
+  value: unknown
+  origin: SettingScope | 'default'
+  stored?: Partial<Record<SettingScope, unknown>>
+  invalid?: SettingProblem[]
+}
+
+export type SettingsView = {
+  settings: ResolvedSetting[]
+  files: Partial<Record<SettingScope, string>>
+  errors?: SettingProblem[]
+}
+
+// HTTPError carries the status of a refused settings write, so the screen can
+// tell a refusal retrying cannot fix (400, 422) from a busy or broken server.
+export class HTTPError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+export async function fetchSettings(): Promise<SettingsView> {
+  const r = await fetch(`${base()}/settings`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as SettingsView
+}
+
+// putSetting grava value (JSON tipado: booleano para chave bool) no escopo e
+// devolve a view nova que o servidor responde — a tela a aplica sem reler.
+export async function putSetting(id: string, scope: SettingScope, value: unknown): Promise<SettingsView> {
+  const r = await fetch(`${base()}/settings/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, value }),
+  })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return (await r.json()) as SettingsView
+}
+
+// unsetSetting remove a chave do escopo (idempotente no servidor) e devolve a view nova.
+export async function unsetSetting(id: string, scope: SettingScope): Promise<SettingsView> {
+  const r = await fetch(`${base()}/settings/${encodeURIComponent(id)}?scope=${scope}`, { method: 'DELETE' })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return (await r.json()) as SettingsView
 }
 
 // ---- referências externas (case 0020) ----

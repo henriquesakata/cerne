@@ -52,6 +52,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [modelsChange, setModelsChange] = useState<ModelsChange | null>(null)
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
+  // A failed re-read AFTER the boot (F-0315, critic C2): every settings write
+  // sends the "projects" event, so a flaky re-read must not swap the whole app
+  // for the boot-error page — the current list and screens stay, with a notice.
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const booted = useRef(false)
   const { t } = useT()
 
   // activeRef espelha o pid ativo para uso síncrono fora do ciclo de render
@@ -91,9 +96,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         // Limpa badges de projetos que saíram do painel.
         setChanged((s) => new Set([...s].filter((p) => projects.some((x) => x.pid === p))))
         setBootError(null)
+        setRefreshError(null)
         setReady(true)
+        booted.current = true
       })
-      .catch((e: unknown) => setBootError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e)
+        if (booted.current) setRefreshError(message)
+        else setBootError(message)
+      })
 
   useEffect(() => {
     void reload()
@@ -140,6 +151,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version, lastChange, modelsChange }}>
+      {refreshError && (
+        <div className="load-notice live-refresh-notice" role="status">
+          <p className="form-error">{t.live.refreshError(refreshError)}</p>
+          <button type="button" onClick={() => void reload()}>
+            {t.live.retry}
+          </button>
+        </div>
+      )}
       {children}
     </Ctx.Provider>
   )

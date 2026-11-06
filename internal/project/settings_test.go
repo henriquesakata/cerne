@@ -67,10 +67,10 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 	if s := byID["channel.human_name"]; s.Type != "string" || s.Default != "" || !slices.Equal(s.Scopes, []string{ScopeHost}) || s.Title == "" || s.Description == "" {
 		t.Errorf("channel.human_name = %+v, want string, default \"\", scopes [host], a title and a description", s)
 	}
-	// Critic C9: a key nothing consumes yet must not claim an effect. When
-	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
-	// list change together.
-	unwired := map[string]bool{"graph.enabled": true}
+	// Critic C9: a key nothing consumes yet must not claim an effect. Every
+	// capability key is wired now (F-0315 graph, F-0316 wiki); a new unwired
+	// key, its description and this list change together.
+	unwired := map[string]bool{}
 	for id, s := range byID {
 		if got := strings.HasPrefix(s.Description, "Not wired yet"); got != unwired[id] {
 			t.Errorf("%s description %q: says not wired = %v, want %v", id, s.Description, got, unwired[id])
@@ -697,5 +697,33 @@ func TestSetSettingStringValue(t *testing.T) {
 	}
 	if after, _ := os.ReadFile(filepath.Join(hostDir, "settings.toml")); string(after) != string(before) {
 		t.Errorf("host file = %q, want %q", after, before)
+	}
+}
+
+// TestSettingsRegistryHasPtBRCatalog (F-0315, critic C12): the settings
+// screen translates a key's title and description through a pt-BR catalog
+// keyed by the English source text (ui/src/i18n.tsx, settings.text). A
+// registry text with no entry there silently falls back to English in the
+// pt-BR UI, so a registry change and its translation land together.
+func TestSettingsRegistryHasPtBRCatalog(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "ui", "src", "i18n.tsx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt, _, ok := strings.Cut(string(src), "export type Messages")
+	if !ok {
+		t.Fatal("i18n.tsx: no `export type Messages` after the pt-BR dictionary")
+	}
+	_, catalog, ok := strings.Cut(pt, "    text: {")
+	if !ok {
+		t.Fatal("i18n.tsx: no settings `text: {` catalog in the pt-BR dictionary")
+	}
+	catalog, _, _ = strings.Cut(catalog, "} as Record<string, string>")
+	for _, s := range settingsRegistry {
+		for _, text := range []string{s.Title, s.Description} {
+			if !strings.Contains(catalog, "'"+text+"':") && !strings.Contains(catalog, `"`+text+`":`) {
+				t.Errorf("%s: no pt-BR entry for %q in ui/src/i18n.tsx settings.text (quote the key)", s.ID, text)
+			}
+		}
 	}
 }

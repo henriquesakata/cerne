@@ -154,27 +154,34 @@ type registryEntry struct {
 }
 
 // projectInfo is the public shape of a registered project (GET /api/projects).
-// Mindmap carries the project's effective mindmap.enabled setting (F-0187,
-// served by the settings registry since F-0314): false hides the tab in the UI.
+// Graph and Mindmap carry the project's effective graph.enabled (F-0315) and
+// mindmap.enabled (F-0187, from the settings registry since F-0314): false
+// hides that tab in the UI.
 type projectInfo struct {
 	PID     string `json:"pid"`
 	Name    string `json:"name"`
+	Graph   bool   `json:"graph"`
 	Mindmap bool   `json:"mindmap"`
 }
 
-// mindmapEnabled resolves mindmap.enabled for projDir (project > host >
-// default). A bad value or unreadable file elsewhere does not touch it; an
-// invalid mindmap value falls through to the next scope, then the default.
-func mindmapEnabled(projDir string) bool {
+// newProjectInfo resolves the project's tab gates once (project > host >
+// default). Fail-open: no projDir or an absent key leaves the tab on; a bad
+// value or unreadable file elsewhere does not touch a gate, and an invalid
+// gate value falls through to the next scope, then the default.
+func newProjectInfo(pid, name, projDir string) projectInfo {
+	info := projectInfo{PID: pid, Name: name, Graph: true, Mindmap: true}
 	if projDir == "" {
-		return true
+		return info
 	}
 	for _, s := range project.ResolveSettings(projDir).Settings {
-		if s.ID == "mindmap.enabled" {
-			return s.Value != false
+		switch s.ID {
+		case "graph.enabled":
+			info.Graph = s.Value != false
+		case "mindmap.enabled":
+			info.Mindmap = s.Value != false
 		}
 	}
-	return true
+	return info
 }
 
 // registry holds the registered projects and starts/stops the per-project
@@ -264,7 +271,7 @@ func (r *registry) list() (infos []projectInfo, def string) {
 	infos = make([]projectInfo, 0, len(r.order))
 	for _, pid := range r.order {
 		if e, ok := r.projects[pid]; ok {
-			infos = append(infos, projectInfo{PID: e.pid, Name: e.name, Mindmap: mindmapEnabled(e.projDir)})
+			infos = append(infos, newProjectInfo(e.pid, e.name, e.projDir))
 		}
 	}
 	if len(r.order) > 0 {
@@ -310,6 +317,9 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	lintBroadcast = func(pid string) {
 		hub.broadcast(liveEvent{kind: "change", pid: pid})
 	}
+	// A settings write (F-0315) changes the tab gates projectInfo carries:
+	// every tab re-reads /api/projects and shows or hides Graph/Mindmap.
+	settingsBroadcast = func() { hub.broadcast(liveEvent{kind: "projects"}) }
 	reg := &registry{
 		projects: make(map[string]*registryEntry),
 		hub:      hub,
@@ -346,7 +356,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 			writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 			return
 		}
-		writeJSON(w, http.StatusOK, projectInfo{PID: pid, Name: name, Mindmap: mindmapEnabled(reg.projDir(pid))})
+		writeJSON(w, http.StatusOK, newProjectInfo(pid, name, reg.projDir(pid)))
 	})
 	mux.HandleFunc("DELETE /api/projects/{pid}", func(w http.ResponseWriter, r *http.Request) {
 		if !reg.remove(r.PathValue("pid")) {

@@ -96,7 +96,7 @@ var settingsRegistry = []Setting{
 	{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "Not wired yet (F-0315): off will hide the Graph tab in the UI. Today it changes nothing.",
+		Description: "Shows the Graph tab in the UI. Off hides it.",
 	},
 	{
 		ID: "mindmap.enabled", Title: "Mindmap", Type: "bool", Default: true,

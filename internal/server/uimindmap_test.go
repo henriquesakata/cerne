@@ -24,6 +24,23 @@ func TestUIMultiProjectInfoMindmapFlag(t *testing.T) {
 	}
 }
 
+// TestUIMultiProjectInfoGraphFlag pins F-0315 criteria 6 and 7 at the
+// contract: GET /api/projects carries each project's effective graph.enabled
+// next to mindmap — false when its .cernerc turns the tab off, true otherwise.
+func TestUIMultiProjectInfoGraphFlag(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	byPID := mindmapFlags(t, "", "[graph]\nenabled = false\n")
+	if !byPID["proj-a"].Graph {
+		t.Errorf("proj-a (no .cernerc) graph = false, want true (default on)")
+	}
+	if byPID["proj-b"].Graph {
+		t.Errorf("proj-b ([graph] enabled = false) graph = true, want false")
+	}
+	if !byPID["proj-b"].Mindmap {
+		t.Errorf("proj-b (graph off only) mindmap = false, want true")
+	}
+}
+
 // TestUIMultiProjectInfoMindmapFromHostScope: the gate follows the whole
 // resolution — a host-scope off reaches a project that does not set the key,
 // and a project-scope on beats it.

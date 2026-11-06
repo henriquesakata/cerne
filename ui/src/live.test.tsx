@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, act, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { LiveProvider, useProjects } from './live'
-import { fetchProjects } from './api'
+import { fetchProjects, subscribeLive } from './api'
 import type { ProjectInfo } from './api'
+import Nav from './Nav'
 
 // F-0209: trocar de projeto pelo seletor sempre aterrissa no dashboard —
 // nenhuma rota de detalhe sobrevive à troca.
@@ -18,7 +19,10 @@ vi.mock('./api', async (importOriginal) => ({
   fetchProjects: vi.fn(),
   setApiProject: vi.fn(),
   subscribeLive: vi.fn(() => () => {}),
+  fetchVersion: vi.fn(async () => ''),
 }))
+
+vi.mock('./NotificationBell', () => ({ default: () => null }))
 
 function Probe() {
   const { activePid, setActivePid } = useProjects()
@@ -161,5 +165,71 @@ describe('LiveProvider — projeto ativo por aba (F-0288)', () => {
       </LiveProvider>,
     )
     expect(await screen.findByText('p1')).toBeInTheDocument()
+  })
+})
+
+// F-0315 critérios 6/7, elo UI: uma escrita de settings faz o servidor emitir
+// o evento SSE "projects" (elo servidor: TestSettingsWriteAnnouncesProjects);
+// a aba relê /api/projects e a nav esconde/reexibe o Grafo sem reload.
+describe('LiveProvider — gate do Grafo ao vivo (F-0315)', () => {
+  it('evento projects com graph desligado tira a aba Grafo; religado, ela volta', async () => {
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    let onProjects = () => {}
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      return () => {}
+    })
+    const gate = (graph: boolean) => async () => ({ projects: [{ pid: 'p1', name: 'P1', graph }], default: 'p1' })
+    vi.mocked(fetchProjects).mockImplementation(gate(true))
+    render(
+      <LiveProvider>
+        <Nav hash="#/" />
+      </LiveProvider>,
+    )
+    expect((await screen.findAllByText('Grafo')).length).toBeGreaterThan(0)
+    const brand = screen.getByText('cerne')
+
+    vi.mocked(fetchProjects).mockImplementation(gate(false))
+    await act(async () => onProjects())
+    await waitFor(() => expect(screen.queryByText('Grafo')).not.toBeInTheDocument())
+
+    vi.mocked(fetchProjects).mockImplementation(gate(true))
+    await act(async () => onProjects())
+    expect((await screen.findAllByText('Grafo')).length).toBeGreaterThan(0)
+    // Mesma árvore: a nav não foi remontada (sem reload).
+    expect(screen.getByText('cerne')).toBe(brand)
+  })
+})
+
+// F-0315 (crítica C2): toda escrita de settings dispara o evento "projects";
+// se a releitura da lista falhar depois do boot, o app inteiro não pode virar a
+// página de erro de boot — a lista e as telas atuais ficam, com um aviso.
+describe('LiveProvider — releitura da lista que falha depois do boot (F-0315)', () => {
+  it('mantém projetos e telas, com um aviso não bloqueante e nova tentativa', async () => {
+    let onProjects = () => {}
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      return () => {}
+    })
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+
+    vi.mocked(fetchProjects).mockRejectedValueOnce(new Error('Failed to fetch'))
+    await act(async () => onProjects())
+    expect(screen.getByText('p1')).toBeInTheDocument()
+    expect(screen.queryByText(/erro ao carregar projetos/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Failed to fetch')
+
+    await act(async () => screen.getByRole('button', { name: /tentar de novo/i }).click())
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    expect(screen.getByText('p1')).toBeInTheDocument()
   })
 })

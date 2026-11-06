@@ -33,7 +33,7 @@ const MAX_RESULTS = 20
 
 // norm derruba caixa e diacrítico dos dois lados da comparação, para que
 // "decisao" ache "Decisão" — o espelho no browser do que internal/slug faz no Go.
-function norm(s: string): string {
+export function norm(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFD')
