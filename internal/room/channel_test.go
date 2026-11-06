@@ -226,3 +226,23 @@ func TestManagerIgnoresChannelDir(t *testing.T) {
 		}
 	}
 }
+
+// TestChannelSeqSurvivesTrim (F-0325, critic C16): the seq high-water mark is
+// kept apart from messages.jsonl, so trimming or compacting the log never
+// hands out a seq below a session's watermark again.
+func TestChannelSeqSurvivesTrim(t *testing.T) {
+	dir := t.TempDir()
+	c := OpenChannel(dir)
+	for range 3 {
+		if _, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: "oi"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, ChannelID, "messages.jsonl"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: "depois do corte"})
+	if err != nil || m.Seq != 4 {
+		t.Fatalf("seq after trimming = %d (%v), want 4", m.Seq, err)
+	}
+}

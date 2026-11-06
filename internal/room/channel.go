@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -67,6 +69,7 @@ func OpenChannel(roomsDir string) Channel {
 
 func (c Channel) messagesPath() string   { return filepath.Join(c.dir, "messages.jsonl") }
 func (c Channel) deliveriesPath() string { return filepath.Join(c.dir, "deliveries.jsonl") }
+func (c Channel) seqPath() string        { return filepath.Join(c.dir, "seq") }
 
 // Append assigns m the next seq and persists it, under the lock.
 func (c Channel) Append(m Message) (Message, error) {
@@ -78,12 +81,19 @@ func (c Channel) Append(m Message) (Message, error) {
 		if err != nil {
 			return err
 		}
-		last := 0
+		// The high-water mark lives apart from the log (critic C16): a
+		// trimmed or compacted log must never hand out a seq again, or every
+		// session whose watermark is past it misses the new messages.
+		hw, _ := os.ReadFile(c.seqPath())
+		last, _ := strconv.Atoi(strings.TrimSpace(string(hw)))
 		for _, prev := range parseLines[Message](raw) {
 			last = max(last, prev.Seq)
 		}
 		m.Seq = last + 1
-		return appendLine(c.messagesPath(), raw, m)
+		if err := appendLine(c.messagesPath(), raw, m); err != nil {
+			return err
+		}
+		return os.WriteFile(c.seqPath(), []byte(strconv.Itoa(m.Seq)+"\n"), 0o644)
 	})
 	if err != nil {
 		return Message{}, err
