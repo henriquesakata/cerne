@@ -3,9 +3,11 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -570,4 +572,53 @@ func channelRoster(cacheDir string, active []store.Work) []ChannelMember {
 		out = append(out, ChannelMember{Work: w.ID, Title: w.Title, Actor: w.Actor, Live: live})
 	}
 	return out
+}
+
+// ChannelStopReminder is the end-of-turn nudge for messages addressed to
+// session sess and still unanswered (criterion 16): each is reminded at most
+// once per session, so a Stop continuation never comes back for it. The
+// returned mark records them as reminded — call it only once the text was
+// actually emitted. Nothing due, or any error: "" and a no-op mark.
+func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string, func()) {
+	noop := func() {}
+	if safeSessionID(sess) != nil {
+		return "", noop
+	}
+	ch := channelOf(cacheDir)
+	msgs, err := ch.Messages()
+	if err != nil || len(msgs) == 0 {
+		return "", noop
+	}
+	id, ok := sessionWork(cacheDir, repoDir, sess)
+	if !ok {
+		return "", noop
+	}
+	dels, err := ch.Deliveries()
+	if err != nil {
+		return "", noop
+	}
+	marker := filepath.Join(cacheDir, "rooms", room.ChannelID, "stop-reminded", sess)
+	raw, _ := os.ReadFile(marker)
+	reminded := strings.Fields(string(raw))
+	cs := channelState{msgs: msgs, dels: dels}
+	var due []string
+	var seqs []string
+	for _, m := range liveMessages(repoDir, msgs, now) {
+		seq := strconv.Itoa(m.Seq)
+		if slices.Contains(reminded, seq) || !directedTo(m, id) || cs.answered(m, id.Work) {
+			continue
+		}
+		due = append(due, fmt.Sprintf("#%d from %s: %q", m.Seq, m.Nick, truncateBody(m.Body, 80, 1<<20)))
+		seqs = append(seqs, seq)
+	}
+	if len(due) == 0 {
+		return "", noop
+	}
+	text := fmt.Sprintf("cerne channel: still unanswered and addressed to you — %s. Reply with cerne msg send \"<text>\" (any later message of yours counts) or silence it with cerne msg ack %s.",
+		strings.Join(due, "; "), strings.Join(seqs, " "))
+	return text, func() {
+		if os.MkdirAll(filepath.Dir(marker), 0o755) == nil {
+			_ = os.WriteFile(marker, []byte(strings.Join(append(reminded, seqs...), "\n")+"\n"), 0o644)
+		}
+	}
 }

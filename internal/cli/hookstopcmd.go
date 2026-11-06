@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -66,9 +67,41 @@ func runHookStopCheck(cmd *cobra.Command) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
-	id, ok, err := app.CurrentBinding(cacheDir, repoDir, in.SessionID)
-	if err != nil || !ok {
+
+	// Each part decides and rations itself; whatever is due goes out in ONE
+	// envelope — a single continuation of the turn, never two.
+	var parts []string
+	var marks []func()
+	if msg, mark := stopCloseout(cacheDir, repoDir, in.SessionID); msg != "" {
+		parts, marks = append(parts, msg), append(marks, mark)
+	}
+	if msg, mark := app.ChannelStopReminder(cacheDir, repoDir, in.SessionID, time.Now().UTC()); msg != "" {
+		parts, marks = append(parts, msg), append(marks, mark) // F-0325
+	}
+	if len(parts) == 0 {
 		return
+	}
+
+	var out stopContext
+	out.HookSpecificOutput.HookEventName = "Stop"
+	out.HookSpecificOutput.AdditionalContext = strings.Join(parts, "\n\n")
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	if err := enc.Encode(out); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), err)
+		return
+	}
+	// Marked only once delivered: an undelivered reminder must not count.
+	for _, mark := range marks {
+		mark()
+	}
+}
+
+// stopCloseout is the F-0171 closeout reminder for the session's live
+// binding, at most once per (session, binding) (F-0294); mark records it.
+func stopCloseout(cacheDir, repoDir, sess string) (string, func()) {
+	id, ok, err := app.CurrentBinding(cacheDir, repoDir, sess)
+	if err != nil || !ok {
+		return "", nil
 	}
 
 	var msg string
@@ -78,26 +111,18 @@ func runHookStopCheck(cmd *cobra.Command) {
 	case domain.IsFeatureID(id):
 		msg = fmt.Sprintf("cerne: feature %s is in development as this turn ends. Before stopping, reflect finished tasks in plan.md, accumulate evidence in result.md, and `cerne sync` — the board should show real progress, not the last session's snapshot.", id)
 	default:
-		return
+		return "", nil
 	}
 
 	// CurrentBinding already rejected an unsafe session id, so it is a safe
 	// file name. A marker read/write failure never suppresses the reminder.
-	marker := filepath.Join(cacheDir, stopRemindedSubdir, in.SessionID)
+	marker := filepath.Join(cacheDir, stopRemindedSubdir, sess)
 	if prev, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(prev)) == id {
-		return
+		return "", nil
 	}
-
-	var out stopContext
-	out.HookSpecificOutput.HookEventName = "Stop"
-	out.HookSpecificOutput.AdditionalContext = msg
-	enc := json.NewEncoder(cmd.OutOrStdout())
-	if err := enc.Encode(out); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err)
-		return
-	}
-	// Marked only once delivered: an undelivered reminder must not count.
-	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err == nil {
-		_ = os.WriteFile(marker, []byte(id+"\n"), 0o644)
+	return msg, func() {
+		if err := os.MkdirAll(filepath.Dir(marker), 0o755); err == nil {
+			_ = os.WriteFile(marker, []byte(id+"\n"), 0o644)
+		}
 	}
 }

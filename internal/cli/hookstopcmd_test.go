@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -173,5 +174,84 @@ func TestHookStopCheckRemindsOncePerBinding(t *testing.T) {
 	}
 	if out := stop("sess-a"); out != "" {
 		t.Fatalf("rebound repeat: want silence, got:\n%s", out)
+	}
+}
+
+// TestHookStopCheckChannelReminderNonReentrant (F-0325 crit. 16, F-0294): an
+// addressed channel message still unanswered when the turn ends is reminded
+// once — never on the Stop's own continuation, never again next turn — a new
+// one is reminded once more, and with the closeout reminder due in the same
+// Stop both go out in one envelope (a single continuation).
+func TestHookStopCheckChannelReminderNonReentrant(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	a := startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	stop := func(sess string, active bool) string {
+		t.Helper()
+		stdin := `{"session_id":"` + sess + `","cwd":` + strconv.Quote(projDir) + `,"stop_hook_active":` + strconv.FormatBool(active) + `}`
+		out, err := execCerneStdin(t, stdin, "hook", "stop-check")
+		if err != nil {
+			t.Fatalf("stop-check: %v\n%s", err, out)
+		}
+		return out
+	}
+	if out := stop("sess-a", false); !strings.Contains(out, "work done") {
+		t.Fatalf("closeout reminder (F-0171) missing:\n%s", out)
+	}
+
+	seedChannel(t, repoDir, b, a+" segura o rooms.go")
+	out := stop("sess-a", false)
+	if strings.Count(out, "\n") != 1 || strings.Contains(out, "work done") || strings.Contains(out, `"decision"`) {
+		t.Fatalf("want one non-blocking channel-only envelope:\n%s", out)
+	}
+	c := channelEnvelope(t, out)
+	for _, want := range []string{"#1", b, "cerne msg send", "cerne msg ack 1"} {
+		if c.HookSpecificOutput.HookEventName != "Stop" || !strings.Contains(c.HookSpecificOutput.AdditionalContext, want) {
+			t.Fatalf("reminder missing %q:\n%s", want, out)
+		}
+	}
+	if out := stop("sess-a", true); out != "" {
+		t.Fatalf("continuation reminded again: %q", out)
+	}
+	if out := stop("sess-a", false); out != "" {
+		t.Fatalf("next turn reminded the same message again: %q", out)
+	}
+
+	seedChannel(t, repoDir, b, a+" mais uma")
+	if out := stop("sess-a", false); !strings.Contains(out, "#2") || strings.Contains(out, "#1") {
+		t.Fatalf("new addressed message: %q", out)
+	}
+
+	cw := startBoundWork(t, projDir, repoDir, "sess-c", "Atualizar a documentação")
+	seedChannel(t, repoDir, b, cw+" pode consumir")
+	out = stop("sess-c", false)
+	if strings.Count(out, "hookSpecificOutput") != 1 || !strings.Contains(out, "work done") || !strings.Contains(out, "cerne msg ack 3") {
+		t.Fatalf("want one envelope with both parts:\n%s", out)
+	}
+}
+
+// TestHookStopCheckChannelFailOpen (crit. 19): an unreadable or corrupt channel
+// never breaks the end of the turn, nor the closeout reminder.
+func TestHookStopCheckChannelFailOpen(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	a := startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, a+" segura")
+	chDir := filepath.Join(filepath.Dir(repoDir), "rooms", "channel")
+	if err := os.Chmod(chDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerneStdin(t, stopPayload(t, "sess-a", projDir), "hook", "stop-check")
+	if err := os.Chmod(chDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err != nil || !strings.Contains(out, "work done") || strings.Contains(out, "cerne msg") {
+		t.Fatalf("unreadable channel: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(chDir, "messages.jsonl"), []byte("{garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerneStdin(t, stopPayload(t, "sess-a", projDir), "hook", "stop-check"); err != nil || out != "" {
+		t.Fatalf("corrupt channel: %v %q", err, out)
 	}
 }
