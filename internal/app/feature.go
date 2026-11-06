@@ -182,6 +182,7 @@ type newFeature struct {
 	prefix, title, module, parent, specBody, owner, priority string
 	facets, components                                       []string
 	force                                                    bool
+	fromIdea                                                 string // F-0312: the idea a promote mints it from
 }
 
 func prepareFeature(prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (newFeature, error) {
@@ -255,6 +256,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			Components: n.components,
 			Owner:      n.owner,
 			Priority:   n.priority,
+			FromIdea:   n.fromIdea,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}

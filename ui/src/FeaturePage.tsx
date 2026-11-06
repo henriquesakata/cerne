@@ -308,6 +308,7 @@ export default function FeaturePage({ id }: { id: string }) {
             <a href={`#/f/${encodeURIComponent(f.parent)}`}>{f.parent}</a>
           </p>
         )}
+        {f.from_idea && <p className="feature-note">{t.feature.fromIdea(f.from_idea)}</p>}
         {f.superseded_by && (
           <p className="feature-note">{t.feature.supersededBy(f.superseded_by)}</p>
         )}

@@ -160,6 +160,7 @@ func PromoteIdea(repoDir, projDir, id, module string, force bool) (store.Idea, s
 		if err != nil {
 			return "", err
 		}
+		n.fromIdea = i.ID
 		if f, _, err = n.mint(repoDir); err != nil {
 			return "", err
 		}

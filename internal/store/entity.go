@@ -44,9 +44,12 @@ type Feature struct {
 	DeliveryMRURL     string `json:"delivery_mr_url,omitempty"`
 	// Capabilities lists the product-capability nodes (C-…) this feature
 	// contributes to (F-0188) — the functional axis, N:N, validated on link.
-	Capabilities []string  `json:"capabilities,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	// FromIdea is the idea (I-, F-0312) this feature was promoted from — the
+	// structured back-link; the spec's "**Origem:**" line is prose only.
+	FromIdea  string    `json:"from_idea,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Decision is the persisted form of a decision entity.

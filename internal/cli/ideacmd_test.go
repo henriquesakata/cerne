@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -230,5 +231,32 @@ func TestShowIdeaLowercaseAndArticle(t *testing.T) {
 	_, err = execCerne(t, "show", "I-0001", "--doc", "spec", "--dir", projDir)
 	if err == nil || !strings.Contains(err.Error(), "this is an idea") {
 		t.Fatalf("show --doc on an idea err = %v, want 'this is an idea'", err)
+	}
+}
+
+// C3: the feature→idea link is data on the feature (from_idea), shown by
+// cerne show — rewriting the spec, which erases the stub's prose line, keeps it.
+func TestPromotedFeatureKeepsFromIdeaAfterSpecRewrite(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV")
+	ideaCmd(t, projDir, "promote", "I-0001")
+	fs, _ := store.LoadAllFeatures(repoDir)
+	if len(fs) != 1 || fs[0].FromIdea != "I-0001" {
+		t.Fatalf("features = %+v, want one with from_idea I-0001", fs)
+	}
+	fid := fs[0].ID
+	if err := app.SaveFeatureDoc(repoDir, projDir, fid, "spec", "---\ncerne_id: "+fid+"\n---\n\n## Problema\n\nReescrita, sem a linha de origem.\n"); err != nil {
+		t.Fatalf("SaveFeatureDoc: %v", err)
+	}
+	out, err := execCerne(t, "show", fid, "--dir", projDir)
+	if err != nil || !strings.Contains(out, "from idea: I-0001") {
+		t.Fatalf("show %s after a spec rewrite = %v\n%s", fid, err, out)
+	}
+	var doc struct {
+		Entity store.Feature `json:"entity"`
+	}
+	out, err = execCerne(t, "show", fid, "--json", "--dir", projDir)
+	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.Entity.FromIdea != "I-0001" {
+		t.Fatalf("show --json = %+v, %v\n%s", doc, err, out)
 	}
 }

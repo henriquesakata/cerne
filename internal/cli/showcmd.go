@@ -297,6 +297,9 @@ func (r showResult) renderText(w io.Writer) {
 		if e.Parent != "" {
 			fmt.Fprintf(w, "epic: %s\n", e.Parent)
 		}
+		if e.FromIdea != "" {
+			fmt.Fprintf(w, "from idea: %s\n", e.FromIdea)
+		}
 		if r.approvalStale != nil && *r.approvalStale {
 			fmt.Fprintln(w, approvalStaleLine(e.ID))
 		}

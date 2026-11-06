@@ -34,6 +34,7 @@ export type Feature = {
   capabilities?: string[] // F-0188: C- ids da taxonomia funcional
   owner?: string // F-0204: responsável (texto livre)
   priority?: string // F-0204: p0..p3 (conjunto fechado)
+  from_idea?: string // F-0312: a ideia (I-) de que a promoção a criou
   created_at: string
   updated_at: string
 }

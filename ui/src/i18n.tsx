@@ -409,6 +409,7 @@ const ptBR = {
     },
   },
   feature: {
+    fromIdea: (id: string) => `Nasceu da ideia ${id}`,
     loadError: (e: string) => `Erro ao carregar a feature: ${e}`,
     backToKanban: '← Kanban',
     backToBacklog: '← Backlog',
@@ -1297,6 +1298,7 @@ const en: Messages = {
     },
   },
   feature: {
+    fromIdea: (id: string) => `Promoted from idea ${id}`,
     loadError: (e: string) => `Failed to load the feature: ${e}`,
     backToKanban: '← Kanban',
     backToBacklog: '← Backlog',
