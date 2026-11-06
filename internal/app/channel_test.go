@@ -780,3 +780,27 @@ func TestChannelStopReminderIsADelivery(t *testing.T) {
 		t.Fatalf("answered message injected again: %q", out)
 	}
 }
+
+// TestChannelStopReminderWithinBudget (critic C4): the Stop reminder goes
+// through the injection renderer — 5 inline, 280 runes, the 400-token
+// ceiling — however many addressed messages are pending.
+func TestChannelStopReminderWithinBudget(t *testing.T) {
+	f := newChanFixture(t)
+	for i := range 30 {
+		f.post("W-0002", ptBody(fmt.Sprintf("W-0001 ação não prevista número %d", i), 400), false)
+	}
+	f.at = f.at.Add(time.Second)
+	text, mark := ChannelStopReminder(f.cacheDir, f.repoDir, "s1", f.at)
+	if tokens := (len(text) + 3) / 4; tokens > 400 {
+		t.Fatalf("Stop reminder = %d tokens (%d bytes), want <= 400:\n%s", tokens, len(text), text)
+	}
+	if n := len(injectedBodies(text)); n != 5 || !strings.Contains(text, "\n+25 more — cerne msg read\n") {
+		t.Fatalf("want 5 inline + 25 counted:\n%s", text)
+	}
+	mark()
+	f.at = f.at.Add(time.Second)
+	if again, _ := ChannelStopReminder(f.cacheDir, f.repoDir, "s1", f.at); again != "" {
+		t.Fatalf("reminded again next turn: %q", again)
+	}
+	t.Logf("30 addressed: Stop reminder %d bytes, %d tokens", len(text), (len(text)+3)/4)
+}

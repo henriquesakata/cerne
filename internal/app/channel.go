@@ -259,7 +259,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 			return nil, nil
 		}
 		var inline []room.Message
-		out, inline = renderInjection(pending)
+		out, inline = renderInjection(pending, "cerne channel:\n")
 		d := &room.Delivery{Session: sess, Work: id.Work, At: now, Peek: !consume}
 		for _, m := range inline {
 			d.Seqs = append(d.Seqs, m.Seq)
@@ -280,7 +280,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 // cap by priority, newest first within a group. Every body is cut to
 // min(280 runes, its equal share of the remaining bytes), which holds the
 // whole block under channelBudgetBytes by construction.
-func renderInjection(pending []injItem) (string, []room.Message) {
+func renderInjection(pending []injItem, header string) (string, []room.Message) {
 	ranked := slices.Clone(pending)
 	slices.SortStableFunc(ranked, func(a, b injItem) int {
 		if a.group != b.group {
@@ -297,7 +297,6 @@ func renderInjection(pending []injItem) (string, []room.Message) {
 	sel := ranked[:min(len(ranked), max(humans, channelInlineCap))]
 	anyDirected := slices.ContainsFunc(pending, func(it injItem) bool { return it.directed })
 
-	const header = "cerne channel:\n"
 	var tail string
 	per := 0
 	for {
@@ -623,28 +622,34 @@ func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string,
 	raw, _ := os.ReadFile(marker)
 	reminded := strings.Fields(string(raw))
 	cs := channelState{msgs: msgs, dels: dels}
-	var due []string
+	var due []injItem
 	var seqs []string
 	for _, m := range liveMessages(repoDir, msgs, now) {
 		seq := strconv.Itoa(m.Seq)
 		if slices.Contains(reminded, seq) || !directedTo(m, id) || cs.answered(m, id.Work) {
 			continue
 		}
-		due = append(due, fmt.Sprintf("#%d from %s: %q", m.Seq, m.Nick, truncateBody(m.Body, 80, 1<<20)))
+		group := groupDirected
+		if m.Human {
+			group = groupHuman
+		}
+		due = append(due, injItem{m: m, group: group, directed: true})
 		seqs = append(seqs, seq)
 	}
 	if len(due) == 0 {
 		return "", noop
 	}
-	text := fmt.Sprintf("cerne channel: still unanswered and addressed to you — %s. Reply with cerne msg send \"<text>\" (any later message of yours counts) or silence it with cerne msg ack %s.",
-		strings.Join(due, "; "), strings.Join(seqs, " "))
+	// Same renderer, caps and 400-token ceiling as every injection (critic C4).
+	text, inline := renderInjection(due, "cerne channel — addressed to you and still unanswered as this turn ends:\n")
 	return text, func() {
 		// The reminder showed these messages to the session: a delivery like
 		// any injection, so the reply it asks for answers them (critic C3).
 		// It moves no watermark: it carries nothing but addressed messages.
-		shown := make([]int, len(seqs))
-		for i, seq := range seqs {
-			shown[i], _ = strconv.Atoi(seq)
+		// Every due message is marked reminded — the count line points at
+		// `cerne msg read` for the rest — so one Stop never becomes many.
+		shown := make([]int, len(inline))
+		for i, m := range inline {
+			shown[i] = m.Seq
 		}
 		_ = ch.Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
 			return &room.Delivery{Session: sess, Work: id.Work, Seqs: shown, At: now}, nil
