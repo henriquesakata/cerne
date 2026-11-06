@@ -866,8 +866,7 @@ const ptBR = {
     scopes: {
       project: 'Projeto',
       host: 'Host',
-      default: 'Padrão',
-    } satisfies Record<SettingScope | 'default', string>,
+    } satisfies Record<SettingScope, string>,
     // Títulos e descrições do registro chegam em inglês (D-0006); a tradução é
     // indexada pelo texto-fonte (estilo gettext): texto novo ou alterado no
     // servidor cai no inglês, nunca numa tradução velha. Chaves SEMPRE entre
@@ -1724,7 +1723,6 @@ const en: Messages = {
     scopes: {
       project: 'Project',
       host: 'Host',
-      default: 'Default',
     },
     text: {},
   },
