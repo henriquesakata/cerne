@@ -376,9 +376,29 @@ function SettingRow({
         </p>
       )}
       {control}
+      {/* A stored value the resolution skipped (critic C9): said in text —
+          scope, file and value — and removable in the scope being edited;
+          another scope's is one "Edit in" away. */}
       {s.invalid?.map((p) => (
-        <p key={`${p.scope}:${p.raw}`} className="form-error settings-invalid" title={`${p.file}: ${p.error}`}>
-          {ts.invalid(ts.scopes[p.scope], p.raw ?? '')}
+        <p key={`${p.scope}:${p.raw}`} className="settings-invalid">
+          <span className="form-error">{ts.invalid(ts.scopes[p.scope], p.file, p.raw ?? '')}</span>{' '}
+          {p.scope === ws ? (
+            <button
+              type="button"
+              className="settings-switch"
+              aria-describedby={titleId}
+              aria-disabled={lock}
+              onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
+            >
+              {ts.removeInvalid}
+            </button>
+          ) : (
+            s.scopes.includes(p.scope) && (
+              <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(p.scope)}>
+                {ts.editIn(ts.scopes[p.scope])}
+              </button>
+            )
+          )}
         </p>
       ))}
       <p className="settings-meta muted">

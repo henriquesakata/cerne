@@ -374,7 +374,9 @@ describe('Settings — escape para o arquivo cru (F-0315, barra R-0042)', () => 
     )
     render(<Settings />)
     const wiki = await screen.findByRole('listitem', { name: 'Wiki' })
-    expect(within(wiki).getByText('Valor inválido em Host: "no" — ignorado')).toHaveClass('form-error')
+    expect(
+      within(wiki).getByText('Valor inválido em Host (/home/u/.config/cerne/settings.toml): "no" — ignorado.'),
+    ).toHaveClass('form-error')
   })
 })
 
@@ -556,5 +558,36 @@ describe('Settings — recusas conhecidas do servidor em pt-BR/en (F-0315, crít
     )
     fireEvent.click(within(await screen.findByRole('listitem', { name: 'Graph' })).getByRole('checkbox'))
     expect(await within(row('Graph')).findByRole('status')).toHaveTextContent('The file is locked by another writer')
+  })
+})
+
+describe('Settings — valor inválido visível e removível (F-0315, crítica C9)', () => {
+  it('o problema diz escopo, arquivo e valor em texto, e "Remover valor inválido" apaga daquele escopo', async () => {
+    fetchSettings.mockResolvedValue(
+      withKey('wiki.enabled', { invalid: [{ scope: 'project', file: '/repo/.cernerc', raw: '"yes"', error: 'want a bool' }] }),
+    )
+    render(<Settings />)
+    const wiki = await screen.findByRole('listitem', { name: 'Wiki' })
+    const problem = within(wiki).getByText(/Valor inválido em Projeto/)
+    expect(problem).toHaveTextContent('/repo/.cernerc')
+    expect(problem).toHaveTextContent('"yes"')
+    expect(problem).not.toHaveAttribute('title')
+    fireEvent.click(within(wiki).getByRole('button', { name: 'Remover valor inválido' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('wiki.enabled', 'project'))
+    await waitFor(() => expect(within(row('Wiki')).queryByText(/Valor inválido/)).toBeNull())
+  })
+
+  it('valor inválido de outro escopo leva a ele, onde a remoção age', async () => {
+    fetchSettings.mockResolvedValue(
+      withKey('wiki.enabled', {
+        invalid: [{ scope: 'host', file: '/home/u/.config/cerne/settings.toml', raw: '"no"', error: 'want a bool' }],
+      }),
+    )
+    render(<Settings />)
+    const wiki = await screen.findByRole('listitem', { name: 'Wiki' })
+    expect(within(wiki).queryByRole('button', { name: 'Remover valor inválido' })).toBeNull()
+    fireEvent.click(within(wiki).getByRole('button', { name: 'Editar em Host' }))
+    fireEvent.click(within(row('Wiki')).getByRole('button', { name: 'Remover valor inválido' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('wiki.enabled', 'host'))
   })
 })

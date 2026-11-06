@@ -858,7 +858,8 @@ const ptBR = {
       invalid: 'O servidor recusou o valor ou o escopo desta configuração.',
     },
     file: 'Arquivo:',
-    invalid: (scope: string, raw: string) => `Valor inválido em ${scope}: ${raw} — ignorado`,
+    invalid: (scope: string, file: string, raw: string) => `Valor inválido em ${scope} (${file}): ${raw} — ignorado.`,
+    removeInvalid: 'Remover valor inválido',
     scopes: {
       project: 'Projeto',
       host: 'Host',
@@ -1710,7 +1711,8 @@ const en: Messages = {
       invalid: "The server refused this setting's value or scope.",
     },
     file: 'File:',
-    invalid: (scope: string, raw: string) => `Invalid value in ${scope}: ${raw} — ignored`,
+    invalid: (scope: string, file: string, raw: string) => `Invalid value in ${scope} (${file}): ${raw} — ignored.`,
+    removeInvalid: 'Remove invalid value',
     scopes: {
       project: 'Project',
       host: 'Host',
