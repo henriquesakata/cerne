@@ -68,6 +68,13 @@ func anchor(result string) (share, bool) {
 	return a, json.Unmarshal([]byte(raw), &a) == nil
 }
 
+// AnchorCounters reads the own counters of result's v1 cost anchor (the
+// process panel's one reader, F-0321): false with no real "## Custo" anchor.
+func AnchorCounters(result string) (Counters, bool) {
+	a, ok := anchor(result)
+	return a.Counters, ok
+}
+
 // custoSection locates the real "## Custo" section of result, ignoring fenced
 // code blocks (a quoted example must not hijack the stamp, C7): the first such
 // heading outside a fence, up to the next "## " heading outside one or the end,

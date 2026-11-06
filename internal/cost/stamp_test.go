@@ -272,3 +272,23 @@ func TestStampBlockNamesUnattributedAndRecovered(t *testing.T) {
 		t.Errorf("a fully recovered session reads as a loss:\n%s", got)
 	}
 }
+
+// TestAnchorCountersReadsStampedResult pins the process panel's one anchor
+// reader (F-0321): the own counters of a stamped result; nothing from a quoted
+// example inside a code fence, nor from an empty body.
+func TestAnchorCountersReadsStampedResult(t *testing.T) {
+	got, err := Stamp("", Report{ID: "F-0001", Counters: Counters{1, 2, 3, 4}, Messages: 1})
+	if err != nil {
+		t.Fatalf("Stamp: %v", err)
+	}
+	if c, ok := AnchorCounters(got); !ok || c != (Counters{1, 2, 3, 4}) {
+		t.Fatalf("AnchorCounters = %+v, %v, want {1 2 3 4}, true", c, ok)
+	}
+	fenced := "# F-0001\n\n```markdown\n" + got + "```\n"
+	if _, ok := AnchorCounters(fenced); ok {
+		t.Fatalf("AnchorCounters read a fenced example as the anchor")
+	}
+	if _, ok := AnchorCounters(""); ok {
+		t.Fatalf("AnchorCounters read an anchor from an empty body")
+	}
+}
