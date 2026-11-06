@@ -78,3 +78,28 @@ func TestHookLifecycleReminderSilence(t *testing.T) {
 		}
 	}
 }
+
+// F-0312 C13: a promote mints a stub candidate, so it gets the same
+// write-the-spec-now reminder as feature new — and a refused promote, whose
+// message cites the existing F-, stays silent.
+func TestHookLifecycleReminderOnIdeaPromote(t *testing.T) {
+	out, err := execCerneStdin(t, hookJSON(t, "sess-lc", "/tmp/proj", "Bash",
+		map[string]any{"command": "cerne idea promote I-0003"},
+		map[string]any{"stdout": "I-0003: active -> promoted (F-0042)\nNext step: complete the spec of F-0042."}),
+		"hook", "lifecycle-reminder")
+	if err != nil {
+		t.Fatalf("hook lifecycle-reminder: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{"additionalContext", "F-0042", "same turn", "cerne feature approve F-0042 --check", "STOP"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	out, _ = execCerneStdin(t, hookJSON(t, "sess-lc", "/tmp/proj", "Bash",
+		map[string]any{"command": "cerne idea promote I-0003"},
+		map[string]any{"stdout": "Error: the idea is not active: I-0003 is promoted (promoted to F-0042)"}),
+		"hook", "lifecycle-reminder")
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("a refused promote produced a reminder:\n%s", out)
+	}
+}

@@ -319,3 +319,14 @@ func TestIdeaPromoteTitleForAnExactDuplicate(t *testing.T) {
 		t.Fatalf("promoted feature = %+v, %v; want the given title, from I-0002", f, err)
 	}
 }
+
+// C13: promote says what comes next, like feature new: the candidate is a
+// stub whose spec and tags are still to be written.
+func TestIdeaPromotePrintsNextStep(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV")
+	out := ideaCmd(t, projDir, "promote", "I-0001")
+	if !strings.Contains(out, "Next step: complete the spec and tags of F-0001") {
+		t.Fatalf("promote output lacks the next step:\n%s", out)
+	}
+}
