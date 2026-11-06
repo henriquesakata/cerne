@@ -1000,6 +1000,16 @@ export type SettingsView = {
   errors?: SettingProblem[]
 }
 
+// HTTPError carries the status of a refused settings write, so the screen can
+// tell a refusal retrying cannot fix (400, 422) from a busy or broken server.
+export class HTTPError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 export async function fetchSettings(): Promise<SettingsView> {
   const r = await fetch(`${base()}/settings`)
   if (!r.ok) throw new Error(await errorMessage(r))
@@ -1014,14 +1024,14 @@ export async function putSetting(id: string, scope: SettingScope, value: unknown
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scope, value }),
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
   return (await r.json()) as SettingsView
 }
 
 // unsetSetting remove a chave do escopo (idempotente no servidor) e devolve a view nova.
 export async function unsetSetting(id: string, scope: SettingScope): Promise<SettingsView> {
   const r = await fetch(`${base()}/settings/${encodeURIComponent(id)}?scope=${scope}`, { method: 'DELETE' })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
   return (await r.json()) as SettingsView
 }
 

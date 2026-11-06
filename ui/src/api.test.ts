@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchSettings, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
+import { fetchSettings, HTTPError, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
 
 function streamResponse(chunks: string[]): Response {
   const encoder = new TextEncoder()
@@ -87,5 +87,15 @@ describe('settings API (F-0315 critérios 5 e 8): escopo do projeto ativo da aba
     await expect(putSetting('wiki.enabled', 'project', true)).rejects.toThrow('config file is locked by another writer')
     await expect(unsetSetting('wiki.enabled', 'project')).rejects.toThrow('config file is locked by another writer')
     await expect(fetchSettings()).rejects.toThrow('config file is locked by another writer')
+  })
+
+  it('a recusa de uma escrita carrega o status, para a tela decidir se nova tentativa ajuda (crítica C8)', async () => {
+    setApiProject('p2')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'bad' }), { status: 422 })))
+    const err = await putSetting('graph.enabled', 'project', false).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(HTTPError)
+    expect((err as HTTPError).status).toBe(422)
+    const del = await unsetSetting('graph.enabled', 'project').catch((e: unknown) => e)
+    expect((del as HTTPError).status).toBe(422)
   })
 })

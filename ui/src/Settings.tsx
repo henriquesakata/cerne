@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import {
   fetchSettings,
+  HTTPError,
   putSetting,
   unsetSetting,
   type ResolvedSetting,
@@ -44,7 +45,13 @@ function formatValue(v: unknown, ts: Texts): string {
 // pressed goes away (a reset, an "Edit in …" shortcut, a remounted field).
 const controlId = (id: string) => `setting-${id}`
 
-type Failure = { message: string; retry: () => void }
+// retry is absent when retrying can only fail the same way (critic C8).
+type Failure = { message: string; retry?: () => void }
+
+// retryable: a busy lock (409), a broken server (5xx) or no answer at all
+// (network). A 400 (value, scope) or 422 (file layout, parse) needs the file
+// or the value fixed first.
+const retryable = (e: unknown) => !(e instanceof HTTPError) || e.status === 409 || e.status >= 500
 
 // A write failure belongs to the key AND the scope it wrote to (critic C6):
 // another scope's row never shows it, and its retry goes where it failed.
@@ -116,7 +123,10 @@ export default function Settings() {
         settle(null)
       },
       (e: unknown) =>
-        settle({ message: e instanceof Error ? e.message : String(e), retry: () => write(id, scope, run) }),
+        settle({
+          message: e instanceof Error ? e.message : String(e),
+          retry: retryable(e) ? () => write(id, scope, run) : undefined,
+        }),
     )
   }
   const switchScope = (id: string, to: SettingScope) => {
@@ -200,6 +210,7 @@ export default function Settings() {
               s={s}
               scope={scope}
               tx={tx}
+              files={view.files}
               busy={busy.has(s.id)}
               landed={landed[s.id] ?? 0}
               failures={failures}
@@ -217,6 +228,7 @@ function SettingRow({
   s,
   scope,
   tx,
+  files,
   busy,
   landed,
   failures,
@@ -226,6 +238,7 @@ function SettingRow({
   s: ResolvedSetting
   scope: SettingScope
   tx: (src: string) => string
+  files: SettingsView['files']
   busy: boolean
   landed: number
   failures: Readonly<Record<string, Failure>>
@@ -376,7 +389,14 @@ function SettingRow({
           </button>
         )}
       </p>
-      {failure && <Notice message={ts.writeError(failure.message)} onRetry={failure.retry} busy={busy} />}
+      {failure?.retry && <Notice message={ts.writeError(failure.message)} onRetry={failure.retry} busy={busy} />}
+      {failure && !failure.retry && (
+        // No retry: the message and the way to the file that needs fixing.
+        <div className="load-notice" role="status">
+          <p className="form-error">{ts.writeError(failure.message)}</p>
+          {files[ws] && <FixBlock command={files[ws]} />}
+        </div>
+      )}
     </li>
   )
 }

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import '@testing-library/jest-dom/vitest'
 import Settings from './Settings'
 import { I18nProvider } from './i18n'
-import type { ResolvedSetting, SettingScope, SettingsView } from './api'
+import { HTTPError, type ResolvedSetting, type SettingScope, type SettingsView } from './api'
 
 // F-0315: a tela de Settings é derivada do registro de F-0314 — nenhuma chave
 // é conhecida pela tela; título, descrição, tipo e escopos vêm do payload.
@@ -493,5 +493,30 @@ describe('Settings — texto vazio é redefinir (F-0315, crítica C7)', () => {
     fireEvent.click(within(row('Nome no canal')).getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('channel.human_name', 'host', 'Ana'))
     await waitFor(() => expect(within(row('Nome no canal')).getByRole('textbox')).toHaveValue('Ana'))
+  })
+})
+
+describe('Settings — nova tentativa só quando tentar de novo ajuda (F-0315, crítica C8)', () => {
+  it('400 e 422 mostram a mensagem e o arquivo cru, sem "Tentar de novo"', async () => {
+    for (const status of [400, 422]) {
+      cleanup()
+      putSetting.mockRejectedValueOnce(new HTTPError('refused', status))
+      render(<Settings />)
+      fireEvent.click(within(await screen.findByRole('listitem', { name: 'Grafo' })).getByRole('checkbox'))
+      const status_ = await within(row('Grafo')).findByRole('status')
+      expect(within(status_).queryByRole('button', { name: 'Tentar de novo' })).toBeNull()
+      expect(within(status_).getByText('/repo/.cernerc')).toBeInTheDocument()
+    }
+  })
+
+  it('409 (travado), 5xx e falha de rede oferecem "Tentar de novo"', async () => {
+    for (const err of [new HTTPError('busy', 409), new HTTPError('boom', 503), new TypeError('Failed to fetch')]) {
+      cleanup()
+      putSetting.mockRejectedValueOnce(err)
+      render(<Settings />)
+      fireEvent.click(within(await screen.findByRole('listitem', { name: 'Grafo' })).getByRole('checkbox'))
+      const status = await within(row('Grafo')).findByRole('status')
+      expect(within(status).getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
+    }
   })
 })
