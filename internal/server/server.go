@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1093,12 +1094,15 @@ func handleWikiPage(w http.ResponseWriter, repoDir, rel string) {
 }
 
 // lintFinding is one lint problem in the API's snake_case contract,
-// projected from lint.Finding (which carries no JSON tags).
+// projected from lint.Finding (which carries no JSON tags). Advisory marks a
+// finding that never blocks — an advisory rule (F-0322) or wiki debt with the
+// wiki off (F-0316) — so no surface counts it as open work.
 type lintFinding struct {
-	Rule   string `json:"rule"`
-	Entity string `json:"entity,omitempty"`
-	File   string `json:"file,omitempty"`
-	Detail string `json:"detail"`
+	Rule     string `json:"rule"`
+	Entity   string `json:"entity,omitempty"`
+	File     string `json:"file,omitempty"`
+	Detail   string `json:"detail"`
+	Advisory bool   `json:"advisory,omitempty"`
 }
 
 // lintResponse is the GET /api/lint payload; findings come already ordered
@@ -1127,9 +1131,14 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	// A copy: the findings may be the cache's, and the downgrade is this
+	// request's wiki.enabled, never a stamp left on them.
+	findings = slices.Clone(findings)
+	wikiOn, _ := project.WikiEnabled(projDir)
+	lint.DowngradeWikiDebt(findings, wikiOn)
 	out := make([]lintFinding, len(findings))
 	for i, f := range findings {
-		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail}
+		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail, Advisory: !lint.Blocking(f)}
 	}
 	writeJSON(w, http.StatusOK, lintResponse{Findings: out, Stale: stale})
 }

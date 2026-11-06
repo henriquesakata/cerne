@@ -1,9 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -235,5 +239,58 @@ func TestUIMultiWiresLintBroadcast(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no SSE event for the finished revalidation")
+	}
+}
+
+// TestLintEndpointMarksAdvisory pins C6 of F-0316 (and P-0002) on /api/lint:
+// each finding says whether it blocks — a stale pending (F-0322) and wiki
+// debt with the wiki off are advisory, a broken link is not — and the mark is
+// derived per request, never stamped on the cached findings: with the wiki
+// back on, the same cached wiki debt blocks again.
+func TestLintEndpointMarksAdvisory(t *testing.T) {
+	prev := lintRunner
+	lintRunner = func(string, int, int, ...string) ([]lint.Finding, error) {
+		return []lint.Finding{
+			{Rule: lint.RuleBrokenLink, Entity: "F-0001", Detail: "link"},
+			{Rule: lint.RuleWikiSourceUnknown, File: "content/wiki/project.md", Detail: "unknown source: F-0999"},
+			{Rule: lint.RuleStalePending, Entity: "P-0001", Detail: "old"},
+		}, nil
+	}
+	t.Cleanup(func() { lintRunner = prev; resetLintCache() })
+	resetLintCache()
+	repoDir, projDir, _ := newGitBackend(t)
+	rc := filepath.Join(projDir, ".cernerc")
+	if err := os.WriteFile(rc, []byte("[wiki]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := New(repoDir, projDir, "demo")
+	advisory := func() map[string]bool {
+		t.Helper()
+		var got struct {
+			Findings []struct {
+				Rule     string `json:"rule"`
+				Advisory bool   `json:"advisory"`
+			} `json:"findings"`
+		}
+		if err := json.Unmarshal(getLint(t, h).Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]bool{}
+		for _, f := range got.Findings {
+			m[f.Rule] = f.Advisory
+		}
+		return m
+	}
+
+	want := map[string]bool{lint.RuleBrokenLink: false, lint.RuleWikiSourceUnknown: true, lint.RuleStalePending: true}
+	if got := advisory(); !maps.Equal(got, want) {
+		t.Fatalf("wiki off: advisory = %v, want %v", got, want)
+	}
+	if err := os.Remove(rc); err != nil {
+		t.Fatal(err)
+	}
+	want[lint.RuleWikiSourceUnknown] = false
+	if got := advisory(); !maps.Equal(got, want) {
+		t.Fatalf("wiki back on (cached findings): advisory = %v, want %v", got, want)
 	}
 }
