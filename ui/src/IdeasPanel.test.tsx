@@ -15,7 +15,7 @@ const idea = (id: string, text: string): Idea => ({
 let ideas: Idea[] = []
 const fetchIdeas = vi.fn(async () => ideas)
 const createIdea = vi.fn<(text: string, facets: string[], components: string[], token: string) => Promise<Idea>>()
-const dropIdea = vi.fn<(id: string) => Promise<Idea>>()
+const dropIdea = vi.fn<(id: string, reason: string) => Promise<Idea>>()
 const promoteIdea = vi.fn<(id: string, module: string, force?: boolean) => Promise<{ idea: Idea; feature: Feature }>>()
 
 vi.mock('./api', async (importOriginal) => ({
@@ -23,7 +23,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchIdeas: () => fetchIdeas(),
   createIdea: (text: string, facets: string[], components: string[], token: string) =>
     createIdea(text, facets, components, token),
-  dropIdea: (id: string) => dropIdea(id),
+  dropIdea: (id: string, reason: string) => dropIdea(id, reason),
   promoteIdea: (...a: [string, string, boolean?]) => promoteIdea(...a),
 }))
 
@@ -124,7 +124,11 @@ describe('IdeasPanel (F-0312)', () => {
     await waitFor(() => expect(onPromoted).toHaveBeenCalled())
     await waitFor(() => expect(fetchIdeas.mock.calls.length).toBeGreaterThan(loads))
     fireEvent.click(row('segunda ideia').getByRole('button', { name: 'Descartar' }))
-    await waitFor(() => expect(dropIdea).toHaveBeenCalledWith('I-0002'))
+    // C11: one click only asks; the drop goes on confirm, with the reason.
+    expect(dropIdea).not.toHaveBeenCalled()
+    fireEvent.change(row('segunda ideia').getByRole('textbox', { name: 'Motivo (opcional)' }), { target: { value: 'duplicada' } })
+    fireEvent.click(row('segunda ideia').getByRole('button', { name: 'Confirmar descarte' }))
+    await waitFor(() => expect(dropIdea).toHaveBeenCalledWith('I-0002', 'duplicada'))
     await waitFor(() => expect(fetchIdeas.mock.calls.length).toBeGreaterThan(loads + 1))
   })
 
@@ -156,6 +160,19 @@ describe('IdeasPanel (F-0312)', () => {
     expect(screen.getByText(/detalhe detalhe/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar menos' }))
     expect(screen.queryByText(/detalhe detalhe/)).toBeNull()
+  })
+
+  it('descartar sem motivo e cancelar não descartam por engano (C11)', async () => {
+    ideas = [idea('I-0001', 'uma ideia')]
+    dropIdea.mockResolvedValue({ ...ideas[0], state: 'dropped' })
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('uma ideia')
+    fireEvent.click(row('uma ideia').getByRole('button', { name: 'Descartar' }))
+    fireEvent.click(row('uma ideia').getByRole('button', { name: 'Cancelar' }))
+    expect(row('uma ideia').queryByRole('button', { name: 'Confirmar descarte' })).toBeNull()
+    fireEvent.click(row('uma ideia').getByRole('button', { name: 'Descartar' }))
+    fireEvent.click(row('uma ideia').getByRole('button', { name: 'Confirmar descarte' }))
+    await waitFor(() => expect(dropIdea).toHaveBeenCalledWith('I-0001', ''))
   })
 
   it('com 2+ módulos, promover pede o módulo', async () => {

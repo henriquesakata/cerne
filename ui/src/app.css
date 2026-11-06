@@ -291,6 +291,8 @@ h2 {
 .ideas-more { font: inherit; font-size: 0.72rem; margin-left: 0.4rem; padding: 0 0.3rem; }
 .ideas-meta { font-size: 0.75rem; }
 .ideas-actions { display: flex; gap: 0.3rem; margin-left: auto; }
+.ideas-drop, .ideas-similar { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; font-size: 0.8rem; }
+.ideas-drop input { flex: 1 1 10rem; min-width: 0; }
 .ideas-actions button, .ideas-actions select { font: inherit; font-size: 0.72rem; padding: 0.1rem 0.4rem; }
 
 .backlog-card-refine {

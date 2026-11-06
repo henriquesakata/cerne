@@ -1536,8 +1536,9 @@ export async function createIdea(text: string, facets: string[], components: str
   return (await postIdea<{ idea: Idea }>('', { text, facets, components, token })).idea
 }
 
-export async function dropIdea(id: string): Promise<Idea> {
-  return (await postIdea<{ idea: Idea }>(`/${encodeURIComponent(id)}/drop`, {})).idea
+// dropIdea descarta sem apagar; reason (opcional) aparece no `--all`.
+export async function dropIdea(id: string, reason: string): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>(`/${encodeURIComponent(id)}/drop`, { reason })).idea
 }
 
 // promoteIdea cria a candidata; module só é exigido com 2+ módulos; force

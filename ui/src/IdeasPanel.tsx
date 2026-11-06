@@ -37,6 +37,9 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
   const [module, setModule] = useState('')
   // A promote refused by the duplicate guard (C9): its similars, and a force.
   const [similar, setSimilar] = useState<{ id: string; matches: DupMatch[] } | null>(null)
+  // Drop is terminal (C11): a click opens the confirmation, with an optional reason.
+  const [dropping, setDropping] = useState<string | null>(null)
+  const [reason, setReason] = useState('')
   const needsModule = modules.length >= 2
 
   const send = (sub: Submission) => {
@@ -68,6 +71,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
     run()
       .then(() => {
         setChoosing(null)
+        setDropping(null)
         after?.()
         return load.reload()
       })
@@ -143,10 +147,34 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                   <button type="button" disabled={busy !== null} onClick={() => promote(i)}>
                     {choosing === i.id ? t.ideas.confirm : t.ideas.promote}
                   </button>
-                  <button type="button" disabled={busy !== null} onClick={() => act(i.id, () => dropIdea(i.id))}>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setDropping(i.id)
+                      setReason('')
+                    }}
+                  >
                     {t.ideas.drop}
                   </button>
                 </span>
+                {dropping === i.id && (
+                  <span className="ideas-drop">
+                    <input
+                      type="text"
+                      aria-label={t.ideas.dropReason}
+                      placeholder={t.ideas.dropReason}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                    />
+                    <button type="button" disabled={busy !== null} onClick={() => act(i.id, () => dropIdea(i.id, reason.trim()))}>
+                      {t.ideas.dropConfirm}
+                    </button>
+                    <button type="button" onClick={() => setDropping(null)}>
+                      {t.common.cancel}
+                    </button>
+                  </span>
+                )}
                 {similar?.id === i.id && (
                   <div className="ideas-similar">
                     <p>{t.ideas.similarIntro}</p>

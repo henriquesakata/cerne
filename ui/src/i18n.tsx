@@ -239,6 +239,8 @@ const ptBR = {
     promoteAnyway: 'Promover mesmo assim',
     showMore: 'Mostrar mais',
     showLess: 'Mostrar menos',
+    dropReason: 'Motivo (opcional)',
+    dropConfirm: 'Confirmar descarte',
   },
   backlog: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -1138,6 +1140,8 @@ const en: Messages = {
     promoteAnyway: 'Promote anyway',
     showMore: 'Show more',
     showLess: 'Show less',
+    dropReason: 'Reason (optional)',
+    dropConfirm: 'Confirm drop',
   },
   backlog: {
     loadError: (e: string) => `Failed to load state: ${e}`,
