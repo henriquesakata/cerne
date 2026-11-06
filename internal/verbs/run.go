@@ -96,6 +96,11 @@ type Result struct {
 	Err    error  `json:"-"`
 }
 
+// Fail is the Result of a call refused before Run could see it (a tool input
+// that does not decode): err wraps one of the sentinels, and the code comes
+// from the same mapping Run uses.
+func Fail(err error) Result { return fail(err, "") }
+
 func fail(err error, out string) Result {
 	return Result{Output: out, Error: &Error{Code: codeOf(err), Message: err.Error()}, Err: err}
 }

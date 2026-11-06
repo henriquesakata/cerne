@@ -24,6 +24,10 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
+// The chat's tool channel (F-0323) derives its verb catalog from this very
+// tree; server cannot import cli, so the tree is injected here.
+func init() { server.CommandTree = Root }
+
 func newUICmd() *cobra.Command {
 	var dir string
 	var port int

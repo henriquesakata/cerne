@@ -15,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 // capabilityIDPattern distinguishes an existing C- id from a free-text title
@@ -112,6 +113,9 @@ type chatResponse struct {
 	// NoExec (F-0323 crit. 7) marks a turn whose mode has no execution
 	// channel: the UI draws no execution card and offers the commands to copy.
 	NoExec bool `json:"no_exec,omitempty"`
+	// Runs (F-0323) are the confirmed turn's tool executions, each with its
+	// structured result — what the UI shows as ✓ id or ✗ code.
+	Runs []chatRun `json:"runs,omitempty"`
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -131,7 +135,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	}
 	// F-0323: a confirmation that does not bind to the card's turn is refused
 	// loudly — never silently downgraded to a read-only turn.
-	_, confirmErr := confirmedTurn(req)
+	turn, confirmErr := confirmedTurn(req)
 	confirmed := confirmErr == nil
 	if req.Confirm && !confirmed {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("invalid confirmation: "+confirmErr.Error()+" (send conversation_id and confirm_turn with confirm)"))
@@ -195,6 +199,23 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
 	defer cancel()
 	prompt := app.BuildChatPrompt(sysPrompt, msgs)
+
+	// F-0323: the confirmed turn of a function-calling provider executes
+	// through the verb catalog — and only it is offered the tool. Single-shot
+	// (the turn is short, and its terminal line is a valid one-event stream).
+	if tc, ok := prov.(llm.ToolCaller); ok && confirmed && channel {
+		var runs []chatRun
+		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true, Conversation: req.ConversationID, Turn: turn}
+		reply, err := tc.CompleteTools(ctx, prompt, chatTools(CommandTree), toolRun(env, &runs))
+		if err != nil {
+			// Whatever already ran is reported with the failure: a write must
+			// never go unreported because a later round broke.
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error(), "runs": runs})
+			return
+		}
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs})
+		return
+	}
 
 	// F-0240: a provider with the Streamer capability transmits the reply as
 	// NDJSON deltas; anyone else keeps the single-shot path below — whose body
