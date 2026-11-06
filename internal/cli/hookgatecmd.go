@@ -68,6 +68,9 @@ var (
 	featureStartRe = regexp.MustCompile(`\bfeature\s+start\b`)
 	workIDRe       = regexp.MustCompile(`\bW-\d{4,}\b`)
 	featureIDRe    = regexp.MustCompile(`\bF-\d{4,}\b`)
+	// startedIDRe is the id a confirmed `feature start` binds: F-, E- or T-,
+	// the same kinds bindingLive accepts (F-0309).
+	startedIDRe = regexp.MustCompile(`\b[FET]-\d{4,}\b`)
 )
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
@@ -106,10 +109,10 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		// The W- id is minted by the command; it appears in the response.
 		id = workIDRe.FindString(string(in.ToolResponse))
 	case featureStartRe.MatchString(ti.Command):
-		// The F- id is the argument; bind only if the response confirms the
+		// The F-/E-/T- id is the argument; bind only if the response confirms the
 		// transition (a refused gate prints an error, not the id -> state).
 		if strings.Contains(string(in.ToolResponse), "in_development") {
-			id = featureIDRe.FindString(ti.Command)
+			id = startedIDRe.FindString(ti.Command)
 		}
 	}
 	if id == "" {

@@ -237,6 +237,25 @@ func TestHookBindWorkBindsFromFeatureStart(t *testing.T) {
 	}
 }
 
+// TestHookBindWorkBindsEpicAndTaskStart (F-0309 C5): `feature start` of an
+// E- or T- binds it like an F- — each start writes its ledger line.
+func TestHookBindWorkBindsEpicAndTaskStart(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for i, id := range []string{"T-0007", "E-0002", "F-0005"} {
+		stdin := hookJSON(t, "sess-"+id, projDir, "Bash",
+			map[string]any{"command": "cerne feature start " + id},
+			map[string]any{"stdout": id + ": approved → in_development"})
+		if out, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+			t.Fatalf("%s: hook bind-work: %v\noutput: %s", id, err, out)
+		}
+		raw, _ := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "costbind.ndjson"))
+		lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		if len(lines) != i+1 || !strings.Contains(lines[i], `"entity_id":"`+id+`"`) {
+			t.Fatalf("%s: ledger =\n%s", id, raw)
+		}
+	}
+}
+
 // TestHookWorkGateDenyHint (F-0170 crit. 4): with [gates] work_gate_hint set,
 // the deny reason carries the project's suffix; without it, the reason stays
 // free of any hint separator.
