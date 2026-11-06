@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import {
   fetchSettings,
   putSetting,
@@ -69,6 +69,17 @@ export default function Settings() {
   const [written, setWritten] = useState<{ base: SettingsView | null; view: SettingsView } | null>(null)
   const latest = useRef({ data: load.data, pid: activePid })
   latest.current = { data: load.data, pid: activePid }
+  const { reload } = load
+
+  // Every settings write, from any tab, sends the SSE "projects" event and the
+  // LiveProvider re-reads the project list (a new array): re-read this screen
+  // too, or it contradicts the nav it sits under (critic C3).
+  const seenProjects = useRef(projects)
+  useEffect(() => {
+    if (seenProjects.current === projects) return
+    seenProjects.current = projects
+    void reload()
+  }, [projects, reload])
   const hintId = useId()
 
   // After the commit that removed the pressed control, hand the focus to the

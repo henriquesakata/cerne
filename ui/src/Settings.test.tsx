@@ -20,8 +20,11 @@ vi.mock('./api', async (importOriginal) => ({
 }))
 
 let liveVersion = 0
+// Estável entre renders, como no LiveProvider: só muda de identidade quando a
+// lista é relida (o evento SSE "projects").
+let mockProjects = [{ pid: 'p1', name: 'Projeto A' }]
 vi.mock('./live', () => ({
-  useProjects: () => ({ projects: [{ pid: 'p1', name: 'Projeto A' }], activePid: 'p1' }),
+  useProjects: () => ({ projects: mockProjects, activePid: 'p1' }),
   useLiveVersion: () => liveVersion,
 }))
 
@@ -99,6 +102,7 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   liveVersion = 0
+  mockProjects = [{ pid: 'p1', name: 'Projeto A' }]
   fetchSettings.mockReset()
   putSetting.mockReset()
   unsetSetting.mockReset()
@@ -443,5 +447,20 @@ describe('Settings — a escrita aplica a view da própria resposta (F-0315, cr�
     expect(await within(row('Wiki')).findByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
     expect(within(row('Wiki')).getByRole('checkbox')).not.toBeChecked()
     expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('Settings — escuta o evento projects (F-0315, crítica C3)', () => {
+  it('a lista de projetos relida (escrita em outra aba) relê a tela aberta', async () => {
+    const { rerender } = render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Mapa mental' })
+    rerender(<Settings />)
+    expect(fetchSettings).toHaveBeenCalledTimes(1)
+
+    fetchSettings.mockResolvedValue(withKey('mindmap.enabled', { value: false, origin: 'host', stored: { host: false } }))
+    mockProjects = [{ pid: 'p1', name: 'Projeto A' }]
+    rerender(<Settings />)
+    expect(await within(row('Mapa mental')).findByText('Efetivo: desligado, de Host')).toBeInTheDocument()
+    expect(fetchSettings).toHaveBeenCalledTimes(2)
   })
 })
