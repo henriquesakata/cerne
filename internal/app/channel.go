@@ -242,7 +242,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 		through := 0
 		for _, m := range live {
 			through = max(through, m.Seq)
-			if m.Nick == id.Work && !m.Human {
+			if m.Session == sess { // own message; another session of the work still gets it (critic C12)
 				continue
 			}
 			// Addressed: pending until answered. Human: pending until shown
@@ -509,7 +509,7 @@ func ChannelRead(cacheDir, repoDir, sess string, now time.Time) ([]ChannelMessag
 			d := &room.Delivery{Session: sess, Work: id.Work, At: now}
 			for _, m := range liveMessages(repoDir, msgs, now) {
 				d.Through = max(d.Through, m.Seq)
-				if m.Human || m.Nick != id.Work {
+				if m.Session != sess {
 					d.Seqs = append(d.Seqs, m.Seq)
 				}
 			}

@@ -877,3 +877,20 @@ func TestChannelProtocolLineTruthful(t *testing.T) {
 		t.Fatalf("protocol line not pointing at the read:\n%s", out)
 	}
 }
+
+// TestChannelSameWorkSessionsSeeEachOther (critic C12): a message is kept
+// from its own session only, so two sessions on one work coordinate over the
+// channel (as background: naming your own work is no address).
+func TestChannelSameWorkSessionsSeeEachOther(t *testing.T) {
+	f := newChanFixture(t)
+	if err := BindSession(f.cacheDir, "s2b", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	seq := f.postAs("s2", "W-0002", "SAME-WORK-PROBE: I take internal/app, you take ui")
+	if out := f.inject("s2b", true); !strings.Contains(out, fmt.Sprintf("#%d W-0002: SAME-WORK-PROBE", seq)) {
+		t.Fatalf("the other session of the work did not get it: %q", out)
+	}
+	if out := f.inject("s2", true); out != "" {
+		t.Fatalf("the sender's own session got its message back: %q", out)
+	}
+}
