@@ -146,6 +146,16 @@ type joinRoomRequest struct {
 	Bio  string `json:"bio"`
 }
 
+// refuseChannelRite answers a war-room rite (join, close, minutes,
+// facilitation) aimed at the permanent channel with 409 (F-0325).
+func refuseChannelRite(w http.ResponseWriter, id string) bool {
+	if id != room.ChannelID {
+		return false
+	}
+	writeRoomErr(w, room.ErrPermanentRoom)
+	return true
+}
+
 func writeRoomErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, room.ErrNotFound):
@@ -166,6 +176,8 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case errors.Is(err, room.ErrRoomOpen):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, room.ErrPermanentRoom):
+		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, room.ErrMessageTooLong):
 		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
 	case errors.Is(err, room.ErrChannelBusy):
@@ -176,6 +188,9 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 }
 
 func handleRoomJoin(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req joinRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -326,6 +341,9 @@ type handoffFacilitatorRequest struct {
 // atomically, so the caller can transfer control (e.g. to a human) by
 // handing over only the freshly minted id.
 func handleRoomFacilitatorHandoff(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req handoffFacilitatorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -354,6 +372,9 @@ type createItemRequest struct {
 // handleRoomCreateItem raises a proposal or decision-request item on behalf
 // of an authenticated participant (F-0228 criterion 2).
 func handleRoomCreateItem(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req createItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -387,6 +408,9 @@ func handleRoomCreateItem(w http.ResponseWriter, r *http.Request, projectID, id 
 // handleRoomPending lists the room's open facilitation items — the
 // facilitator's triage queue, no LLM synthesis (F-0228 criterion 3).
 func handleRoomPending(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	m, err := roomManagerFor(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -415,6 +439,9 @@ type resolveItemRequest struct {
 // handleRoomResolveItem resolves an open facilitation item; only the
 // facilitator may (F-0228 criterion 4).
 func handleRoomResolveItem(w http.ResponseWriter, r *http.Request, projectID, id, itemID string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req resolveItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -440,6 +467,9 @@ type closeRoomRequest struct {
 }
 
 func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req closeRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -475,6 +505,9 @@ type setMinutesNoteRequest struct {
 // overwrite an existing link unless Force — reporting the existing note id
 // either way, so the CLI can point the caller at it.
 func handleRoomSetMinutesNote(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req setMinutesNoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))

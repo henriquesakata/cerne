@@ -826,3 +826,28 @@ func TestChannelHumanPostUsesSetting(t *testing.T) {
 		t.Fatalf("blank body: status %d", rec.Code)
 	}
 }
+
+// TestChannelRiteRoutesRefuse (crit. 2): every war-room rite — join, close,
+// minutes, facilitation — is refused on the permanent channel with 409.
+func TestChannelRiteRoutesRefuse(t *testing.T) {
+	h, _, _ := newChannelServer(t, "proj-channel-rites")
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/join"},
+		{http.MethodPost, "/close"},
+		{http.MethodPost, "/minutes/note"},
+		{http.MethodPost, "/facilitator/handoff"},
+		{http.MethodPost, "/items"},
+		{http.MethodGet, "/items/pending"},
+		{http.MethodPost, "/items/I1/resolve"},
+	} {
+		body := `{"nick":"x","note_id":"N-0001","kind":"proposal"}`
+		if tc.method == http.MethodGet {
+			body = ""
+		}
+		var got map[string]string
+		rec := doJSON(t, h, tc.method, "/api/rooms/channel"+tc.path, body, &got)
+		if rec.Code != http.StatusConflict || !strings.Contains(got["error"], "permanent") {
+			t.Errorf("%s %s = %d %v, want 409 naming the permanent channel", tc.method, tc.path, rec.Code, got)
+		}
+	}
+}
