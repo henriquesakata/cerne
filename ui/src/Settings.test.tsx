@@ -408,3 +408,26 @@ describe('Settings — escritas simultâneas (F-0315, crítica C1)', () => {
     expect(within(row('Grafo')).queryByRole('status')).toBeNull()
   })
 })
+
+describe('Settings — falha de escrita por chave e escopo (F-0315, crítica C6)', () => {
+  it('o erro de Projeto não aparece em Host, e a nova tentativa reenvia ao escopo que falhou', async () => {
+    fetchSettings.mockResolvedValue(
+      withKey('mindmap.enabled', { value: true, origin: 'project', stored: { project: true, host: false } }),
+    )
+    putSetting.mockRejectedValueOnce(new Error('config file is locked by another writer'))
+    render(<Settings />)
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox'))
+    expect(await within(row('Mapa mental')).findByRole('status')).toHaveTextContent('locked')
+    expect(putSetting).toHaveBeenLastCalledWith('mindmap.enabled', 'project', false)
+
+    fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Host' }))
+    expect(within(scopeGroup()).getByRole('button', { name: 'Host global' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(row('Mapa mental')).queryByRole('status')).toBeNull()
+
+    fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Projeto' }))
+    const status = within(row('Mapa mental')).getByRole('status')
+    fireEvent.click(within(status).getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledTimes(2))
+    expect(putSetting).toHaveBeenLastCalledWith('mindmap.enabled', 'project', false)
+  })
+})

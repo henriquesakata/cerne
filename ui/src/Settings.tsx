@@ -39,6 +39,10 @@ const controlId = (id: string) => `setting-${id}`
 
 type Failure = { message: string; retry: () => void }
 
+// A write failure belongs to the key AND the scope it wrote to (critic C6):
+// another scope's row never shows it, and its retry goes where it failed.
+const failureKey = (id: string, scope: SettingScope) => `${id}\n${scope}`
+
 export default function Settings() {
   const { t } = useT()
   const ts = t.settings
@@ -68,9 +72,10 @@ export default function Settings() {
   // write runs one settings write for key id, then re-reads the view; the nav
   // follows through the SSE "projects" event the server sends (F-0315). A
   // failure stays on the row with a retry that re-sends the same write.
-  const write = (id: string, run: () => Promise<void>) => {
+  const write = (id: string, scope: SettingScope, run: () => Promise<void>) => {
+    const fk = failureKey(id, scope)
     const settle = (failure: Failure | null) => {
-      setFailures(({ [id]: _, ...rest }) => (failure ? { ...rest, [id]: failure } : rest))
+      setFailures(({ [fk]: _, ...rest }) => (failure ? { ...rest, [fk]: failure } : rest))
       setBusy((b) => new Set([...b].filter((k) => k !== id)))
     }
     setBusy((b) => new Set(b).add(id))
@@ -80,7 +85,8 @@ export default function Settings() {
         refocus.current = id
         settle(null)
       },
-      (e: unknown) => settle({ message: e instanceof Error ? e.message : String(e), retry: () => write(id, run) }),
+      (e: unknown) =>
+        settle({ message: e instanceof Error ? e.message : String(e), retry: () => write(id, scope, run) }),
     )
   }
   const switchScope = (id: string, to: SettingScope) => {
@@ -165,8 +171,8 @@ export default function Settings() {
               scope={scope}
               tx={tx}
               busy={busy.has(s.id)}
-              failure={failures[s.id] ?? null}
-              onWrite={(run) => write(s.id, run)}
+              failures={failures}
+              onWrite={(ws, run) => write(s.id, ws, run)}
               onScope={(to) => switchScope(s.id, to)}
             />
           ))}
@@ -181,7 +187,7 @@ function SettingRow({
   scope,
   tx,
   busy,
-  failure,
+  failures,
   onWrite,
   onScope,
 }: {
@@ -189,8 +195,8 @@ function SettingRow({
   scope: SettingScope
   tx: (src: string) => string
   busy: boolean
-  failure: Failure | null
-  onWrite: (run: () => Promise<void>) => void
+  failures: Readonly<Record<string, Failure>>
+  onWrite: (scope: SettingScope, run: () => Promise<void>) => void
   onScope: (to: SettingScope) => void
 }) {
   const { t } = useT()
@@ -201,6 +207,7 @@ function SettingRow({
   // A key that does not take the selected scope writes to the one it takes.
   const ws = s.scopes.includes(scope) ? scope : s.scopes[0]
   const current = valueAt(s, ws)
+  const failure = failures[failureKey(s.id, ws)]
   const modified = s.stored?.[ws] !== undefined
   // The key's other scopes that store a value: above ws they override it.
   const others = s.scopes.filter((sc) => sc !== ws && s.stored?.[sc] !== undefined)
@@ -225,7 +232,7 @@ function SettingRow({
           aria-disabled={lock}
           onChange={(e) => {
             const next = e.target.checked
-            if (!busy) onWrite(() => putSetting(s.id, ws, next))
+            if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
           }}
         />
         <span id={descId}>{desc}</span>
@@ -243,7 +250,7 @@ function SettingRow({
             onSubmit={(e) => {
               e.preventDefault()
               const next = String(new FormData(e.currentTarget).get('value') ?? '')
-              if (!busy) onWrite(() => putSetting(s.id, ws, next))
+              if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
             }}
           >
             {/* Keyed by the value: another scope or a saved write remounts it. */}
@@ -323,7 +330,7 @@ function SettingRow({
             className="settings-switch"
             aria-describedby={titleId}
             aria-disabled={lock}
-            onClick={busy ? undefined : () => onWrite(() => unsetSetting(s.id, ws))}
+            onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
           >
             {ts.reset}
           </button>
