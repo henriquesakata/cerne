@@ -180,6 +180,7 @@ const ptBR = {
     copy: 'Copiar',
     copied: 'Copiado!',
     copyBlock: 'Copiar bloco de código',
+    copyFailed: 'Não foi possível copiar — selecione o texto',
   },
   kanban: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -859,6 +860,7 @@ const ptBR = {
       invalid: 'O servidor recusou o valor ou o escopo desta configuração.',
     },
     file: 'Arquivo:',
+    copyFailed: 'Não foi possível copiar — selecione o caminho',
     invalid: (scope: string, file: string, raw: string) => `Valor inválido em ${scope} (${file}): ${raw} — ignorado.`,
     removeInvalid: 'Remover valor inválido',
     scopes: {
@@ -1046,6 +1048,7 @@ const en: Messages = {
     copy: 'Copy',
     copied: 'Copied!',
     copyBlock: 'Copy code block',
+    copyFailed: 'Could not copy — select the text',
   },
   kanban: {
     loadError: (e: string) => `Failed to load state: ${e}`,
@@ -1715,6 +1718,7 @@ const en: Messages = {
       invalid: "The server refused this setting's value or scope.",
     },
     file: 'File:',
+    copyFailed: 'Could not copy — select the path',
     invalid: (scope: string, file: string, raw: string) => `Invalid value in ${scope} (${file}): ${raw} — ignored.`,
     removeInvalid: 'Remove invalid value',
     scopes: {

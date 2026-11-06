@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   fetchHarness,
   type HarnessItem,
@@ -178,25 +178,35 @@ function HarnessRow({ item }: { item: HarnessItem }) {
 }
 
 // FixBlock: o comando de correção em bloco copiável — mesma afordância do
-// bloco cercado da F-0247, sempre visível.
-export function FixBlock({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false)
+// bloco cercado da F-0247, sempre visível. Sem clipboard (ou com a escrita
+// recusada) a cópia diz que falhou e seleciona o texto, para o Cmd/Ctrl+C
+// (F-0315, crítica C14); `copyFailed` nomeia o que selecionar.
+export function FixBlock({ command, copyFailed }: { command: string; copyFailed?: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const pre = useRef<HTMLPreElement>(null)
   const { t } = useT()
+  const fail = () => {
+    setState('failed')
+    if (pre.current) window.getSelection()?.selectAllChildren(pre.current)
+  }
   const copy = () => {
-    navigator.clipboard
-      ?.writeText(command)
-      .then(() => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      })
-      .catch(() => {})
+    if (!navigator.clipboard) return fail()
+    navigator.clipboard.writeText(command).then(() => {
+      setState('copied')
+      setTimeout(() => setState('idle'), 2000)
+    }, fail)
   }
   return (
     <div className="code-block harness-fix">
-      <pre>{command}</pre>
+      <pre ref={pre}>{command}</pre>
       <button type="button" className="code-copy" aria-label={t.common.copyBlock} onClick={copy}>
-        {copied ? t.common.copied : t.common.copy}
+        {state === 'copied' ? t.common.copied : t.common.copy}
       </button>
+      {state === 'failed' && (
+        <p className="form-error code-copy-failed" role="status">
+          {copyFailed ?? t.common.copyFailed}
+        </p>
+      )}
     </div>
   )
 }

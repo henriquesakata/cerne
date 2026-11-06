@@ -684,3 +684,18 @@ describe('Settings — contraste do texto secundário (F-0315, crítica C13)', (
     for (const n of nodes) expect(n).not.toHaveClass('muted')
   })
 })
+
+describe('Settings — cópia que falha avisa e seleciona o caminho (F-0315, crítica C14)', () => {
+  it.each([
+    ['sem navigator.clipboard', undefined],
+    ['com a escrita recusada', { writeText: vi.fn(async () => Promise.reject(new Error('denied'))) }],
+  ])('%s', async (_, clipboard) => {
+    Object.defineProperty(navigator, 'clipboard', { value: clipboard, configurable: true })
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    const top = topFile()!.parentElement!
+    fireEvent.click(within(top).getByRole('button', { name: 'Copiar bloco de código' }))
+    expect(await within(top).findByText('Não foi possível copiar — selecione o caminho')).toBeInTheDocument()
+    expect(window.getSelection()?.toString()).toBe('/repo/.cernerc')
+  })
+})

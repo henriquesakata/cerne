@@ -189,7 +189,7 @@ export default function Settings() {
       {view.files[scope] && (
         <div className="settings-file">
           <span>{ts.file}</span>
-          <FixBlock command={view.files[scope]} />
+          <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
         </div>
       )}
       {(view.errors ?? []).map((e) => (
@@ -380,7 +380,7 @@ function SettingRow({
       {ws !== scope && files[ws] && (
         <div className="settings-file">
           <span>{ts.file}</span>
-          <FixBlock command={files[ws]} />
+          <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />
         </div>
       )}
       {control}
@@ -436,7 +436,7 @@ function SettingRow({
         // No retry: the message and the way to the file that needs fixing.
         <div className="load-notice" role="status">
           <p className="form-error">{ts.writeError(refusalText(failure, ts, files[ws]))}</p>
-          {files[ws] && <FixBlock command={files[ws]} />}
+          {files[ws] && <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />}
         </div>
       )}
     </li>
