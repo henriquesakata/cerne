@@ -944,7 +944,9 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Rel < pages[j].Rel })
 	resp := wikiIndexResponse{Pages: pages}
-	if on, _ := project.WikiEnabled(projDir); !on {
+	// A wiki no compile ever produced is not stale (C4): the page's own "no
+	// page compiled yet" state already says what to do.
+	if on, _ := project.WikiEnabled(projDir); !on && len(pages) > 0 {
 		// A staleness error never hides the wiki (F-0316 crit. 9): no banner.
 		stale, _ := compile.Stale(repoDir)
 		for _, p := range stale {

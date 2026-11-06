@@ -367,3 +367,24 @@ func TestWikiCompileBusy(t *testing.T) {
 		t.Fatalf("runner ran %d time(s), want 1", runs)
 	}
 }
+
+// TestWikiIndexNeverCompiledIsNotStale pins C4 of F-0316: a wiki no compile
+// ever produced is not "compiled before its sources changed" — the index
+// lists no page and no staleness, and the page's own "no page compiled yet"
+// state says what to do.
+func TestWikiIndexNeverCompiledIsNotStale(t *testing.T) {
+	repoDir, projDir, _ := staleWikiBackend(t)
+	if err := os.Remove(filepath.Join(repoDir, "content", "wiki", "modules", "core.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte("[wiki]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var got wikiIndexJSON
+	if rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/wiki", "", &got); rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/wiki: %d %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Pages) != 0 || len(got.Stale) != 0 || got.NeedsProvider {
+		t.Fatalf("never compiled: %+v, want no pages, no stale, no needs_provider", got)
+	}
+}
