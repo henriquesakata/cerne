@@ -2,13 +2,17 @@
 # SubagentStart hook installed by `cerne hook install` (F-0150). SessionStart
 # does not fire inside subagents, so every subagent would otherwise start blind
 # to cerne; this hook injects the condensed cerne rules plus the live work list
-# via additionalContext at spawn. It degrades silently (exit 0, no output) when
-# the cerne binary is absent or the directory is not a cerne project — it must
-# never break a subagent spawn. Tool-managed — do not edit; fix it upstream in
-# internal/hooks/assets/ and re-run `cerne hook install`.
+# via additionalContext at spawn, plus the session's pending channel messages
+# (F-0325, peeked: the parent session still gets them). It degrades silently
+# (exit 0, no output) when the cerne binary is absent or the directory is not a
+# cerne project — it must never break a subagent spawn. Tool-managed — do not
+# edit; fix it upstream in internal/hooks/assets/ and re-run
+# `cerne hook install`.
 
 command -v cerne >/dev/null 2>&1 || exit 0
+payload=$(cat)
 worklist=$(cerne work list 2>/dev/null) || exit 0
+channel=$(printf '%s' "$payload" | cerne hook channel --point subagent 2>/dev/null) || channel=""
 
 rules=$(cat <<'RULES'
 cerne project rules (subagent context — the main-session rules do not reach subagents):
@@ -23,12 +27,13 @@ RULES
 
 ctx="$rules
 $worklist"
+if [ -n "$channel" ]; then
+  ctx="$ctx
 
-# JSON-escape with bash parameter expansion only — no jq dependency.
-ctx=${ctx//\\/\\\\}
-ctx=${ctx//\"/\\\"}
-ctx=${ctx//$'\r'/}
-ctx=${ctx//$'\t'/\\t}
-ctx=${ctx//$'\n'/\\n}
+$channel"
+fi
 
-printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' "$ctx"
+# The JSON envelope is built in Go (encoding/json): every control character a
+# channel message may carry is escaped, so the envelope is always valid.
+printf '%s' "$ctx" | cerne hook envelope --event SubagentStart 2>/dev/null || true
+exit 0
