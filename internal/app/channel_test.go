@@ -968,3 +968,46 @@ func TestChannelTargetsSayAckAndClosed(t *testing.T) {
 		t.Fatalf("addressed to a closed work = %+v", got)
 	}
 }
+
+// TestChannelCompactsWhenLarge (critic C11): past the size threshold a write
+// compacts expired messages away; watermarks stay valid — a session that had
+// seen the old traffic gets only what is new — and seqs keep climbing.
+func TestChannelCompactsWhenLarge(t *testing.T) {
+	saved := channelCompactBytes
+	channelCompactBytes = 1
+	t.Cleanup(func() { channelCompactBytes = saved })
+	f := newChanFixture(t)
+	for i := range 3 {
+		if _, err := f.ch.Append(room.Message{Type: "message", Nick: "W-0002", Session: "s2", Body: fmt.Sprintf("velha %d", i), Time: chanT0.Add(-25 * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	live := f.post("W-0002", "viva", false)
+	if out := f.inject("s1", true); !strings.Contains(out, "viva") {
+		t.Fatalf("injection = %q", out)
+	}
+	m, _ := f.send("s2", "nova")
+	msgs, err := f.ch.Messages()
+	if err != nil || len(msgs) != 2 || msgs[0].Seq != live || m.Seq != live+1 {
+		t.Fatalf("after compaction: %+v (new #%d), want only #%d and the new one", msgs, m.Seq, live)
+	}
+	if out := f.inject("s1", true); out != fmt.Sprintf("cerne channel:\n#%d W-0002: nova\n", m.Seq) {
+		t.Fatalf("old session after compaction = %q, want only the new message", out)
+	}
+}
+
+// TestChannelInjectAllExpiredIsFree (critic C11): a channel with nothing live
+// costs an Edit no lock — zero bytes even while another writer holds it.
+func TestChannelInjectAllExpiredIsFree(t *testing.T) {
+	f := newChanFixture(t)
+	if _, err := f.ch.Append(room.Message{Type: "message", Nick: "W-0002", Session: "s2", Body: "velha", Time: chanT0.Add(-25 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.cacheDir, "rooms", "channel", "lock"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ChannelInject(f.cacheDir, f.repoDir, "s1", true, f.at)
+	if err != nil || out != "" {
+		t.Fatalf("all-expired injection = %q, %v; want zero bytes without touching the lock", out, err)
+	}
+}

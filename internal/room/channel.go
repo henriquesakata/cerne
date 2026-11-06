@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -132,6 +133,71 @@ func (c Channel) Update(fn func(msgs []Message, dels []Delivery) (*Delivery, err
 		}
 		return appendLine(c.deliveriesPath(), rawDels, *d)
 	})
+}
+
+// Compact rewrites both logs under the lock (critic C11): it keeps the
+// messages keep accepts, drops every delivery row that only referenced
+// dropped ones, and folds each session's watermark into one row, so a session
+// never sees again what it already passed. The seq high-water mark is
+// untouched — seqs keep climbing.
+func (c Channel) Compact(keep func(Message) bool) error {
+	return c.withLock(func() error {
+		msgs, err := c.Messages()
+		if err != nil {
+			return err
+		}
+		dels, err := c.Deliveries()
+		if err != nil {
+			return err
+		}
+		kept := map[int]bool{}
+		var msgOut []byte
+		for _, m := range msgs {
+			if keep(m) {
+				kept[m.Seq] = true
+				line, _ := json.Marshal(m)
+				msgOut = append(append(msgOut, line...), '\n')
+			}
+		}
+		marks := map[string]Delivery{} // per session: its highest watermark
+		var order []string
+		var delOut []byte
+		for _, d := range dels {
+			if d.Through > 0 {
+				if prev, seen := marks[d.Session]; !seen || d.Through > prev.Through {
+					if !seen {
+						order = append(order, d.Session)
+					}
+					marks[d.Session] = Delivery{Session: d.Session, Work: d.Work, Through: d.Through, At: d.At}
+				}
+			}
+			d.Seqs = slices.DeleteFunc(d.Seqs, func(seq int) bool { return !kept[seq] })
+			d.Ack = slices.DeleteFunc(d.Ack, func(seq int) bool { return !kept[seq] })
+			if len(d.Seqs) == 0 && len(d.Ack) == 0 {
+				continue
+			}
+			d.Through = 0 // carried by the session's mark row
+			line, _ := json.Marshal(d)
+			delOut = append(append(delOut, line...), '\n')
+		}
+		for _, sess := range order {
+			line, _ := json.Marshal(marks[sess])
+			delOut = append(append(delOut, line...), '\n')
+		}
+		if err := writeReplace(c.messagesPath(), msgOut); err != nil {
+			return err
+		}
+		return writeReplace(c.deliveriesPath(), delOut)
+	})
+}
+
+// writeReplace swaps path's content atomically (temp file + rename).
+func writeReplace(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Version changes whenever either log grows: the long-poll cursor.

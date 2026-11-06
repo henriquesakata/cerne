@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -244,5 +245,49 @@ func TestChannelSeqSurvivesTrim(t *testing.T) {
 	m, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: "depois do corte"})
 	if err != nil || m.Seq != 4 {
 		t.Fatalf("seq after trimming = %d (%v), want 4", m.Seq, err)
+	}
+}
+
+// TestChannelCompact (F-0325, critic C11): compaction keeps only the messages
+// keep accepts, drops the delivery rows that only referenced dropped ones, and
+// keeps every session's watermark; the seq keeps climbing afterwards.
+func TestChannelCompact(t *testing.T) {
+	c := OpenChannel(t.TempDir())
+	for _, body := range []string{"velha 1", "velha 2", "viva"} {
+		if _, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: body}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []Delivery{
+		{Session: "s1", Work: "W-0002", Seqs: []int{1, 2}, Through: 2},
+		{Session: "s1", Work: "W-0002", Seqs: []int{3}, Through: 3},
+		{Session: "s2", Work: "W-0003", Ack: []int{1}},
+	} {
+		if err := c.Update(func([]Message, []Delivery) (*Delivery, error) { return &d, nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Compact(func(m Message) bool { return m.Body == "viva" }); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	msgs, _ := c.Messages()
+	if len(msgs) != 1 || msgs[0].Seq != 3 {
+		t.Fatalf("messages after compaction = %+v", msgs)
+	}
+	dels, _ := c.Deliveries()
+	through := map[string]int{}
+	for _, d := range dels {
+		through[d.Session] = max(through[d.Session], d.Through)
+		for _, seq := range append(slices.Clone(d.Seqs), d.Ack...) {
+			if seq != 3 {
+				t.Fatalf("delivery still references dropped #%d: %+v", seq, d)
+			}
+		}
+	}
+	if through["s1"] != 3 || len(dels) > 2 {
+		t.Fatalf("deliveries after compaction = %+v, want s1's watermark 3 kept in at most 2 rows", dels)
+	}
+	if m, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: "nova"}); err != nil || m.Seq != 4 {
+		t.Fatalf("seq after compaction = %d (%v), want 4", m.Seq, err)
 	}
 }

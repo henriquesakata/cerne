@@ -101,29 +101,44 @@ func directedTo(m room.Message, id channelIdentity) bool {
 // channelTTL bounds every channel message's life (criterion 20).
 const channelTTL = 24 * time.Hour
 
-// liveMessages keeps the messages still alive at now: younger than 24h and,
-// for an agent's message, sent by a work that is still live. Every reader
-// filters through it, so no surface ever shows an expired message.
-func liveMessages(repoDir string, msgs []room.Message, now time.Time) []room.Message {
+// channelLive returns the liveness test at now: a message is alive while
+// younger than 24h and, for an agent's message, while its sender's work is
+// live (each sender's work is loaded once).
+func channelLive(repoDir string, now time.Time) func(room.Message) bool {
 	senderLive := map[string]bool{}
-	var out []room.Message
-	for _, m := range msgs {
+	return func(m room.Message) bool {
 		if now.Sub(m.Time) > channelTTL {
-			continue
+			return false
 		}
-		if !m.Human {
-			live, seen := senderLive[m.Nick]
-			if !seen {
-				live = bindingLive(repoDir, m.Nick)
-				senderLive[m.Nick] = live
-			}
-			if !live {
-				continue
-			}
+		if m.Human {
+			return true
 		}
-		out = append(out, m)
+		live, seen := senderLive[m.Nick]
+		if !seen {
+			live = bindingLive(repoDir, m.Nick)
+			senderLive[m.Nick] = live
+		}
+		return live
 	}
-	return out
+}
+
+// liveMessages keeps the messages still alive at now (criterion 20). Every
+// reader filters through it, so no surface ever shows an expired message.
+func liveMessages(repoDir string, msgs []room.Message, now time.Time) []room.Message {
+	alive := channelLive(repoDir, now)
+	return slices.DeleteFunc(slices.Clone(msgs), func(m room.Message) bool { return !alive(m) })
+}
+
+// channelCompactBytes is the size of both logs past which a write compacts the
+// expired messages away (critic C11). A var so tests can lower it.
+var channelCompactBytes int64 = 1 << 20
+
+// compactChannel drops expired messages once the logs outgrow the threshold.
+// Best effort: a failed compaction leaves the logs as they were.
+func compactChannel(ch room.Channel, repoDir string, now time.Time) {
+	if ch.Version() > channelCompactBytes {
+		_ = ch.Compact(channelLive(repoDir, now))
+	}
 }
 
 // Injection budget (criteria 6-8). Tokens are estimated as bytes/4, the
@@ -242,12 +257,14 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 		return "", nil
 	}
 	ch := room.OpenChannel(filepath.Join(cacheDir, "rooms"))
-	if msgs, err := ch.Messages(); err != nil || len(msgs) == 0 {
-		return "", err // hot path: no channel yet
+	msgs, err := ch.Messages()
+	if err != nil || len(liveMessages(repoDir, msgs, now)) == 0 {
+		return "", err // hot path: no live message, no lock (critic C11)
 	}
+	defer compactChannel(ch, repoDir, now)
 	id, _ := sessionWork(cacheDir, repoDir, sess)
 	var out string
-	err := ch.Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
+	err = ch.Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
 		cs := channelState{msgs: msgs, dels: dels}
 		live := liveMessages(repoDir, msgs, now)
 		wm := cs.watermark(sess)
@@ -456,10 +473,12 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	if !ok {
 		return room.Message{}, nil, ErrNoChannelIdentity
 	}
-	m, err := channelOf(cacheDir).Append(room.Message{Type: "message", Nick: id.Work, Session: sess, Body: body, Time: now})
+	ch := channelOf(cacheDir)
+	m, err := ch.Append(room.Message{Type: "message", Nick: id.Work, Session: sess, Body: body, Time: now})
 	if err != nil {
 		return room.Message{}, nil, err
 	}
+	compactChannel(ch, repoDir, now)
 	// Each other session counts as the open work it answers as, once: a
 	// sibling session of the sender's own work receives it too (critic
 	// C10/C12). ponytail: a session file outlives its Claude session, so a
