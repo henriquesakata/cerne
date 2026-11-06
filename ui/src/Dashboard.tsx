@@ -505,13 +505,42 @@ function unguardedText(m: ProcessMarker, t: Messages): string {
   return ` ${t.dashboard.processUnguarded(lack.join(', '))}`
 }
 
+// ProcessSideCell: the side's headline in the summary and crit. 8's numbers
+// behind it (C4) — window, raw-counter medians, coverage (C5), returned and
+// escaped shares (the latter pending while young, C10), exclusions (C13).
 function ProcessSideCell({ side }: { side: ProcessSide }) {
   const { t, lang } = useT()
+  const d = t.dashboard
+  const count = (v: number) => v.toLocaleString(lang, { maximumFractionDigits: 0 })
+  const pct = (v: number) => `${Math.round(v * 100).toLocaleString(lang)}%`
+  const raw = side.raw_median
   return (
     <>
-      {side.n > 0
-        ? `n=${side.n} · ${fmtMtok(side.median, lang)} (p25 ${fmtMtok(side.p25, lang)} – p75 ${fmtMtok(side.p75, lang)})`
-        : 'n=0'}
+      <details className="dash-process-side">
+        <summary>
+          {d.processSideSummary(side.n, side.delivered)}
+          {side.n > 0 &&
+            ` · ${fmtMtok(side.median, lang)} (p25 ${fmtMtok(side.p25, lang)} – p75 ${fmtMtok(side.p75, lang)})`}
+        </summary>
+        <dl>
+          <dt>{d.processWindow}</dt>
+          <dd>{`${fmtWhen(side.from, lang)} → ${fmtWhen(side.to, lang)}`}</dd>
+          {side.n > 0 && (
+            <>
+              <dt>{d.processRaw}</dt>
+              <dd>{d.processRawLine(count(raw.input), count(raw.cache_creation), count(raw.cache_read), count(raw.output))}</dd>
+              <dt>{d.processCoverage}</dt>
+              <dd>{d.processCoverageLine(fmtMtok(side.unattributed_median, lang), pct(side.coverage))}</dd>
+              <dt>{d.processReturned}</dt>
+              <dd>{d.processReturnedLine(pct(side.returned_share), side.with_gauntlet)}</dd>
+              <dt>{d.processEscaped}</dt>
+              <dd>{side.escaped_share === null ? d.processGuards.pending : pct(side.escaped_share)}</dd>
+            </>
+          )}
+          <dt>{d.processExcludedSide}</dt>
+          <dd>{d.processExcludedSideLine(side.excluded_no_cost, side.excluded_epic, side.excluded_no_gauntlet)}</dd>
+        </dl>
+      </details>
       {side.cut_by && (
         <>
           <br />
@@ -628,7 +657,9 @@ export function ProcessPerfCard() {
               </tbody>
             </table>
           )}
-          <p className="muted">{t.dashboard.processExcluded(data.excluded_no_cost, data.excluded_no_gauntlet)}</p>
+          <p className="muted">
+            {t.dashboard.processExcluded(data.excluded_no_cost, data.excluded_epic, data.excluded_no_gauntlet)}
+          </p>
         </>
       )}
     </Card>

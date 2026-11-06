@@ -1859,6 +1859,10 @@ h2 {
 .dash-process table { width: 100%; border-collapse: collapse; }
 .dash-process th,
 .dash-process td { text-align: left; padding: 4px 8px; vertical-align: top; border-top: 1px solid var(--border-soft); }
+.dash-process-side summary { cursor: pointer; }
+.dash-process-side dl { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 0.9em; }
+.dash-process-side dt { color: var(--muted); }
+.dash-process-side dd { margin: 0; }
 
 .dash-stats {
   display: flex;

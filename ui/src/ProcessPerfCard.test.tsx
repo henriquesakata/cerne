@@ -163,6 +163,37 @@ describe('ProcessPerfCard (F-0321)', () => {
     expect(screen.queryByText(/veta/)).toBeNull()
   })
 
+  // C4/C5/C10/C12/C13: crit. 8's per-side numbers are on the card — window,
+  // raw-counter medians, coverage, returned and escaped shares, exclusions.
+  it('mostra os números de cada lado', async () => {
+    payload.current = report([
+      mk('D-0001', {
+        after: side(28, {
+          delivered: 32,
+          excluded_no_cost: 2,
+          excluded_epic: 1,
+          excluded_no_gauntlet: 2,
+          with_gauntlet: 26,
+          returned_share: 0.5,
+          unattributed_median: 5e5,
+          coverage: 0.8,
+          escaped_share: null,
+        }),
+        escaped: 'pending',
+      }),
+    ])
+    render(<ProcessPerfCard />)
+    await screen.findByText(/273 entregue\(s\) sem custo carimbado · 1 épico/)
+    expect(screen.getByText(/n=28 de 32 entregue\(s\)/)).toBeInTheDocument()
+    expect(screen.getAllByText(/05\/10\/2026.*00:00 UTC → 02\/11\/2026.*00:00 UTC/).length).toBe(2)
+    expect(screen.getAllByText('entrada 300 · escrita de cache 339.857 · leitura de cache 28.934.595 · saída 150.077').length).toBe(2)
+    expect(screen.getByText('não atribuído (mediana) 0,5 M · cobertura 80% das sessões ligadas')).toBeInTheDocument()
+    expect(screen.getByText('50% de 26 com Gauntlet')).toBeInTheDocument()
+    expect(screen.getByText('2 sem custo carimbado · 1 épico(s) · 2 sem Gauntlet')).toBeInTheDocument()
+    expect(screen.getAllByText('pendente').length).toBeGreaterThanOrEqual(1) // the young after side's escaped share
+    expect(screen.getByText(/não é comparável a uma série feita de todos os transcripts/)).toBeInTheDocument()
+  })
+
   it('estado vazio sem gráfico', async () => {
     payload.current = report([mk('D-0062', { before: side(3), after: side(0), code: 'small_sample', guarded: false })], {
       reason: 'no feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp)',

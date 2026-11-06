@@ -109,7 +109,7 @@ const ptBR = {
     processWeek: (week: string, median: string, n: number) => `${week}: mediana ${median}, n=${n}`,
     processEmpty: 'Nenhuma feature com custo carimbado — depende da F-0309 (cerne cost <id> --stamp).',
     processScope:
-      'Tokens ponderados por feature entregue (entrada + 1,25×escrita de cache + 0,1×leitura + 5×saída), só das sessões ligadas à feature.',
+      'Tokens ponderados por feature entregue (entrada + 1,25×escrita de cache + 0,1×leitura + 5×saída), só das sessões ligadas à feature; a cobertura de cada lado diz quanto dessas sessões o painel vê. O nível não é comparável a uma série feita de todos os transcripts.',
     processNoMarkers: 'Nenhum marco: nenhuma decisão com facet process e component metric.',
     processCols: { marker: 'Marco', before: 'Antes', after: 'Depois', guard: 'Guarda', verdict: 'Veredito' },
     processVerdicts: { melhorou: 'melhorou', piorou: 'piorou', inconclusivo: 'inconclusivo' },
@@ -137,8 +137,20 @@ const ptBR = {
       quality_better_cost_flat: (guards: string) => `qualidade melhorou, custo sem diferença detectável: ${guards}`,
       cost_and_quality_worse: (pct: number, guards: string) => `custo e qualidade pioraram: custo subiu ${pct}%; ${guards}`,
     },
-    processExcluded: (noCost: number, noG: number) =>
-      `${noCost} entregue(s) sem custo carimbado · ${noG} sem registro de Gauntlet (fora só da guarda de devolução)`,
+    processExcluded: (noCost: number, epic: number, noG: number) =>
+      `${noCost} entregue(s) sem custo carimbado · ${epic} épico(s), cujo custo próprio é só orquestração · ${noG} sem registro de Gauntlet (fora só da guarda de devolução)`,
+    processSideSummary: (n: number, delivered: number) => `n=${n} de ${delivered} entregue(s)`,
+    processWindow: 'Janela',
+    processRaw: 'Medianas brutas',
+    processRawLine: (input: string, write: string, read: string, output: string) =>
+      `entrada ${input} · escrita de cache ${write} · leitura de cache ${read} · saída ${output}`,
+    processCoverage: 'Cobertura',
+    processCoverageLine: (unattributed: string, coverage: string) =>
+      `não atribuído (mediana) ${unattributed} · cobertura ${coverage} das sessões ligadas`,
+    processReturnedLine: (share: string, n: number) => `${share} de ${n} com Gauntlet`,
+    processExcludedSide: 'Excluídas',
+    processExcludedSideLine: (noCost: number, epic: number, noG: number) =>
+      `${noCost} sem custo carimbado · ${epic} épico(s) · ${noG} sem Gauntlet`,
     activity: 'Atividade',
     events: 'Últimos eventos',
     noEvents: 'Nenhum evento.',
@@ -1063,7 +1075,7 @@ const en: Messages = {
     processWeek: (week: string, median: string, n: number) => `${week}: median ${median}, n=${n}`,
     processEmpty: 'No feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp).',
     processScope:
-      'Weighted tokens per delivered feature (input + 1.25×cache write + 0.1×cache read + 5×output), from the sessions bound to the feature only.',
+      'Weighted tokens per delivered feature (input + 1.25×cache write + 0.1×cache read + 5×output), from the sessions bound to the feature only; each side\'s coverage says how much of those sessions the panel sees. The level is not comparable to a series built from all transcripts.',
     processNoMarkers: 'No markers: no decision has facet process and component metric.',
     processCols: { marker: 'Marker', before: 'Before', after: 'After', guard: 'Guard', verdict: 'Verdict' },
     processVerdicts: { melhorou: 'improved', piorou: 'worse', inconclusivo: 'inconclusive' },
@@ -1091,8 +1103,20 @@ const en: Messages = {
       quality_better_cost_flat: (guards: string) => `quality better, no detectable cost difference: ${guards}`,
       cost_and_quality_worse: (pct: number, guards: string) => `cost and quality worse: cost up ${pct}%; ${guards}`,
     },
-    processExcluded: (noCost: number, noG: number) =>
-      `${noCost} delivered without a stamped cost · ${noG} without a Gauntlet record (out of the returns guard only)`,
+    processExcluded: (noCost: number, epic: number, noG: number) =>
+      `${noCost} delivered without a stamped cost · ${epic} epic(s), whose own cost is orchestration only · ${noG} without a Gauntlet record (out of the returns guard only)`,
+    processSideSummary: (n: number, delivered: number) => `n=${n} of ${delivered} delivered`,
+    processWindow: 'Window',
+    processRaw: 'Raw medians',
+    processRawLine: (input: string, write: string, read: string, output: string) =>
+      `input ${input} · cache write ${write} · cache read ${read} · output ${output}`,
+    processCoverage: 'Coverage',
+    processCoverageLine: (unattributed: string, coverage: string) =>
+      `unattributed (median) ${unattributed} · coverage ${coverage} of the bound sessions`,
+    processReturnedLine: (share: string, n: number) => `${share} of ${n} with a Gauntlet`,
+    processExcludedSide: 'Excluded',
+    processExcludedSideLine: (noCost: number, epic: number, noG: number) =>
+      `${noCost} without a stamped cost · ${epic} epic(s) · ${noG} without a Gauntlet`,
     activity: 'Activity',
     events: 'Recent events',
     noEvents: 'No events.',
