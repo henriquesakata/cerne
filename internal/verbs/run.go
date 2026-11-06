@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,11 +92,12 @@ type Error struct {
 // Result is the structured tool result (frozen contract): success carries the
 // affected id from the event log, failure carries a named error, never empty.
 type Result struct {
-	OK     bool   `json:"ok"`
-	ID     string `json:"id,omitempty"`
-	Output string `json:"output"`
-	Error  *Error `json:"error,omitempty"`
-	Err    error  `json:"-"`
+	OK     bool     `json:"ok"`
+	ID     string   `json:"id,omitempty"`  // the primary entity: the first one the call wrote
+	IDs    []string `json:"ids,omitempty"` // every entity the call wrote (C10)
+	Output string   `json:"output"`
+	Error  *Error   `json:"error,omitempty"`
+	Err    error    `json:"-"`
 }
 
 // Fail is the Result of a call refused before Run could see it (a tool input
@@ -204,7 +206,7 @@ func execute(ctx context.Context, argv []string, stdin string, env Env) Result {
 	}
 	waitErr := c.Wait()
 	out := truncate(stdout.String(), maxOutput)
-	id := affectedID(env.RepoDir, call)
+	ids := affectedIDs(env.RepoDir, call)
 	var res Result
 	switch {
 	case ctx.Err() != nil && lockHeldByOther(env.RepoDir, c.Process.Pid):
@@ -220,28 +222,32 @@ func execute(ctx context.Context, argv []string, stdin string, env Env) Result {
 	default:
 		res = Result{OK: true, Output: out}
 	}
-	res.ID = id // filled even on failure: a partial write still names its entity
+	// Filled even on failure: a partial write still names its entities.
+	if res.IDs = ids; len(ids) > 0 {
+		res.ID = ids[0]
+	}
 	return res
 }
 
-// affectedID is the entity of the first event the call wrote, found by the
-// call's nonce (stamped by store.AppendEvent): the id comes from the log, never
-// from the command's prose. Read-only verbs write nothing and have no id.
+// affectedIDs are the entities of every event the call wrote, in order and
+// once each, found by the call's nonce (stamped by store.AppendEvent): ids come
+// from the log, never from the command's prose. Read-only verbs write nothing.
 // ponytail: reads the whole log per call; scan only the current month's file if it grows slow.
-func affectedID(repoDir, call string) string {
+func affectedIDs(repoDir, call string) []string {
 	if repoDir == "" {
-		return ""
+		return nil
 	}
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
-		return ""
+		return nil
 	}
+	var ids []string
 	for _, ev := range evs {
-		if ev.Payload["tool_call"] == call {
-			return ev.EntityID
+		if ev.Payload["tool_call"] == call && !slices.Contains(ids, ev.EntityID) {
+			ids = append(ids, ev.EntityID)
 		}
 	}
-	return ""
+	return ids
 }
 
 // lockHeldByOther reports a backend lockfile whose holder is not the child.

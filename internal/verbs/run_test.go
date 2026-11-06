@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -72,7 +73,7 @@ func TestRunCreatesAndReturnsID(t *testing.T) {
 	env := newProject(t)
 	env.Conversation, env.Turn = "c1", 3
 	res := run(t, env, "reference new", "conteúdo", "Ref T", "--url", "https://example.com/t", "--facet", "code", "--component", "chat")
-	if !res.OK || res.ID != "R-0001" || !strings.Contains(res.Output, "R-0001 registered") || res.Error != nil {
+	if !res.OK || res.ID != "R-0001" || !slices.Equal(res.IDs, []string{"R-0001"}) || !strings.Contains(res.Output, "R-0001 registered") || res.Error != nil {
 		t.Fatalf("Run = %+v, want OK with R-0001", res)
 	}
 	evs, err := store.ReadEvents(env.RepoDir)

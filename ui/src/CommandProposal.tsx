@@ -73,7 +73,7 @@ export function ToolRuns({ runs }: { runs: ChatRun[] }) {
             <span>
               {r.result.ok
                 ? r.result.id
-                  ? t.toolRuns.ok(r.result.id)
+                  ? t.toolRuns.ok((r.result.ids?.length ? r.result.ids : [r.result.id]).join(', '))
                   : t.toolRuns.noEntity
                 : t.toolRuns.failed(r.result.error?.code ?? '', r.result.error?.message ?? '')}
             </span>

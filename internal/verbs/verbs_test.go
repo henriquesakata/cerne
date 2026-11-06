@@ -1,9 +1,13 @@
 package verbs
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func run(*cobra.Command, []string) error { return nil }
@@ -82,5 +86,20 @@ func TestClassIsExplicitAndFailsClosed(t *testing.T) {
 		if got[path] != class {
 			t.Errorf("%s: class %q, want %q", path, got[path], class)
 		}
+	}
+}
+
+// TestAffectedIDsListsEveryEntity (F-0323 C10): a call that writes several
+// entities reports all of them, in event order, first one primary.
+func TestAffectedIDsListsEveryEntity(t *testing.T) {
+	repo := t.TempDir()
+	for _, ev := range []struct{ id, call string }{{"F-0004", "n1"}, {"X-0001", "other"}, {"P-0001", "n1"}, {"F-0004", "n1"}} {
+		e := domain.NewEvent(ev.id, "x.changed", map[string]string{"tool_call": ev.call}, "agent")
+		if err := store.AppendEvent(repo, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := affectedIDs(repo, "n1"); !slices.Equal(got, []string{"F-0004", "P-0001"}) {
+		t.Fatalf("affectedIDs = %v, want [F-0004 P-0001]", got)
 	}
 }

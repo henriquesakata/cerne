@@ -1194,6 +1194,7 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
       reply: 'Feito.',
       runs: [
         { tool: 'cerne', verb: 'reference new', args: ['T', '--url', 'u'], result: { ok: true, id: 'R-0099', output: 'R-0099 registered.' } },
+        { tool: 'cerne', verb: 'feature new', args: ['X'], result: { ok: true, id: 'F-0004', ids: ['F-0004', 'P-0001'], output: '' } },
         { tool: 'cerne', verb: 'feature approve', args: ['F-0001'], result: { ok: false, output: '', error: { code: 'lifecycle_denied', message: 'lifecycle is a human act' } } },
       ],
     })
@@ -1202,6 +1203,7 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
 
     expect(await screen.findByText(/R-0099/)).toBeInTheDocument()
+    expect(screen.getByText(/F-0004, P-0001/)).toBeInTheDocument()
     expect(screen.getByText(/lifecycle_denied: lifecycle is a human act/)).toBeInTheDocument()
     expect(screen.getByText('cerne reference new T --url u')).toBeInTheDocument()
   })

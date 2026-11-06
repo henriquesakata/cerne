@@ -725,7 +725,7 @@ export async function ask(query: string, history: boolean): Promise<AskAnswer> {
 // ChatRun (F-0323) é uma execução do turno confirmado pelo canal de tools: o
 // verbo, os argumentos e o resultado estruturado que o cerne devolveu — o id
 // real ou o erro nomeado, nunca a prosa do agente.
-export type ChatRunResult = { ok: boolean; id?: string; output: string; error?: { code: string; message: string } }
+export type ChatRunResult = { ok: boolean; id?: string; ids?: string[]; output: string; error?: { code: string; message: string } }
 export type ChatRun = { tool: string; verb: string; args?: string[]; result: ChatRunResult }
 
 // runs e noExec ficam na mensagem do agente (storage local) e nunca voltam ao
