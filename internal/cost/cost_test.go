@@ -31,6 +31,7 @@ type tmsg struct {
 	model   string
 	agent   string
 	from    string // sessionId stamped on the line when not the file's (a resume copy)
+	bare    bool   // no sessionId on the line at all
 	c       Counters
 }
 
@@ -51,6 +52,9 @@ func (m tmsg) line(sess string) string {
 	}
 	if m.req != "" {
 		o["requestId"] = m.req
+	}
+	if m.bare {
+		delete(o, "sessionId")
 	}
 	if m.agent != "" {
 		o["isSidechain"], o["agentId"] = true, m.agent
@@ -275,6 +279,33 @@ func TestAttributeSubagentKeepsSpawnBinding(t *testing.T) {
 	r := compute(t, in, "")
 	if r.Entities["F-0001"] != x2.add(x4).add(x5) || r.Entities["F-0002"] != m6 || r.Entities["F-0003"] != x8 {
 		t.Fatalf("entities = %+v, want F-0001=%v F-0002=%v F-0003=%v", r.Entities, x2.add(x4).add(x5), m6, x8)
+	}
+}
+
+// sharedCopyFixture: message m sits in two sessions with no sessionId on the
+// lines (a copy cerne cannot tell apart). In "orig" it is attributed to F-0001;
+// in "copy" — whose first binding is older, a subagent's — it is outside any
+// binding.
+func sharedCopyFixture(t *testing.T) (Inputs, Counters) {
+	t.Helper()
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0309", domain.StateInDevelopment)
+	m := tmsg{ts: at(3), id: "m", req: "r", bare: true, c: cc(1, 10, 100, 1000)}
+	writeSession(t, in.Roots[0], "orig", m)
+	writeSession(t, in.Roots[0], "copy", m, tmsg{ts: at(5), id: "own", req: "r", agent: "y", c: cc(0, 0, 0, 7)})
+	bindAt(t, in.CacheDir, "copy", "y", "F-0309", at(1))
+	bindAt(t, in.CacheDir, "orig", "", "F-0001", at(2))
+	return in, m.c
+}
+
+// TestComputeEntityUnattributedExcludesAttributedElsewhere (C8): the entity
+// view attributes and dedups across every ledger session like the project
+// view, so a copy attributed to another entity is not in its unattributed.
+func TestComputeEntityUnattributedExcludesAttributedElsewhere(t *testing.T) {
+	in, _ := sharedCopyFixture(t)
+	if r := compute(t, in, "F-0309"); r.Unattributed != (Counters{}) || r.Counters != cc(0, 0, 0, 7) {
+		t.Fatalf("F-0309 = %+v, unattributed %+v; want only its own message, nothing unattributed", r.Counters, r.Unattributed)
 	}
 }
 

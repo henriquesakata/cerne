@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -154,7 +153,12 @@ func (r *Report) rollup(repoDir string) error {
 }
 
 // own is the cost of the sessions bound to id itself (Compute without the
-// rollup).
+// rollup). Both views read the same universe — every Claude Code session of
+// the ledger — and attribute and dedup across it, so a message counts in one
+// place only; the entity view then keeps what lands on id, and the
+// unattributed messages of its own sessions.
+// ponytail: the entity view re-reads every ledger session (~0.5 s per 120 MB);
+// a per-entity index if the ledger grows past what that tolerates.
 func own(in Inputs, id string) (Report, error) {
 	r := Report{ID: id, ByModel: map[string]Counters{}}
 	binds, exists, err := readLedger(in.CacheDir)
@@ -169,60 +173,60 @@ func own(in Inputs, id string) (Report, error) {
 	if err != nil {
 		return r, err
 	}
-	res := att.res
 	bySess := map[string][]Bind{}
 	for _, b := range binds {
 		bySess[b.Session] = append(bySess[b.Session], b)
 	}
-	var scope, other []string
+	var universe, other []string
+	inScope := map[string]bool{}
 	for sess, bs := range bySess {
+		claude, mine := true, id == ""
 		for _, b := range bs {
-			if id == "" || res.resolve(b.Entity) == id {
-				scope = append(scope, sess)
-				break
-			}
+			claude = claude && b.Harness == HarnessClaudeCode
+			mine = mine || att.res.resolve(b.Entity) == id
+		}
+		switch {
+		case !claude && mine:
+			other = append(other, sess)
+		case claude:
+			universe = append(universe, sess)
+			inScope[sess] = mine
 		}
 	}
-	if len(scope) == 0 {
+	sort.Strings(other)
+	if id != "" && len(other) > 0 {
+		return Report{ID: id, ByModel: map[string]Counters{}},
+			fmt.Errorf("%w; bound under another harness: %s", ErrUnsupportedHarness, strings.Join(other, ", "))
+	}
+	r.OtherHarness = other // project view: left out, named, instead of failing whole
+	scoped := 0
+	for _, mine := range inScope {
+		if mine {
+			scoped++
+		}
+	}
+	if scoped == 0 && len(other) == 0 {
 		r.Reason = "no session bound"
 		if id != "" {
 			r.Reason += " to " + id
 		}
 		return r, nil
 	}
-	for _, sess := range scope {
-		for _, b := range bySess[sess] {
-			if b.Harness != HarnessClaudeCode {
-				other = append(other, sess)
-				break
-			}
-		}
-	}
-	if len(other) > 0 {
-		sort.Strings(other)
-		if id != "" {
-			return Report{ID: id, ByModel: map[string]Counters{}},
-				fmt.Errorf("%w; bound under another harness: %s", ErrUnsupportedHarness, strings.Join(other, ", "))
-		}
-		// The project view leaves them out, named, instead of failing whole.
-		r.OtherHarness = other
-		scope = slices.DeleteFunc(scope, func(s string) bool { return slices.Contains(other, s) })
-	}
-	for _, sess := range scope {
+	for _, sess := range universe {
 		bs := bySess[sess]
 		sort.SliceStable(bs, func(i, j int) bool { return bs[i].TS.Before(bs[j].TS) })
 	}
-	// Oldest binding first: on a message repeated across sessions (fork or
-	// resume), the attributed copy wins, then the oldest session's.
-	sort.Slice(scope, func(i, j int) bool {
-		a, b := bySess[scope[i]][0].TS, bySess[scope[j]][0].TS
+	// Oldest binding first: on a message repeated across sessions, the
+	// attributed copy wins, then the oldest session's.
+	sort.Slice(universe, func(i, j int) bool {
+		a, b := bySess[universe[i]][0].TS, bySess[universe[j]][0].TS
 		if !a.Equal(b) {
 			return a.Before(b)
 		}
-		return scope[i] < scope[j]
+		return universe[i] < universe[j]
 	})
 
-	files, err := sessionFiles(in.Roots, scope)
+	files, err := sessionFiles(in.Roots, universe)
 	if err != nil {
 		return Report{ID: id, ByModel: map[string]Counters{}}, err
 	}
@@ -233,11 +237,15 @@ func own(in Inputs, id string) (Report, error) {
 	var all []owned
 	kept := map[string]int{}
 	pruned := map[string]bool{}
-	for _, sess := range scope {
-		r.Sessions++
+	for _, sess := range universe {
+		if inScope[sess] {
+			r.Sessions++
+		}
 		if len(files[sess]) == 0 {
-			r.SessionsWithoutTranscript++
-			pruned[sess] = true
+			if inScope[sess] {
+				r.SessionsWithoutTranscript++
+				pruned[sess] = true
+			}
 			continue
 		}
 		msgs, err := readSession(sess, files[sess])
@@ -264,7 +272,9 @@ func own(in Inputs, id string) (Report, error) {
 	for _, o := range all {
 		switch {
 		case o.entity == "":
-			r.Unattributed = r.Unattributed.add(o.c)
+			if inScope[o.session] {
+				r.Unattributed = r.Unattributed.add(o.c)
+			}
 		case id == "" || o.entity == id:
 			k := aggKey{o.entity, o.session, o.file}
 			if agg[k] == nil {
@@ -273,7 +283,7 @@ func own(in Inputs, id string) (Report, error) {
 			agg[k].add(o.msg)
 		}
 	}
-	r.SessionsRecovered = fuseSnapshots(in.CacheDir, id, bySess, pruned, agg)
+	r.SessionsRecovered = fuseSnapshots(in.CacheDir, id, inScope, pruned, agg)
 	r.tally(agg)
 	return r, nil
 }
@@ -283,7 +293,7 @@ func own(in Inputs, id string) (Report, error) {
 // saw more messages (a file pruned or truncated since) — replace, never sum:
 // a live transcript holds everything its snapshot saw. id "" reads every
 // snapshot. Returns how many pruned sessions came back from a snapshot.
-func fuseSnapshots(cacheDir, id string, bySess map[string][]Bind, pruned map[string]bool, agg map[aggKey]*fileAgg) int {
+func fuseSnapshots(cacheDir, id string, inScope, pruned map[string]bool, agg map[aggKey]*fileAgg) int {
 	ids := []string{id}
 	if id == "" {
 		ids = snapshotIDs(cacheDir)
@@ -291,7 +301,7 @@ func fuseSnapshots(cacheDir, id string, bySess map[string][]Bind, pruned map[str
 	recovered := map[string]bool{}
 	for _, e := range ids {
 		for sess, ss := range loadSnapshot(cacheDir, e).Sessions {
-			if ss == nil || bySess[sess] == nil {
+			if ss == nil || !inScope[sess] {
 				continue
 			}
 			for rel, f := range ss.Files {
