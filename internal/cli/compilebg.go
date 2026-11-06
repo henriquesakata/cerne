@@ -8,19 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gitlab.com/rockt/cerne/internal/compile"
 )
 
 // The background-compile sidecars sit NEXT TO the backend clone (same rule as
 // gitback.LockPath): repoDir is <cache>/<id>/repo, so they never land inside a
-// worktree and are never swept into a commit.
-func compileLockPath(repoDir string) string { return repoDir + ".compile.lock" }
+// worktree and are never swept into a commit. The lock's path and staleness
+// window live in package compile, which the server's busy probe reads too.
+func compileLockPath(repoDir string) string { return compile.LockPath(repoDir) }
 func compileLogPath(repoDir string) string  { return repoDir + ".compile.log" }
-
-// compileStaleAfter bounds ONE page's synthesis, not a whole run: the holder
-// touches the lock after every page. A wiki page is a full LLM call and
-// routinely takes minutes, so this window is far wider than gitback's — but a
-// crashed holder still frees the wiki within it instead of wedging the project.
-var compileStaleAfter = 30 * time.Minute
 
 // maxCompileRounds bounds the holder's absorb loop (see compileSynchronous).
 const maxCompileRounds = 5
@@ -53,21 +50,21 @@ func tryCompileLock(repoDir string) (*compileLock, bool) {
 }
 
 // stealStaleCompileLock removes path when its holder last showed a sign of life
-// more than compileStaleAfter ago. Returns true when the caller should retry the
+// more than compile.LockStaleAfter ago. Returns true when the caller should retry the
 // exclusive create — the lock was removed, or it vanished on its own.
 func stealStaleCompileLock(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
 		return errors.Is(err, os.ErrNotExist)
 	}
-	if time.Since(info.ModTime()) < compileStaleAfter {
+	if time.Since(info.ModTime()) < compile.LockStaleAfter {
 		return false
 	}
 	return os.Remove(path) == nil
 }
 
 // touch refreshes the lock's mtime, proving the holder is alive through a run
-// longer than compileStaleAfter. Called between pages.
+// longer than compile.LockStaleAfter. Called between pages.
 func (l *compileLock) touch() {
 	if l == nil {
 		return

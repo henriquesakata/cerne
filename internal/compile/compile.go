@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
@@ -241,6 +242,24 @@ func Stale(repoDir string) ([]Page, error) {
 		return nil, err
 	}
 	return Dirty(repoDir, Compilable(pages, ""), false)
+}
+
+// LockPath is the single-flight compile lock (F-0286). It sits NEXT TO the
+// backend clone (repoDir is <cache>/<id>/repo), never inside a worktree.
+func LockPath(repoDir string) string { return repoDir + ".compile.lock" }
+
+// LockStaleAfter bounds ONE page's synthesis, not a whole run: the holder
+// touches the lock after every page. A wiki page is a full LLM call and
+// routinely takes minutes, so this window is far wider than gitback's — but a
+// crashed holder still frees the wiki within it instead of wedging the project.
+const LockStaleAfter = 30 * time.Minute
+
+// Running reports whether a live compile holds the lock: it exists and its
+// holder touched it within LockStaleAfter — a lock a new compile would neither
+// take nor steal (F-0316's busy probe).
+func Running(repoDir string) bool {
+	info, err := os.Stat(LockPath(repoDir))
+	return err == nil && time.Since(info.ModTime()) < LockStaleAfter
 }
 
 // maxSourceExcerptChars bounds each source's content in the synthesis prompt so

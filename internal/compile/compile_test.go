@@ -530,3 +530,26 @@ func TestStale(t *testing.T) {
 		t.Fatalf("source changed after the compile: Stale = %v, want [modules/core]", got)
 	}
 }
+
+// TestRunning pins the busy probe the on-demand recompile asks before running
+// (F-0316): a live holder's lock is running; no lock, or one its holder has
+// not touched within LockStaleAfter (a new compile would steal it), is not.
+func TestRunning(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	if Running(repoDir) {
+		t.Fatal("no lock: Running = true")
+	}
+	if err := os.WriteFile(LockPath(repoDir), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !Running(repoDir) {
+		t.Fatal("fresh lock: Running = false")
+	}
+	old := time.Now().Add(-LockStaleAfter - time.Minute)
+	if err := os.Chtimes(LockPath(repoDir), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if Running(repoDir) {
+		t.Fatal("stale lock: Running = true")
+	}
+}

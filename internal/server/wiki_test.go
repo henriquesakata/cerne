@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -293,5 +294,65 @@ func TestWikiCompileEndpoint(t *testing.T) {
 	}
 	if len(ran) != 0 {
 		t.Fatalf("runner ran %v without a callable provider or on the remote serve", ran)
+	}
+}
+
+// TestWikiCompileBusy pins F-0316 criterion 7's honesty: a recompile never
+// claims a compile it did not run. A live compile lock (a CLI compile, a
+// compile_on_push run) or another recompile in flight answers 409 busy and
+// runs nothing; a lock its holder abandoned does not block.
+func TestWikiCompileBusy(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "unused",
+		LLM: project.LLMConfig{Mode: "byo-key", BaseURL: "http://127.0.0.1:1", KeyEnv: "TEST_WIKI_KEY"}}); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	var mu sync.Mutex
+	runs := 0
+	orig := wikiCompileRunner
+	wikiCompileRunner = func(string) ([]byte, error) {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		entered <- struct{}{}
+		<-release
+		return nil, nil
+	}
+	t.Cleanup(func() { wikiCompileRunner = orig })
+	h := New(repoDir, projDir, "")
+	post := func() (int, string) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/wiki/compile", nil))
+		return rec.Code, rec.Body.String()
+	}
+
+	lock := compile.LockPath(repoDir)
+	if err := os.WriteFile(lock, []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := post(); code != http.StatusConflict || !strings.Contains(body, `"busy": true`) {
+		t.Fatalf("lock held: %d %s, want 409 busy", code, body)
+	}
+	if runs != 0 {
+		t.Fatalf("lock held: runner ran %d time(s)", runs)
+	}
+
+	old := time.Now().Add(-compile.LockStaleAfter - time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	first := make(chan int)
+	go func() { code, _ := post(); first <- code }()
+	<-entered
+	if code, body := post(); code != http.StatusConflict || !strings.Contains(body, `"busy": true`) {
+		t.Fatalf("second concurrent POST: %d %s, want 409 busy", code, body)
+	}
+	close(release)
+	if code := <-first; code != http.StatusOK {
+		t.Fatalf("first POST over an abandoned lock: %d, want 200", code)
+	}
+	if runs != 1 {
+		t.Fatalf("runner ran %d time(s), want 1", runs)
 	}
 }

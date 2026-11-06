@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
@@ -961,11 +962,18 @@ func callableLLM(projDir string) bool {
 	return err == nil && llm.ResolveMode(cfg.LLM.Mode) != llm.ModeDelegation
 }
 
-// wikiCompileResponse is the POST /api/wiki/compile payload (F-0316).
+// wikiCompileResponse is the POST /api/wiki/compile payload (F-0316). Busy
+// (with 409) means a compile was already running and this request ran none.
 type wikiCompileResponse struct {
 	Compiled      bool `json:"compiled"`
 	NeedsProvider bool `json:"needs_provider,omitempty"`
+	Busy          bool `json:"busy,omitempty"`
 }
+
+// wikiCompiling holds the backends with an on-demand recompile in flight in
+// this process: a second tab (or a click after navigating back) is busy at
+// once, before the child would find the lock and exit 0 having done nothing.
+var wikiCompiling sync.Map
 
 // wikiCompileRunner runs `cerne compile --dir projDir` to completion and
 // returns its combined output. A var so tests fake it — under go test the
@@ -984,11 +992,26 @@ var wikiCompileRunner = func(projDir string) ([]byte, error) {
 // handleWikiCompile is the on-demand recompile behind the stale banner
 // (F-0316): the whole CLI path (single-flight lock, provenance, commit+push).
 // Delegation has no provider to synthesize for the browser, so it runs nothing
-// and answers needs_provider. A failure answers the last line the compile
-// printed, so the banner can show why and offer a retry.
-func handleWikiCompile(w http.ResponseWriter, projDir string) {
+// and answers needs_provider. A compile already running — here or in another
+// process holding the compile lock — answers 409 busy and runs nothing. A
+// failure answers the last line the compile printed, so the banner can show
+// why and offer a retry.
+func handleWikiCompile(w http.ResponseWriter, repoDir, projDir string) {
 	if !callableLLM(projDir) {
 		writeJSON(w, http.StatusOK, wikiCompileResponse{NeedsProvider: true})
+		return
+	}
+	if _, inFlight := wikiCompiling.LoadOrStore(repoDir, true); inFlight {
+		writeJSON(w, http.StatusConflict, wikiCompileResponse{Busy: true})
+		return
+	}
+	defer wikiCompiling.Delete(repoDir)
+	// ponytail: a compile that takes the lock between this probe and the
+	// child's own try makes the child exit 0 having run nothing — a window of
+	// milliseconds; a distinct "already running" exit status closes it if it
+	// ever shows up.
+	if compile.Running(repoDir) {
+		writeJSON(w, http.StatusConflict, wikiCompileResponse{Busy: true})
 		return
 	}
 	out, err := wikiCompileRunner(projDir)

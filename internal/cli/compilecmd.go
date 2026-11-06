@@ -216,7 +216,7 @@ func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page,
 			return nil, err
 		}
 		done = append(done, p)
-		lock.touch() // a whole run outlives compileStaleAfter; a single page must not
+		lock.touch() // a whole run outlives compile.LockStaleAfter; a single page must not
 	}
 	if len(done) > 0 {
 		if err := app.CommitAndSnapshot(ctx.repoDir, ctx.projDir, fmt.Sprintf("cerne: compile %d page(s)", len(done))); err != nil {
