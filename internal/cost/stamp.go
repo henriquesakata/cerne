@@ -190,3 +190,14 @@ func DropSnapshot(cacheDir, id string) error {
 	}
 	return err
 }
+
+// Unstamped reports whether id has a harvested cost snapshot its result never
+// received: the snapshot exists and the result carries no anchor (C12 — the
+// accept warns, since the stamp needs an implemented feature).
+func Unstamped(cacheDir, repoDir, id string) bool {
+	if _, err := os.Stat(snapshotPath(cacheDir, id)); err != nil {
+		return false
+	}
+	_, stamped := readAnchor(repoDir, id)
+	return !stamped
+}

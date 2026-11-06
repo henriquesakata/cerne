@@ -2,10 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -68,6 +70,9 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	if cost.Unstamped(filepath.Dir(ctx.repoDir), ctx.repoDir, id) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s's token cost was never stamped: its harvested cost did not reach the result. Run 'cerne cost <id> --stamp' after 'feature complete', before the accept (F-0309).\n", id)
+	}
 	return nil
 }
 

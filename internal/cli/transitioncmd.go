@@ -167,6 +167,9 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
 		}
 	}
+	if action == domain.ActionComplete {
+		fmt.Fprintf(cmd.OutOrStdout(), "Next step: record its token cost with 'cerne cost %s --stamp' before the human accept (F-0309).\n", id)
+	}
 	if action == domain.ActionStart {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: when done, fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'.\n", id, id)
 	}

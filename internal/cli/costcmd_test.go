@@ -375,3 +375,58 @@ func TestCostShowsStampAfterPrune(t *testing.T) {
 		t.Fatalf("re-stamp after prune: %v\n%s", err, out)
 	}
 }
+
+func writeSnapshot(t *testing.T, repoDir, id string) string {
+	t.Helper()
+	snap := filepath.Join(filepath.Dir(repoDir), "cost", id+".json")
+	if err := os.MkdirAll(filepath.Dir(snap), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(snap, []byte(`{"v":1,"id":"`+id+`","sessions":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return snap
+}
+
+// TestFeatureCompleteAndAcceptRemindCostStamp (F-0309 C12): complete names the
+// stamp as the next step; accept warns, without blocking, when a cost snapshot
+// exists and the result carries no anchor — and stays silent otherwise.
+func TestFeatureCompleteAndAcceptRemindCostStamp(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment, domain.StateImplemented)
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "cerne cost F-0001 --stamp") {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	writeSnapshot(t, repoDir, "F-0001")
+	out, err = execCerne(t, "feature", "accept", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001: implemented → done") || !strings.Contains(out, "warning") || !strings.Contains(out, "never stamped") {
+		t.Fatalf("accept with an unstamped snapshot: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "accept", "F-0002", "--dir", projDir); err != nil || strings.Contains(out, "warning") {
+		t.Fatalf("accept with no snapshot: %v\n%s", err, out)
+	}
+}
+
+// TestCostStampKeepsHigherAnchorDropsSnapshot (C12): when the anchor already
+// holds more than the transcripts, the stamp keeps it and still drops the
+// snapshot — it can only hold less than the anchor.
+func TestCostStampKeepsHigherAnchorDropsSnapshot(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	stamped, err := cost.Stamp(realDoc("F-0001", "Result original."), cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 9}, Messages: 100, Sessions: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDoc(t, repoDir, "F-0001", "result.md", stamped)
+	commitBackend(t, repoDir)
+	costSessions(t, repoDir)
+	snap := writeSnapshot(t, repoDir, "F-0001")
+	out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "unchanged") || readResult(t, repoDir, "F-0001") != stamped {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(snap); !os.IsNotExist(err) {
+		t.Fatalf("snapshot kept: %v", err)
+	}
+}

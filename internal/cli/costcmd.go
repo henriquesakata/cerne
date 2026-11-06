@@ -84,9 +84,11 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 	if r.Sessions == 0 && (r.Children == nil || len(r.Children.Stamped) == 0) {
 		return fmt.Errorf("%w for %s", cost.ErrNothingToStamp, id)
 	}
+	// The anchor already holds more than the transcripts: keep it, and drop the
+	// snapshot — it can only hold less (C12).
 	if r.Source == "stamp" {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s cost unchanged — its stamp already covers more messages (%d) than the transcripts still hold.\n", id, r.Messages)
-		return nil
+		return cost.DropSnapshot(cacheDir, id)
 	}
 	raw, err := os.ReadFile(app.FeatureDocPath(ctx.repoDir, id, "result.md"))
 	if err != nil {
@@ -95,7 +97,7 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 	body, err := cost.Stamp(string(raw), r)
 	if errors.Is(err, cost.ErrStampWouldLower) {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s cost unchanged — %v\n", id, err)
-		return nil
+		return cost.DropSnapshot(cacheDir, id)
 	}
 	if err != nil {
 		return err
