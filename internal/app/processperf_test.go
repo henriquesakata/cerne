@@ -152,7 +152,7 @@ func TestProcessPerfEscapedFromFixes(t *testing.T) {
 	}
 
 	r := mustProcessPerf(t, repoDir)
-	if a := r.Markers[0].After; a.N != 1 || a.EscapedShare != 1 {
+	if a := r.Markers[0].After; a.N != 1 || a.EscapedShare == nil || *a.EscapedShare != 1 {
 		t.Fatalf("after = n %d escaped %v, want 1 / 1", a.N, a.EscapedShare)
 	}
 }
