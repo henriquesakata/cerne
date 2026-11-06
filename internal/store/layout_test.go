@@ -223,3 +223,72 @@ func TestNextID(t *testing.T) {
 		})
 	}
 }
+
+// TestAppendEventStampsChatOrigin pins the F-0323 provenance stamp: with
+// CERNE_ORIGIN set (only ever by the chat verb executor, in the child env) the
+// payload gains origin/conversation/turn/tool_call; without it the line is
+// byte-identical to the event's own encoding.
+func TestAppendEventStampsChatOrigin(t *testing.T) {
+	at := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
+	chatEnv := map[string]string{
+		"CERNE_ORIGIN": "chat", "CERNE_CONVERSATION": "c1", "CERNE_TURN": "3", "CERNE_TOOL_CALL": "ab12",
+	}
+	stamped := map[string]string{"origin": "chat", "conversation": "c1", "turn": "3", "tool_call": "ab12"}
+	cases := []struct {
+		name    string
+		env     map[string]string
+		payload map[string]string
+		want    map[string]string
+	}{
+		{"no origin keeps payload", nil, map[string]string{"title": "T"}, map[string]string{"title": "T"}},
+		{"chat origin stamps", chatEnv, map[string]string{"title": "T"}, merge(stamped, map[string]string{"title": "T"})},
+		{"nil payload stamped", chatEnv, nil, stamped},
+		{"existing origin kept", chatEnv, map[string]string{"origin": "import"}, merge(stamped, map[string]string{"origin": "import"})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, k := range []string{"CERNE_ORIGIN", "CERNE_CONVERSATION", "CERNE_TURN", "CERNE_TOOL_CALL"} {
+				t.Setenv(k, tc.env[k])
+			}
+			dir := t.TempDir()
+			ev := testEvent("aaaa", at)
+			ev.Payload = tc.payload
+			if err := AppendEvent(dir, ev); err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
+			if tc.env == nil {
+				want, _ := ev.MarshalNDJSON()
+				data, err := os.ReadFile(filepath.Join(dir, "events", "2026-11.ndjson"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := strings.TrimSuffix(string(data), "\n"); got != string(want) {
+					t.Fatalf("line = %s, want byte-identical %s", got, want)
+				}
+			}
+			got, err := ReadEvents(dir)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("ReadEvents = %v, %v", got, err)
+			}
+			if len(got[0].Payload) != len(tc.want) {
+				t.Fatalf("payload = %v, want %v", got[0].Payload, tc.want)
+			}
+			for k, v := range tc.want {
+				if got[0].Payload[k] != v {
+					t.Fatalf("payload[%s] = %q, want %q (payload %v)", k, got[0].Payload[k], v, got[0].Payload)
+				}
+			}
+		})
+	}
+}
+
+func merge(a, b map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
