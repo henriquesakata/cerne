@@ -361,3 +361,32 @@ func TestProcessEmptyHasReason(t *testing.T) {
 		t.Fatalf("markers = nil, want []")
 	}
 }
+
+func bits(k, n int) []float64 {
+	out := make([]float64, n)
+	for i := range k {
+		out[i] = 1
+	}
+	return out
+}
+
+// TestProcessGuardScoreInterval pins C7: a guard's interval is Newcombe's
+// hybrid score interval (method 10), which keeps its width when one side is
+// all zero — 0/10 vs 3/10 at 90% is +2.6 to +55.8 pp, where a percentile
+// bootstrap claimed +10 to +50.
+func TestProcessGuardScoreInterval(t *testing.T) {
+	ci := newcombe(bits(0, 10), bits(3, 10), 1.6448536269514722)
+	if math.Abs(ci[0]-0.0255) > 0.0005 || math.Abs(ci[1]-0.5583) > 0.0005 {
+		t.Fatalf("newcombe(0/10, 3/10, 90%%) = %v, want ≈ [0.0255, 0.5583]", ci)
+	}
+	var samples []ProcessSample
+	for i := range 10 {
+		b, a := sample(fmt.Sprintf("B%d", i), at(5+i), 1000), sample(fmt.Sprintf("A%d", i), at(30+i), 1000)
+		a.Returned = i < 3
+		samples = append(samples, b, a)
+	}
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	if want := newcombe(bits(0, 10), bits(3, 10), guardZ); fmt.Sprint(m.ReturnedDiffCI) != fmt.Sprint(want) {
+		t.Fatalf("returned ci = %v, want the score interval %v", m.ReturnedDiffCI, want)
+	}
+}

@@ -14,7 +14,8 @@ import (
 const (
 	minSample = 8                   // deliveries per side before any verdict
 	window    = 28 * 24 * time.Hour // each side of a marker, and the escaped-defect horizon
-	resamples = 2000                // bootstrap draws per interval
+	resamples = 2000                // bootstrap draws per cost interval
+	guardZ    = 1.6448536269514722  // two-sided 90% normal quantile of the guards' score intervals
 	// Weights relative to one input token — the hub's custo-agentes.mjs, every
 	// cache write at the 5-minute rate: the F-0309 anchor does not split it.
 	weightInput, weightCacheCreation, weightCacheRead, weightOutput = 1.0, 1.25, 0.1, 5.0
@@ -171,7 +172,7 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 
 	var notes, vetoes []string
 	guard := func(label string, b, a []float64) (string, []float64) {
-		ci := bootstrapCI(b, a, func(b, a []float64) float64 { return mean(a) - mean(b) })
+		ci := newcombe(b, a, guardZ)
 		text := fmt.Sprintf("%s %+.0f pp (90%% CI %+.0f to %+.0f)", label, (mean(a)-mean(b))*100, ci[0]*100, ci[1]*100)
 		if ci[0] > 0 {
 			vetoes = append(vetoes, text)
@@ -240,6 +241,26 @@ func bootstrapCI(before, after []float64, stat func(b, a []float64) float64) []f
 	}
 	slices.Sort(vals)
 	return []float64{vals[resamples*5/100-1], vals[resamples*95/100-1]}
+}
+
+// newcombe is the hybrid score interval of mean(after) − mean(before) for 0/1
+// values (Newcombe 1998, method 10): Wilson intervals per side, combined. Unlike
+// a percentile bootstrap it keeps its width when a side is all zero — the
+// usual case for returns and escapes.
+func newcombe(before, after []float64, z float64) []float64 {
+	pb, pa := mean(before), mean(after)
+	lb, ub := wilson(pb, len(before), z)
+	la, ua := wilson(pa, len(after), z)
+	d := pa - pb
+	return []float64{d - math.Hypot(pa-la, ub-pb), d + math.Hypot(ua-pa, pb-lb)}
+}
+
+// wilson is the Wilson score interval of a proportion p observed over n.
+func wilson(p float64, n int, z float64) (lo, hi float64) {
+	nn, z2 := float64(n), z*z
+	center := (p + z2/(2*nn)) / (1 + z2/nn)
+	half := z / (1 + z2/nn) * math.Sqrt(p*(1-p)/nn+z2/(4*nn*nn))
+	return center - half, center + half
 }
 
 func side(ss []ProcessSample, from, to time.Time, cutBy string) Side {
