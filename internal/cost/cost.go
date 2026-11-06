@@ -165,7 +165,11 @@ func own(in Inputs, id string) (Report, error) {
 		r.Reason = "no session bound"
 		return r, nil
 	}
-	res := resolver{repo: in.RepoDir, memo: map[string]string{}}
+	att, err := newAttributor(in.RepoDir)
+	if err != nil {
+		return r, err
+	}
+	res := att.res
 	bySess := map[string][]Bind{}
 	for _, b := range binds {
 		bySess[b.Session] = append(bySess[b.Session], b)
@@ -241,7 +245,7 @@ func own(in Inputs, id string) (Report, error) {
 			return Report{ID: id, ByModel: map[string]Counters{}}, err
 		}
 		for _, m := range msgs {
-			o := owned{m, res.resolve(governing(bySess[sess], m))}
+			o := owned{m, att.entity(bySess[sess], m)}
 			if m.key != "" {
 				if i, ok := kept[m.key]; ok {
 					if all[i].entity == "" && o.entity != "" {
@@ -333,31 +337,88 @@ func (r *Report) tally(agg map[aggKey]*fileAgg) {
 	}
 }
 
-// governing is the bound id in force for m: the last binding of m's own
+// governing is the binding in force for m: the last binding of m's own
 // subagent at or before m.ts, else the main thread's last one (a subagent
 // inherits its parent's binding until it binds itself; a nested subagent
-// inherits the main thread's). "" when none, or when m.ts is unreadable.
+// inherits the main thread's). false when none, or when m.ts is unreadable.
 // binds are sorted by TS.
-func governing(binds []Bind, m msg) string {
+func governing(binds []Bind, m msg) (Bind, bool) {
 	if m.ts.IsZero() {
-		return ""
+		return Bind{}, false
 	}
-	var main, own string
-	for _, b := range binds {
+	var main, own *Bind
+	for i, b := range binds {
 		if b.TS.After(m.ts) {
 			break
 		}
 		switch b.Agent {
 		case "":
-			main = b.Entity
+			main = &binds[i]
 		case m.agent:
-			own = b.Entity
+			own = &binds[i]
 		}
 	}
-	if own != "" {
-		return own
+	if own != nil {
+		return *own, true
 	}
-	return main
+	if main != nil {
+		return *main, true
+	}
+	return Bind{}, false
+}
+
+// closeEvents end a binding: the work finished, or the feature leaving
+// in_development (complete, supersede; the others cannot follow a start and
+// are listed so no terminal move is ever missed).
+var closeEvents = map[string]bool{
+	"work.done": true, "work.abandoned": true,
+	"feature.completed": true, "feature.superseded": true, "feature.rejected": true,
+	"feature.accepted": true, "feature.reverted": true,
+}
+
+// attributor decides the entity each message counts on: the governing
+// binding, capped at the close of the entity it bound (C1) — the ledger has
+// no unbind line, the event log already knows when the work or feature ended.
+type attributor struct {
+	res    resolver
+	closes map[string][]time.Time // bound id → its close events, ascending
+}
+
+func newAttributor(repoDir string) (attributor, error) {
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return attributor{}, err
+	}
+	closes := map[string][]time.Time{}
+	for _, ev := range events {
+		if closeEvents[ev.Type] {
+			closes[ev.EntityID] = append(closes[ev.EntityID], ev.At)
+		}
+	}
+	for _, ts := range closes {
+		sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
+	}
+	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes}, nil
+}
+
+// entity is m's entity under its session's binds (sorted by TS); "" when no
+// binding governs m or the bound entity had closed by m's timestamp.
+func (a attributor) entity(binds []Bind, m msg) string {
+	b, ok := governing(binds, m)
+	if !ok || a.closed(b, m.ts) {
+		return ""
+	}
+	return a.res.resolve(b.Entity)
+}
+
+// closed reports whether b's entity closed after b began and at or before t.
+func (a attributor) closed(b Bind, t time.Time) bool {
+	for _, c := range a.closes[b.Entity] {
+		if !c.Before(b.TS) {
+			return !t.Before(c)
+		}
+	}
+	return false
 }
 
 // resolver maps a bound id to the entity its tokens count on, memoized.

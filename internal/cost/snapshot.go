@@ -111,7 +111,14 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 	}
 	sort.SliceStable(mine, func(i, j int) bool { return mine[i].TS.Before(mine[j].TS) })
 
-	res := resolver{repo: in.RepoDir, memo: map[string]string{}}
+	if len(mine) == 0 {
+		return nil
+	}
+	att, err := newAttributor(in.RepoDir)
+	if err != nil {
+		return err
+	}
+	res := att.res
 	snaps := map[string]*snapshot{}
 	var since time.Time
 	for _, b := range mine {
@@ -153,7 +160,7 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 	}
 	agg := map[aggKey]*fileAgg{}
 	for _, m := range msgs {
-		id := res.resolve(governing(mine, m))
+		id := att.entity(mine, m)
 		if snaps[id] == nil {
 			continue
 		}

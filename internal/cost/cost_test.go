@@ -213,6 +213,46 @@ func TestAttributeSubagentOwnBinding(t *testing.T) {
 	}
 }
 
+func closeAt(t *testing.T, repo, id, typ string, ts time.Time) {
+	t.Helper()
+	ev := domain.NewEvent(id, typ, nil, "agent")
+	ev.At = ts
+	if err := store.AppendEvent(repo, ev); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAttributeBindingEndsWhenEntityCloses (C1): a binding ends when its entity
+// closes — the work done/abandoned, the feature leaving in_development — so a
+// later message of the session is unattributed, not charged to the last
+// entity. The critic's t1 scenario plus a feature start → complete.
+func TestAttributeBindingEndsWhenEntityCloses(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0003", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0004", domain.StateImplemented)
+	if err := store.SaveWork(in.RepoDir, store.Work{ID: "W-0005", Title: "w", State: domain.WorkDone, Refs: []string{"F-0003"}, CreatedAt: base, UpdatedAt: base}); err != nil {
+		t.Fatal(err)
+	}
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(1), id: "before", req: "r", c: cc(1, 0, 0, 0)},
+		tmsg{ts: at(3), id: "during", req: "r", c: cc(10, 0, 0, 0)},
+		tmsg{ts: at(6), id: "after", req: "r", c: cc(100, 0, 0, 0)})
+	bindAt(t, in.CacheDir, "s", "", "W-0005", at(2))
+	closeAt(t, in.RepoDir, "W-0005", "work.done", at(5))
+	writeSession(t, in.Roots[0], "f",
+		tmsg{ts: at(3), id: "dev", req: "r", c: cc(0, 7, 0, 0)},
+		tmsg{ts: at(5), id: "done", req: "r", c: cc(0, 70, 0, 0)})
+	bindAt(t, in.CacheDir, "f", "", "F-0004", at(2))
+	closeAt(t, in.RepoDir, "F-0004", "feature.completed", at(4))
+
+	if r := compute(t, in, "F-0003"); r.Counters != cc(10, 0, 0, 0) || r.Unattributed != cc(101, 0, 0, 0) {
+		t.Fatalf("F-0003 = %+v / unattributed %+v, want 10 / 101", r.Counters, r.Unattributed)
+	}
+	if r := compute(t, in, "F-0004"); r.Counters != cc(0, 7, 0, 0) || r.Unattributed != cc(0, 70, 0, 0) {
+		t.Fatalf("F-0004 = %+v / unattributed %+v, want 7 / 70", r.Counters, r.Unattributed)
+	}
+}
+
 // TestComputeResolvesWorkToFeature: a W- with exactly one feature ref counts
 // on that feature; a W- with none stays itself, visible in the project view.
 func TestComputeResolvesWorkToFeature(t *testing.T) {
