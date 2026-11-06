@@ -190,3 +190,20 @@ describe('chatRequest (F-0248): a escrita parte do storage corrente, não do sna
     ])
   })
 })
+
+describe('chatRequest (F-0323): execuções e ausência de canal', () => {
+  it('o terminal com runs/no_exec fica gravado na mensagem do agente, e o id da conversa vai no override', async () => {
+    seedConversation('c9')
+    const runs = [{ tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0099', output: '' } }]
+    streamChat.mockResolvedValue({ answered: true, reply: 'Feito.', runs, no_exec: true })
+
+    send('c9', [{ role: 'user', content: 'Registra' }], { confirm: true, confirmTurn: 0 })
+    await vi.waitFor(() => expect(status('c9').pending).toBe(false))
+
+    expect(readChats().chats.find((c) => c.id === 'c9')?.messages).toEqual([
+      { role: 'user', content: 'Registra' },
+      { role: 'assistant', content: 'Feito.', runs, noExec: true },
+    ])
+    expect(streamChat.mock.calls[0][1]).toMatchObject({ conversationId: 'c9', confirm: true, confirmTurn: 0 })
+  })
+})

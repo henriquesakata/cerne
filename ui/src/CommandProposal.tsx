@@ -1,4 +1,6 @@
+import type { ChatRun } from './api'
 import { useT } from './i18n'
+import Markdown from './Markdown'
 
 // CommandProposal (F-0260) é o card do bloco ```cerne-comando: o agente ecoa os
 // comandos de escrita que pretende rodar e para; o clique devolve o turno a ele
@@ -39,6 +41,45 @@ export default function CommandProposal({ commands, busy, onConfirm }: Props) {
       <button type="button" className="command-proposal-run" onClick={onConfirm} disabled={busy}>
         {t.commandProposal.run}
       </button>
+    </section>
+  )
+}
+
+// CopyCommands (F-0323 critério 7): num modo sem canal de execução não existe
+// card que prometa rodar — os comandos viram um bloco para o usuário copiar e
+// rodar no terminal dele (o CodeBlock do Markdown dá o botão de copiar).
+export function CopyCommands({ commands }: { commands: string[] }) {
+  const { t } = useT()
+  return (
+    <section className="command-proposal">
+      <p className="muted">{t.commandProposal.noExecHint}</p>
+      <Markdown>{'```bash\n' + commands.join('\n') + '\n```'}</Markdown>
+    </section>
+  )
+}
+
+// ToolRuns (F-0323 critérios 1/3) lista o que o turno confirmado executou: o
+// comando e o resultado estruturado — o id que o cerne devolveu ou o erro
+// nomeado. É o que o humano confere contra a prosa do agente.
+export function ToolRuns({ runs }: { runs: ChatRun[] }) {
+  const { t } = useT()
+  return (
+    <section className="tool-runs">
+      <h4>{t.toolRuns.title}</h4>
+      <ul>
+        {runs.map((r, i) => (
+          <li key={i} className={r.result.ok ? 'tool-run-ok' : 'tool-run-failed'}>
+            <code>{['cerne', r.verb, ...(r.args ?? [])].join(' ')}</code>
+            <span>
+              {r.result.ok
+                ? r.result.id
+                  ? t.toolRuns.ok(r.result.id)
+                  : t.toolRuns.noEntity
+                : t.toolRuns.failed(r.result.error?.code ?? '', r.result.error?.message ?? '')}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

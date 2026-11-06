@@ -125,7 +125,7 @@ const feature = (id: string): Feature => ({
 describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
   it('envia a mensagem e mostra a resposta do agente', async () => {
     streamChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
-    renderChat()
+    const { conversation } = renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), {
       target: { value: 'Preciso exportar relatórios.' },
@@ -135,7 +135,8 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     await waitFor(() => expect(screen.getByText('Em qual formato?')).toBeInTheDocument())
     expect(streamChat).toHaveBeenCalledWith(
       [{ role: 'user', content: 'Preciso exportar relatórios.' }],
-      { model: undefined, effort: undefined },
+      // F-0323: o id da conversa vai em todo turno (proveniência das escritas).
+      { model: undefined, effort: undefined, conversationId: conversation.id },
       expect.any(Function),
     )
   })
@@ -498,7 +499,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     await waitFor(() =>
       expect(streamChat).toHaveBeenCalledWith(
         [{ role: 'user', content: 'Oi' }],
-        { model: 'claude-sonnet-5-5', effort: 'low' },
+        { model: 'claude-sonnet-5-5', effort: 'low', conversationId: expect.any(String) },
         expect.any(Function),
       ),
     )
@@ -1149,6 +1150,60 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     expect(override?.confirm).toBe(true)
     const sent = messages as { role: string; content: string }[]
     expect(sent[sent.length - 1].role).toBe('user')
+  })
+
+  // F-0323 critérios 5/8: a confirmação vai presa ao card — o id da conversa
+  // e o índice da mensagem do agente que o trazia.
+  it('Executar envia conversation_id e confirm_turn', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: commandReply })
+    const { conversation } = renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Registra isso pra mim' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /executar/i }))
+
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const [messages, override] = streamChat.mock.calls[1]
+    expect(override?.confirm).toBe(true)
+    expect(override?.confirmTurn).toBe(1)
+    const sent = messages as { role: string; content: string }[]
+    expect(sent[1].content).toBe(commandReply)
+    expect(conversation.id).toBeTruthy()
+  })
+
+  // F-0323 critério 7: sem canal de execução não há card que prometa rodar
+  // nada — os comandos viram bloco para copiar.
+  it('mensagem noExec não desenha Executar e mostra os comandos copiáveis', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: commandReply, no_exec: true })
+    renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Registra isso pra mim' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    expect(await screen.findByText(/copie e rode no seu terminal/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /executar/i })).not.toBeInTheDocument()
+    const pre = document.querySelector('pre')
+    expect(pre?.textContent).toContain('cerne feature new "Exportar CSV"')
+    expect(pre?.textContent).toContain('cerne note new "Exportação é sempre CSV"')
+    expect(screen.getByRole('button', { name: /copiar bloco/i })).toBeInTheDocument()
+  })
+
+  // F-0323 critérios 1/3: o painel de execuções mostra o id que o cerne
+  // devolveu e o erro nomeado — nunca um id da prosa do agente.
+  it('runs mostram o id devolvido e o erro nomeado', async () => {
+    streamChat.mockResolvedValue({
+      answered: true,
+      reply: 'Feito.',
+      runs: [
+        { tool: 'cerne', verb: 'reference new', args: ['T', '--url', 'u'], result: { ok: true, id: 'R-0099', output: 'R-0099 registered.' } },
+        { tool: 'cerne', verb: 'feature approve', args: ['F-0001'], result: { ok: false, output: '', error: { code: 'lifecycle_denied', message: 'lifecycle is a human act' } } },
+      ],
+    })
+    renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Registra' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    expect(await screen.findByText(/R-0099/)).toBeInTheDocument()
+    expect(screen.getByText(/lifecycle_denied: lifecycle is a human act/)).toBeInTheDocument()
+    expect(screen.getByText('cerne reference new T --url u')).toBeInTheDocument()
   })
 
   it('resposta sem bloco de comando não renderiza card', async () => {

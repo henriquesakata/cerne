@@ -19,7 +19,7 @@ import {
   type ModelEntry,
 } from './api'
 import * as chatRequest from './chatRequest'
-import CommandProposal from './CommandProposal'
+import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
 import Markdown from './Markdown'
 import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
@@ -709,7 +709,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
 
   // sendMessages guarda `next` como o candidato a reenvio (critério 4) — só
   // vira "erro visível" se a requisição falhar; sucesso limpa em reconcile().
-  const sendMessages = (next: ChatMsg[], confirm = false) => {
+  // confirmTurn (F-0323) é o índice da mensagem do agente que trazia o card:
+  // só o turno nascido do clique o carrega, e é ele que vira o confirm.
+  const sendMessages = (next: ChatMsg[], confirmTurn?: number) => {
     setError(null)
     setFailedMessages(next)
     chatRequest.send(conversation.id, next, {
@@ -721,7 +723,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       // F-0260: só o turno nascido do clique em Executar carrega a permissão de
       // escrita. O default é false, então digitar "confirmo" no compositor não
       // autoriza nada — a autorização é o clique, não o texto.
-      confirm: confirm || undefined,
+      confirm: confirmTurn !== undefined || undefined,
+      confirmTurn,
     })
   }
 
@@ -889,9 +892,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // diz o que fazer com ela).
   const confirmCommands = () => {
     if (busy) return
+    const cardTurn = messages.length - 1
     const next = [...messages, { role: 'user' as const, content: t.commandProposal.confirmed }]
     setMessages(next)
-    sendMessages(next, true)
+    sendMessages(next, cardTurn)
   }
 
   if (needsProvider) {
@@ -919,8 +923,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           // F-0260: o card de comandos só vale na ÚLTIMA mensagem. Um eco antigo
           // reautorizado depois que a conversa andou rodaria comandos que já não
           // são o que se quer — e criação não tem desfazer.
-          const commands =
-            m.role === 'assistant' && i === messages.length - 1 ? parseCommands(m.content) : null
+          // F-0323 critério 7: num modo sem canal (noExec) os comandos não
+          // viram card — viram bloco para copiar, em qualquer mensagem.
+          const fenced = m.role === 'assistant' ? parseCommands(m.content) : null
+          const commands = fenced && !m.noExec && i === messages.length - 1 ? fenced : null
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
               {m.role !== 'assistant' && <p>{m.content}</p>}
@@ -945,6 +951,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
                   {commands && (
                     <CommandProposal commands={commands} busy={busy} onConfirm={confirmCommands} />
                   )}
+                  {fenced && m.noExec && <CopyCommands commands={fenced} />}
+                  {m.runs && <ToolRuns runs={m.runs} />}
                 </>
               )}
             </div>

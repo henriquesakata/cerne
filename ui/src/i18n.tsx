@@ -282,6 +282,13 @@ const ptBR = {
     // confirmed é o turno que o clique manda ao agente — vira mensagem de
     // usuário na transcrição, então fica na língua da conversa.
     confirmed: 'Confirmado: execute os comandos que você propôs e me diga o resultado real (os ids que o cerne devolveu).',
+    noExecHint: 'Este modo não executa comandos: copie e rode no seu terminal.',
+  },
+  toolRuns: {
+    title: 'Execuções',
+    ok: (id: string) => `✓ ${id}`,
+    noEntity: '✓ sem entidade',
+    failed: (code: string, message: string) => `✗ ${code}: ${message}`,
   },
   channel: {
     title: 'Canal do projeto',
@@ -1144,6 +1151,13 @@ const en: Messages = {
     hint: 'Check before authorizing: the agent will run exactly these commands.',
     run: 'Run',
     confirmed: 'Confirmed: run the commands you proposed and report the real outcome (the ids cerne returned).',
+    noExecHint: 'This mode cannot run commands: copy them and run them in your terminal.',
+  },
+  toolRuns: {
+    title: 'Runs',
+    ok: (id: string) => `✓ ${id}`,
+    noEntity: '✓ no entity',
+    failed: (code: string, message: string) => `✗ ${code}: ${message}`,
   },
   channel: {
     title: 'Project channel',

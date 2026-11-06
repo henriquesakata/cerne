@@ -39,6 +39,31 @@ describe('streamChat (F-0244 critério 4b): consome tanto deltas quanto o evento
   })
 })
 
+describe('streamChat (F-0323): confirmação presa ao turno', () => {
+  it('o corpo leva conversation_id e confirm_turn, e as mensagens só com role/content', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(streamResponse([`{"answered":true,"reply":"ok"}\n`]))
+    vi.stubGlobal('fetch', fetch)
+    const runs = [{ tool: 'cerne', verb: 'status', args: [], result: { ok: true, output: '' } }]
+    await streamChat(
+      [
+        { role: 'assistant', content: 'card', runs, noExec: true },
+        { role: 'user', content: 'Confirmado' },
+      ],
+      { confirm: true, conversationId: 'c1', confirmTurn: 0 },
+      () => {},
+    )
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.conversation_id).toBe('c1')
+    expect(body.confirm_turn).toBe(0)
+    expect(body.confirm).toBe(true)
+    expect(body.messages).toEqual([
+      { role: 'assistant', content: 'card' },
+      { role: 'user', content: 'Confirmado' },
+    ])
+  })
+})
+
 describe('recompileWiki (F-0316)', () => {
   it('409 é "compilação em andamento", não falha nem sucesso', async () => {
     setApiProject('proj-x')

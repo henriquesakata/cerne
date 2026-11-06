@@ -722,7 +722,15 @@ export async function ask(query: string, history: boolean): Promise<AskAnswer> {
 
 // ---- chat de solicitação de features no Backlog (F-0210) ----
 
-export type ChatMsg = { role: 'user' | 'assistant'; content: string }
+// ChatRun (F-0323) é uma execução do turno confirmado pelo canal de tools: o
+// verbo, os argumentos e o resultado estruturado que o cerne devolveu — o id
+// real ou o erro nomeado, nunca a prosa do agente.
+export type ChatRunResult = { ok: boolean; id?: string; output: string; error?: { code: string; message: string } }
+export type ChatRun = { tool: string; verb: string; args?: string[]; result: ChatRunResult }
+
+// runs e noExec ficam na mensagem do agente (storage local) e nunca voltam ao
+// servidor: o transcript enviado é só role/content.
+export type ChatMsg = { role: 'user' | 'assistant'; content: string; runs?: ChatRun[]; noExec?: boolean }
 
 // ChatAnswer espelha o payload de POST /api/chat. answered é false quando o
 // projeto não tem um provider [llm] configurado (delegação): nenhuma
@@ -731,6 +739,9 @@ export type ChatAnswer = {
   answered: boolean
   needs_provider?: boolean
   reply?: string
+  runs?: ChatRun[]
+  // no_exec (F-0323): o modo não tem canal de execução — sem card de Executar.
+  no_exec?: boolean
 }
 
 // ChatOverride (F-0218) carrega a escolha do seletor de modelo/esforço do
@@ -740,7 +751,17 @@ export type ChatAnswer = {
 // confirm (F-0260) é a confirmação explícita do usuário sobre os comandos que o
 // agente ecoou no turno anterior — só ela libera as ferramentas de escrita, e
 // só naquele turno. Nasce do clique no card, nunca do texto da mensagem.
-export type ChatOverride = { model?: string; effort?: string; featureId?: string; confirm?: boolean }
+// conversationId e confirmTurn (F-0323) prendem a confirmação ao card: o id da
+// conversa (proveniência das escritas) e o índice da mensagem do agente que o
+// trazia — sem eles o servidor recusa o confirm com 422.
+export type ChatOverride = {
+  model?: string
+  effort?: string
+  featureId?: string
+  confirm?: boolean
+  conversationId?: string
+  confirmTurn?: number
+}
 
 // streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
 // case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
@@ -758,11 +779,13 @@ export async function streamChat(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messages,
+      messages: messages.map(({ role, content }) => ({ role, content })),
       model: override?.model,
       effort: override?.effort,
       feature_id: override?.featureId,
       confirm: override?.confirm,
+      conversation_id: override?.conversationId,
+      confirm_turn: override?.confirmTurn,
     }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
