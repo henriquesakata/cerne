@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/ask"
+	"gitlab.com/rockt/cerne/internal/compile"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -865,9 +867,14 @@ type wikiPageRef struct {
 }
 
 // wikiIndexResponse is the GET /api/wiki payload: the compiled pages that exist
-// on disk, so the human browses what `cerne compile` actually produced.
+// on disk, so the human browses what `cerne compile` actually produced. With
+// wiki.enabled off (F-0316) Stale lists the pages a compile would rewrite —
+// the stale banner — and NeedsProvider says the browser cannot recompile them
+// (delegation), so the banner shows the command instead of a button.
 type wikiIndexResponse struct {
-	Pages []wikiPageRef `json:"pages"`
+	Pages         []wikiPageRef `json:"pages"`
+	Stale         []string      `json:"stale,omitempty"`
+	NeedsProvider bool          `json:"needs_provider,omitempty"`
 }
 
 // wikiPageResponse is the GET /api/wiki/<rel> payload: the synthesis body with
@@ -895,8 +902,9 @@ func safeWikiRel(rel string) bool {
 // handleWikiIndex lists the compiled pages under content/wiki/ — the top-level
 // pages (project/decisions/references) and the nested modules/ pages — so the
 // human can browse the synthesis. An absent wiki dir is an empty list, not an
-// error.
-func handleWikiIndex(w http.ResponseWriter, repoDir string) {
+// error. Staleness is computed only with the wiki off: on, compile_on_push
+// owns freshness and the index does not pay for hashing every source.
+func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 	wikiDir := filepath.Join(repoDir, "content", "wiki")
 	pages := []wikiPageRef{}
 	entries, err := os.ReadDir(wikiDir)
@@ -932,7 +940,68 @@ func handleWikiIndex(w http.ResponseWriter, repoDir string) {
 		}
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Rel < pages[j].Rel })
-	writeJSON(w, http.StatusOK, wikiIndexResponse{Pages: pages})
+	resp := wikiIndexResponse{Pages: pages}
+	if !project.WikiEnabled(projDir) {
+		// A staleness error never hides the wiki (F-0316 crit. 9): no banner.
+		stale, _ := compile.Stale(repoDir)
+		for _, p := range stale {
+			resp.Stale = append(resp.Stale, p.Rel)
+		}
+		if len(resp.Stale) > 0 {
+			resp.NeedsProvider = !callableLLM(projDir)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// callableLLM reports whether projDir's [llm] can synthesize for a human in
+// the browser: a readable .cernerc whose mode is not delegation.
+func callableLLM(projDir string) bool {
+	cfg, _, err := project.LoadConfig(projDir)
+	return err == nil && llm.ResolveMode(cfg.LLM.Mode) != llm.ModeDelegation
+}
+
+// wikiCompileResponse is the POST /api/wiki/compile payload (F-0316).
+type wikiCompileResponse struct {
+	Compiled      bool `json:"compiled"`
+	NeedsProvider bool `json:"needs_provider,omitempty"`
+}
+
+// wikiCompileRunner runs `cerne compile --dir projDir` to completion and
+// returns its combined output. A var so tests fake it — under go test the
+// executable is the test binary (compilebg.go). Not CommandContext: a closed
+// tab must not kill a run holding the compile lock.
+var wikiCompileRunner = func(projDir string) ([]byte, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	c := exec.Command(exe, "compile", "--dir", projDir)
+	c.Dir = projDir
+	return c.CombinedOutput()
+}
+
+// handleWikiCompile is the on-demand recompile behind the stale banner
+// (F-0316): the whole CLI path (single-flight lock, provenance, commit+push).
+// Delegation has no provider to synthesize for the browser, so it runs nothing
+// and answers needs_provider. A failure answers the last line the compile
+// printed, so the banner can show why and offer a retry.
+func handleWikiCompile(w http.ResponseWriter, projDir string) {
+	if !callableLLM(projDir) {
+		writeJSON(w, http.StatusOK, wikiCompileResponse{NeedsProvider: true})
+		return
+	}
+	out, err := wikiCompileRunner(projDir)
+	if err != nil {
+		msg := err.Error()
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if last := strings.TrimSpace(lines[len(lines)-1]); last != "" {
+			msg = strings.TrimPrefix(last, "Error: ")
+		}
+		writeJSON(w, http.StatusInternalServerError, errorBody(msg))
+		return
+	}
+	writeJSON(w, http.StatusOK, wikiCompileResponse{Compiled: true})
 }
 
 // handleWikiPage serves one compiled page body (frontmatter stripped) by its
