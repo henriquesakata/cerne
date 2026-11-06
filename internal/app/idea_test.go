@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -172,5 +174,85 @@ func TestDropIdeaRaceOneWinner(t *testing.T) {
 	types, _ := ideaEvents(t, repoDir, i.ID)
 	if wins != 1 || !slices.Equal(types, []string{"idea.created", "idea.dropped"}) {
 		t.Fatalf("wins = %d, events = %v; want 1 winner, one idea.dropped", wins, types)
+	}
+}
+
+// Crit. 6: promote mints a candidate from the idea — first line as title, the
+// text as the spec's context with the [[I-NNNN]] back-link, tags inherited —
+// and the idea records promoted_to and leaves the active list.
+func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	i, err := CreateIdea(repoDir, projDir, "Exportar o kanban em CSV\ncom filtros", nil, []string{"kanban"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, f, err := PromoteIdea(repoDir, projDir, i.ID, "", false)
+	if err != nil {
+		t.Fatalf("PromoteIdea: %v", err)
+	}
+	if !strings.HasPrefix(f.ID, "F-") || f.State != domain.StateCandidate || f.Title != "Exportar o kanban em CSV" ||
+		!slices.Equal(f.Components, []string{"kanban"}) {
+		t.Fatalf("feature = %+v, want a candidate titled by the first line, component kanban", f)
+	}
+	spec := promotedSpec(t, repoDir, f.ID)
+	for _, want := range []string{"**Origem:** ideia [[I-0001]] (capturada em " + i.CreatedAt.Format(time.DateOnly) + ")", "com filtros"} {
+		if !strings.Contains(spec, want) {
+			t.Fatalf("spec lacks %q:\n%s", want, spec)
+		}
+	}
+	if got.State != domain.IdeaPromoted || got.PromotedTo != f.ID || got.ClosedAt == nil {
+		t.Fatalf("idea = %+v, want promoted to %s", got, f.ID)
+	}
+	if active, _ := ListIdeas(repoDir, false, ""); len(active) != 0 {
+		t.Fatalf("a promoted idea is still active: %+v", active)
+	}
+	types, payloads := ideaEvents(t, repoDir, i.ID)
+	if !slices.Equal(types, []string{"idea.created", "idea.promoted"}) || payloads[1]["promoted_to"] != f.ID {
+		t.Fatalf("idea events = %v %v, want idea.promoted with promoted_to", types, payloads)
+	}
+	createdPayload(t, repoDir, f.ID, "feature.created")
+
+	long, err := CreateIdea(repoDir, projDir, strings.Repeat("a", 200), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, f2, err := PromoteIdea(repoDir, projDir, long.ID, "", false)
+	if err != nil {
+		t.Fatalf("PromoteIdea long: %v", err)
+	}
+	if n := utf8.RuneCountInString(f2.Title); n != 81 || !strings.HasSuffix(f2.Title, "…") {
+		t.Fatalf("long title = %q (%d runes), want 80 + …", f2.Title, n)
+	}
+}
+
+// Crit. 7: promoting a closed idea is refused before any feature is created,
+// naming the state and the existing feature.
+func TestPromoteIdeaRefusesClosed(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	i, err := CreateIdea(repoDir, projDir, "Promovida uma vez", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.LoadAllFeatures(repoDir)
+	_, _, err = PromoteIdea(repoDir, projDir, i.ID, "", false)
+	if !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "promoted") || !strings.Contains(err.Error(), f.ID) {
+		t.Fatalf("second promote err = %v, want ErrIdeaNotActive naming promoted and %s", err, f.ID)
+	}
+	d, err := CreateIdea(repoDir, projDir, "Descartada", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DropIdea(repoDir, projDir, d.ID, "não"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := PromoteIdea(repoDir, projDir, d.ID, "", false); !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "dropped") {
+		t.Fatalf("promote of a dropped idea err = %v, want ErrIdeaNotActive naming dropped", err)
+	}
+	if after, _ := store.LoadAllFeatures(repoDir); len(after) != len(before) {
+		t.Fatalf("a refused promote created a feature: %d -> %d", len(before), len(after))
 	}
 }

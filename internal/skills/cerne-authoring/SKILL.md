@@ -279,6 +279,7 @@ A pending (`P-NNNN`) is a **known debt of a concrete delivery** — "case Y of F
 - **Capture:** `cerne idea new "<text>" [--facet <f>] [--component <c>]` mints `I-NNNN` (active) with nothing else required — no spec, module, work or tags.
 - **Read:** `cerne idea list` (active only, newest first: id, date, state, first line; `--all` adds dropped and promoted ideas with the reason or the feature; `--search <term>` filters by text, case- and accent-insensitive; `--json`). `cerne idea show I-NNNN` (or `cerne show I-NNNN`, `--json` on both) prints one.
 - **Drop:** `cerne idea drop I-NNNN [--reason "<why>"]` — active -> dropped; the record is kept and shows in `--all` with the reason. Terminal.
+- **Promote:** `cerne idea promote I-NNNN [--module <m>] [--force]` — creates a **candidate** feature titled by the idea's first line, inheriting its tags, with the text as the spec's context under `**Origem:** ideia [[I-NNNN]]`; the idea records `promoted_to` and leaves the active list. Prints both ids. A dropped or promoted idea is refused, naming its state and feature.
 
 ## Permanent channel (F-0325): quick coordination, no ceremony
 

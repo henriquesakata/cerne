@@ -29,6 +29,7 @@ func newIdeaCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newIdeaListCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newIdeaShowCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaDropCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newIdeaPromoteCmd(&dir)))
 	return cmd
 }
 
@@ -153,5 +154,33 @@ func newIdeaDropCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why the idea is discarded (optional)")
+	return cmd
+}
+
+func newIdeaPromoteCmd(dir *string) *cobra.Command {
+	var module string
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "promote <id>",
+		Short: "Turn an active idea into a candidate feature (active -> promoted), linked both ways",
+		Long: "Creates a candidate feature titled by the idea's first line, with the idea's tags and its text as the " +
+			"spec's context; the spec links back with '**Origem:** ideia [[I-NNNN]]' and the idea records " +
+			"promoted_to. From there the candidate follows the regular funnel: fill its spec and tags.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], module, force)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", i.ID, domain.IdeaActive, i.State, f.ID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&module, "module", "", "module of the created feature (required when the project has 2+ modules)")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the created feature's duplicate-registration guard (F-0147)")
 	return cmd
 }

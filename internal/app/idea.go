@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/slug"
+	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -89,6 +90,46 @@ func ListIdeas(repoDir string, all bool, search string) ([]store.Idea, error) {
 // the reason (optional) persisted.
 func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 	return closeIdea(repoDir, projDir, id, domain.IdeaDropped, strings.TrimSpace(reason), "")
+}
+
+// PromoteIdea turns an active idea into a candidate feature: the first line
+// of the text (80 runes max) is the title, the whole text the spec's context
+// under "**Origem:** ideia [[I-NNNN]] (capturada em AAAA-MM-DD)" — the link
+// back — and the idea's tags are inherited. The idea then records promoted_to.
+// A closed idea is refused before any feature exists. module and force go to
+// the feature core (ValidateModule, the F-0147 guard).
+//
+// ponytail: two mutations, not one transaction — the same ceiling as
+// PromotePending. If the idea closes in between, the feature exists without
+// the idea pointing to it; the error names both.
+func PromoteIdea(repoDir, projDir, id, module string, force bool) (store.Idea, store.Feature, error) {
+	i, err := store.LoadIdea(repoDir, id)
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	if i.State != domain.IdeaActive {
+		return store.Idea{}, store.Feature{}, notActive(i)
+	}
+	title := ""
+	for _, l := range strings.Split(i.Text, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			title = truncateDraftRunes(l, 80)
+			break
+		}
+	}
+	context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), i.Text)
+	f, err := CreateFeatureWithSpec(repoDir, projDir, title, module, "", i.Facets, i.Components, spectmpl.StubWithContext(title, context), force, "", "")
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	i, err = closeIdea(repoDir, projDir, id, domain.IdeaPromoted, "", f.ID)
+	switch {
+	case errors.Is(err, ErrIdeaNotActive):
+		return store.Idea{}, f, fmt.Errorf("%s was created, but %w meanwhile, so it does not point to %s — decide whether %s is still wanted", f.ID, err, f.ID, f.ID)
+	case err != nil:
+		return store.Idea{}, f, fmt.Errorf("%s was created, but recording the promotion on %s failed: %w — check 'cerne idea show %s' and, if it is still active, drop it with --reason \"promoted to %s\"", f.ID, id, err, id, f.ID)
+	}
+	return i, f, nil
 }
 
 // closeIdea moves an active idea to `to`, re-reading it inside the backend

@@ -140,3 +140,54 @@ func TestIdeaDropWithAndWithoutReason(t *testing.T) {
 		t.Fatalf("drop deleted records: %d left", len(all))
 	}
 }
+
+// Crit. 5 and 6: promote prints both ids; the pair is traceable both ways and
+// the back-link is not a broken wiki-link.
+func TestIdeaPromotePrintsBothIDs(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV", "--facet", "code")
+	out := ideaCmd(t, projDir, "promote", "I-0001")
+	features, _ := store.LoadAllFeatures(repoDir)
+	if len(features) != 1 || !strings.Contains(out, "I-0001: active -> promoted ("+features[0].ID+")") {
+		t.Fatalf("promote output = %q, features = %+v", out, features)
+	}
+	fid := features[0].ID
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
+		t.Fatalf("a promoted idea is still listed as active:\n%s", out)
+	}
+	if out := ideaCmd(t, projDir, "list", "--all"); !strings.Contains(out, "promoted  Exportar o kanban em CSV  → "+fid) {
+		t.Fatalf("--all lacks the promoted idea and its feature:\n%s", out)
+	}
+	if out, err := execCerne(t, "show", "I-0001", "--dir", projDir); err != nil || !strings.Contains(out, "promoted to: "+fid) {
+		t.Fatalf("show I-0001 = %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "show", fid, "--doc", "spec", "--dir", projDir); err != nil || !strings.Contains(out, "[[I-0001]]") {
+		t.Fatalf("show %s --doc spec lacks the back-link: %v\n%s", fid, err, out)
+	}
+	out, _ = execCerne(t, "lint", "--dir", projDir)
+	if strings.Contains(out, "I-0001") {
+		t.Fatalf("lint reports the back-link:\n%s", out)
+	}
+}
+
+// The promote goes through the feature core: a multi-module project needs
+// --module, and a refusal leaves the idea active with no feature created.
+func TestIdeaPromoteNeedsModuleInMultiModuleProject(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "core", "web")
+	ideaCmd(t, projDir, "new", "Atalho de teclado")
+	if out, err := execCerne(t, "idea", "promote", "I-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--module") {
+		t.Fatalf("promote without --module err = %v, want the module requirement\n%s", err, out)
+	}
+	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.State != domain.IdeaActive {
+		t.Fatalf("a refused promote moved the idea to %s", i.State)
+	}
+	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 0 {
+		t.Fatalf("a refused promote created %d feature(s)", len(fs))
+	}
+	if out := ideaCmd(t, projDir, "promote", "I-0001", "--module", "core"); !strings.Contains(out, "promoted") {
+		t.Fatalf("promote --module core = %q", out)
+	}
+	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 || fs[0].Module != "core" {
+		t.Fatalf("features = %+v, want one in core", fs)
+	}
+}
