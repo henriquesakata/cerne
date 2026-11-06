@@ -890,11 +890,15 @@ func TestRoomListSurvivesABrokenChannel(t *testing.T) {
 	h, _, cacheDir := newChannelServer(t, "proj-channel-broken")
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &openJSON{})
 	seedServerChannel(t, cacheDir, "W-0002", "oi", time.Now().UTC())
-	chDir := filepath.Join(cacheDir, "rooms", "channel")
-	if err := os.Chmod(chDir, 0o000); err != nil {
+	// The log path becomes a directory: unreadable for root too (CI runs as
+	// root, where chmod 000 does not stop a read).
+	log := filepath.Join(cacheDir, "rooms", "channel", "messages.jsonl")
+	if err := os.Remove(log); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(chDir, 0o755) })
+	if err := os.Mkdir(log, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	var got struct {
 		Rooms []struct {
 			ID        string `json:"id"`

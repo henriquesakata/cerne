@@ -238,13 +238,9 @@ func TestHookStopCheckChannelFailOpen(t *testing.T) {
 	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
 	seedChannel(t, repoDir, b, a+" segura")
 	chDir := filepath.Join(filepath.Dir(repoDir), "rooms", "channel")
-	if err := os.Chmod(chDir, 0o000); err != nil {
-		t.Fatal(err)
-	}
+	restore := breakChannelRead(t, chDir)
 	out, err := execCerneStdin(t, stopPayload(t, "sess-a", projDir), "hook", "stop-check")
-	if err := os.Chmod(chDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	restore()
 	if err != nil || !strings.Contains(out, "work done") || strings.Contains(out, "cerne msg") {
 		t.Fatalf("unreadable channel: %v\n%s", err, out)
 	}
