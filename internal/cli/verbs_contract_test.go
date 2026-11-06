@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
@@ -107,6 +108,33 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 		}
 		if v.Lifecycle && !byName && !featureVerbs[path] {
 			t.Errorf("(c) %q is marked lifecycle but is neither a feature transition nor a retire/substituir", path)
+		}
+	}
+}
+
+// TestAgentDeniedCommandsCoverLifecycleMarks keeps the claude-cli harness
+// refusals (the one hand-kept list) an exact projection of the lifecycle marks
+// (F-0323 criterion 4, "in any mode"): every marked verb has its rule, and no
+// rule outlives its verb.
+func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
+	rules := map[string]bool{}
+	for _, r := range llm.AgentDeniedCommands {
+		rules[r] = true
+	}
+	marked := map[string]bool{}
+	for _, v := range verbs.From(Root()) {
+		if !v.Lifecycle {
+			continue
+		}
+		rule := "Bash(cerne " + v.Path + ":*)"
+		marked[rule] = true
+		if !rules[rule] {
+			t.Errorf("llm.AgentDeniedCommands lacks %q for lifecycle verb %q", rule, v.Path)
+		}
+	}
+	for r := range rules {
+		if !marked[r] {
+			t.Errorf("llm.AgentDeniedCommands has orphan rule %q (no marked verb)", r)
 		}
 	}
 }

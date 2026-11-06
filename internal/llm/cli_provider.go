@@ -66,7 +66,11 @@ var AgentWriteTools = []string{"Bash(cerne:*)"}
 // the retirement of an entity. With a broad allowlist this list IS the gate, so
 // TestAgentDeniedCommandsCoverLifecycle checks it against domain.FeatureActions
 // rather than against a hand-kept copy — a transition added upstream without a
-// refusal here fails the suite instead of quietly reaching the agent.
+// refusal here fails the suite instead of quietly reaching the agent. Since
+// F-0323 the source is the lifecycle mark on each cobra command (verbs.Mark-
+// Lifecycle): this list is a projection of the marks, kept exact both ways by
+// TestAgentDeniedCommandsCoverLifecycleMarks (internal/cli), the same class the
+// chat tool executor refuses, so both modes deny the same verbs.
 //
 // It is the FIRST layer, not the only one: these rules match by prefix, and a
 // prefix rule is brittle (command chaining, spacing). app.CheckHumanGate refuses
@@ -84,9 +88,12 @@ var AgentDeniedCommands = []string{
 	"Bash(cerne feature deliver:*)",
 	"Bash(cerne note retire:*)",
 	"Bash(cerne reference retire:*)",
-	"Bash(cerne decision retire:*)",
 	"Bash(cerne runbook retire:*)",
 	"Bash(cerne capability retire:*)",
+	"Bash(cerne retire:*)",
+	"Bash(cerne decision substituir:*)",
+	"Bash(cerne note substituir:*)",
+	"Bash(cerne runbook substituir:*)",
 }
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized
