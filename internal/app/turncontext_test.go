@@ -163,3 +163,27 @@ func TestBuildTurnContextBrokenIndex(t *testing.T) {
 		t.Fatalf("baseline should survive a broken index:\n%s", got)
 	}
 }
+
+// TestBuildTurnContextExcludesIdeas (F-0312 crit. 9): the automatic priming
+// never carries ideas, even one that matches the message word for word — the
+// corpus is read on demand only (cerne idea list --search).
+func TestBuildTurnContextExcludesIdeas(t *testing.T) {
+	repoDir, dbPath := turnContextFixture(t)
+	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Text: "conciliação via planilha zebra", State: domain.IdeaActive}); err != nil {
+		t.Fatalf("SaveIdea: %v", err)
+	}
+	commitBackend(t, repoDir)
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	got, err := BuildTurnContext(repoDir, dbPath, "o que temos sobre zebra e conciliação?", 6000)
+	if err != nil {
+		t.Fatalf("BuildTurnContext: %v", err)
+	}
+	if !strings.Contains(got, "F-0001") {
+		t.Fatalf("the priming lost the matching feature (fixture broken):\n%s", got)
+	}
+	if strings.Contains(got, "I-0001") || strings.Contains(got, "planilha zebra") {
+		t.Fatalf("the priming carries an idea:\n%s", got)
+	}
+}
