@@ -51,13 +51,13 @@ func newHookEnvelopeCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			text, err := io.ReadAll(cmd.InOrStdin())
+			text, err := readOptionalBody(cmd, "")
 			if err != nil {
 				return err
 			}
 			var c sessionContext
 			c.HookSpecificOutput.HookEventName = event
-			c.HookSpecificOutput.AdditionalContext = string(text)
+			c.HookSpecificOutput.AdditionalContext = text
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(c)
 		},
 	}
