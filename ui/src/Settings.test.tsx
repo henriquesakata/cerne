@@ -372,3 +372,39 @@ describe('Settings — escape para o arquivo cru (F-0315, barra R-0042)', () => 
     expect(within(wiki).getByText('Valor inválido em Host: "no" — ignorado')).toHaveClass('form-error')
   })
 })
+
+// deferred devolve uma promessa e as alavancas para resolvê-la/rejeitá-la no teste.
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  let reject!: (e: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+describe('Settings — escritas simultâneas (F-0315, crítica C1)', () => {
+  it('cada linha guarda o próprio ocupado e a própria falha: uma escrita não destrava nem engole a outra', async () => {
+    const wiki = deferred<void>()
+    const graph = deferred<void>()
+    putSetting.mockImplementation((id) => (id === 'wiki.enabled' ? wiki.promise : graph.promise))
+    render(<Settings />)
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Wiki' })).getByRole('checkbox'))
+    fireEvent.click(within(row('Grafo')).getByRole('checkbox'))
+    await waitFor(() => expect(row('Grafo')).toHaveAttribute('aria-busy', 'true'))
+    expect(row('Wiki')).toHaveAttribute('aria-busy', 'true')
+
+    graph.resolve()
+    await waitFor(() => expect(row('Grafo')).not.toHaveAttribute('aria-busy'))
+    // A Wiki segue em voo: continua ocupada e um novo clique não grava de novo.
+    expect(row('Wiki')).toHaveAttribute('aria-busy', 'true')
+    fireEvent.click(within(row('Wiki')).getByRole('checkbox'))
+    expect(putSetting.mock.calls.filter(([id]) => id === 'wiki.enabled')).toHaveLength(1)
+
+    wiki.reject(new Error('config file is locked by another writer'))
+    expect(await within(row('Wiki')).findByRole('status')).toHaveTextContent('config file is locked by another writer')
+    expect(row('Wiki')).not.toHaveAttribute('aria-busy')
+    expect(within(row('Grafo')).queryByRole('status')).toBeNull()
+  })
+})

@@ -37,7 +37,7 @@ function formatValue(v: unknown, ts: Texts): string {
 // pressed goes away (a reset, an "Edit in …" shortcut, a remounted field).
 const controlId = (id: string) => `setting-${id}`
 
-type Failure = { id: string; message: string; retry: () => void }
+type Failure = { message: string; retry: () => void }
 
 export default function Settings() {
   const { t } = useT()
@@ -47,8 +47,10 @@ export default function Settings() {
   const load = useLiveLoad(fetchSettings, [activePid])
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<SettingScope>('project')
-  const [busy, setBusy] = useState<string | null>(null)
-  const [failure, setFailure] = useState<Failure | null>(null)
+  // Per key: overlapping writes on different rows never unlock or swallow
+  // each other (critic C1).
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
+  const [failures, setFailures] = useState<Readonly<Record<string, Failure>>>({})
   const refocus = useRef<string | null>(null)
   const hintId = useId()
 
@@ -67,18 +69,18 @@ export default function Settings() {
   // follows through the SSE "projects" event the server sends (F-0315). A
   // failure stays on the row with a retry that re-sends the same write.
   const write = (id: string, run: () => Promise<void>) => {
-    setBusy(id)
+    const settle = (failure: Failure | null) => {
+      setFailures(({ [id]: _, ...rest }) => (failure ? { ...rest, [id]: failure } : rest))
+      setBusy((b) => new Set([...b].filter((k) => k !== id)))
+    }
+    setBusy((b) => new Set(b).add(id))
     run().then(
       async () => {
         await load.reload()
-        setFailure((f) => (f?.id === id ? null : f))
         refocus.current = id
-        setBusy(null)
+        settle(null)
       },
-      (e: unknown) => {
-        setFailure({ id, message: e instanceof Error ? e.message : String(e), retry: () => write(id, run) })
-        setBusy(null)
-      },
+      (e: unknown) => settle({ message: e instanceof Error ? e.message : String(e), retry: () => write(id, run) }),
     )
   }
   const switchScope = (id: string, to: SettingScope) => {
@@ -162,8 +164,8 @@ export default function Settings() {
               s={s}
               scope={scope}
               tx={tx}
-              busy={busy === s.id}
-              failure={failure?.id === s.id ? failure : null}
+              busy={busy.has(s.id)}
+              failure={failures[s.id] ?? null}
               onWrite={(run) => write(s.id, run)}
               onScope={(to) => switchScope(s.id, to)}
             />
