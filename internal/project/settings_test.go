@@ -67,10 +67,10 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 	if s := byID["channel.human_name"]; s.Type != "string" || s.Default != "" || !slices.Equal(s.Scopes, []string{ScopeHost}) || s.Title == "" || s.Description == "" {
 		t.Errorf("channel.human_name = %+v, want string, default \"\", scopes [host], a title and a description", s)
 	}
-	// Critic C9: a key nothing consumes yet must not claim an effect. When
-	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
-	// list change together.
-	unwired := map[string]bool{"graph.enabled": true}
+	// Critic C9: a key nothing consumes yet must not claim an effect. Every
+	// capability key is wired now (F-0315 graph, F-0316 wiki); a new unwired
+	// key, its description and this list change together.
+	unwired := map[string]bool{}
 	for id, s := range byID {
 		if got := strings.HasPrefix(s.Description, "Not wired yet"); got != unwired[id] {
 			t.Errorf("%s description %q: says not wired = %v, want %v", id, s.Description, got, unwired[id])
