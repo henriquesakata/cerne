@@ -124,11 +124,27 @@ type messagesRequest struct {
 	MaxTokens int              `json:"max_tokens"`
 	Stream    bool             `json:"stream,omitempty"`
 	Messages  []messagesMember `json:"messages"`
+	Tools     []anthropicTool  `json:"tools,omitempty"`
 }
 
+// messagesMember.Content is a string for plain turns and a block list for the
+// tool loop's turns; a string serializes exactly as before.
 type messagesMember struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+type anthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+type toolResultBlock struct {
+	Type      string `json:"type"`
+	ToolUseID string `json:"tool_use_id"`
+	Content   string `json:"content"`
+	IsError   bool   `json:"is_error"`
 }
 
 // messagesResponse is the subset of the response we read: the content blocks.
@@ -137,8 +153,11 @@ type messagesResponse struct {
 }
 
 type contentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
 }
 
 // maxErrBodyBytes bounds how much of a non-2xx response body is echoed back in
@@ -280,6 +299,59 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 		}
 	}
 	return b.String(), nil
+}
+
+// CompleteTools implements ToolCaller over the Messages API (F-0323): while
+// the model stops on tool_use, every tool_use block is answered by call, in
+// order, with one tool_result each in a single user turn; the assistant turn is
+// echoed verbatim (thinking blocks included, as the API requires). Calls run
+// only on stop_reason tool_use — a turn cut by max_tokens never executes a
+// possibly truncated input. Returns the final turn's text.
+func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools []Tool, call func(context.Context, ToolCall) (string, bool)) (string, error) {
+	defs := make([]anthropicTool, len(tools))
+	for i, t := range tools {
+		defs[i] = anthropicTool{Name: t.Name, Description: t.Description, InputSchema: t.Schema}
+	}
+	msgs := []messagesMember{{Role: "user", Content: prompt}}
+	for range maxToolRounds {
+		resp, err := p.post(ctx, messagesRequest{Model: p.model, MaxTokens: p.maxTokens, Messages: msgs, Tools: defs})
+		if err != nil {
+			return "", err
+		}
+		var parsed struct {
+			StopReason string            `json:"stop_reason"`
+			Content    []json.RawMessage `json:"content"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&parsed)
+		resp.Body.Close()
+		if err != nil {
+			return "", fmt.Errorf("unreadable API response: %w", err)
+		}
+		var text strings.Builder
+		var uses []contentBlock
+		for _, raw := range parsed.Content {
+			var b contentBlock
+			if json.Unmarshal(raw, &b) != nil {
+				continue
+			}
+			switch b.Type {
+			case "text":
+				text.WriteString(b.Text)
+			case "tool_use":
+				uses = append(uses, b)
+			}
+		}
+		if parsed.StopReason != "tool_use" || len(uses) == 0 {
+			return text.String(), nil
+		}
+		results := make([]toolResultBlock, len(uses))
+		for i, u := range uses {
+			content, isErr := call(ctx, ToolCall{Name: u.Name, Input: u.Input})
+			results[i] = toolResultBlock{Type: "tool_result", ToolUseID: u.ID, Content: content, IsError: isErr}
+		}
+		msgs = append(msgs, messagesMember{Role: "assistant", Content: parsed.Content}, messagesMember{Role: "user", Content: results})
+	}
+	return "", fmt.Errorf("%w (%d rounds)", ErrToolRounds, maxToolRounds)
 }
 
 // sseEvent is the subset of a Messages API streaming event we read: text

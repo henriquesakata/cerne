@@ -344,3 +344,122 @@ func TestNewProviderDefaultModelFromGlobalCatalog(t *testing.T) {
 		t.Fatalf("model sent = %v, want the global default vendor-global-1", gotModel)
 	}
 }
+
+var _ ToolCaller = (*httpProvider)(nil)
+
+// toolServer replies to each Messages call with the next canned body (the last
+// one repeats) and records every request body.
+func toolServer(t *testing.T, bodies *[]map[string]any, replies ...string) *httptest.Server {
+	t.Helper()
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var b map[string]any
+		_ = json.Unmarshal(raw, &b)
+		*bodies = append(*bodies, b)
+		reply := replies[min(n, len(replies)-1)]
+		n++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, reply)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestAnthropicCompleteToolsLoop (F-0323 criterion 1, transport): a tool_use
+// round runs every call in order with its raw input, the next request echoes
+// the assistant blocks verbatim and answers each with a tool_result, and the
+// final text is returned.
+func TestAnthropicCompleteToolsLoop(t *testing.T) {
+	var bodies []map[string]any
+	round1 := `{"stop_reason":"tool_use","content":[` +
+		`{"type":"thinking","thinking":"","signature":"sig"},` +
+		`{"type":"text","text":"Vou rodar."},` +
+		`{"type":"tool_use","id":"tu_1","name":"cerne","input":{"verb":"reference new","args":["T"]}},` +
+		`{"type":"tool_use","id":"tu_2","name":"cerne","input":{"verb":"status"}}]}`
+	round2 := `{"stop_reason":"end_turn","content":[{"type":"text","text":"Registrei R-0001."}]}`
+	prov := newStreamProvider(t, toolServer(t, &bodies, round1, round2).URL)
+
+	var calls []ToolCall
+	tools := []Tool{{Name: "cerne", Description: "roda um verbo", Schema: map[string]any{"type": "object"}}}
+	got, err := prov.CompleteTools(context.Background(), "p", tools, func(_ context.Context, c ToolCall) (string, bool) {
+		calls = append(calls, c)
+		return `{"ok":` + map[bool]string{true: "true", false: "false"}[len(calls) == 1] + `}`, len(calls) == 2
+	})
+	if err != nil || got != "Registrei R-0001." {
+		t.Fatalf("CompleteTools = %q, %v", got, err)
+	}
+	if len(calls) != 2 || string(calls[0].Input) != `{"verb":"reference new","args":["T"]}` || string(calls[1].Input) != `{"verb":"status"}` {
+		t.Fatalf("calls = %+v", calls)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("requests = %d, want 2", len(bodies))
+	}
+	def := bodies[0]["tools"].([]any)[0].(map[string]any)
+	if def["name"] != "cerne" || def["description"] != "roda um verbo" || def["input_schema"].(map[string]any)["type"] != "object" {
+		t.Fatalf("tool def = %v", def)
+	}
+	msgs := bodies[1]["messages"].([]any)
+	if len(msgs) != 3 {
+		t.Fatalf("2nd request messages = %v", msgs)
+	}
+	asst := msgs[1].(map[string]any)
+	var want map[string]any
+	_ = json.Unmarshal([]byte(round1), &want)
+	if asst["role"] != "assistant" || !jsonEqual(asst["content"], want["content"]) {
+		t.Fatalf("assistant turn = %v, want the original blocks verbatim", asst)
+	}
+	results := msgs[2].(map[string]any)["content"].([]any)
+	if len(results) != 2 {
+		t.Fatalf("tool results = %v", results)
+	}
+	for i, wantErr := range []bool{false, true} {
+		r := results[i].(map[string]any)
+		if r["type"] != "tool_result" || r["tool_use_id"] != []string{"tu_1", "tu_2"}[i] || r["is_error"] != wantErr || r["content"] == "" {
+			t.Fatalf("result %d = %v", i, r)
+		}
+	}
+}
+
+func jsonEqual(a, b any) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
+}
+
+func TestAnthropicCompleteToolsRoundLimit(t *testing.T) {
+	var bodies []map[string]any
+	loop := `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"tu","name":"cerne","input":{}}]}`
+	prov := newStreamProvider(t, toolServer(t, &bodies, loop).URL)
+	_, err := prov.CompleteTools(context.Background(), "p", nil, func(context.Context, ToolCall) (string, bool) { return "{}", false })
+	if !errors.Is(err, ErrToolRounds) {
+		t.Fatalf("err = %v, want ErrToolRounds", err)
+	}
+}
+
+func TestAnthropicCompleteToolsHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, "overloaded "+strings.Repeat("x", 2000))
+	}))
+	defer srv.Close()
+	prov := newStreamProvider(t, srv.URL)
+	_, err := prov.CompleteTools(context.Background(), "p", nil, func(context.Context, ToolCall) (string, bool) { return "", false })
+	if err == nil || !strings.Contains(err.Error(), "500") || !strings.Contains(err.Error(), "overloaded") || len(err.Error()) > 1000 {
+		t.Fatalf("err = %v, want status 500 with a truncated body", err)
+	}
+}
+
+// A turn cut by max_tokens never executes its (possibly truncated) tool_use.
+func TestAnthropicCompleteToolsRunsCallsOnlyOnToolUse(t *testing.T) {
+	var bodies []map[string]any
+	cut := `{"stop_reason":"max_tokens","content":[{"type":"text","text":"parcial"},{"type":"tool_use","id":"tu","name":"cerne","input":{}}]}`
+	prov := newStreamProvider(t, toolServer(t, &bodies, cut).URL)
+	got, err := prov.CompleteTools(context.Background(), "p", nil, func(context.Context, ToolCall) (string, bool) {
+		t.Fatal("call ran on a max_tokens turn")
+		return "", false
+	})
+	if err != nil || got != "parcial" {
+		t.Fatalf("CompleteTools = %q, %v", got, err)
+	}
+}
