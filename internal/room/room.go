@@ -112,6 +112,8 @@ type Message struct {
 	Title   string   `json:"title,omitempty"`   // proposal|decision_request only
 	ItemID  string   `json:"item_id,omitempty"` // resolution only: the item it resolves
 	Minutes *Minutes `json:"minutes,omitempty"` // close only
+
+	Human bool `json:"human,omitempty"` // permanent channel (F-0325): posted by the human from the UI
 }
 
 // Manager owns every room for one project: in-memory state for concurrency
