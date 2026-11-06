@@ -92,6 +92,9 @@ func TestFlowStatsNoWrites(t *testing.T) {
 	if _, err := execCerne(t, "stats", "--dir", projDir); err != nil {
 		t.Fatalf("stats: %v", err)
 	}
+	if _, err := execCerne(t, "stats", "--process", "--dir", projDir); err != nil {
+		t.Fatalf("stats --process: %v", err)
+	}
 
 	after, err := store.ReadEvents(repoDir)
 	if err != nil {
