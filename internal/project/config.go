@@ -332,6 +332,9 @@ func defaultModel() string {
 	return cat.DefaultModel
 }
 
+// llmProviderOpenAI is the OpenAI-compatible byo-key provider (F-0323).
+const llmProviderOpenAI = "openai"
+
 // WithDefaults returns a copy with each empty/zero byo-key field filled by its
 // default. Mode is left untouched (llm.ResolveMode owns that fallback). It is
 // exported so the llm package can normalize a config before building a provider.
@@ -339,13 +342,17 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 	if c.Provider == "" {
 		c.Provider = defaultLLMProvider
 	}
-	if c.Model == "" {
+	// F-0323: the openai provider gets no Anthropic default model (it would
+	// never exist there) and its own base URL.
+	if c.Model == "" && c.Provider != llmProviderOpenAI {
 		c.Model = defaultModel()
 	}
 	if c.KeyEnv == "" {
 		c.KeyEnv = defaultLLMKeyEnv
 	}
-	if c.BaseURL == "" {
+	if c.BaseURL == "" && c.Provider == llmProviderOpenAI {
+		c.BaseURL = "https://api.openai.com"
+	} else if c.BaseURL == "" {
 		c.BaseURL = defaultLLMBaseURL
 	}
 	if c.MaxTokens == 0 {

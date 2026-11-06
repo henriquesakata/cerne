@@ -147,11 +147,11 @@ func TestNewProviderMissingKey(t *testing.T) {
 // TestNewProviderUnsupportedProvider errors naming the unsupported provider.
 func TestNewProviderUnsupportedProvider(t *testing.T) {
 	t.Setenv("TEST_LLM_KEY", "sk")
-	_, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "openai", KeyEnv: "TEST_LLM_KEY"})
+	_, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "gemini", KeyEnv: "TEST_LLM_KEY"})
 	if err == nil {
-		t.Fatalf("NewProvider with provider=openai succeeded, want error")
+		t.Fatalf("NewProvider with provider=gemini succeeded, want error")
 	}
-	if !strings.Contains(err.Error(), "openai") {
+	if !strings.Contains(err.Error(), "gemini") {
 		t.Fatalf("error %q does not name the unsupported provider", err)
 	}
 }

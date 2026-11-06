@@ -62,8 +62,8 @@ func ConfiguredProviders(cfg project.LLMConfig) []string {
 //   - delegation: ErrNoProviderForDelegation (no provider exists there);
 //   - claude-cli: an *cliProvider shelling to cfg.ClaudeBin via the real
 //     exec runner — NO API key is read (auth is the Claude Code subscription);
-//   - byo-key (default for any other mode): only provider "anthropic" (any
-//     other value errors, naming it), reads the API key from os.Getenv(cfg.KeyEnv)
+//   - byo-key (default for any other mode): provider "anthropic" or "openai"
+//     (F-0323; any other value errors, naming it), reads the API key from os.Getenv(cfg.KeyEnv)
 //     (ErrAPIKeyMissing when empty), and returns an *httpProvider.
 func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	cfg = cfg.WithDefaults()
@@ -73,12 +73,18 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	case ModeClaudeCLI:
 		return &cliProvider{bin: cfg.ClaudeBin, run: execRun}, nil
 	}
-	if cfg.Provider != providerAnthropic {
-		return nil, fmt.Errorf("LLM provider %q not supported (only %q)", cfg.Provider, providerAnthropic)
+	if cfg.Provider != providerAnthropic && cfg.Provider != providerOpenAI {
+		return nil, fmt.Errorf("LLM provider %q not supported (only %q, %q)", cfg.Provider, providerAnthropic, providerOpenAI)
+	}
+	if cfg.Model == "" {
+		return nil, errModelRequired
 	}
 	key := os.Getenv(cfg.KeyEnv)
 	if key == "" {
 		return nil, fmt.Errorf("%w: set the %s environment variable", ErrAPIKeyMissing, cfg.KeyEnv)
+	}
+	if cfg.Provider == providerOpenAI {
+		return &openaiProvider{baseURL: cfg.BaseURL, model: cfg.Model, apiKey: key, httpClient: http.DefaultClient}, nil
 	}
 	return &httpProvider{
 		baseURL:    cfg.BaseURL,

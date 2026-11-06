@@ -483,3 +483,66 @@ func TestTypedToolDecodesToSameArgv(t *testing.T) {
 		t.Fatalf("typed lifecycle call = %s, want lifecycle_denied", content)
 	}
 }
+
+// TestSecondAdapterConsumesSameCatalog (F-0323 crit. 10): the same confirmed
+// turn through the Anthropic and the OpenAI-compatible adapters offers the same
+// catalog and hands the model the same result — only chatTools produces the
+// catalog, there is no per-provider branch.
+func TestSecondAdapterConsumesSameCatalog(t *testing.T) {
+	input := `{"verb":"reference new","args":["T","--url","u"]}`
+	stub := func(context.Context, *cobra.Command, verbs.Call, verbs.Env) verbs.Result {
+		return verbs.Result{OK: true, ID: "R-0099", Output: "R-0099 registered."}
+	}
+
+	hA, _, _, bodiesA := toolTurnSetup(t, scripted(input, "Registrei R-0099."))
+	setTree(t, typedTree)
+	setRunVerb(t, stub)
+	gotA := confirmedTurnOf(t, hA)
+
+	var bodiesO []map[string]any
+	round := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var b map[string]any
+		_ = json.Unmarshal(raw, &b)
+		bodiesO = append(bodiesO, b)
+		args, _ := json.Marshal(input)
+		reply := `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[` +
+			`{"id":"call_1","type":"function","function":{"name":"cerne","arguments":` + string(args) + `}}]}}]}`
+		if round > 0 {
+			reply = `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Registrei R-0099."}}]}`
+		}
+		round++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, reply)
+	}))
+	t.Cleanup(srv.Close)
+	repoDir, projDir, _ := newGitBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "proj-chat", Backend: "unused",
+		LLM: project.LLMConfig{Mode: "byo-key", Provider: "openai", Model: "gpt-test", BaseURL: srv.URL, KeyEnv: "TEST_CHAT_KEY"}}); err != nil {
+		t.Fatal(err)
+	}
+	gotO := confirmedTurnOf(t, New(repoDir, projDir, "proj-chat"))
+
+	asJSON := func(v any) string { b, _ := json.Marshal(v); return string(b) }
+	toolsA, toolsO := (*bodiesA)[0]["tools"].([]any), bodiesO[0]["tools"].([]any)
+	if len(toolsA) < 2 || len(toolsA) != len(toolsO) {
+		t.Fatalf("tool counts differ: anthropic %d, openai %d", len(toolsA), len(toolsO))
+	}
+	for i := range toolsA {
+		a := toolsA[i].(map[string]any)
+		o := toolsO[i].(map[string]any)["function"].(map[string]any)
+		if a["name"] != o["name"] || asJSON(a["input_schema"]) != asJSON(o["parameters"]) {
+			t.Fatalf("tool %d differs:\nanthropic %s\nopenai    %s", i, asJSON(a), asJSON(o))
+		}
+	}
+	contentA := toolResults(t, (*bodiesA)[1])[0]["content"]
+	msgsO := bodiesO[1]["messages"].([]any)
+	toolMsg := msgsO[len(msgsO)-1].(map[string]any)
+	if toolMsg["role"] != "tool" || toolMsg["content"] != contentA {
+		t.Fatalf("tool result differs:\nanthropic %v\nopenai    %v", contentA, toolMsg)
+	}
+	if asJSON(gotA.Runs) != asJSON(gotO.Runs) || gotO.Reply != gotA.Reply {
+		t.Fatalf("runs differ:\nanthropic %s\nopenai    %s", asJSON(gotA.Runs), asJSON(gotO.Runs))
+	}
+}
