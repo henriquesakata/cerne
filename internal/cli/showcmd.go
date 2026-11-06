@@ -20,7 +20,7 @@ import (
 )
 
 // ErrUnknownIDPrefix is returned by `cerne show` when a cerne_id's prefix maps
-// to no known entity kind (F/D/R/N/RB/H/C/P).
+// to no known entity kind (F/D/R/N/RB/H/C/P/I).
 var ErrUnknownIDPrefix = errors.New("unknown cerne_id prefix")
 
 // ErrNoSuchDoc is returned by `cerne show --doc` when the requested document
@@ -53,8 +53,8 @@ func newShowCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
-		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending) by id",
-		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-) and prints the metadata plus the entity's " +
+		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea) by id",
+		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-/I-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
 			"already-implemented features that are not materialized in '.docs/'. Use --doc to print a single " +
 			"feature document raw (spec|plan|result), and --json for machine output.",
@@ -169,6 +169,8 @@ func kindForID(id string) (string, bool) {
 		return "capability", true
 	case "P":
 		return "pending", true
+	case "I":
+		return "idea", true
 	}
 	return "", false
 }
@@ -233,6 +235,12 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 			content = []showDoc{{"", p.Body}}
 		}
 		return showResult{kind, p, content, nil}, nil
+	case "idea":
+		i, err := store.LoadIdea(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("idea %s: %w", id, err)
+		}
+		return showResult{kind, i, []showDoc{{"", i.Text}}, nil}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }
@@ -333,6 +341,24 @@ func (r showResult) renderText(w io.Writer) {
 	case store.Pending:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		fmt.Fprintf(w, "from: %s\n", e.From)
+		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
+		if e.ClosedAt != nil {
+			fmt.Fprintf(w, "closed: %s\n", e.ClosedAt.Format(time.DateOnly))
+		}
+		if len(e.Facets) > 0 {
+			fmt.Fprintf(w, "facets: %s\n", strings.Join(e.Facets, ", "))
+		}
+		if len(e.Components) > 0 {
+			fmt.Fprintf(w, "components: %s\n", strings.Join(e.Components, ", "))
+		}
+		if e.PromotedTo != "" {
+			fmt.Fprintf(w, "promoted to: %s\n", e.PromotedTo)
+		}
+		if e.Reason != "" {
+			fmt.Fprintf(w, "reason: %s\n", e.Reason)
+		}
+	case store.Idea:
+		fmt.Fprintf(w, "%s  %s  [%s]\n", e.ID, r.kind, e.State)
 		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
 		if e.ClosedAt != nil {
 			fmt.Fprintf(w, "closed: %s\n", e.ClosedAt.Format(time.DateOnly))

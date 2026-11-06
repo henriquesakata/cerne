@@ -44,6 +44,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newNoteCmd())
 	root.AddCommand(verbs.MarkLocal(newWorkCmd()))
 	root.AddCommand(newPendingCmd())
+	root.AddCommand(newIdeaCmd())
 	root.AddCommand(newCapabilityCmd())
 	root.AddCommand(newReferenceCmd())
 	root.AddCommand(newRetireCmd())

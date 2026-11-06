@@ -274,6 +274,12 @@ A pending (`P-NNNN`) is a **known debt of a concrete delivery** — "case Y of F
 - **Where they reappear:** open pendings get their own block in `cerne next` (oldest first, capped), and `cerne lint` reports an open pending older than 30 days as **`stale-pending`** — an advisory **warning** that never fails `cerne lint` on its own, attributed to the origin so `cerne lint --feature/--parent` on that delivery shows it.
 - **A pending never blocks the lifecycle:** approve, start, complete and accept run as if it did not exist. It is a reminder, not a gate.
 
+## Ideas (raw material, F-0312)
+
+- **Capture:** `cerne idea new "<text>" [--facet <f>] [--component <c>]` mints `I-NNNN` (active) with nothing else required — no spec, module, work or tags.
+- **Read:** `cerne idea list` (active only, newest first: id, date, state, first line; `--all` adds dropped and promoted ideas with the reason or the feature; `--search <term>` filters by text, case- and accent-insensitive; `--json`). `cerne idea show I-NNNN` (or `cerne show I-NNNN`, `--json` on both) prints one.
+- **Drop:** `cerne idea drop I-NNNN [--reason "<why>"]` — active -> dropped; the record is kept and shows in `--all` with the reason. Terminal.
+
 ## Permanent channel (F-0325): quick coordination, no ceremony
 
 Every project has one always-on channel for short exchanges between agents with open work and the human ("touching `internal/server/rooms.go`, hold on"; "contract done, consume it"). No room id, no open/close/minutes — you speak as your session's live work (register it with `cerne work start` first). Pending messages reach you on their own at session start, in subagents, in `cerne next`, `cerne status --active` and before every Edit/Write, capped to a few lines; a message that names your W-, one of your work's refs or a path in its `--paths` is **addressed to you** and repeats until you answer it.
