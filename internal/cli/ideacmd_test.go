@@ -191,3 +191,30 @@ func TestIdeaPromoteNeedsModuleInMultiModuleProject(t *testing.T) {
 		t.Fatalf("features = %+v, want one in core", fs)
 	}
 }
+
+// C6/C16: every idea verb refuses a non-idea id with "not an idea id" — a
+// traversal never reaches the disk — and accepts a lowercase i-.
+func TestIdeaVerbsRefuseNonIdeaIDs(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "x", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\n%s", err, out)
+	}
+	for _, args := range [][]string{
+		{"idea", "drop", "../works/W-0001", "--reason", "t"},
+		{"idea", "promote", "F-0001"},
+		{"idea", "drop", "F-0001"},
+		{"idea", "show", "F-0001"},
+	} {
+		out, err := execCerne(t, append(args, "--dir", projDir)...)
+		if err == nil || !strings.Contains(err.Error(), "not an idea id") {
+			t.Fatalf("%v: err = %v, want 'not an idea id'\n%s", args, err, out)
+		}
+	}
+	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 0 {
+		t.Fatalf("a refused id planted %d idea(s): %+v", len(all), all)
+	}
+	ideaCmd(t, projDir, "new", "minúscula")
+	if out := ideaCmd(t, projDir, "show", "i-0001"); !strings.Contains(out, "I-0001  idea  [active]") {
+		t.Fatalf("idea show i-0001 = %q", out)
+	}
+}

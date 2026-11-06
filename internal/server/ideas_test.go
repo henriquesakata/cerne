@@ -203,3 +203,19 @@ func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
 		}
 	}
 }
+
+// C6: an encoded traversal in the path is refused before any disk access.
+func TestIdeaRoutesRefuseNonIdeaIDs(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	var e map[string]any
+	for _, path := range []string{"/api/ideas/..%2Fnotes%2FN-0001/drop", "/api/ideas/F-0001/promote"} {
+		rec := doJSON(t, h, http.MethodPost, path, `{}`, &e)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "not an idea id") {
+			t.Fatalf("POST %s = %d %s, want 422 not an idea id", path, rec.Code, rec.Body.String())
+		}
+	}
+	if files, _ := filepath.Glob(filepath.Join(repoDir, "entities", "ideas", "*.json")); len(files) != 0 {
+		t.Fatalf("a refused id planted %v", files)
+	}
+}

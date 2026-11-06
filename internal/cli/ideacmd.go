@@ -124,10 +124,11 @@ func newIdeaShowCmd(dir *string) *cobra.Command {
 		Short: "Show one idea (same as 'cerne show I-NNNN')",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !strings.HasPrefix(args[0], "I-") {
-				return fmt.Errorf("%q is not an idea id (I-NNNN): use 'cerne show'", args[0])
+			id, err := app.CanonicalIdeaID(args[0])
+			if err != nil {
+				return err
 			}
-			return runShow(cmd, *dir, args[0], "", asJSON)
+			return runShow(cmd, *dir, id, "", asJSON)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")

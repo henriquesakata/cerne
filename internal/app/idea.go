@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,21 @@ var ErrIdeaTextRequired = errors.New("the idea text cannot be empty")
 // ErrIdeaNotActive: drop/promote on a dropped or promoted idea; the wrap
 // names the state and the feature (promoted) or the reason (dropped).
 var ErrIdeaNotActive = errors.New("the idea is not active")
+
+// ErrNotIdeaID is returned for an id that is not I-NNNN, before it reaches
+// any path: an idea has no FSM to refuse another kind's "active" entity.
+var ErrNotIdeaID = errors.New("not an idea id")
+
+var ideaIDRx = regexp.MustCompile(`^I-\d{4,}$`)
+
+// CanonicalIdeaID upper-cases id and checks it is I-NNNN (ErrNotIdeaID).
+func CanonicalIdeaID(id string) (string, error) {
+	c := strings.ToUpper(strings.TrimSpace(id))
+	if !ideaIDRx.MatchString(c) {
+		return "", fmt.Errorf("%w (I-NNNN): %q", ErrNotIdeaID, id)
+	}
+	return c, nil
+}
 
 // CreateIdea captures an active idea (I-, F-0312): text and optional tags,
 // nothing else — no project, module, work or duplicate guard is read, so the
@@ -89,6 +105,10 @@ func ListIdeas(repoDir string, all bool, search string) ([]store.Idea, error) {
 // DropIdea discards an active idea without deleting it: active -> dropped,
 // the reason (optional) persisted.
 func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
+	id, err := CanonicalIdeaID(id)
+	if err != nil {
+		return store.Idea{}, err
+	}
 	return closeIdea(repoDir, projDir, id, domain.IdeaDropped, strings.TrimSpace(reason), "")
 }
 
@@ -103,6 +123,10 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 // PromotePending. If the idea closes in between, the feature exists without
 // the idea pointing to it; the error names both.
 func PromoteIdea(repoDir, projDir, id, module string, force bool) (store.Idea, store.Feature, error) {
+	id, err := CanonicalIdeaID(id)
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
 	i, err := store.LoadIdea(repoDir, id)
 	if err != nil {
 		return store.Idea{}, store.Feature{}, err

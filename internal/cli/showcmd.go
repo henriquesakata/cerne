@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -236,6 +237,9 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		}
 		return showResult{kind, p, content, nil}, nil
 	case "idea":
+		if _, err := app.CanonicalIdeaID(id); err != nil {
+			return showResult{}, err
+		}
 		i, err := store.LoadIdea(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("idea %s: %w", id, err)

@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -254,5 +256,33 @@ func TestPromoteIdeaRefusesClosed(t *testing.T) {
 	}
 	if after, _ := store.LoadAllFeatures(repoDir); len(after) != len(before) {
 		t.Fatalf("a refused promote created a feature: %d -> %d", len(before), len(after))
+	}
+}
+
+// C6: an id that is not I-NNNN is refused before it touches a path — a
+// traversal like ../works/W-0001 used to load the work as an "active idea"
+// and plant entities/ideas/W-0001.json. Case is normalized.
+func TestIdeaIDValidatedBeforeAnyPath(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if err := store.SaveWork(repoDir, store.Work{ID: "W-0001", Title: "x", State: domain.WorkActive}); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	for _, id := range []string{"../works/W-0001", "F-0001", "I-12", "I-0001/x"} {
+		if _, err := DropIdea(repoDir, projDir, id, ""); !errors.Is(err, ErrNotIdeaID) {
+			t.Fatalf("DropIdea(%q) err = %v, want ErrNotIdeaID", id, err)
+		}
+		if _, _, err := PromoteIdea(repoDir, projDir, id, "", false); !errors.Is(err, ErrNotIdeaID) {
+			t.Fatalf("PromoteIdea(%q) err = %v, want ErrNotIdeaID", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "entities", "ideas", "W-0001.json")); err == nil {
+		t.Fatal("a traversal planted entities/ideas/W-0001.json")
+	}
+	if _, err := CreateIdea(repoDir, projDir, "minúscula", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := DropIdea(repoDir, projDir, "i-0001", ""); err != nil || got.ID != "I-0001" {
+		t.Fatalf("DropIdea(i-0001) = %+v, %v; want I-0001 dropped", got, err)
 	}
 }
