@@ -116,6 +116,69 @@ func TestLLMConfigPutSwitchesMode(t *testing.T) {
 	}
 }
 
+// TestLLMConfigPutPreservesCernerc (F-0314 criterion 4): switching the mode
+// from the UI rewrites only the llm.mode line; comments and tables the Config
+// struct does not model (a settings-registry [mindmap]) survive byte for byte.
+func TestLLMConfigPutPreservesCernerc(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	before := "project_id = \"p\"\n# keep this comment\nbackend = \"b\"\n\n[mindmap]\nenabled = false\n\n[llm]\nmode = \"delegation\" # x\n"
+	path := filepath.Join(projDir, ".cernerc")
+	if err := os.WriteFile(path, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Mode string `json:"mode"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/config/llm", `{"mode":"claude-cli"}`, &got)
+	if rec.Code != http.StatusOK || got.Mode != "claude-cli" {
+		t.Fatalf("status %d mode %q, want 200 claude-cli; body: %s", rec.Code, got.Mode, rec.Body.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(before, `mode = "delegation" # x`, `mode = "claude-cli" # x`, 1); string(after) != want {
+		t.Fatalf(".cernerc after PUT =\n%s\nwant only the mode line changed:\n%s", after, want)
+	}
+}
+
+// TestLLMConfigPutMapsRefusals (critic C5): PUT /config/llm maps a write
+// refusal like /settings does: a layout the editor will not touch and a
+// malformed file are 422, another writer's lock is 409.
+func TestLLMConfigPutMapsRefusals(t *testing.T) {
+	cases := []struct {
+		name, cernerc string
+		held          bool
+		want          int
+	}{
+		{"dotted llm.mode", "project_id = \"p\"\nllm.mode = \"delegation\"\n", false, http.StatusUnprocessableEntity},
+		{"malformed", "project_id = \"p\"\n[llm\n", false, http.StatusUnprocessableEntity},
+		{"held lock", "project_id = \"p\"\n", true, http.StatusConflict},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir := newBackend(t)
+			path := filepath.Join(projDir, ".cernerc")
+			if err := os.WriteFile(path, []byte(tc.cernerc), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.held {
+				if err := os.WriteFile(path+".lock", nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var body map[string]string
+			rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/config/llm", `{"mode":"claude-cli"}`, &body)
+			if rec.Code != tc.want || body["error"] == "" {
+				t.Errorf("status %d body %v, want %d with an error", rec.Code, body, tc.want)
+			}
+			if after, _ := os.ReadFile(path); string(after) != tc.cernerc {
+				t.Errorf(".cernerc changed on refusal: %q", after)
+			}
+		})
+	}
+}
+
 // TestLLMConfigPutInvalid: an unknown mode is a 400 with a pt-BR message, and
 // nothing is written.
 func TestLLMConfigPutInvalid(t *testing.T) {

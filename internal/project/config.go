@@ -18,6 +18,10 @@ import (
 // filesystem root without finding a .cernerc.
 var ErrNoProject = errors.New("no cerne project")
 
+// ErrConfigParse: a config file (.cernerc, settings.toml) is not valid TOML,
+// or does not decode into Config. Wrapped with the file's path.
+var ErrConfigParse = errors.New("cannot parse config file")
+
 const configFilename = ".cernerc"
 
 // Config is the persisted form of .cernerc (TOML, committed by the user).
@@ -61,7 +65,6 @@ type Config struct {
 	RecentWorkDays int             `toml:"recent_work_days,omitzero"`
 	Gates          GatesConfig     `toml:"gates"`     // F-0131: who may cross the human gates
 	Activity       ActivityConfig  `toml:"activity"`  // F-0146: auto-registered activity on feature transitions
-	UI             UIConfig        `toml:"ui"`        // F-0187: per-project UI preferences (mindmap tab toggle)
 	LLM            LLMConfig       `toml:"llm"`       // optional v1.5 LLM layer config
 	Telemetry      TelemetryConfig `toml:"telemetry"` // F-0149: opt-in trace export + log level
 	Delivery       DeliveryConfig  `toml:"delivery"`  // F-0179: delivery link capture (commit/MR on complete)
@@ -179,18 +182,6 @@ type ActivityConfig struct {
 // AutoEnabled resolves the auto-registration switch: on unless explicitly off.
 func (a ActivityConfig) AutoEnabled() bool {
 	return a.Auto == nil || *a.Auto
-}
-
-// UIConfig is the optional [ui] block of .cernerc (F-0187). Mindmap is a
-// pointer so "absent" (nil → enabled, the default) is distinguishable from an
-// explicit `mindmap = false` opt-out, which also hides the tab from the menu.
-type UIConfig struct {
-	Mindmap *bool `toml:"mindmap"`
-}
-
-// MindmapEnabled resolves the mindmap tab switch: on unless explicitly off.
-func (u UIConfig) MindmapEnabled() bool {
-	return u.Mindmap == nil || *u.Mindmap
 }
 
 // Gate values for the [gates] block (F-0131). Default is human on both ends;
@@ -368,7 +359,8 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 
 // SaveConfig writes <dir>/.cernerc as TOML. The [llm] block is omitted when it
 // is the zero value, so a fresh project doesn't carry an empty table the user
-// would collide with when adding their own [llm] config.
+// would collide with when adding their own [llm] config. It writes a whole
+// file; edit an existing one via SetSetting/SetLLMMode.
 func SaveConfig(dir string, c Config) error {
 	type wire struct {
 		ProjectID                string              `toml:"project_id"`
@@ -436,39 +428,66 @@ func SaveConfig(dir string, c Config) error {
 	return writeFileAtomic(dir, configFilename, data)
 }
 
+// SetLLMMode sets [llm] mode in <dir>/.cernerc by editing that one line, so
+// comments and tables Config does not model survive (F-0314).
+func SetLLMMode(dir, mode string) error {
+	_, err := editTOMLFile(filepath.Join(dir, configFilename), "llm", "mode", mode)
+	return err
+}
+
 // LoadConfig walks up from startDir until a .cernerc is found and returns
 // the decoded config plus the directory containing it. ErrNoProject when no
 // .cernerc exists up to the filesystem root.
 func LoadConfig(startDir string) (Config, string, error) {
-	dir, err := filepath.Abs(startDir)
+	dir, err := findConfigDir(startDir)
 	if err != nil {
 		return Config{}, "", err
 	}
+	path := filepath.Join(dir, configFilename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, "", err
+	}
+	var c Config
+	if err := toml.Unmarshal(data, &c); err != nil {
+		return Config{}, "", fmt.Errorf("%s: %w: %w", path, ErrConfigParse, err)
+	}
+	return c, dir, nil
+}
+
+// findConfigDir walks up from startDir to the directory holding a .cernerc,
+// without decoding it. ErrNoProject when none exists up to the root.
+func findConfigDir(startDir string) (string, error) {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
 	for {
-		path := filepath.Join(dir, configFilename)
-		data, err := os.ReadFile(path)
+		_, err := os.Stat(filepath.Join(dir, configFilename))
 		if err == nil {
-			var c Config
-			if err := toml.Unmarshal(data, &c); err != nil {
-				return Config{}, "", fmt.Errorf("%s: %w", path, err)
-			}
-			return c, dir, nil
+			return dir, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return Config{}, "", err
+			return "", err
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return Config{}, "", fmt.Errorf("%w: no %s from %s up to filesystem root", ErrNoProject, configFilename, startDir)
+			return "", fmt.Errorf("%w: no %s from %s up to filesystem root", ErrNoProject, configFilename, startDir)
 		}
 		dir = parent
 	}
 }
 
 // writeFileAtomic writes data to <dir>/<filename> atomically: temp file in
-// the same dir, then rename.
+// the target's dir, then rename. A symlink is written through (its target is
+// replaced, the link kept) and an existing file keeps its mode bits; a new
+// one gets 0644 (F-0314, as git config does).
 func writeFileAtomic(dir, filename string, data []byte) error {
-	tmp, err := os.CreateTemp(dir, filename+".*.tmp")
+	path, mode, err := writeTarget(filepath.Join(dir, filename))
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
@@ -477,13 +496,36 @@ func writeFileAtomic(dir, filename string, data []byte) error {
 		os.Remove(tmp.Name())
 		return err
 	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, filename)); err != nil {
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
 	return nil
+}
+
+// writeTarget resolves path through symlinks, so a rewrite lands on the
+// link's target, and returns the mode the rewrite keeps: the existing file's,
+// or 0644 for a new one.
+func writeTarget(path string) (string, os.FileMode, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return path, 0o644, nil
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	fi, err := os.Stat(real)
+	if err != nil {
+		return "", 0, err
+	}
+	return real, fi.Mode().Perm(), nil
 }

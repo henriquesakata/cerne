@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import Nav from './Nav'
 import type { ProjectInfo } from './api'
 
-// F-0187 critério 4: com [ui] mindmap = false no projeto ativo, o item some do
+// F-0187 critério 4: com mindmap.enabled = false no projeto ativo, o item some do
 // menu ("não deve nem aparecer"). O flag viaja em ProjectInfo (GET /api/projects).
 
 let mockProjects: ProjectInfo[] = []

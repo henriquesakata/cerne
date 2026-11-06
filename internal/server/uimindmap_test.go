@@ -9,15 +9,70 @@ import (
 	"testing"
 )
 
-// TestUIMultiProjectInfoMindmapFlag pins F-0187 criterion 4: GET /api/projects
-// carries the per-project [ui] mindmap flag — false when the project's
-// .cernerc disables the tab, true otherwise (absent config = default on).
+// TestUIMultiProjectInfoMindmapFlag pins F-0187 criterion 4, now served by the
+// settings registry (F-0314 criterion 8): GET /api/projects carries each
+// project's mindmap.enabled — false when its .cernerc disables the tab, true
+// otherwise (absent config = default on).
 func TestUIMultiProjectInfoMindmapFlag(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	byPID := mindmapFlags(t, "", "[mindmap]\nenabled = false\n")
+	if !byPID["proj-a"].Mindmap {
+		t.Errorf("proj-a (no .cernerc) mindmap = false, want true (default on)")
+	}
+	if byPID["proj-b"].Mindmap {
+		t.Errorf("proj-b ([mindmap] enabled = false) mindmap = true, want false")
+	}
+}
+
+// TestUIMultiProjectInfoMindmapFromHostScope: the gate follows the whole
+// resolution — a host-scope off reaches a project that does not set the key,
+// and a project-scope on beats it.
+func TestUIMultiProjectInfoMindmapFromHostScope(t *testing.T) {
+	hostDir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", hostDir)
+	if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte("[mindmap]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	byPID := mindmapFlags(t, "\n", "[mindmap]\nenabled = true\n")
+	if byPID["proj-a"].Mindmap {
+		t.Errorf("proj-a (key unset, host off) mindmap = true, want false")
+	}
+	if !byPID["proj-b"].Mindmap {
+		t.Errorf("proj-b (project on, host off) mindmap = false, want true")
+	}
+}
+
+// TestUIMultiProjectInfoMindmapSurvivesBadHostFile (critic C2): a typo in the
+// per-user file, on another key or as broken TOML, never brings back a tab
+// the project turned off.
+func TestUIMultiProjectInfoMindmapSurvivesBadHostFile(t *testing.T) {
+	for _, host := range []string{"[wiki]\nenabled = \"no\"\n", "[x"} {
+		hostDir := t.TempDir()
+		t.Setenv("CERNE_CONFIG_DIR", hostDir)
+		if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte(host), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if byPID := mindmapFlags(t, "", "[mindmap]\nenabled = false\n"); byPID["proj-b"].Mindmap {
+			t.Errorf("host %q: proj-b ([mindmap] enabled = false) mindmap = true, want false", host)
+		}
+	}
+}
+
+// mindmapFlags registers two projects in a local ui — each gets a .cernerc
+// ending in its extra, or none when extra is "" — and returns GET
+// /api/projects by pid.
+func mindmapFlags(t *testing.T, extraA, extraB string) map[string]projectInfo {
+	t.Helper()
 	repoA, projA, _ := newGitBackendNoClean(t)
 	repoB, projB, _ := newGitBackendNoClean(t)
-	cernerc := "project_id = \"proj-b\"\nbackend = \"x\"\ndefault_scope = \"\"\n[ui]\nmindmap = false\n"
-	if err := os.WriteFile(filepath.Join(projB, ".cernerc"), []byte(cernerc), 0o644); err != nil {
-		t.Fatalf("write .cernerc: %v", err)
+	for _, p := range []struct{ dir, id, extra string }{{projA, "proj-a", extraA}, {projB, "proj-b", extraB}} {
+		if p.extra == "" {
+			continue
+		}
+		cernerc := "project_id = \"" + p.id + "\"\nbackend = \"x\"\ndefault_scope = \"\"\n" + p.extra
+		if err := os.WriteFile(filepath.Join(p.dir, ".cernerc"), []byte(cernerc), 0o644); err != nil {
+			t.Fatalf("write .cernerc: %v", err)
+		}
 	}
 	resolve := func(dir string) (string, string, string, string, error) {
 		switch dir {
@@ -48,10 +103,5 @@ func TestUIMultiProjectInfoMindmapFlag(t *testing.T) {
 	for _, p := range list.Projects {
 		byPID[p.PID] = p
 	}
-	if !byPID["proj-a"].Mindmap {
-		t.Errorf("proj-a (no .cernerc) mindmap = false, want true (default on)")
-	}
-	if byPID["proj-b"].Mindmap {
-		t.Errorf("proj-b ([ui] mindmap = false) mindmap = true, want false")
-	}
+	return byPID
 }

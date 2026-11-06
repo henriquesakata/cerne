@@ -133,6 +133,17 @@ func dataRoutes() []dataRoute {
 		{"PUT", "/config/models/provider", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
 			handlePreferredProviderPut(w, r, projDir)
 		}},
+		// Settings registry (F-0314). The host scope is per-host state: local
+		// ui only, never the remote serve.
+		{"GET", "/settings", false, func(w http.ResponseWriter, _ *http.Request, _, projDir, _ string) {
+			handleSettingsGet(w, projDir)
+		}},
+		{"PUT", "/settings/{id}", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
+			handleSettingsPut(w, r, projDir, r.PathValue("id"))
+		}},
+		{"DELETE", "/settings/{id}", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
+			handleSettingsDelete(w, r, projDir, r.PathValue("id"))
+		}},
 		{"GET", "/wiki", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleWikiIndex(w, repoDir)
 		}},
