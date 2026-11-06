@@ -148,4 +148,12 @@ func TestMsgAck(t *testing.T) {
 	if out, err := execCerne(t, "msg", "ack", "x", "--session", "sess-b", "--dir", projDir); err == nil {
 		t.Fatalf("non-numeric seq accepted:\n%s", out)
 	}
+	// Critic C9: a seq that is not a live message is refused, nothing written.
+	if out, err := execCerne(t, "msg", "ack", "9999", "--session", "sess-b", "--dir", projDir); err == nil ||
+		!strings.Contains(err.Error(), "no live channel message #9999") {
+		t.Fatalf("ack of a nonexistent seq: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "msg", "ack", "1", "--session", "sess-b", "--dir", projDir); err != nil || out != "#1 is already answered\n" {
+		t.Fatalf("second ack: %v %q", err, out)
+	}
 }

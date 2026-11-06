@@ -470,19 +470,51 @@ func ChannelPost(cacheDir, name, body string, now time.Time) (room.Message, erro
 	return channelOf(cacheDir).Append(room.Message{Type: "message", Nick: name, Body: body, Human: true, Time: now})
 }
 
+// ErrNoSuchMessage is the sentinel for an ack of a seq that is not a live
+// channel message (unknown, not sent yet, or expired).
+var ErrNoSuchMessage = errors.New("no live channel message")
+
 // ChannelAck silences addressed messages seqs for session sess's work without
-// a reply (criterion 10).
-func ChannelAck(cacheDir, repoDir, sess string, seqs []int, now time.Time) error {
+// a reply (criterion 10). Every seq must be a live message, or nothing is
+// written — a typo must not silence a message before it arrives (critic C9).
+// A seq not addressed to the work, or already answered, is skipped with a
+// note; only the rest are acked.
+func ChannelAck(cacheDir, repoDir, sess string, seqs []int, now time.Time) (acked []int, notes []string, err error) {
 	if safeSessionID(sess) != nil {
-		return ErrNoChannelIdentity
+		return nil, nil, ErrNoChannelIdentity
 	}
 	id, ok := sessionWork(cacheDir, repoDir, sess)
 	if !ok {
-		return ErrNoChannelIdentity
+		return nil, nil, ErrNoChannelIdentity
 	}
-	return channelOf(cacheDir).Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
-		return &room.Delivery{Session: sess, Work: id.Work, Ack: seqs, At: now}, nil
+	err = channelOf(cacheDir).Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
+		live := map[int]room.Message{}
+		for _, m := range liveMessages(repoDir, msgs, now) {
+			live[m.Seq] = m
+		}
+		cs := channelState{msgs: msgs, dels: dels}
+		for _, seq := range seqs {
+			m, ok := live[seq]
+			switch {
+			case !ok:
+				return nil, fmt.Errorf("%w #%d (unknown, not sent yet, or expired)", ErrNoSuchMessage, seq)
+			case !directedTo(m, id):
+				notes = append(notes, fmt.Sprintf("#%d is not addressed to %s — nothing to ack", seq, id.Work))
+			case cs.answered(m, id.Work):
+				notes = append(notes, fmt.Sprintf("#%d is already answered", seq))
+			default:
+				acked = append(acked, seq)
+			}
+		}
+		if len(acked) == 0 {
+			return nil, nil
+		}
+		return &room.Delivery{Session: sess, Work: id.Work, Ack: acked, At: now}, nil
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return acked, notes, nil
 }
 
 // ChannelRead is the explicit read (criterion 18): every live message with its

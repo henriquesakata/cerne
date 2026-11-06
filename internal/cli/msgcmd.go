@@ -178,14 +178,21 @@ func newMsgAckCmd(dir, session *string) *cobra.Command {
 				return err
 			}
 			sess := msgSession(*session)
-			if err := app.ChannelAck(cacheDir, repoDir, sess, seqs, time.Now().UTC()); err != nil {
+			acked, notes, err := app.ChannelAck(cacheDir, repoDir, sess, seqs, time.Now().UTC())
+			if err != nil {
 				return msgIdentityErr(sess, err)
 			}
-			labels := make([]string, len(seqs))
-			for i, n := range seqs {
-				labels[i] = "#" + strconv.Itoa(n)
+			out := cmd.OutOrStdout()
+			for _, n := range notes {
+				fmt.Fprintln(out, n)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "acked %s\n", strings.Join(labels, " "))
+			if len(acked) > 0 {
+				labels := make([]string, len(acked))
+				for i, n := range acked {
+					labels[i] = "#" + strconv.Itoa(n)
+				}
+				fmt.Fprintf(out, "acked %s\n", strings.Join(labels, " "))
+			}
 			return nil
 		},
 	}

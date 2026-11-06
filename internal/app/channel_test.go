@@ -643,7 +643,7 @@ func TestChannelAckSilencesDirected(t *testing.T) {
 	if out := f.inject("s1", true); !strings.Contains(out, "→ you") {
 		t.Fatalf("injection = %q", out)
 	}
-	if err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{m.Seq}, f.at); err != nil {
+	if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{m.Seq}, f.at); err != nil {
 		t.Fatalf("ChannelAck: %v", err)
 	}
 	if out := f.inject("s1", true); out != "" {
@@ -653,7 +653,7 @@ func TestChannelAckSilencesDirected(t *testing.T) {
 	if got := stateOf(t, msgs, m.Seq); got.State != ChannelAnswered {
 		t.Fatalf("acked = %+v", got)
 	}
-	if err := ChannelAck(f.cacheDir, f.repoDir, "s-unbound", []int{m.Seq}, f.at); !errors.Is(err, ErrNoChannelIdentity) {
+	if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s-unbound", []int{m.Seq}, f.at); !errors.Is(err, ErrNoChannelIdentity) {
 		t.Fatalf("unbound ack: %v", err)
 	}
 }
@@ -908,5 +908,37 @@ func TestChannelSendReportsUniqueWorks(t *testing.T) {
 	}
 	if _, to := f.send("s2", "oi"); !slices.Equal(to, []string{"W-0001", "W-0002", "W-0003"}) {
 		t.Fatalf("recipients = %v, want each open work once, the sender's sibling session included", to)
+	}
+}
+
+// TestChannelAckValidates (critic C9): ack refuses a seq that is not a live
+// message (unknown, future or expired) and writes nothing, so a typo cannot
+// silence a message before it arrives; acking a message not addressed to you,
+// or already answered, is a no-op with a note.
+func TestChannelAckValidates(t *testing.T) {
+	f := newChanFixture(t)
+	if _, err := f.ch.Append(room.Message{Type: "message", Nick: "W-0002", Session: "s2", Body: "W-0001 velha", Time: chanT0.Add(-25 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	addressed := f.post("W-0002", "W-0001 segura", false)
+	background := f.post("W-0002", "build verde", false)
+	for _, seqs := range [][]int{{9999}, {1}, {addressed, 9999}} {
+		if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s1", seqs, f.at); !errors.Is(err, ErrNoSuchMessage) {
+			t.Fatalf("ack %v: err = %v, want ErrNoSuchMessage", seqs, err)
+		}
+	}
+	if d := f.deliveries(); len(d) != 0 {
+		t.Fatalf("a refused ack wrote %+v", d)
+	}
+	acked, notes, err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{background, addressed}, f.at)
+	if err != nil || !slices.Equal(acked, []int{addressed}) || len(notes) != 1 || !strings.Contains(notes[0], "not addressed to W-0001") {
+		t.Fatalf("ack = %v %v %v", acked, notes, err)
+	}
+	acked, notes, err = ChannelAck(f.cacheDir, f.repoDir, "s1", []int{addressed}, f.at)
+	if err != nil || len(acked) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "already answered") {
+		t.Fatalf("second ack = %v %v %v", acked, notes, err)
+	}
+	if n := len(f.deliveries()); n != 1 {
+		t.Fatalf("%d delivery lines, want only the one real ack", n)
 	}
 }
