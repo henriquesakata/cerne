@@ -804,3 +804,40 @@ func TestChannelStopReminderWithinBudget(t *testing.T) {
 	}
 	t.Logf("30 addressed: Stop reminder %d bytes, %d tokens", len(text), (len(text)+3)/4)
 }
+
+// TestChannelHumansNeverSilentlyConsumed (critic C6): a human message that
+// does not fit inline stays pending for that session — the next injections
+// show it — so a session with 23 human messages pending eventually sees every
+// one inline and none ends not_delivered.
+func TestChannelHumansNeverSilentlyConsumed(t *testing.T) {
+	f := newChanFixture(t)
+	var humans []int
+	for i := range 23 {
+		humans = append(humans, f.post("Henrique", ptBody(fmt.Sprintf("humano %d", i), 400), true))
+	}
+	seen := map[int]bool{}
+	for round := 0; ; round++ {
+		out := f.inject("s2", true)
+		if out == "" {
+			break
+		}
+		if round == 5 {
+			t.Fatalf("still injecting after 5 rounds:\n%s", out)
+		}
+		if tokens := (len(out) + 3) / 4; tokens > 400 {
+			t.Fatalf("round %d = %d tokens", round, tokens)
+		}
+		for seq := range injectedBodies(out) {
+			seen[seq] = true
+		}
+	}
+	msgs, _ := f.read("")
+	for _, seq := range humans {
+		if !seen[seq] {
+			t.Fatalf("human #%d never shown inline (seen %v)", seq, seen)
+		}
+		if got := stateOf(t, msgs, seq); got.State == ChannelNotDelivered {
+			t.Fatalf("human #%d left not_delivered: %+v", seq, got)
+		}
+	}
+}

@@ -216,8 +216,8 @@ func (cs channelState) watermark(sess string) int {
 
 // ChannelInject renders the channel block for session sess at a contact point
 // and records the delivery in the same locked step (criteria 4-11, 17): the
-// live messages the session has not seen plus the ones addressed to it and
-// still unanswered, human first, then addressed, then background, cut to the
+// live messages the session has not seen, plus the ones addressed to it and
+// still unanswered, plus human messages not yet shown to it inline; human first, then addressed, then background, cut to the
 // inline cap and the byte budget. Nothing to deliver is zero bytes and no
 // write. consume=false is a peek (subagents): it records what was shown but
 // leaves the watermark, so the parent session still gets the background.
@@ -242,8 +242,11 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 			if m.Nick == id.Work && !m.Human {
 				continue
 			}
+			// Addressed: pending until answered. Human: pending until shown
+			// inline to this session — never folded into the count line and
+			// consumed (critic C6). Background: once, by the watermark.
 			directed := directedTo(m, id) && !cs.answered(m, id.Work)
-			if !directed && (m.Seq <= wm || cs.shownTo(m, sess)) {
+			if !directed && (cs.shownTo(m, sess) || !m.Human && m.Seq <= wm) {
 				continue
 			}
 			group := groupBackground
