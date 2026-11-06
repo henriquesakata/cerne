@@ -237,3 +237,36 @@ func TestIdeaCaptureRouteIsIdempotentByToken(t *testing.T) {
 		t.Fatalf("the same token minted %d ideas", len(all))
 	}
 }
+
+// C5: the idea write routes refuse a cross-origin or non-JSON request (the
+// F-0316/F-0323 guard) — a page the user visits cannot plant ideas or mint
+// candidates. Nothing is written.
+func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	if _, err := app.CreateIdea(repoDir, projDir, "alvo", nil, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/ideas", "/api/ideas/I-0001/drop", "/api/ideas/I-0001/promote"} {
+		for _, hdr := range []map[string]string{
+			{"Origin": "https://evil.example", "Content-Type": "application/json"},
+			{"Content-Type": "text/plain"},
+		} {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":"plantada"}`))
+			for k, v := range hdr {
+				req.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("POST %s %v = %d, want 403", path, hdr, rec.Code)
+			}
+		}
+	}
+	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 1 || all[0].State != "active" {
+		t.Fatalf("a refused request wrote: %+v", all)
+	}
+	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 {
+		t.Fatalf("a refused promote minted a candidate: %d features", len(fs))
+	}
+}

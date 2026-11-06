@@ -28,6 +28,10 @@ func handleIdeas(w http.ResponseWriter, repoDir string) {
 }
 
 func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	if !sameOriginJSON(r) { // C5: a write route, same guard as the chat (F-0323 C2)
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req struct {
 		Text       string   `json:"text"`
 		Facets     []string `json:"facets"`
@@ -47,6 +51,10 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 }
 
 func handleDropIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	if !sameOriginJSON(r) { // C5: a write route, same guard as the chat (F-0323 C2)
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req struct {
 		Reason string `json:"reason"`
 	}
@@ -63,6 +71,10 @@ func handleDropIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir, id
 }
 
 func handlePromoteIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	if !sameOriginJSON(r) { // C5: a write route, same guard as the chat (F-0323 C2)
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req struct {
 		Module string `json:"module"`
 		Force  bool   `json:"force"`
