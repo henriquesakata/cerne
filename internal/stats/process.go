@@ -38,10 +38,13 @@ const (
 	guardPending = "pending"
 )
 
-// ProcessSample is one delivered feature with a stamped cost anchor.
+// ProcessSample is one delivered feature. Excluded names why it is out of the
+// cost sample ("no_cost": no anchor or an all-zero one) — it still counts as a
+// delivery of its side and week (C13).
 type ProcessSample struct {
 	ID          string
 	CompletedAt time.Time   // first feature.completed
+	Excluded    string      // "" (sampled) | "no_cost"
 	Raw         [4]int64    // input, cache_creation, cache_read, output — the F-0309 anchor
 	HasGauntlet bool        // false: out of the returns guard, never zero returns (crit. 5)
 	Returned    bool        // at least one "Rodada N — derrota"
@@ -65,17 +68,23 @@ type Raw struct {
 
 // Side is one window around a marker: [From, To), cut short at CutBy.
 type Side struct {
-	From          time.Time `json:"from"`
-	To            time.Time `json:"to"`
-	CutBy         string    `json:"cut_by,omitempty"`
-	N             int       `json:"n"`
-	Median        float64   `json:"median"`
-	P25           float64   `json:"p25"`
-	P75           float64   `json:"p75"`
-	RawMedian     Raw       `json:"raw_median"`
-	WithGauntlet  int       `json:"with_gauntlet"`
-	ReturnedShare float64   `json:"returned_share"` // of WithGauntlet
-	EscapedShare  *float64  `json:"escaped_share"`  // of N; null until the side's last delivery is 28 days old (C10)
+	From  time.Time `json:"from"`
+	To    time.Time `json:"to"`
+	CutBy string    `json:"cut_by,omitempty"`
+	// Delivered is every delivery of the window; N the stamped ones sampled.
+	// The exclusions are counted per side (C13): a thin or skewed stamped
+	// subset shows next to its own numbers.
+	Delivered          int      `json:"delivered"`
+	ExcludedNoCost     int      `json:"excluded_no_cost"`
+	ExcludedNoGauntlet int      `json:"excluded_no_gauntlet"` // of N: out of the returns guard only
+	N                  int      `json:"n"`
+	Median             float64  `json:"median"`
+	P25                float64  `json:"p25"`
+	P75                float64  `json:"p75"`
+	RawMedian          Raw      `json:"raw_median"`
+	WithGauntlet       int      `json:"with_gauntlet"`
+	ReturnedShare      float64  `json:"returned_share"` // of WithGauntlet
+	EscapedShare       *float64 `json:"escaped_share"`  // of N; null until the side's last delivery is 28 days old (C10)
 }
 
 // MarkerReport is a marker judged before/after.
@@ -98,10 +107,11 @@ type MarkerReport struct {
 
 // WeekCost is one ISO week (UTC) of the cost series.
 type WeekCost struct {
-	Week   string    `json:"week"`  // "2026-W45"
-	Start  time.Time `json:"start"` // Monday 00:00 UTC
-	Median float64   `json:"median"`
-	N      int       `json:"n"`
+	Week      string    `json:"week"`  // "2026-W45"
+	Start     time.Time `json:"start"` // Monday 00:00 UTC
+	Median    float64   `json:"median"`
+	N         int       `json:"n"`         // stamped deliveries sampled
+	Delivered int       `json:"delivered"` // every delivery of the week (C13)
 }
 
 // ProcessReport is the process panel (F-0321).
@@ -113,11 +123,12 @@ type ProcessReport struct {
 	ExcludedNoGauntlet int            `json:"excluded_no_gauntlet"` // samples out of the returns guard
 }
 
-// ComputeProcess builds the process panel from stamped deliveries and change
-// markers: the weekly median cost, and per marker the before/after windows
-// (28 days, cut at the neighbouring marker) with one verdict. now decides
-// whether the escaped-defect guard is still pending (crit. 20).
-func ComputeProcess(samples []ProcessSample, markers []Marker, excludedNoCost int, now time.Time) ProcessReport {
+// ComputeProcess builds the process panel from every delivery (excluded ones
+// flagged) and the change markers: the weekly median cost, and per marker the
+// before/after windows (28 days, cut at the neighbouring marker) with one
+// verdict. now decides whether the escaped-defect guard is still pending
+// (crit. 20).
+func ComputeProcess(samples []ProcessSample, markers []Marker, now time.Time) ProcessReport {
 	ss := slices.Clone(samples)
 	slices.SortFunc(ss, func(a, b ProcessSample) int {
 		if c := a.CompletedAt.Compare(b.CompletedAt); c != 0 {
@@ -132,14 +143,11 @@ func ComputeProcess(samples []ProcessSample, markers []Marker, excludedNoCost in
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
-	r := ProcessReport{Weeks: weeks(ss), Markers: make([]MarkerReport, 0, len(ms)), ExcludedNoCost: excludedNoCost}
-	if len(ss) == 0 {
+	r := ProcessReport{Weeks: weeks(ss), Markers: make([]MarkerReport, 0, len(ms))}
+	all := side(ss, time.Time{}, time.Time{}, "", now)
+	r.ExcludedNoCost, r.ExcludedNoGauntlet = all.ExcludedNoCost, all.ExcludedNoGauntlet
+	if all.N == 0 {
 		r.Reason = "no feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp)"
-	}
-	for _, s := range ss {
-		if !s.HasGauntlet {
-			r.ExcludedNoGauntlet++
-		}
 	}
 	for i, m := range ms {
 		from, cutBefore := m.At.Add(-window), ""
@@ -152,7 +160,7 @@ func ComputeProcess(samples []ProcessSample, markers []Marker, excludedNoCost in
 		}
 		before, after := between(ss, from, m.At), between(ss, m.At, to)
 		mr := MarkerReport{Marker: m, Before: side(before, from, m.At, cutBefore, now), After: side(after, m.At, to, cutAfter, now)}
-		judge(&mr, before, after, now)
+		judge(&mr, sampled(before), sampled(after), now)
 		r.Markers = append(r.Markers, mr)
 	}
 	return r
@@ -314,8 +322,16 @@ func wilson(p float64, n int, z float64) (lo, hi float64) {
 	return center - half, center + half
 }
 
-func side(ss []ProcessSample, from, to time.Time, cutBy string, now time.Time) Side {
-	s := Side{From: from, To: to, CutBy: cutBy, N: len(ss)}
+// side summarizes one window's deliveries: counts over all, statistics over
+// the sampled ones.
+func side(all []ProcessSample, from, to time.Time, cutBy string, now time.Time) Side {
+	ss := sampled(all)
+	s := Side{From: from, To: to, CutBy: cutBy, Delivered: len(all), N: len(ss)}
+	for _, x := range all {
+		if x.Excluded == "no_cost" {
+			s.ExcludedNoCost++
+		}
+	}
 	if len(ss) == 0 {
 		return s
 	}
@@ -329,7 +345,7 @@ func side(ss []ProcessSample, from, to time.Time, cutBy string, now time.Time) S
 	}
 	s.RawMedian = Raw{median(raw[0]), median(raw[1]), median(raw[2]), median(raw[3])}
 	r := returns(ss)
-	s.WithGauntlet, s.ReturnedShare = len(r), mean(r)
+	s.WithGauntlet, s.ReturnedShare, s.ExcludedNoGauntlet = len(r), mean(r), len(ss)-len(r)
 	// A delivery under 28 days old has not had time to reveal its defect: the
 	// side's share would read low exactly where crit. 20 says not to look.
 	if !now.Before(ss[len(ss)-1].CompletedAt.Add(window)) {
@@ -339,22 +355,42 @@ func side(ss []ProcessSample, from, to time.Time, cutBy string, now time.Time) S
 	return s
 }
 
+// weeks is the cost series: one entry per ISO week holding a sampled delivery,
+// with every delivery of that week counted alongside.
 func weeks(ss []ProcessSample) []WeekCost {
-	out := []WeekCost{}
+	var all []WeekCost
 	var byWeek [][]float64
 	for _, s := range ss { // sorted by time: one week's deliveries are contiguous
 		t := s.CompletedAt.UTC()
 		y, w := t.ISOWeek()
 		key := fmt.Sprintf("%04d-W%02d", y, w)
-		if len(out) == 0 || out[len(out)-1].Week != key {
+		if len(all) == 0 || all[len(all)-1].Week != key {
 			day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-			out = append(out, WeekCost{Week: key, Start: day.AddDate(0, 0, -((int(day.Weekday()) + 6) % 7))})
+			all = append(all, WeekCost{Week: key, Start: day.AddDate(0, 0, -((int(day.Weekday()) + 6) % 7))})
 			byWeek = append(byWeek, nil)
 		}
-		byWeek[len(byWeek)-1] = append(byWeek[len(byWeek)-1], weighted(s.Raw))
+		all[len(all)-1].Delivered++
+		if s.Excluded == "" {
+			byWeek[len(byWeek)-1] = append(byWeek[len(byWeek)-1], weighted(s.Raw))
+		}
 	}
+	out := []WeekCost{}
 	for i, c := range byWeek {
-		out[i].Median, out[i].N = median(c), len(c)
+		if len(c) > 0 {
+			all[i].Median, all[i].N = median(c), len(c)
+			out = append(out, all[i])
+		}
+	}
+	return out
+}
+
+// sampled keeps the deliveries in the cost sample.
+func sampled(ss []ProcessSample) []ProcessSample {
+	var out []ProcessSample
+	for _, s := range ss {
+		if s.Excluded == "" {
+			out = append(out, s)
+		}
 	}
 	return out
 }

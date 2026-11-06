@@ -53,7 +53,7 @@ func marker(id string, t time.Time) Marker { return Marker{ID: id, Title: "mudan
 // real F-0309 anchor is input + 1.25·cache_creation + 0.1·cache_read + 5·output.
 func TestWeightedCostMatchesFormula(t *testing.T) {
 	s := ProcessSample{ID: "F-0309", CompletedAt: at(0), Raw: [4]int64{302, 339857, 28934595, 150077}}
-	r := ComputeProcess([]ProcessSample{s}, nil, 0, mature)
+	r := ComputeProcess([]ProcessSample{s}, nil, mature)
 	if len(r.Weeks) != 1 || r.Weeks[0].Median != 4068967.75 {
 		t.Fatalf("weeks = %+v, want one week with median 4068967.75", r.Weeks)
 	}
@@ -71,7 +71,7 @@ func TestProcessWeeklyMedianAndN(t *testing.T) {
 		sample("E", time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC), 7),
 		sample("F", at(21), 2),
 	}
-	r := ComputeProcess(samples, nil, 0, mature)
+	r := ComputeProcess(samples, nil, mature)
 	want := []WeekCost{
 		{Week: "2026-W02", Start: at(0), Median: 5, N: 4},
 		{Week: "2026-W03", Start: at(7), Median: 7, N: 1},
@@ -95,7 +95,7 @@ func TestProcessWindowsTruncateAtNeighbour(t *testing.T) {
 	for _, d := range []int{0, 10, 29, 30, 35, 39, 40, 50, 70} {
 		samples = append(samples, sample(fmt.Sprintf("D%02d", d), at(d), float64(d+1)))
 	}
-	r := ComputeProcess(samples, []Marker{marker("B", at(40)), marker("A", at(30))}, 0, mature)
+	r := ComputeProcess(samples, []Marker{marker("B", at(40)), marker("A", at(30))}, mature)
 	if len(r.Markers) != 2 || r.Markers[0].ID != "A" || r.Markers[1].ID != "B" {
 		t.Fatalf("markers = %+v, want A then B", r.Markers)
 	}
@@ -132,7 +132,7 @@ func TestProcessSideStats(t *testing.T) {
 		samples = append(samples, s)
 	}
 	samples = append(samples, spread(1000, 8, at(30))...)
-	r := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature)
+	r := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature)
 	b := r.Markers[0].Before
 	// weighted = k·(1 + 12.5 + 10 + 10) = 33.5k, k = 1..8
 	if b.N != 8 || b.Median != 150.75 || b.P25 != 67 || b.P75 != 201 {
@@ -156,7 +156,7 @@ func TestProcessSideStats(t *testing.T) {
 // inconclusivo for a small sample — no interval, no guard computed.
 func TestProcessSmallSampleInconclusive(t *testing.T) {
 	samples := append(spread(20e6, 7, at(2)), spread(20e6, 30, at(30))...)
-	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	if m.Verdict != "inconclusivo" || m.Code != "small_sample" || !strings.HasPrefix(m.Reason, "small sample (n=7 before, n=30 after") {
 		t.Fatalf("marker = %s/%s %q, want inconclusivo/small_sample small sample (n=7 before, n=30 after…", m.Verdict, m.Code, m.Reason)
 	}
@@ -186,7 +186,7 @@ func TestProcessCostVerdictBootstrap(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			samples := append(spread(20e6, 30, at(2)), spread(tc.afterMedian, 30, at(30))...)
-			m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+			m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 			if m.Verdict != tc.verdict || m.Code != tc.code || len(m.CostRatioCI) != 2 {
 				t.Fatalf("marker = %s/%s ci %v (%q), want %s/%s", m.Verdict, m.Code, m.CostRatioCI, m.Reason, tc.verdict, tc.code)
 			}
@@ -222,9 +222,9 @@ func TestProcessBootstrapReproducible(t *testing.T) {
 		before[i].Returned = i%4 == 0
 	}
 	samples := append(before, after...)
-	one := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
-	two := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
-	far := ComputeProcess(samples, []Marker{marker("D-0001", at(30)), marker("D-0002", at(400))}, 0, mature).Markers[0]
+	one := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0]
+	two := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0]
+	far := ComputeProcess(samples, []Marker{marker("D-0001", at(30)), marker("D-0002", at(400))}, mature).Markers[0]
 	for _, m := range []MarkerReport{two, far} {
 		if fmt.Sprint(m.CostRatioCI, m.ReturnedDiffCI, m.EscapedDiffCI) != fmt.Sprint(one.CostRatioCI, one.ReturnedDiffCI, one.EscapedDiffCI) {
 			t.Fatalf("ci = %v %v %v, want %v %v %v", m.CostRatioCI, m.ReturnedDiffCI, m.EscapedDiffCI,
@@ -246,7 +246,7 @@ func TestProcessReturnedGuard(t *testing.T) {
 			after[i].Returned, after[i].HasGauntlet = afterReturned(i), afterGauntlet(i)
 			before[i].Returned = beforeReturned(i)
 		}
-		return ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+		return ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	}
 	all := func(int) bool { return true }
 	none := func(int) bool { return false }
@@ -282,7 +282,7 @@ func TestProcessQualityGuardVetoesCheaper(t *testing.T) {
 	for i := range after {
 		after[i].Returned = i%2 == 0
 	}
-	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	if m.Cost != "melhorou" || m.Verdict != "piorou" || m.Code != "quality_guard" || !strings.Contains(m.Reason, "quality guard") {
 		t.Fatalf("returns veto = cost %s final %s/%s %q, want melhorou → piorou/quality_guard", m.Cost, m.Verdict, m.Code, m.Reason)
 	}
@@ -294,7 +294,7 @@ func TestProcessQualityGuardVetoesCheaper(t *testing.T) {
 			after[i].Fixes = []time.Time{after[i].CompletedAt.AddDate(0, 0, 10)}
 		}
 	}
-	m = ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	m = ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	if m.Cost != "melhorou" || m.Escaped != "piorou" || m.Verdict != "piorou" || m.Code != "quality_guard" {
 		t.Fatalf("escaped veto = cost %s escaped %s final %s/%s %q, want melhorou/piorou → piorou/quality_guard",
 			m.Cost, m.Escaped, m.Verdict, m.Code, m.Reason)
@@ -313,7 +313,7 @@ func TestProcessEscapedDefectHorizon(t *testing.T) {
 	for _, tc := range cases {
 		s := sample("F-0001", at(0), 100)
 		s.Fixes = []time.Time{at(tc.fixDay)}
-		r := ComputeProcess([]ProcessSample{s}, []Marker{marker("D-0001", at(-5))}, 0, mature)
+		r := ComputeProcess([]ProcessSample{s}, []Marker{marker("D-0001", at(-5))}, mature)
 		if got := r.Markers[0].After.EscapedShare; got == nil || *got != tc.want {
 			t.Fatalf("fix on day %d: escaped share = %v, want %v", tc.fixDay, got, tc.want)
 		}
@@ -333,13 +333,13 @@ func TestProcessEscapedGuardPending(t *testing.T) {
 	last := after[len(after)-1].CompletedAt
 	samples := append(before, after...)
 
-	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, last.AddDate(0, 0, 10)).Markers[0]
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, last.AddDate(0, 0, 10)).Markers[0]
 	if m.Escaped != "pending" || m.EscapedDiffCI != nil || m.Verdict != "melhorou" || !strings.Contains(m.Reason, "pending until") {
 		t.Fatalf("young = escaped %s ci %v final %s %q, want pending, no interval, melhorou", m.Escaped, m.EscapedDiffCI, m.Verdict, m.Reason)
 	}
 	assertReason(t, m)
 
-	m = ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, last.AddDate(0, 0, 29)).Markers[0]
+	m = ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, last.AddDate(0, 0, 29)).Markers[0]
 	if m.Escaped != "piorou" || m.Verdict != "piorou" {
 		t.Fatalf("mature = escaped %s final %s, want piorou/piorou", m.Escaped, m.Verdict)
 	}
@@ -349,7 +349,11 @@ func TestProcessEscapedGuardPending(t *testing.T) {
 // delivery at all gives the explicit reason, an empty (never null) series, and
 // the markers still listed as a small sample.
 func TestProcessEmptyHasReason(t *testing.T) {
-	r := ComputeProcess(nil, []Marker{marker("D-0001", at(0))}, 3, mature)
+	var unstamped []ProcessSample
+	for i := range 3 {
+		unstamped = append(unstamped, ProcessSample{ID: fmt.Sprintf("U%d", i), CompletedAt: at(i), Excluded: "no_cost"})
+	}
+	r := ComputeProcess(unstamped, []Marker{marker("D-0001", at(0))}, mature)
 	if !strings.Contains(r.Reason, "F-0309") || r.Weeks == nil || len(r.Weeks) != 0 || r.ExcludedNoCost != 3 {
 		t.Fatalf("report = %+v, want the F-0309 reason, empty weeks, excluded 3", r)
 	}
@@ -361,7 +365,7 @@ func TestProcessEmptyHasReason(t *testing.T) {
 	if m.Verdict != "inconclusivo" || !strings.HasPrefix(m.Reason, "small sample (n=0 before, n=0 after") {
 		t.Fatalf("marker = %s %q, want inconclusivo small sample (n=0 before, n=0 after…", m.Verdict, m.Reason)
 	}
-	if r := ComputeProcess(nil, nil, 0, mature); r.Markers == nil {
+	if r := ComputeProcess(nil, nil, mature); r.Markers == nil {
 		t.Fatalf("markers = nil, want []")
 	}
 }
@@ -389,7 +393,7 @@ func TestProcessGuardScoreInterval(t *testing.T) {
 		a.Returned = i < 3
 		samples = append(samples, b, a)
 	}
-	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	if want := newcombe(bits(0, 10), bits(3, 10), guardZ); fmt.Sprint(m.ReturnedDiffCI) != fmt.Sprint(want) {
 		t.Fatalf("returned ci = %v, want the score interval %v", m.ReturnedDiffCI, want)
 	}
@@ -404,7 +408,7 @@ func TestProcessGuardsJudgeBothWays(t *testing.T) {
 		for i := range 30 {
 			before[i].Returned, after[i].Returned = beforeReturned(i), afterReturned(i)
 		}
-		return ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+		return ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	}
 	none := func(int) bool { return false }
 	most := func(i int) bool { return i%5 != 0 }
@@ -451,7 +455,7 @@ func TestProcessNullCalibration(t *testing.T) {
 					ss = append(ss, s)
 				}
 			}
-			count[ComputeProcess(ss, []Marker{marker("D-0001", at(30))}, 0, far).Markers[0].Verdict]++
+			count[ComputeProcess(ss, []Marker{marker("D-0001", at(30))}, far).Markers[0].Verdict]++
 		}
 		worse, better := 100*float64(count["piorou"])/trials, 100*float64(count["melhorou"])/trials
 		t.Logf("null n=%d: piorou %.1f%% melhorou %.1f%%", n, worse, better)
@@ -470,7 +474,7 @@ func TestProcessUnguardedVerdictIsQualified(t *testing.T) {
 		before[i].HasGauntlet, after[i].HasGauntlet = i < 3, i < 3
 	}
 	young := after[29].CompletedAt.AddDate(0, 0, 10)
-	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, young).Markers[0]
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, young).Markers[0]
 	if m.Verdict != "melhorou" || m.Guarded || m.Returned != "inconclusivo" || m.Escaped != "pending" {
 		t.Fatalf("unguarded = %s guarded %v returned %s escaped %s, want melhorou guarded=false", m.Verdict, m.Guarded, m.Returned, m.Escaped)
 	}
@@ -479,7 +483,7 @@ func TestProcessUnguardedVerdictIsQualified(t *testing.T) {
 		t.Fatalf("json = %s, want guarded:false", b)
 	}
 	before, after = spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
-	if m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]; m.Verdict != "melhorou" || !m.Guarded {
+	if m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, mature).Markers[0]; m.Verdict != "melhorou" || !m.Guarded {
 		t.Fatalf("guarded = %s guarded %v, want melhorou guarded=true", m.Verdict, m.Guarded)
 	}
 }
@@ -490,7 +494,7 @@ func TestProcessUnguardedVerdictIsQualified(t *testing.T) {
 func TestProcessWindowCutHasItsOwnReason(t *testing.T) {
 	a, b := at(30), at(30).Add(2*time.Hour+8*time.Minute)
 	samples := append(spread(20e6, 10, at(2)), spread(12e6, 10, b)...)
-	r := ComputeProcess(samples, []Marker{marker("D-0061", a), marker("D-0062", b)}, 0, mature)
+	r := ComputeProcess(samples, []Marker{marker("D-0061", a), marker("D-0062", b)}, mature)
 	m := r.Markers[0]
 	if m.Verdict != "inconclusivo" || m.Code != "window_cut" || m.CutSide != "after" ||
 		!strings.Contains(m.Reason, "after window cut at D-0062: 2026-02-04 00:00 → 2026-02-04 02:08 UTC (2h8m, n=0)") ||
@@ -508,7 +512,7 @@ func TestProcessWindowCutHasItsOwnReason(t *testing.T) {
 // must stay inconclusive — a narrower interval would claim melhorou.
 func TestProcessIntervalLevelDecides(t *testing.T) {
 	samples := append(spread(20e6, 30, at(2)), spread(16e6, 30, at(30))...)
-	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	if m.Verdict != "inconclusivo" || len(m.CostRatioCI) != 2 || m.CostRatioCI[1] <= 1 || m.CostRatioCI[0] > 0.7 {
 		t.Fatalf("−20%% = %s ci %v, want inconclusivo with a 90%% interval reaching past 1 and below 0.7", m.Verdict, m.CostRatioCI)
 	}
@@ -522,7 +526,7 @@ func TestProcessComparesMedians(t *testing.T) {
 	for i := 18; i < 30; i++ {
 		after[i].Raw[0] *= 10
 	}
-	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, mature).Markers[0]
 	if m.Verdict != "inconclusivo" || m.After.Median != m.Before.Median || !(m.CostRatioCI[0] < 1 && 1 < m.CostRatioCI[1]) {
 		t.Fatalf("heavy tail = %s medians %v/%v ci %v, want inconclusivo with 1 inside the median-ratio interval",
 			m.Verdict, m.Before.Median, m.After.Median, m.CostRatioCI)
@@ -535,11 +539,40 @@ func TestProcessComparesMedians(t *testing.T) {
 func TestProcessImmatureEscapedShareWithheld(t *testing.T) {
 	before, after := spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
 	young := after[29].CompletedAt.AddDate(0, 0, 10)
-	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, young).Markers[0]
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, young).Markers[0]
 	if m.After.EscapedShare != nil || m.Before.EscapedShare == nil {
 		t.Fatalf("escaped shares = before %v after %v, want before kept and after withheld", m.Before.EscapedShare, m.After.EscapedShare)
 	}
 	if b, _ := json.Marshal(m.After); !strings.Contains(string(b), `"escaped_share":null`) {
 		t.Fatalf("after json = %s, want escaped_share null", b)
+	}
+}
+
+// TestProcessExclusionsPerSide pins C13: deliveries and exclusions are counted
+// per side and per week, so a side whose stamped subset is thin or skewed
+// shows it next to its numbers.
+func TestProcessExclusionsPerSide(t *testing.T) {
+	unstamped := func(id string, t time.Time) ProcessSample {
+		return ProcessSample{ID: id, CompletedAt: t, Excluded: "no_cost"}
+	}
+	noGauntlet := sample("A1", at(31), 100)
+	noGauntlet.HasGauntlet = false
+	samples := []ProcessSample{
+		sample("B1", at(10), 100), unstamped("B2", at(11)), unstamped("B3", at(12)),
+		noGauntlet, unstamped("A2", at(32)),
+	}
+	r := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature)
+	b, a := r.Markers[0].Before, r.Markers[0].After
+	if b.Delivered != 3 || b.N != 1 || b.ExcludedNoCost != 2 || b.ExcludedNoGauntlet != 0 {
+		t.Fatalf("before = delivered %d n %d no_cost %d no_gauntlet %d, want 3 / 1 / 2 / 0", b.Delivered, b.N, b.ExcludedNoCost, b.ExcludedNoGauntlet)
+	}
+	if a.Delivered != 2 || a.N != 1 || a.ExcludedNoCost != 1 || a.ExcludedNoGauntlet != 1 {
+		t.Fatalf("after = delivered %d n %d no_cost %d no_gauntlet %d, want 2 / 1 / 1 / 1", a.Delivered, a.N, a.ExcludedNoCost, a.ExcludedNoGauntlet)
+	}
+	if r.ExcludedNoCost != 3 || r.ExcludedNoGauntlet != 1 {
+		t.Fatalf("totals = no_cost %d no_gauntlet %d, want 3 / 1", r.ExcludedNoCost, r.ExcludedNoGauntlet)
+	}
+	if len(r.Weeks) != 2 || r.Weeks[0].Delivered != 3 || r.Weeks[0].N != 1 || r.Weeks[1].Delivered != 2 || r.Weeks[1].N != 1 {
+		t.Fatalf("weeks = %+v, want W03 delivered 3 n 1 and W06 delivered 2 n 1", r.Weeks)
 	}
 }

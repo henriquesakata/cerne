@@ -62,7 +62,6 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 		}
 	}
 	var samples []stats.ProcessSample
-	excluded := 0
 	for _, id := range ids {
 		body, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -70,7 +69,7 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 		}
 		c, ok := cost.AnchorCounters(string(body))
 		if !ok || c == (cost.Counters{}) {
-			excluded++
+			samples = append(samples, stats.ProcessSample{ID: id, CompletedAt: completed[id], Excluded: "no_cost"})
 			continue
 		}
 		has, derrotas := lint.GauntletRounds(body)
@@ -83,5 +82,5 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 			Fixes:       fixes[id],
 		})
 	}
-	return stats.ComputeProcess(samples, markers, excluded, now), nil
+	return stats.ComputeProcess(samples, markers, now), nil
 }

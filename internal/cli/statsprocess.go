@@ -42,7 +42,7 @@ func renderProcess(out io.Writer, r stats.ProcessReport) {
 	} else {
 		fmt.Fprintln(out, "Weekly median (ISO week, UTC):")
 		for _, w := range r.Weeks {
-			fmt.Fprintf(out, "  %s  %s  n=%d\n", w.Week, tokens(w.Median), w.N)
+			fmt.Fprintf(out, "  %s  %s  n=%d of %d delivered\n", w.Week, tokens(w.Median), w.N, w.Delivered)
 		}
 	}
 	fmt.Fprintln(out)
@@ -66,7 +66,17 @@ func renderProcess(out io.Writer, r stats.ProcessReport) {
 }
 
 func renderSide(out io.Writer, label string, s stats.Side) {
-	fmt.Fprintf(out, "    %s [%s → %s)  n=%d", label, s.From.UTC().Format(time.DateOnly), s.To.UTC().Format(time.DateOnly), s.N)
+	fmt.Fprintf(out, "    %s [%s → %s)  n=%d of %d delivered", label, s.From.UTC().Format(time.DateOnly), s.To.UTC().Format(time.DateOnly), s.N, s.Delivered)
+	var excl []string
+	if s.ExcludedNoCost > 0 {
+		excl = append(excl, fmt.Sprintf("%d without a stamped cost", s.ExcludedNoCost))
+	}
+	if s.ExcludedNoGauntlet > 0 {
+		excl = append(excl, fmt.Sprintf("%d without a Gauntlet record", s.ExcludedNoGauntlet))
+	}
+	if len(excl) > 0 {
+		fmt.Fprintf(out, " (%s)", strings.Join(excl, ", "))
+	}
 	if s.N > 0 {
 		fmt.Fprintf(out, "  median %s  p25 %s  p75 %s · raw medians: input %.0f · cache_creation %.0f · cache_read %.0f · output %.0f"+
 			" · returned %.0f%% of %d with Gauntlet · escaped %s",
