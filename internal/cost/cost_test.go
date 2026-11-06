@@ -253,6 +253,31 @@ func TestAttributeBindingEndsWhenEntityCloses(t *testing.T) {
 	}
 }
 
+// TestAttributeSubagentKeepsSpawnBinding (C2): a background subagent keeps the
+// main-thread binding in force at its first message when the main thread
+// rebinds meanwhile; its own binding still wins once it has one.
+func TestAttributeSubagentKeepsSpawnBinding(t *testing.T) {
+	in := fixture(t)
+	for _, id := range []string{"F-0001", "F-0002", "F-0003"} {
+		saveFeature(t, in.RepoDir, id, domain.StateInDevelopment)
+	}
+	x2, x4, x5, m6, x8 := cc(1, 0, 0, 0), cc(2, 0, 0, 0), cc(4, 0, 0, 0), cc(0, 1, 0, 0), cc(0, 0, 1, 0)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "x2", req: "r", agent: "x", c: x2},
+		tmsg{ts: at(4), id: "x4", req: "r", agent: "x", c: x4},
+		tmsg{ts: at(5), id: "x5", req: "r", agent: "x", c: x5},
+		tmsg{ts: at(6), id: "m6", req: "r", c: m6},
+		tmsg{ts: at(8), id: "x8", req: "r", agent: "x", c: x8})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	bindAt(t, in.CacheDir, "s", "", "F-0002", at(3))
+	bindAt(t, in.CacheDir, "s", "x", "F-0003", at(7))
+
+	r := compute(t, in, "")
+	if r.Entities["F-0001"] != x2.add(x4).add(x5) || r.Entities["F-0002"] != m6 || r.Entities["F-0003"] != x8 {
+		t.Fatalf("entities = %+v, want F-0001=%v F-0002=%v F-0003=%v", r.Entities, x2.add(x4).add(x5), m6, x8)
+	}
+}
+
 // TestComputeResolvesWorkToFeature: a W- with exactly one feature ref counts
 // on that feature; a W- with none stays itself, visible in the project view.
 func TestComputeResolvesWorkToFeature(t *testing.T) {

@@ -159,8 +159,9 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 		return err
 	}
 	agg := map[aggKey]*fileAgg{}
+	spawn := spawnTimes(msgs)
 	for _, m := range msgs {
-		id := att.entity(mine, m)
+		id := att.entity(mine, spawn, m)
 		if snaps[id] == nil {
 			continue
 		}

@@ -244,8 +244,9 @@ func own(in Inputs, id string) (Report, error) {
 		if err != nil {
 			return Report{ID: id, ByModel: map[string]Counters{}}, err
 		}
+		spawn := spawnTimes(msgs)
 		for _, m := range msgs {
-			o := owned{m, att.entity(bySess[sess], m)}
+			o := owned{m, att.entity(bySess[sess], spawn, m)}
 			if m.key != "" {
 				if i, ok := kept[m.key]; ok {
 					if all[i].entity == "" && o.entity != "" {
@@ -338,23 +339,28 @@ func (r *Report) tally(agg map[aggKey]*fileAgg) {
 }
 
 // governing is the binding in force for m: the last binding of m's own
-// subagent at or before m.ts, else the main thread's last one (a subagent
-// inherits its parent's binding until it binds itself; a nested subagent
-// inherits the main thread's). false when none, or when m.ts is unreadable.
-// binds are sorted by TS.
-func governing(binds []Bind, m msg) (Bind, bool) {
+// subagent at or before m.ts; else, for a subagent, the main thread's binding
+// in force at its first message (spawned is that instant — a background
+// subagent keeps the entity it was launched for when the main thread rebinds
+// meanwhile, C2; a nested one inherits the main thread's); else, on the main
+// thread, its last binding at or before m.ts. false when none, or when m.ts is
+// unreadable. binds are sorted by TS.
+func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 	if m.ts.IsZero() {
 		return Bind{}, false
+	}
+	at := m.ts
+	if m.agent != "" && !spawned.IsZero() && spawned.Before(at) {
+		at = spawned
 	}
 	var main, own *Bind
 	for i, b := range binds {
 		if b.TS.After(m.ts) {
 			break
 		}
-		switch b.Agent {
-		case "":
+		if b.Agent == "" && !b.TS.After(at) {
 			main = &binds[i]
-		case m.agent:
+		} else if b.Agent != "" && b.Agent == m.agent {
 			own = &binds[i]
 		}
 	}
@@ -365,6 +371,17 @@ func governing(binds []Bind, m msg) (Bind, bool) {
 		return *main, true
 	}
 	return Bind{}, false
+}
+
+// spawnTimes maps each subagent of a session to its first message's ts.
+func spawnTimes(msgs []msg) map[string]time.Time {
+	first := map[string]time.Time{}
+	for _, m := range msgs {
+		if m.agent != "" && !m.ts.IsZero() && (first[m.agent].IsZero() || m.ts.Before(first[m.agent])) {
+			first[m.agent] = m.ts
+		}
+	}
+	return first
 }
 
 // closeEvents end a binding: the work finished, or the feature leaving
@@ -401,10 +418,11 @@ func newAttributor(repoDir string) (attributor, error) {
 	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes}, nil
 }
 
-// entity is m's entity under its session's binds (sorted by TS); "" when no
-// binding governs m or the bound entity had closed by m's timestamp.
-func (a attributor) entity(binds []Bind, m msg) string {
-	b, ok := governing(binds, m)
+// entity is m's entity under its session's binds (sorted by TS) and subagent
+// spawn times; "" when no binding governs m or the bound entity had closed by
+// m's timestamp.
+func (a attributor) entity(binds []Bind, spawn map[string]time.Time, m msg) string {
+	b, ok := governing(binds, m, spawn[m.agent])
 	if !ok || a.closed(b, m.ts) {
 		return ""
 	}
