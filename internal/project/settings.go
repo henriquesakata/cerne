@@ -89,6 +89,11 @@ type SettingsView struct {
 // endpoint and the UI all derive from it. Kept in id order.
 var settingsRegistry = []Setting{
 	{
+		ID: "channel.human_name", Title: "Channel name", Type: "string", Default: "",
+		Scopes:      []string{ScopeHost},
+		Description: "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.",
+	},
+	{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Not wired yet (F-0315): off will hide the Graph tab in the UI. Today it changes nothing.",

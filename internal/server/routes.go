@@ -173,8 +173,8 @@ func dataRoutes() []dataRoute {
 		{"POST", "/rooms/{id}/sessions/resume", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomResume(w, r, projectID, r.PathValue("id"))
 		}},
-		{"POST", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
-			handleRoomSay(w, r, projectID, r.PathValue("id"))
+		{"POST", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, _, projDir, projectID string) {
+			handleRoomSay(w, r, projDir, projectID, r.PathValue("id"))
 		}},
 		{"GET", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, projectID string) {
 			handleRoomRead(w, r, repoDir, projectID, r.PathValue("id"))

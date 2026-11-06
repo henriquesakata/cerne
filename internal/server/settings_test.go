@@ -304,3 +304,21 @@ func TestSettingsEndpointCarriesStoredValues(t *testing.T) {
 	}
 	t.Fatal("mindmap.enabled not served")
 }
+
+// TestSettingsPutStringValue (F-0325): a string key takes a JSON string and
+// refuses a bool; a bool key still refuses the JSON string "false".
+func TestSettingsPutStringValue(t *testing.T) {
+	h, _, _ := settingsBackend(t, "")
+	var view project.SettingsView
+	rec := doJSON(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":"Henrique"}`, &view)
+	if rec.Code != http.StatusOK || resolvedByID(view)["channel.human_name"].Value != "Henrique" {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if rec := doJSON(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":true}`, &body); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bool under a string key: status %d", rec.Code)
+	}
+	if rec := doJSON(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
+		t.Fatalf("string under a bool key: status %d", rec.Code)
+	}
+}

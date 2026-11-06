@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -165,6 +166,10 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case errors.Is(err, room.ErrRoomOpen):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, room.ErrMessageTooLong):
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+	case errors.Is(err, room.ErrChannelBusy):
+		writeJSON(w, http.StatusServiceUnavailable, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	}
@@ -220,10 +225,30 @@ type sayRequest struct {
 	Body      string `json:"body"`
 }
 
-func handleRoomSay(w http.ResponseWriter, r *http.Request, projectID, id string) {
+func handleRoomSay(w http.ResponseWriter, r *http.Request, projDir, projectID, id string) {
 	var req sayRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if id == room.ChannelID {
+		// The UI composer (F-0325): the human posts with no session, named
+		// by the channel.human_name setting.
+		if strings.TrimSpace(req.Body) == "" {
+			writeJSON(w, http.StatusBadRequest, errorBody("the message cannot be empty"))
+			return
+		}
+		cacheDir, err := project.CacheDir(projectID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		msg, err := app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Body, time.Now().UTC())
+		if err != nil {
+			writeRoomErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, msg)
 		return
 	}
 	if req.SessionID == "" {

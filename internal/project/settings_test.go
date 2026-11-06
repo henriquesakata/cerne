@@ -62,6 +62,11 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 			t.Errorf("%s = %+v, want bool, default true, scopes [project host], a title and a description", id, s)
 		}
 	}
+	// F-0325: the channel's human display name is the person's, not the
+	// project's — host scope only — and is resolved at use when empty.
+	if s := byID["channel.human_name"]; s.Type != "string" || s.Default != "" || !slices.Equal(s.Scopes, []string{ScopeHost}) || s.Title == "" || s.Description == "" {
+		t.Errorf("channel.human_name = %+v, want string, default \"\", scopes [host], a title and a description", s)
+	}
 	// Critic C9: a key nothing consumes yet must not claim an effect. When
 	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
 	// list change together.

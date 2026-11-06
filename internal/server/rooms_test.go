@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -776,5 +777,52 @@ func TestChannelReadFollowWakesOnDelivery(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("follow read did not wake on the delivery")
+	}
+}
+
+// TestChannelHumanPostUsesSetting (crit. 22): the UI composer posts to the same
+// channel the agents read, as the human — named by channel.human_name (host
+// scope), else the OS user, else "human". No session needed.
+func TestChannelHumanPostUsesSetting(t *testing.T) {
+	h, _, cacheDir := newChannelServer(t, "proj-channel-human")
+	hostDir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", hostDir)
+	post := func() messageJSON {
+		t.Helper()
+		var got struct {
+			messageJSON
+			Human bool `json:"human"`
+		}
+		rec := doJSON(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"body":"segura o deploy"}`, &got)
+		if rec.Code != http.StatusCreated || !got.Human || got.Body != "segura o deploy" {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		return got.messageJSON
+	}
+	if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte("[channel]\nhuman_name = \"Henrique\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if m := post(); m.Nick != "Henrique" {
+		t.Fatalf("nick = %q, want the setting", m.Nick)
+	}
+	if err := os.Remove(filepath.Join(hostDir, "settings.toml")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("USER", "ana")
+	t.Setenv("USERNAME", "")
+	if m := post(); m.Nick != "ana" {
+		t.Fatalf("nick = %q, want $USER", m.Nick)
+	}
+	t.Setenv("USER", "")
+	if m := post(); m.Nick != "human" {
+		t.Fatalf("nick = %q, want human", m.Nick)
+	}
+	msgs, err := room.OpenChannel(filepath.Join(cacheDir, "rooms")).Messages()
+	if err != nil || len(msgs) != 3 || !msgs[0].Human {
+		t.Fatalf("channel = %+v, %v", msgs, err)
+	}
+	var bad map[string]string
+	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"body":"  "}`, &bad); rec.Code != http.StatusBadRequest {
+		t.Fatalf("blank body: status %d", rec.Code)
 	}
 }

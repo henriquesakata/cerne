@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/room"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -621,4 +622,21 @@ func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string,
 			_ = os.WriteFile(marker, []byte(strings.Join(append(reminded, seqs...), "\n")+"\n"), 0o644)
 		}
 	}
+}
+
+// ChannelHumanName is the human's nick on the channel (criterion 22): the
+// channel.human_name setting (host scope — it is the person's name, not the
+// project's), else the OS user, as for a work's actor, else "human".
+func ChannelHumanName(projDir string) string {
+	for _, s := range project.ResolveSettings(projDir).Settings {
+		if name, _ := s.Value.(string); s.ID == "channel.human_name" && strings.TrimSpace(name) != "" {
+			return name
+		}
+	}
+	for _, env := range []string{"USER", "USERNAME"} {
+		if u := os.Getenv(env); u != "" {
+			return u
+		}
+	}
+	return "human"
 }
