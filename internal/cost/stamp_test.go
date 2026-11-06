@@ -187,3 +187,35 @@ func TestAnchorSchemaIsV1(t *testing.T) {
 		t.Fatalf("anchor keys = %v, want %v", keys, want)
 	}
 }
+
+// TestStampIgnoresQuotedExamples (C7): a "## Custo" heading or an anchor quoted
+// in a fenced block — or an anchor line outside the real "## Custo" section —
+// neither hijacks the stamp nor reads as the anchor; the real block is found
+// outside fences and its last anchor is the one read.
+func TestStampIgnoresQuotedExamples(t *testing.T) {
+	example := `<!-- cerne:cost v1 {"id":"F-0001","counters":{"input":1,"cache_creation":0,"cache_read":0,"output":0},"messages":999} -->`
+	doc := strings.Replace(resultDoc("F-0001"), "Resultado.\n",
+		"Resultado.\n\n```markdown\n## Custo\n\n"+example+"\n```\n\n"+example+"\n", 1)
+	if _, ok := anchor(doc); ok {
+		t.Fatal("a quoted example read as the anchor")
+	}
+	r := stampReport("F-0001", cc(600, 0, 0, 0), 1)
+	got := mustStamp(t, doc, r)
+	if !strings.HasPrefix(got, strings.TrimRight(doc, "\n")) || !strings.Contains(got, "| input | 600 |") {
+		t.Fatalf("stamp did not append the real block after the examples:\n%s", got)
+	}
+	a, ok := anchor(got)
+	if !ok || a.Counters != cc(600, 0, 0, 0) || a.Messages != 1 {
+		t.Fatalf("anchor = %+v (%v), want the real one", a, ok)
+	}
+	if again := mustStamp(t, got, stampReport("F-0001", cc(700, 0, 0, 0), 2)); strings.Count(again, "| input | 700 |") != 1 ||
+		strings.Count(again, "\n## Custo\n") != 2 || !strings.Contains(again, "```markdown\n## Custo\n") {
+		t.Fatalf("re-stamp touched the quoted example or duplicated the block:\n%s", again)
+	}
+
+	// Two anchors inside the real section (a hand edit): the last one counts.
+	twice := got + "\n" + strings.Replace(example, `"messages":999`, `"messages":5`, 1) + "\n"
+	if a, ok := anchor(twice); !ok || a.Messages != 5 {
+		t.Fatalf("anchor = %+v (%v), want the last one in the section", a, ok)
+	}
+}

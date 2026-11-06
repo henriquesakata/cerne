@@ -57,19 +57,52 @@ func shareOf(r Report) share {
 		Sessions: r.Sessions, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
 }
 
-// anchor reads the v1 share a stamped result carries.
+// anchor reads the v1 share a stamped result carries: the last anchor line of
+// its real "## Custo" section.
 func anchor(result string) (share, bool) {
-	m := anchorRe.FindStringSubmatch(result)
-	if m == nil {
+	_, _, raw, ok := custoSection(result)
+	if !ok || raw == "" {
 		return share{}, false
 	}
 	var a share
-	return a, json.Unmarshal([]byte(m[1]), &a) == nil
+	return a, json.Unmarshal([]byte(raw), &a) == nil
 }
 
-// Stamp writes r's "## Custo" block into result: replacing the existing block
-// in place (up to the next "## " section or the end), else appended at the
-// end. The block carries no date, so the same report stamps byte-identically.
+// custoSection locates the real "## Custo" section of result, ignoring fenced
+// code blocks (a quoted example must not hijack the stamp, C7): the first such
+// heading outside a fence, up to the next "## " heading outside one or the end,
+// as [start, end) byte offsets, plus the last anchor line inside it.
+func custoSection(result string) (start, end int, anchorJSON string, ok bool) {
+	start, end = -1, len(result)
+	fence, off := "", 0
+	for _, line := range strings.SplitAfter(result, "\n") {
+		text := strings.TrimRight(line, "\r\n")
+		trimmed := strings.TrimLeft(text, " ")
+		switch {
+		case fence != "":
+			if strings.HasPrefix(trimmed, fence) {
+				fence = ""
+			}
+		case strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~"):
+			fence = trimmed[:3]
+		case start < 0:
+			if custoHeadingRe.MatchString(text) {
+				start = off
+			}
+		case nextSectionRe.MatchString(text):
+			return start, off, anchorJSON, true
+		default:
+			if m := anchorRe.FindStringSubmatch(text); m != nil {
+				anchorJSON = m[1]
+			}
+		}
+		off += len(line)
+	}
+	return start, end, anchorJSON, start >= 0
+}
+
+// Stamp writes r's "## Custo" block into result: replacing the real existing
+// block in place (custoSection), else appended at the end. The block carries no date, so the same report stamps byte-identically.
 // A report with fewer messages than the anchor already recorded is
 // ErrStampWouldLower and result comes back unchanged.
 func Stamp(result string, r Report) (string, error) {
@@ -80,15 +113,14 @@ func Stamp(result string, r Report) (string, error) {
 	if err != nil {
 		return result, err
 	}
-	loc := custoHeadingRe.FindStringIndex(result)
-	if loc == nil {
+	start, end, _, ok := custoSection(result)
+	if !ok {
 		return strings.TrimRight(result, "\n") + "\n\n" + blk, nil
 	}
-	rest := result[loc[1]:]
-	if next := nextSectionRe.FindStringIndex(rest); next != nil {
-		return result[:loc[0]] + blk + "\n" + rest[next[0]:], nil
+	if end < len(result) {
+		return result[:start] + blk + "\n" + result[end:], nil
 	}
-	return result[:loc[0]] + blk, nil
+	return result[:start] + blk, nil
 }
 
 func countersLine(c Counters) string {
