@@ -630,3 +630,34 @@ func TestBuildChatSystemPromptNoteContract(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildChatSystemPromptIdeasOnDemand (F-0312 crit. 9): in every mode the
+// prompt carries no idea (the roster lists features only) and tells the agent
+// to read ideas on demand with idea list --search; in claude-cli the command
+// is on the allowed list.
+func TestBuildChatSystemPromptIdeasOnDemand(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Text: "conciliação via planilha", State: domain.IdeaActive}); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	for _, tc := range []struct {
+		mode    string
+		channel bool
+	}{{"claude-cli", false}, {"byo-key", true}, {"", false}} {
+		prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{LLM: project.LLMConfig{Mode: tc.mode}}, tc.channel)
+		if err != nil {
+			t.Fatalf("%q: %v", tc.mode, err)
+		}
+		if !strings.Contains(prompt, `cerne idea list --search`) || strings.Contains(prompt, "I-0001") || strings.Contains(prompt, "via planilha") {
+			t.Fatalf("%q channel=%v: want the on-demand policy and no idea in the prompt:\n%s", tc.mode, tc.channel, prompt)
+		}
+		if tc.mode == "claude-cli" {
+			_, rest, _ := strings.Cut(prompt, "Comandos permitidos:")
+			allowed, _, _ := strings.Cut(rest, ". Quando")
+			if !strings.Contains(allowed, "cerne idea list") {
+				t.Fatalf("claude-cli allowed commands lack idea list: %q", allowed)
+			}
+		}
+	}
+}

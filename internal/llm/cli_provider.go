@@ -42,6 +42,7 @@ var AgentReadTools = []string{
 	"Bash(cerne note show:*)",
 	"Bash(cerne reference list:*)",
 	"Bash(cerne decision list:*)",
+	"Bash(cerne idea list:*)",
 }
 
 // AgentWriteTools is what a CONFIRMED turn adds on top of AgentReadTools
