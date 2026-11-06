@@ -388,3 +388,51 @@ func TestWikiIndexNeverCompiledIsNotStale(t *testing.T) {
 		t.Fatalf("never compiled: %+v, want no pages, no stale, no needs_provider", got)
 	}
 }
+
+// TestWikiCompileRefusesCrossSite pins C7 of F-0316: the recompile spends the
+// host's LLM and pushes to the backend, so a page on another origin must not
+// trigger it with a preflight-free POST. A foreign Origin or a non-JSON body
+// type is 403 and runs nothing; same-origin and Origin-less (CLI, curl) pass.
+func TestWikiCompileRefusesCrossSite(t *testing.T) {
+	runs := 0
+	orig := wikiCompileRunner
+	wikiCompileRunner = func(string, string) ([]byte, error) { runs++; return nil, nil }
+	t.Cleanup(func() { wikiCompileRunner = orig })
+	repoDir, projDir := newBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "unused",
+		LLM: project.LLMConfig{Mode: "byo-key", BaseURL: "http://127.0.0.1:1", KeyEnv: "TEST_WIKI_KEY"}}); err != nil {
+		t.Fatal(err)
+	}
+	h := New(repoDir, projDir, "")
+	cases := []struct {
+		name, origin, contentType string
+		want                      int
+	}{
+		{"cross-origin", "https://evil.example", "", http.StatusForbidden},
+		{"cross-origin text/plain", "https://evil.example", "text/plain", http.StatusForbidden},
+		{"opaque origin", "null", "", http.StatusForbidden},
+		{"no origin, form body", "", "application/x-www-form-urlencoded", http.StatusForbidden},
+		{"same origin", "http://example.com", "", http.StatusOK},
+		{"same origin JSON", "http://example.com", "application/json; charset=utf-8", http.StatusOK},
+		{"no origin (CLI, curl)", "", "", http.StatusOK},
+	}
+	for _, tc := range cases {
+		runs = 0
+		req := httptest.NewRequest(http.MethodPost, "/api/wiki/compile", nil) // Host: example.com
+		if tc.origin != "" {
+			req.Header.Set("Origin", tc.origin)
+		}
+		if tc.contentType != "" {
+			req.Header.Set("Content-Type", tc.contentType)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		wantRuns := 0
+		if tc.want == http.StatusOK {
+			wantRuns = 1
+		}
+		if rec.Code != tc.want || runs != wantRuns {
+			t.Errorf("%s: %d (ran %d), want %d (ran %d); body %s", tc.name, rec.Code, runs, tc.want, wantRuns, rec.Body.String())
+		}
+	}
+}

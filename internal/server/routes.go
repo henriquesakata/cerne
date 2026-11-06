@@ -147,9 +147,10 @@ func dataRoutes() []dataRoute {
 		{"GET", "/wiki", true, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
 			handleWikiIndex(w, repoDir, projDir)
 		}},
-		// On-demand recompile (F-0316): spends the host's LLM, local ui only.
-		{"POST", "/wiki/compile", false, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
-			handleWikiCompile(w, repoDir, projDir)
+		// On-demand recompile (F-0316): spends the host's LLM, local ui only,
+		// same-origin only.
+		{"POST", "/wiki/compile", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleWikiCompile(w, r, repoDir, projDir)
 		}},
 		{"GET", "/wiki/{rel...}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleWikiPage(w, repoDir, r.PathValue("rel"))

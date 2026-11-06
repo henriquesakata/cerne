@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -960,6 +962,25 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// sameOriginJSON guards a state-changing route against the cross-site POST a
+// browser sends without a preflight (C7, F-0316): an Origin that is not this
+// server's, or a body type other than JSON (a form or text/plain post), is
+// refused. No Origin and no body type — the CLI, curl — passes.
+func sameOriginJSON(r *http.Request) bool {
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		if err != nil || u.Host != r.Host {
+			return false
+		}
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != "application/json" {
+			return false
+		}
+	}
+	return true
+}
+
 // callableLLM reports whether projDir's [llm] can synthesize for a human in
 // the browser: a readable .cernerc whose mode is not delegation.
 func callableLLM(projDir string) bool {
@@ -1047,7 +1068,11 @@ func wikiCompileCmd(exe, projDir string) *exec.Cmd {
 // process holding the compile lock — answers 409 busy and runs nothing. A
 // failure answers the last line the compile printed, so the banner can show
 // why and offer a retry.
-func handleWikiCompile(w http.ResponseWriter, repoDir, projDir string) {
+func handleWikiCompile(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	if !callableLLM(projDir) {
 		writeJSON(w, http.StatusOK, wikiCompileResponse{NeedsProvider: true})
 		return
