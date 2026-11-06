@@ -57,7 +57,7 @@ type Report struct {
 	Unattributed              Counters            `json:"unattributed"`
 	Entities                  map[string]Counters `json:"entities,omitempty"`      // project view (id == "")
 	OtherHarness              []string            `json:"other_harness,omitempty"` // project view: sessions left out, bound under another harness
-	Children                  *Rollup             `json:"children,omitempty"`      // epic: its children's anchors
+	Children                  *Rollup             `json:"children,omitempty"`      // epic: its descendants' anchors
 	Total                     *Counters           `json:"total,omitempty"`         // epic: own + children
 }
 
@@ -120,33 +120,42 @@ func Compute(in Inputs, id string) (Report, error) {
 	return r, r.rollup(in.RepoDir)
 }
 
-// rollup reads the anchors of id's direct children from their results in the
-// backend clone: a child epic contributes its total, the others their
-// counters; a child without anchor is named with its state, never skipped.
+// rollup walks id's descendants in the live parent/child tree (F-0027), at
+// every depth, from their results in the backend clone: each stamped node adds
+// its own anchor counters — never a stored total, which a descendant stamped
+// later would leave stale — and every node without an anchor is named with its
+// state, never skipped.
 func (r *Report) rollup(repoDir string) error {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return err
 	}
-	children := store.ChildrenByParent(features)[r.ID]
-	if len(children) == 0 {
+	byParent := store.ChildrenByParent(features)
+	if len(byParent[r.ID]) == 0 {
 		return nil
 	}
 	ro := &Rollup{Stamped: []string{}, Missing: []string{}}
-	for _, c := range children {
-		raw, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", c.ID, "result.md"))
-		a, ok := anchor(string(raw))
-		if !ok {
-			ro.Missing = append(ro.Missing, fmt.Sprintf("%s (%s)", c.ID, c.State))
-			continue
+	seen := map[string]bool{r.ID: true}
+	var walk func(id string)
+	walk = func(id string) {
+		for _, c := range byParent[id] {
+			if seen[c.ID] {
+				continue // a parent cycle in the data: each node counts once
+			}
+			seen[c.ID] = true
+			raw, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", c.ID, "result.md"))
+			if a, ok := anchor(string(raw)); ok {
+				ro.Counters = ro.Counters.add(a.Counters)
+				ro.Stamped = append(ro.Stamped, c.ID)
+			} else {
+				ro.Missing = append(ro.Missing, fmt.Sprintf("%s (%s)", c.ID, c.State))
+			}
+			walk(c.ID)
 		}
-		if a.Total != nil {
-			ro.Counters = ro.Counters.add(*a.Total)
-		} else {
-			ro.Counters = ro.Counters.add(a.Counters)
-		}
-		ro.Stamped = append(ro.Stamped, c.ID)
 	}
+	walk(r.ID)
+	sort.Strings(ro.Stamped)
+	sort.Strings(ro.Missing)
 	total := r.Counters.add(ro.Counters)
 	r.Children, r.Total = ro, &total
 	return nil

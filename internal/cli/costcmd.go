@@ -206,7 +206,7 @@ func renderCost(out io.Writer, r cost.Report) {
 	renderRollup(out, r)
 }
 
-// renderRollup prints an epic's children share and its total.
+// renderRollup prints an epic's descendants share and its total.
 func renderRollup(out io.Writer, r cost.Report) {
 	if r.Children == nil || r.Total == nil {
 		return
@@ -217,7 +217,7 @@ func renderRollup(out io.Writer, r cost.Report) {
 		}
 		return strings.Join(ids, ", ")
 	}
-	fmt.Fprintf(out, "Children (sum of their stamped anchors): %s\n", fmtCounters(r.Children.Counters))
+	fmt.Fprintf(out, "Children, at every depth (sum of their stamped anchors): %s\n", fmtCounters(r.Children.Counters))
 	fmt.Fprintf(out, "  stamped: %s\n", list(r.Children.Stamped))
 	fmt.Fprintf(out, "  without anchor: %s\n", list(r.Children.Missing))
 	fmt.Fprintf(out, "Total (own + children): %s\n", fmtCounters(*r.Total))

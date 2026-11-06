@@ -93,8 +93,8 @@ func TestStampNeverLowersAnchor(t *testing.T) {
 }
 
 // TestRollupSumsAnchorsAndNamesMissing (crit. 10): an epic's report sums its
-// direct children's anchors (a child epic's total), names those without one
-// with their state, and totals own + children.
+// children's anchors, names those without one with their state, and totals
+// own + children.
 func TestRollupSumsAnchorsAndNamesMissing(t *testing.T) {
 	in := fixture(t)
 	saveFeature(t, in.RepoDir, "E-0001", domain.StateInDevelopment)
@@ -109,10 +109,6 @@ func TestRollupSumsAnchorsAndNamesMissing(t *testing.T) {
 	child("F-0003", domain.StateImplemented)
 	writeResult(t, in.RepoDir, "F-0003", resultDoc("F-0003"))
 	child("F-0004", domain.StateInDevelopment)
-	child("F-0005", domain.StateImplemented)
-	nested := stampReport("F-0005", cc(1, 0, 0, 0), 1)
-	nested.Total = &Counters{Input: 5, CacheCreation: 5, CacheRead: 5, Output: 5}
-	writeResult(t, in.RepoDir, "F-0005", mustStamp(t, resultDoc("F-0005"), nested))
 	writeSession(t, in.Roots[0], "s", tmsg{ts: at(2), id: "a", req: "r", c: cc(100, 0, 0, 0)})
 	bindAt(t, in.CacheDir, "s", "", "E-0001", at(1))
 
@@ -120,11 +116,45 @@ func TestRollupSumsAnchorsAndNamesMissing(t *testing.T) {
 	if r.Counters != cc(100, 0, 0, 0) || r.Children == nil || r.Total == nil {
 		t.Fatalf("report = %+v", r)
 	}
-	if r.Children.Counters != cc(6, 6, 6, 6) || !reflect.DeepEqual(r.Children.Stamped, []string{"F-0002", "F-0005"}) ||
+	if r.Children.Counters != cc(1, 1, 1, 1) || !reflect.DeepEqual(r.Children.Stamped, []string{"F-0002"}) ||
 		!reflect.DeepEqual(r.Children.Missing, []string{"F-0003 (implemented)", "F-0004 (in_development)"}) {
 		t.Fatalf("children = %+v", *r.Children)
 	}
-	if *r.Total != cc(106, 6, 6, 6) {
+	if *r.Total != cc(101, 1, 1, 1) {
 		t.Fatalf("total = %+v, want own + children", *r.Total)
+	}
+}
+
+// TestRollupRecursesLiveTree (C3): the rollup walks the live parent/child tree
+// at every depth, summing each node's own anchor counters — never a stored
+// total, which a grandchild stamped after its parent would leave stale — and
+// naming every node without an anchor.
+func TestRollupRecursesLiveTree(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	node := func(id, parent string, own *Counters, total *Counters) {
+		t.Helper()
+		if err := store.SaveFeature(in.RepoDir, store.Feature{ID: id, Title: id, Parent: parent, State: domain.StateImplemented, CreatedAt: base, UpdatedAt: base}); err != nil {
+			t.Fatal(err)
+		}
+		if own == nil {
+			writeResult(t, in.RepoDir, id, resultDoc(id))
+			return
+		}
+		r := stampReport(id, *own, 1)
+		r.Total = total
+		writeResult(t, in.RepoDir, id, mustStamp(t, resultDoc(id), r))
+	}
+	// F-0002 (an epic) was stamped before its child F-0004: its stored total is its own cost alone.
+	node("F-0002", "F-0001", &Counters{Input: 2000}, &Counters{Input: 2000})
+	node("F-0003", "F-0001", &Counters{Input: 110}, nil)
+	node("F-0004", "F-0002", &Counters{Input: 40000}, nil)
+	node("F-0005", "F-0004", nil, nil)
+
+	r := compute(t, in, "F-0001")
+	if r.Children == nil || r.Children.Counters != cc(42110, 0, 0, 0) ||
+		!reflect.DeepEqual(r.Children.Stamped, []string{"F-0002", "F-0003", "F-0004"}) ||
+		!reflect.DeepEqual(r.Children.Missing, []string{"F-0005 (implemented)"}) {
+		t.Fatalf("children = %+v", r.Children)
 	}
 }

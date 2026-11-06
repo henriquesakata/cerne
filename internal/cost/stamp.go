@@ -23,8 +23,9 @@ var (
 	ErrStampWouldLower = errors.New("the stamp would lower the recorded cost")
 )
 
-// Rollup is an epic's children share: the sum of their stamped anchors, and
-// the children stamped and missing (with their state).
+// Rollup is an epic's descendants share, at every depth: the sum of their
+// stamped anchors' own counters, and the descendants stamped and missing (with
+// their state).
 type Rollup struct {
 	Counters Counters `json:"counters"`
 	Stamped  []string `json:"stamped"`
@@ -112,7 +113,7 @@ func block(r Report) (string, error) {
 		fmt.Fprintf(&b, "Atenção: %d sessão(ões) sem transcript nem snapshot; total parcial.\n", lost)
 	}
 	if r.Children != nil && r.Total != nil {
-		fmt.Fprintf(&b, "Filhos (âncoras somadas): %s; carimbados: %s; sem âncora: %s.\n",
+		fmt.Fprintf(&b, "Filhos, em qualquer profundidade (âncoras somadas): %s; carimbados: %s; sem âncora: %s.\n",
 			countersLine(r.Children.Counters), listOrNone(r.Children.Stamped), listOrNone(r.Children.Missing))
 		fmt.Fprintf(&b, "Total (próprio + filhos): %s.\n", countersLine(*r.Total))
 	}
