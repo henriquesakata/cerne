@@ -90,9 +90,9 @@ func newMsgSendCmd(dir, session *string) *cobra.Command {
 			case 0:
 				fmt.Fprintf(out, "sent #%d — no live session right now; it stays in the channel until it expires (24h, or when %s closes)\n", m.Seq, m.Nick)
 			case 1:
-				fmt.Fprintf(out, "sent #%d — 1 live session will receive it: %s\n", m.Seq, to[0])
+				fmt.Fprintf(out, "sent #%d — 1 work with a live session will receive it: %s\n", m.Seq, to[0])
 			default:
-				fmt.Fprintf(out, "sent #%d — %d live sessions will receive it: %s\n", m.Seq, len(to), strings.Join(to, ", "))
+				fmt.Fprintf(out, "sent #%d — %d works with a live session will receive it: %s\n", m.Seq, len(to), strings.Join(to, ", "))
 			}
 			return nil
 		},

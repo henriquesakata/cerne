@@ -39,7 +39,7 @@ func TestMsgSendWithoutRoomID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("msg send: %v\n%s", err, out)
 	}
-	if want := fmt.Sprintf("sent #1 — 1 live session will receive it: %s\n", b); out != want {
+	if want := fmt.Sprintf("sent #1 — 1 work with a live session will receive it: %s\n", b); out != want {
 		t.Fatalf("output = %q, want %q", out, want)
 	}
 

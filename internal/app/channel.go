@@ -426,7 +426,7 @@ func channelOf(cacheDir string) room.Channel {
 }
 
 // ChannelSend posts body as session sess's work, creating the channel on
-// demand (criterion 1), and returns the bound ids of the other live sessions
+// demand (criterion 1), and returns the open works with another live session
 // that will receive it (criterion 12) — empty when nobody is around.
 func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Message, []string, error) {
 	if strings.TrimSpace(body) == "" {
@@ -443,12 +443,19 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	if err != nil {
 		return room.Message{}, nil, err
 	}
-	bindings := sessionBindingsIn(cacheDir)
-	mine := bindings[sess]
+	// Each other session counts as the open work it answers as, once: a
+	// sibling session of the sender's own work receives it too (critic
+	// C10/C12). ponytail: a session file outlives its Claude session, so a
+	// work whose sessions all ended still counts until its binding goes stale.
+	seen := map[string]bool{}
 	var to []string
-	for s, bound := range bindings {
-		if s != sess && bound != mine && bindingLive(repoDir, bound) {
-			to = append(to, bound)
+	for s := range sessionBindingsIn(cacheDir) {
+		if s == sess {
+			continue
+		}
+		if other, ok := sessionWork(cacheDir, repoDir, s); ok && !seen[other.Work] {
+			seen[other.Work] = true
+			to = append(to, other.Work)
 		}
 	}
 	slices.Sort(to)

@@ -894,3 +894,19 @@ func TestChannelSameWorkSessionsSeeEachOther(t *testing.T) {
 		t.Fatalf("the sender's own session got its message back: %q", out)
 	}
 }
+
+// TestChannelSendReportsUniqueWorks (critic C10/C12): the send report names
+// each receiving work once, only works still open, and includes the sender's
+// own work when another of its sessions is live.
+func TestChannelSendReportsUniqueWorks(t *testing.T) {
+	f := newChanFixture(t)
+	bindTestWork(t, f.repoDir, "W-0009", domain.WorkDone)
+	for sess, id := range map[string]string{"s2b": "W-0002", "s2c": "W-0002", "s9": "W-0009", "s1b": "W-0001"} {
+		if err := BindSession(f.cacheDir, sess, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, to := f.send("s2", "oi"); !slices.Equal(to, []string{"W-0001", "W-0002", "W-0003"}) {
+		t.Fatalf("recipients = %v, want each open work once, the sender's sibling session included", to)
+	}
+}
