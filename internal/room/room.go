@@ -117,6 +117,9 @@ type Message struct {
 	Minutes *Minutes `json:"minutes,omitempty"` // close only
 
 	Human bool `json:"human,omitempty"` // permanent channel (F-0325): posted by the human from the UI
+	// Session is the agent session that posted a channel message (F-0325):
+	// an answer counts only from the session that was shown the message.
+	Session string `json:"session,omitempty"`
 }
 
 // Manager owns every room for one project: in-memory state for concurrency

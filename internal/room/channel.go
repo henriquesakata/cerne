@@ -42,14 +42,16 @@ var (
 )
 
 // Delivery is one line of the channel's delivery log: session sess (working
-// as Work) was shown Seqs at At and has seen everything up to Through (0 for
-// a peek that must not move the watermark). Ack carries explicit
-// acknowledgements instead (`cerne msg ack`).
+// as Work) was shown Seqs at At and has seen everything up to Through. A Peek
+// (a subagent's throwaway context) is recorded but delivers nothing: it never
+// moves a watermark and never makes a later post an answer. Ack carries
+// explicit acknowledgements instead (`cerne msg ack`).
 type Delivery struct {
 	Session string    `json:"session"`
 	Work    string    `json:"work,omitempty"`
 	Seqs    []int     `json:"seqs,omitempty"`
 	Through int       `json:"through,omitempty"`
+	Peek    bool      `json:"peek,omitempty"`
 	Ack     []int     `json:"ack,omitempty"`
 	At      time.Time `json:"at"`
 }

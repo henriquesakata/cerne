@@ -165,32 +165,28 @@ type channelState struct {
 	dels []room.Delivery
 }
 
-// answered reports whether work acked m, or posted after m was delivered to
-// it (criterion 10) — nothing else silences an addressed message. A post the
-// work made before it was ever shown m answers nothing: counting it would
-// silence exactly the message the work has not seen.
+// answered reports whether work acked m, or a session of work posted after m
+// was delivered to that same session (criterion 10) — nothing else silences
+// an addressed message. A post made before the session was shown m, a peek
+// (a subagent's discarded context) or another session's post answers nothing:
+// each would silence exactly the message the session has not seen.
 func (cs channelState) answered(m room.Message, work string) bool {
 	if work == "" {
 		return false
 	}
-	var seen time.Time
 	for _, d := range cs.dels {
-		if d.Work != work {
+		if d.Work == work && slices.Contains(d.Ack, m.Seq) {
+			return true
+		}
+	}
+	for _, d := range cs.dels {
+		if d.Work != work || d.Peek || !slices.Contains(d.Seqs, m.Seq) {
 			continue
 		}
-		if slices.Contains(d.Ack, m.Seq) {
-			return true
-		}
-		if slices.Contains(d.Seqs, m.Seq) && (seen.IsZero() || d.At.Before(seen)) {
-			seen = d.At
-		}
-	}
-	if seen.IsZero() {
-		return false
-	}
-	for _, later := range cs.msgs {
-		if later.Seq > m.Seq && later.Nick == work && !later.Time.Before(seen) {
-			return true
+		for _, later := range cs.msgs {
+			if later.Seq > m.Seq && later.Nick == work && later.Session == d.Session && !later.Time.Before(d.At) {
+				return true
+			}
 		}
 	}
 	return false
@@ -253,7 +249,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 		}
 		var inline []room.Message
 		out, inline = renderInjection(pending)
-		d := &room.Delivery{Session: sess, Work: id.Work, At: now}
+		d := &room.Delivery{Session: sess, Work: id.Work, At: now, Peek: !consume}
 		for _, m := range inline {
 			d.Seqs = append(d.Seqs, m.Seq)
 		}
@@ -427,7 +423,7 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	if !ok {
 		return room.Message{}, nil, ErrNoChannelIdentity
 	}
-	m, err := channelOf(cacheDir).Append(room.Message{Type: "message", Nick: id.Work, Body: body, Time: now})
+	m, err := channelOf(cacheDir).Append(room.Message{Type: "message", Nick: id.Work, Session: sess, Body: body, Time: now})
 	if err != nil {
 		return room.Message{}, nil, err
 	}
@@ -522,6 +518,7 @@ func ChannelRead(cacheDir, repoDir, sess string, now time.Time) ([]ChannelMessag
 // derive computes m's targets and state against the active works.
 func (cs channelState) derive(m room.Message, active []store.Work) ChannelMessage {
 	cm := ChannelMessage{Message: m}
+	cm.Session = "" // a session id lets `msg send --session` speak as its work: never served
 	for _, w := range active {
 		if directedTo(m, identityOf(w)) {
 			cm.Directed = true
@@ -559,10 +556,11 @@ func (cs channelState) derive(m room.Message, active []store.Work) ChannelMessag
 	return cm
 }
 
-// delivered reports whether m was ever shown to a session working as work.
+// delivered reports whether m was ever shown to a session working as work (a
+// peek is no delivery).
 func (cs channelState) delivered(m room.Message, work string) bool {
 	for _, d := range cs.dels {
-		if d.Work == work && slices.Contains(d.Seqs, m.Seq) {
+		if d.Work == work && !d.Peek && slices.Contains(d.Seqs, m.Seq) {
 			return true
 		}
 	}

@@ -154,11 +154,19 @@ func newChanFixture(t *testing.T) *chanFixture {
 	return f
 }
 
-// post appends a message one second after the previous one.
+// fixtureSession is the session each fixture work posts from.
+var fixtureSession = map[string]string{"W-0001": "s1", "W-0002": "s2", "W-0003": "s3"}
+
+// post appends a message one second after the previous one; an agent posts
+// from its fixture session.
 func (f *chanFixture) post(nick, body string, human bool) int {
 	f.t.Helper()
 	f.at = f.at.Add(time.Second)
-	m, err := f.ch.Append(room.Message{Type: "message", Nick: nick, Body: body, Human: human, Time: f.at})
+	sess := ""
+	if !human {
+		sess = fixtureSession[nick]
+	}
+	m, err := f.ch.Append(room.Message{Type: "message", Nick: nick, Session: sess, Body: body, Human: human, Time: f.at})
 	if err != nil {
 		f.t.Fatalf("Append: %v", err)
 	}
@@ -690,5 +698,59 @@ func TestChannelReadFullLiveHistory(t *testing.T) {
 	// The session saw everything it read: no injection repeats it.
 	if out := f.inject("s1", true); out != "" {
 		t.Fatalf("injection after a full read = %q", out)
+	}
+}
+
+// postAs appends a message as session sess working on nick, one second later.
+func (f *chanFixture) postAs(sess, nick, body string) int {
+	f.t.Helper()
+	f.at = f.at.Add(time.Second)
+	m, err := f.ch.Append(room.Message{Type: "message", Nick: nick, Session: sess, Body: body, Time: f.at})
+	if err != nil {
+		f.t.Fatalf("Append: %v", err)
+	}
+	return m.Seq
+}
+
+// TestChannelPeekIsNoDelivery (critic C2, PEEK-PROBE): a subagent's peek is
+// recorded but is no delivery — the parent's next post, about anything, must
+// not answer an addressed message only the subagent saw; neither may a post
+// from another session of the same work.
+func TestChannelPeekIsNoDelivery(t *testing.T) {
+	f := newChanFixture(t)
+	if err := BindSession(f.cacheDir, "s2b", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	seq := f.postAs("s1", "W-0001", "W-0002 PEEK-PROBE: do not merge before my rebase")
+	if out := f.inject("s2", false); !strings.Contains(out, "PEEK-PROBE") {
+		t.Fatalf("peek = %q", out)
+	}
+	if d := f.deliveries(); len(d) != 1 || !d[0].Peek || d[0].Through != 0 {
+		t.Fatalf("peek delivery = %+v, want marked as a peek", d)
+	}
+	f.postAs("s2", "W-0002", "FYI: tests are green on my side")
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, seq); got.State != ChannelNotDelivered {
+		t.Fatalf("after a peek and an unrelated post: %+v, want not_delivered", got)
+	}
+	if out := f.inject("s2", true); !strings.Contains(out, "#1 W-0001 → you: W-0002 PEEK-PROBE") {
+		t.Fatalf("parent never got the message the subagent peeked: %q", out)
+	}
+	f.postAs("s2b", "W-0002", "outra sessão do mesmo work")
+	if out := f.inject("s2", true); !strings.Contains(out, "PEEK-PROBE") {
+		t.Fatalf("a post from another session of the work answered it: %q", out)
+	}
+	f.postAs("s2", "W-0002", "ok, espero o rebase")
+	if out := f.inject("s2", true); strings.Contains(out, "PEEK-PROBE") {
+		t.Fatalf("still repeating after the real answer: %q", out)
+	}
+	msgs, _ = f.read("")
+	if got := stateOf(t, msgs, seq); got.State != ChannelAnswered {
+		t.Fatalf("after the real answer: %+v", got)
+	}
+	for _, m := range msgs {
+		if m.Session != "" {
+			t.Fatalf("read leaks the sender's session id (it speaks as the work): %+v", m)
+		}
 	}
 }
