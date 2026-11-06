@@ -785,6 +785,20 @@ export type ChatOverride = {
   confirmTurn?: number
 }
 
+// runsSummary (F-0323 C20) devolve ao transcript o que o turno confirmado de
+// fato executou — verbo, ok e ids, ou o código do erro —, para que os turnos
+// seguintes se ancorem nos ids reais e não na prosa da resposta.
+function runsSummary(runs: ChatRun[] | undefined, noRuns: boolean | undefined): string {
+  if (!runs?.length && !noRuns) return ''
+  const lines = (runs ?? []).map((r) => {
+    const ids = r.result.ids?.length ? r.result.ids : r.result.id ? [r.result.id] : []
+    return r.result.ok
+      ? `- ${r.verb}: ok${ids.length ? ' ' + ids.join(', ') : ''}`
+      : `- ${r.verb}: erro ${r.result.error?.code ?? ''}`
+  })
+  return '\n\n[execuções deste turno]\n' + (lines.length ? lines.join('\n') : '- nenhuma')
+}
+
 // streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
 // case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
 // NDJSON: cada linha {"delta":...} vira onDelta; a última linha é o evento
@@ -801,7 +815,7 @@ export async function streamChat(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messages: messages.map(({ role, content }) => ({ role, content })),
+      messages: messages.map(({ role, content, runs, noRuns }) => ({ role, content: content + runsSummary(runs, noRuns) })),
       model: override?.model,
       effort: override?.effort,
       feature_id: override?.featureId,

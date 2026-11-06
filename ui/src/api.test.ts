@@ -44,10 +44,9 @@ describe('streamChat (F-0323): confirmação presa ao turno', () => {
     setApiProject('proj-x')
     const fetch = vi.fn().mockResolvedValue(streamResponse([`{"answered":true,"reply":"ok"}\n`]))
     vi.stubGlobal('fetch', fetch)
-    const runs = [{ tool: 'cerne', verb: 'status', args: [], result: { ok: true, output: '' } }]
     await streamChat(
       [
-        { role: 'assistant', content: 'card', runs, noExec: true },
+        { role: 'assistant', content: 'card', noExec: true },
         { role: 'user', content: 'Confirmado' },
       ],
       { confirm: true, conversationId: 'c1', confirmTurn: 0 },
@@ -61,6 +60,37 @@ describe('streamChat (F-0323): confirmação presa ao turno', () => {
       { role: 'assistant', content: 'card' },
       { role: 'user', content: 'Confirmado' },
     ])
+  })
+})
+
+describe('streamChat (F-0323 C20): o resultado das tools volta ao transcript', () => {
+  it('a mensagem com execuções leva um resumo compacto (verbo, ok e ids, ou o código do erro)', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(streamResponse([`{"answered":true,"reply":"ok"}\n`]))
+    vi.stubGlobal('fetch', fetch)
+    await streamChat(
+      [
+        { role: 'user', content: 'registra' },
+        {
+          role: 'assistant',
+          content: 'Feito.',
+          runs: [
+            { tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0001', ids: ['R-0001', 'F-0001'], output: '' } },
+            { tool: 'cerne', verb: 'feature approve', args: ['F-0001'], result: { ok: false, output: '', error: { code: 'lifecycle_denied', message: 'x' } } },
+          ],
+        },
+        { role: 'assistant', content: 'Nada.', noRuns: true },
+        { role: 'user', content: 'e agora?' },
+      ],
+      { conversationId: 'c1' },
+      () => {},
+    )
+    const sent = JSON.parse(fetch.mock.calls[0][1].body).messages as { role: string; content: string }[]
+    expect(sent[0]).toEqual({ role: 'user', content: 'registra' })
+    expect(sent[1].content).toBe(
+      'Feito.\n\n[execuções deste turno]\n- reference new: ok R-0001, F-0001\n- feature approve: erro lifecycle_denied',
+    )
+    expect(sent[2].content).toBe('Nada.\n\n[execuções deste turno]\n- nenhuma')
   })
 })
 
