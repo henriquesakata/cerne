@@ -80,12 +80,15 @@ export default function Nav({ hash }: { hash: string }) {
 function NavLinks({ active, hash }: { active: string; hash: string }) {
   const { t, lang } = useT()
   const { projects, activePid } = useProjects()
-  // mindmap.enabled = false no projeto ativo esconde o item (F-0187/F-0314); flag
-  // ausente (servidor antigo) fica ligado.
-  const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
+  // graph.enabled (F-0315) / mindmap.enabled (F-0187/F-0314) = false no projeto
+  // ativo esconde o item; flag ausente (servidor antigo) fica ligado. O valor
+  // chega pelo /api/projects, relido no evento SSE "projects" de uma escrita.
+  const info = projects.find((p) => p.pid === activePid)
+  const off = { graph: info?.graph === false, mindmap: info?.mindmap === false }
   const links = useMemo(
-    () => LINKS.filter((l) => l.key !== 'mindmap' || mindmapOn),
-    [mindmapOn],
+    () => LINKS.filter((l) => !off[l.key as keyof typeof off]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [off.graph, off.mindmap],
   )
   const containerRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)

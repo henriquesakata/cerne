@@ -62,8 +62,11 @@ export default function App() {
 function Routed({ hash }: { hash: string }) {
   const { t } = useT()
   const { projects, activePid } = useProjects()
-  // mindmap.enabled = false: a rota também morre — cai no dashboard (F-0187).
-  const mindmapOn = projects.find((p) => p.pid === activePid)?.mindmap !== false
+  // graph.enabled / mindmap.enabled = false: a rota também morre — cai no
+  // dashboard (F-0315, F-0187).
+  const info = projects.find((p) => p.pid === activePid)
+  const graphOn = info?.graph !== false
+  const mindmapOn = info?.mindmap !== false
   const feature = /^#\/f\/(.+)$/.exec(hash)
   if (feature) return <FeaturePage key={feature[1]} id={decodeURIComponent(feature[1])} />
   const decision = /^#\/d\/(.+)$/.exec(hash)
@@ -85,7 +88,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/notes') return <Notes />
   if (hash === '#/conventions') return <Conventions />
   if (hash === '#/wiki') return <Wiki />
-  if (hash === '#/graph')
+  if (hash === '#/graph' && graphOn)
     return (
       <Suspense fallback={<p className="status">{t.graph.loadingChunk}</p>}>
         <Graph />
