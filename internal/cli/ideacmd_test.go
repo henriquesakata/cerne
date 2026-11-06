@@ -282,3 +282,22 @@ func TestIdeaNewRetriesIdempotentlyAfterPostPushFailure(t *testing.T) {
 		t.Fatalf("the internal retry minted a twin: %d ideas", len(all))
 	}
 }
+
+// C15: unquoted words are one text, and a dash-leading text is told to use --.
+func TestIdeaNewJoinsWordsAndHintsDoubleDash(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ideaCmd(t, projDir, "new", "talvez", "um", "dia", "X")
+	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.Text != "talvez um dia X" {
+		t.Fatalf("text = %q, want the joined words", i.Text)
+	}
+	_, err := execCerne(t, "idea", "new", "-x ideia", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "cerne idea new -- ") {
+		t.Fatalf("dash-leading text err = %v, want the -- hint", err)
+	}
+	if out, err := execCerne(t, "idea", "new", "--dir", projDir, "--", "-x ideia"); err != nil {
+		t.Fatalf("idea new -- -x ideia: %v\n%s", err, out)
+	}
+	if i, _ := store.LoadIdea(repoDir, "I-0002"); i.Text != "-x ideia" {
+		t.Fatalf("text after -- = %q, want '-x ideia'", i.Text)
+	}
+}

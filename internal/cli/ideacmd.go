@@ -38,9 +38,11 @@ func newIdeaCmd() *cobra.Command {
 func newIdeaNewCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
-		Use:   "new <text>",
+		Use:   "new <text…>",
 		Short: "Capture an idea: the text is all it takes (tags optional)",
-		Args:  cobra.ExactArgs(1),
+		Long: "Captures the words given as one text (quoting is optional). A text that starts with a dash " +
+			"goes after '--': cerne idea new -- \"-x is an idea\".",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
 			if err != nil {
@@ -51,7 +53,7 @@ func newIdeaNewCmd(dir *string) *cobra.Command {
 			// retried without minting a twin (C2).
 			token := rand.Text()
 			create := func() (store.Idea, error) {
-				return app.CreateIdea(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component), token)
+				return app.CreateIdea(ctx.repoDir, ctx.projDir, strings.Join(args, " "), splitInforms(facet), splitInforms(component), token)
 			}
 			i, err := create()
 			if err != nil && !errors.Is(err, app.ErrIdeaTextRequired) && !errors.Is(err, domain.ErrUnknownFacet) {
@@ -66,6 +68,10 @@ func newIdeaNewCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV)")
+	// A dash-leading text parses as a flag: say how to pass it (C15).
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return fmt.Errorf("%w — a text that starts with a dash goes after '--': cerne idea new -- \"<text>\"", err)
+	})
 	return cmd
 }
 
