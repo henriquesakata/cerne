@@ -1,5 +1,7 @@
-// Package stats computes flow metrics (lead time, cycle time, throughput)
-// purely from the event log — no I/O, no writes.
+// Package stats computes flow metrics (lead time, cycle time, throughput) from
+// the event log, and process metrics (cost per delivered feature, quality guard
+// and change-marker verdicts, F-0321) from collected samples — purely, no I/O,
+// no writes.
 package stats
 
 import (

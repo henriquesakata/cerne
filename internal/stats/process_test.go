@@ -1,0 +1,363 @@
+package stats
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+)
+
+// day0 is a Monday (2026-W02), so at(n) lands on known ISO weeks.
+var day0 = time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+
+func at(day int) time.Time { return day0.AddDate(0, 0, day) }
+
+// mature is a "now" far past every horizon: the escaped guard is never pending.
+var mature = at(10_000)
+
+// sample is a stamped delivery whose weighted cost is exactly cost (all of it
+// as input, weight 1), with a Gauntlet record and no defeat.
+func sample(id string, t time.Time, cost float64) ProcessSample {
+	return ProcessSample{ID: id, CompletedAt: t, Raw: [4]int64{int64(math.Round(cost)), 0, 0, 0}, HasGauntlet: true}
+}
+
+// spread is n deterministic deliveries log-uniform around median (factor e
+// either way), dated evenly across one window starting at from.
+func spread(median float64, n int, from time.Time) []ProcessSample {
+	out := make([]ProcessSample, n)
+	for i := range out {
+		c := median * math.Exp(-1+2*float64(i)/float64(n-1))
+		out[i] = sample(fmt.Sprintf("S-%s-%03d", from.Format("20060102"), i), from.Add(time.Duration(i)*window/time.Duration(n)), c)
+	}
+	return out
+}
+
+var digitRe = regexp.MustCompile(`\d`)
+
+// assertReason pins criterion 13: a verdict always carries a one-line reason
+// with the numbers behind it, never the bare word.
+func assertReason(t *testing.T, m MarkerReport) {
+	t.Helper()
+	if m.Reason == "" || strings.Contains(m.Reason, "\n") || !digitRe.MatchString(m.Reason) {
+		t.Fatalf("reason = %q, want one line carrying its numbers", m.Reason)
+	}
+}
+
+func marker(id string, t time.Time) Marker { return Marker{ID: id, Title: "mudança " + id, At: t} }
+
+// TestWeightedCostMatchesFormula pins criterion 1: the weighted cost of the
+// real F-0309 anchor is input + 1.25·cache_creation + 0.1·cache_read + 5·output.
+func TestWeightedCostMatchesFormula(t *testing.T) {
+	s := ProcessSample{ID: "F-0309", CompletedAt: at(0), Raw: [4]int64{302, 339857, 28934595, 150077}}
+	r := ComputeProcess([]ProcessSample{s}, nil, 0, mature)
+	if len(r.Weeks) != 1 || r.Weeks[0].Median != 4068967.75 {
+		t.Fatalf("weeks = %+v, want one week with median 4068967.75", r.Weeks)
+	}
+}
+
+// TestProcessWeeklyMedianAndN pins criterion 3: one entry per ISO week (UTC)
+// with the median and n of that week's deliveries; Sunday 23:59 is still the
+// week, Monday 00:00 is the next; a week with no delivery is not emitted.
+func TestProcessWeeklyMedianAndN(t *testing.T) {
+	samples := []ProcessSample{
+		sample("A", at(0), 1),
+		sample("B", at(1), 3),
+		sample("C", at(2), 10),
+		sample("D", time.Date(2026, 1, 11, 23, 59, 0, 0, time.UTC), 7),
+		sample("E", time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC), 7),
+		sample("F", at(21), 2),
+	}
+	r := ComputeProcess(samples, nil, 0, mature)
+	want := []WeekCost{
+		{Week: "2026-W02", Start: at(0), Median: 5, N: 4},
+		{Week: "2026-W03", Start: at(7), Median: 7, N: 1},
+		{Week: "2026-W05", Start: at(21), Median: 2, N: 1},
+	}
+	if len(r.Weeks) != len(want) {
+		t.Fatalf("weeks = %+v, want %+v", r.Weeks, want)
+	}
+	for i, w := range want {
+		g := r.Weeks[i]
+		if g.Week != w.Week || !g.Start.Equal(w.Start) || g.Median != w.Median || g.N != w.N {
+			t.Fatalf("week %d = %+v, want %+v", i, g, w)
+		}
+	}
+}
+
+// TestProcessWindowsTruncateAtNeighbour pins criterion 7: before = [m−28d, m),
+// after = [m, m+28d), each cut at the neighbouring marker and naming it.
+func TestProcessWindowsTruncateAtNeighbour(t *testing.T) {
+	var samples []ProcessSample
+	for _, d := range []int{0, 10, 29, 30, 35, 39, 40, 50, 70} {
+		samples = append(samples, sample(fmt.Sprintf("D%02d", d), at(d), float64(d+1)))
+	}
+	r := ComputeProcess(samples, []Marker{marker("B", at(40)), marker("A", at(30))}, 0, mature)
+	if len(r.Markers) != 2 || r.Markers[0].ID != "A" || r.Markers[1].ID != "B" {
+		t.Fatalf("markers = %+v, want A then B", r.Markers)
+	}
+	a, b := r.Markers[0], r.Markers[1]
+	check := func(name string, s Side, n int, med float64, from, to time.Time, cut string) {
+		t.Helper()
+		if s.N != n || s.Median != med || !s.From.Equal(from) || !s.To.Equal(to) || s.CutBy != cut {
+			t.Fatalf("%s = n %d median %v [%s, %s) cut %q, want n %d median %v [%s, %s) cut %q",
+				name, s.N, s.Median, s.From, s.To, s.CutBy, n, med, from, to, cut)
+		}
+	}
+	check("A.before", a.Before, 2, 20.5, at(2), at(30), "") // days 10, 29
+	check("A.after", a.After, 3, 36, at(30), at(40), "B")   // days 30, 35, 39
+	check("B.before", b.Before, 3, 36, at(30), at(40), "A") // days 30, 35, 39
+	check("B.after", b.After, 2, 46, at(40), at(68), "")    // days 40, 50
+}
+
+// TestProcessSideStats pins criteria 8 and 1: per side, n, median, p25, p75 of
+// the weighted cost, the median of each raw counter, the share with a return
+// (of those with a Gauntlet) and the share with an escaped defect (of n).
+func TestProcessSideStats(t *testing.T) {
+	var samples []ProcessSample
+	for i := range 8 {
+		k := int64(i + 1)
+		s := ProcessSample{ID: fmt.Sprintf("B%d", k), CompletedAt: at(10 + i), Raw: [4]int64{k, 10 * k, 100 * k, 2 * k}}
+		s.HasGauntlet = i < 6 // 6 with a Gauntlet record
+		s.Returned = i%2 == 0 // returned: 0, 2, 4 among them (6 is out of the guard)
+		if i == 1 || i == 3 { // two escaped defects, fix created 5 days after delivery
+			s.Fixes = []time.Time{s.CompletedAt.AddDate(0, 0, 5)}
+		}
+		if i == 5 { // a fix created before completion is in-cycle rework, never escaped
+			s.Fixes = []time.Time{s.CompletedAt.AddDate(0, 0, -1)}
+		}
+		samples = append(samples, s)
+	}
+	samples = append(samples, spread(1000, 8, at(30))...)
+	r := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature)
+	b := r.Markers[0].Before
+	// weighted = k·(1 + 12.5 + 10 + 10) = 33.5k, k = 1..8
+	if b.N != 8 || b.Median != 150.75 || b.P25 != 67 || b.P75 != 201 {
+		t.Fatalf("before = n %d median %v p25 %v p75 %v, want 8 / 150.75 / 67 / 201", b.N, b.Median, b.P25, b.P75)
+	}
+	if want := (Raw{Input: 4.5, CacheCreation: 45, CacheRead: 450, Output: 9}); b.RawMedian != want {
+		t.Fatalf("raw median = %+v, want %+v", b.RawMedian, want)
+	}
+	if b.WithGauntlet != 6 || b.ReturnedShare != 0.5 || b.EscapedShare != 0.25 {
+		t.Fatalf("guards = with %d returned %v escaped %v, want 6 / 0.5 / 0.25", b.WithGauntlet, b.ReturnedShare, b.EscapedShare)
+	}
+	if a := r.Markers[0].After; a.N != 8 || a.WithGauntlet != 8 {
+		t.Fatalf("after = n %d with %d, want 8 / 8", a.N, a.WithGauntlet)
+	}
+	if r.ExcludedNoGauntlet != 2 {
+		t.Fatalf("excluded_no_gauntlet = %d, want 2", r.ExcludedNoGauntlet)
+	}
+}
+
+// TestProcessSmallSampleInconclusive pins criterion 9: any side under 8 is
+// inconclusivo for a small sample — no interval, no guard computed.
+func TestProcessSmallSampleInconclusive(t *testing.T) {
+	samples := append(spread(20e6, 7, at(2)), spread(20e6, 30, at(30))...)
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	if m.Verdict != "inconclusivo" || m.Code != "small_sample" || !strings.HasPrefix(m.Reason, "small sample (n=7 before, n=30 after") {
+		t.Fatalf("marker = %s/%s %q, want inconclusivo/small_sample small sample (n=7 before, n=30 after…", m.Verdict, m.Code, m.Reason)
+	}
+	if m.CostRatioCI != nil || m.Cost != "" || m.Returned != "" || m.Escaped != "" {
+		t.Fatalf("marker = %+v, want no interval and no guard", m)
+	}
+	assertReason(t, m)
+}
+
+// TestProcessCostVerdictBootstrap pins criterion 10: with n >= 8 per side the
+// 90% bootstrap interval of the median ratio decides — wholly below 1 is
+// melhorou, wholly above is piorou, straddling 1 is noise.
+func TestProcessCostVerdictBootstrap(t *testing.T) {
+	cases := []struct {
+		name        string
+		afterMedian float64
+		verdict     string
+		code        string
+	}{
+		{"40% down", 12e6, "melhorou", "cost"},
+		{"no change", 20e6, "inconclusivo", "within_noise"},
+		// The log-mirror of −40% (×1/0.6, +67%): a plain +40% is a smaller
+		// log shift, and with this e^±1 dispersion at n=30 its interval is
+		// 0.90–2.12 — honestly within noise, as the rule should say.
+		{"40% down mirrored up", 20e6 / 0.6, "piorou", "cost"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			samples := append(spread(20e6, 30, at(2)), spread(tc.afterMedian, 30, at(30))...)
+			m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+			if m.Verdict != tc.verdict || m.Code != tc.code || len(m.CostRatioCI) != 2 {
+				t.Fatalf("marker = %s/%s ci %v (%q), want %s/%s", m.Verdict, m.Code, m.CostRatioCI, m.Reason, tc.verdict, tc.code)
+			}
+			lo, hi := m.CostRatioCI[0], m.CostRatioCI[1]
+			switch tc.verdict {
+			case "melhorou":
+				if hi >= 1 {
+					t.Fatalf("ci = %v, want wholly below 1", m.CostRatioCI)
+				}
+			case "piorou":
+				if lo <= 1 {
+					t.Fatalf("ci = %v, want wholly above 1", m.CostRatioCI)
+				}
+			default:
+				if !(lo < 1 && 1 < hi) || !strings.Contains(m.Reason, "difference within noise") {
+					t.Fatalf("ci = %v reason %q, want 1 inside and difference within noise", m.CostRatioCI, m.Reason)
+				}
+			}
+			assertReason(t, m)
+		})
+	}
+}
+
+// TestProcessBootstrapReproducible pins criterion 10's fixed seed: the same
+// input gives the same intervals, and a distant extra marker does not move them.
+func TestProcessBootstrapReproducible(t *testing.T) {
+	before, after := spread(20e6, 30, at(2)), spread(15e6, 30, at(30))
+	for i := range after {
+		after[i].Returned = i%3 == 0
+		before[i].Returned = i%4 == 0
+	}
+	samples := append(before, after...)
+	one := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	two := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	far := ComputeProcess(samples, []Marker{marker("D-0001", at(30)), marker("D-0002", at(400))}, 0, mature).Markers[0]
+	for _, m := range []MarkerReport{two, far} {
+		if fmt.Sprint(m.CostRatioCI, m.ReturnedDiffCI, m.EscapedDiffCI) != fmt.Sprint(one.CostRatioCI, one.ReturnedDiffCI, one.EscapedDiffCI) {
+			t.Fatalf("ci = %v %v %v, want %v %v %v", m.CostRatioCI, m.ReturnedDiffCI, m.EscapedDiffCI,
+				one.CostRatioCI, one.ReturnedDiffCI, one.EscapedDiffCI)
+		}
+	}
+	if len(one.CostRatioCI) != 2 || len(one.ReturnedDiffCI) != 2 {
+		t.Fatalf("ci = %v %v, want both computed", one.CostRatioCI, one.ReturnedDiffCI)
+	}
+}
+
+// TestProcessReturnedGuard pins criterion 11: the 90% interval of the change
+// in the share of returned deliveries; wholly above 0 is piorou (and vetoes);
+// too few Gauntlet records on a side is inconclusivo and never vetoes.
+func TestProcessReturnedGuard(t *testing.T) {
+	build := func(afterReturned, afterGauntlet, beforeReturned func(i int) bool) MarkerReport {
+		before, after := spread(20e6, 30, at(2)), spread(20e6, 30, at(30))
+		for i := range after {
+			after[i].Returned, after[i].HasGauntlet = afterReturned(i), afterGauntlet(i)
+			before[i].Returned = beforeReturned(i)
+		}
+		return ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	}
+	all := func(int) bool { return true }
+	none := func(int) bool { return false }
+	half := func(i int) bool { return i%2 == 0 }
+	sixth := func(i int) bool { return i%6 == 0 }
+
+	m := build(half, all, none)
+	if m.Returned != "piorou" || len(m.ReturnedDiffCI) != 2 || m.ReturnedDiffCI[0] <= 0 {
+		t.Fatalf("returned = %s ci %v, want piorou wholly above 0", m.Returned, m.ReturnedDiffCI)
+	}
+	if m.Verdict != "piorou" || m.Code != "quality_guard" || !strings.Contains(m.Reason, "quality guard") {
+		t.Fatalf("marker = %s/%s %q, want piorou/quality_guard", m.Verdict, m.Code, m.Reason)
+	}
+	assertReason(t, m)
+
+	m = build(half, func(i int) bool { return i < 5 }, none)
+	if m.Returned != "inconclusivo" || m.ReturnedDiffCI != nil || m.Verdict != "inconclusivo" || m.Code != "within_noise" {
+		t.Fatalf("thin guard = returned %s ci %v final %s/%s, want inconclusivo, no veto", m.Returned, m.ReturnedDiffCI, m.Verdict, m.Code)
+	}
+
+	m = build(sixth, all, sixth)
+	if m.Returned != "ok" || m.Verdict != "inconclusivo" || m.Code != "within_noise" {
+		t.Fatalf("equal returns = returned %s final %s/%s, want ok and no veto", m.Returned, m.Verdict, m.Code)
+	}
+	assertReason(t, m)
+}
+
+// TestProcessQualityGuardVetoesCheaper pins criteria 12 and 19: a cheaper
+// change whose quality guard got worse — by returns or by escaped defects — is
+// piorou for the quality guard.
+func TestProcessQualityGuardVetoesCheaper(t *testing.T) {
+	before, after := spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
+	for i := range after {
+		after[i].Returned = i%2 == 0
+	}
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	if m.Cost != "melhorou" || m.Verdict != "piorou" || m.Code != "quality_guard" || !strings.Contains(m.Reason, "quality guard") {
+		t.Fatalf("returns veto = cost %s final %s/%s %q, want melhorou → piorou/quality_guard", m.Cost, m.Verdict, m.Code, m.Reason)
+	}
+	assertReason(t, m)
+
+	before, after = spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
+	for i := range after {
+		if i%2 == 0 {
+			after[i].Fixes = []time.Time{after[i].CompletedAt.AddDate(0, 0, 10)}
+		}
+	}
+	m = ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	if m.Cost != "melhorou" || m.Escaped != "piorou" || m.Verdict != "piorou" || m.Code != "quality_guard" {
+		t.Fatalf("escaped veto = cost %s escaped %s final %s/%s %q, want melhorou/piorou → piorou/quality_guard",
+			m.Cost, m.Escaped, m.Verdict, m.Code, m.Reason)
+	}
+	assertReason(t, m)
+}
+
+// TestProcessEscapedDefectHorizon pins criterion 19: a fix created in
+// (completion, completion+28d] is an escaped defect; one created before the
+// completion is in-cycle rework, one after the horizon does not count.
+func TestProcessEscapedDefectHorizon(t *testing.T) {
+	cases := []struct {
+		fixDay int
+		want   float64
+	}{{-1, 0}, {10, 1}, {28, 1}, {30, 0}}
+	for _, tc := range cases {
+		s := sample("F-0001", at(0), 100)
+		s.Fixes = []time.Time{at(tc.fixDay)}
+		r := ComputeProcess([]ProcessSample{s}, []Marker{marker("D-0001", at(-5))}, 0, mature)
+		if got := r.Markers[0].After.EscapedShare; got != tc.want {
+			t.Fatalf("fix on day %d: escaped share = %v, want %v", tc.fixDay, got, tc.want)
+		}
+	}
+}
+
+// TestProcessEscapedGuardPending pins criterion 20: until 28 days have passed
+// since the last delivery of the after window, the escaped guard is pending
+// and out of the verdict.
+func TestProcessEscapedGuardPending(t *testing.T) {
+	before, after := spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
+	for i := range after {
+		if i%2 == 0 {
+			after[i].Fixes = []time.Time{after[i].CompletedAt.AddDate(0, 0, 10)}
+		}
+	}
+	last := after[len(after)-1].CompletedAt
+	samples := append(before, after...)
+
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, last.AddDate(0, 0, 10)).Markers[0]
+	if m.Escaped != "pending" || m.EscapedDiffCI != nil || m.Verdict != "melhorou" || !strings.Contains(m.Reason, "pending until") {
+		t.Fatalf("young = escaped %s ci %v final %s %q, want pending, no interval, melhorou", m.Escaped, m.EscapedDiffCI, m.Verdict, m.Reason)
+	}
+	assertReason(t, m)
+
+	m = ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, last.AddDate(0, 0, 29)).Markers[0]
+	if m.Escaped != "piorou" || m.Verdict != "piorou" {
+		t.Fatalf("mature = escaped %s final %s, want piorou/piorou", m.Escaped, m.Verdict)
+	}
+}
+
+// TestProcessEmptyHasReason pins criterion 16 in the pure layer: no stamped
+// delivery at all gives the explicit reason, an empty (never null) series, and
+// the markers still listed as a small sample.
+func TestProcessEmptyHasReason(t *testing.T) {
+	r := ComputeProcess(nil, []Marker{marker("D-0001", at(0))}, 3, mature)
+	if !strings.Contains(r.Reason, "F-0309") || r.Weeks == nil || len(r.Weeks) != 0 || r.ExcludedNoCost != 3 {
+		t.Fatalf("report = %+v, want the F-0309 reason, empty weeks, excluded 3", r)
+	}
+	b, _ := json.Marshal(r)
+	if !strings.Contains(string(b), `"weeks":[]`) {
+		t.Fatalf("json = %s, want weeks: []", b)
+	}
+	m := r.Markers[0]
+	if m.Verdict != "inconclusivo" || !strings.HasPrefix(m.Reason, "small sample (n=0 before, n=0 after") {
+		t.Fatalf("marker = %s %q, want inconclusivo small sample (n=0 before, n=0 after…", m.Verdict, m.Reason)
+	}
+	if r := ComputeProcess(nil, nil, 0, mature); r.Markers == nil {
+		t.Fatalf("markers = nil, want []")
+	}
+}
