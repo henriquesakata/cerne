@@ -742,6 +742,31 @@ func TestFixesUnknownFeatureRefused(t *testing.T) {
 	}
 }
 
+// TestFixesCycleRefused pins C18: a feature cannot fix itself, nor the
+// feature that already fixes it — refused with ErrFixesCycle, nothing written.
+func TestFixesCycleRefused(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Entregue", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	if _, err := CreateFeatureFixes(repoDir, projDir, "Corrige", "", "", "F-0001", nil, nil, "", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureFixes: %v", err)
+	}
+	evsBefore, _ := store.ReadEvents(repoDir)
+	if _, err := SetFeature(repoDir, projDir, "F-0002", "", "", "F-0002", false, false, true); !errors.Is(err, ErrFixesCycle) {
+		t.Fatalf("self-reference err = %v, want ErrFixesCycle", err)
+	}
+	if _, err := SetFeature(repoDir, projDir, "F-0001", "", "", "F-0002", false, false, true); !errors.Is(err, ErrFixesCycle) {
+		t.Fatalf("two-cycle err = %v, want ErrFixesCycle", err)
+	}
+	evsAfter, _ := store.ReadEvents(repoDir)
+	f1, _ := store.LoadFeature(repoDir, "F-0001")
+	f2, _ := store.LoadFeature(repoDir, "F-0002")
+	if len(evsAfter) != len(evsBefore) || f1.Fixes != "" || f2.Fixes != "F-0001" {
+		t.Fatalf("events %d→%d, fixes F-0001 %q F-0002 %q, want nothing written", len(evsBefore), len(evsAfter), f1.Fixes, f2.Fixes)
+	}
+}
+
 // TestCreateFeatureDuplicateTitle pins the F-0121 retry guard: a title whose
 // normalized form (domain.NormalizeTitle, the F-0045 rule) matches a LIVE
 // feature is refused with ErrDuplicateTitle naming the existing id — nothing

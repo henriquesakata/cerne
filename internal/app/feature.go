@@ -38,6 +38,10 @@ var ErrParentNotFound = errors.New("parent feature (epic) not found")
 // (F-0321): the correction link is refused before anything is written.
 var ErrFixesNotFound = errors.New("the feature it fixes was not found")
 
+// ErrFixesCycle is returned when --fixes names the feature itself, or the
+// feature that already fixes it (F-0321): a correction link never loops.
+var ErrFixesCycle = errors.New("a feature cannot fix itself or the feature that fixes it")
+
 // ErrParentTerminal is returned when the parent (epic) is in a terminal state
 // (superseded/rejected): new work is not filed under a dead epic.
 var ErrParentTerminal = errors.New("the parent feature (epic) is closed")
@@ -246,7 +250,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			}
 		}
 		if fixes != "" {
-			if err := validateFixes(repoDir, fixes); err != nil {
+			if err := validateFixes(repoDir, id, fixes); err != nil {
 				return err
 			}
 		}
@@ -406,15 +410,26 @@ func ValidateModule(module string, modules []string) error {
 	return nil
 }
 
-// validateFixes checks that the feature a correction fixes exists
-// (ErrFixesNotFound, wrapped). A terminal target is accepted: the fixed feature
-// is normally implemented — that is how its defect escaped.
-func validateFixes(repoDir, id string) error {
-	_, err := store.LoadFeature(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return fmt.Errorf("%w: %s", ErrFixesNotFound, id)
+// validateFixes checks that the feature id corrects, fixes, exists
+// (ErrFixesNotFound, wrapped) and closes no loop: neither id itself nor a
+// feature that already fixes id (ErrFixesCycle, wrapped). A terminal target is
+// accepted: the fixed feature is normally implemented — that is how its defect
+// escaped.
+func validateFixes(repoDir, id, fixes string) error {
+	if fixes == id {
+		return fmt.Errorf("%w: %s", ErrFixesCycle, id)
 	}
-	return err
+	target, err := store.LoadFeature(repoDir, fixes)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("%w: %s", ErrFixesNotFound, fixes)
+	}
+	if err != nil {
+		return err
+	}
+	if target.Fixes == id {
+		return fmt.Errorf("%w: %s already fixes %s", ErrFixesCycle, fixes, id)
+	}
+	return nil
 }
 
 // validateParent checks that a non-empty parent is a usable epic for childID:
@@ -550,8 +565,9 @@ func RenameFeature(repoDir, projDir, id, newTitle string) error {
 // (ErrInvalidPriority, wrapped); a terminal feature (domain.TitleEditable's
 // definition — implemented/done/rejected/superseded) is frozen (ErrFeatureFrozen,
 // wrapped); store.ErrNotFound (wrapped) for an unknown feature. A non-empty
-// fixes must name an existing feature (ErrFixesNotFound, wrapped, F-0321); an
-// empty one clears the link.
+// fixes must name an existing feature (ErrFixesNotFound, wrapped, F-0321)
+// other than id and not one that fixes id (ErrFixesCycle, wrapped); an empty
+// one clears the link.
 func SetFeature(repoDir, projDir, id, owner, priority, fixes string, setOwner, setPriority, setFixes bool) (store.Feature, error) {
 	var f store.Feature
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
@@ -579,7 +595,7 @@ func SetFeature(repoDir, projDir, id, owner, priority, fixes string, setOwner, s
 		if setFixes {
 			fixes = strings.TrimSpace(fixes)
 			if fixes != "" {
-				if err := validateFixes(repoDir, fixes); err != nil {
+				if err := validateFixes(repoDir, id, fixes); err != nil {
 					return "", err
 				}
 			}
