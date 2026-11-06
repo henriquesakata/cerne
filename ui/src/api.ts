@@ -1480,6 +1480,54 @@ export async function postChannel(body: string): Promise<ChannelMessage> {
   return (await r.json()) as ChannelMessage
 }
 
+// --- Ideias (F-0312) ---
+
+// Idea espelha store.Idea: matéria-prima fora do funil — texto e tags
+// opcionais, sem spec nem gates.
+export type Idea = {
+  id: string
+  text: string
+  state: 'active' | 'dropped' | 'promoted'
+  facets?: string[]
+  components?: string[]
+  created_at: string
+  updated_at: string
+  closed_at?: string
+  reason?: string
+  promoted_to?: string
+}
+
+// fetchIdeas lista as ideias ativas, mais novas primeiro.
+export async function fetchIdeas(): Promise<Idea[]> {
+  const r = await fetch(`${base()}/ideas`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { ideas: Idea[] }).ideas
+}
+
+async function postIdea<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${base()}/ideas${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as T
+}
+
+// createIdea tem o contrato do `cerne idea new`: só o texto é exigido.
+export async function createIdea(text: string, facets: string[], components: string[]): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>('', { text, facets, components })).idea
+}
+
+export async function dropIdea(id: string): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>(`/${encodeURIComponent(id)}/drop`, {})).idea
+}
+
+// promoteIdea cria a candidata; module só é exigido com 2+ módulos.
+export async function promoteIdea(id: string, module: string): Promise<{ idea: Idea; feature: Feature }> {
+  return postIdea(`/${encodeURIComponent(id)}/promote`, { module })
+}
+
 // --- Harness (F-0251) ---
 
 // HarnessItem é uma linha do inventário do harness efetivo: nome, camada de

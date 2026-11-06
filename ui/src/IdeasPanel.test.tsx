@@ -1,0 +1,112 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
+import IdeasPanel from './IdeasPanel'
+import type { Feature, Idea } from './api'
+
+const idea = (id: string, text: string): Idea => ({
+  id,
+  text,
+  state: 'active',
+  created_at: '2026-11-06T10:00:00Z',
+  updated_at: '2026-11-06T10:00:00Z',
+})
+
+let ideas: Idea[] = []
+const fetchIdeas = vi.fn(async () => ideas)
+const createIdea = vi.fn<(text: string, facets: string[], components: string[]) => Promise<Idea>>()
+const dropIdea = vi.fn<(id: string) => Promise<Idea>>()
+const promoteIdea = vi.fn<(id: string, module: string) => Promise<{ idea: Idea; feature: Feature }>>()
+
+vi.mock('./api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./api')>()),
+  fetchIdeas: () => fetchIdeas(),
+  createIdea: (text: string, facets: string[], components: string[]) => createIdea(text, facets, components),
+  dropIdea: (id: string) => dropIdea(id),
+  promoteIdea: (id: string, module: string) => promoteIdea(id, module),
+}))
+
+beforeEach(() => {
+  cleanup()
+  ideas = []
+  fetchIdeas.mockClear()
+  createIdea.mockReset()
+  dropIdea.mockReset()
+  promoteIdea.mockReset()
+})
+
+const input = () => screen.getByRole('textbox', { name: 'Nova ideia' }) as HTMLInputElement
+const capture = (text: string) => {
+  fireEvent.change(input(), { target: { value: text } })
+  fireEvent.submit(input().closest('form')!)
+}
+const row = (text: string) => within(screen.getByText(text).closest('li')!)
+
+describe('IdeasPanel (F-0312)', () => {
+  it('captura só com o texto', async () => {
+    createIdea.mockResolvedValue(idea('I-0001', 'talvez um dia X'))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    const details = input().closest('form')!.querySelector('details')!
+    expect(details.open).toBe(false)
+    capture('  talvez um dia X ')
+    await waitFor(() => expect(createIdea).toHaveBeenCalledWith('talvez um dia X', [], []))
+  })
+
+  it('a ideia nova aparece sem recarregar', async () => {
+    createIdea.mockImplementation(async (text) => {
+      ideas = [idea('I-0001', text)]
+      return ideas[0]
+    })
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('exportar o kanban')
+    expect(await screen.findByText('exportar o kanban')).toBeInTheDocument()
+    expect(input().value).toBe('')
+  })
+
+  it('falha mantém o texto e oferece tentar de novo', async () => {
+    createIdea.mockRejectedValueOnce(new Error('backend fora'))
+    createIdea.mockResolvedValueOnce(idea('I-0001', 'não perder isto'))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('não perder isto')
+    expect(await screen.findByText(/backend fora/)).toBeInTheDocument()
+    expect(input().value).toBe('não perder isto')
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(createIdea).toHaveBeenCalledTimes(2))
+    expect(createIdea).toHaveBeenLastCalledWith('não perder isto', [], [])
+    await waitFor(() => expect(input().value).toBe(''))
+    expect(screen.queryByText(/backend fora/)).toBeNull()
+  })
+
+  it('lista ativas com texto, data, promover e descartar', async () => {
+    ideas = [idea('I-0002', 'segunda ideia'), idea('I-0001', 'primeira ideia')]
+    promoteIdea.mockResolvedValue({ idea: { ...ideas[1], state: 'promoted' }, feature: {} as Feature })
+    dropIdea.mockResolvedValue({ ...ideas[0], state: 'dropped' })
+    const onPromoted = vi.fn()
+    render(<IdeasPanel modules={['core']} onPromoted={onPromoted} />)
+    expect(await screen.findByText('primeira ideia')).toBeInTheDocument()
+    expect(row('primeira ideia').getByText('2026-11-06')).toBeInTheDocument()
+    const loads = fetchIdeas.mock.calls.length
+    fireEvent.click(row('primeira ideia').getByRole('button', { name: 'Promover' }))
+    await waitFor(() => expect(promoteIdea).toHaveBeenCalledWith('I-0001', ''))
+    await waitFor(() => expect(onPromoted).toHaveBeenCalled())
+    await waitFor(() => expect(fetchIdeas.mock.calls.length).toBeGreaterThan(loads))
+    fireEvent.click(row('segunda ideia').getByRole('button', { name: 'Descartar' }))
+    await waitFor(() => expect(dropIdea).toHaveBeenCalledWith('I-0002'))
+    await waitFor(() => expect(fetchIdeas.mock.calls.length).toBeGreaterThan(loads + 1))
+  })
+
+  it('com 2+ módulos, promover pede o módulo', async () => {
+    ideas = [idea('I-0001', 'atalho de teclado')]
+    promoteIdea.mockResolvedValue({ idea: { ...ideas[0], state: 'promoted' }, feature: {} as Feature })
+    render(<IdeasPanel modules={['core', 'web']} onPromoted={() => {}} />)
+    await screen.findByText('atalho de teclado')
+    fireEvent.click(row('atalho de teclado').getByRole('button', { name: 'Promover' }))
+    expect(promoteIdea).not.toHaveBeenCalled()
+    fireEvent.change(row('atalho de teclado').getByRole('combobox', { name: 'Módulo' }), { target: { value: 'web' } })
+    fireEvent.click(row('atalho de teclado').getByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(promoteIdea).toHaveBeenCalledWith('I-0001', 'web'))
+  })
+})

@@ -3,6 +3,7 @@ import { fetchState, type Feature } from './api'
 import Tag from './Tag'
 import BacklogChat from './BacklogChat'
 import ConversationList from './ConversationList'
+import IdeasPanel from './IdeasPanel'
 import { useBacklogChats } from './useBacklogChats'
 import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
@@ -23,6 +24,7 @@ export default function Backlog() {
   const [openClarifications, setOpenClarifications] = useState<Record<string, number>>({})
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [modules, setModules] = useState<string[]>([])
   const version = useLiveVersion()
   const { t } = useT()
   const chats = useBacklogChats()
@@ -32,6 +34,7 @@ export default function Backlog() {
       .then((s) => {
         setFeatures(s.features.filter((f) => f.state === 'candidate'))
         setOpenClarifications(s.open_clarifications ?? {})
+        setModules(s.project.modules ?? [])
         setError(null)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -59,6 +62,8 @@ export default function Backlog() {
             ))}
           </div>
         )}
+        {/* F-0312: ideias são matéria-prima, separadas das candidatas. */}
+        <IdeasPanel modules={modules} onPromoted={() => setRefreshKey((k) => k + 1)} />
         <ConversationList
           conversations={chats.chats}
           activeId={chats.active.id}
