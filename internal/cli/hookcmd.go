@@ -23,6 +23,7 @@ func newHookCmd() *cobra.Command {
 	cmd.AddCommand(newHookProvenanceCmd())
 	cmd.AddCommand(newHookCommitTrailerCmd())
 	cmd.AddCommand(newHookSessionContextCmd())
+	cmd.AddCommand(newHookChannelCmd())
 	return cmd
 }
 
