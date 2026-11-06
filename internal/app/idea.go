@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -40,7 +41,11 @@ func CanonicalIdeaID(id string) (string, error) {
 // CreateIdea captures an active idea (I-, F-0312): text and optional tags,
 // nothing else — no project, module, work or duplicate guard is read, so the
 // capture costs nothing (crit. 1). Tags are validated before any write.
-func CreateIdea(repoDir, projDir, text string, facets, components []string) (store.Idea, error) {
+// token is the submission's idempotency key (C2, the F-0121 retry parity):
+// checked inside the lock, a token already in the backend returns that idea
+// and writes nothing — so retrying a capture whose push landed but whose tail
+// failed never mints a twin. An empty token always mints.
+func CreateIdea(repoDir, projDir, text string, facets, components []string, token string) (store.Idea, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return store.Idea{}, ErrIdeaTextRequired
@@ -49,8 +54,20 @@ func CreateIdea(repoDir, projDir, text string, facets, components []string) (sto
 	if err != nil {
 		return store.Idea{}, err
 	}
+	token = strings.TrimSpace(token)
 	var i store.Idea
+	existing := false
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		if token != "" {
+			all, err := store.LoadAllIdeas(repoDir)
+			if err != nil {
+				return "", err
+			}
+			if k := slices.IndexFunc(all, func(x store.Idea) bool { return x.Token == token }); k >= 0 {
+				i, existing = all[k], true
+				return "", nil // a retry: writes nothing, surfaces as ErrNothingToCommit
+			}
+		}
 		id, err := store.NextID(repoDir, "I")
 		if err != nil {
 			return "", err
@@ -64,6 +81,7 @@ func CreateIdea(repoDir, projDir, text string, facets, components []string) (sto
 			Components: domain.NormalizeComponents(components),
 			CreatedAt:  now,
 			UpdatedAt:  now,
+			Token:      token,
 		}
 		if err := store.SaveIdea(repoDir, i); err != nil {
 			return "", err
@@ -73,6 +91,9 @@ func CreateIdea(repoDir, projDir, text string, facets, components []string) (sto
 		}
 		return "cerne: capture " + id, nil
 	})
+	if existing && errors.Is(err, gitback.ErrNothingToCommit) {
+		return i, nil
+	}
 	if err != nil {
 		return store.Idea{}, err
 	}

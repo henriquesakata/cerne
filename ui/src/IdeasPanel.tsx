@@ -3,6 +3,12 @@ import { createIdea, dropIdea, fetchIdeas, promoteIdea, type Idea } from './api'
 import { useT } from './i18n'
 import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 
+type Submission = { body: string; facets: string[]; components: string[]; token: string }
+
+// newToken identifies one capture submission (C2). Not crypto.randomUUID: a
+// remote `cerne serve` over plain http is not a secure context.
+const newToken = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+
 const csv = (s: string) =>
   s
     .split(',')
@@ -20,7 +26,8 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
   const [facets, setFacets] = useState('')
   const [components, setComponents] = useState('')
   const [sending, setSending] = useState(false)
-  const [sendError, setSendError] = useState<string | null>(null)
+  // The failed submission, kept whole (token included) for "Tentar de novo".
+  const [failed, setFailed] = useState<{ error: string; sub: Submission } | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   // Com 2+ módulos o core exige --module: o Promover abre o select primeiro.
@@ -28,24 +35,25 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
   const [module, setModule] = useState('')
   const needsModule = modules.length >= 2
 
-  const capture = () => {
-    const body = text.trim()
-    if (body === '' || sending) return
+  const send = (sub: Submission) => {
+    if (sending) return
     setSending(true)
-    setSendError(null)
-    createIdea(body, csv(facets), csv(components))
+    setFailed(null)
+    createIdea(sub.body, sub.facets, sub.components, sub.token)
       .then(() => {
         setText('')
         setFacets('')
         setComponents('')
         return load.reload()
       })
-      .catch((err: unknown) => setSendError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setFailed({ error: err instanceof Error ? err.message : String(err), sub }))
       .finally(() => setSending(false))
   }
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    capture()
+    const body = text.trim()
+    if (body === '') return
+    send({ body, facets: csv(facets), components: csv(components), token: newToken() })
   }
 
   const act = (id: string, run: () => Promise<unknown>, after?: () => void) => {
@@ -96,7 +104,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
           />
         </details>
       </form>
-      {sendError && <Notice message={t.ideas.captureError(sendError)} onRetry={capture} busy={sending} />}
+      {failed && <Notice message={t.ideas.captureError(failed.error)} onRetry={() => send(failed.sub)} busy={sending} />}
       {actionError && <p className="status error">{t.ideas.actionError(actionError)}</p>}
       {load.data === null ? (
         <LoadPending load={load} message={t.ideas.loadError} />

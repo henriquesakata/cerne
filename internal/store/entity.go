@@ -350,6 +350,9 @@ type Idea struct {
 	ClosedAt   *time.Time       `json:"closed_at,omitempty"`
 	Reason     string           `json:"reason,omitempty"`
 	PromotedTo string           `json:"promoted_to,omitempty"`
+	// Token is the capture's idempotency key (C2): a retry of the same
+	// submission returns this idea instead of minting a twin.
+	Token string `json:"token,omitempty"`
 }
 
 // SaveIdea writes the idea to entities/ideas/<ID>.json, creating the subdir

@@ -3,6 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -258,5 +260,25 @@ func TestPromotedFeatureKeepsFromIdeaAfterSpecRewrite(t *testing.T) {
 	out, err = execCerne(t, "show", fid, "--json", "--dir", projDir)
 	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.Entity.FromIdea != "I-0001" {
 		t.Fatalf("show --json = %+v, %v\n%s", doc, err, out)
+	}
+}
+
+// C2: idea new retries once with its own token, so a failure after the push
+// (the snapshot can't be written) ends with ONE idea and a success.
+func TestIdeaNewRetriesIdempotentlyAfterPostPushFailure(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	docs := filepath.Join(projDir, ".docs")
+	if err := os.RemoveAll(docs); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(docs, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "idea", "new", "sonda pós-push", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "I-0001 created") {
+		t.Fatalf("idea new = %v\n%s", err, out)
+	}
+	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 1 {
+		t.Fatalf("the internal retry minted a twin: %d ideas", len(all))
 	}
 }

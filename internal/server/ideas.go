@@ -32,12 +32,13 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		Text       string   `json:"text"`
 		Facets     []string `json:"facets"`
 		Components []string `json:"components"`
+		Token      string   `json:"token"` // C2: per submission, reused by "Tentar de novo"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	i, err := app.CreateIdea(repoDir, projDir, req.Text, req.Facets, req.Components)
+	i, err := app.CreateIdea(repoDir, projDir, req.Text, req.Facets, req.Components, req.Token)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error())) // blank text, unknown facet
 		return

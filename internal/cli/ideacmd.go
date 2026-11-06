@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -44,7 +46,17 @@ func newIdeaNewCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, err := app.CreateIdea(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component))
+			// One token per invocation, reused by the one internal retry: a
+			// failure after the push lands (snapshot, unconfirmed head) is
+			// retried without minting a twin (C2).
+			token := rand.Text()
+			create := func() (store.Idea, error) {
+				return app.CreateIdea(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component), token)
+			}
+			i, err := create()
+			if err != nil && !errors.Is(err, app.ErrIdeaTextRequired) && !errors.Is(err, domain.ErrUnknownFacet) {
+				i, err = create()
+			}
 			if err != nil {
 				return err
 			}

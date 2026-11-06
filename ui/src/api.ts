@@ -1515,9 +1515,11 @@ async function postIdea<T>(path: string, body: unknown): Promise<T> {
   return (await r.json()) as T
 }
 
-// createIdea tem o contrato do `cerne idea new`: só o texto é exigido.
-export async function createIdea(text: string, facets: string[], components: string[]): Promise<Idea> {
-  return (await postIdea<{ idea: Idea }>('', { text, facets, components })).idea
+// createIdea tem o contrato do `cerne idea new`: só o texto é exigido. token
+// identifica o envio (C2): o "Tentar de novo" reenvia o mesmo, e o servidor
+// devolve a ideia já capturada em vez de duplicá-la.
+export async function createIdea(text: string, facets: string[], components: string[], token: string): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>('', { text, facets, components, token })).idea
 }
 
 export async function dropIdea(id: string): Promise<Idea> {

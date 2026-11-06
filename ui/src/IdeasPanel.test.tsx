@@ -14,14 +14,15 @@ const idea = (id: string, text: string): Idea => ({
 
 let ideas: Idea[] = []
 const fetchIdeas = vi.fn(async () => ideas)
-const createIdea = vi.fn<(text: string, facets: string[], components: string[]) => Promise<Idea>>()
+const createIdea = vi.fn<(text: string, facets: string[], components: string[], token: string) => Promise<Idea>>()
 const dropIdea = vi.fn<(id: string) => Promise<Idea>>()
 const promoteIdea = vi.fn<(id: string, module: string) => Promise<{ idea: Idea; feature: Feature }>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchIdeas: () => fetchIdeas(),
-  createIdea: (text: string, facets: string[], components: string[]) => createIdea(text, facets, components),
+  createIdea: (text: string, facets: string[], components: string[], token: string) =>
+    createIdea(text, facets, components, token),
   dropIdea: (id: string) => dropIdea(id),
   promoteIdea: (id: string, module: string) => promoteIdea(id, module),
 }))
@@ -50,7 +51,7 @@ describe('IdeasPanel (F-0312)', () => {
     const details = input().closest('form')!.querySelector('details')!
     expect(details.open).toBe(false)
     capture('  talvez um dia X ')
-    await waitFor(() => expect(createIdea).toHaveBeenCalledWith('talvez um dia X', [], []))
+    await waitFor(() => expect(createIdea).toHaveBeenCalledWith('talvez um dia X', [], [], expect.any(String)))
   })
 
   it('a ideia nova aparece sem recarregar', async () => {
@@ -75,9 +76,25 @@ describe('IdeasPanel (F-0312)', () => {
     expect(input().value).toBe('não perder isto')
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await waitFor(() => expect(createIdea).toHaveBeenCalledTimes(2))
-    expect(createIdea).toHaveBeenLastCalledWith('não perder isto', [], [])
+    // C2: the retry re-sends the SAME submission token, so a capture whose
+    // push landed before the failure is returned, never duplicated.
+    const [first, second] = createIdea.mock.calls
+    expect(second).toEqual(first)
+    expect(first[3]).toMatch(/.+/)
     await waitFor(() => expect(input().value).toBe(''))
     expect(screen.queryByText(/backend fora/)).toBeNull()
+  })
+
+  it('cada envio novo leva um token novo (C2)', async () => {
+    createIdea.mockImplementation(async (text) => idea('I-0001', text))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('uma')
+    await waitFor(() => expect(createIdea).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(input().value).toBe(''))
+    capture('outra')
+    await waitFor(() => expect(createIdea).toHaveBeenCalledTimes(2))
+    expect(createIdea.mock.calls[1][3]).not.toBe(createIdea.mock.calls[0][3])
   })
 
   it('lista ativas com texto, data, promover e descartar', async () => {

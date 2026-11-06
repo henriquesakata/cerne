@@ -68,7 +68,7 @@ func TestIdeasLeaveAPIOutputsUnchanged(t *testing.T) {
 		t.FailNow()
 	}
 	for _, text := range []string{"zebra listrada", "conciliação do OFX", "terceira"} {
-		if _, err := app.CreateIdea(repoDir, projDir, text, nil, []string{"lint"}); err != nil {
+		if _, err := app.CreateIdea(repoDir, projDir, text, nil, []string{"lint"}, ""); err != nil {
 			t.Fatalf("CreateIdea: %v", err)
 		}
 	}
@@ -160,7 +160,7 @@ func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
 			defer wg.Done()
 			text := fmt.Sprintf("corpo %d", k)
 			if k%2 == 0 {
-				i, err := app.CreateIdea(repoDir, projDir, text, nil, nil)
+				i, err := app.CreateIdea(repoDir, projDir, text, nil, nil, "")
 				ids[k], errs[k] = i.ID, err
 				return
 			}
@@ -217,5 +217,23 @@ func TestIdeaRoutesRefuseNonIdeaIDs(t *testing.T) {
 	}
 	if files, _ := filepath.Glob(filepath.Join(repoDir, "entities", "ideas", "*.json")); len(files) != 0 {
 		t.Fatalf("a refused id planted %v", files)
+	}
+}
+
+// C2: the route takes the capture's token — a re-POST of the same submission
+// returns the idea already captured.
+func TestIdeaCaptureRouteIsIdempotentByToken(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	var got struct {
+		Idea store.Idea `json:"idea"`
+	}
+	for k := 0; k < 2; k++ {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"text":"uma vez só","token":"t-1"}`, &got); rec.Code != http.StatusCreated || got.Idea.ID != "I-0001" {
+			t.Fatalf("POST #%d = %d %+v, want 201 I-0001", k+1, rec.Code, got.Idea)
+		}
+	}
+	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 1 {
+		t.Fatalf("the same token minted %d ideas", len(all))
 	}
 }
