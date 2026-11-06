@@ -93,3 +93,30 @@ func TestChannelDirectedTo(t *testing.T) {
 		})
 	}
 }
+
+// TestChannelExpiry (F-0325 crit. 20): an agent message lives 24h or until its
+// sender's work closes, whichever comes first; a human message only 24h.
+func TestChannelExpiry(t *testing.T) {
+	repoDir := t.TempDir()
+	saveChanWork(t, repoDir, "W-0001", nil, nil)
+	bindTestWork(t, repoDir, "W-0002", domain.WorkDone)
+	now := chanT0.Add(48 * time.Hour)
+	for _, tc := range []struct {
+		name string
+		m    room.Message
+		live bool
+	}{
+		{"agent under 24h, work active", room.Message{Nick: "W-0001", Time: now.Add(-23 * time.Hour)}, true},
+		{"agent at 24h+1s", room.Message{Nick: "W-0001", Time: now.Add(-24*time.Hour - time.Second)}, false},
+		{"agent whose work is done", room.Message{Nick: "W-0002", Time: now.Add(-time.Minute)}, false},
+		{"human at 23h, no work", room.Message{Nick: "Henrique", Human: true, Time: now.Add(-23 * time.Hour)}, true},
+		{"human at 24h+1s", room.Message{Nick: "Henrique", Human: true, Time: now.Add(-24*time.Hour - time.Second)}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := liveMessages(repoDir, []room.Message{tc.m}, now)
+			if (len(got) == 1) != tc.live {
+				t.Fatalf("live = %v, want %v", len(got) == 1, tc.live)
+			}
+		})
+	}
+}

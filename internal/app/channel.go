@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/room"
@@ -83,4 +84,32 @@ func directedTo(m room.Message, id channelIdentity) bool {
 		}
 	}
 	return false
+}
+
+// channelTTL bounds every channel message's life (criterion 20).
+const channelTTL = 24 * time.Hour
+
+// liveMessages keeps the messages still alive at now: younger than 24h and,
+// for an agent's message, sent by a work that is still live. Every reader
+// filters through it, so no surface ever shows an expired message.
+func liveMessages(repoDir string, msgs []room.Message, now time.Time) []room.Message {
+	senderLive := map[string]bool{}
+	var out []room.Message
+	for _, m := range msgs {
+		if now.Sub(m.Time) > channelTTL {
+			continue
+		}
+		if !m.Human {
+			live, seen := senderLive[m.Nick]
+			if !seen {
+				live = bindingLive(repoDir, m.Nick)
+				senderLive[m.Nick] = live
+			}
+			if !live {
+				continue
+			}
+		}
+		out = append(out, m)
+	}
+	return out
 }
