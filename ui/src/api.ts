@@ -859,10 +859,21 @@ export async function registerChatNote(
 
 export type WikiPageRef = { name: string; rel: string }
 
-export async function fetchWikiIndex(): Promise<WikiPageRef[]> {
+// stale/needs_provider só vêm com a wiki desligada (F-0316): as páginas que
+// envelheceram e se o navegador não tem provedor para recompilá-las.
+export type WikiIndex = { pages: WikiPageRef[]; stale?: string[]; needs_provider?: boolean }
+
+export async function fetchWikiIndex(): Promise<WikiIndex> {
   const r = await fetch(`${base()}/wiki`)
   if (!r.ok) throw new Error(await errorMessage(r))
-  return ((await r.json()) as { pages: WikiPageRef[] }).pages
+  return (await r.json()) as WikiIndex
+}
+
+// recompileWiki roda `cerne compile` no servidor até o fim (F-0316).
+export async function recompileWiki(): Promise<{ compiled: boolean; needs_provider?: boolean }> {
+  const r = await fetch(`${base()}/wiki/compile`, { method: 'POST' })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as { compiled: boolean; needs_provider?: boolean }
 }
 
 export type WikiPage = { rel: string; body: string }
