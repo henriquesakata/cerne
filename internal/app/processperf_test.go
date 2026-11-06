@@ -222,3 +222,20 @@ func TestProcessPerfReadsUnattributed(t *testing.T) {
 		t.Fatalf("after = unattributed %v coverage %v, want 1000 / 0.75", a.UnattributedMedian, a.Coverage)
 	}
 }
+
+// TestProcessPerfIgnoresDeadFixers pins C16: a "fix" that was rejected (not a
+// bug after all) or superseded is no escaped defect of what it named.
+func TestProcessPerfIgnoresDeadFixers(t *testing.T) {
+	for _, state := range []domain.FeatureState{domain.StateRejected, domain.StateSuperseded} {
+		repoDir := newPanelBackend(t)
+		seedDecision(t, repoDir, "D-0001", panelAt(0), domain.DecisionActive, []string{"process"}, []string{"metric"})
+		seedDelivered(t, repoDir, "F-0001", panelAt(1), stamped(t, "# F-0001\n", cost.Counters{Input: 1000}))
+		fix := store.Feature{ID: "F-0002", Title: "Corrige", Fixes: "F-0001", State: state, CreatedAt: panelAt(6)}
+		if err := store.SaveFeature(repoDir, fix); err != nil {
+			t.Fatalf("SaveFeature: %v", err)
+		}
+		if a := mustProcessPerf(t, repoDir).Markers[0].After; a.EscapedShare == nil || *a.EscapedShare != 0 {
+			t.Fatalf("%s fixer: escaped share = %+v, want 0", state, a)
+		}
+	}
+}

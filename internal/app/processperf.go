@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/cost"
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/stats"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -51,7 +52,9 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 		if f.Parent != "" {
 			epic[f.Parent] = true
 		}
-		if f.Fixes != "" {
+		// A rejected or superseded "fix" (not a bug after all) is no escaped
+		// defect of what it named (C16).
+		if f.Fixes != "" && f.State != domain.StateRejected && f.State != domain.StateSuperseded {
 			fixes[f.Fixes] = append(fixes[f.Fixes], f.CreatedAt)
 		}
 	}
