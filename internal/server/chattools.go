@@ -216,7 +216,10 @@ func toolRun(env verbs.Env, runs *[]chatRun) func(context.Context, llm.ToolCall)
 		if err != nil {
 			res = verbs.Fail(err)
 		} else {
-			res = runVerb(ctx, root, call, env)
+			// C12: the child outlives the request — a write killed mid-flight
+			// leaves the backend lock and an unpushed commit; only the
+			// executor's own per-call timeout stops it.
+			res = runVerb(context.WithoutCancel(ctx), root, call, env)
 		}
 		*runs = append(*runs, chatRun{Tool: tc.Name, Verb: call.Verb, Args: call.Args, Result: res})
 		out, _ := json.Marshal(res)

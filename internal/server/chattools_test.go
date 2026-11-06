@@ -553,3 +553,22 @@ func TestSecondAdapterConsumesSameCatalog(t *testing.T) {
 		t.Fatalf("runs differ:\nanthropic %s\nopenai    %s", asJSON(gotA.Runs), asJSON(gotO.Runs))
 	}
 }
+
+// TestToolRunSurvivesClientDisconnect (F-0323 C12): the child must not die
+// with the browser tab — a write killed mid-flight leaves the backend lock
+// and an unpushed commit. Only the executor's own per-call timeout stops it.
+func TestToolRunSurvivesClientDisconnect(t *testing.T) {
+	setTree(t, fixtureTree)
+	var callErr error
+	setRunVerb(t, func(ctx context.Context, _ *cobra.Command, _ verbs.Call, _ verbs.Env) verbs.Result {
+		callErr = ctx.Err()
+		return verbs.Result{OK: true}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the client went away
+	var runs []chatRun
+	toolRun(verbs.Env{Confirmed: true}, &runs)(ctx, llm.ToolCall{Name: "cerne", Input: json.RawMessage(`{"verb":"zz-probe"}`)})
+	if callErr != nil {
+		t.Fatalf("the executor got a canceled context (%v): the child would die with the connection", callErr)
+	}
+}

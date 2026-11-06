@@ -200,7 +200,10 @@ func execute(ctx context.Context, argv []string, stdin string, env Env) Result {
 	}
 	var stdout, stderr bytes.Buffer
 	c.Stdout, c.Stderr = &stdout, &stderr
-	c.WaitDelay = 2 * time.Second
+	// C12: on the deadline the child is interrupted first and killed only
+	// after WaitDelay, so a cerne mid-write gets its chance to finish.
+	c.Cancel = func() error { return c.Process.Signal(os.Interrupt) }
+	c.WaitDelay = 5 * time.Second
 	if err := c.Start(); err != nil {
 		return fail(fmt.Errorf("%w: %v", ErrExecFailed, err), "")
 	}
@@ -212,7 +215,7 @@ func execute(ctx context.Context, argv []string, stdin string, env Env) Result {
 	case ctx.Err() != nil && lockHeldByOther(env.RepoDir, c.Process.Pid):
 		res = fail(fmt.Errorf("%w after %s: retry once the other cerne operation finishes", ErrLockConflict, timeout), out)
 	case ctx.Err() != nil:
-		res = fail(fmt.Errorf("%w after %s: command interrupted; check `cerne status` before retrying", ErrTimeout, timeout), out)
+		res = fail(fmt.Errorf("%w after %s: command interrupted; the backend lock may still be held (stolen after 2 min) — check `cerne status` before retrying", ErrTimeout, timeout), out)
 	case waitErr != nil:
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {

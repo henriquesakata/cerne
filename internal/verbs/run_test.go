@@ -146,6 +146,9 @@ func TestRunNamedErrors(t *testing.T) {
 			if res.OK || !errors.Is(res.Err, tc.want) || res.Error == nil || res.Error.Code != tc.code || res.Error.Message == "" {
 				t.Fatalf("Run = %+v (err %v), want %s", res, res.Err, tc.code)
 			}
+			if tc.want == verbs.ErrTimeout && !strings.Contains(res.Error.Message, "lock") {
+				t.Fatalf("timeout message = %q, want the backend-lock warning", res.Error.Message)
+			}
 			if tc.want == verbs.ErrCommandFailed && !strings.Contains(res.Error.Message, "url cannot be empty") {
 				t.Fatalf("message = %q, want the core's own refusal", res.Error.Message)
 			}
