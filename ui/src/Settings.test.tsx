@@ -337,3 +337,38 @@ describe('Settings — edição por escopo (F-0315)', () => {
     await waitFor(() => expect(row('Mapa mental')).not.toHaveAttribute('aria-busy'))
   })
 })
+
+describe('Settings — escape para o arquivo cru (F-0315, barra R-0042)', () => {
+  it('mostra o arquivo do escopo selecionado, copiável, e troca com o seletor', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(screen.getByText('Arquivo:')).toBeInTheDocument()
+    expect(screen.getByText('/repo/.cernerc')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar bloco de código' }))
+    expect(writeText).toHaveBeenCalledWith('/repo/.cernerc')
+
+    fireEvent.click(within(scopeGroup()).getByRole('button', { name: /Host/ }))
+    expect(screen.getByText('/home/u/.config/cerne/settings.toml')).toBeInTheDocument()
+    expect(screen.queryByText('/repo/.cernerc')).toBeNull()
+  })
+
+  it('sem arquivo para o escopo (fora de um projeto), não há bloco', async () => {
+    fetchSettings.mockResolvedValue(fixture({ files: { host: '/home/u/.config/cerne/settings.toml' } }))
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(screen.queryByText('Arquivo:')).toBeNull()
+  })
+
+  it('valor inválido guardado num escopo é dito na linha — é onde o usuário vai ao arquivo', async () => {
+    fetchSettings.mockResolvedValue(
+      withKey('wiki.enabled', {
+        invalid: [{ scope: 'host', file: '/home/u/.config/cerne/settings.toml', raw: '"no"', error: 'want a bool' }],
+      }),
+    )
+    render(<Settings />)
+    const wiki = await screen.findByRole('listitem', { name: 'Wiki' })
+    expect(within(wiki).getByText('Valor inválido em Host: "no" — ignorado')).toHaveClass('form-error')
+  })
+})

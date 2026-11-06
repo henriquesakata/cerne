@@ -2951,3 +2951,6 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-string button[aria-disabled="true"],
 .settings-row[aria-busy="true"] input { opacity: 0.5; cursor: default; }
 .settings-row .load-notice { margin: 0.5rem 0 0; }
+.settings-file { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.6rem 0 0; font-size: 0.82rem; }
+.settings-file .harness-fix { margin: 0; max-width: 100%; }
+.settings-invalid { margin: 0.35rem 0 0; font-size: 0.82rem; }

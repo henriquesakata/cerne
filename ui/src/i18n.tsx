@@ -849,6 +849,8 @@ const ptBR = {
     writesTo: (scope: string) => `Grava em ${scope}`,
     reset: 'Redefinir neste escopo',
     writeError: (e: string) => `Não foi possível gravar: ${e}`,
+    file: 'Arquivo:',
+    invalid: (scope: string, raw: string) => `Valor inválido em ${scope}: ${raw} — ignorado`,
     scopes: {
       project: 'Projeto',
       host: 'Host',
@@ -1692,6 +1694,8 @@ const en: Messages = {
     writesTo: (scope: string) => `Writes to ${scope}`,
     reset: 'Reset in this scope',
     writeError: (e: string) => `Could not save: ${e}`,
+    file: 'File:',
+    invalid: (scope: string, raw: string) => `Invalid value in ${scope}: ${raw} — ignored`,
     scopes: {
       project: 'Project',
       host: 'Host',

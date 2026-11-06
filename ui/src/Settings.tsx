@@ -4,6 +4,7 @@ import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useProjects } from './live'
 import { useT, type Messages } from './i18n'
 import { norm } from './Palette'
+import { FixBlock } from './Harness'
 
 // Settings (F-0315): the active project's settings, derived from the registry
 // F-0314 serves. The screen knows no key: title, description, type and scopes
@@ -123,6 +124,14 @@ export default function Settings() {
           {ts.scopeHint[scope]}
         </p>
       </div>
+      {/* The escape to the raw file (R-0042): where the selected scope lives,
+          for whoever would rather edit it by hand. */}
+      {view.files[scope] && (
+        <div className="settings-file">
+          <span className="muted">{ts.file}</span>
+          <FixBlock command={view.files[scope]} />
+        </div>
+      )}
       {(view.errors ?? []).map((e) => (
         <Notice
           key={`${e.scope}:${e.file}`}
@@ -293,6 +302,11 @@ function SettingRow({
         </p>
       )}
       {control}
+      {s.invalid?.map((p) => (
+        <p key={`${p.scope}:${p.raw}`} className="form-error settings-invalid" title={`${p.file}: ${p.error}`}>
+          {ts.invalid(ts.scopes[p.scope], p.raw ?? '')}
+        </p>
+      ))}
       <p className="settings-meta muted">
         <span>
           {s.origin === 'default'

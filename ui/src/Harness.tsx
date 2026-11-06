@@ -179,7 +179,7 @@ function HarnessRow({ item }: { item: HarnessItem }) {
 
 // FixBlock: o comando de correção em bloco copiável — mesma afordância do
 // bloco cercado da F-0247, sempre visível.
-function FixBlock({ command }: { command: string }) {
+export function FixBlock({ command }: { command: string }) {
   const [copied, setCopied] = useState(false)
   const { t } = useT()
   const copy = () => {
