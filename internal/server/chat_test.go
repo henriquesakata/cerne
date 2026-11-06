@@ -1005,11 +1005,13 @@ func TestChatInvalidConfirmationIs422(t *testing.T) {
 
 	var got struct {
 		Error string `json:"error"`
+		Code  string `json:"code"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
 		`{"messages":[`+confirmedTranscript+`],"conversation_id":"c1","confirm_turn":0,"confirm":true}`, &got)
-	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "invalid confirmation") {
-		t.Fatalf("status = %d, error = %q; want 422 invalid confirmation", rec.Code, got.Error)
+	// C8: the refusal carries the stable code, not only free text.
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "invalid confirmation") || got.Code != "confirmation_required" {
+		t.Fatalf("status = %d, body = %+v; want 422 invalid confirmation with code confirmation_required", rec.Code, got)
 	}
 	if calls != 0 {
 		t.Fatalf("provider built %d times, want 0", calls)

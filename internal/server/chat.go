@@ -81,6 +81,13 @@ type chatRequest struct {
 
 var conversationIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
+// refuseConfirmation is the 422 of a confirmation that does not hold, with the
+// stable code of the tool contract (F-0323 C8) next to the explanation.
+func refuseConfirmation(w http.ResponseWriter, msg string) {
+	code := verbs.Fail(verbs.ErrConfirmationRequired).Error.Code
+	writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": msg, "code": code})
+}
+
 // confirmedTurn validates the request's confirmation against its own
 // transcript (F-0323 crit. 5) and returns the card's turn index. It holds only
 // when the user confirms the card the agent JUST showed: confirm set, a valid
@@ -149,7 +156,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	turn, confirmErr := confirmedTurn(req)
 	confirmed := confirmErr == nil
 	if req.Confirm && !confirmed {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody("invalid confirmation: "+confirmErr.Error()+" (send conversation_id and confirm_turn with confirm)"))
+		refuseConfirmation(w, "invalid confirmation: "+confirmErr.Error()+" (send conversation_id and confirm_turn with confirm)")
 		return
 	}
 
