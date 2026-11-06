@@ -502,3 +502,29 @@ func TestProcessWindowCutHasItsOwnReason(t *testing.T) {
 	}
 	assertReason(t, m)
 }
+
+// TestProcessIntervalLevelDecides pins C11's level: a 20% drop at n=30 with
+// this dispersion clears a 50% interval but not the 90% one, so the verdict
+// must stay inconclusive — a narrower interval would claim melhorou.
+func TestProcessIntervalLevelDecides(t *testing.T) {
+	samples := append(spread(20e6, 30, at(2)), spread(16e6, 30, at(30))...)
+	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	if m.Verdict != "inconclusivo" || len(m.CostRatioCI) != 2 || m.CostRatioCI[1] <= 1 || m.CostRatioCI[0] > 0.7 {
+		t.Fatalf("−20%% = %s ci %v, want inconclusivo with a 90%% interval reaching past 1 and below 0.7", m.Verdict, m.CostRatioCI)
+	}
+}
+
+// TestProcessComparesMedians pins C11's statistic: the after side is the
+// before side with its 12 dearest deliveries ×10 — the mean ratio is ~5, the
+// median ratio exactly 1 — so the verdict compares medians, not means.
+func TestProcessComparesMedians(t *testing.T) {
+	before, after := spread(20e6, 30, at(2)), spread(20e6, 30, at(30))
+	for i := 18; i < 30; i++ {
+		after[i].Raw[0] *= 10
+	}
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	if m.Verdict != "inconclusivo" || m.After.Median != m.Before.Median || !(m.CostRatioCI[0] < 1 && 1 < m.CostRatioCI[1]) {
+		t.Fatalf("heavy tail = %s medians %v/%v ci %v, want inconclusivo with 1 inside the median-ratio interval",
+			m.Verdict, m.Before.Median, m.After.Median, m.CostRatioCI)
+	}
+}
