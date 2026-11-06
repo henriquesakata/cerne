@@ -73,6 +73,7 @@ export default function Wiki() {
           message={'busy' in failure ? t.wiki.recompileBusy : t.wiki.recompileError(failure.error)}
           onRetry={() => void recompile()}
           busy={busy}
+          autoFocus
         />
       )}
       <h1>{t.wiki.title}</h1>

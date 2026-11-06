@@ -123,6 +123,17 @@ describe('Wiki — desatualizada (F-0316)', () => {
     expect(recompileWiki).toHaveBeenCalledTimes(2)
   })
 
+  it('na falha o foco vai para o "Tentar de novo", não cai no body (C5, F-0302)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
+    render(<Wiki />)
+    const recompile = await screen.findByRole('button', { name: 'Recompilar' })
+    recompile.focus()
+    fireEvent.click(recompile)
+    await screen.findByText('Falha ao recompilar a wiki: boom')
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toHaveFocus()
+  })
+
   it('o erro fica ao lado do aviso, nunca aninhado nele, e o aviso tem um só estilo (C10)', async () => {
     vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
     vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
