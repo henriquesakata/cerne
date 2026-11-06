@@ -72,15 +72,16 @@ function Card({
 }
 
 // gateCounts extrai o que só um humano resolve: candidate aguarda approve,
-// implemented aguarda accept (F-0131), e o lint é a dívida documental aberta.
+// implemented aguarda accept (F-0131), e o lint é a dívida documental aberta —
+// só a que bloqueia: o achado consultivo não é pendência (F-0316, P-0002).
 // Puro para poder ser testado sem render.
 export function gateCounts(
   features: Feature[],
-  findings: { rule: string }[],
+  findings: { rule: string; advisory?: boolean }[],
 ): { approve: number; accept: number; lint: number; total: number } {
   const approve = features.filter((f) => f.state === 'candidate').length
   const accept = features.filter((f) => f.state === 'implemented').length
-  const lint = findings.length
+  const lint = findings.filter((f) => !f.advisory).length
   return { approve, accept, lint, total: approve + accept + lint }
 }
 

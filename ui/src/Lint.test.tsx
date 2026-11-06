@@ -50,3 +50,23 @@ describe('Lint — falha de carga (F-0300)', () => {
     expect(await screen.findByText('link quebrado para F-9999')).toBeInTheDocument()
   })
 })
+
+// F-0316 (P-0002): o total conta só o que bloqueia; o achado consultivo
+// aparece, marcado como aviso, sem entrar na conta de problemas.
+describe('Lint — achados consultivos (F-0316)', () => {
+  it('conta só os bloqueantes e marca o consultivo como aviso', async () => {
+    vi.mocked(fetchLintStatus).mockResolvedValueOnce({
+      findings: [
+        { rule: 'broken-link', file: 'spec.md', detail: 'link quebrado para F-9999' },
+        { rule: 'wiki-source-unknown', file: 'content/wiki/project.md', detail: 'unknown source: F-0999', advisory: true },
+        { rule: 'stale-pending', file: 'entities/pendings/P-0001.json', detail: 'pendência velha', advisory: true },
+      ],
+      stale: false,
+    })
+    render(<Lint />)
+    expect(await screen.findByText('1 problema(s) · 2 aviso(s)')).toBeInTheDocument()
+    expect(screen.getByText('pendência velha')).toBeInTheDocument()
+    expect(screen.getByText('unknown source: F-0999').closest('li')).toHaveTextContent('aviso')
+    expect(screen.getByText('link quebrado para F-9999').closest('li')).not.toHaveTextContent('aviso')
+  })
+})

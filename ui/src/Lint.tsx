@@ -46,6 +46,11 @@ export default function Lint() {
     list.push(f)
     byRule.set(f.rule, list)
   }
+  // Regras fora de RULE_ORDER também aparecem (depois), em vez de sumirem da
+  // lista enquanto contam no total.
+  const rules = [...RULE_ORDER, ...[...byRule.keys()].filter((r) => !RULE_ORDER.includes(r))]
+  // O consultivo (F-0322, F-0316) aparece marcado, fora da conta de problemas.
+  const advisory = findings.filter((f) => f.advisory).length
 
   return (
     <main className="page">
@@ -53,8 +58,11 @@ export default function Lint() {
       <h1>
         {t.lint.title} {staleBadge}
       </h1>
-      <p className="counts">{t.lint.counts(findings.length)}</p>
-      {RULE_ORDER.map((rule) => {
+      <p className="counts">
+        {t.lint.counts(findings.length - advisory)}
+        {advisory > 0 && ` · ${t.lint.advisoryCount(advisory)}`}
+      </p>
+      {rules.map((rule) => {
         const list = byRule.get(rule) ?? []
         if (list.length === 0) return null
         return (
@@ -68,6 +76,7 @@ export default function Lint() {
                 <li key={i}>
                   <span className="card-id">{f.file || f.entity}</span>
                   <span className="lint-detail">{f.detail}</span>
+                  {f.advisory && <span className="badge">{t.lint.advisoryBadge}</span>}
                 </li>
               ))}
             </ul>

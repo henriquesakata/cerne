@@ -578,6 +578,9 @@ export type LintFinding = {
   entity?: string
   file?: string
   detail: string
+  // Consultivo (F-0322, F-0316): aparece, mas nunca bloqueia nem conta como
+  // dívida aberta.
+  advisory?: boolean
 }
 
 export async function fetchLint(): Promise<LintFinding[]> {

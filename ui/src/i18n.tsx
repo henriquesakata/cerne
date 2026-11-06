@@ -766,6 +766,8 @@ const ptBR = {
     updating: 'atualizando…',
     noProblems: 'Nenhum problema encontrado.',
     counts: (n: number) => `${n} problema(s)`,
+    advisoryCount: (n: number) => `${n} aviso(s)`,
+    advisoryBadge: 'aviso',
   },
   history: {
     typeLabels: {
@@ -1551,6 +1553,8 @@ const en: Messages = {
     updating: 'updating…',
     noProblems: 'No problem found.',
     counts: (n: number) => `${n} problem(s)`,
+    advisoryCount: (n: number) => `${n} advisory`,
+    advisoryBadge: 'advisory',
   },
   history: {
     typeLabels: {
