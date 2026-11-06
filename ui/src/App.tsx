@@ -67,6 +67,12 @@ function Routed({ hash }: { hash: string }) {
   const info = projects.find((p) => p.pid === activePid)
   const graphOn = info?.graph !== false
   const mindmapOn = info?.mindmap !== false
+  // A deep link to a tab turned off lands on the dashboard: the hash says so
+  // too, so the nav marks Dashboard and Back skips the dead route (F-0315, C15).
+  const gated = (hash === '#/graph' && !graphOn) || (hash === '#/mindmap' && !mindmapOn)
+  useEffect(() => {
+    if (gated) window.location.replace('#/')
+  }, [gated])
   const feature = /^#\/f\/(.+)$/.exec(hash)
   if (feature) return <FeaturePage key={feature[1]} id={decodeURIComponent(feature[1])} />
   const decision = /^#\/d\/(.+)$/.exec(hash)

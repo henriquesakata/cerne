@@ -114,3 +114,16 @@ describe('App — rota do Grafo governada por graph.enabled (F-0315)', () => {
     expect(await screen.findByText('grafo montado')).toBeInTheDocument()
   })
 })
+
+describe('App — deep link para uma aba desligada vira #/ (F-0315, crítica C15)', () => {
+  it.each([
+    ['#/graph', { graph: false }],
+    ['#/mindmap', { mindmap: false }],
+  ])('%s com a chave off troca o hash por #/ e a nav marca o Dashboard', async (hash, gate) => {
+    mockProjects = [{ pid: 'p1', name: 'P1', ...gate }]
+    window.location.hash = hash
+    render(<App />)
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('active'))
+  })
+})
