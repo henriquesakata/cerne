@@ -254,3 +254,21 @@ func TestComputeHonoursAnchorAfterPrune(t *testing.T) {
 		t.Fatalf("project = %+v, want F-0005 from its stamp", p)
 	}
 }
+
+// TestStampBlockNamesUnattributedAndRecovered (C10b): the "## Custo" prose
+// carries the unattributed bucket and the sessions recovered from a snapshot,
+// so a complete total does not read as partial.
+func TestStampBlockNamesUnattributedAndRecovered(t *testing.T) {
+	r := stampReport("F-0001", cc(1, 2, 3, 4), 2)
+	r.Sessions, r.SessionsWithoutTranscript, r.SessionsRecovered, r.Unattributed = 2, 1, 1, cc(5, 0, 0, 5)
+	got := mustStamp(t, resultDoc("F-0001"), r)
+	for _, want := range []string{"Sessões: 2 (1 sem transcript, 1 recuperada(s) do snapshot)",
+		"Não atribuído (mensagens dessas sessões do ledger fora de qualquer ligação): input 5 · cache_creation 0 · cache_read 0 · output 5"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Atenção") {
+		t.Errorf("a fully recovered session reads as a loss:\n%s", got)
+	}
+}

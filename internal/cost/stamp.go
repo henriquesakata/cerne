@@ -159,7 +159,9 @@ func block(r Report) (string, error) {
 	if r.First != "" {
 		window = r.First + " → " + r.Last
 	}
-	fmt.Fprintf(&b, "Sessões: %d · mensagens: %d · janela: %s.\n", r.Sessions, r.Messages, window)
+	fmt.Fprintf(&b, "Sessões: %d (%d sem transcript, %d recuperada(s) do snapshot) · mensagens: %d · janela: %s.\n",
+		r.Sessions, r.SessionsWithoutTranscript, r.SessionsRecovered, r.Messages, window)
+	fmt.Fprintf(&b, "Não atribuído (mensagens dessas sessões do ledger fora de qualquer ligação): %s.\n", countersLine(r.Unattributed))
 	if lost := r.SessionsWithoutTranscript - r.SessionsRecovered; lost > 0 {
 		fmt.Fprintf(&b, "Atenção: %d sessão(ões) sem transcript nem snapshot; total parcial.\n", lost)
 	}

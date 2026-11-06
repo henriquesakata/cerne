@@ -169,7 +169,7 @@ func renderCost(out io.Writer, r cost.Report) {
 	if r.ID == "" {
 		scope = ", attributed to entities"
 	}
-	fmt.Fprintf(out, "%s: tokens from Claude Code transcripts%s (no monetary value)\n", name, scope)
+	fmt.Fprintf(out, "%s: tokens from the Claude Code transcripts of the sessions recorded in the ledger%s (no monetary value)\n", name, scope)
 	for _, row := range []struct {
 		label string
 		n     int64
@@ -200,13 +200,14 @@ func renderCost(out io.Writer, r cost.Report) {
 			fmt.Fprintf(out, "  %s  %s%s\n", e, fmtCounters(r.Entities[e]), from)
 		}
 	}
-	fmt.Fprintf(out, "Sessions: %d (%d without transcript) · messages: %d\n", r.Sessions, r.SessionsWithoutTranscript, r.Messages)
+	fmt.Fprintf(out, "Sessions: %d (%d without transcript, %d recovered from snapshot) · messages: %d\n",
+		r.Sessions, r.SessionsWithoutTranscript, r.SessionsRecovered, r.Messages)
 	if r.First != "" {
 		fmt.Fprintf(out, "Window: %s → %s\n", r.First, r.Last)
 	} else {
 		fmt.Fprintln(out, "Window: — (no attributed message)")
 	}
-	fmt.Fprintf(out, "Unattributed (messages in these sessions outside any binding): %s\n", fmtCounters(r.Unattributed))
+	fmt.Fprintf(out, "Unattributed (messages of these ledger sessions outside any binding): %s\n", fmtCounters(r.Unattributed))
 	if len(r.OtherHarness) > 0 {
 		fmt.Fprintf(out, "Left out (bound under another harness; cost reads Claude Code transcripts only): %s\n", strings.Join(r.OtherHarness, ", "))
 	}
