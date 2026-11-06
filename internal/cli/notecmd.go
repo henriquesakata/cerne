@@ -263,7 +263,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component string, force bool) error {

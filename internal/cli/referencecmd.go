@@ -124,7 +124,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source")
 	_ = cmd.MarkFlagRequired("url")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string, force bool) error {

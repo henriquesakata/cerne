@@ -138,3 +138,35 @@ func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
 		}
 	}
 }
+
+// TestChatToolMarksAreSafe (F-0323): the high-traffic verbs that get a typed
+// chat tool are marked on their definitions — no list here. A marked verb is
+// never lifecycle, its Use parses into positionals, and no positional collides
+// with a flag or with the stdin field of the typed schema.
+func TestChatToolMarksAreSafe(t *testing.T) {
+	var marked []string
+	for _, v := range verbs.From(Root()) {
+		if !v.ChatTool {
+			continue
+		}
+		marked = append(marked, v.Path)
+		if v.Lifecycle {
+			t.Errorf("%q is a typed chat tool and a lifecycle verb", v.Path)
+		}
+		pos, err := v.Positionals()
+		if err != nil {
+			t.Errorf("%q: Use %q does not parse: %v", v.Path, v.Use, err)
+		}
+		for _, p := range pos {
+			if _, clash := v.Flags[p]; clash || p == "stdin" {
+				t.Errorf("%q: positional %q collides with a flag or stdin", v.Path, p)
+			}
+		}
+	}
+	if len(marked) == 0 {
+		t.Fatal("no verb is marked as a typed chat tool")
+	}
+	if t.Failed() {
+		t.Logf("typed chat tools: %v", marked)
+	}
+}

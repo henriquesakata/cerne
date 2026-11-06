@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -380,5 +381,105 @@ func TestChatUnconfirmedTurnOffersNoTools(t *testing.T) {
 	}
 	if _, offered := (*bodies)[0]["tools"]; offered || (*bodies)[0]["stream"] != true {
 		t.Fatalf("body = %v, want a stream request without tools", (*bodies)[0])
+	}
+}
+
+// typedTree is the fixture with `reference new` marked as a typed chat tool.
+func typedTree() *cobra.Command {
+	root := fixtureTree()
+	newRef, _, _ := root.Find([]string{"reference", "new"})
+	newRef.Flags().Bool("force", false, "bypass the duplicate guard")
+	newRef.Flags().String("file", "", "content file")
+	newRef.Flags().String("dir", "", "project dir")
+	_ = newRef.Flags().MarkHidden("dir")
+	verbs.MarkChatTool(newRef)
+	return root
+}
+
+func toolByName(tools []llm.Tool, name string) *llm.Tool {
+	for i := range tools {
+		if tools[i].Name == name {
+			return &tools[i]
+		}
+	}
+	return nil
+}
+
+// TestTypedToolsGeneratedFromMarks (F-0323, spec "Decisões do design"): a
+// marked command gets a typed tool generated from its definition — positionals
+// from Use (required), flags with their JSON type, stdin — and marking another
+// command makes another typed tool appear, with no list edited.
+func TestTypedToolsGeneratedFromMarks(t *testing.T) {
+	tools := chatTools(typedTree)
+	tool := toolByName(tools, "cerne_reference_new")
+	if tool == nil || toolByName(tools, "cerne") == nil {
+		t.Fatalf("tools = %+v, want cerne and cerne_reference_new", tools)
+	}
+	props := tool.Schema["properties"].(map[string]any)
+	typeOf := func(k string) any {
+		p, ok := props[k].(map[string]any)
+		if !ok {
+			return nil
+		}
+		return p["type"]
+	}
+	if typeOf("title") != "string" || typeOf("url") != "string" || typeOf("force") != "boolean" || typeOf("stdin") != "string" {
+		t.Fatalf("properties = %v", props)
+	}
+	if _, ok := props["file"]; ok {
+		t.Fatalf("file must not be offered: %v", props)
+	}
+	if _, ok := props["dir"]; ok {
+		t.Fatalf("dir must not be offered: %v", props)
+	}
+	if req := tool.Schema["required"].([]string); !slices.Equal(req, []string{"title"}) {
+		t.Fatalf("required = %v, want [title]", req)
+	}
+
+	tools = chatTools(func() *cobra.Command {
+		root := typedTree()
+		probe, _, _ := root.Find([]string{"zz-probe"})
+		verbs.MarkChatTool(probe)
+		return root
+	})
+	if toolByName(tools, "cerne_zz-probe") == nil {
+		t.Fatalf("marking zz-probe did not generate its typed tool: %+v", tools)
+	}
+}
+
+// TestTypedToolDecodesToSameArgv: a typed input becomes exactly the call the
+// generic tool would carry, and a forged typed name of a lifecycle verb is
+// still refused by the executor.
+func TestTypedToolDecodesToSameArgv(t *testing.T) {
+	typed, err := decodeToolCall(typedTree(), llm.ToolCall{Name: "cerne_reference_new",
+		Input: json.RawMessage(`{"title":"T","url":"u","force":true,"stdin":"c"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generic, err := decodeToolCall(typedTree(), llm.ToolCall{Name: "cerne",
+		Input: json.RawMessage(`{"verb":"reference new","args":["T","--force","--url=u"],"stdin":"c"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typed.Verb != generic.Verb || !slices.Equal(typed.Args, generic.Args) || typed.Stdin != generic.Stdin {
+		t.Fatalf("typed = %+v, generic = %+v", typed, generic)
+	}
+
+	if _, err := decodeToolCall(typedTree(), llm.ToolCall{Name: "cerne_nope", Input: json.RawMessage(`{}`)}); !errors.Is(err, verbs.ErrUnknownVerb) {
+		t.Fatalf("unknown typed name err = %v, want ErrUnknownVerb", err)
+	}
+	if _, err := decodeToolCall(typedTree(), llm.ToolCall{Name: "cerne_reference_new", Input: json.RawMessage(`{"title":"T","file":"/etc/passwd"}`)}); !errors.Is(err, verbs.ErrInvalidArguments) {
+		t.Fatalf("file field err = %v, want ErrInvalidArguments", err)
+	}
+
+	setTree(t, typedTree)
+	setRunVerb(t, verbs.Run)
+	var runs []chatRun
+	content, isErr := toolRun(verbs.Env{Bin: "/nonexistent", Confirmed: true}, &runs)(context.Background(),
+		llm.ToolCall{Name: "cerne_feature_approve", Input: json.RawMessage(`{"id":"F-0001"}`)})
+	var res verbs.Result
+	_ = json.Unmarshal([]byte(content), &res)
+	if !isErr || res.Error == nil || res.Error.Code != "lifecycle_denied" {
+		t.Fatalf("typed lifecycle call = %s, want lifecycle_denied", content)
 	}
 }

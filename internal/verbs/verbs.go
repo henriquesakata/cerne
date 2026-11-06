@@ -5,6 +5,8 @@
 package verbs
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -75,4 +77,21 @@ func verbOf(c *cobra.Command) Verb {
 		Lifecycle: c.Annotations[lifecycleKey] == "true",
 		ChatTool:  c.Annotations[chatToolKey] == "true",
 	}
+}
+
+var positional = regexp.MustCompile(`^(<([a-z0-9_-]+)>|\[([a-z0-9_-]+)\])$`)
+
+// Positionals are the argument names of the verb's Use, in order: each must be
+// a single <x> or [x] (a variadic "..." has no typed-tool shape).
+func (v Verb) Positionals() ([]string, error) {
+	fields := strings.Fields(v.Use)
+	var out []string
+	for _, f := range fields[min(1, len(fields)):] {
+		m := positional.FindStringSubmatch(f)
+		if m == nil {
+			return nil, fmt.Errorf("use %q: %q is not a single <arg> or [arg]", v.Use, f)
+		}
+		out = append(out, m[2]+m[3])
+	}
+	return out, nil
 }

@@ -39,3 +39,15 @@ func TestFromSkipsGroupsAndHidden(t *testing.T) {
 		}
 	}
 }
+
+func TestPositionals(t *testing.T) {
+	v := Verb{Use: "new <title> [kind]"}
+	if got, err := v.Positionals(); err != nil || len(got) != 2 || got[0] != "title" || got[1] != "kind" {
+		t.Fatalf("Positionals = %v, %v", got, err)
+	}
+	for _, use := range []string{"add <ids>...", "say <room> <message...>", "new title"} {
+		if _, err := (Verb{Use: use}).Positionals(); err == nil {
+			t.Errorf("Positionals(%q) parsed, want an error", use)
+		}
+	}
+}

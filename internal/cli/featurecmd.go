@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newFeatureCmd() *cobra.Command {
@@ -70,7 +71,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool, owner, priority string) error {
@@ -96,7 +97,7 @@ func newFeatureSpecCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
