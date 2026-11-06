@@ -3,6 +3,8 @@ package cost
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -54,6 +56,8 @@ type Report struct {
 	Last                      string              `json:"last,omitempty"`
 	Unattributed              Counters            `json:"unattributed"`
 	Entities                  map[string]Counters `json:"entities,omitempty"` // project view (id == "")
+	Children                  *Rollup             `json:"children,omitempty"` // epic: its children's anchors
+	Total                     *Counters           `json:"total,omitempty"`    // epic: own + children
 }
 
 // Inputs locate what Compute reads.
@@ -106,7 +110,50 @@ type aggKey struct{ entity, session, file string }
 // sessions with a binding that resolves to id, or every ledger session when id
 // is "" — and attributes each message to the binding in force at its
 // timestamp. No ledger, or no binding for id, is a zero report with Reason.
+// An id with children (an epic, F-0027) also sums their stamped anchors.
 func Compute(in Inputs, id string) (Report, error) {
+	r, err := own(in, id)
+	if err != nil || id == "" {
+		return r, err
+	}
+	return r, r.rollup(in.RepoDir)
+}
+
+// rollup reads the anchors of id's direct children from their results in the
+// backend clone: a child epic contributes its total, the others their
+// counters; a child without anchor is named with its state, never skipped.
+func (r *Report) rollup(repoDir string) error {
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return err
+	}
+	children := store.ChildrenByParent(features)[r.ID]
+	if len(children) == 0 {
+		return nil
+	}
+	ro := &Rollup{Stamped: []string{}, Missing: []string{}}
+	for _, c := range children {
+		raw, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", c.ID, "result.md"))
+		a, ok := anchor(string(raw))
+		if !ok {
+			ro.Missing = append(ro.Missing, fmt.Sprintf("%s (%s)", c.ID, c.State))
+			continue
+		}
+		if a.Total != nil {
+			ro.Counters = ro.Counters.add(*a.Total)
+		} else {
+			ro.Counters = ro.Counters.add(a.Counters)
+		}
+		ro.Stamped = append(ro.Stamped, c.ID)
+	}
+	total := r.Counters.add(ro.Counters)
+	r.Children, r.Total = ro, &total
+	return nil
+}
+
+// own is the cost of the sessions bound to id itself (Compute without the
+// rollup).
+func own(in Inputs, id string) (Report, error) {
 	r := Report{ID: id, ByModel: map[string]Counters{}}
 	binds, exists, err := readLedger(in.CacheDir)
 	if err != nil {

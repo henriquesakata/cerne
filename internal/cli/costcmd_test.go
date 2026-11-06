@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,9 +50,8 @@ func costBind(t *testing.T, cacheDir, sess, id, ts string) {
 	}
 }
 
-// costProject is a project with F-0001 in state, bound in sess-1 (main +
-// subagent transcript, one message before the bind) and sess-2 (no
-// transcript). It returns the project dir and the backend clone.
+// costProject is a project with F-0001 in state and costSessions. It returns
+// the project dir and the backend clone.
 func costProject(t *testing.T, state domain.FeatureState) (projDir, repoDir string) {
 	t.Helper()
 	projDir, _, repoDir = setupProject(t)
@@ -59,6 +60,14 @@ func costProject(t *testing.T, state domain.FeatureState) (projDir, repoDir stri
 		t.Fatal(err)
 	}
 	commitBackend(t, repoDir)
+	costSessions(t, repoDir)
+	return projDir, repoDir
+}
+
+// costSessions binds F-0001 in sess-1 (main + subagent transcript, one
+// message before the bind) and sess-2 (no transcript).
+func costSessions(t *testing.T, repoDir string) {
+	t.Helper()
 	root := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", root)
 	writeTranscript(t, root, "sess-1.jsonl",
@@ -69,7 +78,6 @@ func costProject(t *testing.T, state domain.FeatureState) (projDir, repoDir stri
 	cacheDir := filepath.Dir(repoDir)
 	costBind(t, cacheDir, "sess-1", "F-0001", "2026-11-01T10:01:00Z")
 	costBind(t, cacheDir, "sess-2", "F-0001", "2026-11-01T10:01:00Z")
-	return projDir, repoDir
 }
 
 // TestCostCommandLabelsEachCounter (F-0309 crit. 5): the text report labels
@@ -180,5 +188,157 @@ func TestCostCommandNoLedger(t *testing.T) {
 		if err != nil || !strings.Contains(out, "no session bound") || !strings.Contains(out, "0 tokens") {
 			t.Fatalf("%v: err=%v\n%s", args, err, out)
 		}
+	}
+}
+
+// stampEvents counts the feature.doc_edited events carrying the stamp reason.
+func stampEvents(t *testing.T, repoDir string) int {
+	t.Helper()
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, ev := range events {
+		if ev.Type == "feature.doc_edited" && ev.Payload["reason"] == "cost stamp (F-0309)" {
+			n++
+		}
+	}
+	return n
+}
+
+func readResult(t *testing.T, repoDir, id string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// TestCostStampAmendsResultOnce (F-0309 crit. 8-9): --stamp on an implemented
+// feature amends its result with one "## Custo" block (the four counters and
+// the anchor), through the amend path (event with the reason), and drops the
+// snapshot; a second run is unchanged — no event, still one block.
+func TestCostStampAmendsResultOnce(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	costSessions(t, repoDir)
+	snap := filepath.Join(filepath.Dir(repoDir), "cost", "F-0001.json")
+	if err := os.MkdirAll(filepath.Dir(snap), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(snap, []byte(`{"v":1,"id":"F-0001","sessions":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001 cost stamped") {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	result := readResult(t, repoDir, "F-0001")
+	for _, want := range []string{"<!-- cerne:cost v1 {", "| input | 3 |", "| cache_creation | 30 |", "| cache_read | 300 |", "| output | 3000 |"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result lacks %q:\n%s", want, result)
+		}
+	}
+	if n := strings.Count(result, "## Custo"); n != 1 {
+		t.Fatalf("%d cost blocks, want 1", n)
+	}
+	if n := stampEvents(t, repoDir); n != 1 {
+		t.Fatalf("%d stamp events, want 1", n)
+	}
+	if _, err := os.Stat(snap); !os.IsNotExist(err) {
+		t.Fatalf("snapshot not dropped: %v", err)
+	}
+
+	out, err = execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "unchanged") {
+		t.Fatalf("second stamp: %v\n%s", err, out)
+	}
+	if n := stampEvents(t, repoDir); n != 1 || strings.Count(readResult(t, repoDir, "F-0001"), "## Custo") != 1 {
+		t.Fatalf("second stamp wrote: %d events", n)
+	}
+}
+
+// TestCostStampRefusesBeforeComplete: outside implemented the stamp refuses
+// and leaves the result as is.
+func TestCostStampRefusesBeforeComplete(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ids := seedResultFeatures(t, repoDir, domain.StateInDevelopment, domain.StateDone)
+	costSessions(t, repoDir)
+	for _, id := range ids {
+		before := readResult(t, repoDir, id)
+		_, err := execCerne(t, "cost", id, "--stamp", "--dir", projDir)
+		if !errors.Is(err, cost.ErrStampNeedsImplemented) || !strings.Contains(err.Error(), "cerne feature complete") {
+			t.Fatalf("%s: err = %v, want ErrStampNeedsImplemented with the hint", id, err)
+		}
+		if readResult(t, repoDir, id) != before {
+			t.Fatalf("%s: result changed", id)
+		}
+	}
+}
+
+// TestCostStampRefusesWithoutSessions: an implemented feature no session was
+// bound to has nothing to stamp — a zero stamp would hide the gap.
+func TestCostStampRefusesWithoutSessions(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	if _, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); !errors.Is(err, cost.ErrNothingToStamp) {
+		t.Fatalf("err = %v, want ErrNothingToStamp", err)
+	}
+}
+
+// TestCostEpicRollupCLI (crit. 10): the epic report sums the stamped children,
+// names the ones without an anchor and totals own + children, in text and
+// JSON; an epic with stamped children stamps its total even with no session
+// of its own (so its parent's rollup reads it).
+func TestCostEpicRollupCLI(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	now := time.Now().UTC()
+	for _, f := range []store.Feature{
+		{ID: "E-0001", Title: "Épico", State: domain.StateImplemented},
+		{ID: "F-0002", Title: "Filho 2", Parent: "E-0001", State: domain.StateImplemented},
+		{ID: "F-0003", Title: "Filho 3", Parent: "E-0001", State: domain.StateImplemented},
+	} {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatal(err)
+		}
+		writeDoc(t, repoDir, f.ID, "spec.md", realDoc(f.ID, "Spec."))
+		writeDoc(t, repoDir, f.ID, "result.md", realDoc(f.ID, "Result."))
+	}
+	stamped, err := cost.Stamp(realDoc("F-0002", "Result."), cost.Report{ID: "F-0002", Counters: cost.Counters{Input: 7, CacheCreation: 8, CacheRead: 9, Output: 10}, Messages: 1, Sessions: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDoc(t, repoDir, "F-0002", "result.md", stamped)
+	commitBackend(t, repoDir)
+
+	out, err := execCerne(t, "cost", "E-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("cost E-0001: %v\n%s", err, out)
+	}
+	for _, want := range []string{"stamped: F-0002", "without anchor: F-0003 (implemented)", "Total (own + children): input 7 · cache_creation 8 · cache_read 9 · output 10"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	out, err = execCerne(t, "cost", "E-0001", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r cost.Report
+	if err := json.Unmarshal([]byte(out), &r); err != nil || r.Children == nil || len(r.Children.Missing) != 1 || r.Children.Missing[0] != "F-0003 (implemented)" {
+		t.Fatalf("json children = %+v (%v):\n%s", r.Children, err, out)
+	}
+
+	if out, err := execCerne(t, "cost", "E-0001", "--stamp", "--dir", projDir); err != nil || !strings.Contains(out, "E-0001 cost stamped") {
+		t.Fatalf("epic stamp: %v\n%s", err, out)
+	}
+	if res := readResult(t, repoDir, "E-0001"); !strings.Contains(res, `"total":{"input":7,"cache_creation":8,"cache_read":9,"output":10}`) {
+		t.Fatalf("epic anchor lacks its total:\n%s", res)
 	}
 }

@@ -1,0 +1,138 @@
+package cost
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+var (
+	// ErrStampNeedsImplemented: the stamp records the closed cost, so it runs
+	// after `cerne feature complete` and before the human accept.
+	ErrStampNeedsImplemented = errors.New("the cost stamp needs an implemented feature")
+	// ErrNothingToStamp: no session bound and no stamped child — a zero stamp
+	// would hide the gap in the epic rollup.
+	ErrNothingToStamp = errors.New("nothing to stamp: no session bound and no stamped child")
+	// ErrStampWouldLower: the durable record never goes down (the snapshot is
+	// gone after the first stamp; a re-stamp after pruning would shrink it).
+	ErrStampWouldLower = errors.New("the stamp would lower the recorded cost")
+)
+
+// Rollup is an epic's children share: the sum of their stamped anchors, and
+// the children stamped and missing (with their state).
+type Rollup struct {
+	Counters Counters `json:"counters"`
+	Stamped  []string `json:"stamped"`
+	Missing  []string `json:"missing"` // "F-0003 (implemented)"
+}
+
+var (
+	custoHeadingRe = regexp.MustCompile(`(?m)^##[ \t]+Custo[ \t]*$`)
+	nextSectionRe  = regexp.MustCompile(`(?m)^##[ \t]`)
+	anchorRe       = regexp.MustCompile(`(?m)^<!-- cerne:cost v1 (\{.*\}) -->$`)
+)
+
+// anchor reads the report a stamped result carries.
+func anchor(result string) (Report, bool) {
+	m := anchorRe.FindStringSubmatch(result)
+	if m == nil {
+		return Report{}, false
+	}
+	var r Report
+	return r, json.Unmarshal([]byte(m[1]), &r) == nil
+}
+
+// Stamp writes r's "## Custo" block into result: replacing the existing block
+// in place (up to the next "## " section or the end), else appended at the
+// end. The block carries no date, so the same report stamps byte-identically.
+// A report with fewer messages than the anchor already recorded is
+// ErrStampWouldLower and result comes back unchanged.
+func Stamp(result string, r Report) (string, error) {
+	if old, ok := anchor(result); ok && r.Messages < old.Messages {
+		return result, fmt.Errorf("%w: kept the stamped cost (%d messages), the transcripts now hold fewer (%d)", ErrStampWouldLower, old.Messages, r.Messages)
+	}
+	blk, err := block(r)
+	if err != nil {
+		return result, err
+	}
+	loc := custoHeadingRe.FindStringIndex(result)
+	if loc == nil {
+		return strings.TrimRight(result, "\n") + "\n\n" + blk, nil
+	}
+	rest := result[loc[1]:]
+	if next := nextSectionRe.FindStringIndex(rest); next != nil {
+		return result[:loc[0]] + blk + "\n" + rest[next[0]:], nil
+	}
+	return result[:loc[0]] + blk, nil
+}
+
+func countersLine(c Counters) string {
+	return fmt.Sprintf("input %d · cache_creation %d · cache_read %d · output %d", c.Input, c.CacheCreation, c.CacheRead, c.Output)
+}
+
+// block renders the "## Custo" section — document content, so pt-BR like the
+// authoring prompts.
+func block(r Report) (string, error) {
+	anchorJSON, err := json.Marshal(r)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	b.WriteString("## Custo\n\n")
+	fmt.Fprintf(&b, "Tokens lidos dos transcripts do Claude Code (`cerne cost %s --stamp`), atribuídos pela ligação sessão→entidade vigente em cada mensagem. Sem valor monetário.\n\n", r.ID)
+	b.WriteString("| Parte | Tokens | O que é |\n|---|---:|---|\n")
+	fmt.Fprintf(&b, "| input | %d | entrada nova, cobrada a preço cheio |\n", r.Counters.Input)
+	fmt.Fprintf(&b, "| cache_creation | %d | gravação no cache de prompt |\n", r.Counters.CacheCreation)
+	fmt.Fprintf(&b, "| cache_read | %d | leitura do cache de prompt |\n", r.Counters.CacheRead)
+	fmt.Fprintf(&b, "| output | %d | gerados pelo modelo |\n\n", r.Counters.Output)
+	fmt.Fprintf(&b, "Subagentes (sidechain, já incluídos acima): %s.\n", countersLine(r.Sidechain))
+	models := make([]string, 0, len(r.ByModel))
+	for m := range r.ByModel {
+		models = append(models, m)
+	}
+	sort.Strings(models)
+	for i, m := range models {
+		models[i] = m + " (" + countersLine(r.ByModel[m]) + ")"
+	}
+	if len(models) == 0 {
+		models = []string{"—"}
+	}
+	fmt.Fprintf(&b, "Por modelo: %s.\n", strings.Join(models, "; "))
+	window := "—"
+	if r.First != "" {
+		window = r.First + " → " + r.Last
+	}
+	fmt.Fprintf(&b, "Sessões: %d · mensagens: %d · janela: %s.\n", r.Sessions, r.Messages, window)
+	if lost := r.SessionsWithoutTranscript - r.SessionsRecovered; lost > 0 {
+		fmt.Fprintf(&b, "Atenção: %d sessão(ões) sem transcript nem snapshot; total parcial.\n", lost)
+	}
+	if r.Children != nil && r.Total != nil {
+		fmt.Fprintf(&b, "Filhos (âncoras somadas): %s; carimbados: %s; sem âncora: %s.\n",
+			countersLine(r.Children.Counters), listOrNone(r.Children.Stamped), listOrNone(r.Children.Missing))
+		fmt.Fprintf(&b, "Total (próprio + filhos): %s.\n", countersLine(*r.Total))
+	}
+	fmt.Fprintf(&b, "\n<!-- cerne:cost v1 %s -->\n", anchorJSON)
+	return b.String(), nil
+}
+
+func listOrNone(ids []string) string {
+	if len(ids) == 0 {
+		return "—"
+	}
+	return strings.Join(ids, ", ")
+}
+
+// DropSnapshot removes id's snapshot once its cost is stamped (the temporary
+// file of F-0309's clarification); a missing one is fine.
+func DropSnapshot(cacheDir, id string) error {
+	err := os.Remove(snapshotPath(cacheDir, id))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
