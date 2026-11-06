@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -18,6 +20,10 @@ import (
 // the entity is still live (self-healing: a stale binding reads as absent and
 // is removed). The binding is local per machine — exactly the scope of a
 // Claude Code session — so it lives in the cache dir, never in the backend.
+//
+// Every bind also appends a line to the cost ledger (F-0309,
+// <cacheDir>/costbind.ndjson): additive, outside sessions/, and never touched
+// by any cleanup path below — it is the history cost attributes tokens by.
 
 // sessionsSubdir is the per-project cache subdirectory holding one file per
 // bound session.
@@ -40,6 +46,13 @@ func safeSessionID(sess string) error {
 // BindSession records that session sess is working under entity id (a W- work
 // or F- feature), overwriting any previous binding for the session.
 func BindSession(cacheDir, sess, id string) error {
+	return BindSessionAgent(cacheDir, sess, "", cost.CurrentHarness(), id)
+}
+
+// BindSessionAgent is BindSession from inside subagent agent ("" for the main
+// thread) under harness: the binding file is the session's, the cost ledger
+// line also carries the agent and the harness (F-0309).
+func BindSessionAgent(cacheDir, sess, agent, harness, id string) error {
 	if err := safeSessionID(sess); err != nil {
 		return err
 	}
@@ -47,7 +60,10 @@ func BindSession(cacheDir, sess, id string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, sess), []byte(id+"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, sess), []byte(id+"\n"), 0o644); err != nil {
+		return err
+	}
+	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, TS: time.Now().UTC()})
 }
 
 // CurrentBinding resolves the binding for session sess against the backend

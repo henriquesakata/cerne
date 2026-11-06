@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/room"
 )
@@ -83,6 +84,40 @@ func TestHookBindWorkBindsFromWorkStart(t *testing.T) {
 	}
 	if !ok || id != "W-0001" {
 		t.Fatalf("binding = (%q, %v), want (W-0001, true)", id, ok)
+	}
+}
+
+// TestHookBindWorkRecordsAgentInLedger (F-0309): a bind fired from inside a
+// subagent records the payload's agent_id (and the claude-code harness) on the
+// cost ledger line; the sessions/ binding is written as before.
+func TestHookBindWorkRecordsAgentInLedger(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\noutput: %s", err, out)
+	}
+	stdin := strings.Replace(hookJSON(t, "sess-hook", projDir, "Bash",
+		map[string]any{"command": `cerne work start "Investigar erro X"`},
+		map[string]any{"stdout": "W-0001 criada (active) — Investigar erro X (ator: agent)"}),
+		"{", `{"agent_id":"a1b2",`, 1)
+	if out, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+	}
+
+	cacheDir := filepath.Dir(repoDir)
+	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook"); err != nil || !ok || id != "W-0001" {
+		t.Fatalf("binding = (%q, %v, %v), want (W-0001, true)", id, ok, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(cacheDir, "costbind.ndjson"))
+	if err != nil {
+		t.Fatalf("ledger: %v", err)
+	}
+	var b cost.Bind
+	if err := json.Unmarshal(bytes.TrimSpace(raw), &b); err != nil {
+		t.Fatalf("ledger %q: %v", raw, err)
+	}
+	if b.Session != "sess-hook" || b.Agent != "a1b2" || b.Entity != "W-0001" || b.Harness != cost.HarnessClaudeCode {
+		t.Fatalf("ledger line = %+v, want sess-hook/a1b2/W-0001/claude-code", b)
 	}
 }
 
@@ -199,6 +234,46 @@ func TestHookBindWorkBindsFromFeatureStart(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(raw)); got != "F-0002" {
 		t.Fatalf("bound id = %q, want F-0002", got)
+	}
+}
+
+// TestHookBindWorkBindsEpicAndTaskStart (F-0309 C5): `feature start` of an
+// E- or T- binds it like an F- — each start writes its ledger line.
+func TestHookBindWorkBindsEpicAndTaskStart(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for i, id := range []string{"T-0007", "E-0002", "F-0005"} {
+		stdin := hookJSON(t, "sess-"+id, projDir, "Bash",
+			map[string]any{"command": "cerne feature start " + id},
+			map[string]any{"stdout": id + ": approved → in_development"})
+		if out, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+			t.Fatalf("%s: hook bind-work: %v\noutput: %s", id, err, out)
+		}
+		raw, _ := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "costbind.ndjson"))
+		lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		if len(lines) != i+1 || !strings.Contains(lines[i], `"entity_id":"`+id+`"`) {
+			t.Fatalf("%s: ledger =\n%s", id, raw)
+		}
+	}
+}
+
+// TestHookBindWorkHarnessFromFormat (F-0309 C9): a bind delivered under a
+// non-Claude --format records harness "other" even with CLAUDECODE=1 inherited;
+// under --format claude the CLAUDECODE check still decides.
+func TestHookBindWorkHarnessFromFormat(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	for _, format := range []string{"codex", "claude"} {
+		stdin := hookJSON(t, "sess-"+format, projDir, "Bash",
+			map[string]any{"command": "cerne feature start F-0002"},
+			map[string]any{"stdout": "F-0002: approved → in_development"})
+		if out, err := execCerneStdin(t, stdin, "hook", "bind-work", "--format", format); err != nil {
+			t.Fatalf("%s: %v\n%s", format, err, out)
+		}
+	}
+	raw, _ := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "costbind.ndjson"))
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], `"harness":"other"`) || !strings.Contains(lines[1], `"harness":"claude-code"`) {
+		t.Fatalf("ledger =\n%s", raw)
 	}
 }
 

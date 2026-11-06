@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -31,6 +32,11 @@ type hookInput struct {
 	ToolName     string          `json:"tool_name"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// AgentID is present only when the hook fires inside a subagent (whose
+	// session_id is still the parent's); TranscriptPath is the session's
+	// JSONL (F-0309).
+	AgentID        string `json:"agent_id"`
+	TranscriptPath string `json:"transcript_path"`
 	// StopHookActive is set on a Stop payload when the stop is itself the
 	// continuation of a Stop hook (F-0294).
 	StopHookActive bool `json:"stop_hook_active"`
@@ -63,6 +69,9 @@ var (
 	featureStartRe = regexp.MustCompile(`\bfeature\s+start\b`)
 	workIDRe       = regexp.MustCompile(`\bW-\d{4,}\b`)
 	featureIDRe    = regexp.MustCompile(`\bF-\d{4,}\b`)
+	// startedIDRe is the id a confirmed `feature start` binds: F-, E- or T-,
+	// the same kinds bindingLive accepts (F-0309).
+	startedIDRe = regexp.MustCompile(`\b[FET]-\d{4,}\b`)
 )
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
@@ -101,10 +110,10 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		// The W- id is minted by the command; it appears in the response.
 		id = workIDRe.FindString(string(in.ToolResponse))
 	case featureStartRe.MatchString(ti.Command):
-		// The F- id is the argument; bind only if the response confirms the
+		// The F-/E-/T- id is the argument; bind only if the response confirms the
 		// transition (a refused gate prints an error, not the id -> state).
 		if strings.Contains(string(in.ToolResponse), "in_development") {
-			id = featureIDRe.FindString(ti.Command)
+			id = startedIDRe.FindString(ti.Command)
 		}
 	}
 	if id == "" {
@@ -118,7 +127,13 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if err != nil {
 		return
 	}
-	_ = app.BindSession(cacheDir, in.SessionID, id)
+	// The cost ledger trusts the delivering contract first: only a Claude Code
+	// payload can be a claude-code bind, and only under its CLAUDECODE marker.
+	harness := cost.CurrentHarness()
+	if format != "claude" {
+		harness = "other"
+	}
+	_ = app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, harness, id)
 }
 
 func newHookWorkGateCmd() *cobra.Command {
