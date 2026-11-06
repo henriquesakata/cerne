@@ -116,7 +116,8 @@ export default function Settings() {
               onClick={() => setScope(sc)}
             >
               {ts.scopes[sc]}
-              {sc === 'host' && <span className="badge settings-global">{ts.global}</span>}
+              {/* The space keeps the accessible name "Host global". */}
+              {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
             </button>
           ))}
         </span>

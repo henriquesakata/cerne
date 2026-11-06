@@ -300,8 +300,8 @@ describe('Settings — edição por escopo (F-0315)', () => {
   it('c8: o escopo Host é marcado como global, com a dica de que vale para todos os projetos', async () => {
     render(<Settings />)
     await screen.findByRole('listitem', { name: 'Grafo' })
-    const host = within(scopeGroup()).getByRole('button', { name: /Host/ })
-    expect(host).toHaveTextContent('global')
+    // O selo entra no nome com espaço: "Host global", nunca "Hostglobal".
+    const host = within(scopeGroup()).getByRole('button', { name: 'Host global' })
     expect(host).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
     expect(screen.getByText(/versionado/)).toBeInTheDocument()
     fireEvent.click(host)
