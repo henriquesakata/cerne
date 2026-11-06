@@ -167,7 +167,8 @@ func (f *chanFixture) post(nick, body string, human bool) int {
 
 func (f *chanFixture) inject(sess string, consume bool) string {
 	f.t.Helper()
-	out, err := ChannelInject(f.cacheDir, f.repoDir, sess, consume, f.at.Add(time.Minute))
+	f.at = f.at.Add(time.Second) // one fake clock: posts and injections stay ordered
+	out, err := ChannelInject(f.cacheDir, f.repoDir, sess, consume, f.at)
 	if err != nil {
 		f.t.Fatalf("ChannelInject(%s): %v", sess, err)
 	}
@@ -252,6 +253,21 @@ func TestChannelInjectDirectedRepeatsUntilAnswered(t *testing.T) {
 		}
 		if out := f.inject("s1", true); out != "" {
 			t.Fatalf("after ack: %q, want zero bytes", out)
+		}
+	})
+	t.Run("a post made before the session saw it is no answer", func(t *testing.T) {
+		f := newChanFixture(t)
+		f.post("W-0002", "W-0001 segura o rooms.go", false)
+		f.post("W-0001", "build verde", false) // never shown #1 yet
+		if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002 → you") {
+			t.Fatalf("addressed message silenced by a post that predates its delivery: %q", out)
+		}
+		if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002 → you") {
+			t.Fatalf("addressed message did not repeat: %q", out)
+		}
+		f.post("W-0001", "ok, seguro", false)
+		if out := f.inject("s1", true); out != "" {
+			t.Fatalf("after a real answer: %q", out)
 		}
 	})
 	t.Run("background is delivered once", func(t *testing.T) {
@@ -384,7 +400,7 @@ func TestChannelInjectRecordsDeliveries(t *testing.T) {
 	}
 	d := dels[0]
 	if d.Session != "s1" || d.Work != "W-0001" || !slices.Equal(d.Seqs, []int{3, 4, 5, 6, 7}) ||
-		d.Through != 8 || !d.At.Equal(f.at.Add(time.Minute)) {
+		d.Through != 8 || !d.At.Equal(f.at) {
 		t.Fatalf("delivery = %+v", d)
 	}
 }
@@ -508,7 +524,8 @@ func (f *chanFixture) send(sess, body string) (room.Message, []string) {
 
 func (f *chanFixture) read(sess string) ([]ChannelMessage, []ChannelMember) {
 	f.t.Helper()
-	msgs, roster, err := ChannelRead(f.cacheDir, f.repoDir, sess, f.at.Add(time.Minute))
+	f.at = f.at.Add(time.Second)
+	msgs, roster, err := ChannelRead(f.cacheDir, f.repoDir, sess, f.at)
 	if err != nil {
 		f.t.Fatalf("ChannelRead: %v", err)
 	}

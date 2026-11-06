@@ -165,19 +165,31 @@ type channelState struct {
 	dels []room.Delivery
 }
 
-// answered reports whether work has posted after m or acked it (criterion
-// 10) — nothing else silences an addressed message.
+// answered reports whether work acked m, or posted after m was delivered to
+// it (criterion 10) — nothing else silences an addressed message. A post the
+// work made before it was ever shown m answers nothing: counting it would
+// silence exactly the message the work has not seen.
 func (cs channelState) answered(m room.Message, work string) bool {
 	if work == "" {
 		return false
 	}
-	for _, later := range cs.msgs {
-		if later.Seq > m.Seq && later.Nick == work {
+	var seen time.Time
+	for _, d := range cs.dels {
+		if d.Work != work {
+			continue
+		}
+		if slices.Contains(d.Ack, m.Seq) {
 			return true
 		}
+		if slices.Contains(d.Seqs, m.Seq) && (seen.IsZero() || d.At.Before(seen)) {
+			seen = d.At
+		}
 	}
-	for _, d := range cs.dels {
-		if d.Work == work && slices.Contains(d.Ack, m.Seq) {
+	if seen.IsZero() {
+		return false
+	}
+	for _, later := range cs.msgs {
+		if later.Seq > m.Seq && later.Nick == work && !later.Time.Before(seen) {
 			return true
 		}
 	}
