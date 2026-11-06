@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -64,6 +65,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		findings = append(findings, drift...)
 		lint.Sort(findings)
 	}
+	lint.DowngradeWikiDebt(findings, project.WikiEnabled(dir))
 	out := cmd.OutOrStdout()
 	var label string
 	var outside int
@@ -97,12 +99,13 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 }
 
 // lintFailure is the exit policy of a lint gate: an error counting the
-// blocking findings, nil when every finding is advisory (F-0322). Root has
+// blocking findings, nil when every finding is advisory (F-0322) or wiki debt
+// downgraded by a disabled wiki (F-0316). Root has
 // SilenceUsage, so the error surfaces as a single line and exit code 1.
 func lintFailure(findings []lint.Finding) error {
 	blocking := 0
 	for _, f := range findings {
-		if !lint.Advisory(f.Rule) {
+		if lint.Blocking(f) {
 			blocking++
 		}
 	}
@@ -202,6 +205,8 @@ func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string
 		warning := ""
 		if lint.Advisory(rule) {
 			warning = " (warning)"
+		} else if group[0].Downgraded {
+			warning = " (warning: wiki.enabled is off)"
 		}
 		fmt.Fprintf(w, "%s (%d)%s\n", strings.ToUpper(rule), len(group), warning)
 		for _, f := range group {
@@ -211,7 +216,7 @@ func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string
 	}
 	advisory := 0
 	for _, f := range findings {
-		if lint.Advisory(f.Rule) {
+		if !lint.Blocking(f) {
 			advisory++
 		}
 	}

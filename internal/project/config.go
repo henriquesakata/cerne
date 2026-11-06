@@ -35,7 +35,7 @@ type Config struct {
 	PinBranch      string `toml:"pin_branch,omitempty"`      // F-0102: docs.lock is written/committed only on this branch; empty = every branch (pre-0102 behavior)
 	PushPin        bool   `toml:"push_pin,omitempty"`        // F-0180: publish the docs.lock pin to origin right after the deferred commit, when only pin commits are ahead (opt-in, default off)
 	PinWriter      string `toml:"pin_writer,omitempty"`      // F-0198: "ci" reserves committed docs.lock writes for the explicit CI writer
-	CompileOnPush  bool   `toml:"compile_on_push,omitempty"` // F-0117: a successful push recompiles the dirty wiki pages (callable [llm] mode only; opt-in, default off)
+	CompileOnPush  bool   `toml:"compile_on_push,omitempty"` // F-0117: a successful push recompiles the dirty wiki pages (callable [llm] mode only; opt-in, default off); ignored while wiki.enabled is off (F-0316)
 	// UnregisteredSourceIgnore lists URL substrings the unregistered-source lint
 	// rule skips (F-0107) — e.g. the project's own code repo host, which is not an
 	// external source. Internal/local hosts (.local, localhost, private IPs) are

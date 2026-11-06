@@ -147,3 +147,33 @@ func contains(s, sub string) bool {
 	}
 	return len(sub) == 0
 }
+
+// TestDowngradeWikiDebt pins F-0316 criteria 2, 3 and 5 at the engine: with
+// the wiki off its debt is stamped advisory and stops blocking; with it on
+// nothing changes — the stamp is derived per run, never stored.
+func TestDowngradeWikiDebt(t *testing.T) {
+	fresh := func() []Finding {
+		return []Finding{{Rule: RuleWikiSourceUnknown, File: "content/wiki/project.md"}, {Rule: RuleBrokenLink, Entity: "F-0001"}}
+	}
+
+	off := fresh()
+	DowngradeWikiDebt(off, false)
+	if !off[0].Downgraded || Blocking(off[0]) {
+		t.Errorf("wiki debt with wiki off = %+v, want downgraded and not blocking", off[0])
+	}
+	if off[1].Downgraded || !Blocking(off[1]) {
+		t.Errorf("broken-link with wiki off = %+v, want untouched and blocking", off[1])
+	}
+
+	on := fresh()
+	DowngradeWikiDebt(on, true)
+	for _, f := range on {
+		if f.Downgraded || !Blocking(f) {
+			t.Errorf("%s with wiki on = %+v, want untouched and blocking", f.Rule, f)
+		}
+	}
+
+	if Blocking(Finding{Rule: RuleStalePending}) {
+		t.Error("stale-pending blocks; want advisory (F-0322)")
+	}
+}

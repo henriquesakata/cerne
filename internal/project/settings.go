@@ -106,8 +106,19 @@ var settingsRegistry = []Setting{
 	{
 		ID: "wiki.enabled", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "Not wired yet (F-0316): off will stop compiling the wiki on push and counting its debt as pending work. Today it changes nothing.",
+		Description: "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.",
 	},
+}
+
+// WikiEnabled is wiki.enabled for the project at (or above) projDir (F-0316):
+// false only when it resolves to false.
+func WikiEnabled(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "wiki.enabled" {
+			return s.Value != false
+		}
+	}
+	return true
 }
 
 // ResolveSettings resolves every declared setting for the project at (or

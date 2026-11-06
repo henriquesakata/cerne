@@ -70,11 +70,34 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 	// Critic C9: a key nothing consumes yet must not claim an effect. When
 	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
 	// list change together.
-	unwired := map[string]bool{"graph.enabled": true, "wiki.enabled": true}
+	unwired := map[string]bool{"graph.enabled": true}
 	for id, s := range byID {
 		if got := strings.HasPrefix(s.Description, "Not wired yet"); got != unwired[id] {
 			t.Errorf("%s description %q: says not wired = %v, want %v", id, s.Description, got, unwired[id])
 		}
+	}
+}
+
+// TestWikiEnabled pins the one read of wiki.enabled every F-0316 consumer
+// shares: project > host > default, an invalid value falling through.
+func TestWikiEnabled(t *testing.T) {
+	cases := []struct {
+		name, project, host string
+		want                bool
+	}{
+		{"nothing set", "", "", true},
+		{"project off", "[wiki]\nenabled = false\n", "", false},
+		{"host off", "", "[wiki]\nenabled = false\n", false},
+		{"project on over host off", "[wiki]\nenabled = true\n", "[wiki]\nenabled = false\n", true},
+		{"invalid project over host off", "[wiki]\nenabled = \"talvez\"\n", "[wiki]\nenabled = false\n", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			if got := WikiEnabled(projDir); got != tc.want {
+				t.Errorf("WikiEnabled = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

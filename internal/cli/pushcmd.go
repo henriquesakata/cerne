@@ -169,12 +169,16 @@ func pushedSpecStaleness(repoDir string, docs []pushedDoc) map[string]bool {
 // lock held and exits, because the holder re-reads the dirty set before
 // releasing and absorbs that round too (compileSynchronous).
 //
+// wiki.enabled off (F-0316) silences it whatever compile_on_push says, the
+// delegation warning included: auto-compile needs the wiki on AND the opt-in
+// AND a callable mode. An explicit `cerne compile` is never blocked.
+//
 // Failures stay informational — a stderr warning, never a failed push.
 // Delegation mode has no callable provider, so the hook warns instead of
 // leaving surprise two-phase .pending files behind. `cerne sync` inherits the
 // hook through runPush.
 func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
-	if !ctx.cfg.CompileOnPush {
+	if !ctx.cfg.CompileOnPush || !project.WikiEnabled(ctx.projDir) {
 		return
 	}
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
@@ -224,6 +228,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	if err != nil {
 		return err
 	}
+	lint.DowngradeWikiDebt(findings, project.WikiEnabled(ctx.projDir))
 	if len(findings) == 0 {
 		fmt.Fprintln(out, "Lint: no problems found.")
 		return nil
