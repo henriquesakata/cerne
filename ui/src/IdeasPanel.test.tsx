@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import IdeasPanel from './IdeasPanel'
-import { SimilarExists, type Feature, type Idea } from './api'
+import { HTTPError, SimilarExists, type Feature, type Idea } from './api'
 
 const idea = (id: string, text: string): Idea => ({
   id,
@@ -117,7 +117,8 @@ describe('IdeasPanel (F-0312)', () => {
     const onPromoted = vi.fn()
     render(<IdeasPanel modules={['core']} onPromoted={onPromoted} />)
     expect(await screen.findByText('primeira ideia')).toBeInTheDocument()
-    expect(row('primeira ideia').getByText('2026-11-06')).toBeInTheDocument()
+    // C18: the local date, not the UTC slice of created_at.
+    expect(row('primeira ideia').getByText(new Date('2026-11-06T10:00:00Z').toLocaleDateString('pt-BR'))).toBeInTheDocument()
     const loads = fetchIdeas.mock.calls.length
     fireEvent.click(row('primeira ideia').getByRole('button', { name: 'Promover I-0001' }))
     await waitFor(() => expect(promoteIdea).toHaveBeenCalledWith('I-0001', '', false))
@@ -185,6 +186,25 @@ describe('IdeasPanel (F-0312)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('backend fora')
     fireEvent.click(row('uma ideia').getByRole('button', { name: 'Promover I-0001' }))
     await waitFor(() => expect(screen.getAllByRole('alert').map((a) => a.textContent).join(' ')).toContain('push recusado'))
+  })
+
+  it('recusas conhecidas em pt-BR, e o erro some no sucesso seguinte (C18)', async () => {
+    ideas = [idea('I-0001', 'uma ideia')]
+    createIdea.mockRejectedValueOnce(new HTTPError('facet desconhecida: nope', 422))
+    createIdea.mockResolvedValue(idea('I-0002', 'outra'))
+    promoteIdea.mockRejectedValueOnce(new HTTPError('the idea is not active: I-0001 is dropped (reason: x)', 422))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('uma ideia')
+    expect(screen.getByRole('textbox', { name: 'Facetas (separadas por vírgula)' })).toBeInTheDocument()
+    capture('outra')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Faceta desconhecida')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('facet desconhecida')
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    fireEvent.click(row('uma ideia').getByRole('button', { name: 'Promover I-0001' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('não está mais ativa')
+    capture('mais uma')
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
   it('com 2+ módulos, promover pede o módulo', async () => {

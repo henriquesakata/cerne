@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { createIdea, dropIdea, fetchIdeas, promoteIdea, SimilarExists, type DupMatch, type Idea } from './api'
-import { useT } from './i18n'
+import { createIdea, dropIdea, fetchIdeas, HTTPError, promoteIdea, SimilarExists, type DupMatch, type Idea } from './api'
+import { useT, type Messages } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 // A submission keeps the fields as typed (raw), so success clears only what
@@ -10,6 +10,20 @@ type Submission = { body: string; facets: string[]; components: string[]; token:
 // newToken identifies one capture submission (C2). Not crypto.randomUUID: a
 // remote `cerne serve` over plain http is not a secure context.
 const newToken = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+
+// refusal says a known server refusal in the UI's language (the F-0315
+// pattern); anything else keeps the server's text.
+function refusal(err: unknown, t: Messages): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (!(err instanceof HTTPError) || err.status !== 422) return msg
+  const r = t.ideas.refusals
+  if (msg.startsWith('the idea text cannot be empty')) return r.textRequired
+  if (msg.startsWith('facet desconhecida')) return r.unknownFacet
+  if (msg.startsWith('the idea is not active')) return r.notActive
+  if (msg.startsWith('--module is required')) return r.moduleRequired
+  if (msg.startsWith('a live feature with this title already exists')) return r.duplicateTitle
+  return msg
+}
 
 const csv = (s: string) =>
   s
@@ -22,7 +36,7 @@ const csv = (s: string) =>
 // via useLiveLoad (F-0031); falha na captura mantém o texto e oferece tentar
 // de novo (F-0300).
 export default function IdeasPanel({ modules, onPromoted }: { modules: string[]; onPromoted: () => void }) {
-  const { t } = useT()
+  const { t, lang } = useT()
   const load = useLiveLoad(fetchIdeas)
   const [text, setText] = useState('')
   const [facets, setFacets] = useState('')
@@ -52,9 +66,10 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
         setText((cur) => (cur === rt ? '' : cur))
         setFacets((cur) => (cur === rf ? '' : cur))
         setComponents((cur) => (cur === rc ? '' : cur))
+        setActionError(null) // C18: a later success clears an older failure
         return load.reload()
       })
-      .catch((err: unknown) => setFailed({ error: err instanceof Error ? err.message : String(err), sub }))
+      .catch((err: unknown) => setFailed({ error: refusal(err, t), sub }))
       .finally(() => setSending(false))
   }
   const submit = (e: FormEvent) => {
@@ -77,7 +92,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
       })
       .catch((err: unknown) => {
         if (err instanceof SimilarExists) setSimilar({ id, matches: err.matches })
-        else setActionError(err instanceof Error ? err.message : String(err))
+        else setActionError(refusal(err, t))
       })
       .finally(() => setBusy(null))
   }
@@ -146,7 +161,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
               <li key={i.id} className="ideas-item">
                 <IdeaText text={i.text} />
                 <span className="ideas-meta">
-                  <span className="card-id">{i.id}</span> <span className="muted">{i.created_at.slice(0, 10)}</span>
+                  <span className="card-id">{i.id}</span> <span className="muted">{new Date(i.created_at).toLocaleDateString(lang)}</span>
                 </span>
                 <span className="ideas-actions">
                   {choosing === i.id && (

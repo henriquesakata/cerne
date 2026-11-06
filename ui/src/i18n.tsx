@@ -225,7 +225,7 @@ const ptBR = {
     capture: 'Anotar',
     saving: 'Salvando…',
     tags: 'Tags (opcional)',
-    facets: 'Facets (separadas por vírgula)',
+    facets: 'Facetas (separadas por vírgula)',
     components: 'Componentes (separados por vírgula)',
     empty: 'Nenhuma ideia ativa.',
     loadError: (e: string) => `Erro ao carregar as ideias: ${e}`,
@@ -247,6 +247,13 @@ const ptBR = {
     dropOf: (id: string) => `Descartar ${id}`,
     dropReasonOf: (id: string) => `Motivo do descarte de ${id} (opcional)`,
     dropConfirmOf: (id: string) => `Confirmar descarte de ${id}`,
+    refusals: {
+      textRequired: 'O texto da ideia não pode ficar vazio.',
+      unknownFacet: 'Faceta desconhecida — use infra, code, data, process ou auth.',
+      notActive: 'A ideia não está mais ativa: já foi promovida ou descartada.',
+      moduleRequired: 'Este projeto exige um módulo para a candidata.',
+      duplicateTitle: 'Já existe uma feature viva com este título — promova pelo terminal com --title.',
+    },
   },
   backlog: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -1154,6 +1161,13 @@ const en: Messages = {
     dropOf: (id: string) => `Drop ${id}`,
     dropReasonOf: (id: string) => `Reason for dropping ${id} (optional)`,
     dropConfirmOf: (id: string) => `Confirm dropping ${id}`,
+    refusals: {
+      textRequired: 'The idea text cannot be empty.',
+      unknownFacet: 'Unknown facet — use infra, code, data, process or auth.',
+      notActive: 'The idea is no longer active: it was already promoted or dropped.',
+      moduleRequired: 'This project requires a module for the candidate.',
+      duplicateTitle: 'A live feature already has this title — promote it from the terminal with --title.',
+    },
   },
   backlog: {
     loadError: (e: string) => `Failed to load state: ${e}`,

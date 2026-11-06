@@ -1525,7 +1525,7 @@ async function postIdea<T>(path: string, body: unknown): Promise<T> {
     const b = (await r.json().catch(() => ({}))) as { error?: string; matches?: DupMatch[] }
     throw new SimilarExists(b.error ?? `HTTP ${r.status}`, b.matches ?? [])
   }
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
   return (await r.json()) as T
 }
 
