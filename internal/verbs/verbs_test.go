@@ -51,3 +51,36 @@ func TestPositionals(t *testing.T) {
 		}
 	}
 }
+
+// TestClassIsExplicitAndFailsClosed (F-0323 C4): every verb carries its chat
+// class on its own definition; only "local" flows down from a group, so a new
+// leaf under a chat-bearing group is unclassified (and denied), never chat.
+func TestClassIsExplicitAndFailsClosed(t *testing.T) {
+	root := &cobra.Command{Use: "cerne"}
+	feature := MarkChat(&cobra.Command{Use: "feature", RunE: run})
+	feature.AddCommand(
+		MarkChat(&cobra.Command{Use: "new <title>", RunE: run}),
+		MarkLifecycle(&cobra.Command{Use: "approve <id>", RunE: run}),
+		&cobra.Command{Use: "reopen <id>", RunE: run},
+	)
+	ops := MarkLocal(&cobra.Command{Use: "hook"})
+	ops.AddCommand(&cobra.Command{Use: "install", RunE: run})
+	root.AddCommand(feature, ops, MarkChatTool(&cobra.Command{Use: "brief", RunE: run}))
+
+	want := map[string]string{
+		"feature": ClassChat, "feature new": ClassChat, "feature approve": ClassLifecycle,
+		"feature reopen": "", "hook install": ClassLocal, "brief": ClassChat,
+	}
+	got := map[string]string{}
+	for _, v := range From(root) {
+		got[v.Path] = v.Class
+		if v.Lifecycle != (v.Class == ClassLifecycle) {
+			t.Errorf("%s: Lifecycle %v disagrees with class %q", v.Path, v.Lifecycle, v.Class)
+		}
+	}
+	for path, class := range want {
+		if got[path] != class {
+			t.Errorf("%s: class %q, want %q", path, got[path], class)
+		}
+	}
+}

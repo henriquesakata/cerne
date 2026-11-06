@@ -24,14 +24,14 @@ func newNoteCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newNoteNewCmd(&dir))
-	cmd.AddCommand(newNoteListCmd(&dir))
-	cmd.AddCommand(newNoteTagsCmd(&dir))
-	cmd.AddCommand(newNoteShowCmd(&dir))
-	cmd.AddCommand(newNoteRetagCmd(&dir))
-	cmd.AddCommand(newNoteKeepCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newNoteListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteTagsCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteShowCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
-	cmd.AddCommand(newErrataCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
 

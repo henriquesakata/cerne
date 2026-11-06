@@ -26,13 +26,13 @@ func newRunbookCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newRunbookNewCmd(&dir))
-	cmd.AddCommand(newRunbookDraftCmd(&dir))
-	cmd.AddCommand(newRunbookRetagCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newRunbookNewCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookDraftCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newRunbookRetagCmd(&dir)))
 	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
 	cmd.AddCommand(newRunbookRetireCmd(&dir))
-	cmd.AddCommand(newRunbookMigrateCmd(&dir))
-	cmd.AddCommand(newErrataCmd(&dir))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookMigrateCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
 

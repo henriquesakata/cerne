@@ -28,12 +28,12 @@ func newDecisionCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newDecisionNewCmd(&dir))
-	cmd.AddCommand(newDecisionListCmd(&dir))
-	cmd.AddCommand(newDecisionDraftCmd(&dir))
-	cmd.AddCommand(newDecisionRetagCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newDecisionNewCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newDecisionListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newDecisionDraftCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newDecisionRetagCmd(&dir)))
 	cmd.AddCommand(newDecisionSubstituirCmd(&dir))
-	cmd.AddCommand(newErrataCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
 

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"gitlab.com/rockt/cerne/internal/cli"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -165,6 +167,23 @@ func TestRunDeniesLifecycleWithoutExec(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("no lifecycle verb in the catalog")
+	}
+}
+
+// TestRunDeniesNonChatVerbs (F-0323 C4): an operational verb and a verb with no
+// chat class never run through the chat — denied before confirmation, without
+// exec.
+func TestRunDeniesNonChatVerbs(t *testing.T) {
+	env := verbs.Env{Bin: "/nonexistent", Confirmed: true}
+	res := verbs.Run(context.Background(), cli.Root(), verbs.Call{Verb: "import", Args: []string{"--yes"}}, env)
+	if !errors.Is(res.Err, verbs.ErrLocalOnly) || res.Error == nil || res.Error.Code != "local_only" {
+		t.Fatalf("import --yes = %+v, want local_only", res)
+	}
+	root := cli.Root()
+	root.AddCommand(&cobra.Command{Use: "zz-raw", RunE: func(*cobra.Command, []string) error { return nil }})
+	res = verbs.Run(context.Background(), root, verbs.Call{Verb: "zz-raw"}, env)
+	if !errors.Is(res.Err, verbs.ErrLocalOnly) {
+		t.Fatalf("unclassified zz-raw = %+v, want local_only", res)
 	}
 }
 

@@ -45,13 +45,13 @@ type chatRun struct {
 // chatTools renders the verb catalog of tree as the confirmed turn's tools
 // (F-0323): the generic tool, whose verb enum is every non-lifecycle verb, plus
 // a typed tool generated for each verb marked verbs.MarkChatTool — the tree is
-// the only list (crit. 6).
+// the only list (crit. 6), and only verbs classified chat are offered.
 func chatTools(tree func() *cobra.Command) []llm.Tool {
 	var enum []string
 	var typed []llm.Tool
 	for _, v := range verbs.From(tree()) {
-		if v.Lifecycle {
-			continue
+		if v.Class != verbs.ClassChat {
+			continue // lifecycle, local and unclassified are never offered (C4)
 		}
 		enum = append(enum, v.Path)
 		if !v.ChatTool {
@@ -122,8 +122,8 @@ func genericTool(enum []string) llm.Tool {
 }
 
 // decodeToolCall reads a tool input into a verbs.Call: the generic tool's
-// {verb, args, stdin}, or a typed tool of ANY catalog verb (lifecycle
-// included, so a forged typed name still meets the executor's refusal).
+// {verb, args, stdin}, or a typed tool of ANY catalog verb (lifecycle and
+// local included, so a forged typed name still meets the executor's refusal).
 func decodeToolCall(root *cobra.Command, tc llm.ToolCall) (verbs.Call, error) {
 	var c verbs.Call
 	if tc.Name == chatToolName {
@@ -145,7 +145,7 @@ func decodeToolCall(root *cobra.Command, tc llm.ToolCall) (verbs.Call, error) {
 // repeats the flag).
 func decodeTyped(v verbs.Verb, input json.RawMessage) (verbs.Call, error) {
 	call := verbs.Call{Verb: v.Path}
-	if v.Lifecycle {
+	if v.Class != verbs.ClassChat {
 		return call, nil // verbs.Run refuses it before reading anything else
 	}
 	bad := func(format string, a ...any) (verbs.Call, error) {

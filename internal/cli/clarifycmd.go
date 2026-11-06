@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newClarifyCmd() *cobra.Command {
@@ -17,9 +18,9 @@ func newClarifyCmd() *cobra.Command {
 		Use:   "clarify",
 		Short: "List and answer open [ESCLARECER]/[CLARIFY] markers from the terminal",
 	}
-	cmd.AddCommand(newClarifyListCmd())
-	cmd.AddCommand(newClarifyAnswerCmd())
-	cmd.AddCommand(newClarifyCorrectCmd())
+	cmd.AddCommand(verbs.MarkChat(newClarifyListCmd()))
+	cmd.AddCommand(verbs.MarkLocal(newClarifyAnswerCmd()))
+	cmd.AddCommand(verbs.MarkLocal(newClarifyCorrectCmd()))
 	return cmd
 }
 

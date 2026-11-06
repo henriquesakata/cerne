@@ -24,8 +24,8 @@ func newReferenceCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newReferenceNewCmd(&dir))
-	cmd.AddCommand(newReferenceListCmd(&dir))
-	cmd.AddCommand(newReferenceRetagCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newReferenceListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newReferenceRetagCmd(&dir)))
 	cmd.AddCommand(newReferenceRetireCmd(&dir))
 	return cmd
 }

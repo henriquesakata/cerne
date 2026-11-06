@@ -37,27 +37,29 @@ func catalogByPath(root *cobra.Command) map[string]verbs.Verb {
 }
 
 // TestCatalogFollowsCommandTree is criterion 6 of F-0323: the verb catalog the
-// chat exposes is the cobra tree itself, so a verb added to the tree shows up
-// with no list edited anywhere — the two probes below are added here and
-// nowhere else.
+// chat offers is the cobra tree itself, so a verb added to the tree shows up
+// with no list edited anywhere — the probes below are added here and nowhere
+// else. Only a verb classified chat on its own definition is offered; one
+// left unclassified is reported and never offered (C4, fail closed).
 func TestCatalogFollowsCommandTree(t *testing.T) {
 	root := Root()
-	probe := &cobra.Command{Use: "zz-probe <x>", Short: "probe", RunE: func(*cobra.Command, []string) error { return nil }}
+	noop := func(*cobra.Command, []string) error { return nil }
+	probe := verbs.MarkChat(&cobra.Command{Use: "zz-probe <x>", Short: "probe", RunE: noop})
 	probe.Flags().String("y", "", "y flag")
-	gate := &cobra.Command{Use: "zz-gate", Short: "gate", RunE: func(*cobra.Command, []string) error { return nil }}
-	verbs.MarkLifecycle(gate)
-	root.AddCommand(probe, gate)
+	gate := verbs.MarkLifecycle(&cobra.Command{Use: "zz-gate", Short: "gate", RunE: noop})
+	raw := &cobra.Command{Use: "zz-raw", Short: "unclassified", RunE: noop}
+	root.AddCommand(probe, gate, raw)
 
 	cat := catalogByPath(root)
 	p, ok := cat["zz-probe"]
-	if !ok {
-		t.Fatalf("zz-probe missing from catalog")
+	if !ok || p.Class != verbs.ClassChat || p.Use != "zz-probe <x>" || p.Flags["y"] != "string" {
+		t.Fatalf("zz-probe = %+v (present %v), want class chat, Use %q, flag y string", p, ok, "zz-probe <x>")
 	}
-	if p.Lifecycle || p.Use != "zz-probe <x>" || p.Flags["y"] != "string" {
-		t.Fatalf("zz-probe = %+v, want non-lifecycle, Use %q, flag y string", p, "zz-probe <x>")
+	if g := cat["zz-gate"]; !g.Lifecycle || g.Class != verbs.ClassLifecycle {
+		t.Fatalf("zz-gate = %+v, want lifecycle", g)
 	}
-	if g, ok := cat["zz-gate"]; !ok || !g.Lifecycle {
-		t.Fatalf("zz-gate = %+v (present %v), want Lifecycle", g, ok)
+	if got := unclassified(root); !slices.Equal(got, []string{"zz-raw"}) {
+		t.Fatalf("unclassified = %v, want exactly the injected zz-raw", got)
 	}
 
 	real := Root()
@@ -74,9 +76,28 @@ func TestCatalogFollowsCommandTree(t *testing.T) {
 		t.Fatalf("catalog paths diverge from the tree:\n got %v\nwant %v", got, want)
 	}
 	for _, must := range []string{"reference new", "note new", "feature spec"} {
-		if !slices.Contains(got, must) {
-			t.Errorf("catalog lacks %q", must)
+		if cat[must].Class != verbs.ClassChat {
+			t.Errorf("%q is not offered (class %q)", must, cat[must].Class)
 		}
+	}
+}
+
+func unclassified(root *cobra.Command) []string {
+	var out []string
+	for _, v := range verbs.From(root) {
+		if v.Class == "" {
+			out = append(out, v.Path)
+		}
+	}
+	return out
+}
+
+// TestEveryVerbIsClassified (F-0323 C4): the chat class is mandatory on every
+// user-facing verb — a verb added without one fails here, and at runtime it is
+// denied rather than offered.
+func TestEveryVerbIsClassified(t *testing.T) {
+	if got := unclassified(Root()); len(got) > 0 {
+		t.Fatalf("verbs without a chat class (mark them verbs.MarkChat/MarkLocal/MarkLifecycle where they are defined): %v", got)
 	}
 }
 

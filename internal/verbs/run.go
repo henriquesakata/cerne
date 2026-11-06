@@ -25,6 +25,7 @@ var (
 	ErrUnknownVerb          = errors.New("unknown verb")
 	ErrInvalidArguments     = errors.New("invalid arguments")
 	ErrLifecycleDenied      = errors.New("lifecycle verb denied: lifecycle is a human act, hand the command to the human to run in a terminal")
+	ErrLocalOnly            = errors.New("verb not offered in the chat: operational or unclassified verbs run only in the human's terminal")
 	ErrConfirmationRequired = errors.New("confirmation required: the human has not confirmed this turn's command card")
 	ErrCommandFailed        = errors.New("command failed")
 	ErrLockConflict         = errors.New("backend lock held by another process")
@@ -39,6 +40,7 @@ var codes = []struct {
 	{ErrUnknownVerb, "unknown_verb"},
 	{ErrInvalidArguments, "invalid_arguments"},
 	{ErrLifecycleDenied, "lifecycle_denied"},
+	{ErrLocalOnly, "local_only"},
 	{ErrConfirmationRequired, "confirmation_required"},
 	{ErrCommandFailed, "command_failed"},
 	{ErrLockConflict, "lock_conflict"},
@@ -106,7 +108,8 @@ func fail(err error, out string) Result {
 }
 
 // Run executes call under the chat gate. Order: resolve what cobra would run
-// (unknown_verb), lifecycle (denied before anything, confirmed or not),
+// (unknown_verb), lifecycle (denied before anything, confirmed or not), any
+// class but chat (local_only — unclassified fails closed),
 // confirmation, cobra validation on root (invalid_arguments), then the cerne
 // binary as a child with CERNE_ACTOR=agent and the provenance env. Run parses
 // flags into root: pass a fresh tree per call.
@@ -117,8 +120,12 @@ func Run(ctx context.Context, root *cobra.Command, call Call, env Env) Result {
 	if err != nil || cmd == root || cmd.CommandPath() != want || !cmd.Runnable() || hidden(cmd) {
 		return fail(fmt.Errorf("%w: %q (want a verb of the catalog)", ErrUnknownVerb, call.Verb), "")
 	}
-	if cmd.Annotations[lifecycleKey] == "true" {
+	switch classOf(cmd) {
+	case ClassLifecycle:
 		return fail(fmt.Errorf("%w: cerne %s", ErrLifecycleDenied, call.Verb), "")
+	case ClassChat:
+	default:
+		return fail(fmt.Errorf("%w: cerne %s", ErrLocalOnly, call.Verb), "")
 	}
 	if !env.Confirmed {
 		return fail(ErrConfirmationRequired, "")

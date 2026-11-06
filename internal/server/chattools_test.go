@@ -30,10 +30,11 @@ func fixtureTree() *cobra.Command {
 	feature := &cobra.Command{Use: "feature"}
 	feature.AddCommand(verbs.MarkLifecycle(&cobra.Command{Use: "approve <id>", Args: cobra.ExactArgs(1), RunE: noop}))
 	ref := &cobra.Command{Use: "reference"}
-	newRef := &cobra.Command{Use: "new <title>", Args: cobra.ExactArgs(1), RunE: noop}
+	newRef := verbs.MarkChat(&cobra.Command{Use: "new <title>", Args: cobra.ExactArgs(1), RunE: noop})
 	newRef.Flags().String("url", "", "source URL")
 	ref.AddCommand(newRef)
-	root.AddCommand(feature, ref, &cobra.Command{Use: "zz-probe", RunE: noop})
+	root.AddCommand(feature, ref, verbs.MarkChat(&cobra.Command{Use: "zz-probe", RunE: noop}),
+		&cobra.Command{Use: "zz-raw", RunE: noop}, verbs.MarkLocal(&cobra.Command{Use: "pull", RunE: noop}))
 	return root
 }
 
@@ -361,7 +362,7 @@ func TestChatToolCatalogFollowsCommandTree(t *testing.T) {
 
 	setTree(t, func() *cobra.Command {
 		root := fixtureTree()
-		root.AddCommand(&cobra.Command{Use: "zz-other", RunE: func(*cobra.Command, []string) error { return nil }})
+		root.AddCommand(verbs.MarkChat(&cobra.Command{Use: "zz-other", RunE: func(*cobra.Command, []string) error { return nil }}))
 		return root
 	})
 	confirmedTurnOf(t, h)

@@ -22,10 +22,10 @@ func newCapabilityCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newCapabilityNewCmd(&dir))
-	cmd.AddCommand(newCapabilityListCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newCapabilityNewCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newCapabilityListCmd(&dir)))
 	cmd.AddCommand(newCapabilityRetireCmd(&dir))
-	cmd.AddCommand(newCapabilityBootstrapCmd(&dir))
+	cmd.AddCommand(verbs.MarkLocal(newCapabilityBootstrapCmd(&dir)))
 	return cmd
 }
 
