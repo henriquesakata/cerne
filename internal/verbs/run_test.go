@@ -206,3 +206,13 @@ func TestRunReadVerbHasNoID(t *testing.T) {
 		t.Fatalf("Run(status) = %+v, want OK without id", res)
 	}
 }
+
+// The chat contract tells the agent to consult `cerne <verb> --help` instead
+// of guessing flags: help passes the gate (a read) and returns the usage.
+func TestRunHelpPassesTheGate(t *testing.T) {
+	env := newProject(t)
+	res := run(t, env, "reference new", "", "--help")
+	if !res.OK || !strings.Contains(res.Output, "Usage:") || res.ID != "" {
+		t.Fatalf("Run(reference new --help) = %+v, want OK with the usage", res)
+	}
+}

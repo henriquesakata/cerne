@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -142,7 +143,9 @@ func hidden(c *cobra.Command) bool {
 // project is the chat's (--dir) and content comes through stdin (--file would
 // read an arbitrary local file into the shared backend).
 func validate(cmd *cobra.Command, rest []string) error {
-	if err := cmd.ParseFlags(rest); err != nil {
+	if err := cmd.ParseFlags(rest); errors.Is(err, pflag.ErrHelp) {
+		return nil // the child prints the verb's help: a read the chat contract advises
+	} else if err != nil {
 		return err
 	}
 	for _, f := range []string{"dir", "file"} {
