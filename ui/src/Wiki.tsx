@@ -37,17 +37,19 @@ export default function Wiki() {
   return (
     <main className="page">
       <LoadNotice load={load} />
-      {stale.length > 0 &&
-        (needs_provider ? (
-          <p className="ask-notice">
-            <span>{t.wiki.stale(stale.length)}</span> {t.wiki.staleDelegation1}
-            <code>cerne compile</code>
-            {t.wiki.staleDelegation2}
-          </p>
-        ) : (
-          <div className="load-notice" role="status">
-            <p>{t.wiki.stale(stale.length)}</p>
-            {error === null ? (
+      {/* Um aviso (âmbar) nos dois modos; a falha vem ao lado dele, num
+          Notice próprio, nunca um status dentro do outro (F-0316). */}
+      {stale.length > 0 && (
+        <p className="ask-notice" role="status">
+          <span>{t.wiki.stale(stale.length)}</span>{' '}
+          {needs_provider ? (
+            <>
+              {t.wiki.staleDelegation1}
+              <code>cerne compile</code>
+              {t.wiki.staleDelegation2}
+            </>
+          ) : (
+            error === null && (
               <button
                 type="button"
                 aria-disabled={busy || undefined}
@@ -55,11 +57,13 @@ export default function Wiki() {
               >
                 {busy ? t.wiki.recompiling : t.wiki.recompile}
               </button>
-            ) : (
-              <Notice message={t.wiki.recompileError(error)} onRetry={() => void recompile()} busy={busy} />
-            )}
-          </div>
-        ))}
+            )
+          )}
+        </p>
+      )}
+      {stale.length > 0 && !needs_provider && error !== null && (
+        <Notice message={t.wiki.recompileError(error)} onRetry={() => void recompile()} busy={busy} />
+      )}
       <h1>{t.wiki.title}</h1>
       <p className="muted">
         {t.wiki.intro1}<code>cerne compile</code>{t.wiki.intro2}

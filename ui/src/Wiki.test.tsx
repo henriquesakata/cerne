@@ -108,11 +108,24 @@ describe('Wiki — desatualizada (F-0316)', () => {
     await waitFor(() => expect(screen.queryByText(banner)).not.toBeInTheDocument())
   })
 
+  it('o erro fica ao lado do aviso, nunca aninhado nele, e o aviso tem um só estilo (C10)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockRejectedValueOnce(new Error('boom'))
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    const error = await screen.findByText('Falha ao recompilar a wiki: boom')
+    const bannerBox = screen.getByText(banner).closest('[role="status"]')
+    expect(bannerBox).toHaveClass('ask-notice')
+    expect(bannerBox).not.toContainElement(error)
+    expect(error.closest('[role="status"]')?.parentElement?.closest('[role="status"]')).toBeNull()
+  })
+
   it('em delegação mostra o comando, sem botão', async () => {
     vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'], needs_provider: true })
     render(<Wiki />)
     expect(await screen.findByText(banner)).toBeInTheDocument()
     expect(screen.getByText('cerne compile', { selector: '.ask-notice code' })).toBeInTheDocument()
+    expect(screen.getByText(banner).closest('[role="status"]')).toHaveClass('ask-notice')
     expect(screen.queryByRole('button', { name: 'Recompilar' })).not.toBeInTheDocument()
   })
 })
