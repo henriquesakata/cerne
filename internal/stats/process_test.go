@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"regexp"
 	"strings"
 	"testing"
@@ -253,8 +254,8 @@ func TestProcessReturnedGuard(t *testing.T) {
 	if m.Returned != "piorou" || len(m.ReturnedDiffCI) != 2 || m.ReturnedDiffCI[0] <= 0 {
 		t.Fatalf("returned = %s ci %v, want piorou wholly above 0", m.Returned, m.ReturnedDiffCI)
 	}
-	if m.Verdict != "piorou" || m.Code != "quality_guard" || !strings.Contains(m.Reason, "quality guard") {
-		t.Fatalf("marker = %s/%s %q, want piorou/quality_guard", m.Verdict, m.Code, m.Reason)
+	if m.Verdict != "piorou" || m.Code != "quality_worse_cost_flat" {
+		t.Fatalf("marker = %s/%s %q, want piorou/quality_worse_cost_flat", m.Verdict, m.Code, m.Reason)
 	}
 	assertReason(t, m)
 
@@ -388,5 +389,71 @@ func TestProcessGuardScoreInterval(t *testing.T) {
 	m := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
 	if want := newcombe(bits(0, 10), bits(3, 10), guardZ); fmt.Sprint(m.ReturnedDiffCI) != fmt.Sprint(want) {
 		t.Fatalf("returned ci = %v, want the score interval %v", m.ReturnedDiffCI, want)
+	}
+}
+
+// TestProcessGuardsJudgeBothWays pins C1 and C20: with the cost unchanged, a
+// guard that got measurably better says melhorou and one that got worse says
+// piorou, each under its own code; worse cost and worse quality says both.
+func TestProcessGuardsJudgeBothWays(t *testing.T) {
+	build := func(afterMedian float64, beforeReturned, afterReturned func(int) bool) MarkerReport {
+		before, after := spread(20e6, 30, at(2)), spread(afterMedian, 30, at(30))
+		for i := range 30 {
+			before[i].Returned, after[i].Returned = beforeReturned(i), afterReturned(i)
+		}
+		return ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]
+	}
+	none := func(int) bool { return false }
+	most := func(i int) bool { return i%5 != 0 }
+
+	m := build(20e6, most, none)
+	if m.Cost != "inconclusivo" || m.Returned != "melhorou" || m.Verdict != "melhorou" || m.Code != "quality_better_cost_flat" ||
+		!strings.HasPrefix(m.Reason, "quality better, no detectable cost difference") {
+		t.Fatalf("better quality = cost %s returned %s final %s/%s %q, want melhorou/quality_better_cost_flat", m.Cost, m.Returned, m.Verdict, m.Code, m.Reason)
+	}
+	m = build(20e6, none, most)
+	if m.Returned != "piorou" || m.Verdict != "piorou" || m.Code != "quality_worse_cost_flat" ||
+		!strings.HasPrefix(m.Reason, "quality worse, no detectable cost difference") || strings.Contains(m.Reason, "vetoes") {
+		t.Fatalf("worse quality = returned %s final %s/%s %q, want piorou/quality_worse_cost_flat, never a veto", m.Returned, m.Verdict, m.Code, m.Reason)
+	}
+	m = build(20e6/0.6, none, most)
+	if m.Cost != "piorou" || m.Verdict != "piorou" || m.Code != "cost_and_quality_worse" || !strings.Contains(m.Reason, "cost up") || !strings.Contains(m.Reason, "returned share") {
+		t.Fatalf("both worse = cost %s final %s/%s %q, want piorou/cost_and_quality_worse naming both", m.Cost, m.Verdict, m.Code, m.Reason)
+	}
+	assertReason(t, m)
+}
+
+// TestProcessNullCalibration pins C2: with the same distribution on both sides
+// (lognormal σ=1 costs, 20% returns, 10% escapes, fixed seed), the panel says
+// piorou or melhorou rarely and about as often. Tolerance: each rate ≤ 6.5%
+// — the cost test's 5% per tail plus the guards' Bonferroni share, measured
+// ≈ 4–6%, plus ~2 Monte Carlo SE (0.7 pp at 1000 trials) — and the two within
+// 2.5 pp of each other. Without the multiplicity control piorou ran 10–12%.
+func TestProcessNullCalibration(t *testing.T) {
+	far := at(10_000)
+	for _, n := range []int{12, 30} {
+		rng := rand.New(rand.NewPCG(7, 11))
+		const trials = 1000
+		count := map[string]int{}
+		for range trials {
+			var ss []ProcessSample
+			for side := range 2 {
+				for i := range n {
+					t := at(2 + 28*side).Add(time.Duration(i) * window / time.Duration(n))
+					s := ProcessSample{ID: fmt.Sprintf("F-%d-%03d", side, i), CompletedAt: t, HasGauntlet: true,
+						Raw: [4]int64{int64(math.Exp(15 + rng.NormFloat64())), 0, 0, 0}, Returned: rng.Float64() < 0.2}
+					if rng.Float64() < 0.1 {
+						s.Fixes = []time.Time{t.Add(48 * time.Hour)}
+					}
+					ss = append(ss, s)
+				}
+			}
+			count[ComputeProcess(ss, []Marker{marker("D-0001", at(30))}, 0, far).Markers[0].Verdict]++
+		}
+		worse, better := 100*float64(count["piorou"])/trials, 100*float64(count["melhorou"])/trials
+		t.Logf("null n=%d: piorou %.1f%% melhorou %.1f%%", n, worse, better)
+		if worse > 6.5 || better > 6.5 || math.Abs(worse-better) > 2.5 {
+			t.Fatalf("null n=%d: piorou %.1f%% melhorou %.1f%%, want each ≤ 6.5%% and within 2.5 pp", n, worse, better)
+		}
 	}
 }

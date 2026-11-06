@@ -15,7 +15,15 @@ const (
 	minSample = 8                   // deliveries per side before any verdict
 	window    = 28 * 24 * time.Hour // each side of a marker, and the escaped-defect horizon
 	resamples = 2000                // bootstrap draws per cost interval
-	guardZ    = 1.6448536269514722  // two-sided 90% normal quantile of the guards' score intervals
+	// Multiplicity (C2): the cost test keeps its 5% per tail (crit. 10). The
+	// two guards can now decide a verdict alone (cost inconclusive), so they
+	// share a further 2.5% per tail — Bonferroni, 1.25% each, a 97.5% score
+	// interval per guard — rather than 5% each, which made a no-change process
+	// read piorou 10–12% of the time. Nominal ceiling 7.5% per direction;
+	// measured ≈ 4–6% (TestProcessNullCalibration), since the median
+	// bootstrap and the score intervals are both conservative.
+	guardZ     = 2.241402727604947 // two-sided 97.5% normal quantile
+	guardLevel = 0.975
 	// Weights relative to one input token — the hub's custo-agentes.mjs, every
 	// cache write at the 5-minute rate: the F-0309 anchor does not split it.
 	weightInput, weightCacheCreation, weightCacheRead, weightOutput = 1.0, 1.25, 0.1, 5.0
@@ -170,13 +178,20 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 		m.Cost = inconclusive
 	}
 
-	var notes, vetoes []string
+	// Each guard reads both ways: its interval wholly above 0 is worse,
+	// wholly below 0 is better (C1). notes keeps every guard's line for the
+	// reason; worse/better keep the deciding ones.
+	var notes, worse, better []string
 	guard := func(label string, b, a []float64) (string, []float64) {
 		ci := newcombe(b, a, guardZ)
-		text := fmt.Sprintf("%s %+.0f pp (90%% CI %+.0f to %+.0f)", label, (mean(a)-mean(b))*100, ci[0]*100, ci[1]*100)
-		if ci[0] > 0 {
-			vetoes = append(vetoes, text)
+		text := fmt.Sprintf("%s %+.0f pp (%.1f%% CI %+.0f to %+.0f)", label, (mean(a)-mean(b))*100, guardLevel*100, ci[0]*100, ci[1]*100)
+		switch {
+		case ci[0] > 0:
+			worse = append(worse, text)
 			return worsened, ci
+		case ci[1] < 0:
+			better = append(better, text)
+			return improved, ci
 		}
 		notes = append(notes, text)
 		return guardOK, ci
@@ -194,24 +209,30 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 		m.Escaped, m.EscapedDiffCI = guard("escaped share", escapes(before), escapes(after))
 	}
 
+	dir := "down"
+	if ratio > 1 {
+		dir = "up"
+	}
+	costMove := fmt.Sprintf("%s, cost %s %.0f%%", costText, dir, math.Abs(ratio-1)*100)
 	switch {
-	case len(vetoes) > 0:
-		link := ", with "
-		if m.Cost == improved {
-			link = " vetoes "
-		}
+	case len(worse) > 0 && m.Cost == improved: // the guard vetoes the cost gain (crit. 12)
 		m.Verdict, m.Code = worsened, "quality_guard"
-		m.Reason = "quality guard: " + strings.Join(vetoes, "; ") + link + costText
-	case m.Cost == inconclusive:
+		m.Reason = "quality guard: " + strings.Join(worse, "; ") + " vetoes " + costText
+	case len(worse) > 0 && m.Cost == worsened: // both worse (C20)
+		m.Verdict, m.Code = worsened, "cost_and_quality_worse"
+		m.Reason = "cost and quality worse: " + costMove + "; " + strings.Join(worse, "; ")
+	case len(worse) > 0: // same cost, measurably worse quality (C2)
+		m.Verdict, m.Code = worsened, "quality_worse_cost_flat"
+		m.Reason = "quality worse, no detectable cost difference: " + strings.Join(worse, "; ") + "; " + costText + joinNotes(better)
+	case m.Cost != inconclusive:
+		m.Verdict, m.Code = m.Cost, "cost"
+		m.Reason = costMove + joinNotes(append(better, notes...))
+	case len(better) > 0: // same cost, measurably better quality (C1)
+		m.Verdict, m.Code = improved, "quality_better_cost_flat"
+		m.Reason = "quality better, no detectable cost difference: " + strings.Join(better, "; ") + "; " + costText + joinNotes(notes)
+	default:
 		m.Verdict, m.Code = inconclusive, "within_noise"
 		m.Reason = "difference within noise: " + costText + joinNotes(notes)
-	default:
-		dir := "down"
-		if ratio > 1 {
-			dir = "up"
-		}
-		m.Verdict, m.Code = m.Cost, "cost"
-		m.Reason = fmt.Sprintf("%s, cost %s %.0f%%", costText, dir, math.Abs(ratio-1)*100) + joinNotes(notes)
 	}
 }
 
