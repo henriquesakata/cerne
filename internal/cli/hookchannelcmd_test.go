@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gitlab.com/rockt/cerne/internal/room"
 )
 
 func sessionStartJSON(t *testing.T, sess, cwd string) string {
@@ -101,5 +103,31 @@ func TestHookSessionContextIncludesChannel(t *testing.T) {
 	out, err = execCerneStdin(t, hookJSON(t, "sess-a", projDir, "", nil, nil), "hook", "session-context", "--format", "codex")
 	if err != nil || strings.Contains(out, "cerne channel:") {
 		t.Fatalf("delivered twice: %v\n%s", err, out)
+	}
+}
+
+// TestHookChannelSubagentPeek (crit. 15): a subagent shares its parent's
+// session id and a context that will be thrown away, so it gets a peek — it
+// records what it was shown but never moves the parent's watermark.
+func TestHookChannelSubagentPeek(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CLAUDE_ENV_FILE", "")
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "build verde")
+	payload := sessionStartJSON(t, "sess-a", projDir)
+
+	want := "cerne channel:\n#1 " + b + ": build verde\n"
+	for i := range 2 {
+		if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "subagent"); err != nil || out != want {
+			t.Fatalf("subagent peek %d: %v %q", i+1, err, out)
+		}
+	}
+	dels, err := room.OpenChannel(filepath.Join(filepath.Dir(repoDir), "rooms")).Deliveries()
+	if err != nil || len(dels) != 2 || dels[0].Through != 0 || dels[0].Seqs[0] != 1 {
+		t.Fatalf("peek deliveries = %+v, %v", dels, err)
+	}
+	if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "session-start"); err != nil || out != want {
+		t.Fatalf("parent lost the background to a peek: %v %q", err, out)
 	}
 }

@@ -42,15 +42,20 @@ func runHookChannel(cmd *cobra.Command, point string) {
 	if err != nil {
 		return
 	}
-	if point != "session-start" {
+	// A subagent shares its parent's session id and a context that will be
+	// discarded: it peeks, so consuming there never steals the parent's
+	// background.
+	consume := point == "session-start"
+	if consume {
+		exportSession(in.SessionID)
+	} else if point != "subagent" {
 		return
 	}
-	exportSession(in.SessionID)
 	cfg, _, err := project.LoadConfig(in.CWD)
 	if err != nil {
 		return
 	}
-	fmt.Fprint(cmd.OutOrStdout(), channelBlock(cfg.ProjectID, in.SessionID, true))
+	fmt.Fprint(cmd.OutOrStdout(), channelBlock(cfg.ProjectID, in.SessionID, consume))
 }
 
 // channelBlock is session sess's pending channel block for the project, ""

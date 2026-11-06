@@ -29,6 +29,8 @@ func TestInstall_WritesSubagentContext(t *testing.T) {
 		"additionalContext",
 		"SubagentStart",
 		"exit 0", // silent degradation path
+		"payload=$(cat)",
+		"cerne hook channel --point subagent", // F-0325: the session's pending channel messages, peeked
 	} {
 		if !strings.Contains(content, frag) {
 			t.Errorf("subagent context script missing fragment %q", frag)
