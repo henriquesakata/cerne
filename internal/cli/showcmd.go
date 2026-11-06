@@ -76,6 +76,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	id = strings.ToUpper(strings.TrimSpace(id)) // ids are stored upper-case: i-0001 is I-0001
 	res, err := resolveEntity(ctx.repoDir, id)
 	if err != nil {
 		return err
@@ -131,7 +132,11 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 // has no real content.
 func (r *showResult) selectDoc(name string) error {
 	if r.kind != "feature" {
-		return fmt.Errorf("%w: only features have spec/plan/result documents (this is a %s)", ErrNoSuchDoc, r.kind)
+		article := "a"
+		if strings.ContainsRune("aeiou", rune(r.kind[0])) {
+			article = "an"
+		}
+		return fmt.Errorf("%w: only features have spec/plan/result documents (this is %s %s)", ErrNoSuchDoc, article, r.kind)
 	}
 	if !slices.Contains(featureDocNames, name) {
 		return fmt.Errorf("%w: valid: %s", ErrNoSuchDoc, strings.Join(featureDocNames, ", "))

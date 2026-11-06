@@ -218,3 +218,17 @@ func TestIdeaVerbsRefuseNonIdeaIDs(t *testing.T) {
 		t.Fatalf("idea show i-0001 = %q", out)
 	}
 }
+
+// C16: cerne show takes a lowercase i- id, and the --doc refusal reads "an idea".
+func TestShowIdeaLowercaseAndArticle(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	ideaCmd(t, projDir, "new", "minúscula")
+	out, err := execCerne(t, "show", "i-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "I-0001  idea  [active]") {
+		t.Fatalf("show i-0001 = %v\n%s", err, out)
+	}
+	_, err = execCerne(t, "show", "I-0001", "--doc", "spec", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "this is an idea") {
+		t.Fatalf("show --doc on an idea err = %v, want 'this is an idea'", err)
+	}
+}
