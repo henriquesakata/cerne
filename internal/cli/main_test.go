@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("CERNE_CONFIG_DIR", dir)
 	os.Unsetenv("CLAUDECODE")
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
+	claudeRoots = func() []string { return strings.Split(os.Getenv("CLAUDE_CONFIG_DIR"), ",") }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

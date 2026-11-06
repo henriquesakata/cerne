@@ -72,7 +72,7 @@ func runHookStopCheck(cmd *cobra.Command) {
 	// F-0309: keep the session's live features' cost snapshot current, so a
 	// pruned transcript does not lose it before the stamp. Silent, fail-open.
 	// ponytail: a changed transcript is re-read whole each Stop (~95 ms for a 30 MB main file); a byte-offset tail if Stop latency shows up.
-	_ = cost.Harvest(cost.Inputs{CacheDir: cacheDir, RepoDir: repoDir, Roots: cost.ClaudeRoots()}, in.SessionID, in.TranscriptPath, time.Now().UTC())
+	_ = cost.Harvest(cost.Inputs{CacheDir: cacheDir, RepoDir: repoDir, Roots: claudeRoots()}, in.SessionID, in.TranscriptPath, time.Now().UTC())
 
 	// Each part decides and rations itself; whatever is due goes out in ONE
 	// envelope — a single continuation of the turn, never two.

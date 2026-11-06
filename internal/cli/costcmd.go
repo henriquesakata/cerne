@@ -18,6 +18,10 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
+// claudeRoots locates the Claude Code transcripts; TestMain pins it to
+// CLAUDE_CONFIG_DIR alone so no test reads the real ~/.claude.
+var claudeRoots = cost.ClaudeRoots
+
 func newCostCmd() *cobra.Command {
 	var dir string
 	var asJSON, stamp bool
@@ -72,7 +76,7 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 			cost.ErrStampNeedsImplemented, id, f.State, id)
 	}
 	cacheDir := filepath.Dir(ctx.repoDir)
-	r, err := cost.Compute(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: cost.ClaudeRoots()}, id)
+	r, err := cost.Compute(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, id)
 	if err != nil {
 		return err
 	}
@@ -119,7 +123,7 @@ func runCost(cmd *cobra.Command, dir, id string, asJSON bool) error {
 			return err
 		}
 	}
-	r, err := cost.Compute(cost.Inputs{CacheDir: filepath.Dir(ctx.repoDir), RepoDir: ctx.repoDir, Roots: cost.ClaudeRoots()}, id)
+	r, err := cost.Compute(cost.Inputs{CacheDir: filepath.Dir(ctx.repoDir), RepoDir: ctx.repoDir, Roots: claudeRoots()}, id)
 	if err != nil {
 		return err
 	}

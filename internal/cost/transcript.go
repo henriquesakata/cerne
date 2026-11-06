@@ -15,18 +15,28 @@ import (
 )
 
 // ClaudeRoots returns the Claude Code config dirs whose projects/ hold the
-// session transcripts: $CLAUDE_CONFIG_DIR when set (Claude Code's own
-// override, seen by the CLI and the hooks alike), else ~/.config/claude and
-// ~/.claude — the two places ccusage scans too.
+// session transcripts: every comma-separated entry of $CLAUDE_CONFIG_DIR
+// (Claude Code's own override), then ~/.config/claude and ~/.claude — the two
+// places ccusage scans too — always, deduped. Sessions are looked up by UUID,
+// so an extra root is harmless, and a hook whose environment differs from the
+// terminal's still finds the transcript.
 func ClaudeRoots() []string {
-	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
-		return []string{dir}
+	var roots []string
+	seen := map[string]bool{}
+	add := func(dir string) {
+		if dir = strings.TrimSpace(dir); dir != "" && !seen[filepath.Clean(dir)] {
+			seen[filepath.Clean(dir)] = true
+			roots = append(roots, filepath.Clean(dir))
+		}
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
+	for _, dir := range strings.Split(os.Getenv("CLAUDE_CONFIG_DIR"), ",") {
+		add(dir)
 	}
-	return []string{filepath.Join(home, ".config", "claude"), filepath.Join(home, ".claude")}
+	if home, err := os.UserHomeDir(); err == nil {
+		add(filepath.Join(home, ".config", "claude"))
+		add(filepath.Join(home, ".claude"))
+	}
+	return roots
 }
 
 // tfile is one transcript file of a session: rel is its path under projects/

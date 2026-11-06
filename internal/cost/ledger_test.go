@@ -3,6 +3,7 @@ package cost
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -41,5 +42,22 @@ func TestReadLedgerSkipsMalformedLine(t *testing.T) {
 	binds, exists, err = readLedger(t.TempDir())
 	if err != nil || exists || binds != nil {
 		t.Fatalf("missing ledger: binds=%v exists=%v err=%v, want nil/false/nil", binds, exists, err)
+	}
+}
+
+// TestClaudeRootsMergesEnvAndDefaults (C16): CLAUDE_CONFIG_DIR may list
+// several dirs, comma-separated; the defaults are always scanned too, deduped
+// (sessions are looked up by UUID, so an extra root is harmless).
+func TestClaudeRootsMergesEnvAndDefaults(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claude, config := filepath.Join(home, ".claude"), filepath.Join(home, ".config", "claude")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/a, /b ,,/a,"+claude)
+	if got, want := ClaudeRoots(), []string{"/a", "/b", claude, config}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ClaudeRoots() = %v, want %v", got, want)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	if got, want := ClaudeRoots(), []string{config, claude}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ClaudeRoots() = %v, want %v", got, want)
 	}
 }
