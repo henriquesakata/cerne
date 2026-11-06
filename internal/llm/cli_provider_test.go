@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
@@ -525,6 +524,7 @@ func runnerName(r runner) uintptr { return reflect.ValueOf(r).Pointer() }
 // a per-turn capability, never a standing one. An unconfirmed turn must get the
 // read boundary of F-0224 byte for byte — proposta is not permissão.
 func TestAgentWriteToolsGatedByConfirm(t *testing.T) {
+	withDenied(t, "Bash(cerne feature approve:*)")
 	for _, tc := range []struct {
 		name  string
 		write bool
@@ -558,40 +558,27 @@ func TestAgentWriteToolsScope(t *testing.T) {
 	}
 }
 
-// TestAgentDeniedCommandsCoverLifecycle (F-0269 criteria 2, 7): with a broad
-// allowlist, the refusal list IS the gate — so it is checked against the FSM
-// itself, not against a hand-kept copy of it. A transition added to
-// internal/domain without a refusal here fails this test instead of silently
-// handing the agent a human gate. `accept`, `deliver` and `retire` are named
-// separately: they succeed the approval without being FSM feature actions.
-func TestAgentDeniedCommandsCoverLifecycle(t *testing.T) {
-	// The CLI verb differs from the domain action only for supersede.
-	verbOf := map[domain.Action]string{domain.ActionSupersede: "substituir"}
-
-	for _, action := range domain.FeatureActions() {
-		verb, ok := verbOf[action]
-		if !ok {
-			verb = string(action)
-		}
-		if !deniesVerb(AgentDeniedCommands, verb) {
-			t.Errorf("AgentDeniedCommands does not refuse %q (domain action %q) — lifecycle stays a human act (F-0131)", verb, action)
-		}
-	}
-	for _, verb := range []string{"accept", "deliver", "retire"} {
-		if !deniesVerb(AgentDeniedCommands, verb) {
-			t.Errorf("AgentDeniedCommands does not refuse %q — it succeeds the approval", verb)
-		}
-	}
+// withDenied injects the refusal rules cli derives from the command classes
+// (F-0323 C19): this package never sees the tree, so its tests set them.
+func withDenied(t *testing.T, rules ...string) {
+	t.Helper()
+	orig := AgentDeniedCommands
+	AgentDeniedCommands = rules
+	t.Cleanup(func() { AgentDeniedCommands = orig })
 }
 
-// deniesVerb reports whether some refusal rule targets the given cerne verb.
-func deniesVerb(rules []string, verb string) bool {
-	for _, r := range rules {
-		if strings.Contains(r, " "+verb) {
-			return true
-		}
+// TestAgentWriteNeedsDerivedDenials (F-0323 C19): the broad write grant only
+// exists paired with refusals derived from the command tree; a process where
+// they were never injected gets the read-only agent, never an unfenced write.
+func TestAgentWriteNeedsDerivedDenials(t *testing.T) {
+	withDenied(t)
+	prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli"}, "/proj", true)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return false
+	if got := prov.(*cliProvider).agentTools; !reflect.DeepEqual(got, AgentReadTools) {
+		t.Fatalf("agentTools = %v, want the read-only set without derived denials", got)
+	}
 }
 
 // TestAgentProviderDeniedTools (F-0269 criterion 2): the refusals reach the CLI
@@ -599,6 +586,7 @@ func deniesVerb(rules []string, verb string) bool {
 // commands. An unconfirmed turn has no write to refuse, so it carries the path
 // refusals alone.
 func TestAgentProviderDeniedTools(t *testing.T) {
+	withDenied(t, "Bash(cerne feature approve:*)")
 	for _, tc := range []struct {
 		name  string
 		write bool

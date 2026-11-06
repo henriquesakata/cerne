@@ -15,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/runtmpl"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newRunbookCmd() *cobra.Command {
@@ -25,13 +26,13 @@ func newRunbookCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newRunbookNewCmd(&dir))
-	cmd.AddCommand(newRunbookDraftCmd(&dir))
-	cmd.AddCommand(newRunbookRetagCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newRunbookNewCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookDraftCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newRunbookRetagCmd(&dir)))
 	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
 	cmd.AddCommand(newRunbookRetireCmd(&dir))
-	cmd.AddCommand(newRunbookMigrateCmd(&dir))
-	cmd.AddCommand(newErrataCmd(&dir))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookMigrateCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
 
@@ -192,7 +193,7 @@ func newRunbookSubstituirCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the runbook that supersedes")
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runRunbookSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
@@ -228,7 +229,7 @@ func newRunbookRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runRunbookRetire(cmd *cobra.Command, dir, id, reason string) error {

@@ -9,6 +9,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 // F-0203: epics (E-) and tasks (T-) reuse the feature entity — same lifecycle,
@@ -24,7 +25,7 @@ func newEpicCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newEpicNewCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newEpicNewCmd(&dir)))
 	return cmd
 }
 
@@ -67,7 +68,7 @@ func newTaskCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newTaskNewCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newTaskNewCmd(&dir)))
 	return cmd
 }
 

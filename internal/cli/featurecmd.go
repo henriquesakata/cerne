@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/lint"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newFeatureCmd() *cobra.Command {
@@ -21,18 +22,18 @@ func newFeatureCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newFeatureNewCmd(&dir))
-	cmd.AddCommand(newFeatureListCmd(&dir))
-	cmd.AddCommand(newFeatureRetagCmd(&dir))
-	cmd.AddCommand(newFeatureSetCmd(&dir))
-	cmd.AddCommand(newFeatureReparentCmd(&dir))
-	cmd.AddCommand(newFeatureCapabilityCmd(&dir))
-	cmd.AddCommand(newFeatureRenameCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newFeatureListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newFeatureRetagCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newFeatureSetCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newFeatureReparentCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newFeatureCapabilityCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newFeatureRenameCmd(&dir)))
 	cmd.AddCommand(newFeatureSpecCmd(&dir))
-	cmd.AddCommand(newFeatureAmendCmd(&dir))
+	cmd.AddCommand(verbs.MarkLocal(newFeatureAmendCmd(&dir)))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
-	cmd.AddCommand(newErrataCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
 
@@ -70,7 +71,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool, owner, priority string) error {
@@ -96,7 +97,7 @@ func newFeatureSpecCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {

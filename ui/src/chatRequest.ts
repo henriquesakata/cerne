@@ -1,4 +1,4 @@
-import { streamChat, type ChatMsg, type ChatOverride } from './api'
+import { ChatRunsError, streamChat, type ChatMsg, type ChatOverride, type ChatRun } from './api'
 import { getConversation, readChats, writeChats } from './useBacklogChats'
 
 // chatRequest (F-0230) é um singleton por conversa, fora do ciclo de vida do
@@ -73,17 +73,29 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
   // acrescenta na primeira escrita, substitui nas seguintes. Índice derivado
   // do snapshot é justamente o acoplamento que causava a perda (F-0248).
   let appended = false
-  const writeAssistant = (content: string) => {
+  // F-0323: o terminal traz as execuções e a ausência de canal; elas ficam na
+  // mensagem do agente (só quando presentes, para não sujar as demais).
+  const writeAssistant = (content: string, res?: { runs?: ChatRun[]; no_exec?: boolean; no_runs?: boolean; truncated?: boolean }) => {
+    const msg: ChatMsg = {
+      role: 'assistant',
+      content,
+      ...(res?.runs?.length ? { runs: res.runs } : {}),
+      ...(res?.no_exec ? { noExec: true } : {}),
+      ...(res?.no_runs ? { noRuns: true } : {}),
+      ...(res?.truncated ? { truncated: true } : {}),
+    }
     patchMessages(convId, (current) => {
       const last = current[current.length - 1]
       if (appended && last?.role === 'assistant') {
-        return [...current.slice(0, -1), { role: 'assistant', content }]
+        return [...current.slice(0, -1), msg]
       }
       appended = true
-      return [...current, { role: 'assistant', content }]
+      return [...current, msg]
     })
   }
-  streamChat(messages, override, (delta) => {
+  // F-0323: o id da conversa vai em todo turno — é a proveniência das escritas
+  // e o que prende uma confirmação ao card.
+  streamChat(messages, { ...override, conversationId: convId }, (delta) => {
     partial += delta
     writeAssistant(partial)
     notify(convId)
@@ -93,13 +105,15 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
       if (res.needs_provider) {
         outcomes.set(convId, { kind: 'needs_provider' })
       } else {
-        writeAssistant(res.reply ?? '')
+        writeAssistant(res.reply ?? '', res)
         outcomes.set(convId, { kind: 'success' })
       }
       notify(convId)
     })
     .catch((err: unknown) => {
       statuses.set(convId, IDLE)
+      // F-0323 C6: o que rodou antes da falha fica na conversa, ao lado do erro.
+      if (err instanceof ChatRunsError) writeAssistant(partial, { runs: err.runs })
       outcomes.set(convId, { kind: 'error', message: err instanceof Error ? err.message : String(err) })
       notify(convId)
     })

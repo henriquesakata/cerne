@@ -664,6 +664,15 @@ h2 {
 }
 .command-proposal-run { align-self: flex-start; }
 
+/* F-0323: o que o turno confirmado executou — id real ou erro nomeado. */
+.tool-runs { margin-top: 0.6rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); }
+.tool-runs h4 { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--muted); }
+.tool-runs ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; }
+.tool-runs li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.tool-runs code { overflow-wrap: anywhere; }
+.tool-run-failed span { color: var(--danger); }
+.tool-runs-warning { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--danger); }
+
 /* Referência ao painel na transcrição (F-0255 critério 1). */
 .backlog-chat-proposal-ref {
   margin: 0.4rem 0 0;

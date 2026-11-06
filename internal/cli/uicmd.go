@@ -20,9 +20,33 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/server"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
+
+// The chat's tool channel (F-0323) derives its verb catalog from this very
+// tree, and the claude-cli agent its refusals; server and llm cannot import
+// cli, so both are injected here.
+func init() {
+	server.CommandTree = Root
+	llm.AgentDeniedCommands = agentDeniedCommands(Root())
+}
+
+// agentDeniedCommands is the claude-cli refusal list derived from the
+// lifecycle marks (crit. 4: lifecycle refused in every mode). Only lifecycle:
+// local verbs stay allowed in the subscription mode, whose write policy
+// (F-0260/F-0267/F-0269) this feature does not change.
+func agentDeniedCommands(root *cobra.Command) []string {
+	var rules []string
+	for _, v := range verbs.From(root) {
+		if v.Lifecycle {
+			rules = append(rules, "Bash(cerne "+v.Path+":*)")
+		}
+	}
+	return rules
+}
 
 func newUICmd() *cobra.Command {
 	var dir string

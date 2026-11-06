@@ -13,6 +13,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newPendingCmd() *cobra.Command {
@@ -26,12 +27,12 @@ func newPendingCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newPendingNewCmd(&dir))
-	cmd.AddCommand(newPendingListCmd(&dir))
-	cmd.AddCommand(newPendingShowCmd(&dir))
-	cmd.AddCommand(newPendingResolveCmd(&dir))
-	cmd.AddCommand(newPendingDropCmd(&dir))
-	cmd.AddCommand(newPendingPromoteCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newPendingNewCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newPendingListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newPendingShowCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newPendingResolveCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newPendingDropCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newPendingPromoteCmd(&dir)))
 	return cmd
 }
 

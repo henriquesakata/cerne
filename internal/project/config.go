@@ -309,6 +309,10 @@ type LLMConfig struct {
 	BaseURL   string `toml:"base_url,omitempty"`   // API base URL; default "https://api.anthropic.com"
 	MaxTokens int    `toml:"max_tokens,omitzero"`  // max output tokens; default 8000
 	ClaudeBin string `toml:"claude_bin,omitempty"` // claude-cli binary path; default "claude"
+	// NoFunctionCalling declares a byo-key endpoint without tool use (an
+	// OpenAI-compatible gateway or model that ignores or rejects tools): the
+	// chat then has no execution channel and degrades honestly (F-0323 C7).
+	NoFunctionCalling bool `toml:"no_function_calling,omitempty"`
 }
 
 // LLM defaults applied by withDefaults when a byo-key field is empty/zero.
@@ -332,6 +336,9 @@ func defaultModel() string {
 	return cat.DefaultModel
 }
 
+// llmProviderOpenAI is the OpenAI-compatible byo-key provider (F-0323).
+const llmProviderOpenAI = "openai"
+
 // WithDefaults returns a copy with each empty/zero byo-key field filled by its
 // default. Mode is left untouched (llm.ResolveMode owns that fallback). It is
 // exported so the llm package can normalize a config before building a provider.
@@ -339,13 +346,17 @@ func (c LLMConfig) WithDefaults() LLMConfig {
 	if c.Provider == "" {
 		c.Provider = defaultLLMProvider
 	}
-	if c.Model == "" {
+	// F-0323: the openai provider gets no Anthropic default model (it would
+	// never exist there) and its own base URL.
+	if c.Model == "" && c.Provider != llmProviderOpenAI {
 		c.Model = defaultModel()
 	}
 	if c.KeyEnv == "" {
 		c.KeyEnv = defaultLLMKeyEnv
 	}
-	if c.BaseURL == "" {
+	if c.BaseURL == "" && c.Provider == llmProviderOpenAI {
+		c.BaseURL = "https://api.openai.com"
+	} else if c.BaseURL == "" {
 		c.BaseURL = defaultLLMBaseURL
 	}
 	if c.MaxTokens == 0 {

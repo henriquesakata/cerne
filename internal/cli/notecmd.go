@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newNoteCmd() *cobra.Command {
@@ -23,14 +24,14 @@ func newNoteCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newNoteNewCmd(&dir))
-	cmd.AddCommand(newNoteListCmd(&dir))
-	cmd.AddCommand(newNoteTagsCmd(&dir))
-	cmd.AddCommand(newNoteShowCmd(&dir))
-	cmd.AddCommand(newNoteRetagCmd(&dir))
-	cmd.AddCommand(newNoteKeepCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newNoteListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteTagsCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteShowCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSubstituirCmd(&dir))
-	cmd.AddCommand(newErrataCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
 
@@ -262,7 +263,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component string, force bool) error {
@@ -309,7 +310,7 @@ func newNoteRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
@@ -410,7 +411,7 @@ func newNoteSubstituirCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the note that supersedes (optional; empty = just retire)")
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for the supersession/retirement (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runNoteSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {

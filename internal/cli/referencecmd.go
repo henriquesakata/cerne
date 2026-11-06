@@ -12,6 +12,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newReferenceCmd() *cobra.Command {
@@ -23,8 +24,8 @@ func newReferenceCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newReferenceNewCmd(&dir))
-	cmd.AddCommand(newReferenceListCmd(&dir))
-	cmd.AddCommand(newReferenceRetagCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newReferenceListCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newReferenceRetagCmd(&dir)))
 	cmd.AddCommand(newReferenceRetireCmd(&dir))
 	return cmd
 }
@@ -79,7 +80,7 @@ func newReferenceRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "reason for retiring (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runReferenceRetire(cmd *cobra.Command, dir, id, reason string) error {
@@ -123,7 +124,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source")
 	_ = cmd.MarkFlagRequired("url")
-	return cmd
+	return verbs.MarkChatTool(cmd)
 }
 
 func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string, force bool) error {

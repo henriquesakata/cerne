@@ -61,33 +61,20 @@ var AgentReadTools = []string{
 var AgentWriteTools = []string{"Bash(cerne:*)"}
 
 // AgentDeniedCommands are the --disallowedTools rules that keep the broad grant
-// above away from the lifecycle (F-0269 criterion 2): the transitions of the
-// feature FSM, plus the verbs that succeed an approval (accept, deliver) and
-// the retirement of an entity. With a broad allowlist this list IS the gate, so
-// TestAgentDeniedCommandsCoverLifecycle checks it against domain.FeatureActions
-// rather than against a hand-kept copy — a transition added upstream without a
-// refusal here fails the suite instead of quietly reaching the agent.
+// above away from the lifecycle (F-0269 criterion 2): transitions, accept,
+// deliver, retire, substituir, import. With a broad allowlist this list IS the
+// gate, so it is never hand-kept: internal/cli derives it at init from the
+// lifecycle marks (verbs.MarkLifecycle), the same class the API-token tool
+// channel refuses, so both modes deny the lifecycle alike (F-0323 crit. 4).
+// Nil — a process that never linked the tree — means NewAgentProvider grants
+// no write.
 //
 // It is the FIRST layer, not the only one: these rules match by prefix, and a
 // prefix rule is brittle (command chaining, spacing). app.CheckHumanGate refuses
 // approve/accept/revert for CERNE_ACTOR=agent — the stamp agentRun puts on every
 // command the agent runs — so the human gates of F-0131 survive a harness rule
-// that fails to match. Fixed in the binary on purpose, like AgentDeniedPaths.
-var AgentDeniedCommands = []string{
-	"Bash(cerne feature approve:*)",
-	"Bash(cerne feature accept:*)",
-	"Bash(cerne feature start:*)",
-	"Bash(cerne feature complete:*)",
-	"Bash(cerne feature reject:*)",
-	"Bash(cerne feature revert:*)",
-	"Bash(cerne feature substituir:*)",
-	"Bash(cerne feature deliver:*)",
-	"Bash(cerne note retire:*)",
-	"Bash(cerne reference retire:*)",
-	"Bash(cerne decision retire:*)",
-	"Bash(cerne runbook retire:*)",
-	"Bash(cerne capability retire:*)",
-}
+// that fails to match.
+var AgentDeniedCommands []string
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized
 // Read away from secret files (F-0258 criterion 6). The positive allowlist

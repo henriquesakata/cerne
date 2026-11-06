@@ -1,4 +1,6 @@
+import type { ChatRun } from './api'
 import { useT } from './i18n'
+import Markdown from './Markdown'
 
 // CommandProposal (F-0260) é o card do bloco ```cerne-comando: o agente ecoa os
 // comandos de escrita que pretende rodar e para; o clique devolve o turno a ele
@@ -17,10 +19,13 @@ type Props = {
   commands: string[]
   // busy: já há um turno em voo; autorizar duas vezes duplicaria a escrita.
   busy: boolean
+  // bound (F-0323 C3): o servidor executa só estes comandos (canal de tools);
+  // false no modo assinatura, onde o turno recebe o cerne inteiro.
+  bound: boolean
   onConfirm: () => void
 }
 
-export default function CommandProposal({ commands, busy, onConfirm }: Props) {
+export default function CommandProposal({ commands, busy, bound, onConfirm }: Props) {
   const { t } = useT()
 
   return (
@@ -28,7 +33,7 @@ export default function CommandProposal({ commands, busy, onConfirm }: Props) {
       <header className="command-proposal-head">
         <h4>{t.commandProposal.title}</h4>
       </header>
-      <p className="muted">{t.commandProposal.hint}</p>
+      <p className="muted">{bound ? t.commandProposal.hint : t.commandProposal.hintUnbound}</p>
       <ol className="command-proposal-list">
         {commands.map((c, i) => (
           <li key={i}>
@@ -41,4 +46,54 @@ export default function CommandProposal({ commands, busy, onConfirm }: Props) {
       </button>
     </section>
   )
+}
+
+// CopyCommands (F-0323 critério 7): num modo sem canal de execução não existe
+// card que prometa rodar — os comandos viram um bloco para o usuário copiar e
+// rodar no terminal dele (o CodeBlock do Markdown dá o botão de copiar).
+export function CopyCommands({ commands }: { commands: string[] }) {
+  const { t } = useT()
+  return (
+    <section className="command-proposal">
+      <p className="muted">{t.commandProposal.noExecHint}</p>
+      <Markdown>{'```bash\n' + commands.join('\n') + '\n```'}</Markdown>
+    </section>
+  )
+}
+
+// ToolRuns (F-0323 critérios 1/3) lista o que o turno confirmado executou: o
+// comando e o resultado estruturado — o id que o cerne devolveu ou o erro
+// nomeado. É o que o humano confere contra a prosa do agente.
+// noRuns/truncated (C5): o turno confirmado que não executou nada diz isso, em
+// vez de parecer sucesso — inclusive quando a prosa do agente afirma um id.
+export function ToolRuns({ runs, noRuns, truncated }: { runs: ChatRun[]; noRuns?: boolean; truncated?: boolean }) {
+  const { t } = useT()
+  return (
+    <section className="tool-runs">
+      <h4>{t.toolRuns.title}</h4>
+      {noRuns && <p className="tool-runs-warning">{t.toolRuns.none}</p>}
+      {truncated && <p className="tool-runs-warning">{t.toolRuns.truncated}</p>}
+      <ul>
+        {runs.map((r, i) => (
+          <li key={i} className={r.result.ok ? 'tool-run-ok' : 'tool-run-failed'}>
+            <code>{['cerne', r.verb, ...(r.args ?? []).map(shellQuote)].join(' ')}</code>
+            <span>
+              {r.result.ok
+                ? r.result.id
+                  ? t.toolRuns.ok((r.result.ids?.length ? r.result.ids : [r.result.id]).join(', '))
+                  : t.toolRuns.noEntity
+                : t.toolRuns.failed(r.result.error?.code ?? '', r.result.error?.message ?? '')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+// shellQuote (F-0323 C15) mostra cada argumento como o shell o leria: um título
+// com espaço ou com "; cerne feature approve …" aparece citado, nunca como se
+// fossem comandos encadeados — é aqui que o humano confere o que rodou.
+function shellQuote(arg: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`
 }

@@ -109,6 +109,7 @@ func LoadProject(backendDir string) (Project, error) {
 // AppendEvent appends the event as one NDJSON line to
 // events/<YYYY-MM>.ndjson, partitioned by ev.At in UTC.
 func AppendEvent(backendDir string, ev domain.Event) error {
+	ev.Payload = stampOrigin(ev.Payload)
 	line, err := ev.MarshalNDJSON()
 	if err != nil {
 		return err
@@ -127,6 +128,31 @@ func AppendEvent(backendDir string, ev domain.Event) error {
 		return err
 	}
 	return f.Close()
+}
+
+// stampOrigin adds the chat-channel provenance (F-0323) to a payload when
+// CERNE_ORIGIN is set. Only the chat verb executor (internal/verbs.Run) sets
+// these variables, and only in its child's env, so every event a tool call
+// writes carries origin/conversation/turn plus the call's nonce. Existing keys
+// win; the caller's map is never mutated.
+func stampOrigin(p map[string]string) map[string]string {
+	origin := os.Getenv("CERNE_ORIGIN")
+	if origin == "" {
+		return p
+	}
+	out := make(map[string]string, len(p)+4)
+	for k, v := range map[string]string{
+		"origin":       origin,
+		"conversation": os.Getenv("CERNE_CONVERSATION"),
+		"turn":         os.Getenv("CERNE_TURN"),
+		"tool_call":    os.Getenv("CERNE_TOOL_CALL"),
+	} {
+		out[k] = v
+	}
+	for k, v := range p {
+		out[k] = v
+	}
+	return out
 }
 
 // ReadEvents returns all events from events/*.ndjson in file-name then

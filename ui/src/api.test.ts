@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchSettings, HTTPError, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
+import { ChatRunsError, fetchSettings, HTTPError, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
 
 function streamResponse(chunks: string[]): Response {
   const encoder = new TextEncoder()
@@ -36,6 +36,76 @@ describe('streamChat (F-0244 critério 4b): consome tanto deltas quanto o evento
     const res = await streamChat([{ role: 'user', content: 'oi' }], undefined, (d) => deltas.push(d))
     expect(deltas).toEqual([])
     expect(res).toEqual({ answered: true, reply: 'tudo de uma vez' })
+  })
+})
+
+describe('streamChat (F-0323): confirmação presa ao turno', () => {
+  it('o corpo leva conversation_id e confirm_turn, e as mensagens só com role/content', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(streamResponse([`{"answered":true,"reply":"ok"}\n`]))
+    vi.stubGlobal('fetch', fetch)
+    await streamChat(
+      [
+        { role: 'assistant', content: 'card', noExec: true },
+        { role: 'user', content: 'Confirmado' },
+      ],
+      { confirm: true, conversationId: 'c1', confirmTurn: 0 },
+      () => {},
+    )
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.conversation_id).toBe('c1')
+    expect(body.confirm_turn).toBe(0)
+    expect(body.confirm).toBe(true)
+    expect(body.messages).toEqual([
+      { role: 'assistant', content: 'card' },
+      { role: 'user', content: 'Confirmado' },
+    ])
+  })
+})
+
+describe('streamChat (F-0323 C20): o resultado das tools volta ao transcript', () => {
+  it('a mensagem com execuções leva um resumo compacto (verbo, ok e ids, ou o código do erro)', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(streamResponse([`{"answered":true,"reply":"ok"}\n`]))
+    vi.stubGlobal('fetch', fetch)
+    await streamChat(
+      [
+        { role: 'user', content: 'registra' },
+        {
+          role: 'assistant',
+          content: 'Feito.',
+          runs: [
+            { tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0001', ids: ['R-0001', 'F-0001'], output: '' } },
+            { tool: 'cerne', verb: 'feature approve', args: ['F-0001'], result: { ok: false, output: '', error: { code: 'lifecycle_denied', message: 'x' } } },
+          ],
+        },
+        { role: 'assistant', content: 'Nada.', noRuns: true },
+        { role: 'user', content: 'e agora?' },
+      ],
+      { conversationId: 'c1' },
+      () => {},
+    )
+    const sent = JSON.parse(fetch.mock.calls[0][1].body).messages as { role: string; content: string }[]
+    expect(sent[0]).toEqual({ role: 'user', content: 'registra' })
+    expect(sent[1].content).toBe(
+      'Feito.\n\n[execuções deste turno]\n- reference new: ok R-0001, F-0001\n- feature approve: erro lifecycle_denied',
+    )
+    expect(sent[2].content).toBe('Nada.\n\n[execuções deste turno]\n- nenhuma')
+  })
+})
+
+describe('streamChat (F-0323 C6): escritas antes de uma falha chegam ao humano', () => {
+  it('um 500 com runs vira ChatRunsError carregando as execuções e a mensagem', async () => {
+    setApiProject('proj-x')
+    const runs = [{ tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0004', output: '' } }]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'tool-use loop exceeded its round limit', runs }), { status: 500 })),
+    )
+    const err = await streamChat([{ role: 'user', content: 'oi' }], undefined, () => {}).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ChatRunsError)
+    expect((err as ChatRunsError).message).toBe('tool-use loop exceeded its round limit')
+    expect((err as ChatRunsError).runs).toEqual(runs)
   })
 })
 

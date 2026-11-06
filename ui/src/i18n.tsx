@@ -277,11 +277,22 @@ const ptBR = {
   },
   commandProposal: {
     title: 'Comandos propostos',
-    hint: 'Confira antes de autorizar: o agente vai rodar exatamente estes comandos.',
+    hint: 'Confira antes de autorizar: o servidor só executa os comandos desta lista — qualquer outro é recusado.',
+    hintUnbound:
+      'Confira antes de autorizar: no modo assinatura o agente recebe o cerne neste turno (menos ciclo de vida e operacionais); o combinado são estes comandos.',
     run: 'Executar',
     // confirmed é o turno que o clique manda ao agente — vira mensagem de
     // usuário na transcrição, então fica na língua da conversa.
     confirmed: 'Confirmado: execute os comandos que você propôs e me diga o resultado real (os ids que o cerne devolveu).',
+    noExecHint: 'Este modo não executa comandos: copie e rode no seu terminal.',
+  },
+  toolRuns: {
+    title: 'Execuções',
+    ok: (id: string) => `✓ ${id}`,
+    noEntity: '✓ sem entidade',
+    failed: (code: string, message: string) => `✗ ${code}: ${message}`,
+    none: 'Nenhum comando foi executado neste turno — confira antes de confiar em qualquer id da resposta.',
+    truncated: 'A resposta do modelo foi cortada (truncated): nada da rodada cortada foi executado.',
   },
   channel: {
     title: 'Canal do projeto',
@@ -1141,9 +1152,20 @@ const en: Messages = {
   },
   commandProposal: {
     title: 'Proposed commands',
-    hint: 'Check before authorizing: the agent will run exactly these commands.',
+    hint: 'Check before authorizing: the server runs only the commands in this list — any other is refused.',
+    hintUnbound:
+      'Check before authorizing: in subscription mode the agent gets cerne for this turn (except lifecycle and operational verbs); these are the commands agreed.',
     run: 'Run',
     confirmed: 'Confirmed: run the commands you proposed and report the real outcome (the ids cerne returned).',
+    noExecHint: 'This mode cannot run commands: copy them and run them in your terminal.',
+  },
+  toolRuns: {
+    title: 'Runs',
+    ok: (id: string) => `✓ ${id}`,
+    noEntity: '✓ no entity',
+    failed: (code: string, message: string) => `✗ ${code}: ${message}`,
+    none: 'No command was run in this turn — check before trusting any id in the reply.',
+    truncated: 'The model output was cut (truncated): nothing in the cut round was run.',
   },
   channel: {
     title: 'Project channel',

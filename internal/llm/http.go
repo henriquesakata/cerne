@@ -62,8 +62,8 @@ func ConfiguredProviders(cfg project.LLMConfig) []string {
 //   - delegation: ErrNoProviderForDelegation (no provider exists there);
 //   - claude-cli: an *cliProvider shelling to cfg.ClaudeBin via the real
 //     exec runner — NO API key is read (auth is the Claude Code subscription);
-//   - byo-key (default for any other mode): only provider "anthropic" (any
-//     other value errors, naming it), reads the API key from os.Getenv(cfg.KeyEnv)
+//   - byo-key (default for any other mode): provider "anthropic" or "openai"
+//     (F-0323; any other value errors, naming it), reads the API key from os.Getenv(cfg.KeyEnv)
 //     (ErrAPIKeyMissing when empty), and returns an *httpProvider.
 func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	cfg = cfg.WithDefaults()
@@ -73,12 +73,18 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	case ModeClaudeCLI:
 		return &cliProvider{bin: cfg.ClaudeBin, run: execRun}, nil
 	}
-	if cfg.Provider != providerAnthropic {
-		return nil, fmt.Errorf("LLM provider %q not supported (only %q)", cfg.Provider, providerAnthropic)
+	if cfg.Provider != providerAnthropic && cfg.Provider != providerOpenAI {
+		return nil, fmt.Errorf("LLM provider %q not supported (only %q, %q)", cfg.Provider, providerAnthropic, providerOpenAI)
+	}
+	if cfg.Model == "" {
+		return nil, errModelRequired
 	}
 	key := os.Getenv(cfg.KeyEnv)
 	if key == "" {
 		return nil, fmt.Errorf("%w: set the %s environment variable", ErrAPIKeyMissing, cfg.KeyEnv)
+	}
+	if cfg.Provider == providerOpenAI {
+		return &openaiProvider{baseURL: cfg.BaseURL, model: cfg.Model, apiKey: key, httpClient: http.DefaultClient}, nil
 	}
 	return &httpProvider{
 		baseURL:    cfg.BaseURL,
@@ -105,7 +111,8 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
 		tools := AgentReadTools
 		denied := AgentDeniedPaths
-		if write {
+		// F-0323: no derived refusals, no broad grant (fail closed).
+		if write && len(AgentDeniedCommands) > 0 {
 			tools = append(append([]string{}, AgentReadTools...), AgentWriteTools...)
 			// F-0269: the broad grant only makes sense paired with the refusals —
 			// an unconfirmed turn has no write to refuse.
@@ -124,11 +131,34 @@ type messagesRequest struct {
 	MaxTokens int              `json:"max_tokens"`
 	Stream    bool             `json:"stream,omitempty"`
 	Messages  []messagesMember `json:"messages"`
+	Tools     []anthropicTool  `json:"tools,omitempty"`
+	// ToolChoice asks for one tool call per round (F-0323 C11).
+	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
 }
 
+type anthropicToolChoice struct {
+	Type                   string `json:"type"`
+	DisableParallelToolUse bool   `json:"disable_parallel_tool_use"`
+}
+
+// messagesMember.Content is a string for plain turns and a block list for the
+// tool loop's turns; a string serializes exactly as before.
 type messagesMember struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+type anthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+type toolResultBlock struct {
+	Type      string `json:"type"`
+	ToolUseID string `json:"tool_use_id"`
+	Content   string `json:"content"`
+	IsError   bool   `json:"is_error"`
 }
 
 // messagesResponse is the subset of the response we read: the content blocks.
@@ -137,8 +167,11 @@ type messagesResponse struct {
 }
 
 type contentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
 }
 
 // maxErrBodyBytes bounds how much of a non-2xx response body is echoed back in
@@ -280,6 +313,70 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 		}
 	}
 	return b.String(), nil
+}
+
+// CompleteTools implements ToolCaller over the Messages API (F-0323): while
+// the model stops on tool_use, the round's first tool_use runs through call and
+// any other is answered as not executed (C11), one tool_result each in a single
+// user turn; the assistant turn is
+// echoed verbatim (thinking blocks included, as the API requires). Calls run
+// only on stop_reason tool_use — a turn cut by max_tokens executes nothing and
+// returns ErrTruncated with its partial text (C5). Returns the final turn's text.
+func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools []Tool, call func(context.Context, ToolCall) (string, bool)) (string, error) {
+	defs := make([]anthropicTool, len(tools))
+	for i, t := range tools {
+		defs[i] = anthropicTool{Name: t.Name, Description: t.Description, InputSchema: t.Schema}
+	}
+	msgs := []messagesMember{{Role: "user", Content: prompt}}
+	for range maxToolRounds {
+		req := messagesRequest{Model: p.model, MaxTokens: p.maxTokens, Messages: msgs, Tools: defs}
+		if len(defs) > 0 {
+			req.ToolChoice = &anthropicToolChoice{Type: "auto", DisableParallelToolUse: true}
+		}
+		resp, err := p.post(ctx, req)
+		if err != nil {
+			return "", err
+		}
+		var parsed struct {
+			StopReason string            `json:"stop_reason"`
+			Content    []json.RawMessage `json:"content"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&parsed)
+		resp.Body.Close()
+		if err != nil {
+			return "", fmt.Errorf("unreadable API response: %w", err)
+		}
+		var text strings.Builder
+		var uses []contentBlock
+		for _, raw := range parsed.Content {
+			var b contentBlock
+			if json.Unmarshal(raw, &b) != nil {
+				continue
+			}
+			switch b.Type {
+			case "text":
+				text.WriteString(b.Text)
+			case "tool_use":
+				uses = append(uses, b)
+			}
+		}
+		if parsed.StopReason == "max_tokens" {
+			return text.String(), ErrTruncated
+		}
+		if parsed.StopReason != "tool_use" || len(uses) == 0 {
+			return text.String(), nil
+		}
+		results := make([]toolResultBlock, len(uses))
+		for i, u := range uses {
+			content, isErr := notExecuted, true
+			if i == 0 { // C11: one call per round
+				content, isErr = call(ctx, ToolCall{Name: u.Name, Input: u.Input})
+			}
+			results[i] = toolResultBlock{Type: "tool_result", ToolUseID: u.ID, Content: content, IsError: isErr}
+		}
+		msgs = append(msgs, messagesMember{Role: "assistant", Content: parsed.Content}, messagesMember{Role: "user", Content: results})
+	}
+	return "", fmt.Errorf("%w (%d rounds)", ErrToolRounds, maxToolRounds)
 }
 
 // sseEvent is the subset of a Messages API streaming event we read: text

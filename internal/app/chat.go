@@ -106,7 +106,11 @@ type ChatMessage struct {
 // and the capability tree — for the agent to ground a proposal in what
 // already exists, and instructions for how to format that proposal so the UI
 // can offer it for confirmation.
-func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string, error) {
+//
+// channel (F-0323) is whether the active mode can execute cerne commands: only
+// then does the prompt carry the write contract; without it the agent is told
+// it has no channel and hands copyable commands to the human instead.
+func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel bool) (string, error) {
 	persona, err := cfg.Agent.Resolve(projDir)
 	if err != nil {
 		return "", err
@@ -232,9 +236,31 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
 	b.WriteString(chatNoteContract)
 	b.WriteString("\n\n")
-	b.WriteString(chatCommandContract)
+	if channel {
+		b.WriteString(chatCommandContract)
+	} else {
+		b.WriteString(chatNoChannelContract)
+	}
 	return b.String(), nil
 }
+
+// ChatNoChannelMarker heads the no-channel contract (F-0323 crit. 7). Exported
+// for the tests that assert which contract a mode received.
+const ChatNoChannelMarker = "SEM CANAL DE EXECUÇÃO"
+
+// chatNoChannelContract replaces chatCommandContract when the mode has no
+// execution channel (a provider without function calling): the prompt must
+// not promise an execution that cannot happen — that promise is what turned a
+// confirmed card into silence (R-0046).
+const chatNoChannelContract = ChatNoChannelMarker + `
+
+Neste modo você NÃO consegue executar comandos do cerne: não há canal de execução, e o usuário não verá card de execução. Quando a conversa pedir uma escrita no cerne (registrar referência, nota ou feature; atualizar uma feature existente), entregue os comandos neste bloco, uma linha por comando — a interface o mostra para o usuário copiar e rodar no terminal dele:
+
+` + "```" + ChatCommandFence + `
+cerne reference new "<título>" --url <url> --informs F-NNNN
+` + "```" + `
+
+Diga explicitamente que você não executou nada. Nunca afirme que registrou e nunca invente nem suponha um id: o id só existe depois que o usuário rodar o comando e te contar a saída real.`
 
 // chatNoteFence is the second fenced block of the chat surface (F-0249):
 // durable knowledge proposed as a note. Same detection mechanism as
@@ -269,10 +295,12 @@ Sem facet e sem ao menos um component o registro é RECUSADO pelo servidor — n
 
 A nota só é gravada com a confirmação do usuário no card. Sem esse clique nada foi escrito: não diga que registrou, não invente o id.`
 
-// chatCommandFence is the chat surface's third fenced block (F-0260): the
+// ChatCommandFence is the chat surface's third fenced block (F-0260): the
 // commands the agent intends to run, echoed for the user to confirm. Same
 // detection mechanism as the other two — the UI parses all three alike.
-const chatCommandFence = "cerne-comando"
+// Exported for the server, which binds a confirmation to the turn carrying it
+// (F-0323).
+const ChatCommandFence = "cerne-comando"
 
 // ChatCommandMarker is the heading of the write contract. Exported for the same
 // reason as ChatRoleBoundaryMarker: the tests assert on the block's presence and
@@ -295,7 +323,7 @@ O caminho normal de registro é o card: você propõe, o usuário clica. Quando 
 
 1. Neste turno, ECOE o que pretende rodar num bloco cercado, uma linha por comando, e pare. NÃO execute nada neste turno, nem afirme que registrou.
 
-` + "```" + chatCommandFence + `
+` + "```" + ChatCommandFence + `
 cerne feature new "<título>" --context "<por quê>" --facet <facet> --component <comp>
 ` + "```" + `
 
@@ -305,7 +333,7 @@ Comandos de CRIAÇÃO: ` + "`cerne feature new`" + `, ` + "`cerne note new`" + `
 
 Comandos de ATUALIZAÇÃO de uma feature que JÁ existe (F-0265) — use quando o usuário pedir para mudar uma feature pelo id, em vez de propor bloco (o bloco continua sendo o caminho da candidata NOVA):
 
-` + "```" + chatCommandFence + `
+` + "```" + ChatCommandFence + `
 cerne feature spec F-NNNN <<'SPEC'   # reescreve a spec inteira pelo stdin (só em candidate)
 <spec completa>
 SPEC

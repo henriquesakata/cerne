@@ -722,7 +722,24 @@ export async function ask(query: string, history: boolean): Promise<AskAnswer> {
 
 // ---- chat de solicitação de features no Backlog (F-0210) ----
 
-export type ChatMsg = { role: 'user' | 'assistant'; content: string }
+// ChatRun (F-0323) é uma execução do turno confirmado pelo canal de tools: o
+// verbo, os argumentos e o resultado estruturado que o cerne devolveu — o id
+// real ou o erro nomeado, nunca a prosa do agente.
+export type ChatRunResult = { ok: boolean; id?: string; ids?: string[]; output: string; error?: { code: string; message: string } }
+export type ChatRun = { tool: string; verb: string; args?: string[]; result: ChatRunResult }
+
+// runs e noExec ficam na mensagem do agente (storage local) e nunca voltam ao
+// servidor: o transcript enviado é só role/content.
+// noRuns/truncated (F-0323 C5): o turno confirmado não executou nada, ou a
+// saída do modelo foi cortada — nunca um sucesso silencioso.
+export type ChatMsg = {
+  role: 'user' | 'assistant'
+  content: string
+  runs?: ChatRun[]
+  noExec?: boolean
+  noRuns?: boolean
+  truncated?: boolean
+}
 
 // ChatAnswer espelha o payload de POST /api/chat. answered é false quando o
 // projeto não tem um provider [llm] configurado (delegação): nenhuma
@@ -731,6 +748,22 @@ export type ChatAnswer = {
   answered: boolean
   needs_provider?: boolean
   reply?: string
+  runs?: ChatRun[]
+  // no_exec (F-0323): o modo não tem canal de execução — sem card de Executar.
+  no_exec?: boolean
+  no_runs?: boolean
+  truncated?: boolean
+}
+
+// ChatRunsError (F-0323 C6) é a falha de um turno que já executou algo: o
+// servidor devolve as execuções junto do erro, e elas têm de chegar ao humano —
+// uma escrita feita antes da falha nunca some atrás de um "tente de novo".
+export class ChatRunsError extends Error {
+  runs: ChatRun[]
+  constructor(message: string, runs: ChatRun[]) {
+    super(message)
+    this.runs = runs
+  }
 }
 
 // ChatOverride (F-0218) carrega a escolha do seletor de modelo/esforço do
@@ -740,7 +773,31 @@ export type ChatAnswer = {
 // confirm (F-0260) é a confirmação explícita do usuário sobre os comandos que o
 // agente ecoou no turno anterior — só ela libera as ferramentas de escrita, e
 // só naquele turno. Nasce do clique no card, nunca do texto da mensagem.
-export type ChatOverride = { model?: string; effort?: string; featureId?: string; confirm?: boolean }
+// conversationId e confirmTurn (F-0323) prendem a confirmação ao card: o id da
+// conversa (proveniência das escritas) e o índice da mensagem do agente que o
+// trazia — sem eles o servidor recusa o confirm com 422.
+export type ChatOverride = {
+  model?: string
+  effort?: string
+  featureId?: string
+  confirm?: boolean
+  conversationId?: string
+  confirmTurn?: number
+}
+
+// runsSummary (F-0323 C20) devolve ao transcript o que o turno confirmado de
+// fato executou — verbo, ok e ids, ou o código do erro —, para que os turnos
+// seguintes se ancorem nos ids reais e não na prosa da resposta.
+function runsSummary(runs: ChatRun[] | undefined, noRuns: boolean | undefined): string {
+  if (!runs?.length && !noRuns) return ''
+  const lines = (runs ?? []).map((r) => {
+    const ids = r.result.ids?.length ? r.result.ids : r.result.id ? [r.result.id] : []
+    return r.result.ok
+      ? `- ${r.verb}: ok${ids.length ? ' ' + ids.join(', ') : ''}`
+      : `- ${r.verb}: erro ${r.result.error?.code ?? ''}`
+  })
+  return '\n\n[execuções deste turno]\n' + (lines.length ? lines.join('\n') : '- nenhuma')
+}
 
 // streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
 // case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
@@ -758,14 +815,20 @@ export async function streamChat(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messages,
+      messages: messages.map(({ role, content, runs, noRuns }) => ({ role, content: content + runsSummary(runs, noRuns) })),
       model: override?.model,
       effort: override?.effort,
       feature_id: override?.featureId,
       confirm: override?.confirm,
+      conversation_id: override?.conversationId,
+      confirm_turn: override?.confirmTurn,
     }),
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { error?: string; runs?: ChatRun[] }
+    const message = body.error || `HTTP ${r.status}`
+    throw body.runs?.length ? new ChatRunsError(message, body.runs) : new Error(message)
+  }
   if (!r.body) return (await r.json()) as ChatAnswer
 
   const parseLine = (line: string): ChatAnswer | null => {

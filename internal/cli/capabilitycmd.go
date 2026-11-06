@@ -11,6 +11,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newCapabilityCmd() *cobra.Command {
@@ -21,10 +22,10 @@ func newCapabilityCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newCapabilityNewCmd(&dir))
-	cmd.AddCommand(newCapabilityListCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newCapabilityNewCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newCapabilityListCmd(&dir)))
 	cmd.AddCommand(newCapabilityRetireCmd(&dir))
-	cmd.AddCommand(newCapabilityBootstrapCmd(&dir))
+	cmd.AddCommand(verbs.MarkLocal(newCapabilityBootstrapCmd(&dir)))
 	return cmd
 }
 
@@ -115,7 +116,7 @@ func newCapabilityRetireCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why the capability is being retired (required)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 // newFeatureCapabilityCmd is the feature-side link: 'cerne feature capability

@@ -10,6 +10,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 // newFeatureAcceptCmd wires `cerne feature accept` (F-0131 crit. 3, 7, 9): the
@@ -35,7 +36,7 @@ func newFeatureAcceptCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "optional acceptance note (required with --all-implemented)")
 	cmd.Flags().BoolVar(&allImplemented, "all-implemented", false, "accept every feature currently implemented (legacy bulk migration; requires --reason)")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason string, allImplemented bool) error {

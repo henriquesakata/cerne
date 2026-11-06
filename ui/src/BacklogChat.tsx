@@ -19,7 +19,7 @@ import {
   type ModelEntry,
 } from './api'
 import * as chatRequest from './chatRequest'
-import CommandProposal from './CommandProposal'
+import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
 import Markdown from './Markdown'
 import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
@@ -568,6 +568,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [defaultModel, setDefaultModel] = useState('')
   const [providers, setProviders] = useState<string[]>([])
   const [provider, setProvider] = useState('')
+  // F-0323 C3: só o canal de tools prende a execução ao card; no modo
+  // assinatura o agente recebe o cerne no turno, e a dica tem de dizer isso.
+  const [cardBound, setCardBound] = useState(true)
   const [model, setModel] = useState(conversation.model)
   const [effort, setEffort] = useState(conversation.effort)
   const [, forceTick] = useState(0)
@@ -587,6 +590,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     fetchLLMOptions()
       .then((opts) => {
         setNeedsProvider(opts.mode === 'delegation')
+        setCardBound(opts.mode !== 'claude-cli')
         // F-0311: o provedor inicial é a preferência persistida (critério 16),
         // se o projeto ainda o alcança; senão o primeiro configurado.
         const prov = opts.providers.includes(opts.preferredProvider)
@@ -627,6 +631,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       const outcome = chatRequest.consumeOutcome(id)
       if (!outcome) return
       if (outcome.kind === 'error') {
+        // F-0323 C6: o que rodou antes da falha fica na tela com o erro; o
+        // turno confirmado não se repete (confirmação de uso único), então não
+        // há reenvio a oferecer.
+        const fresh = chatRequest.getConversation(id)
+        if (fresh?.messages.at(-1)?.runs) {
+          setMessages(fresh.messages)
+          setFailedMessages(null)
+        }
         setError(outcome.message)
         return
       }
@@ -709,7 +721,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
 
   // sendMessages guarda `next` como o candidato a reenvio (critério 4) — só
   // vira "erro visível" se a requisição falhar; sucesso limpa em reconcile().
-  const sendMessages = (next: ChatMsg[], confirm = false) => {
+  // confirmTurn (F-0323) é o índice da mensagem do agente que trazia o card:
+  // só o turno nascido do clique o carrega, e é ele que vira o confirm.
+  const sendMessages = (next: ChatMsg[], confirmTurn?: number) => {
     setError(null)
     setFailedMessages(next)
     chatRequest.send(conversation.id, next, {
@@ -721,7 +735,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       // F-0260: só o turno nascido do clique em Executar carrega a permissão de
       // escrita. O default é false, então digitar "confirmo" no compositor não
       // autoriza nada — a autorização é o clique, não o texto.
-      confirm: confirm || undefined,
+      confirm: confirmTurn !== undefined || undefined,
+      confirmTurn,
     })
   }
 
@@ -889,9 +904,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // diz o que fazer com ela).
   const confirmCommands = () => {
     if (busy) return
+    const cardTurn = messages.length - 1
     const next = [...messages, { role: 'user' as const, content: t.commandProposal.confirmed }]
     setMessages(next)
-    sendMessages(next, true)
+    sendMessages(next, cardTurn)
   }
 
   if (needsProvider) {
@@ -919,8 +935,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           // F-0260: o card de comandos só vale na ÚLTIMA mensagem. Um eco antigo
           // reautorizado depois que a conversa andou rodaria comandos que já não
           // são o que se quer — e criação não tem desfazer.
-          const commands =
-            m.role === 'assistant' && i === messages.length - 1 ? parseCommands(m.content) : null
+          // F-0323 critério 7: num modo sem canal (noExec) os comandos não
+          // viram card — viram bloco para copiar, em qualquer mensagem.
+          const fenced = m.role === 'assistant' ? parseCommands(m.content) : null
+          const commands = fenced && !m.noExec && i === messages.length - 1 ? fenced : null
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
               {m.role !== 'assistant' && <p>{m.content}</p>}
@@ -943,7 +961,11 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
                     />
                   )}
                   {commands && (
-                    <CommandProposal commands={commands} busy={busy} onConfirm={confirmCommands} />
+                    <CommandProposal commands={commands} busy={busy} bound={cardBound} onConfirm={confirmCommands} />
+                  )}
+                  {fenced && m.noExec && <CopyCommands commands={fenced} />}
+                  {(m.runs || m.noRuns || m.truncated) && (
+                    <ToolRuns runs={m.runs ?? []} noRuns={m.noRuns} truncated={m.truncated} />
                   )}
                 </>
               )}

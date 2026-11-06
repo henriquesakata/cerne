@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 func newRetireCmd() *cobra.Command {
@@ -36,7 +37,7 @@ func newRetireCmd() *cobra.Command {
 	cmd.Flags().StringVar(&importedFrom, "imported-from", "", "optional provenance (path/id in the legacy tree)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	return cmd
+	return verbs.MarkLifecycle(cmd)
 }
 
 func runRetire(cmd *cobra.Command, dir, name, by, reason string, aliases []string, importedFrom string) error {
