@@ -850,6 +850,13 @@ const ptBR = {
     writesTo: (scope: string) => `Grava em ${scope}`,
     reset: 'Redefinir neste escopo',
     writeError: (e: string) => `Não foi possível gravar: ${e}`,
+    // Recusas conhecidas do servidor (F-0314), pelo status (crítica C17).
+    refusals: {
+      busy: (lock: string) =>
+        `O arquivo está travado por outra escrita. Tente de novo em instantes; se nenhum cerne estiver rodando, apague ${lock}.`,
+      layout: 'Não é possível editar este valor com segurança no arquivo: corrija-o à mão.',
+      invalid: 'O servidor recusou o valor ou o escopo desta configuração.',
+    },
     file: 'Arquivo:',
     invalid: (scope: string, raw: string) => `Valor inválido em ${scope}: ${raw} — ignorado`,
     scopes: {
@@ -1696,6 +1703,12 @@ const en: Messages = {
     writesTo: (scope: string) => `Writes to ${scope}`,
     reset: 'Reset in this scope',
     writeError: (e: string) => `Could not save: ${e}`,
+    refusals: {
+      busy: (lock: string) =>
+        `The file is locked by another writer. Try again in a moment; if no cerne is running, remove ${lock}.`,
+      layout: 'This value cannot be edited safely in the file: fix it by hand.',
+      invalid: "The server refused this setting's value or scope.",
+    },
     file: 'File:',
     invalid: (scope: string, raw: string) => `Invalid value in ${scope}: ${raw} — ignored`,
     scopes: {

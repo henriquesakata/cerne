@@ -45,8 +45,18 @@ function formatValue(v: unknown, ts: Texts): string {
 // pressed goes away (a reset, an "Edit in …" shortcut, a remounted field).
 const controlId = (id: string) => `setting-${id}`
 
-// retry is absent when retrying can only fail the same way (critic C8).
-type Failure = { message: string; retry?: () => void }
+// retry is absent when retrying can only fail the same way (critic C8);
+// status is the HTTP status of a refusal, none when there was no answer.
+type Failure = { message: string; status?: number; retry?: () => void }
+
+// refusalText says a known refusal in the UI's language (critic C17); an
+// unknown one keeps the server's text. file is the scope's file, for the lock.
+function refusalText(f: Failure, ts: Texts, file: string | undefined): string {
+  if (f.status === 409 && f.message.includes('locked')) return ts.refusals.busy(`${file ?? ''}.lock`)
+  if (f.status === 422) return ts.refusals.layout
+  if (f.status === 400) return ts.refusals.invalid
+  return f.message
+}
 
 // retryable: a busy lock (409), a broken server (5xx) or no answer at all
 // (network). A 400 (value, scope) or 422 (file layout, parse) needs the file
@@ -125,6 +135,7 @@ export default function Settings() {
       (e: unknown) =>
         settle({
           message: e instanceof Error ? e.message : String(e),
+          status: e instanceof HTTPError ? e.status : undefined,
           retry: retryable(e) ? () => write(id, scope, run) : undefined,
         }),
     )
@@ -389,11 +400,13 @@ function SettingRow({
           </button>
         )}
       </p>
-      {failure?.retry && <Notice message={ts.writeError(failure.message)} onRetry={failure.retry} busy={busy} />}
+      {failure?.retry && (
+        <Notice message={ts.writeError(refusalText(failure, ts, files[ws]))} onRetry={failure.retry} busy={busy} />
+      )}
       {failure && !failure.retry && (
         // No retry: the message and the way to the file that needs fixing.
         <div className="load-notice" role="status">
-          <p className="form-error">{ts.writeError(failure.message)}</p>
+          <p className="form-error">{ts.writeError(refusalText(failure, ts, files[ws]))}</p>
           {files[ws] && <FixBlock command={files[ws]} />}
         </div>
       )}

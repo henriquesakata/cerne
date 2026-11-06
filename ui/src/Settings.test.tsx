@@ -520,3 +520,41 @@ describe('Settings — nova tentativa só quando tentar de novo ajuda (F-0315, c
     }
   })
 })
+
+describe('Settings — recusas conhecidas do servidor em pt-BR/en (F-0315, crítica C17)', () => {
+  const failWith = async (err: Error) => {
+    cleanup()
+    putSetting.mockRejectedValueOnce(err)
+    render(<Settings />)
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Grafo' })).getByRole('checkbox'))
+    return within(row('Grafo')).findByRole('status')
+  }
+
+  it('409 travado, 422 e 400 viram mensagens traduzidas; erro desconhecido mantém o texto cru', async () => {
+    const locked = await failWith(
+      new HTTPError('/repo/.cernerc: config file is locked by another writer; if no cerne is running, remove /repo/.cernerc.lock', 409),
+    )
+    expect(locked).toHaveTextContent('O arquivo está travado por outra escrita')
+    expect(locked).toHaveTextContent('/repo/.cernerc.lock')
+    expect(locked).not.toHaveTextContent('locked by another writer')
+
+    expect(await failWith(new HTTPError('cannot safely edit [graph] enabled; edit the file by hand', 422))).toHaveTextContent(
+      'Não é possível editar este valor com segurança no arquivo',
+    )
+    expect(await failWith(new HTTPError('invalid setting value "x"', 400))).toHaveTextContent(
+      'O servidor recusou o valor ou o escopo',
+    )
+    expect(await failWith(new HTTPError('boom', 500))).toHaveTextContent('Não foi possível gravar: boom')
+  })
+
+  it('em inglês, a mesma recusa sai no dicionário en', async () => {
+    putSetting.mockRejectedValueOnce(new HTTPError('config file is locked by another writer', 409))
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Graph' })).getByRole('checkbox'))
+    expect(await within(row('Graph')).findByRole('status')).toHaveTextContent('The file is locked by another writer')
+  })
+})
