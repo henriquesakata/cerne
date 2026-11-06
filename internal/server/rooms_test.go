@@ -851,3 +851,34 @@ func TestChannelRiteRoutesRefuse(t *testing.T) {
 		}
 	}
 }
+
+// TestChannelPostWithSessionIsTheAgent (F-0325, critic C5): a channel post
+// carrying a session_id — what `cerne room say channel --session` sends — is
+// that session's agent, resolved to its work like `msg send`; only a post
+// with no session (the UI composer) is the human. A session with no live
+// registration is refused, never promoted to the human.
+func TestChannelPostWithSessionIsTheAgent(t *testing.T) {
+	h, _, cacheDir := newChannelServer(t, "proj-channel-agent-post")
+	if err := app.BindSession(cacheDir, "sess-a", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		messageJSON
+		Human bool `json:"human"`
+	}
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"session_id":"sess-a","body":"I am the agent"}`, &got)
+	if rec.Code != http.StatusCreated || got.Human || got.Nick != "W-0001" {
+		t.Fatalf("agent post = %d %s, want 201 as W-0001", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "sess-a") {
+		t.Fatalf("the response leaks the session id: %s", rec.Body.String())
+	}
+	var refused map[string]string
+	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"session_id":"nobody","body":"x"}`, &refused); rec.Code != http.StatusForbidden || !strings.Contains(refused["error"], "cerne work start") {
+		t.Fatalf("unregistered session = %d %v, want 403 pointing at work start", rec.Code, refused)
+	}
+	msgs, err := room.OpenChannel(filepath.Join(cacheDir, "rooms")).Messages()
+	if err != nil || len(msgs) != 1 || msgs[0].Human || msgs[0].Session != "sess-a" {
+		t.Fatalf("channel = %+v, %v", msgs, err)
+	}
+}

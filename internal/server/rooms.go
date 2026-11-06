@@ -178,6 +178,8 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, room.ErrPermanentRoom):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, app.ErrNoChannelIdentity):
+		writeJSON(w, http.StatusForbidden, errorBody(err.Error()+" — run `cerne work start \"<what you are doing>\"` in that session first"))
 	case errors.Is(err, room.ErrMessageTooLong):
 		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
 	case errors.Is(err, room.ErrChannelBusy):
@@ -240,15 +242,20 @@ type sayRequest struct {
 	Body      string `json:"body"`
 }
 
-func handleRoomSay(w http.ResponseWriter, r *http.Request, projDir, projectID, id string) {
+func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID, id string) {
 	var req sayRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 	if id == room.ChannelID {
-		// The UI composer (F-0325): the human posts with no session, named
-		// by the channel.human_name setting.
+		// F-0325: a post carrying a session is that session's agent, exactly
+		// like `cerne msg send` (`cerne room say channel --session` sends
+		// one); only a post with no session — the UI composer — is the human,
+		// named by the channel.human_name setting.
+		// ponytail: local trust model, like every room route — any process
+		// that can reach this localhost port may post as the human or as any
+		// session id it knows. Authenticate when the server leaves the machine.
 		if strings.TrimSpace(req.Body) == "" {
 			writeJSON(w, http.StatusBadRequest, errorBody("the message cannot be empty"))
 			return
@@ -258,7 +265,14 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, projDir, projectID, i
 			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 			return
 		}
-		msg, err := app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Body, time.Now().UTC())
+		now := time.Now().UTC()
+		var msg room.Message
+		if req.SessionID != "" {
+			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Body, now)
+			msg.Session = "" // a session id is never served
+		} else {
+			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Body, now)
+		}
 		if err != nil {
 			writeRoomErr(w, err)
 			return
