@@ -31,6 +31,11 @@ type hookInput struct {
 	ToolName     string          `json:"tool_name"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// AgentID is present only when the hook fires inside a subagent (whose
+	// session_id is still the parent's); TranscriptPath is the session's
+	// JSONL (F-0309).
+	AgentID        string `json:"agent_id"`
+	TranscriptPath string `json:"transcript_path"`
 	// StopHookActive is set on a Stop payload when the stop is itself the
 	// continuation of a Stop hook (F-0294).
 	StopHookActive bool `json:"stop_hook_active"`
@@ -118,7 +123,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if err != nil {
 		return
 	}
-	_ = app.BindSession(cacheDir, in.SessionID, id)
+	_ = app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, id)
 }
 
 func newHookWorkGateCmd() *cobra.Command {

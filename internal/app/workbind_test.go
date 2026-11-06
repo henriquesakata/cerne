@@ -1,11 +1,14 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -162,5 +165,89 @@ func TestLiveBindings(t *testing.T) {
 	got, err = LiveBindings(t.TempDir(), repoDir)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("empty cache: got %v, %v", got, err)
+	}
+}
+
+// readCostLedger returns the raw ledger and its lines decoded.
+func readCostLedger(t *testing.T, cacheDir string) ([]byte, []cost.Bind) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(cacheDir, "costbind.ndjson"))
+	if err != nil {
+		t.Fatalf("read ledger: %v", err)
+	}
+	var binds []cost.Bind
+	for _, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+		var b cost.Bind
+		if err := json.Unmarshal(line, &b); err != nil {
+			t.Fatalf("ledger line %q: %v", line, err)
+		}
+		binds = append(binds, b)
+	}
+	return raw, binds
+}
+
+// TestBindSessionAppendsCostLedger (F-0309 crit. 1): every bind appends one
+// {session_id, entity_id, ts} line (plus harness) to <cache>/costbind.ndjson,
+// never rewriting earlier lines.
+func TestBindSessionAppendsCostLedger(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	cacheDir := t.TempDir()
+	if err := BindSession(cacheDir, "sess-A", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := readCostLedger(t, cacheDir)
+	if err := BindSession(cacheDir, "sess-A", "F-0002"); err != nil {
+		t.Fatal(err)
+	}
+	raw, binds := readCostLedger(t, cacheDir)
+	if len(binds) != 2 {
+		t.Fatalf("ledger has %d lines, want 2:\n%s", len(binds), raw)
+	}
+	for i, want := range []string{"W-0001", "F-0002"} {
+		b := binds[i]
+		if b.Session != "sess-A" || b.Entity != want || b.Harness != cost.HarnessClaudeCode || b.Agent != "" || b.TS.IsZero() {
+			t.Fatalf("line %d = %+v, want sess-A/%s/claude-code, no agent, non-zero ts", i, b, want)
+		}
+	}
+	if binds[1].TS.Before(binds[0].TS) {
+		t.Fatalf("ts decreased: %v then %v", binds[0].TS, binds[1].TS)
+	}
+	if !bytes.HasPrefix(raw, first) {
+		t.Fatalf("first line rewritten:\nbefore %q\nafter  %q", first, raw)
+	}
+}
+
+// TestCostLedgerSurvivesClearAndSelfHeal (F-0309 crit. 2): ClearBindings and
+// the self-heal of CurrentBinding/LiveBindings remove binding files only; the
+// ledger stays byte-identical.
+func TestCostLedgerSurvivesClearAndSelfHeal(t *testing.T) {
+	cacheDir, repoDir := t.TempDir(), t.TempDir()
+	bindTestWork(t, repoDir, "W-0001", domain.WorkActive)
+	bindTestWork(t, repoDir, "W-0002", domain.WorkDone)
+	if err := BindSession(cacheDir, "s1", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindSession(cacheDir, "s2", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := readCostLedger(t, cacheDir)
+
+	if err := ClearBindings(cacheDir, "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := CurrentBinding(cacheDir, repoDir, "s2"); err != nil || ok {
+		t.Fatalf("CurrentBinding(s2) = %v, %v, want stale", ok, err)
+	}
+	if _, err := LiveBindings(cacheDir, repoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	after, _ := readCostLedger(t, cacheDir)
+	if !bytes.Equal(before, after) {
+		t.Fatalf("ledger changed:\nbefore %q\nafter  %q", before, after)
+	}
+	entries, err := os.ReadDir(filepath.Join(cacheDir, "sessions"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("sessions/ = %v (%v), want empty", entries, err)
 	}
 }

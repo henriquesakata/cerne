@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/room"
 )
@@ -83,6 +84,40 @@ func TestHookBindWorkBindsFromWorkStart(t *testing.T) {
 	}
 	if !ok || id != "W-0001" {
 		t.Fatalf("binding = (%q, %v), want (W-0001, true)", id, ok)
+	}
+}
+
+// TestHookBindWorkRecordsAgentInLedger (F-0309): a bind fired from inside a
+// subagent records the payload's agent_id (and the claude-code harness) on the
+// cost ledger line; the sessions/ binding is written as before.
+func TestHookBindWorkRecordsAgentInLedger(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\noutput: %s", err, out)
+	}
+	stdin := strings.Replace(hookJSON(t, "sess-hook", projDir, "Bash",
+		map[string]any{"command": `cerne work start "Investigar erro X"`},
+		map[string]any{"stdout": "W-0001 criada (active) — Investigar erro X (ator: agent)"}),
+		"{", `{"agent_id":"a1b2",`, 1)
+	if out, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+	}
+
+	cacheDir := filepath.Dir(repoDir)
+	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook"); err != nil || !ok || id != "W-0001" {
+		t.Fatalf("binding = (%q, %v, %v), want (W-0001, true)", id, ok, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(cacheDir, "costbind.ndjson"))
+	if err != nil {
+		t.Fatalf("ledger: %v", err)
+	}
+	var b cost.Bind
+	if err := json.Unmarshal(bytes.TrimSpace(raw), &b); err != nil {
+		t.Fatalf("ledger %q: %v", raw, err)
+	}
+	if b.Session != "sess-hook" || b.Agent != "a1b2" || b.Entity != "W-0001" || b.Harness != cost.HarnessClaudeCode {
+		t.Fatalf("ledger line = %+v, want sess-hook/a1b2/W-0001/claude-code", b)
 	}
 }
 
