@@ -52,10 +52,13 @@ func paritySteps() []parityStep {
 // subscription agent reads command output.
 func fakeClaude(scriptPath string) int {
 	_, _ = io.Copy(io.Discard, os.Stdin) // the prompt
-	allowed := ""
+	allowed, disallowed := "", ""
 	for i, a := range os.Args {
-		if a == "--allowedTools" && i+1 < len(os.Args) {
+		if i+1 < len(os.Args) && a == "--allowedTools" {
 			allowed = os.Args[i+1]
+		}
+		if i+1 < len(os.Args) && a == "--disallowedTools" {
+			disallowed = os.Args[i+1]
 		}
 	}
 	if !strings.Contains(allowed, "Bash(cerne:*)") {
@@ -74,6 +77,13 @@ func fakeClaude(scriptPath string) int {
 	}
 	bin, _ := os.Executable()
 	for i, s := range steps {
+		// Claude Code refuses a Bash call matching a --disallowedTools prefix
+		// rule before it runs — the harness half of the subscription mode.
+		line := "cerne " + s.Verb + " " + strings.Join(s.Args, " ")
+		if deniedBy(disallowed, line) {
+			fmt.Printf("### passo %d\nNEGADO pelo harness: %s\n", i+1, line)
+			continue
+		}
 		cmd := exec.Command(bin, append(strings.Fields(s.Verb), s.Args...)...)
 		cmd.Stdin = strings.NewReader(s.Stdin)
 		var out, errOut bytes.Buffer
@@ -85,6 +95,19 @@ func fakeClaude(scriptPath string) int {
 		}
 	}
 	return 0
+}
+
+// deniedBy reports whether a comma-joined list of Bash(<prefix>:*) rules
+// refuses line, the way Claude Code matches them.
+func deniedBy(rules, line string) bool {
+	for _, r := range strings.Split(rules, ",") {
+		if p, ok := strings.CutPrefix(r, "Bash("); ok {
+			if p, ok = strings.CutSuffix(p, ":*)"); ok && strings.HasPrefix(line, p) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type parityProject struct {
@@ -216,7 +239,10 @@ var parityID = regexp.MustCompile(`\b[A-Z]{1,2}-\d{4}\b`)
 func TestChatParitySubscriptionOracle(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	t.Setenv("CERNE_TEST_RUN_CLI", "1")
-	steps := paritySteps()
+	// The fixed non-lifecycle script (crit. 9) plus a lifecycle step both modes
+	// must refuse: the oracle only counts if its harness denials are honoured.
+	steps := append(paritySteps(), parityStep{"feature approve", []string{"F-0001"}, ""})
+	fixed := len(steps) - 1
 	scriptPath := filepath.Join(t.TempDir(), "roteiro.json")
 	raw, _ := json.Marshal(steps)
 	if err := os.WriteFile(scriptPath, raw, 0o644); err != nil {
@@ -241,8 +267,8 @@ func TestChatParitySubscriptionOracle(t *testing.T) {
 		known[ev.EntityID] = true
 	}
 	blocks := strings.Split(termA.Reply, "### passo ")[1:]
-	if len(blocks) != len(steps) || strings.Contains(termA.Reply, "ERRO:") {
-		t.Fatalf("oracle reply does not cover the script:\n%s", termA.Reply)
+	if len(blocks) != len(steps) || strings.Contains(termA.Reply, "ERRO:") || !strings.Contains(blocks[fixed], "NEGADO") {
+		t.Fatalf("oracle reply does not cover the script (lifecycle step denied):\n%s", termA.Reply)
 	}
 	oracle := make([]string, len(steps))
 	for i, b := range blocks {
@@ -282,7 +308,10 @@ func TestChatParitySubscriptionOracle(t *testing.T) {
 	if len(termB.Runs) != len(steps) {
 		t.Fatalf("api mode ran %d steps, want %d: %+v", len(termB.Runs), len(steps), termB.Runs)
 	}
-	for i, run := range termB.Runs {
+	if last := termB.Runs[fixed]; last.Result.Error == nil || last.Result.Error.Code != "lifecycle_denied" {
+		t.Fatalf("api mode lifecycle step = %+v, want lifecycle_denied", last.Result)
+	}
+	for i, run := range termB.Runs[:fixed] {
 		if !run.Result.OK {
 			t.Fatalf("step %d (%s) failed: %+v", i+1, run.Verb, run.Result.Error)
 		}
