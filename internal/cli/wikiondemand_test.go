@@ -225,3 +225,38 @@ func TestWikiEnabledBrokenSourceWarns(t *testing.T) {
 		})
 	}
 }
+
+// TestLintFixTasksOmitsAdvisory pins C6 of F-0316 for --fix-tasks, the list
+// pasted into an agent as work: advisory findings — a stale pending (F-0322),
+// wiki debt with the wiki off — stay in the report but are no task.
+func TestLintFixTasksOmitsAdvisory(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem", "--facet", "code")
+	pendingNew(t, projDir, "Débito velho", "--from", "F-0001")
+	ageInBackend(t, repoDir, "P-0001", true)
+	page := filepath.Join(repoDir, "content", "wiki", "project.md")
+	if err := os.MkdirAll(filepath.Dir(page), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, page, wiki.RenderProvenance(wiki.Provenance{Page: "project", Sources: []string{"F-0999"}, CompiledFrom: "seed", InputHash: "seed"})+"\n# Projeto\n")
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "settings", "set", "wiki.enabled", "false", "--scope", "project", "--dir", projDir); err != nil {
+		t.Fatalf("settings set: %v\n%s", err, out)
+	}
+
+	out, _ := execCerne(t, "lint", "--fix-tasks", "--dir", projDir)
+	for _, shown := range []string{"STALE-PENDING (1) (warning)", "WIKI-SOURCE-UNKNOWN (1) (warning: wiki.enabled is off)"} {
+		if !strings.Contains(out, shown) {
+			t.Fatalf("report lacks %q:\n%s", shown, out)
+		}
+	}
+	_, tasks, ok := strings.Cut(out, "## Maintenance tasks")
+	if !ok || !strings.Contains(tasks, "W-0001") {
+		t.Fatalf("fix-tasks lacks the blocking stale work:\n%s", out)
+	}
+	for _, advisory := range []string{"P-0001", "content/wiki/project.md"} {
+		if strings.Contains(tasks, advisory) {
+			t.Fatalf("fix-tasks lists the advisory %s as work:\n%s", advisory, tasks)
+		}
+	}
+}
