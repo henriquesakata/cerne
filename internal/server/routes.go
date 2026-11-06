@@ -111,6 +111,19 @@ func dataRoutes() []dataRoute {
 		{"POST", "/references", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleCreateReference(w, r, repoDir, projDir)
 		}},
+		// Ideas (F-0312): local-only — the Backlog panel is the one consumer.
+		{"GET", "/ideas", false, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
+			handleIdeas(w, repoDir)
+		}},
+		{"POST", "/ideas", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleCreateIdea(w, r, repoDir, projDir)
+		}},
+		{"POST", "/ideas/{id}/drop", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleDropIdea(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
+		{"POST", "/ideas/{id}/promote", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handlePromoteIdea(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
 		{"GET", "/search", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, projectID string) {
 			handleSearch(w, r, repoDir, projectID)
 		}},

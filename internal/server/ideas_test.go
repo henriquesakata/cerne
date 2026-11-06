@@ -1,13 +1,20 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // TestIdeasLeaveAPIOutputsUnchanged (F-0312 crit. 3, UI surfaces): /api/state
@@ -73,6 +80,126 @@ func TestIdeasLeaveAPIOutputsUnchanged(t *testing.T) {
 	for p, body := range after {
 		if strings.Contains(body, "I-0") || strings.Contains(body, "idea.") {
 			t.Errorf("GET %s mentions an idea: %s", p, body)
+		}
+	}
+}
+
+// TestIdeasAPIRoundTrip (F-0312 crit. 10, server): capture, list (active,
+// newest first), drop, promote — and the refusals.
+func TestIdeasAPIRoundTrip(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	var created struct {
+		Idea store.Idea `json:"idea"`
+	}
+	for _, text := range []string{"primeira", "segunda", "terceira"} {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"text":%q,"components":["kanban"]}`, text), &created); rec.Code != http.StatusCreated {
+			t.Fatalf("POST %q = %d: %s", text, rec.Code, rec.Body.String())
+		}
+	}
+	if created.Idea.ID != "I-0003" || created.Idea.Components[0] != "kanban" {
+		t.Fatalf("created = %+v, want I-0003 with component kanban", created.Idea)
+	}
+	var e map[string]any
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"text":" "}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("blank text = %d, want 422", rec.Code)
+	}
+	var list struct {
+		Ideas []store.Idea `json:"ideas"`
+	}
+	doJSON(t, h, http.MethodGet, "/api/ideas", "", &list)
+	if len(list.Ideas) != 3 || list.Ideas[0].ID != "I-0003" || list.Ideas[2].ID != "I-0001" {
+		t.Fatalf("GET = %+v, want I-0003..I-0001", list.Ideas)
+	}
+	var dropped struct {
+		Idea store.Idea `json:"idea"`
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0002/drop", `{}`, &dropped); rec.Code != http.StatusOK || dropped.Idea.State != "dropped" {
+		t.Fatalf("drop = %d %+v", rec.Code, dropped.Idea)
+	}
+	doJSON(t, h, http.MethodGet, "/api/ideas", "", &list)
+	if len(list.Ideas) != 2 || list.Ideas[0].ID != "I-0003" || list.Ideas[1].ID != "I-0001" {
+		t.Fatalf("GET after drop = %+v, want I-0003, I-0001", list.Ideas)
+	}
+	var promoted struct {
+		Idea    store.Idea    `json:"idea"`
+		Feature store.Feature `json:"feature"`
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &promoted); rec.Code != http.StatusOK ||
+		promoted.Feature.State != "candidate" || promoted.Idea.PromotedTo != promoted.Feature.ID {
+		t.Fatalf("promote = %d %+v", rec.Code, promoted)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	if !strings.Contains(rec.Body.String(), promoted.Feature.ID) {
+		t.Fatalf("/api/state lacks the promoted candidate %s", promoted.Feature.ID)
+	}
+	rec = doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &e)
+	if body := rec.Body.String(); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "promoted") || !strings.Contains(body, promoted.Feature.ID) {
+		t.Fatalf("second promote = %d %s, want 422 naming promoted and %s", rec.Code, body, promoted.Feature.ID)
+	}
+	for _, path := range []string{"/api/ideas/I-0099/drop", "/api/ideas/I-0099/promote"} {
+		if rec := doJSON(t, h, http.MethodPost, path, `{}`, &e); rec.Code != http.StatusNotFound {
+			t.Fatalf("POST %s = %d, want 404", path, rec.Code)
+		}
+	}
+}
+
+// TestIdeaCaptureConcurrentAcrossSurfaces (F-0312 crit. 12): captures racing
+// from the UI route and from the CLI's app call on one clone serialize on the
+// backend lock — distinct ids, every text on origin, nothing corrupted.
+func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	const n = 6
+	ids, errs := make([]string, n), make([]error, n)
+	var wg sync.WaitGroup
+	for k := 0; k < n; k++ {
+		wg.Add(1)
+		go func(k int) {
+			defer wg.Done()
+			text := fmt.Sprintf("corpo %d", k)
+			if k%2 == 0 {
+				i, err := app.CreateIdea(repoDir, projDir, text, nil, nil)
+				ids[k], errs[k] = i.ID, err
+				return
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ideas", strings.NewReader(fmt.Sprintf(`{"text":%q}`, text))))
+			var got struct {
+				Idea store.Idea `json:"idea"`
+			}
+			if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+				errs[k] = fmt.Errorf("POST = %d: %s", rec.Code, rec.Body.String())
+				return
+			}
+			ids[k] = got.Idea.ID
+		}(k)
+	}
+	wg.Wait()
+	seen := map[string]int{}
+	for k := 0; k < n; k++ {
+		if errs[k] != nil {
+			t.Fatalf("capture %d: %v", k, errs[k])
+		}
+		if _, dup := seen[ids[k]]; dup {
+			t.Fatalf("duplicate id minted: %s", ids[k])
+		}
+		seen[ids[k]] = k
+	}
+	verify := filepath.Join(t.TempDir(), "verify")
+	if err := gitback.Clone(origin, verify); err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	files, _ := filepath.Glob(filepath.Join(verify, "entities", "ideas", "*.json"))
+	if len(files) != n {
+		t.Fatalf("origin has %d idea files, want %d", len(files), n)
+	}
+	for id, k := range seen {
+		var i store.Idea
+		data, err := os.ReadFile(filepath.Join(verify, "entities", "ideas", id+".json"))
+		if err != nil || json.Unmarshal(data, &i) != nil || i.Text != fmt.Sprintf("corpo %d", k) {
+			t.Fatalf("%s on origin = %q, %v; want text 'corpo %d'", id, data, err, k)
 		}
 	}
 }
