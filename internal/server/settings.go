@@ -8,6 +8,11 @@ import (
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
+// settingsBroadcast announces a landed settings write (F-0315): the tab gates
+// ride GET /api/projects, so a write changes that payload. The `cerne ui`
+// server injects the SSE hub's broadcast, everywhere else no-op.
+var settingsBroadcast = func() {}
+
 // handleSettingsGet serves the settings registry resolved for projDir
 // (F-0314): every key's declaration, effective value and winning scope, plus
 // the problems the resolution skipped. Always 200: a bad file is data the
@@ -32,6 +37,7 @@ func handleSettingsPut(w http.ResponseWriter, r *http.Request, projDir, id strin
 		writeConfigError(w, err)
 		return
 	}
+	settingsBroadcast()
 	handleSettingsGet(w, projDir)
 }
 
@@ -44,6 +50,7 @@ func handleSettingsDelete(w http.ResponseWriter, r *http.Request, projDir, id st
 		writeConfigError(w, err)
 		return
 	}
+	settingsBroadcast()
 	handleSettingsGet(w, projDir)
 }
 

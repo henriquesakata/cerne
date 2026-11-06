@@ -317,6 +317,9 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	lintBroadcast = func(pid string) {
 		hub.broadcast(liveEvent{kind: "change", pid: pid})
 	}
+	// A settings write (F-0315) changes the tab gates projectInfo carries:
+	// every tab re-reads /api/projects and shows or hides Graph/Mindmap.
+	settingsBroadcast = func() { hub.broadcast(liveEvent{kind: "projects"}) }
 	reg := &registry{
 		projects: make(map[string]*registryEntry),
 		hub:      hub,
