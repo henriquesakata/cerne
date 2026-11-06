@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,11 +14,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"gitlab.com/rockt/cerne/internal/compile"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/telemetry"
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
@@ -434,5 +438,38 @@ func TestWikiCompileRefusesCrossSite(t *testing.T) {
 		if rec.Code != tc.want || runs != wantRuns {
 			t.Errorf("%s: %d (ran %d), want %d (ran %d); body %s", tc.name, rec.Code, runs, tc.want, wantRuns, rec.Body.String())
 		}
+	}
+}
+
+// TestWikiCompileErrorIsCapped pins C11 of F-0316: a failed recompile sends
+// the browser one line of at most 300 characters, not the provider's raw
+// response; the full output goes to the server log.
+func TestWikiCompileErrorIsCapped(t *testing.T) {
+	raw := "synthesizing page project: Anthropic Messages API returned status 500: {\"type\":\"error\",\"error\":{\"message\":\"" + strings.Repeat("x", 1000) + "\"}}"
+	orig := wikiCompileRunner
+	wikiCompileRunner = func(string, string) ([]byte, error) {
+		return []byte("Compiling 1 page(s)…\nError: " + raw + "\n"), errors.New("exit status 1")
+	}
+	t.Cleanup(func() { wikiCompileRunner = orig })
+	var logged bytes.Buffer
+	prevLog := telemetry.SetLogger(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { telemetry.SetLogger(prevLog) })
+	repoDir, projDir := newBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "unused",
+		LLM: project.LLMConfig{Mode: "byo-key", BaseURL: "http://127.0.0.1:1", KeyEnv: "TEST_WIKI_KEY"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var body map[string]string
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/wiki/compile", "", &body)
+	msg := body["error"]
+	if rec.Code != http.StatusInternalServerError || !strings.HasPrefix(msg, "synthesizing page project: Anthropic Messages API returned status 500") {
+		t.Fatalf("failed compile = %d %q, want 500 naming the cause", rec.Code, msg)
+	}
+	if n := utf8.RuneCountInString(msg); n > 300 || strings.ContainsAny(msg, "\r\n") {
+		t.Fatalf("error sent to the browser: %d runes, multi-line %v: %q", n, strings.ContainsAny(msg, "\r\n"), msg)
+	}
+	if !strings.Contains(logged.String(), strings.Repeat("x", 1000)) {
+		t.Fatalf("server log lacks the full compile output:\n%s", logged.String())
 	}
 }

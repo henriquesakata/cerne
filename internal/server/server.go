@@ -1092,15 +1092,31 @@ func handleWikiCompile(w http.ResponseWriter, r *http.Request, repoDir, projDir 
 	}
 	out, err := wikiCompileRunner(repoDir, projDir)
 	if err != nil {
-		msg := err.Error()
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if last := strings.TrimSpace(lines[len(lines)-1]); last != "" && !errors.Is(err, errWikiCompileTimeout) {
-			msg = strings.TrimPrefix(last, "Error: ")
-		}
-		writeJSON(w, http.StatusInternalServerError, errorBody(msg))
+		telemetry.Warn("wiki compile failed", "project", projDir, "error", err.Error(), "output", string(out))
+		writeJSON(w, http.StatusInternalServerError, errorBody(wikiCompileError(out, err)))
 		return
 	}
 	writeJSON(w, http.StatusOK, wikiCompileResponse{Compiled: true})
+}
+
+// maxWikiCompileErrorRunes caps the failure the browser gets: the compile's
+// last line can carry a provider's whole raw response (the server log keeps it).
+const maxWikiCompileErrorRunes = 300
+
+// wikiCompileError is the one-line cause of a failed recompile for the
+// banner: the compile's last output line ("Error: " dropped), or err itself
+// when there is none or the run was killed at its deadline, capped.
+func wikiCompileError(out []byte, err error) string {
+	msg := err.Error()
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "" && !errors.Is(err, errWikiCompileTimeout) {
+		msg = strings.TrimPrefix(last, "Error: ")
+	}
+	msg = strings.Join(strings.Fields(msg), " ")
+	if r := []rune(msg); len(r) > maxWikiCompileErrorRunes {
+		msg = string(r[:maxWikiCompileErrorRunes-1]) + "…"
+	}
+	return msg
 }
 
 // handleWikiPage serves one compiled page body (frontmatter stripped) by its
