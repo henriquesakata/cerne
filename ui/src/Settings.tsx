@@ -62,6 +62,9 @@ export default function Settings() {
   // each other (critic C1).
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
   const [failures, setFailures] = useState<Readonly<Record<string, Failure>>>({})
+  // Landed writes per key: a string field remounts on each, so it shows the
+  // value the server kept (trimmed, or reset) instead of what was typed.
+  const [landed, setLanded] = useState<Readonly<Record<string, number>>>({})
   const refocus = useRef<string | null>(null)
   // The view a landed write answered with (critic C5), shown over the loaded
   // one until a later load replaces that (`base` is the load it was written
@@ -108,6 +111,7 @@ export default function Settings() {
       (view) => {
         // A write answering after a project switch belongs to the old project.
         if (latest.current.pid === pid) setWritten({ base: latest.current.data, view })
+        setLanded((l) => ({ ...l, [id]: (l[id] ?? 0) + 1 }))
         refocus.current = id
         settle(null)
       },
@@ -197,6 +201,7 @@ export default function Settings() {
               scope={scope}
               tx={tx}
               busy={busy.has(s.id)}
+              landed={landed[s.id] ?? 0}
               failures={failures}
               onWrite={(ws, run) => write(s.id, ws, run)}
               onScope={(to) => switchScope(s.id, to)}
@@ -213,6 +218,7 @@ function SettingRow({
   scope,
   tx,
   busy,
+  landed,
   failures,
   onWrite,
   onScope,
@@ -221,6 +227,7 @@ function SettingRow({
   scope: SettingScope
   tx: (src: string) => string
   busy: boolean
+  landed: number
   failures: Readonly<Record<string, Failure>>
   onWrite: (scope: SettingScope, run: () => Promise<SettingsView>) => void
   onScope: (to: SettingScope) => void
@@ -275,17 +282,24 @@ function SettingRow({
             className="settings-string"
             onSubmit={(e) => {
               e.preventDefault()
-              const next = String(new FormData(e.currentTarget).get('value') ?? '')
-              if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
+              if (busy) return
+              // Empty means "use the default" (critic C7): blank or spaces
+              // unset this scope instead of a write the server refuses.
+              const next = String(new FormData(e.currentTarget).get('value') ?? '').trim()
+              onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))
             }}
           >
-            {/* Keyed by the value: another scope or a saved write remounts it. */}
+            {/* Remounts on another scope, another value or a landed write. */}
             <input
-              key={String(current)}
+              key={`${ws}:${landed}:${String(current)}`}
               id={controlId(s.id)}
               name="value"
               type="text"
               className="settings-text"
+              // ponytail: the registry carries no length; 64 is the limit of
+              // the one string key (channel.human_name). Add a maxLength to
+              // Setting when a string key needs another one.
+              maxLength={64}
               defaultValue={String(current)}
               aria-labelledby={titleId}
               aria-describedby={descId}

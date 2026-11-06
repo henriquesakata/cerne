@@ -464,3 +464,34 @@ describe('Settings — escuta o evento projects (F-0315, crítica C3)', () => {
     expect(fetchSettings).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('Settings — texto vazio é redefinir (F-0315, crítica C7)', () => {
+  const ana = () => withKey('channel.human_name', { value: 'Ana', origin: 'host', stored: { host: 'Ana' } })
+
+  it('salvar vazio ou só espaços remove o valor do escopo (DELETE), como diz "Vazio usa o nome do sistema"', async () => {
+    fetchSettings.mockResolvedValue(ana())
+    unsetSetting.mockResolvedValue(fixture())
+    render(<Settings />)
+    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
+    const input = within(channel).getByRole('textbox', { name: 'Nome no canal' })
+    expect(input).toHaveValue('Ana')
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.click(within(channel).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('channel.human_name', 'host'))
+    expect(putSetting).not.toHaveBeenCalled()
+    await waitFor(() => expect(within(row('Nome no canal')).getByText('Efetivo: (vazio) (padrão)')).toBeInTheDocument())
+    expect(within(row('Nome no canal')).getByRole('textbox')).toHaveValue('')
+  })
+
+  it('o valor sai aparado, o campo limita 64 caracteres e mostra o valor gravado depois de salvar', async () => {
+    fetchSettings.mockResolvedValue(ana())
+    putSetting.mockResolvedValue(ana())
+    render(<Settings />)
+    const input = within(await screen.findByRole('listitem', { name: 'Nome no canal' })).getByRole('textbox')
+    expect(input).toHaveAttribute('maxLength', '64')
+    fireEvent.change(input, { target: { value: '  Ana  ' } })
+    fireEvent.click(within(row('Nome no canal')).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('channel.human_name', 'host', 'Ana'))
+    await waitFor(() => expect(within(row('Nome no canal')).getByRole('textbox')).toHaveValue('Ana'))
+  })
+})
