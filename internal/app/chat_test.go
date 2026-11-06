@@ -631,10 +631,10 @@ func TestBuildChatSystemPromptNoteContract(t *testing.T) {
 	}
 }
 
-// TestBuildChatSystemPromptIdeasOnDemand (F-0312 crit. 9): in every mode the
-// prompt carries no idea (the roster lists features only) and tells the agent
-// to read ideas on demand with idea list --search; in claude-cli the command
-// is on the allowed list.
+// TestBuildChatSystemPromptIdeasOnDemand (F-0312 crit. 9, C8): no mode puts
+// an idea in the prompt, and the on-demand read is taught only where the mode
+// can run it — claude-cli directly, a byo-key tool channel through the
+// confirmed card — never in delegation or without a channel (F-0224 crit. 3).
 func TestBuildChatSystemPromptIdeasOnDemand(t *testing.T) {
 	repoDir, projDir := chatFixture(t)
 	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Text: "conciliação via planilha", State: domain.IdeaActive}); err != nil {
@@ -644,20 +644,38 @@ func TestBuildChatSystemPromptIdeasOnDemand(t *testing.T) {
 	for _, tc := range []struct {
 		mode    string
 		channel bool
-	}{{"claude-cli", false}, {"byo-key", true}, {"", false}} {
+		want    string // "" = no ideas read taught at all
+	}{
+		{"claude-cli", false, chatIdeasPolicy},
+		{"claude-cli", true, chatIdeasPolicy},
+		{"byo-key", true, chatIdeasCardPolicy},
+		{"byo-key", false, ""},
+		{"delegation", false, ""},
+		{"", false, ""},
+	} {
 		prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{LLM: project.LLMConfig{Mode: tc.mode}}, tc.channel)
 		if err != nil {
 			t.Fatalf("%q: %v", tc.mode, err)
 		}
-		if !strings.Contains(prompt, `cerne idea list --search`) || strings.Contains(prompt, "I-0001") || strings.Contains(prompt, "via planilha") {
-			t.Fatalf("%q channel=%v: want the on-demand policy and no idea in the prompt:\n%s", tc.mode, tc.channel, prompt)
+		if strings.Contains(prompt, "I-0001") || strings.Contains(prompt, "via planilha") {
+			t.Fatalf("%q channel=%v: an idea leaked into the prompt", tc.mode, tc.channel)
 		}
-		if tc.mode == "claude-cli" {
-			_, rest, _ := strings.Cut(prompt, "Comandos permitidos:")
-			allowed, _, _ := strings.Cut(rest, ". Quando")
-			if !strings.Contains(allowed, "cerne idea list") {
-				t.Fatalf("claude-cli allowed commands lack idea list: %q", allowed)
+		if tc.want == "" {
+			if strings.Contains(prompt, "cerne idea list") {
+				t.Fatalf("%q channel=%v: taught a read the mode cannot run:\n%s", tc.mode, tc.channel, prompt)
 			}
+			continue
 		}
+		if !strings.Contains(prompt, tc.want) {
+			t.Fatalf("%q channel=%v: want the policy %q", tc.mode, tc.channel, tc.want)
+		}
+	}
+	if !strings.Contains(chatIdeasCardPolicy, "cerne idea list --search") || !strings.Contains(chatIdeasCardPolicy, "card") {
+		t.Fatalf("the card policy must name the command and the card: %q", chatIdeasCardPolicy)
+	}
+	cli, _ := BuildChatSystemPrompt(repoDir, projDir, project.Config{LLM: project.LLMConfig{Mode: "claude-cli"}}, false)
+	_, rest, _ := strings.Cut(cli, "Comandos permitidos:")
+	if allowed, _, _ := strings.Cut(rest, ". Quando"); !strings.Contains(allowed, "cerne idea list") {
+		t.Fatalf("claude-cli allowed commands lack idea list: %q", allowed)
 	}
 }

@@ -107,6 +107,12 @@ const chatIdeasPolicy = "Ideias (I-NNNN) são matéria-prima ainda não avaliada
 	"Só quando o usuário pedir ideias sobre um assunto, obtenha-as com `cerne idea list --search \"<termo>\"` " +
 	"(pelo caminho que este modo tiver para rodar comandos do cerne) e cite na resposta os ids I- que usar."
 
+// chatIdeasCardPolicy is chatIdeasPolicy for a tool channel (C8): the read is
+// a command of the confirmed card, like any other the agent runs.
+const chatIdeasCardPolicy = "Ideias (I-NNNN) são matéria-prima ainda não avaliada: não estão no roster nem no contexto recuperado. " +
+	"Só quando o usuário pedir ideias sobre um assunto, ECOE `cerne idea list --search \"<termo>\"` no bloco de comandos e pare; " +
+	"depois que ele confirmar no card, rode exatamente esse comando e cite na resposta os ids I- que usar."
+
 // BuildChatSystemPrompt assembles the Backlog chat's system prompt (F-0210):
 // the project's domain persona (cfg.Agent, falling back to
 // DefaultAgentPersona) plus enough project context — the live feature roster
@@ -185,10 +191,17 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// while holding the verbs), so it now announces the capability and
 		// points at the contract instead of contradicting it.
 		b.WriteString("Escrever no cerne é possível, mas só sob confirmação do usuário: o caminho normal é o card de proposta, e o contrato dos comandos (criação e atualização) está no fim deste prompt.\n\n")
+		// F-0312 crit. 9: ideas are read on demand, by the agent itself here.
+		b.WriteString(chatIdeasPolicy)
+		b.WriteString("\n\n")
+	} else if channel {
+		// C8: a tool channel runs only the confirmed card's commands, so the
+		// read goes through the card (idea list is class chat). Delegation and
+		// a channel-less mode get nothing: no instruction for a command the
+		// mode cannot run (F-0224 crit. 3).
+		b.WriteString(chatIdeasCardPolicy)
+		b.WriteString("\n\n")
 	}
-	// F-0312 crit. 9: ideas are read on demand only, in every mode.
-	b.WriteString(chatIdeasPolicy)
-	b.WriteString("\n\n")
 
 	// F-0254: conduction, not interrogation — investigate the real problem,
 	// situate it in the roster (conversational mirror of the F-0147 duplicate
