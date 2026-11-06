@@ -614,7 +614,10 @@ func newRoomListCmd() *cobra.Command {
 			}
 			for _, rm := range rooms {
 				status := "open"
-				if rm.ClosedAt != nil {
+				switch {
+				case rm.Permanent: // F-0325: the project channel, never opened or closed
+					status = "permanent"
+				case rm.ClosedAt != nil:
 					status = "closed"
 				}
 				fmt.Fprintf(out, "%s  %-6s %d participant(s)  %s\n", rm.ID, status, len(rm.Participants), rm.Topic)

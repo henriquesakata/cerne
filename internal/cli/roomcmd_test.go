@@ -766,3 +766,16 @@ func TestRoomMinutesRegisterRefusesChannel(t *testing.T) {
 		t.Fatalf("room minutes register channel: err = %v\n%s", err, out)
 	}
 }
+
+// TestRoomListShowsChannelPermanent (F-0325, critic C17): the pinned channel
+// is listed as permanent, never as an open room.
+func TestRoomListShowsChannelPermanent(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-list-channel")
+	out, err := runRoom(t, "list", "--dir", dir, "--port", strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !strings.HasPrefix(out, "channel  permanent") || strings.Contains(out, "channel  open") {
+		t.Fatalf("list output = %q, want the channel as permanent", out)
+	}
+}
