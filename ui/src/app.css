@@ -2956,3 +2956,6 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 /* .harness-fix pre resets the padding .code-block reserves for the copy button */
 .settings-file .harness-fix pre { padding-right: 5rem; overflow-x: auto; }
 .settings-invalid { margin: 0.35rem 0 0; font-size: 0.82rem; }
+/* releitura da lista de projetos que falhou depois do boot (F-0315): aviso
+   acima do app, que continua de pé */
+.live-refresh-notice { margin: 0.5rem 1.5rem 0; }

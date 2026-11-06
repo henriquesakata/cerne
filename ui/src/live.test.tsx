@@ -204,3 +204,32 @@ describe('LiveProvider — gate do Grafo ao vivo (F-0315)', () => {
     expect(screen.getByText('cerne')).toBe(brand)
   })
 })
+
+// F-0315 (crítica C2): toda escrita de settings dispara o evento "projects";
+// se a releitura da lista falhar depois do boot, o app inteiro não pode virar a
+// página de erro de boot — a lista e as telas atuais ficam, com um aviso.
+describe('LiveProvider — releitura da lista que falha depois do boot (F-0315)', () => {
+  it('mantém projetos e telas, com um aviso não bloqueante e nova tentativa', async () => {
+    let onProjects = () => {}
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      return () => {}
+    })
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+
+    vi.mocked(fetchProjects).mockRejectedValueOnce(new Error('Failed to fetch'))
+    await act(async () => onProjects())
+    expect(screen.getByText('p1')).toBeInTheDocument()
+    expect(screen.queryByText(/erro ao carregar projetos/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Failed to fetch')
+
+    await act(async () => screen.getByRole('button', { name: /tentar de novo/i }).click())
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    expect(screen.getByText('p1')).toBeInTheDocument()
+  })
+})
