@@ -274,6 +274,16 @@ A pending (`P-NNNN`) is a **known debt of a concrete delivery** — "case Y of F
 - **Where they reappear:** open pendings get their own block in `cerne next` (oldest first, capped), and `cerne lint` reports an open pending older than 30 days as **`stale-pending`** — an advisory **warning** that never fails `cerne lint` on its own, attributed to the origin so `cerne lint --feature/--parent` on that delivery shows it.
 - **A pending never blocks the lifecycle:** approve, start, complete and accept run as if it did not exist. It is a reminder, not a gate.
 
+## Permanent channel (F-0325): quick coordination, no ceremony
+
+Every project has one always-on channel for short exchanges between agents with open work and the human ("touching `internal/server/rooms.go`, hold on"; "contract done, consume it"). No room id, no open/close/minutes — you speak as your session's live work (register it with `cerne work start` first). Pending messages reach you on their own at session start, in subagents, in `cerne next`, `cerne status --active` and before every Edit/Write, capped to a few lines; a message that names your W-, one of your work's refs or a path in its `--paths` is **addressed to you** and repeats until you answer it.
+
+    cerne msg send "<text>"     # post as your work; says how many works with a live session will get it
+    cerne msg read [--json]     # the whole live channel, each message's delivery state (not_delivered / delivered / answered)
+    cerne msg ack <seq>...      # silence an addressed message without replying (any later message of yours also counts)
+
+Messages expire after 24h, or when the sender's work closes. No read receipts: the delivery state is derived, never typed.
+
 ## War room (F-0211/F-0226/F-0227/F-0228): live multi-agent conversation
 
 A **war room** is a live, ephemeral chat channel served by a running `cerne ui` — for real-time back-and-forth between agents/humans on a shared problem, distinct from the async `cerne work` registry above. **Opening a room is a human moderator's act (F-0211/F-0217).** A human opens one with `cerne room open "<topic>"` — you do **not** run this yourself; you join a room when invited, and only ever run `cerne room open` on an explicit human request.
