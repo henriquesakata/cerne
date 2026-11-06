@@ -216,3 +216,124 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
     expect(within(graph).getByText('Effective: off, from Project')).toBeInTheDocument()
   })
 })
+
+// with reescreve uma chave da fixture (o resto fica igual).
+const withKey = (id: string, over: Partial<ResolvedSetting>) =>
+  fixture({ settings: fixture().settings.map((s) => (s.id === id ? { ...s, ...over } : s)) })
+
+const scopeGroup = () => screen.getByRole('group', { name: 'Escopo de edição' })
+
+describe('Settings — edição por escopo (F-0315)', () => {
+  it('c4: valor nos dois escopos mostra o vencedor e o seletor troca o escopo editado', async () => {
+    fetchSettings.mockResolvedValue(
+      withKey('mindmap.enabled', { value: false, origin: 'project', stored: { project: false, host: true } }),
+    )
+    render(<Settings />)
+    const mm = await screen.findByRole('listitem', { name: 'Mapa mental' })
+    expect(within(mm).getByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
+    expect(within(mm).getByText('Também modificado em Host')).toBeInTheDocument()
+    expect(within(mm).getByRole('checkbox', { name: 'Mapa mental' })).not.toBeChecked()
+
+    const project = within(scopeGroup()).getByRole('button', { name: /Projeto/ })
+    const host = within(scopeGroup()).getByRole('button', { name: /Host/ })
+    expect(project).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(host)
+    expect(host).toHaveAttribute('aria-pressed', 'true')
+    expect(project).toHaveAttribute('aria-pressed', 'false')
+    // Em Host, a linha mostra o valor do host e quem o sobrescreve.
+    expect(within(row('Mapa mental')).getByRole('checkbox')).toBeChecked()
+    expect(within(row('Mapa mental')).getByText('Sobrescrito por Projeto')).toBeInTheDocument()
+    expect(within(row('Mapa mental')).getByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
+
+    // O atalho volta o seletor e entrega o foco ao controle da linha (o botão some).
+    fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Projeto' }))
+    expect(project).toHaveAttribute('aria-pressed', 'true')
+    expect(within(row('Mapa mental')).queryByRole('button', { name: 'Editar em Projeto' })).toBeNull()
+    expect(within(row('Mapa mental')).getByRole('checkbox')).toHaveFocus()
+  })
+
+  it('c5: alternar grava no escopo selecionado, com booleano, e o novo efetivo aparece sem reload', async () => {
+    render(<Settings />)
+    const box = within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox')
+    fetchSettings.mockResolvedValue(withKey('mindmap.enabled', { value: false, origin: 'project', stored: { project: false } }))
+    fireEvent.click(box)
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('mindmap.enabled', 'project', false))
+    expect(await within(row('Mapa mental')).findByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
+    expect(within(row('Mapa mental')).getByText('Modificado')).toBeInTheDocument()
+    expect(fetchSettings).toHaveBeenCalledTimes(2)
+  })
+
+  it('c5: com o seletor em Host, a escrita vai ao host', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    fireEvent.click(within(scopeGroup()).getByRole('button', { name: /Host/ }))
+    fireEvent.click(within(row('Wiki')).getByRole('checkbox'))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('wiki.enabled', 'host', false))
+  })
+
+  it('c5: chave só-host grava no host mesmo com o seletor em Projeto, pelo submit', async () => {
+    render(<Settings />)
+    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
+    expect(within(channel).getByText('Grava em Host (global)')).toBeInTheDocument()
+    const input = within(channel).getByRole('textbox', { name: 'Nome no canal' })
+    fireEvent.change(input, { target: { value: 'Ana' } })
+    fireEvent.click(within(channel).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('channel.human_name', 'host', 'Ana'))
+  })
+
+  it('c5: redefinir só existe com valor no escopo, remove dele e devolve o foco ao controle', async () => {
+    render(<Settings />)
+    const graph = await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(within(row('Mapa mental')).queryByRole('button', { name: 'Redefinir neste escopo' })).toBeNull()
+    // test.extra só tem valor no host: em Projeto não há o que redefinir.
+    expect(within(row('Extra toggle')).queryByRole('button', { name: 'Redefinir neste escopo' })).toBeNull()
+    const reset = within(graph).getByRole('button', { name: 'Redefinir neste escopo' })
+    fetchSettings.mockResolvedValue(withKey('graph.enabled', { value: true, origin: 'default', stored: undefined }))
+    reset.focus()
+    fireEvent.click(reset)
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('graph.enabled', 'project'))
+    await waitFor(() => expect(within(row('Grafo')).getByRole('checkbox')).toHaveFocus())
+    expect(within(row('Grafo')).queryByRole('button', { name: 'Redefinir neste escopo' })).toBeNull()
+    expect(within(row('Grafo')).getByText('Efetivo: ligado (padrão)')).toBeInTheDocument()
+  })
+
+  it('c8: o escopo Host é marcado como global, com a dica de que vale para todos os projetos', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    const host = within(scopeGroup()).getByRole('button', { name: /Host/ })
+    expect(host).toHaveTextContent('global')
+    expect(host).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
+    expect(screen.getByText(/versionado/)).toBeInTheDocument()
+    fireEvent.click(host)
+    expect(screen.getByText(/vale para todos os projetos/)).toBeInTheDocument()
+    expect(within(row('Grafo')).getByText('global do host')).toBeInTheDocument()
+  })
+
+  it('c9: escrita recusada mantém a lista, mostra o erro na linha e a nova tentativa reenvia o mesmo PUT', async () => {
+    putSetting.mockRejectedValueOnce(new Error('config file is locked by another writer'))
+    render(<Settings />)
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox'))
+    const status = await within(row('Mapa mental')).findByRole('status')
+    expect(status).toHaveTextContent('Não foi possível gravar: config file is locked by another writer')
+    expect(row('Grafo')).toBeInTheDocument()
+    fireEvent.click(within(status).getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledTimes(2))
+    expect(putSetting.mock.calls[1]).toEqual(putSetting.mock.calls[0])
+    await waitFor(() => expect(within(row('Mapa mental')).queryByRole('status')).toBeNull())
+  })
+
+  it('c9: durante a escrita o controle fica aria-disabled (nunca disabled) e a linha aria-busy', async () => {
+    let release = () => {}
+    putSetting.mockImplementationOnce(() => new Promise<void>((r) => (release = r)))
+    render(<Settings />)
+    const box = within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox')
+    fireEvent.click(box)
+    await waitFor(() => expect(row('Mapa mental')).toHaveAttribute('aria-busy', 'true'))
+    expect(box).toHaveAttribute('aria-disabled', 'true')
+    expect(box).toBeEnabled()
+    fireEvent.click(box) // pressionar de novo durante a escrita não grava nada
+    expect(putSetting).toHaveBeenCalledTimes(1)
+    release()
+    await waitFor(() => expect(row('Mapa mental')).not.toHaveAttribute('aria-busy'))
+  })
+})
