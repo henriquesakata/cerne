@@ -977,16 +977,24 @@ var wikiCompiling sync.Map
 
 // wikiCompileRunner runs `cerne compile --dir projDir` to completion and
 // returns its combined output. A var so tests fake it — under go test the
-// executable is the test binary (compilebg.go). Not CommandContext: a closed
-// tab must not kill a run holding the compile lock.
+// executable is the test binary (compilebg.go).
 var wikiCompileRunner = func(projDir string) ([]byte, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
+	return wikiCompileCmd(exe, projDir).CombinedOutput()
+}
+
+// wikiCompileCmd is the on-demand compile child. Neither the request nor the
+// server owns its life: not CommandContext (a closed tab must not kill a run
+// holding the compile lock), and in its own process group (a Ctrl-C on
+// `cerne ui` must not either — the lock would stay held until it goes stale).
+func wikiCompileCmd(exe, projDir string) *exec.Cmd {
 	c := exec.Command(exe, "compile", "--dir", projDir)
 	c.Dir = projDir
-	return c.CombinedOutput()
+	c.SysProcAttr = ownProcessGroup()
+	return c
 }
 
 // handleWikiCompile is the on-demand recompile behind the stale banner
