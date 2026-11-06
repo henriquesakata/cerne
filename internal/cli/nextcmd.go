@@ -13,7 +13,6 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -119,7 +118,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	lint.DowngradeWikiDebt(findings, project.WikiEnabled(ctx.projDir))
+	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {

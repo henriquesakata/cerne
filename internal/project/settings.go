@@ -111,14 +111,29 @@ var settingsRegistry = []Setting{
 }
 
 // WikiEnabled is wiki.enabled for the project at (or above) projDir (F-0316):
-// false only when it resolves to false.
-func WikiEnabled(projDir string) bool {
-	for _, s := range ResolveSettings(projDir).Settings {
-		if s.ID == "wiki.enabled" {
-			return s.Value != false
+// false only when it resolves to false. A value the resolution skipped — an
+// invalid one, or a scope file it could not read — falls through as F-0314
+// resolves it, but never silently: warning is then one line naming each
+// problem and the value used instead ("" when there is none).
+func WikiEnabled(projDir string) (on bool, warning string) {
+	view := ResolveSettings(projDir)
+	for _, s := range view.Settings {
+		if s.ID != "wiki.enabled" {
+			continue
 		}
+		var problems []string
+		for _, p := range s.Invalid {
+			problems = append(problems, fmt.Sprintf("invalid in %s scope (%s)", p.Scope, p.File))
+		}
+		for _, p := range view.Errors {
+			problems = append(problems, fmt.Sprintf("unreadable in %s scope (%s)", p.Scope, p.File))
+		}
+		if len(problems) > 0 {
+			warning = fmt.Sprintf("warning: wiki.enabled %s; using %s %v", strings.Join(problems, ", "), s.Origin, s.Value)
+		}
+		return s.Value != false, warning
 	}
-	return true
+	return true, ""
 }
 
 // ResolveSettings resolves every declared setting for the project at (or

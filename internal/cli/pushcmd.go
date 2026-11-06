@@ -178,7 +178,7 @@ func pushedSpecStaleness(repoDir string, docs []pushedDoc) map[string]bool {
 // leaving surprise two-phase .pending files behind. `cerne sync` inherits the
 // hook through runPush.
 func maybeCompileOnPush(cmd *cobra.Command, ctx projCtx) {
-	if !ctx.cfg.CompileOnPush || !project.WikiEnabled(ctx.projDir) {
+	if !ctx.cfg.CompileOnPush || !wikiEnabled(cmd, ctx.projDir) {
 		return
 	}
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
@@ -228,7 +228,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	if err != nil {
 		return err
 	}
-	lint.DowngradeWikiDebt(findings, project.WikiEnabled(ctx.projDir))
+	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 	if len(findings) == 0 {
 		fmt.Fprintln(out, "Lint: no problems found.")
 		return nil

@@ -163,3 +163,65 @@ func TestWikiOnDemand(t *testing.T) {
 		}
 	})
 }
+
+// TestWikiEnabledBrokenSourceWarns pins that a broken wiki.enabled source —
+// a malformed host settings file, an invalid project value — still falls
+// through as F-0314 resolves it, but push and lint say so on stderr, naming
+// the scope, the file and the value used, instead of flipping the wiki back
+// on in silence.
+func TestWikiEnabledBrokenSourceWarns(t *testing.T) {
+	cases := []struct {
+		name, project, host string
+		warn                func(projDir, hostDir string) string
+	}{
+		{"malformed host file", "", "[wiki]\nenabled = false\n[graph\n", func(_, hostDir string) string {
+			return "warning: wiki.enabled unreadable in host scope (" + filepath.Join(hostDir, "settings.toml") + "); using default true"
+		}},
+		{"invalid project value", "\n[wiki]\nenabled = \"no\"\n", "", func(projDir, _ string) string {
+			return "warning: wiki.enabled invalid in project scope (" + filepath.Join(projDir, ".cernerc") + "); using default true"
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _, _ := setupProject(t)
+			recordSpawns(t)
+			compileOnPushCallable(t, projDir)
+			hostDir := t.TempDir()
+			t.Setenv("CERNE_CONFIG_DIR", hostDir)
+			if tc.host != "" {
+				mustWrite(t, filepath.Join(hostDir, "settings.toml"), tc.host)
+			}
+			if tc.project != "" {
+				rc := filepath.Join(projDir, ".cernerc")
+				data, err := os.ReadFile(rc)
+				if err != nil {
+					t.Fatal(err)
+				}
+				mustWrite(t, rc, string(data)+tc.project)
+			}
+			newOriginFeature(t, projDir, "Motor", "--facet", "code")
+			if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+				t.Fatalf("pull: %v\n%s", err, out)
+			}
+			specs, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "features", "F-0001-*", "spec.md"))
+			if len(specs) != 1 {
+				t.Fatalf("F-0001 spec in .docs: %v", specs)
+			}
+			data, err := os.ReadFile(specs[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, specs[0], string(data)+"\nMais contexto.\n")
+			want := tc.warn(projDir, hostDir)
+
+			out, err := execCerne(t, "push", "--dir", projDir)
+			if err != nil || !strings.Contains(out, want) {
+				t.Fatalf("push: %v, want the warning %q:\n%s", err, want, out)
+			}
+			out, _ = execCerne(t, "lint", "--dir", projDir)
+			if !strings.Contains(out, want) {
+				t.Fatalf("lint, want the warning %q:\n%s", want, out)
+			}
+		})
+	}
+}

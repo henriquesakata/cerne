@@ -65,7 +65,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		findings = append(findings, drift...)
 		lint.Sort(findings)
 	}
-	lint.DowngradeWikiDebt(findings, project.WikiEnabled(dir))
+	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, dir))
 	out := cmd.OutOrStdout()
 	var label string
 	var outside int
@@ -285,4 +285,15 @@ func taskAction(f lint.Finding) string {
 		return "resolve, drop or promote it (cerne pending resolve|drop|promote)"
 	}
 	return f.Detail
+}
+
+// wikiEnabled is project.WikiEnabled for a command that gates on it (F-0316):
+// a broken wiki.enabled source falls through as resolved, with its warning on
+// stderr so the wiki never flips back on in silence.
+func wikiEnabled(cmd *cobra.Command, dir string) bool {
+	on, warning := project.WikiEnabled(dir)
+	if warning != "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), warning)
+	}
+	return on
 }

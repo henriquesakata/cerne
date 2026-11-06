@@ -941,7 +941,7 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].Rel < pages[j].Rel })
 	resp := wikiIndexResponse{Pages: pages}
-	if !project.WikiEnabled(projDir) {
+	if on, _ := project.WikiEnabled(projDir); !on {
 		// A staleness error never hides the wiki (F-0316 crit. 9): no banner.
 		stale, _ := compile.Stale(repoDir)
 		for _, p := range stale {
