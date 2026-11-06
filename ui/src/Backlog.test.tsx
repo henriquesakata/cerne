@@ -82,6 +82,9 @@ describe('Backlog (F-0202)', () => {
     const cards = container.querySelectorAll('.card-candidate')
     expect(cards).toHaveLength(2)
     cards.forEach((c) => expect(c.textContent).not.toMatch(/I-|ideia/))
+    // C10: the capture is reachable without scrolling past the candidates.
+    const capture = screen.getByRole('textbox', { name: 'Nova ideia' })
+    expect(capture.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('mostra o badge de esclarecimentos pendentes na candidata (F-0195)', async () => {

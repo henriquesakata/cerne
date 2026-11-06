@@ -146,6 +146,18 @@ describe('IdeasPanel (F-0312)', () => {
     await waitFor(() => expect(promoteIdea).toHaveBeenLastCalledWith('I-0001', '', true))
   })
 
+  it('ideia longa aparece recortada, com mostrar mais (C10)', async () => {
+    const long = 'Primeira linha da ideia longa\n' + 'detalhe '.repeat(200)
+    ideas = [idea('I-0001', long)]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    const shown = await screen.findByText(/Primeira linha da ideia longa/)
+    expect(shown.textContent).not.toContain('detalhe')
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar mais' }))
+    expect(screen.getByText(/detalhe detalhe/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar menos' }))
+    expect(screen.queryByText(/detalhe detalhe/)).toBeNull()
+  })
+
   it('com 2+ módulos, promover pede o módulo', async () => {
     ideas = [idea('I-0001', 'atalho de teclado')]
     promoteIdea.mockResolvedValue({ idea: { ...ideas[0], state: 'promoted' }, feature: {} as Feature })

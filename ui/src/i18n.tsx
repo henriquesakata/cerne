@@ -237,6 +237,8 @@ const ptBR = {
     confirm: 'Confirmar',
     similarIntro: 'Já existe candidata parecida — se for a mesma demanda, siga com ela:',
     promoteAnyway: 'Promover mesmo assim',
+    showMore: 'Mostrar mais',
+    showLess: 'Mostrar menos',
   },
   backlog: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -1134,6 +1136,8 @@ const en: Messages = {
     confirm: 'Confirm',
     similarIntro: 'A similar feature already exists — if it is the same demand, carry on with it:',
     promoteAnyway: 'Promote anyway',
+    showMore: 'Show more',
+    showLess: 'Show less',
   },
   backlog: {
     loadError: (e: string) => `Failed to load state: ${e}`,

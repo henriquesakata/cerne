@@ -47,6 +47,9 @@ export default function Backlog() {
           <h1>{t.nav.backlog}</h1>
           {features && <p className="counts">{t.backlog.count(features.length)}</p>}
         </header>
+        {/* F-0312: ideias são matéria-prima, separadas das candidatas; a
+            captura fica no topo, alcançável sem rolar o backlog (C10). */}
+        <IdeasPanel modules={modules} onPromoted={() => setRefreshKey((k) => k + 1)} />
         {error && <p className="status error">{t.backlog.loadError(error)}</p>}
         {!error && !features && <p className="status">{t.common.loading}</p>}
         {features && features.length === 0 && <p className="status">{t.backlog.empty}</p>}
@@ -62,8 +65,6 @@ export default function Backlog() {
             ))}
           </div>
         )}
-        {/* F-0312: ideias são matéria-prima, separadas das candidatas. */}
-        <IdeasPanel modules={modules} onPromoted={() => setRefreshKey((k) => k + 1)} />
         <ConversationList
           conversations={chats.chats}
           activeId={chats.active.id}

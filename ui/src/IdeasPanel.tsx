@@ -126,7 +126,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
           <ul className="ideas-list">
             {load.data.map((i) => (
               <li key={i.id} className="ideas-item">
-                <span className="ideas-text">{i.text}</span>
+                <IdeaText text={i.text} />
                 <span className="ideas-meta">
                   <span className="card-id">{i.id}</span> <span className="muted">{i.created_at.slice(0, 10)}</span>
                 </span>
@@ -171,5 +171,27 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
         </>
       )}
     </section>
+  )
+}
+
+// IdeaText shows a long idea clamped to its first line (280 chars at most),
+// with a toggle for the rest (C10): one 200 KB idea must not push every other
+// one off screen, nor fill the DOM while collapsed.
+const PREVIEW = 280
+
+function IdeaText({ text }: { text: string }) {
+  const { t } = useT()
+  const [open, setOpen] = useState(false)
+  const preview = text.split('\n')[0].slice(0, PREVIEW)
+  const long = preview !== text
+  return (
+    <span className="ideas-text">
+      {open || !long ? text : `${preview}…`}
+      {long && (
+        <button type="button" className="ideas-more" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? t.ideas.showLess : t.ideas.showMore}
+        </button>
+      )}
+    </span>
   )
 }
