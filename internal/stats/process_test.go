@@ -141,7 +141,7 @@ func TestProcessSideStats(t *testing.T) {
 	if want := (Raw{Input: 4.5, CacheCreation: 45, CacheRead: 450, Output: 9}); b.RawMedian != want {
 		t.Fatalf("raw median = %+v, want %+v", b.RawMedian, want)
 	}
-	if b.WithGauntlet != 6 || b.ReturnedShare != 0.5 || b.EscapedShare != 0.25 {
+	if b.WithGauntlet != 6 || b.ReturnedShare != 0.5 || b.EscapedShare == nil || *b.EscapedShare != 0.25 {
 		t.Fatalf("guards = with %d returned %v escaped %v, want 6 / 0.5 / 0.25", b.WithGauntlet, b.ReturnedShare, b.EscapedShare)
 	}
 	if a := r.Markers[0].After; a.N != 8 || a.WithGauntlet != 8 {
@@ -314,7 +314,7 @@ func TestProcessEscapedDefectHorizon(t *testing.T) {
 		s := sample("F-0001", at(0), 100)
 		s.Fixes = []time.Time{at(tc.fixDay)}
 		r := ComputeProcess([]ProcessSample{s}, []Marker{marker("D-0001", at(-5))}, 0, mature)
-		if got := r.Markers[0].After.EscapedShare; got != tc.want {
+		if got := r.Markers[0].After.EscapedShare; got == nil || *got != tc.want {
 			t.Fatalf("fix on day %d: escaped share = %v, want %v", tc.fixDay, got, tc.want)
 		}
 	}
@@ -526,5 +526,20 @@ func TestProcessComparesMedians(t *testing.T) {
 	if m.Verdict != "inconclusivo" || m.After.Median != m.Before.Median || !(m.CostRatioCI[0] < 1 && 1 < m.CostRatioCI[1]) {
 		t.Fatalf("heavy tail = %s medians %v/%v ci %v, want inconclusivo with 1 inside the median-ratio interval",
 			m.Verdict, m.Before.Median, m.After.Median, m.CostRatioCI)
+	}
+}
+
+// TestProcessImmatureEscapedShareWithheld pins C10: a side whose last
+// delivery is under 28 days old has no escaped share yet (null), since its
+// fixes have not had time to happen; a mature side keeps its share.
+func TestProcessImmatureEscapedShareWithheld(t *testing.T) {
+	before, after := spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
+	young := after[29].CompletedAt.AddDate(0, 0, 10)
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, young).Markers[0]
+	if m.After.EscapedShare != nil || m.Before.EscapedShare == nil {
+		t.Fatalf("escaped shares = before %v after %v, want before kept and after withheld", m.Before.EscapedShare, m.After.EscapedShare)
+	}
+	if b, _ := json.Marshal(m.After); !strings.Contains(string(b), `"escaped_share":null`) {
+		t.Fatalf("after json = %s, want escaped_share null", b)
 	}
 }

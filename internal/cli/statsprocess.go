@@ -69,9 +69,9 @@ func renderSide(out io.Writer, label string, s stats.Side) {
 	fmt.Fprintf(out, "    %s [%s → %s)  n=%d", label, s.From.UTC().Format(time.DateOnly), s.To.UTC().Format(time.DateOnly), s.N)
 	if s.N > 0 {
 		fmt.Fprintf(out, "  median %s  p25 %s  p75 %s · raw medians: input %.0f · cache_creation %.0f · cache_read %.0f · output %.0f"+
-			" · returned %.0f%% of %d with Gauntlet · escaped %.0f%%",
+			" · returned %.0f%% of %d with Gauntlet · escaped %s",
 			tokens(s.Median), tokens(s.P25), tokens(s.P75), s.RawMedian.Input, s.RawMedian.CacheCreation,
-			s.RawMedian.CacheRead, s.RawMedian.Output, s.ReturnedShare*100, s.WithGauntlet, s.EscapedShare*100)
+			s.RawMedian.CacheRead, s.RawMedian.Output, s.ReturnedShare*100, s.WithGauntlet, escapedShare(s))
 	}
 	if s.CutBy != "" {
 		fmt.Fprintf(out, "  (window cut at %s)", s.CutBy)
@@ -104,4 +104,13 @@ func unguarded(m stats.MarkerReport) string {
 		lack = append(lack, "escaped pending")
 	}
 	return " (unguarded: " + strings.Join(lack, ", ") + ")"
+}
+
+// escapedShare is a side's escaped share, or "pending" while its deliveries
+// are too young to have revealed a defect (C10).
+func escapedShare(s stats.Side) string {
+	if s.EscapedShare == nil {
+		return "pending"
+	}
+	return fmt.Sprintf("%.0f%%", *s.EscapedShare*100)
 }

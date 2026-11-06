@@ -126,7 +126,7 @@ const processGolden = `{
         },
         "with_gauntlet": 0,
         "returned_share": 0,
-        "escaped_share": 0
+        "escaped_share": null
       },
       "after": {
         "from": "2026-03-02T12:00:00Z",

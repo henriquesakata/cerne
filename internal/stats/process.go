@@ -75,7 +75,7 @@ type Side struct {
 	RawMedian     Raw       `json:"raw_median"`
 	WithGauntlet  int       `json:"with_gauntlet"`
 	ReturnedShare float64   `json:"returned_share"` // of WithGauntlet
-	EscapedShare  float64   `json:"escaped_share"`  // of N
+	EscapedShare  *float64  `json:"escaped_share"`  // of N; null until the side's last delivery is 28 days old (C10)
 }
 
 // MarkerReport is a marker judged before/after.
@@ -151,7 +151,7 @@ func ComputeProcess(samples []ProcessSample, markers []Marker, excludedNoCost in
 			to, cutAfter = ms[i+1].At, ms[i+1].ID
 		}
 		before, after := between(ss, from, m.At), between(ss, m.At, to)
-		mr := MarkerReport{Marker: m, Before: side(before, from, m.At, cutBefore), After: side(after, m.At, to, cutAfter)}
+		mr := MarkerReport{Marker: m, Before: side(before, from, m.At, cutBefore, now), After: side(after, m.At, to, cutAfter, now)}
 		judge(&mr, before, after, now)
 		r.Markers = append(r.Markers, mr)
 	}
@@ -314,7 +314,7 @@ func wilson(p float64, n int, z float64) (lo, hi float64) {
 	return center - half, center + half
 }
 
-func side(ss []ProcessSample, from, to time.Time, cutBy string) Side {
+func side(ss []ProcessSample, from, to time.Time, cutBy string, now time.Time) Side {
 	s := Side{From: from, To: to, CutBy: cutBy, N: len(ss)}
 	if len(ss) == 0 {
 		return s
@@ -329,7 +329,13 @@ func side(ss []ProcessSample, from, to time.Time, cutBy string) Side {
 	}
 	s.RawMedian = Raw{median(raw[0]), median(raw[1]), median(raw[2]), median(raw[3])}
 	r := returns(ss)
-	s.WithGauntlet, s.ReturnedShare, s.EscapedShare = len(r), mean(r), mean(escapes(ss))
+	s.WithGauntlet, s.ReturnedShare = len(r), mean(r)
+	// A delivery under 28 days old has not had time to reveal its defect: the
+	// side's share would read low exactly where crit. 20 says not to look.
+	if !now.Before(ss[len(ss)-1].CompletedAt.Add(window)) {
+		e := mean(escapes(ss))
+		s.EscapedShare = &e
+	}
 	return s
 }
 
