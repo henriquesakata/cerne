@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -141,12 +140,17 @@ func hidden(c *cobra.Command) bool {
 
 // validate runs cobra's own checks, plus the trust-boundary refusals: the
 // project is the chat's (--dir) and content comes through stdin (--file would
-// read an arbitrary local file into the shared backend).
+// read an arbitrary local file into the shared backend). A help request runs
+// only after the whole gate passed, and only as a bare --help/-h: a valued one
+// (--help=false) would reach the child as "no help" and run the verb.
 func validate(cmd *cobra.Command, rest []string) error {
-	if err := cmd.ParseFlags(rest); errors.Is(err, pflag.ErrHelp) {
-		return nil // the child prints the verb's help: a read the chat contract advises
-	} else if err != nil {
+	cmd.InitDefaultHelpFlag()
+	if err := cmd.ParseFlags(rest); err != nil {
 		return err
+	}
+	help := cmd.Flags().Lookup("help")
+	if help.Changed && help.Value.String() != "true" {
+		return errors.New("--help takes no value")
 	}
 	for _, f := range []string{"dir", "file"} {
 		if cmd.Flags().Changed(f) {

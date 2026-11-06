@@ -207,12 +207,28 @@ func TestRunReadVerbHasNoID(t *testing.T) {
 	}
 }
 
-// The chat contract tells the agent to consult `cerne <verb> --help` instead
-// of guessing flags: help passes the gate (a read) and returns the usage.
-func TestRunHelpPassesTheGate(t *testing.T) {
+// --help runs only after the whole gate (F-0323 C1): a help request is still
+// validated like the verb itself, and a valued --help/-h — which the child
+// would read as false and then run the verb — is refused.
+func TestRunHelpOnlyAfterFullValidation(t *testing.T) {
 	env := newProject(t)
-	res := run(t, env, "reference new", "", "--help")
+	res := run(t, env, "reference new", "", "T", "--url", "u", "--help")
 	if !res.OK || !strings.Contains(res.Output, "Usage:") || res.ID != "" {
-		t.Fatalf("Run(reference new --help) = %+v, want OK with the usage", res)
+		t.Fatalf("Run(reference new T --url u --help) = %+v, want OK with the usage", res)
+	}
+	for _, args := range [][]string{
+		{"--help"}, // no title: validation comes first
+		{"Nota vazada", "--facet", "process", "--component", "chat", "--help=false", "--file", "/etc/hosts"},
+		{"Nota vazada", "--facet", "process", "--component", "chat", "--help=false"},
+		{"Nota vazada", "-h=x"},
+		{"Nota vazada", "-h=false", "--dir", "/tmp"},
+	} {
+		res := run(t, env, "note new", "", args...)
+		if !errors.Is(res.Err, verbs.ErrInvalidArguments) {
+			t.Fatalf("Run(note new %v) = %+v, want invalid_arguments", args, res)
+		}
+	}
+	if notes, err := store.LoadAllNotes(env.RepoDir); err != nil || len(notes) != 0 {
+		t.Fatalf("notes = %+v (%v), want none created", notes, err)
 	}
 }
