@@ -330,3 +330,20 @@ func TestIdeaPromotePrintsNextStep(t *testing.T) {
 		t.Fatalf("promote output lacks the next step:\n%s", out)
 	}
 }
+
+// C20: show prints the idea's own history, read from the raw log — the funnel
+// log (History, heatmap) keeps leaving idea.* out.
+func TestShowIdeaPrintsItsHistory(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV")
+	ideaCmd(t, projDir, "promote", "I-0001")
+	out, err := execCerne(t, "show", "I-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show I-0001: %v\n%s", err, out)
+	}
+	_, hist, ok := strings.Cut(out, "## history\n")
+	if !ok || !strings.Contains(hist, "idea.created") || !strings.Contains(hist, "idea.promoted") || !strings.Contains(hist, "promoted_to=F-0001") ||
+		strings.Index(hist, "idea.created") > strings.Index(hist, "idea.promoted") {
+		t.Fatalf("show I-0001 lacks its ordered history:\n%s", out)
+	}
+}

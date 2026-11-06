@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -106,6 +107,28 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 		}
 		if len(lines) > 0 {
 			res.content = append(res.content, showDoc{name: "pending", body: strings.Join(lines, "\n")})
+		}
+	}
+	if res.kind == "idea" {
+		// C20: the idea's own trail, from the raw log — idea.* never reaches
+		// the funnel's ReadEvents (History, heatmap).
+		evs, err := store.ReadAllEvents(ctx.repoDir)
+		if err != nil {
+			return err
+		}
+		var lines []string
+		for _, ev := range evs {
+			if ev.EntityID != id {
+				continue
+			}
+			line := fmt.Sprintf("%s  %s  %s", ev.At.Format(time.RFC3339), ev.Type, ev.Actor)
+			for _, k := range slices.Sorted(maps.Keys(ev.Payload)) {
+				line += fmt.Sprintf("  %s=%s", k, ev.Payload[k])
+			}
+			lines = append(lines, line)
+		}
+		if len(lines) > 0 {
+			res.content = append(res.content, showDoc{name: "history", body: strings.Join(lines, "\n")})
 		}
 	}
 	w := cmd.OutOrStdout()
