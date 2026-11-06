@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
-import { setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
+import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
 const streamChat = vi.fn<
@@ -1232,6 +1232,21 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
 
     expect(await screen.findByText(/nenhum comando foi executado/i)).toBeInTheDocument()
     expect(screen.getByText(/truncated/)).toBeInTheDocument()
+  })
+
+  // F-0323 C6: o que rodou antes de uma falha aparece com o erro.
+  it('erro com execuções mostra o painel de execuções e o erro', async () => {
+    streamChat.mockRejectedValue(
+      new ChatRunsError('tool-use loop exceeded its round limit', [
+        { tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0004', output: '' } },
+      ]),
+    )
+    renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Registra' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    expect(await screen.findByText(/R-0004/)).toBeInTheDocument()
+    expect(screen.getByText(/round limit/)).toBeInTheDocument()
   })
 
   it('resposta sem bloco de comando não renderiza card', async () => {

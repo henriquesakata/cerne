@@ -631,6 +631,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       const outcome = chatRequest.consumeOutcome(id)
       if (!outcome) return
       if (outcome.kind === 'error') {
+        // F-0323 C6: o que rodou antes da falha fica na tela com o erro; o
+        // turno confirmado não se repete (confirmação de uso único), então não
+        // há reenvio a oferecer.
+        const fresh = chatRequest.getConversation(id)
+        if (fresh?.messages.at(-1)?.runs) {
+          setMessages(fresh.messages)
+          setFailedMessages(null)
+        }
         setError(outcome.message)
         return
       }

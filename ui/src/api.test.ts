@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchSettings, HTTPError, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
+import { ChatRunsError, fetchSettings, HTTPError, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
 
 function streamResponse(chunks: string[]): Response {
   const encoder = new TextEncoder()
@@ -61,6 +61,21 @@ describe('streamChat (F-0323): confirmação presa ao turno', () => {
       { role: 'assistant', content: 'card' },
       { role: 'user', content: 'Confirmado' },
     ])
+  })
+})
+
+describe('streamChat (F-0323 C6): escritas antes de uma falha chegam ao humano', () => {
+  it('um 500 com runs vira ChatRunsError carregando as execuções e a mensagem', async () => {
+    setApiProject('proj-x')
+    const runs = [{ tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0004', output: '' } }]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'tool-use loop exceeded its round limit', runs }), { status: 500 })),
+    )
+    const err = await streamChat([{ role: 'user', content: 'oi' }], undefined, () => {}).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ChatRunsError)
+    expect((err as ChatRunsError).message).toBe('tool-use loop exceeded its round limit')
+    expect((err as ChatRunsError).runs).toEqual(runs)
   })
 })
 

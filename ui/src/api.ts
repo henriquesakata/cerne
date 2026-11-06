@@ -755,6 +755,17 @@ export type ChatAnswer = {
   truncated?: boolean
 }
 
+// ChatRunsError (F-0323 C6) é a falha de um turno que já executou algo: o
+// servidor devolve as execuções junto do erro, e elas têm de chegar ao humano —
+// uma escrita feita antes da falha nunca some atrás de um "tente de novo".
+export class ChatRunsError extends Error {
+  runs: ChatRun[]
+  constructor(message: string, runs: ChatRun[]) {
+    super(message)
+    this.runs = runs
+  }
+}
+
 // ChatOverride (F-0218) carrega a escolha do seletor de modelo/esforço do
 // composer — opcional; omitida, o provider usa o default do .cernerc.
 // featureId (F-0256) marca o turno como refino de uma candidata já
@@ -799,7 +810,11 @@ export async function streamChat(
       confirm_turn: override?.confirmTurn,
     }),
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { error?: string; runs?: ChatRun[] }
+    const message = body.error || `HTTP ${r.status}`
+    throw body.runs?.length ? new ChatRunsError(message, body.runs) : new Error(message)
+  }
   if (!r.body) return (await r.json()) as ChatAnswer
 
   const parseLine = (line: string): ChatAnswer | null => {

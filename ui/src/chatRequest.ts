@@ -1,4 +1,4 @@
-import { streamChat, type ChatMsg, type ChatOverride, type ChatRun } from './api'
+import { ChatRunsError, streamChat, type ChatMsg, type ChatOverride, type ChatRun } from './api'
 import { getConversation, readChats, writeChats } from './useBacklogChats'
 
 // chatRequest (F-0230) é um singleton por conversa, fora do ciclo de vida do
@@ -112,6 +112,8 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
     })
     .catch((err: unknown) => {
       statuses.set(convId, IDLE)
+      // F-0323 C6: o que rodou antes da falha fica na conversa, ao lado do erro.
+      if (err instanceof ChatRunsError) writeAssistant(partial, { runs: err.runs })
       outcomes.set(convId, { kind: 'error', message: err instanceof Error ? err.message : String(err) })
       notify(convId)
     })

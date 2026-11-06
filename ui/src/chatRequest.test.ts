@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { consumeOutcome, send, status } from './chatRequest'
 import { readChats, writeChats } from './useBacklogChats'
-import { setApiProject, type ChatAnswer } from './api'
+import { ChatRunsError, setApiProject, type ChatAnswer } from './api'
 
 const streamChat = vi.fn<(messages: unknown, override: unknown, onDelta: (d: string) => void) => Promise<ChatAnswer>>()
 
@@ -205,5 +205,22 @@ describe('chatRequest (F-0323): execuções e ausência de canal', () => {
       { role: 'assistant', content: 'Feito.', runs, noExec: true },
     ])
     expect(streamChat.mock.calls[0][1]).toMatchObject({ conversationId: 'c9', confirm: true, confirmTurn: 0 })
+  })
+})
+
+describe('chatRequest (F-0323 C6): a falha não esconde o que já rodou', () => {
+  it('as execuções de um erro ficam gravadas na mensagem do agente, junto do erro', async () => {
+    seedConversation('c10')
+    const runs = [{ tool: 'cerne', verb: 'reference new', args: ['T'], result: { ok: true, id: 'R-0004', output: '' } }]
+    streamChat.mockRejectedValue(new ChatRunsError('tool-use loop exceeded its round limit', runs))
+
+    send('c10', [{ role: 'user', content: 'Registra' }], { confirm: true, confirmTurn: 0 })
+    await vi.waitFor(() => expect(status('c10').pending).toBe(false))
+
+    expect(readChats().chats.find((c) => c.id === 'c10')?.messages).toEqual([
+      { role: 'user', content: 'Registra' },
+      { role: 'assistant', content: '', runs },
+    ])
+    expect(consumeOutcome('c10')).toEqual({ kind: 'error', message: 'tool-use loop exceeded its round limit' })
   })
 })
