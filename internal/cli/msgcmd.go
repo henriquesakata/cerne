@@ -147,6 +147,12 @@ func newMsgReadCmd(dir, session *string) *cobra.Command {
 					targets := make([]string, len(m.Targets))
 					for i, t := range m.Targets {
 						targets[i] = t.Work
+						switch {
+						case t.Closed:
+							targets[i] += " (closed)"
+						case t.Acked:
+							targets[i] += " (acked)"
+						}
 					}
 					who += " → " + strings.Join(targets, ",")
 				}

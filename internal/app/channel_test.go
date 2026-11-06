@@ -946,3 +946,25 @@ func TestChannelAckValidates(t *testing.T) {
 		t.Fatalf("%d delivery lines, want only the one real ack", n)
 	}
 }
+
+// TestChannelTargetsSayAckAndClosed (critic C17): an ack reads as acked, not
+// as a reply; a message addressed to a work that has closed names that work
+// as closed instead of showing no target at all.
+func TestChannelTargetsSayAckAndClosed(t *testing.T) {
+	f := newChanFixture(t)
+	bindTestWork(t, f.repoDir, "W-0004", domain.WorkDone)
+	acked, _ := f.send("s2", "W-0001 segura")
+	f.inject("s1", true)
+	if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{acked.Seq}, f.at); err != nil {
+		t.Fatal(err)
+	}
+	closed, _ := f.send("s2", "W-0004 pode consumir o contrato")
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, acked.Seq); got.State != ChannelAnswered || len(got.Targets) != 1 || !got.Targets[0].Acked {
+		t.Fatalf("acked = %+v, want answered and marked acked", got)
+	}
+	got := stateOf(t, msgs, closed.Seq)
+	if !got.Directed || len(got.Targets) != 1 || got.Targets[0] != (ChannelTarget{Work: "W-0004", State: ChannelNotDelivered, Closed: true}) {
+		t.Fatalf("addressed to a closed work = %+v", got)
+	}
+}

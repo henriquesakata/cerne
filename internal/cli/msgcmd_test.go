@@ -142,7 +142,7 @@ func TestMsgAck(t *testing.T) {
 		t.Fatalf("msg ack: %v\n%q", err, out)
 	}
 	out, err = execCerne(t, "msg", "read", "--dir", projDir)
-	if err != nil || !strings.Contains(out, "[answered]") {
+	if err != nil || !strings.Contains(out, "→ "+b+" (acked) [answered]") {
 		t.Fatalf("read after ack: %v\n%s", err, out)
 	}
 	if out, err := execCerne(t, "msg", "ack", "x", "--session", "sess-b", "--dir", projDir); err == nil {

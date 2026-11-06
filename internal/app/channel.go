@@ -182,10 +182,8 @@ func (cs channelState) answered(m room.Message, work string) bool {
 	if work == "" {
 		return false
 	}
-	for _, d := range cs.dels {
-		if d.Work == work && slices.Contains(d.Ack, m.Seq) {
-			return true
-		}
+	if cs.acked(m, work) {
+		return true
 	}
 	for _, d := range cs.dels {
 		if d.Work != work || d.Peek || !slices.Contains(d.Seqs, m.Seq) {
@@ -195,6 +193,16 @@ func (cs channelState) answered(m room.Message, work string) bool {
 			if later.Seq > m.Seq && later.Nick == work && later.Session == d.Session && !later.Time.Before(d.At) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// acked reports whether work explicitly acked m (`cerne msg ack`).
+func (cs channelState) acked(m room.Message, work string) bool {
+	for _, d := range cs.dels {
+		if d.Work == work && slices.Contains(d.Ack, m.Seq) {
+			return true
 		}
 	}
 	return false
@@ -405,6 +413,10 @@ const (
 type ChannelTarget struct {
 	Work  string `json:"work"`
 	State string `json:"state"`
+	// Acked: answered by `cerne msg ack`, not by a reply (critic C17).
+	Acked bool `json:"acked,omitempty"`
+	// Closed: the work closed — it will never receive the message.
+	Closed bool `json:"closed,omitempty"`
 }
 
 // ChannelMessage is a live channel message with its derived state: the worst
@@ -570,21 +582,27 @@ func ChannelRead(cacheDir, repoDir, sess string, now time.Time) ([]ChannelMessag
 	cs := channelState{msgs: msgs, dels: dels}
 	var out []ChannelMessage
 	for _, m := range liveMessages(repoDir, msgs, now) {
-		out = append(out, cs.derive(m, active))
+		out = append(out, cs.derive(m, works))
 	}
 	return out, channelRoster(cacheDir, active), nil
 }
 
-// derive computes m's targets and state against the active works.
-func (cs channelState) derive(m room.Message, active []store.Work) ChannelMessage {
+// derive computes m's targets and state against the works: addressed to an
+// active work by id, ref or path; to a closed one only by its W- id (its old
+// paths would match half the channel) — that target is marked Closed.
+func (cs channelState) derive(m room.Message, works []store.Work) ChannelMessage {
 	cm := ChannelMessage{Message: m}
 	cm.Session = "" // a session id lets `msg send --session` speak as its work: never served
-	for _, w := range active {
-		if directedTo(m, identityOf(w)) {
-			cm.Directed = true
+	named := channelRefRe.FindAllString(m.Body, -1)
+	for _, w := range works {
+		switch {
+		case w.State == domain.WorkActive && directedTo(m, identityOf(w)):
 			cm.Targets = append(cm.Targets, ChannelTarget{Work: w.ID})
+		case w.State != domain.WorkActive && w.ID != m.Nick && slices.Contains(named, w.ID):
+			cm.Targets = append(cm.Targets, ChannelTarget{Work: w.ID, Closed: true})
 		}
 	}
+	cm.Directed = len(cm.Targets) > 0
 	if !cm.Directed {
 		seen := map[string]bool{}
 		for _, d := range cs.dels {
@@ -600,6 +618,7 @@ func (cs channelState) derive(m room.Message, active []store.Work) ChannelMessag
 		switch {
 		case cs.answered(m, t.Work):
 			t.State = ChannelAnswered
+			t.Acked = cs.acked(m, t.Work)
 		case cs.delivered(m, t.Work):
 			t.State = ChannelDelivered
 		default:
