@@ -309,6 +309,33 @@ func TestComputeEntityUnattributedExcludesAttributedElsewhere(t *testing.T) {
 	}
 }
 
+// TestComputeSharedCopyCountsOnceAttributed (C11, mutations M3 and M9): a
+// message present in two sessions counts once, and on the copy that is
+// attributed — even when the unattributed copy's session is read first.
+func TestComputeSharedCopyCountsOnceAttributed(t *testing.T) {
+	in, m := sharedCopyFixture(t)
+	r := compute(t, in, "")
+	if r.Entities["F-0001"] != m || r.Unattributed != (Counters{}) || r.Counters != m.add(cc(0, 0, 0, 7)) {
+		t.Fatalf("project = entities %+v, unattributed %+v; want m once, on F-0001", r.Entities, r.Unattributed)
+	}
+}
+
+// TestAttributeBoundaryBelongsToNewBinding (C11, mutation M2): a message at
+// exactly a binding's ts already belongs to that binding.
+func TestAttributeBoundaryBelongsToNewBinding(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(1), id: "a", req: "r", c: cc(1, 0, 0, 0)},
+		tmsg{ts: at(3), id: "b", req: "r", c: cc(0, 1, 0, 0)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	bindAt(t, in.CacheDir, "s", "", "F-0002", at(3))
+	if r := compute(t, in, ""); r.Entities["F-0001"] != cc(1, 0, 0, 0) || r.Entities["F-0002"] != cc(0, 1, 0, 0) {
+		t.Fatalf("entities = %+v, want each boundary message on the binding starting at its ts", r.Entities)
+	}
+}
+
 // TestComputeResolvesWorkToFeature: a W- with exactly one feature ref counts
 // on that feature; a W- with none stays itself, visible in the project view.
 func TestComputeResolvesWorkToFeature(t *testing.T) {
