@@ -336,6 +336,18 @@ func TestAttributeBoundaryBelongsToNewBinding(t *testing.T) {
 	}
 }
 
+// TestShareWindowWidens: the window is the earliest first and the latest last
+// over everything folded in, whatever the fold order (shares come from map
+// iteration).
+func TestShareWindowWidens(t *testing.T) {
+	s := share{First: "2026-11-01T10:05:00Z", Last: "2026-11-01T10:05:00Z"}
+	s.widen("2026-11-01T10:01:00Z", "2026-11-01T10:09:00Z")
+	s.widen("2026-11-01T10:03:00Z", "2026-11-01T10:04:00Z")
+	if s.First != "2026-11-01T10:01:00Z" || s.Last != "2026-11-01T10:09:00Z" {
+		t.Fatalf("window = %s → %s", s.First, s.Last)
+	}
+}
+
 // TestComputeResolvesWorkToFeature: a W- with exactly one feature ref counts
 // on that feature; a W- with none stays itself, visible in the project view.
 func TestComputeResolvesWorkToFeature(t *testing.T) {
