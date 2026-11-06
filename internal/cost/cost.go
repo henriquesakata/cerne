@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ func (c Counters) max(o Counters) Counters {
 type Report struct {
 	ID                        string              `json:"id,omitempty"`
 	Reason                    string              `json:"reason,omitempty"`
+	Source                    string              `json:"source,omitempty"` // entity view: "transcripts", or "stamp" when its anchor holds more
 	Counters                  Counters            `json:"counters"`
 	Sidechain                 Counters            `json:"sidechain"`
 	ByModel                   map[string]Counters `json:"by_model"`
@@ -57,6 +59,7 @@ type Report struct {
 	Unattributed              Counters            `json:"unattributed"`
 	Entities                  map[string]Counters `json:"entities,omitempty"`      // project view (id == "")
 	OtherHarness              []string            `json:"other_harness,omitempty"` // project view: sessions left out, bound under another harness
+	FromStamp                 []string            `json:"from_stamp,omitempty"`    // project view: entities read from their anchor
 	Children                  *Rollup             `json:"children,omitempty"`      // epic: its descendants' anchors
 	Total                     *Counters           `json:"total,omitempty"`         // epic: own + children
 }
@@ -143,8 +146,7 @@ func (r *Report) rollup(repoDir string) error {
 				continue // a parent cycle in the data: each node counts once
 			}
 			seen[c.ID] = true
-			raw, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", c.ID, "result.md"))
-			if a, ok := anchor(string(raw)); ok {
+			if a, ok := readAnchor(repoDir, c.ID); ok {
 				ro.Counters = ro.Counters.add(a.Counters)
 				ro.Stamped = append(ro.Stamped, c.ID)
 			} else {
@@ -293,8 +295,59 @@ func own(in Inputs, id string) (Report, error) {
 		}
 	}
 	r.SessionsRecovered = fuseSnapshots(in.CacheDir, id, inScope, pruned, agg)
-	r.tally(agg)
+
+	// The anchor in the result is the durable record (C4): an entity whose
+	// anchor covers more messages than its transcripts and snapshot still hold
+	// (pruned since the stamp) reads from the anchor, and says so.
+	byEntity := shares(agg)
+	candidates := []string{id}
+	if id == "" {
+		candidates = nil
+		for _, sess := range universe {
+			for _, b := range bySess[sess] {
+				if e := att.res.resolve(b.Entity); domain.IsFeatureID(e) && !slices.Contains(candidates, e) {
+					candidates = append(candidates, e)
+				}
+			}
+		}
+	}
+	stamped := map[string]bool{}
+	for _, e := range candidates {
+		if a, ok := readAnchor(in.RepoDir, e); ok && (byEntity[e] == nil || a.Messages > byEntity[e].Messages) {
+			byEntity[e], stamped[e] = &a, true
+		}
+	}
+	if id != "" {
+		r.Source = "transcripts"
+		if s := byEntity[id]; s != nil {
+			r.addShare(s)
+			if stamped[id] {
+				r.Source, r.Sessions, r.Unattributed = "stamp", s.Sessions, s.Unattributed
+			}
+		}
+		return r, nil
+	}
+	for e, s := range byEntity {
+		r.addShare(s)
+		if r.Entities == nil {
+			r.Entities = map[string]Counters{}
+		}
+		r.Entities[e] = s.Counters
+		if stamped[e] {
+			r.FromStamp = append(r.FromStamp, e)
+		}
+	}
+	sort.Strings(r.FromStamp)
 	return r, nil
+}
+
+// readAnchor reads the anchor of id's result in the backend clone.
+func readAnchor(repoDir, id string) (share, bool) {
+	raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
+	if err != nil {
+		return share{}, false
+	}
+	return anchor(string(raw))
 }
 
 // fuseSnapshots folds the harvested snapshots into the live shares, per
@@ -327,34 +380,50 @@ func fuseSnapshots(cacheDir, id string, inScope, pruned map[string]bool, agg map
 	return len(recovered)
 }
 
-// tally folds the per-file shares into the report.
-func (r *Report) tally(agg map[aggKey]*fileAgg) {
-	var first, last time.Time
+// shares folds the per-file shares into one share per entity.
+func shares(agg map[aggKey]*fileAgg) map[string]*share {
+	out := map[string]*share{}
 	for k, f := range agg {
+		s := out[k.entity]
+		if s == nil {
+			s = &share{ID: k.entity, ByModel: map[string]Counters{}}
+			out[k.entity] = s
+		}
 		for _, b := range f.Buckets {
-			r.Counters = r.Counters.add(b.Counters)
+			s.Counters = s.Counters.add(b.Counters)
 			if b.Sidechain {
-				r.Sidechain = r.Sidechain.add(b.Counters)
+				s.Sidechain = s.Sidechain.add(b.Counters)
 			}
-			r.ByModel[b.Model] = r.ByModel[b.Model].add(b.Counters)
-			r.Messages += b.Messages
-			if first.IsZero() || b.First.Before(first) {
-				first = b.First
-			}
-			if b.Last.After(last) {
-				last = b.Last
-			}
-			if r.ID == "" {
-				if r.Entities == nil {
-					r.Entities = map[string]Counters{}
-				}
-				r.Entities[k.entity] = r.Entities[k.entity].add(b.Counters)
-			}
+			s.ByModel[b.Model] = s.ByModel[b.Model].add(b.Counters)
+			s.Messages += b.Messages
+			s.widen(b.First.UTC().Format(time.RFC3339), b.Last.UTC().Format(time.RFC3339))
 		}
 	}
-	if !first.IsZero() {
-		r.First, r.Last = first.UTC().Format(time.RFC3339), last.UTC().Format(time.RFC3339)
+	return out
+}
+
+// widen stretches the [First, Last] window (same-format RFC3339 UTC strings
+// order as their instants).
+func (s *share) widen(first, last string) {
+	if first != "" && (s.First == "" || first < s.First) {
+		s.First = first
 	}
+	if last > s.Last {
+		s.Last = last
+	}
+}
+
+// addShare folds an entity's share into the report.
+func (r *Report) addShare(s *share) {
+	r.Counters = r.Counters.add(s.Counters)
+	r.Sidechain = r.Sidechain.add(s.Sidechain)
+	for m, c := range s.ByModel {
+		r.ByModel[m] = r.ByModel[m].add(c)
+	}
+	r.Messages += s.Messages
+	w := share{First: r.First, Last: r.Last}
+	w.widen(s.First, s.Last)
+	r.First, r.Last = w.First, w.Last
 }
 
 // governing is the binding in force for m: the last binding of m's own

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -217,5 +218,39 @@ func TestStampIgnoresQuotedExamples(t *testing.T) {
 	twice := got + "\n" + strings.Replace(example, `"messages":999`, `"messages":5`, 1) + "\n"
 	if a, ok := anchor(twice); !ok || a.Messages != 5 {
 		t.Fatalf("anchor = %+v (%v), want the last one in the section", a, ok)
+	}
+}
+
+// TestComputeHonoursAnchorAfterPrune (C4): once a feature is stamped, its
+// transcripts pruned and its snapshot dropped, its own report and the project
+// view read its numbers from the anchor, saying so; while the live read holds
+// as many messages, the live read stays the source.
+func TestComputeHonoursAnchorAfterPrune(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0005", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "a", req: "r", c: cc(12, 120, 1200, 12000)},
+		tmsg{ts: at(3), id: "b", req: "r", agent: "x", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s", "", "F-0005", at(1))
+	harvest(t, in, "s", "", time.Now())
+	prune(t, in, "s")
+	live := compute(t, in, "F-0005")
+	if live.Source != "transcripts" {
+		t.Fatalf("source = %q before the stamp", live.Source)
+	}
+	saveFeature(t, in.RepoDir, "F-0005", domain.StateImplemented)
+	writeResult(t, in.RepoDir, "F-0005", mustStamp(t, resultDoc("F-0005"), live))
+	if err := DropSnapshot(in.CacheDir, "F-0005"); err != nil {
+		t.Fatal(err)
+	}
+
+	r := compute(t, in, "F-0005")
+	if r.Source != "stamp" || r.Counters != live.Counters || r.Sidechain != live.Sidechain || r.Messages != 2 ||
+		!reflect.DeepEqual(r.ByModel, live.ByModel) || r.First != live.First || r.Last != live.Last {
+		t.Fatalf("after prune + stamp:\n%+v\nwant the stamped numbers of\n%+v", r, live)
+	}
+	p := compute(t, in, "")
+	if p.Entities["F-0005"] != live.Counters || !reflect.DeepEqual(p.FromStamp, []string{"F-0005"}) || p.Counters != live.Counters {
+		t.Fatalf("project = %+v, want F-0005 from its stamp", p)
 	}
 }

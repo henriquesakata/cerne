@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -82,6 +83,10 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 	}
 	if r.Sessions == 0 && (r.Children == nil || len(r.Children.Stamped) == 0) {
 		return fmt.Errorf("%w for %s", cost.ErrNothingToStamp, id)
+	}
+	if r.Source == "stamp" {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s cost unchanged — its stamp already covers more messages (%d) than the transcripts still hold.\n", id, r.Messages)
+		return nil
 	}
 	raw, err := os.ReadFile(app.FeatureDocPath(ctx.repoDir, id, "result.md"))
 	if err != nil {
@@ -177,6 +182,9 @@ func renderCost(out io.Writer, r cost.Report) {
 	} {
 		fmt.Fprintf(out, "  %-15s %-12d %s\n", row.label, row.n, row.what)
 	}
+	if r.Source == "stamp" {
+		fmt.Fprintln(out, "  (read from the stamp: the '## Custo' anchor in its result covers more messages than the transcripts and snapshot still hold)")
+	}
 	fmt.Fprintf(out, "  of which sidechain (subagents): %s\n", fmtCounters(r.Sidechain))
 	fmt.Fprintln(out, "By model:")
 	for _, m := range sortedKeys(r.ByModel) {
@@ -185,7 +193,11 @@ func renderCost(out io.Writer, r cost.Report) {
 	if r.ID == "" {
 		fmt.Fprintln(out, "By entity:")
 		for _, e := range sortedKeys(r.Entities) {
-			fmt.Fprintf(out, "  %s  %s\n", e, fmtCounters(r.Entities[e]))
+			from := ""
+			if slices.Contains(r.FromStamp, e) {
+				from = "  (from the stamp)"
+			}
+			fmt.Fprintf(out, "  %s  %s%s\n", e, fmtCounters(r.Entities[e]), from)
 		}
 	}
 	fmt.Fprintf(out, "Sessions: %d (%d without transcript) · messages: %d\n", r.Sessions, r.SessionsWithoutTranscript, r.Messages)

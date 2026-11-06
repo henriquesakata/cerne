@@ -112,6 +112,7 @@ func TestCostCommandJSONStable(t *testing.T) {
 	}
 	const golden = `{
   "id": "F-0001",
+  "source": "transcripts",
   "counters": {
     "input": 3,
     "cache_creation": 30,
@@ -341,5 +342,35 @@ func TestCostEpicRollupCLI(t *testing.T) {
 	// Its anchor holds its own cost only: the rollup recurses, never reading a stored total.
 	if res := readResult(t, repoDir, "E-0001"); !strings.Contains(res, `<!-- cerne:cost v1 {"id":"E-0001","counters":{"input":0,`) || strings.Contains(res, `"total"`) {
 		t.Fatalf("epic anchor:\n%s", res)
+	}
+}
+
+// TestCostShowsStampAfterPrune (F-0309 C4): after the stamp, with the
+// transcripts pruned and no snapshot, `cerne cost F` reports the anchor's
+// numbers and says they come from the stamp; a re-stamp leaves the result.
+func TestCostShowsStampAfterPrune(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	costSessions(t, repoDir)
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	if err := os.RemoveAll(filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects")); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "cost", "F-0001", "--json", "--dir", projDir)
+	var r cost.Report
+	if err != nil || json.Unmarshal([]byte(out), &r) != nil {
+		t.Fatalf("cost --json: %v\n%s", err, out)
+	}
+	if r.Source != "stamp" || r.Counters != (cost.Counters{Input: 3, CacheCreation: 30, CacheRead: 300, Output: 3000}) {
+		t.Fatalf("report = %+v, want the stamped counters from the stamp", r)
+	}
+	if out, _ := execCerne(t, "cost", "F-0001", "--dir", projDir); !strings.Contains(out, "from the stamp") || !strings.Contains(out, "3000") {
+		t.Fatalf("text does not say the numbers come from the stamp:\n%s", out)
+	}
+	before := readResult(t, repoDir, "F-0001")
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil || !strings.Contains(out, "unchanged") || readResult(t, repoDir, "F-0001") != before {
+		t.Fatalf("re-stamp after prune: %v\n%s", err, out)
 	}
 }
