@@ -869,11 +869,15 @@ export async function fetchWikiIndex(): Promise<WikiIndex> {
   return (await r.json()) as WikiIndex
 }
 
-// recompileWiki roda `cerne compile` no servidor até o fim (F-0316).
-export async function recompileWiki(): Promise<{ compiled: boolean; needs_provider?: boolean }> {
+export type WikiCompileResult = { compiled: boolean; needs_provider?: boolean; busy?: boolean }
+
+// recompileWiki roda `cerne compile` no servidor até o fim (F-0316). 409 é
+// outra compilação já em andamento: nada rodou, mas também nada falhou.
+export async function recompileWiki(): Promise<WikiCompileResult> {
   const r = await fetch(`${base()}/wiki/compile`, { method: 'POST' })
+  if (r.status === 409) return { compiled: false, busy: true }
   if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as { compiled: boolean; needs_provider?: boolean }
+  return (await r.json()) as WikiCompileResult
 }
 
 export type WikiPage = { rel: string; body: string }

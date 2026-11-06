@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setApiProject, streamChat } from './api'
+import { recompileWiki, setApiProject, streamChat } from './api'
 
 function streamResponse(chunks: string[]): Response {
   const encoder = new TextEncoder()
@@ -36,5 +36,13 @@ describe('streamChat (F-0244 critério 4b): consome tanto deltas quanto o evento
     const res = await streamChat([{ role: 'user', content: 'oi' }], undefined, (d) => deltas.push(d))
     expect(deltas).toEqual([])
     expect(res).toEqual({ answered: true, reply: 'tudo de uma vez' })
+  })
+})
+
+describe('recompileWiki (F-0316)', () => {
+  it('409 é "compilação em andamento", não falha nem sucesso', async () => {
+    setApiProject('proj-x')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"compiled":false,"busy":true}', { status: 409 })))
+    expect(await recompileWiki()).toEqual({ compiled: false, busy: true })
   })
 })

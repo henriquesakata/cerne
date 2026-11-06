@@ -10,22 +10,29 @@ export default function Wiki() {
   const load = useLiveLoad(fetchWikiIndex, [], { live: false })
   const { t } = useT()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // O que a última tentativa deixou: uma falha, ou outra compilação já em
+  // andamento (409) — nos dois casos a página fica e há "Tentar de novo".
+  const [failure, setFailure] = useState<{ busy: true } | { error: string } | null>(null)
 
   if (!load.data) return <LoadPending load={load} message={t.wiki.loadError} />
   const { pages, stale = [], needs_provider } = load.data
 
   // Recompilar sob demanda (F-0316): no sucesso recarrega o índice (o aviso
-  // some quando nada mais está defasado); na falha a página fica como está,
-  // com o erro e a nova tentativa no lugar do botão (F-0300/F-0302).
+  // some quando nada mais está defasado); na falha, ou com outra compilação em
+  // andamento, a página fica como está, com o motivo e a nova tentativa no
+  // lugar do botão (F-0300/F-0302).
   const recompile = async () => {
     setBusy(true)
     try {
-      await recompileWiki()
-      setError(null)
+      const r = await recompileWiki()
+      if (r.busy) {
+        setFailure({ busy: true })
+        return
+      }
+      setFailure(null)
       await load.reload()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setFailure({ error: e instanceof Error ? e.message : String(e) })
     } finally {
       setBusy(false)
     }
@@ -49,7 +56,7 @@ export default function Wiki() {
               {t.wiki.staleDelegation2}
             </>
           ) : (
-            error === null && (
+            failure === null && (
               <button
                 type="button"
                 aria-disabled={busy || undefined}
@@ -61,8 +68,12 @@ export default function Wiki() {
           )}
         </p>
       )}
-      {stale.length > 0 && !needs_provider && error !== null && (
-        <Notice message={t.wiki.recompileError(error)} onRetry={() => void recompile()} busy={busy} />
+      {stale.length > 0 && !needs_provider && failure !== null && (
+        <Notice
+          message={'busy' in failure ? t.wiki.recompileBusy : t.wiki.recompileError(failure.error)}
+          onRetry={() => void recompile()}
+          busy={busy}
+        />
       )}
       <h1>{t.wiki.title}</h1>
       <p className="muted">

@@ -69,6 +69,7 @@ describe('Wiki — desatualizada (F-0316)', () => {
 
   beforeEach(() => {
     vi.mocked(recompileWiki).mockClear()
+    vi.mocked(fetchWikiIndex).mockClear()
   })
 
   it('avisa, recompila e o aviso some ao fim (critérios 6 e 7)', async () => {
@@ -106,6 +107,20 @@ describe('Wiki — desatualizada (F-0316)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     expect(recompileWiki).toHaveBeenCalledTimes(2)
     await waitFor(() => expect(screen.queryByText(banner)).not.toBeInTheDocument())
+  })
+
+  it('compilação já em andamento: avisa e oferece nova tentativa, sem recarregar (C2)', async () => {
+    vi.mocked(fetchWikiIndex).mockResolvedValueOnce({ pages, stale: ['modules/gitback'] })
+    vi.mocked(recompileWiki).mockResolvedValueOnce({ compiled: false, busy: true })
+    render(<Wiki />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Recompilar' }))
+    expect(
+      await screen.findByText('Compilação em andamento — tente de novo quando ela terminar.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(banner)).toBeInTheDocument()
+    expect(fetchWikiIndex).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(recompileWiki).toHaveBeenCalledTimes(2)
   })
 
   it('o erro fica ao lado do aviso, nunca aninhado nele, e o aviso tem um só estilo (C10)', async () => {
