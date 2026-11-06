@@ -1,0 +1,328 @@
+package cost
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/store"
+)
+
+var base = time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+
+// at is base plus n minutes.
+func at(n int) time.Time { return base.Add(time.Duration(n) * time.Minute) }
+
+func cc(in, cw, cr, out int64) Counters {
+	return Counters{Input: in, CacheCreation: cw, CacheRead: cr, Output: out}
+}
+
+// tmsg is one synthetic assistant transcript line.
+type tmsg struct {
+	ts      time.Time
+	id, req string
+	model   string
+	agent   string
+	c       Counters
+}
+
+func (m tmsg) line(sess string) string {
+	model := m.model
+	if model == "" {
+		model = "claude-opus-5-5"
+	}
+	o := map[string]any{
+		"type": "assistant", "timestamp": m.ts.Format(time.RFC3339Nano), "sessionId": sess,
+		"message": map[string]any{"id": m.id, "model": model, "usage": map[string]any{
+			"input_tokens": m.c.Input, "cache_creation_input_tokens": m.c.CacheCreation,
+			"cache_read_input_tokens": m.c.CacheRead, "output_tokens": m.c.Output,
+		}},
+	}
+	if m.req != "" {
+		o["requestId"] = m.req
+	}
+	if m.agent != "" {
+		o["isSidechain"], o["agentId"] = true, m.agent
+	}
+	raw, _ := json.Marshal(o)
+	return string(raw)
+}
+
+// writeLines writes raw JSONL lines to <root>/projects/<rel>.
+func writeLines(t *testing.T, root, rel string, lines ...string) string {
+	t.Helper()
+	p := filepath.Join(root, "projects", filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// writeMain writes sess's main transcript (agent "") or the subagent's file.
+func writeSession(t *testing.T, root, sess string, msgs ...tmsg) {
+	t.Helper()
+	byFile := map[string][]string{}
+	for _, m := range msgs {
+		rel := "-tmp-p/" + sess + ".jsonl"
+		if m.agent != "" {
+			rel = "-tmp-p/" + sess + "/subagents/agent-" + m.agent + ".jsonl"
+		}
+		byFile[rel] = append(byFile[rel], m.line(sess))
+	}
+	for rel, lines := range byFile {
+		writeLines(t, root, rel, lines...)
+	}
+}
+
+func bindAt(t *testing.T, cache, sess, agent, entity string, ts time.Time) {
+	t.Helper()
+	if err := AppendBind(cache, Bind{Session: sess, Agent: agent, Entity: entity, Harness: HarnessClaudeCode, TS: ts}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func saveFeature(t *testing.T, repo, id string, state domain.FeatureState) {
+	t.Helper()
+	if err := store.SaveFeature(repo, store.Feature{ID: id, Title: "Feature " + id, State: state, CreatedAt: base, UpdatedAt: base}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fixture is a cache, a backend clone and a transcript root, all temporary.
+func fixture(t *testing.T) Inputs {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	return Inputs{CacheDir: t.TempDir(), RepoDir: t.TempDir(), Roots: []string{root}}
+}
+
+func compute(t *testing.T, in Inputs, id string) Report {
+	t.Helper()
+	r, err := Compute(in, id)
+	if err != nil {
+		t.Fatalf("Compute(%q): %v", id, err)
+	}
+	return r
+}
+
+// TestReadSessionDedupKeepsMaxPerCounter (crit. 3, no double count): the
+// streamed chunks of one message (same message.id + requestId) count once,
+// with the max per counter (the last chunk carries the real output) and the
+// earliest ts; a line without requestId counts on its own; <synthetic> and
+// non-assistant lines carrying "usage" are ignored.
+func TestReadSessionDedupKeepsMaxPerCounter(t *testing.T) {
+	root := t.TempDir()
+	p := writeLines(t, root, "-tmp-p/s.jsonl",
+		tmsg{ts: at(1), id: "m1", req: "r1", c: cc(3, 5, 7, 1)}.line("s"),
+		tmsg{ts: at(2), id: "m1", req: "r1", c: cc(3, 5, 7, 1)}.line("s"),
+		tmsg{ts: at(3), id: "m1", req: "r1", c: cc(3, 5, 7, 307)}.line("s"),
+		tmsg{ts: at(4), id: "m2", c: cc(1, 0, 0, 2)}.line("s"),
+		tmsg{ts: at(5), id: "m3", req: "r3", model: "<synthetic>", c: cc(100, 100, 100, 100)}.line("s"),
+		`{"type":"user","timestamp":"2026-11-01T10:06:00Z","toolUseResult":{"usage":{"input_tokens":999,"output_tokens":999}},"message":{"role":"user","content":"x"}}`,
+	)
+	msgs, err := readSession("s", []tfile{{rel: "-tmp-p/s.jsonl", abs: p}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2: %+v", len(msgs), msgs)
+	}
+	if msgs[0].c != cc(3, 5, 7, 307) || !msgs[0].ts.Equal(at(1)) {
+		t.Fatalf("m1 = %+v at %v, want output 307 at the first chunk's ts", msgs[0].c, msgs[0].ts)
+	}
+	if msgs[1].c != cc(1, 0, 0, 2) {
+		t.Fatalf("m2 = %+v", msgs[1].c)
+	}
+}
+
+// TestAttributeRebindMidSession (crit. 3): a rebind A→B mid-session sends each
+// message to the binding in force at its own timestamp; nothing is counted
+// twice or dropped.
+func TestAttributeRebindMidSession(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	c1, c3, c5 := cc(1, 10, 100, 1000), cc(2, 20, 200, 2000), cc(4, 40, 400, 4000)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(1), id: "m1", req: "r1", c: c1},
+		tmsg{ts: at(3), id: "m3", req: "r3", c: c3},
+		tmsg{ts: at(5), id: "m5", req: "r5", c: c5})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(2))
+	bindAt(t, in.CacheDir, "s", "", "F-0002", at(4))
+
+	r := compute(t, in, "")
+	if r.Entities["F-0001"] != c3 || r.Entities["F-0002"] != c5 || r.Unattributed != c1 {
+		t.Fatalf("entities=%+v unattributed=%+v, want F-0001=%v F-0002=%v unattributed=%v", r.Entities, r.Unattributed, c3, c5, c1)
+	}
+	if sum := r.Entities["F-0001"].add(r.Entities["F-0002"]).add(r.Unattributed); sum != c1.add(c3).add(c5) {
+		t.Fatalf("sum %+v != messages %+v", sum, c1.add(c3).add(c5))
+	}
+	if a := compute(t, in, "F-0001"); a.Counters != c3 || a.Messages != 1 || a.Unattributed != c1 {
+		t.Fatalf("F-0001 = %+v", a)
+	}
+}
+
+// TestAttributeOrphanToUnattributed (crit. 4): messages before any binding of
+// their session land in the unattributed bucket, shown in the entity report.
+func TestAttributeOrphanToUnattributed(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(1), id: "m1", req: "r1", c: cc(1, 2, 3, 4)},
+		tmsg{ts: at(2), id: "m2", req: "r2", c: cc(1, 2, 3, 4)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(3))
+
+	r := compute(t, in, "F-0001")
+	if r.Counters != (Counters{}) || r.Unattributed != cc(2, 4, 6, 8) || r.Sessions != 1 {
+		t.Fatalf("report = %+v, want zero counters, unattributed 2/4/6/8, 1 session", r)
+	}
+}
+
+// TestAttributeSubagentOwnBinding: a subagent's message follows its own
+// binding once it has one, and the main thread's before that; the main thread
+// never follows a subagent's binding.
+func TestAttributeSubagentOwnBinding(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0003", domain.StateInDevelopment)
+	x3, x5, m6 := cc(1, 0, 0, 1), cc(0, 2, 0, 2), cc(0, 0, 4, 4)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(3), id: "x3", req: "r", agent: "x", c: x3},
+		tmsg{ts: at(5), id: "x5", req: "r", agent: "x", c: x5},
+		tmsg{ts: at(6), id: "m6", req: "r", c: m6})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	bindAt(t, in.CacheDir, "s", "x", "F-0003", at(4))
+
+	r := compute(t, in, "")
+	if r.Entities["F-0001"] != x3.add(m6) || r.Entities["F-0003"] != x5 {
+		t.Fatalf("entities = %+v, want F-0001=%v F-0003=%v", r.Entities, x3.add(m6), x5)
+	}
+}
+
+// TestComputeResolvesWorkToFeature: a W- with exactly one feature ref counts
+// on that feature; a W- with none stays itself, visible in the project view.
+func TestComputeResolvesWorkToFeature(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	for id, refs := range map[string][]string{"W-0001": {"F-0002"}, "W-0003": nil} {
+		if err := store.SaveWork(in.RepoDir, store.Work{ID: id, Title: id, State: domain.WorkActive, Refs: refs, CreatedAt: base, UpdatedAt: base}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSession(t, in.Roots[0], "s1", tmsg{ts: at(2), id: "a", req: "r", c: cc(1, 1, 1, 1)})
+	writeSession(t, in.Roots[0], "s2", tmsg{ts: at(2), id: "b", req: "r", c: cc(2, 2, 2, 2)})
+	bindAt(t, in.CacheDir, "s1", "", "W-0001", at(1))
+	bindAt(t, in.CacheDir, "s2", "", "W-0003", at(1))
+
+	if r := compute(t, in, "F-0002"); r.Counters != cc(1, 1, 1, 1) || r.Sessions != 1 {
+		t.Fatalf("F-0002 = %+v", r)
+	}
+	r := compute(t, in, "")
+	if r.Entities["F-0002"] != cc(1, 1, 1, 1) || r.Entities["W-0003"] != cc(2, 2, 2, 2) {
+		t.Fatalf("project entities = %+v", r.Entities)
+	}
+	if _, ok := r.Entities["W-0001"]; ok {
+		t.Fatalf("W-0001 should resolve to F-0002: %+v", r.Entities)
+	}
+}
+
+// TestComputeMissingTranscriptCounted (crit. 11): a ledger session whose
+// transcript is gone is counted, never an error.
+func TestComputeMissingTranscriptCounted(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s1", tmsg{ts: at(2), id: "a", req: "r", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s1", "", "F-0001", at(1))
+	bindAt(t, in.CacheDir, "s2", "", "F-0001", at(1))
+
+	r := compute(t, in, "F-0001")
+	if r.Sessions != 2 || r.SessionsWithoutTranscript != 1 || r.Counters != cc(1, 1, 1, 1) {
+		t.Fatalf("report = %+v, want 2 sessions, 1 without transcript", r)
+	}
+}
+
+// TestComputeSidechainIncludedAndSplit (crit. 12): subagent messages count in
+// the entity's total and are reported apart as the sidechain share.
+func TestComputeSidechainIncludedAndSplit(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	main, side := cc(1, 2, 3, 4), cc(10, 20, 30, 40)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "a", req: "r", c: main},
+		tmsg{ts: at(3), id: "b", req: "r", agent: "x", c: side})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+
+	r := compute(t, in, "F-0001")
+	if r.Counters != main.add(side) || r.Sidechain != side || r.Messages != 2 {
+		t.Fatalf("report = %+v, want counters %v sidechain %v", r, main.add(side), side)
+	}
+	if r.First != at(2).Format(time.RFC3339) || r.Last != at(3).Format(time.RFC3339) {
+		t.Fatalf("window = %s → %s", r.First, r.Last)
+	}
+}
+
+// TestComputeRefusesNonClaudeHarness (crit. 13): a binding recorded under
+// another harness refuses the whole scope, naming the supported harness, with
+// no partial number.
+func TestComputeRefusesNonClaudeHarness(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s", tmsg{ts: at(2), id: "a", req: "r", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	if err := AppendBind(in.CacheDir, Bind{Session: "s2", Entity: "F-0001", Harness: "other", TS: at(1)}); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := Compute(in, "F-0001")
+	if !errors.Is(err, ErrUnsupportedHarness) || !strings.Contains(err.Error(), "Claude Code") || !strings.Contains(err.Error(), "s2") {
+		t.Fatalf("err = %v, want ErrUnsupportedHarness naming Claude Code and s2", err)
+	}
+	if r.Counters != (Counters{}) || r.Messages != 0 || r.Unattributed != (Counters{}) {
+		t.Fatalf("partial report leaked: %+v", r)
+	}
+}
+
+// TestComputeNoLedgerIsZeroWithReason (crit. 14): no ledger is zero with the
+// reason, not an error; a ledger with no line for the entity names it.
+func TestComputeNoLedgerIsZeroWithReason(t *testing.T) {
+	in := fixture(t)
+	r := compute(t, in, "F-0001")
+	if r.Counters != (Counters{}) || r.Reason != "no session bound" {
+		t.Fatalf("report = %+v, want zero with reason", r)
+	}
+	bindAt(t, in.CacheDir, "s", "", "F-0002", at(1))
+	if r := compute(t, in, "F-0009"); r.Counters != (Counters{}) || !strings.Contains(r.Reason, "F-0009") {
+		t.Fatalf("report = %+v, want a reason naming F-0009", r)
+	}
+}
+
+// TestTranscriptRootUnreadableIsError: a transcript root that exists but cannot
+// be listed is an error, never read as "no transcript" (a denied read would
+// otherwise look like pruning and print a false zero).
+func TestTranscriptRootUnreadableIsError(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod 000 does not deny reads here")
+	}
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s", tmsg{ts: at(2), id: "a", req: "r", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	projects := filepath.Join(in.Roots[0], "projects")
+	if err := os.Chmod(projects, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(projects, 0o755) })
+
+	if _, err := Compute(in, "F-0001"); !errors.Is(err, ErrTranscriptsUnreadable) || !strings.Contains(err.Error(), projects) {
+		t.Fatalf("err = %v, want ErrTranscriptsUnreadable naming %s", err, projects)
+	}
+}

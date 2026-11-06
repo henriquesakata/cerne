@@ -53,6 +53,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newBriefCmd())
 	root.AddCommand(newSavingsCmd())
 	root.AddCommand(newStatsCmd())
+	root.AddCommand(newCostCmd())
 	root.AddCommand(newPullCmd())
 	root.AddCommand(newPushCmd())
 	root.AddCommand(newSyncCmd())

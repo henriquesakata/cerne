@@ -63,6 +63,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 | `internal/importer` | `import`: scan an existing doc tree (hub conventions) → entities. |
 | `internal/lint` | Deterministic staleness rules (ref-to-superseded, broken-link, orphan, missing-gate-doc, unregistered-source). |
 | `internal/hooks` | Embeds + installs cerne's Claude Code hooks (`cerne hook install`): the provenance gate reminder + settings.json merge. |
+| `internal/cost` | `cerne cost`: append-only session-binding ledger, Claude Code transcript reader (dedup), temporal attributor (F-0309). |
 | `internal/index` | SQLite FTS5 over full history (incl. superseded). |
 | `internal/server` | Local web API + embedded UI (`internal/cli/uicmd.go` serves it). |
 | `internal/cli` | cobra commands: init, feature, status, next, pull, push, import, lint, search, ui, lock (`lock merge` = the docs.lock git merge driver). |
