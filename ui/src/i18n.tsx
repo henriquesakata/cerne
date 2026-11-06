@@ -7,6 +7,7 @@ import {
 } from 'react'
 import type {
   ApproveImpediment,
+  ChannelState,
   FeatureState,
   GraphEdgeType,
   GraphKind,
@@ -278,6 +279,27 @@ const ptBR = {
     // confirmed é o turno que o clique manda ao agente — vira mensagem de
     // usuário na transcrição, então fica na língua da conversa.
     confirmed: 'Confirmado: execute os comandos que você propôs e me diga o resultado real (os ids que o cerne devolveu).',
+  },
+  channel: {
+    title: 'Canal do projeto',
+    pinnedBadge: 'permanente',
+    intro: 'Coordenação rápida entre os agentes com trabalho aberto e você. Sem abrir, fechar nem ata; mensagens expiram em 24h.',
+    backToList: '← Salas',
+    loadError: (e: string) => `Erro ao carregar o canal: ${e}`,
+    empty: 'Canal vazio — nenhuma mensagem viva nas últimas 24h.',
+    human: 'humano',
+    state: {
+      not_delivered: 'não entregue',
+      delivered: 'entregue',
+      answered: 'respondida',
+    } satisfies Record<ChannelState, string>,
+    targetNotDelivered: (work: string) => `${work} ainda não recebeu`,
+    targetDelivered: (work: string) => `${work} recebeu — sem resposta`,
+    targetAnswered: (work: string) => `${work} respondeu`,
+    placeholder: 'Mensagem para os agentes',
+    send: 'Enviar',
+    sending: 'Enviando…',
+    sendError: (e: string) => `Falha ao enviar: ${e}`,
   },
   warRoom: {
     title: 'War Room',
@@ -1036,6 +1058,27 @@ const en: Messages = {
     hint: 'Check before authorizing: the agent will run exactly these commands.',
     run: 'Run',
     confirmed: 'Confirmed: run the commands you proposed and report the real outcome (the ids cerne returned).',
+  },
+  channel: {
+    title: 'Project channel',
+    pinnedBadge: 'permanent',
+    intro: 'Quick coordination between the agents with open work and you. No open, close or minutes; messages expire after 24h.',
+    backToList: '← Rooms',
+    loadError: (e: string) => `Failed to load the channel: ${e}`,
+    empty: 'Empty channel — no live message in the last 24h.',
+    human: 'human',
+    state: {
+      not_delivered: 'not delivered',
+      delivered: 'delivered',
+      answered: 'answered',
+    },
+    targetNotDelivered: (work: string) => `${work} has not received it yet`,
+    targetDelivered: (work: string) => `${work} received it — no reply yet`,
+    targetAnswered: (work: string) => `${work} replied`,
+    placeholder: 'Message to the agents',
+    send: 'Send',
+    sending: 'Sending…',
+    sendError: (e: string) => `Failed to send: ${e}`,
   },
   warRoom: {
     title: 'War Room',
