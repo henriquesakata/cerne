@@ -3,9 +3,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -975,15 +977,53 @@ type wikiCompileResponse struct {
 // once, before the child would find the lock and exit 0 having done nothing.
 var wikiCompiling sync.Map
 
-// wikiCompileRunner runs `cerne compile --dir projDir` to completion and
-// returns its combined output. A var so tests fake it — under go test the
-// executable is the test binary (compilebg.go).
-var wikiCompileRunner = func(projDir string) ([]byte, error) {
+// wikiCompileTimeout bounds one on-demand recompile: a hung provider must not
+// pin the request, the button and the compile lock forever.
+// ponytail: one fixed 10 min for every project; a setting if real wikis
+// outgrow it.
+const wikiCompileTimeout = 10 * time.Minute
+
+// errWikiCompileTimeout: the recompile was killed at its deadline.
+var errWikiCompileTimeout = errors.New("wiki compile timed out")
+
+// wikiCompileRunner runs `cerne compile --dir projDir` to completion (or its
+// deadline) and returns its combined output. A var so tests fake it — under
+// go test the executable is the test binary (compilebg.go).
+var wikiCompileRunner = func(repoDir, projDir string) ([]byte, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	return wikiCompileCmd(exe, projDir).CombinedOutput()
+	return runBounded(wikiCompileCmd(exe, projDir), wikiCompileTimeout, compile.LockPath(repoDir))
+}
+
+// runBounded runs c (started by wikiCompileCmd, so it leads its own process
+// group) and returns its combined output. Past timeout it kills the whole
+// group and answers errWikiCompileTimeout; the compile lock the killed run
+// held — the pid it wrote is c's — is removed, since a SIGKILLed holder never
+// releases it and the retry would be busy until the lock went stale.
+func runBounded(c *exec.Cmd, timeout time.Duration, lockPath string) ([]byte, error) {
+	var out bytes.Buffer
+	c.Stdout, c.Stderr = &out, &out
+	// A process gone but its pipe held open (a grandchild the kill missed)
+	// must not hold Wait either.
+	c.WaitDelay = time.Second
+	if err := c.Start(); err != nil {
+		return nil, err
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		return out.Bytes(), err
+	case <-time.After(timeout):
+		killGroup(c.Process)
+		<-done
+		if data, err := os.ReadFile(lockPath); err == nil && strings.TrimSpace(string(data)) == strconv.Itoa(c.Process.Pid) {
+			_ = os.Remove(lockPath)
+		}
+		return out.Bytes(), fmt.Errorf("%w after %s", errWikiCompileTimeout, timeout)
+	}
 }
 
 // wikiCompileCmd is the on-demand compile child. Neither the request nor the
@@ -1022,11 +1062,11 @@ func handleWikiCompile(w http.ResponseWriter, repoDir, projDir string) {
 		writeJSON(w, http.StatusConflict, wikiCompileResponse{Busy: true})
 		return
 	}
-	out, err := wikiCompileRunner(projDir)
+	out, err := wikiCompileRunner(repoDir, projDir)
 	if err != nil {
 		msg := err.Error()
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if last := strings.TrimSpace(lines[len(lines)-1]); last != "" {
+		if last := strings.TrimSpace(lines[len(lines)-1]); last != "" && !errors.Is(err, errWikiCompileTimeout) {
 			msg = strings.TrimPrefix(last, "Error: ")
 		}
 		writeJSON(w, http.StatusInternalServerError, errorBody(msg))

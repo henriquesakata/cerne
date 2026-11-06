@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -235,12 +236,15 @@ func TestWikiIndexStaleWhenWikiOff(t *testing.T) {
 // never mounts the route.
 func TestWikiCompileEndpoint(t *testing.T) {
 	var ran []string
-	var fail bool
+	var fail, timeout bool
 	orig := wikiCompileRunner
-	wikiCompileRunner = func(projDir string) ([]byte, error) {
+	wikiCompileRunner = func(_, projDir string) ([]byte, error) {
 		ran = append(ran, projDir)
 		if fail {
 			return []byte("Compiling 1 page(s)…\nError: boom\n\n"), errors.New("exit status 1")
+		}
+		if timeout {
+			return []byte("Compiling 1 page(s)…\n"), fmt.Errorf("%w after 10m0s", errWikiCompileTimeout)
 		}
 		return []byte("Compiled 1 page(s).\n"), nil
 	}
@@ -271,6 +275,13 @@ func TestWikiCompileEndpoint(t *testing.T) {
 	var failed map[string]string
 	if rec := doJSON(t, h, http.MethodPost, "/api/wiki/compile", "", &failed); rec.Code != http.StatusInternalServerError || !strings.Contains(failed["error"], "boom") {
 		t.Fatalf("failed compile = %d %s, want 500 naming boom", rec.Code, rec.Body.String())
+	}
+
+	// C9: a run killed at its deadline is an error the banner shows with a retry.
+	fail, timeout = false, true
+	var timedOut map[string]string
+	if rec := doJSON(t, h, http.MethodPost, "/api/wiki/compile", "", &timedOut); rec.Code != http.StatusInternalServerError || !strings.Contains(timedOut["error"], "timed out after 10m0s") {
+		t.Fatalf("timed-out compile = %d %s, want 500 naming the deadline", rec.Code, rec.Body.String())
 	}
 
 	ran = nil
@@ -311,7 +322,7 @@ func TestWikiCompileBusy(t *testing.T) {
 	var mu sync.Mutex
 	runs := 0
 	orig := wikiCompileRunner
-	wikiCompileRunner = func(string) ([]byte, error) {
+	wikiCompileRunner = func(string, string) ([]byte, error) {
 		mu.Lock()
 		runs++
 		mu.Unlock()
