@@ -61,8 +61,8 @@ func renderProcess(out io.Writer, r stats.ProcessReport) {
 		}
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Excluded: %d delivered without a stamped cost · %d without a Gauntlet record (out of the returns guard only)\n",
-		r.ExcludedNoCost, r.ExcludedNoGauntlet)
+	fmt.Fprintf(out, "Excluded: %d delivered without a stamped cost · %d epic(s), features with children whose own cost is orchestration only"+
+		" · %d without a Gauntlet record (out of the returns guard only)\n", r.ExcludedNoCost, r.ExcludedEpic, r.ExcludedNoGauntlet)
 }
 
 func renderSide(out io.Writer, label string, s stats.Side) {
@@ -70,6 +70,9 @@ func renderSide(out io.Writer, label string, s stats.Side) {
 	var excl []string
 	if s.ExcludedNoCost > 0 {
 		excl = append(excl, fmt.Sprintf("%d without a stamped cost", s.ExcludedNoCost))
+	}
+	if s.ExcludedEpic > 0 {
+		excl = append(excl, fmt.Sprintf("%d epic(s)", s.ExcludedEpic))
 	}
 	if s.ExcludedNoGauntlet > 0 {
 		excl = append(excl, fmt.Sprintf("%d without a Gauntlet record", s.ExcludedNoGauntlet))

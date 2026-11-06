@@ -74,7 +74,7 @@ func TestStatsProcessText(t *testing.T) {
 		"before",
 		"after",
 		"verdict: inconclusivo — small sample (n=0 before, n=2 after",
-		"Excluded: 1 delivered without a stamped cost · 1 without a Gauntlet record",
+		"Excluded: 1 delivered without a stamped cost · 0 epic(s), features with children whose own cost is orchestration only · 1 without a Gauntlet record",
 		"2026-W10  3.3M  n=2 of 2 delivered",                       // C13: deliveries per week
 		"n=0 of 1 delivered (1 without a stamped cost)",            // C13: exclusions per side
 		"n=2 of 2 delivered (1 without a Gauntlet record)  median", // C13
@@ -120,6 +120,7 @@ const processGolden = `{
         "to": "2026-03-02T12:00:00Z",
         "delivered": 1,
         "excluded_no_cost": 1,
+        "excluded_epic": 0,
         "excluded_no_gauntlet": 0,
         "n": 0,
         "median": 0,
@@ -140,6 +141,7 @@ const processGolden = `{
         "to": "2026-03-30T12:00:00Z",
         "delivered": 2,
         "excluded_no_cost": 0,
+        "excluded_epic": 0,
         "excluded_no_gauntlet": 1,
         "n": 2,
         "median": 3284983.875,
@@ -162,6 +164,7 @@ const processGolden = `{
     }
   ],
   "excluded_no_cost": 1,
+  "excluded_epic": 0,
   "excluded_no_gauntlet": 1
 }
 `

@@ -182,3 +182,27 @@ func TestProcessPerfUnreadableResultErrors(t *testing.T) {
 		t.Fatalf("ProcessPerf over an unreadable result succeeded, want an error")
 	}
 }
+
+// TestProcessPerfExcludesEpics pins C12: a feature with children is an epic
+// whose own anchor holds only its orchestration — sampled, it would read as a
+// cheap independent delivery. It is excluded and counted, the children stay.
+func TestProcessPerfExcludesEpics(t *testing.T) {
+	repoDir := newPanelBackend(t)
+	seedDecision(t, repoDir, "D-0001", panelAt(0), domain.DecisionActive, []string{"process"}, []string{"metric"})
+	seedDelivered(t, repoDir, "E-0001", panelAt(5), stamped(t, "# E-0001\n", cost.Counters{Input: 200_000}))
+	for i, id := range []string{"F-0001", "F-0002"} {
+		seedDelivered(t, repoDir, id, panelAt(1+i), stamped(t, "# "+id+"\n", cost.Counters{Input: 9_000_000}))
+		f, _ := store.LoadFeature(repoDir, id)
+		f.Parent = "E-0001"
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature: %v", err)
+		}
+	}
+
+	r := mustProcessPerf(t, repoDir)
+	a := r.Markers[0].After
+	if r.ExcludedEpic != 1 || a.ExcludedEpic != 1 || a.N != 2 || a.Delivered != 3 || a.Median != 9_000_000 {
+		t.Fatalf("report = excluded_epic %d, after epic %d n %d delivered %d median %v, want 1 / 1 / 2 / 3 / 9M",
+			r.ExcludedEpic, a.ExcludedEpic, a.N, a.Delivered, a.Median)
+	}
+}

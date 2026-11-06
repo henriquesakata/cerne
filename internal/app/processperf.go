@@ -46,7 +46,11 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 		return stats.ProcessReport{}, err
 	}
 	fixes := map[string][]time.Time{}
+	epic := map[string]bool{}
 	for _, f := range feats {
+		if f.Parent != "" {
+			epic[f.Parent] = true
+		}
 		if f.Fixes != "" {
 			fixes[f.Fixes] = append(fixes[f.Fixes], f.CreatedAt)
 		}
@@ -63,6 +67,10 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 	}
 	var samples []stats.ProcessSample
 	for _, id := range ids {
+		if epic[id] { // its own anchor is orchestration only: out, counted (C12)
+			samples = append(samples, stats.ProcessSample{ID: id, CompletedAt: completed[id], Excluded: "epic"})
+			continue
+		}
 		body, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return stats.ProcessReport{}, fmt.Errorf("process panel: read the result of %s: %w", id, err)

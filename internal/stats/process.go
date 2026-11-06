@@ -39,12 +39,13 @@ const (
 )
 
 // ProcessSample is one delivered feature. Excluded names why it is out of the
-// cost sample ("no_cost": no anchor or an all-zero one) — it still counts as a
-// delivery of its side and week (C13).
+// cost sample ("no_cost": no anchor or an all-zero one; "epic": a feature with
+// children, whose own anchor is only its orchestration, C12) — it still counts
+// as a delivery of its side and week (C13).
 type ProcessSample struct {
 	ID          string
 	CompletedAt time.Time   // first feature.completed
-	Excluded    string      // "" (sampled) | "no_cost"
+	Excluded    string      // "" (sampled) | "no_cost" | "epic"
 	Raw         [4]int64    // input, cache_creation, cache_read, output — the F-0309 anchor
 	HasGauntlet bool        // false: out of the returns guard, never zero returns (crit. 5)
 	Returned    bool        // at least one "Rodada N — derrota"
@@ -76,6 +77,7 @@ type Side struct {
 	// subset shows next to its own numbers.
 	Delivered          int      `json:"delivered"`
 	ExcludedNoCost     int      `json:"excluded_no_cost"`
+	ExcludedEpic       int      `json:"excluded_epic"`
 	ExcludedNoGauntlet int      `json:"excluded_no_gauntlet"` // of N: out of the returns guard only
 	N                  int      `json:"n"`
 	Median             float64  `json:"median"`
@@ -120,6 +122,7 @@ type ProcessReport struct {
 	Weeks              []WeekCost     `json:"weeks"`
 	Markers            []MarkerReport `json:"markers"`
 	ExcludedNoCost     int            `json:"excluded_no_cost"`
+	ExcludedEpic       int            `json:"excluded_epic"`
 	ExcludedNoGauntlet int            `json:"excluded_no_gauntlet"` // samples out of the returns guard
 }
 
@@ -145,7 +148,7 @@ func ComputeProcess(samples []ProcessSample, markers []Marker, now time.Time) Pr
 	})
 	r := ProcessReport{Weeks: weeks(ss), Markers: make([]MarkerReport, 0, len(ms))}
 	all := side(ss, time.Time{}, time.Time{}, "", now)
-	r.ExcludedNoCost, r.ExcludedNoGauntlet = all.ExcludedNoCost, all.ExcludedNoGauntlet
+	r.ExcludedNoCost, r.ExcludedEpic, r.ExcludedNoGauntlet = all.ExcludedNoCost, all.ExcludedEpic, all.ExcludedNoGauntlet
 	if all.N == 0 {
 		r.Reason = "no feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp)"
 	}
@@ -328,8 +331,11 @@ func side(all []ProcessSample, from, to time.Time, cutBy string, now time.Time) 
 	ss := sampled(all)
 	s := Side{From: from, To: to, CutBy: cutBy, Delivered: len(all), N: len(ss)}
 	for _, x := range all {
-		if x.Excluded == "no_cost" {
+		switch x.Excluded {
+		case "no_cost":
 			s.ExcludedNoCost++
+		case "epic":
+			s.ExcludedEpic++
 		}
 	}
 	if len(ss) == 0 {
