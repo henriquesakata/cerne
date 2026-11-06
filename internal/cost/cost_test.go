@@ -30,10 +30,14 @@ type tmsg struct {
 	id, req string
 	model   string
 	agent   string
+	from    string // sessionId stamped on the line when not the file's (a resume copy)
 	c       Counters
 }
 
 func (m tmsg) line(sess string) string {
+	if m.from != "" {
+		sess = m.from
+	}
 	model := m.model
 	if model == "" {
 		model = "claude-opus-5-5"

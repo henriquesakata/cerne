@@ -142,6 +142,7 @@ type rawLine struct {
 	Type        string `json:"type"`
 	Timestamp   string `json:"timestamp"`
 	RequestID   string `json:"requestId"`
+	SessionID   string `json:"sessionId"`
 	IsSidechain bool   `json:"isSidechain"`
 	AgentID     string `json:"agentId"`
 	Message     struct {
@@ -162,7 +163,8 @@ var usageKey = []byte(`"usage"`)
 // writes one line per content block, each repeating the usage, so lines with
 // the same message.id + requestId are ONE message: the max per counter (the
 // last chunk carries the real output), the earliest ts, the rest from the
-// first line. <synthetic> messages and non-assistant lines are skipped; a file
+// first line. <synthetic> messages, non-assistant lines and lines stamped
+// with another session's id (resume copies) are skipped; a file
 // gone since the index is skipped, any other read failure is an error.
 func readSession(sess string, files []tfile) ([]msg, error) {
 	var msgs []msg
@@ -174,6 +176,11 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 			}
 			var l rawLine
 			if json.Unmarshal(line, &l) != nil || l.Type != "assistant" || l.Message.Usage == nil || l.Message.Model == "<synthetic>" {
+				return
+			}
+			// A resumed session's file repeats the original's lines under the
+			// original's sessionId: they count only where they were produced.
+			if l.SessionID != "" && l.SessionID != sess {
 				return
 			}
 			u := l.Message.Usage

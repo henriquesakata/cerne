@@ -196,3 +196,34 @@ func TestComputeLiveWinsUnlessSnapshotHasMore(t *testing.T) {
 		t.Fatalf("live with as many messages lost: %+v", r)
 	}
 }
+
+// TestResumeCopiesNotRecountedAfterPrune (C6): a resumed session's file
+// repeats the original's messages under the original's sessionId; once the
+// original is pruned and recovered from its snapshot, the copies must not
+// count again (as unattributed or otherwise) — each line counts only in the
+// session that produced it.
+func TestResumeCopiesNotRecountedAfterPrune(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	m1, m2 := tmsg{ts: at(2), id: "m1", req: "r", c: cc(1, 10, 100, 1000)}, tmsg{ts: at(3), id: "m2", req: "r", c: cc(2, 20, 200, 2000)}
+	writeSession(t, in.Roots[0], "orig", m1, m2)
+	c1, c2 := m1, m2
+	c1.from, c2.from = "orig", "orig"
+	m3 := tmsg{ts: at(20), id: "m3", req: "r", c: cc(4, 40, 400, 4000)}
+	writeSession(t, in.Roots[0], "resume", c1, c2, m3)
+	bindAt(t, in.CacheDir, "orig", "", "F-0001", at(1))
+	bindAt(t, in.CacheDir, "resume", "", "F-0002", at(10))
+	live := compute(t, in, "")
+
+	harvest(t, in, "orig", "", time.Now())
+	prune(t, in, "orig")
+	r := compute(t, in, "")
+	want := m1.c.add(m2.c).add(m3.c)
+	if got := r.Counters.add(r.Unattributed); got != want || r.Unattributed != (Counters{}) {
+		t.Fatalf("pruned total = %+v (unattributed %+v), want %+v once", got, r.Unattributed, want)
+	}
+	if r.Entities["F-0001"] != live.Entities["F-0001"] || r.Entities["F-0002"] != m3.c {
+		t.Fatalf("entities = %+v, live were %+v", r.Entities, live.Entities)
+	}
+}
