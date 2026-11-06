@@ -1,10 +1,12 @@
 package cost
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -156,5 +158,32 @@ func TestRollupRecursesLiveTree(t *testing.T) {
 		!reflect.DeepEqual(r.Children.Stamped, []string{"F-0002", "F-0003", "F-0004"}) ||
 		!reflect.DeepEqual(r.Children.Missing, []string{"F-0005 (implemented)"}) {
 		t.Fatalf("children = %+v", r.Children)
+	}
+}
+
+// TestAnchorSchemaIsV1 (C14): the anchor has its own v1 schema, decoupled from
+// Report — whatever the report carries (reason, gaps, rollup, views), the
+// stamped JSON holds exactly the v1 fields.
+func TestAnchorSchemaIsV1(t *testing.T) {
+	r := stampReport("F-0001", cc(1, 2, 3, 4), 2)
+	r.Reason, r.SessionsWithoutTranscript, r.SessionsRecovered = "x", 1, 1
+	r.Entities, r.OtherHarness = map[string]Counters{"F-0001": cc(1, 2, 3, 4)}, []string{"s"}
+	r.Children, r.Total = &Rollup{Stamped: []string{}, Missing: []string{}}, &Counters{}
+	m := anchorRe.FindStringSubmatch(mustStamp(t, resultDoc("F-0001"), r))
+	if m == nil {
+		t.Fatal("no anchor")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(m[1]), &fields); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	want := []string{"by_model", "counters", "first", "id", "last", "messages", "sessions", "sidechain", "unattributed"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("anchor keys = %v, want %v", keys, want)
 	}
 }

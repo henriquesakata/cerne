@@ -292,8 +292,8 @@ func TestCostStampRefusesWithoutSessions(t *testing.T) {
 
 // TestCostEpicRollupCLI (crit. 10): the epic report sums the stamped children,
 // names the ones without an anchor and totals own + children, in text and
-// JSON; an epic with stamped children stamps its total even with no session
-// of its own (so its parent's rollup reads it).
+// JSON; an epic with stamped children can be stamped with no session of its
+// own (so its parent's rollup does not list it as missing).
 func TestCostEpicRollupCLI(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
@@ -338,7 +338,8 @@ func TestCostEpicRollupCLI(t *testing.T) {
 	if out, err := execCerne(t, "cost", "E-0001", "--stamp", "--dir", projDir); err != nil || !strings.Contains(out, "E-0001 cost stamped") {
 		t.Fatalf("epic stamp: %v\n%s", err, out)
 	}
-	if res := readResult(t, repoDir, "E-0001"); !strings.Contains(res, `"total":{"input":7,"cache_creation":8,"cache_read":9,"output":10}`) {
-		t.Fatalf("epic anchor lacks its total:\n%s", res)
+	// Its anchor holds its own cost only: the rollup recurses, never reading a stored total.
+	if res := readResult(t, repoDir, "E-0001"); !strings.Contains(res, `<!-- cerne:cost v1 {"id":"E-0001","counters":{"input":0,`) || strings.Contains(res, `"total"`) {
+		t.Fatalf("epic anchor:\n%s", res)
 	}
 }

@@ -38,14 +38,33 @@ var (
 	anchorRe       = regexp.MustCompile(`(?m)^<!-- cerne:cost v1 (\{.*\}) -->$`)
 )
 
-// anchor reads the report a stamped result carries.
-func anchor(result string) (Report, bool) {
+// share is an entity's own token cost — and the v1 anchor schema, a type of
+// its own so a change to Report never moves the stamped format (C14).
+type share struct {
+	ID           string              `json:"id"`
+	Counters     Counters            `json:"counters"`
+	Sidechain    Counters            `json:"sidechain"`
+	ByModel      map[string]Counters `json:"by_model"`
+	Messages     int                 `json:"messages"`
+	Sessions     int                 `json:"sessions"`
+	First        string              `json:"first"`
+	Last         string              `json:"last"`
+	Unattributed Counters            `json:"unattributed"`
+}
+
+func shareOf(r Report) share {
+	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, Messages: r.Messages,
+		Sessions: r.Sessions, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
+}
+
+// anchor reads the v1 share a stamped result carries.
+func anchor(result string) (share, bool) {
 	m := anchorRe.FindStringSubmatch(result)
 	if m == nil {
-		return Report{}, false
+		return share{}, false
 	}
-	var r Report
-	return r, json.Unmarshal([]byte(m[1]), &r) == nil
+	var a share
+	return a, json.Unmarshal([]byte(m[1]), &a) == nil
 }
 
 // Stamp writes r's "## Custo" block into result: replacing the existing block
@@ -79,7 +98,7 @@ func countersLine(c Counters) string {
 // block renders the "## Custo" section — document content, so pt-BR like the
 // authoring prompts.
 func block(r Report) (string, error) {
-	anchorJSON, err := json.Marshal(r)
+	anchorJSON, err := json.Marshal(shareOf(r))
 	if err != nil {
 		return "", err
 	}
