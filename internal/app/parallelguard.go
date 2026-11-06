@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -116,8 +115,12 @@ func guardParallelStart(repoDir, projDir, featureID string, force bool) (forced 
 	if err != nil {
 		return false, nil, err
 	}
-	sess := os.Getenv("CERNE_SESSION")
-	foreign, ambiguous := classifyParallelWorks(works, featureID, myActors(), sess, sessionBindings(projDir), time.Now().UTC())
+	// ponytail: session evidence stays off. Since F-0325 every agent session
+	// exports CERNE_SESSION, and a binding file outlives its session — the
+	// same person after /clear or a restart has a new id, so feeding the
+	// evidence would turn the F-0208 ambiguous warning into a hard refusal
+	// (critic C14). Turn it back on when sessions carry liveness.
+	foreign, ambiguous := classifyParallelWorks(works, featureID, myActors(), "", nil, time.Now().UTC())
 	for _, p := range ambiguous {
 		warnings = append(warnings, fmt.Sprintf("warning: %s is active on %s (same actor, session unknown) — confirm nobody else is implementing it", p.ID, featureID))
 	}
@@ -132,22 +135,6 @@ func guardParallelStart(repoDir, projDir, featureID string, force bool) (forced 
 		lines = append(lines, p.line())
 	}
 	return false, nil, fmt.Errorf("%w (%s):\n%s\nstop and confirm with them before implementing; use --force only if you are taking it over", ErrActiveWorkElsewhere, featureID, strings.Join(lines, "\n"))
-}
-
-// sessionBindings reads every session→entity binding for the project as a map
-// (session id → bound id). Best effort: an unresolvable cache dir or an
-// unreadable sessions dir means no session evidence, which degrades the guard
-// to the actor comparison rather than failing the transition.
-func sessionBindings(projDir string) map[string]string {
-	cfg, _, err := project.LoadConfig(projDir)
-	if err != nil {
-		return nil
-	}
-	cacheDir, err := project.CacheDir(cfg.ProjectID)
-	if err != nil {
-		return nil
-	}
-	return sessionBindingsIn(cacheDir)
 }
 
 // sessionBindingsIn reads the session→entity bindings under cacheDir as is

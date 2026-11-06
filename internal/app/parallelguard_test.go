@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -203,5 +204,35 @@ func TestWorkStartRefuseTellsToStop(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "stop and confirm") || !strings.Contains(err.Error(), "outro-agente") {
 		t.Fatalf("refuse must name the other agent and tell to stop: %v", err)
+	}
+}
+
+// TestStartSameActorOtherSessionWarnsOnly (F-0325, critic C14): F-0325 now
+// exports CERNE_SESSION into every agent session. A same-actor work bound to
+// another session id — the same person after /clear or a restart — must stay
+// the F-0208 ambiguous warning, not turn into a hard refusal.
+func TestStartSameActorOtherSessionWarnsOnly(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "demo", Backend: origin}); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir, err := project.CacheDir("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", false)
+	if err := BindSession(cacheDir, "sess-before-clear", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_SESSION", "sess-after-clear")
+
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil)
+	if err != nil {
+		t.Fatalf("start refused: %v", err)
+	}
+	if out.To != domain.StateInDevelopment || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "W-0001") {
+		t.Fatalf("start = %+v, want in_development with one warning naming W-0001", out)
 	}
 }
