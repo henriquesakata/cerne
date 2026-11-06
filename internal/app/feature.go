@@ -34,6 +34,10 @@ var ErrNotCandidate = errors.New("the feature is past approval")
 // ErrParentNotFound is returned when a feature's parent (epic) does not exist.
 var ErrParentNotFound = errors.New("parent feature (epic) not found")
 
+// ErrFixesNotFound is returned when --fixes names a feature that does not exist
+// (F-0321): the correction link is refused before anything is written.
+var ErrFixesNotFound = errors.New("the feature it fixes was not found")
+
 // ErrParentTerminal is returned when the parent (epic) is in a terminal state
 // (superseded/rejected): new work is not filed under a dead epic.
 var ErrParentTerminal = errors.New("the parent feature (epic) is closed")
@@ -128,7 +132,14 @@ func CreateFeature(repoDir, projDir, title, module, parent string, facets, compo
 // duplicate-registration guard (F-0147) for a consciously distinct problem —
 // the exact-title guard (F-0121) is never bypassed.
 func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority)
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, "")
+}
+
+// CreateFeatureFixes is CreateFeatureWithSpec with the correction link (F-0321):
+// fixes names the delivered feature whose defect this one corrects, validated to
+// exist before anything is written (ErrFixesNotFound, wrapped).
+func CreateFeatureFixes(repoDir, projDir, title, module, parent, fixes string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, strings.TrimSpace(fixes))
 }
 
 // CreateEpicWithSpec creates a declared epic (E-, F-0203): a full feature
@@ -136,7 +147,7 @@ func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facet
 // that is known to decompose. Epic behavior itself stays structural (children),
 // never derived from the prefix.
 func CreateEpicWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force, owner, priority)
+	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force, owner, priority, "")
 }
 
 // CreateTaskWithSpec creates a task (T-, F-0203): an execution unit of a
@@ -147,15 +158,16 @@ func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, 
 	if strings.TrimSpace(parent) == "" {
 		return store.Feature{}, ErrParentRequired
 	}
-	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force, owner, priority)
+	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force, owner, priority, "")
 }
 
 // createFeatureCore is the shared creation flow behind F-/E-/T- (F-0203). The
 // prefix decides only the id sequence and the two task rules: born approved and
 // committed-parent required. Everything else — guards, stub, event, sync — is
 // identical across the three.
-func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
+func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string) (store.Feature, error) {
 	n, err := prepareFeature(prefix, title, module, parent, facets, components, specBody, force, owner, priority)
+	n.fixes = fixes
 	if err != nil {
 		return store.Feature{}, err
 	}
@@ -183,6 +195,7 @@ type newFeature struct {
 	facets, components                                       []string
 	force                                                    bool
 	fromIdea                                                 string // F-0312: the idea a promote mints it from
+	fixes                                                    string // F-0321: the feature this one corrects
 }
 
 func prepareFeature(prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (newFeature, error) {
@@ -206,7 +219,7 @@ func prepareFeature(prefix, title, module, parent string, facets, components []s
 // mint runs the guards, mints the id and writes entity, spec and event; it
 // returns the backend commit message. The caller holds the backend lock.
 func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
-	prefix, title, module, parent, specBody, force := n.prefix, n.title, n.module, n.parent, n.specBody, n.force
+	prefix, title, module, parent, specBody, force, fixes := n.prefix, n.title, n.module, n.parent, n.specBody, n.force, n.fixes
 	var f store.Feature
 	err := func() error {
 		proj, err := store.LoadProject(repoDir)
@@ -232,6 +245,11 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 				return err
 			}
 		}
+		if fixes != "" {
+			if err := validateFixes(repoDir, fixes); err != nil {
+				return err
+			}
+		}
 		state := domain.StateCandidate
 		if prefix == "T" {
 			// A task is born approved: its human gate is the parent PRD's, which
@@ -251,6 +269,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			Title:      title,
 			Module:     module,
 			Parent:     parent,
+			Fixes:      fixes,
 			State:      state,
 			Facets:     n.facets,
 			Components: n.components,
@@ -286,6 +305,9 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		payload := map[string]string{"title": title, "module": module}
 		if parent != "" {
 			payload["parent"] = parent
+		}
+		if fixes != "" {
+			payload["fixes"] = fixes
 		}
 		if forced {
 			// The guard saw live similars and --force overrode it (F-0147) —
@@ -382,6 +404,17 @@ func ValidateModule(module string, modules []string) error {
 		return fmt.Errorf("module %q does not exist in the project (modules: %s)", module, strings.Join(modules, ", "))
 	}
 	return nil
+}
+
+// validateFixes checks that the feature a correction fixes exists
+// (ErrFixesNotFound, wrapped). A terminal target is accepted: the fixed feature
+// is normally implemented — that is how its defect escaped.
+func validateFixes(repoDir, id string) error {
+	_, err := store.LoadFeature(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("%w: %s", ErrFixesNotFound, id)
+	}
+	return err
 }
 
 // validateParent checks that a non-empty parent is a usable epic for childID:
@@ -509,15 +542,17 @@ func RenameFeature(repoDir, projDir, id, newTitle string) error {
 	return err
 }
 
-// SetFeature changes a live feature's owner and/or priority in place, appends
+// SetFeature changes a live feature's owner, priority and/or fixes link in place, appends
 // a feature.set event, then commits, pushes and refreshes the docs.lock
 // snapshot (F-0204). Each field is replaced only when its set flag is true, so
 // a caller can update priority without touching owner (mirrors RetagFeature).
 // Priority is validated against the closed set before any write
 // (ErrInvalidPriority, wrapped); a terminal feature (domain.TitleEditable's
 // definition — implemented/done/rejected/superseded) is frozen (ErrFeatureFrozen,
-// wrapped); store.ErrNotFound (wrapped) for an unknown feature.
-func SetFeature(repoDir, projDir, id, owner, priority string, setOwner, setPriority bool) (store.Feature, error) {
+// wrapped); store.ErrNotFound (wrapped) for an unknown feature. A non-empty
+// fixes must name an existing feature (ErrFixesNotFound, wrapped, F-0321); an
+// empty one clears the link.
+func SetFeature(repoDir, projDir, id, owner, priority, fixes string, setOwner, setPriority, setFixes bool) (store.Feature, error) {
 	var f store.Feature
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -540,6 +575,16 @@ func SetFeature(repoDir, projDir, id, owner, priority string, setOwner, setPrior
 			}
 			f.Priority = np
 			payload["priority"] = f.Priority
+		}
+		if setFixes {
+			fixes = strings.TrimSpace(fixes)
+			if fixes != "" {
+				if err := validateFixes(repoDir, fixes); err != nil {
+					return "", err
+				}
+			}
+			f.Fixes = fixes
+			payload["fixes"] = fixes
 		}
 		f.UpdatedAt = time.Now().UTC()
 		if err := store.SaveFeature(repoDir, f); err != nil {

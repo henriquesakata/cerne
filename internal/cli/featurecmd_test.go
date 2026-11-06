@@ -460,3 +460,36 @@ func TestFeatureSet(t *testing.T) {
 		t.Fatalf("set on implemented feature succeeded, want error")
 	}
 }
+
+// TestFeatureFixesFlag pins F-0321's criteria 17-18 at the CLI: --fixes on
+// feature new and feature set writes the link, an empty set clears it, an
+// unknown target is refused with nothing written, and set with no flag names
+// --fixes among the options.
+func TestFeatureFixesFlag(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "feature", "new", "Entregue", "--context", "ctx de teste", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v", err)
+	}
+	if out, err := execCerne(t, "feature", "new", "Fix", "--context", "ctx de teste", "--fixes", "F-0001", "--dir", projDir); err != nil {
+		t.Fatalf("feature new --fixes: %v\noutput: %s", err, out)
+	}
+	if f, err := store.LoadFeature(repoDir, "F-0002"); err != nil || f.Fixes != "F-0001" {
+		t.Fatalf("F-0002 fixes = %q, %v, want F-0001", f.Fixes, err)
+	}
+	if out, err := execCerne(t, "feature", "set", "F-0002", "--fixes", "", "--dir", projDir); err != nil {
+		t.Fatalf("feature set --fixes \"\": %v\noutput: %s", err, out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Fixes != "" {
+		t.Fatalf("F-0002 fixes = %q after clear, want empty", f.Fixes)
+	}
+	if _, err := execCerne(t, "feature", "new", "Outro", "--context", "ctx de teste", "--fixes", "F-9999", "--dir", projDir); err == nil {
+		t.Fatalf("feature new --fixes F-9999 succeeded, want error")
+	}
+	if _, err := store.LoadFeature(repoDir, "F-0003"); err == nil {
+		t.Fatalf("F-0003 persisted despite the unknown --fixes target")
+	}
+	_, err := execCerne(t, "feature", "set", "F-0002", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "--fixes") {
+		t.Fatalf("set with no flag = %v, want an error naming --fixes", err)
+	}
+}

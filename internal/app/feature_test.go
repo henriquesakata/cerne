@@ -601,7 +601,7 @@ func TestSetFeature(t *testing.T) {
 	}
 
 	// Set owner only — priority stays empty.
-	f, err := SetFeature(repoDir, projDir, "F-0001", "ana", "", true, false)
+	f, err := SetFeature(repoDir, projDir, "F-0001", "ana", "", "", true, false, false)
 	if err != nil {
 		t.Fatalf("set owner: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestSetFeature(t *testing.T) {
 		t.Fatalf("after owner set = owner %q priority %q, want ana / \"\"", f.Owner, f.Priority)
 	}
 	// Set priority only — owner preserved.
-	f, err = SetFeature(repoDir, projDir, "F-0001", "", "p2", false, true)
+	f, err = SetFeature(repoDir, projDir, "F-0001", "", "p2", "", false, true, false)
 	if err != nil {
 		t.Fatalf("set priority: %v", err)
 	}
@@ -622,7 +622,7 @@ func TestSetFeature(t *testing.T) {
 		t.Fatalf("event = %+v, want feature.set with priority p2", last)
 	}
 	// Invalid priority leaves the feature untouched.
-	if _, err := SetFeature(repoDir, projDir, "F-0001", "", "p9", false, true); !errors.Is(err, domain.ErrInvalidPriority) {
+	if _, err := SetFeature(repoDir, projDir, "F-0001", "", "p9", "", false, true, false); !errors.Is(err, domain.ErrInvalidPriority) {
 		t.Fatalf("err = %v, want ErrInvalidPriority", err)
 	}
 	got, _ := store.LoadFeature(repoDir, "F-0001")
@@ -636,8 +636,109 @@ func TestSetFeature(t *testing.T) {
 		t.Fatalf("SaveFeature frozen: %v", err)
 	}
 	commitBackend(t, repoDir) // MutateAndSnapshot's pre-mutate hard reset drops uncommitted files
-	if _, err := SetFeature(repoDir, projDir, "F-0002", "ana", "", true, false); !errors.Is(err, ErrFeatureFrozen) {
+	if _, err := SetFeature(repoDir, projDir, "F-0002", "ana", "", "", true, false, false); !errors.Is(err, ErrFeatureFrozen) {
 		t.Fatalf("err = %v, want ErrFeatureFrozen", err)
+	}
+}
+
+// TestCreateFeatureWithFixes pins F-0321's criterion 17 on create: fixes is
+// stored on the entity and carried by the feature.created payload; a creation
+// without it leaves no fixes key.
+func TestCreateFeatureWithFixes(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Entregue", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if _, ok := evs[len(evs)-1].Payload["fixes"]; ok {
+		t.Fatalf("payload without fixes = %v, want no fixes key", evs[len(evs)-1].Payload)
+	}
+	f, err := CreateFeatureFixes(repoDir, projDir, "Corrige", "", "", "F-0001", nil, nil, "", false, "", "")
+	if err != nil {
+		t.Fatalf("CreateFeatureFixes: %v", err)
+	}
+	if f.ID != "F-0002" || f.Fixes != "F-0001" {
+		t.Fatalf("feature = %s fixes %q, want F-0002 fixes F-0001", f.ID, f.Fixes)
+	}
+	got, _ := store.LoadFeature(repoDir, "F-0002")
+	if got.Fixes != "F-0001" {
+		t.Fatalf("stored fixes = %q, want F-0001", got.Fixes)
+	}
+	evs, _ = store.ReadEvents(repoDir)
+	last := evs[len(evs)-1]
+	if last.Type != "feature.created" || last.EntityID != "F-0002" || last.Payload["fixes"] != "F-0001" {
+		t.Fatalf("event = %+v, want feature.created with fixes F-0001", last)
+	}
+}
+
+// TestSetFeatureFixes pins criterion 17 on set: fixes is written in place with
+// owner/priority preserved, and an empty value clears it — both on the payload.
+func TestSetFeatureFixes(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	for _, title := range []string{"Entregue", "Corrige"} {
+		if _, err := CreateFeature(repoDir, projDir, title, "", "", nil, nil); err != nil {
+			t.Fatalf("CreateFeature: %v", err)
+		}
+	}
+	if _, err := SetFeature(repoDir, projDir, "F-0002", "ana", "p1", "", true, true, false); err != nil {
+		t.Fatalf("set owner/priority: %v", err)
+	}
+	f, err := SetFeature(repoDir, projDir, "F-0002", "", "", "F-0001", false, false, true)
+	if err != nil {
+		t.Fatalf("set fixes: %v", err)
+	}
+	if f.Fixes != "F-0001" || f.Owner != "ana" || f.Priority != "p1" {
+		t.Fatalf("after set = fixes %q owner %q priority %q, want F-0001 / ana / p1", f.Fixes, f.Owner, f.Priority)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if last := evs[len(evs)-1]; last.Type != "feature.set" || last.Payload["fixes"] != "F-0001" {
+		t.Fatalf("event = %+v, want feature.set with fixes F-0001", last)
+	}
+	f, err = SetFeature(repoDir, projDir, "F-0002", "", "", "", false, false, true)
+	if err != nil {
+		t.Fatalf("clear fixes: %v", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, "F-0002"); f.Fixes != "" || got.Fixes != "" {
+		t.Fatalf("after clear = %q / stored %q, want empty", f.Fixes, got.Fixes)
+	}
+	evs, _ = store.ReadEvents(repoDir)
+	if v, ok := evs[len(evs)-1].Payload["fixes"]; !ok || v != "" {
+		t.Fatalf("clear payload = %v, want fixes: \"\"", evs[len(evs)-1].Payload)
+	}
+}
+
+// TestFixesUnknownFeatureRefused pins criterion 18: --fixes naming a missing
+// feature is ErrFixesNotFound and writes nothing; an implemented target (the
+// normal case — the defect shipped) is accepted.
+func TestFixesUnknownFeatureRefused(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if _, err := CreateFeature(repoDir, projDir, "Corrige", "", "", nil, nil); err != nil {
+		t.Fatalf("CreateFeature: %v", err)
+	}
+	featsBefore, _ := store.LoadAllFeatures(repoDir)
+	evsBefore, _ := store.ReadEvents(repoDir)
+	if _, err := CreateFeatureFixes(repoDir, projDir, "Outra", "", "", "F-9999", nil, nil, "", false, "", ""); !errors.Is(err, ErrFixesNotFound) {
+		t.Fatalf("create err = %v, want ErrFixesNotFound", err)
+	}
+	if _, err := SetFeature(repoDir, projDir, "F-0001", "", "", "F-9999", false, false, true); !errors.Is(err, ErrFixesNotFound) {
+		t.Fatalf("set err = %v, want ErrFixesNotFound", err)
+	}
+	featsAfter, _ := store.LoadAllFeatures(repoDir)
+	evsAfter, _ := store.ReadEvents(repoDir)
+	if len(featsAfter) != len(featsBefore) || len(evsAfter) != len(evsBefore) {
+		t.Fatalf("features %d→%d events %d→%d, want nothing written", len(featsBefore), len(featsAfter), len(evsBefore), len(evsAfter))
+	}
+	if got, _ := store.LoadFeature(repoDir, "F-0001"); got.Fixes != "" {
+		t.Fatalf("fixes = %q after refused set, want untouched", got.Fixes)
+	}
+
+	done := store.Feature{ID: "F-0002", Title: "Pronta", State: domain.StateImplemented}
+	if err := store.SaveFeature(repoDir, done); err != nil {
+		t.Fatalf("SaveFeature implemented: %v", err)
+	}
+	commitBackend(t, repoDir) // MutateAndSnapshot's pre-mutate hard reset drops uncommitted files
+	if _, err := CreateFeatureFixes(repoDir, projDir, "Corrige a pronta", "", "", "F-0002", nil, nil, "", false, "", ""); err != nil {
+		t.Fatalf("fixes on an implemented feature: %v, want accepted", err)
 	}
 }
 
