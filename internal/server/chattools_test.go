@@ -681,3 +681,59 @@ func TestChatCallsOutsideTheCardAreRefused(t *testing.T) {
 		t.Fatalf("codes = %v, want the card's command through the gate and the others refused", codes)
 	}
 }
+
+// TestChatRefusesCrossOrigin (F-0323 C2): the chat now writes, so a page of
+// another origin — or a text/plain "simple request" that skips the CORS
+// preflight — is refused before anything is built or run.
+func TestChatRefusesCrossOrigin(t *testing.T) {
+	h, _, _, bodies := toolTurnSetup(t, scripted(`{"verb":"zz-probe"}`, "ok"))
+	setRunVerb(t, func(context.Context, *cobra.Command, verbs.Call, verbs.Env) verbs.Result {
+		t.Fatal("a cross-origin request ran a verb")
+		return verbs.Result{}
+	})
+	for _, route := range []string{"/api/chat", "/api/chat/register", "/api/chat/note"} {
+		for _, hdr := range []map[string]string{
+			{"Origin": "https://evil.example", "Content-Type": "application/json"},
+			{"Content-Type": "text/plain;charset=UTF-8"},
+		} {
+			req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(confirmedBody))
+			for k, v := range hdr {
+				req.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("%s with %v = %d, want 403", route, hdr, rec.Code)
+			}
+		}
+	}
+	if len(*bodies) != 0 {
+		t.Fatalf("the model was called %d times", len(*bodies))
+	}
+}
+
+// TestServeChatHasNoExecChannel (F-0323 C2): the execution channel exists only
+// under the local `cerne ui`; mounted the way `cerne serve` mounts it, the chat
+// degrades honestly — no tools, no_exec, nothing run.
+func TestServeChatHasNoExecChannel(t *testing.T) {
+	_, repoDir, projDir, bodies := toolTurnSetup(t, scripted(`{"verb":"zz-probe"}`, "ok"))
+	setRunVerb(t, func(context.Context, *cobra.Command, verbs.Call, verbs.Env) verbs.Result {
+		t.Fatal("the remote chat ran a verb")
+		return verbs.Result{}
+	})
+	mux := http.NewServeMux()
+	mountDataRoutes(mux, "", func(h scopedHandler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) { h(w, r, repoDir, projDir, "proj-chat") }
+	}, true)
+	var got struct {
+		NoExec bool  `json:"no_exec"`
+		Runs   []any `json:"runs"`
+	}
+	doChatStream(t, mux, confirmedBody, &got)
+	if !got.NoExec || len(got.Runs) != 0 {
+		t.Fatalf("terminal = %+v, want no_exec and no runs", got)
+	}
+	if _, offered := (*bodies)[0]["tools"]; offered {
+		t.Fatalf("remote chat offered tools: %v", (*bodies)[0]["tools"])
+	}
+}

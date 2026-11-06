@@ -128,6 +128,12 @@ type chatResponse struct {
 // into a single Provider.Complete call — nothing is written to the backend
 // here (criterion 6); only handleChatRegister does.
 func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
+	// F-0323 C2: the chat executes writes — refuse the cross-site simple
+	// request a page of another origin can fire without a preflight.
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req chatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -171,12 +177,15 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// the budget covers chained cerne queries, not just one shot. F-0260: the
 	// confirmed turn — and only it — also gets the cerne creation commands.
 	// F-0323: built before the prompt, which depends on its execution channel.
-	prov, err := newAgentProvider(cfg.LLM, projDir, confirmed)
+	// F-0323 C2: the execution channel exists only under the local ui — the
+	// remote `cerne serve` never runs the catalog, in any mode.
+	remote := servedRemotely(r)
+	prov, err := newAgentProvider(cfg.LLM, projDir, confirmed && !remote)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	channel := execChannel(cfg.LLM.Mode, prov)
+	channel := execChannel(cfg.LLM.Mode, prov) && !remote
 
 	sysPrompt, err := app.BuildChatSystemPrompt(repoDir, projDir, cfg, channel)
 	if err != nil {
@@ -390,6 +399,10 @@ func dupConflictBody(err error) map[string]any {
 // apply. This is the only handler in the chat surface that touches the
 // backend, and only after the user's explicit confirmation click.
 func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	if !sameOriginJSON(r) { // F-0323 C2: a write route, same guard as the chat
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req chatRegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -477,6 +490,10 @@ type chatNoteRequest struct {
 // call must not be able to mint one. The note is born durable — domain
 // vocabulary and rejected scope do not expire with a feature (F-0052).
 func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	if !sameOriginJSON(r) { // F-0323 C2: a write route, same guard as the chat
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req chatNoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))

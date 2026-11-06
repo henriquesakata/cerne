@@ -1,6 +1,9 @@
 package server
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 // This file is the single source of truth for the cerne data API routes. The
 // three servers — single-project (newMux, used by tests), local multi-project
@@ -220,6 +223,23 @@ func mountDataRoutes(mux *http.ServeMux, prefix string, bind projectBinder, remo
 		if remoteOnly && !rt.remote {
 			continue
 		}
-		mux.HandleFunc(rt.method+" /api"+prefix+rt.pattern, bind(instrumented(rt)))
+		h := bind(instrumented(rt))
+		if remoteOnly {
+			h = markRemote(h)
+		}
+		mux.HandleFunc(rt.method+" /api"+prefix+rt.pattern, h)
 	}
 }
+
+type remoteKey struct{}
+
+// markRemote tags requests served by the remote `cerne serve`, so a handler
+// can withhold what only the local ui may do — the chat's execution channel
+// (F-0323 C2): a pod must not run the catalog as child processes.
+func markRemote(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h(w, r.WithContext(context.WithValue(r.Context(), remoteKey{}, true)))
+	}
+}
+
+func servedRemotely(r *http.Request) bool { return r.Context().Value(remoteKey{}) == true }
