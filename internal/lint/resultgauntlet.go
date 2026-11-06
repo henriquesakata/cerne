@@ -2,6 +2,7 @@ package lint
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -53,7 +54,10 @@ var (
 	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
 	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
 	// Recorded exemptions count as a complete record: no rounds exist to cite.
-	exemptionRe = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)\s*\(`)
+	// A round's outcome on a line of its own (C6): "Veredito: derrota",
+	// "Resultado: DERROTA." or a line that opens with the outcome word.
+	outcomeLineRe = regexp.MustCompile(`(?i)^(?:(?:veredito|resultado)[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
+	exemptionRe   = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)\s*\(`)
 )
 
 // gauntletSections returns the body of every "## Gauntlet" section, in order.
@@ -154,7 +158,7 @@ type gauntletRound struct {
 	n       int  // 0 = implicit round (section without a "Rodada N" anchor)
 	verdict bool // VEREDITO: A|B|EMPATE, or an outcome word
 	quote   bool // a quoted span with content inside the round's block
-	defeat  bool // the first outcome word on a "Rodada N" line is derrota
+	outcome int8 // 0 unread, 1 vitória/empate, 2 derrota: the anchor line's first outcome word before its citation, else the round's first outcome line
 }
 
 type gauntletRecord struct {
@@ -170,8 +174,9 @@ func parseGauntlet(section string) gauntletRecord {
 	var rec gauntletRecord
 	var blocks []*strings.Builder
 	var nums []int
-	var defeats []bool
-	var cur *strings.Builder // nil = outside any round block
+	var outcomes []int8 // aligned with blocks
+	var implicitOutcome int8
+	cur, curIdx := (*strings.Builder)(nil), -1 // the open round; nil/-1 = outside any
 	implicit := &strings.Builder{}
 	critic, criticList, criticIndent := false, false, 0
 	emphasis := strings.NewReplacer("*", "", "_", "", "\u00a0", " ")
@@ -216,18 +221,27 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {
 			n, _ := strconv.Atoi(m[1])
-			cur = nil
 			i := slices.Index(nums, n) // same number = same round
-			if i >= 0 {
-				cur = blocks[i]
-			} else {
-				cur = &strings.Builder{}
-				blocks, nums, defeats = append(blocks, cur), append(nums, n), append(defeats, false)
+			if i < 0 {
+				blocks, nums, outcomes = append(blocks, &strings.Builder{}), append(nums, n), append(outcomes, 0)
 				i = len(nums) - 1
 			}
-			// The group is vitória, derrota or empate: only derrota starts with d.
-			v := verdictRe.FindStringSubmatch(s)
-			defeats[i] = defeats[i] || (v != nil && strings.EqualFold(v[1][:1], "d"))
+			cur, curIdx = blocks[i], i
+			// The outcome is the line's head, before the judge's citation opens:
+			// a quote or a note after it ("uma vitória e uma derrota") is not it.
+			head := s
+			if q := strings.IndexAny(s, "\"“«"); q >= 0 {
+				head = s[:q]
+			}
+			outcomes[i] = max(outcomes[i], outcomeOf(verdictRe.FindStringSubmatch(head)))
+		} else if o := outcomeOf(outcomeLineRe.FindStringSubmatch(s)); o > 0 {
+			target := &implicitOutcome
+			if curIdx >= 0 {
+				target = &outcomes[curIdx]
+			}
+			if *target == 0 { // the round's first outcome line decides
+				*target = o
+			}
 		}
 		if cur != nil {
 			cur.WriteString(line + "\n")
@@ -236,35 +250,72 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 	}
 	if len(blocks) == 0 { // no anchor: the section itself is the one round
-		blocks, nums, defeats = []*strings.Builder{implicit}, []int{0}, []bool{false}
+		blocks, nums, outcomes = []*strings.Builder{implicit}, []int{0}, []int8{implicitOutcome}
 	}
 	for i, b := range blocks {
 		text := b.String()
-		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text), defeat: defeats[i]})
+		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text), outcome: outcomes[i]})
 	}
 	return rec
 }
 
 // GauntletRounds reads a result's own "## Gauntlet" record for the process
 // panel's returns guard (F-0321), with the same parser as
-// result-missing-gauntlet: hasGauntlet is false with no section or a recorded
-// exemption (out of the guard, never zero returns); derrotas counts the
-// distinct rounds whose "Rodada N" line opens with a derrota verdict.
+// result-missing-gauntlet. Rounds are the distinct "Rodada N" of every
+// section — an exempt bar's alternative-standard rounds included — or, with
+// none, the sections' implicit round (never an exemption's own prose).
+// derrotas counts the rounds read as derrota; with none read, more than one
+// round still means at least one return (derrota abre nova rodada).
+// hasGauntlet is false — out of the guard, never zero returns — with no round
+// or a lone round whose outcome cannot be read (C6).
 func GauntletRounds(result []byte) (hasGauntlet bool, derrotas int) {
-	sections := gauntletSections(stripHTMLComments(result))
-	defeated := map[int]bool{}
-	for _, section := range sections {
+	anchored := map[int]int8{}
+	implicit, hasImplicit := int8(0), false
+	for _, section := range gauntletSections(stripHTMLComments(result)) {
 		rec := parseGauntlet(section)
-		if rec.exempt {
-			return false, 0
-		}
 		for _, r := range rec.rounds {
-			if r.defeat {
-				defeated[r.n] = true
+			switch {
+			case r.n != 0:
+				anchored[r.n] = max(anchored[r.n], r.outcome)
+			case !rec.exempt:
+				implicit, hasImplicit = max(implicit, r.outcome), true
 			}
 		}
 	}
-	return len(sections) > 0, len(defeated)
+	rounds := slices.Collect(maps.Values(anchored))
+	if len(rounds) == 0 && hasImplicit {
+		rounds = []int8{implicit}
+	}
+	unread := 0
+	for _, o := range rounds {
+		switch o {
+		case 2:
+			derrotas++
+		case 0:
+			unread++
+		}
+	}
+	switch {
+	case derrotas > 0:
+		return true, derrotas
+	case unread > 0 && len(rounds) > 1:
+		return true, len(rounds) - 1
+	case unread > 0 || len(rounds) == 0:
+		return false, 0
+	}
+	return true, 0
+}
+
+// outcomeOf maps a verdict-word match to a round outcome: 2 derrota, 1
+// vitória or empate (the group's only words; only derrota starts with d), 0 none.
+func outcomeOf(v []string) int8 {
+	switch {
+	case v == nil:
+		return 0
+	case strings.EqualFold(v[1][:1], "d"):
+		return 2
+	}
+	return 1
 }
 
 func gauntletVerdict(text string) bool {
