@@ -190,3 +190,15 @@ func TestNextLeadsWithChannel(t *testing.T) {
 	projDir, repoDir, block := channelContactFixture(t)
 	assertLeadsWithChannel(t, repoDir, block, "next", "--dir", projDir)
 }
+
+// TestStatusActiveLeadsWithChannel (crit. 15): `status --active` — the agent's
+// lean view — opens with the block, even on the "No features yet" path; plain
+// `status` never carries it.
+func TestStatusActiveLeadsWithChannel(t *testing.T) {
+	projDir, repoDir, block := channelContactFixture(t)
+	t.Setenv("CERNE_SESSION", "sess-a")
+	if out, err := execCerne(t, "status", "--dir", projDir); err != nil || strings.Contains(out, "cerne channel:") {
+		t.Fatalf("plain status: %v\n%s", err, out)
+	}
+	assertLeadsWithChannel(t, repoDir, block, "status", "--active", "--dir", projDir)
+}
