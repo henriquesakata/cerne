@@ -12,6 +12,7 @@ import type {
   GraphEdgeType,
   GraphKind,
   LLMMode,
+  SettingScope,
   TransitionAction,
 } from './api'
 
@@ -47,6 +48,7 @@ const ptBR = {
     themeDark: 'Tema escuro',
     language: 'Idioma',
     versionTitle: 'Versão do cerne',
+    settings: 'Configurações',
   },
   notif: {
     aria: 'Notificações',
@@ -813,6 +815,49 @@ const ptBR = {
     retry: 'Tentar de novo',
     noProjects: 'Nenhum projeto registrado.',
   },
+  settings: {
+    title: 'Configurações',
+    project: 'Projeto',
+    search: 'Buscar configurações',
+    count: (shown: number, total: number) => {
+      const noun = total === 1 ? 'configuração' : 'configurações'
+      return shown === total ? `${total} ${noun}` : `${shown} de ${total} ${noun}`
+    },
+    noMatch: (q: string) => `Nenhuma configuração corresponde a “${q}”.`,
+    modified: 'Modificado',
+    modifiedTitle: (scope: string) => `Definido em ${scope}`,
+    effective: (v: string, from: string) => `Efetivo: ${v}, de ${from}`,
+    effectiveDefault: (v: string) => `Efetivo: ${v} (padrão)`,
+    defaultValue: (v: string) => `Padrão: ${v}`,
+    on: 'ligado',
+    off: 'desligado',
+    empty: '(vazio)',
+    hostGlobal: 'global do host',
+    hostGlobalTitle: 'Vale para todos os projetos deste host (settings.toml, fora de qualquer repositório).',
+    readOnly: 'Sem editor para este tipo na tela: edite no arquivo.',
+    loadError: (e: string) => `Erro ao carregar as configurações: ${e}`,
+    fileError: (file: string, e: string) => `Não foi possível ler ${file}: ${e}`,
+    scopes: {
+      project: 'Projeto',
+      host: 'Host',
+      default: 'Padrão',
+    } satisfies Record<SettingScope | 'default', string>,
+    // Títulos e descrições do registro chegam em inglês (D-0006); a tradução é
+    // indexada pelo texto-fonte (estilo gettext): texto novo ou alterado no
+    // servidor cai no inglês, nunca numa tradução velha.
+    text: {
+      'Channel name': 'Nome no canal',
+      "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.":
+        'Seu nome no canal permanente do projeto, nas mensagens enviadas pela UI. Vazio usa o seu nome de usuário do sistema.',
+      Graph: 'Grafo',
+      'Shows the Graph tab in the UI. Off hides it.': 'Mostra a aba Grafo na UI. Desligado a esconde.',
+      Mindmap: 'Mapa mental',
+      'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
+      Wiki: 'Wiki',
+      'Not wired yet (F-0316): off will stop compiling the wiki on push and counting its debt as pending work. Today it changes nothing.':
+        'Ainda não ligado (F-0316): desligado deixará de compilar a wiki no push e de contar a dívida dela como trabalho pendente. Hoje não muda nada.',
+    } as Record<string, string>,
+  },
 }
 
 export type Messages = typeof ptBR
@@ -845,6 +890,7 @@ const en: Messages = {
     themeDark: 'Dark theme',
     language: 'Language',
     versionTitle: 'cerne version',
+    settings: 'Settings',
   },
   notif: {
     aria: 'Notifications',
@@ -1599,6 +1645,35 @@ const en: Messages = {
     bootError: (e: string) => `Failed to load projects: ${e}`,
     retry: 'Try again',
     noProjects: 'No projects registered.',
+  },
+  settings: {
+    title: 'Settings',
+    project: 'Project',
+    search: 'Search settings',
+    count: (shown: number, total: number) => {
+      const noun = total === 1 ? 'setting' : 'settings'
+      return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`
+    },
+    noMatch: (q: string) => `No setting matches “${q}”.`,
+    modified: 'Modified',
+    modifiedTitle: (scope: string) => `Set in ${scope}`,
+    effective: (v: string, from: string) => `Effective: ${v}, from ${from}`,
+    effectiveDefault: (v: string) => `Effective: ${v} (default)`,
+    defaultValue: (v: string) => `Default: ${v}`,
+    on: 'on',
+    off: 'off',
+    empty: '(empty)',
+    hostGlobal: 'host-global',
+    hostGlobalTitle: 'Applies to every project on this host (settings.toml, outside any repository).',
+    readOnly: 'No editor for this type on screen: edit it in the file.',
+    loadError: (e: string) => `Could not load the settings: ${e}`,
+    fileError: (file: string, e: string) => `Could not read ${file}: ${e}`,
+    scopes: {
+      project: 'Project',
+      host: 'Host',
+      default: 'Default',
+    },
+    text: {},
   },
 }
 

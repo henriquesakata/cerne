@@ -20,6 +20,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchState: vi.fn(async () => state),
   fetchProjects: vi.fn(async () => []),
   search: vi.fn(async () => []),
+  fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
 }))
 
 // Os providers viram passthrough: o alvo aqui é o roteador e a montagem
@@ -72,5 +73,19 @@ describe('App — palette e rota de busca (F-0196)', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument())
     expect(search).not.toHaveBeenCalled()
+  })
+})
+
+describe('App — rota de Settings (F-0315)', () => {
+  it('#/settings monta a tela e a engrenagem da nav fica marcada como página atual', async () => {
+    window.location.hash = '#/settings'
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Configurações' })).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'Configurações' })
+    expect(link).toHaveAttribute('href', '#/settings')
+    expect(link).toHaveAttribute('aria-current', 'page')
+    // Settings não é seção de LINKS: nenhum link de seção fica ativo por fallback.
+    expect(screen.getByRole('link', { name: 'Dashboard' })).not.toHaveClass('active')
   })
 })

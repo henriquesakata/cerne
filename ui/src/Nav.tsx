@@ -52,6 +52,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/history')) return '#/history'
   if (hash.startsWith('#/activity')) return '#/activity'
   if (hash.startsWith('#/stats')) return '#/stats'
+  if (hash.startsWith('#/settings')) return '#/settings' // engrenagem, fora de LINKS
   return '#/' // dashboard (tela inicial, F-0132)
 }
 
@@ -65,6 +66,7 @@ export default function Nav({ hash }: { hash: string }) {
       </span>
       <NavLinks active={active} hash={hash} />
       <ProjectSelector />
+      <SettingsLink active={active === '#/settings'} />
       <NotificationBell />
       <LangToggle />
       <ThemeToggle />
@@ -234,6 +236,23 @@ function NavVersion() {
     <span className="nav-version" title={t.nav.versionTitle}>
       {v}
     </span>
+  )
+}
+
+// Engrenagem das configurações do projeto ativo (F-0315): no cluster da direita,
+// como na barra (VS Code), e não em LINKS, onde cairia quase sempre no "Mais".
+function SettingsLink({ active }: { active: boolean }) {
+  const { t } = useT()
+  return (
+    <a
+      href="#/settings"
+      className={active ? 'theme-toggle settings-link active' : 'theme-toggle settings-link'}
+      title={t.nav.settings}
+      aria-label={t.nav.settings}
+      aria-current={active ? 'page' : undefined}
+    >
+      ⚙
+    </a>
   )
 }
 

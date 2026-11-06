@@ -2865,3 +2865,60 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   padding: 0.4rem 1.25rem 1rem;
   overflow-y: auto;
 }
+
+/* settings (F-0315): lista derivada do registro, no molde da barra (VS Code
+   Settings): barra de "modificado" à esquerda, título + id, descrição, controle
+   e a linha de efetivo/padrão. Só tokens de tema. */
+.settings-link { color: var(--fg); text-decoration: none; }
+.settings-link.active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.settings-project { margin: 0.25rem 0 0; }
+.settings-search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 1rem 0 0.25rem;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.settings-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.settings-row {
+  padding: 0.7rem 0.9rem;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--border-soft);
+}
+.settings-row.modified { border-left-color: var(--accent); }
+.settings-row:focus-within { background: var(--surface-2); }
+.settings-row h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+.settings-row h2 code { font-weight: 400; user-select: all; }
+.settings-modified { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+.settings-desc { margin: 0 0 0.4rem; font-size: 0.88rem; color: var(--muted); }
+.settings-check { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.88rem; color: var(--muted); cursor: pointer; }
+.settings-check input { margin: 0.15rem 0 0; }
+.settings-text {
+  font: inherit;
+  font-size: 0.88rem;
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.settings-readonly { margin: 0; font-size: 0.88rem; }
+.settings-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0.45rem 0 0; font-size: 0.8rem; }

@@ -22,6 +22,7 @@ import Activity from './Activity'
 import Dashboard from './Dashboard'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import Channel from './Channel'
+import Settings from './Settings'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
@@ -108,6 +109,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/stats') return <StatsPage />
   if (hash === '#/activity') return <Activity />
   if (hash === '#/manage') return <Manage />
+  if (hash === '#/settings') return <Settings />
   if (hash === '#/new') return <NewFeature />
   if (hash === '#/kanban') return <Kanban />
   if (hash === '#/backlog') return <Backlog />
