@@ -276,10 +276,13 @@ A pending (`P-NNNN`) is a **known debt of a concrete delivery** — "case Y of F
 
 ## Ideas (raw material, F-0312)
 
+An idea (`I-NNNN`) is **not a demand**: a candidate is a demand we already decided is worth evaluating; an idea is raw material nobody has evaluated yet ("maybe one day X"). Capturing one costs nothing, and it stays outside the funnel by design — it never appears in `cerne lint`, `next`, `status`, `stats`, `brief`, the compiled wiki, the graph, the board/kanban, the Backlog's candidates or the activity heatmap. Don't register raw material as a `candidate` (that drags the full spec + tags package and pollutes the funnel), and don't leave it as a `// TODO`: capture it as an idea.
+
 - **Capture:** `cerne idea new "<text>" [--facet <f>] [--component <c>]` mints `I-NNNN` (active) with nothing else required — no spec, module, work or tags.
 - **Read:** `cerne idea list` (active only, newest first: id, date, state, first line; `--all` adds dropped and promoted ideas with the reason or the feature; `--search <term>` filters by text, case- and accent-insensitive; `--json`). `cerne idea show I-NNNN` (or `cerne show I-NNNN`, `--json` on both) prints one.
 - **Drop:** `cerne idea drop I-NNNN [--reason "<why>"]` — active -> dropped; the record is kept and shows in `--all` with the reason. Terminal.
-- **Promote:** `cerne idea promote I-NNNN [--module <m>] [--force]` — creates a **candidate** feature titled by the idea's first line, inheriting its tags, with the text as the spec's context under `**Origem:** ideia [[I-NNNN]]`; the idea records `promoted_to` and leaves the active list. Prints both ids. A dropped or promoted idea is refused, naming its state and feature.
+- **Promote:** `cerne idea promote I-NNNN [--module <m>] [--force]` — creates a **candidate** feature titled by the idea's first line, inheriting its tags, with the text as the spec's context under `**Origem:** ideia [[I-NNNN]]`; the idea records `promoted_to` and leaves the active list. Prints both ids. A dropped or promoted idea is refused, naming its state and feature. From there the candidate is a regular demand: complete its spec and tags in the same act (the candidate rules apply after the promotion, never to the idea), and fix a poor derived title with `cerne feature rename`.
+- **On demand only (agents):** ideas are never in the automatic context — not in the chat's priming, the roster or retrieved search results — so never pull ideas in unasked. Only when the user asks for ideas on a subject, run `cerne idea list --search "<term>"` and cite the `I-` ids you used.
 
 ## Permanent channel (F-0325): quick coordination, no ceremony
 
