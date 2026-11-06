@@ -613,3 +613,28 @@ describe('Settings — a linha diz o escopo em que age (F-0315, críticas C10 e 
     expect(within(row('Grafo')).queryByText('Arquivo:')).toBeNull()
   })
 })
+
+describe('Settings — chave só-host grava e redefine no host (F-0315, crítica C11)', () => {
+  const hostOnly = () =>
+    fixture({
+      settings: [
+        ...fixture().settings,
+        key({ id: 'test.hostflag', title: 'Host flag', scopes: ['host'], value: true, origin: 'host', stored: { host: true } }),
+      ],
+    })
+
+  it('com Projeto selecionado, o checkbox de uma chave só-host grava no host', async () => {
+    fetchSettings.mockResolvedValue(hostOnly())
+    render(<Settings />)
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Host flag' })).getByRole('checkbox'))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('test.hostflag', 'host', false))
+  })
+
+  it('com Projeto selecionado, o redefinir de uma chave só-host remove do host', async () => {
+    fetchSettings.mockResolvedValue(hostOnly())
+    render(<Settings />)
+    const flag = await screen.findByRole('listitem', { name: 'Host flag' })
+    fireEvent.click(within(flag).getByRole('button', { name: 'Redefinir em Host (global)' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('test.hostflag', 'host'))
+  })
+})
