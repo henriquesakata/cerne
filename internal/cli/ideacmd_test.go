@@ -301,3 +301,21 @@ func TestIdeaNewJoinsWordsAndHintsDoubleDash(t *testing.T) {
 		t.Fatalf("text after -- = %q, want '-x ideia'", i.Text)
 	}
 }
+
+// C9: an idea whose first line equals a live feature's title can still be
+// promoted, under a title the caller gives.
+func TestIdeaPromoteTitleForAnExactDuplicate(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ideaCmd(t, projDir, "new", "Mesmo texto")
+	ideaCmd(t, projDir, "new", "Mesmo texto")
+	ideaCmd(t, projDir, "promote", "I-0001")
+	if _, err := execCerne(t, "idea", "promote", "I-0002", "--force", "--dir", projDir); err == nil {
+		t.Fatal("an exact-duplicate title was promoted")
+	}
+	ideaCmd(t, projDir, "promote", "I-0002", "--title", "Mesmo texto, variante B", "--force")
+	i, _ := store.LoadIdea(repoDir, "I-0002")
+	f, err := store.LoadFeature(repoDir, i.PromotedTo)
+	if err != nil || f.Title != "Mesmo texto, variante B" || f.FromIdea != "I-0002" {
+		t.Fatalf("promoted feature = %+v, %v; want the given title, from I-0002", f, err)
+	}
+}

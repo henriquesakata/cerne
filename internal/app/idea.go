@@ -155,9 +155,11 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 // idea's tags are inherited. The idea then records promoted_to. Checking the
 // idea, minting the feature and marking the idea are ONE mutation under the
 // backend lock (C1): a racing drop either closes the idea first — the promote
-// is refused, nothing created — or finds it already promoted. module and
-// force go to the feature core (ValidateModule, the F-0147 guard).
-func PromoteIdea(repoDir, projDir, id, module string, force bool) (store.Idea, store.Feature, error) {
+// is refused, nothing created — or finds it already promoted. A non-blank
+// title replaces the derived one (C9: an idea whose first line is a live
+// feature's exact title). module and force go to the feature core
+// (ValidateModule, the F-0147 guard).
+func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.Idea, store.Feature, error) {
 	id, err := CanonicalIdeaID(id)
 	if err != nil {
 		return store.Idea{}, store.Feature{}, err
@@ -169,11 +171,12 @@ func PromoteIdea(repoDir, projDir, id, module string, force bool) (store.Idea, s
 		if i, err = loadActiveIdea(repoDir, id); err != nil {
 			return "", err
 		}
-		title := ""
-		for _, l := range strings.Split(i.Text, "\n") {
-			if l = strings.TrimSpace(l); l != "" {
-				title = truncateDraftRunes(l, 80)
-				break
+		if title = strings.TrimSpace(title); title == "" {
+			for _, l := range strings.Split(i.Text, "\n") {
+				if l = strings.TrimSpace(l); l != "" {
+					title = truncateDraftRunes(l, 80)
+					break
+				}
 			}
 		}
 		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), i.Text)

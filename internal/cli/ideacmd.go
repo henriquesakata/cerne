@@ -177,7 +177,7 @@ func newIdeaDropCmd(dir *string) *cobra.Command {
 }
 
 func newIdeaPromoteCmd(dir *string) *cobra.Command {
-	var module string
+	var title, module string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "promote <id>",
@@ -191,7 +191,7 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], module, force)
+			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], title, module, force)
 			if err != nil {
 				return err
 			}
@@ -199,6 +199,7 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&title, "title", "", "the feature's title (default: the idea's first line) — for an idea that reads exactly like a live feature")
 	cmd.Flags().StringVar(&module, "module", "", "module of the created feature (required when the project has 2+ modules)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the created feature's duplicate-registration guard (F-0147)")
 	return cmd

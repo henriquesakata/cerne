@@ -83,7 +83,7 @@ func handlePromoteIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir,
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	i, f, err := app.PromoteIdea(repoDir, projDir, id, req.Module, req.Force)
+	i, f, err := app.PromoteIdea(repoDir, projDir, id, "", req.Module, req.Force)
 	if err != nil {
 		writeIdeaError(w, err)
 		return
