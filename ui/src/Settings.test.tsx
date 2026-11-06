@@ -343,27 +343,34 @@ describe('Settings — edição por escopo (F-0315)', () => {
   })
 })
 
+// topFile: o "Arquivo:" do topo (escopo selecionado), fora das linhas — uma
+// linha que grava em outro escopo mostra o seu próprio.
+const topFile = () => screen.queryAllByText('Arquivo:').find((e) => e.closest('li') === null)
+
 describe('Settings — escape para o arquivo cru (F-0315, barra R-0042)', () => {
   it('mostra o arquivo do escopo selecionado, copiável, e troca com o seletor', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     render(<Settings />)
     await screen.findByRole('listitem', { name: 'Grafo' })
-    expect(screen.getByText('Arquivo:')).toBeInTheDocument()
+    expect(topFile()).toBeInTheDocument()
     expect(screen.getByText('/repo/.cernerc')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Copiar bloco de código' }))
+    fireEvent.click(within(topFile()!.parentElement!).getByRole('button', { name: 'Copiar bloco de código' }))
     expect(writeText).toHaveBeenCalledWith('/repo/.cernerc')
 
     fireEvent.click(within(scopeGroup()).getByRole('button', { name: /Host/ }))
-    expect(screen.getByText('/home/u/.config/cerne/settings.toml')).toBeInTheDocument()
-    expect(screen.queryByText('/repo/.cernerc')).toBeNull()
+    const top = topFile()!.parentElement!
+    expect(within(top).getByText('/home/u/.config/cerne/settings.toml')).toBeInTheDocument()
+    expect(within(top).queryByText('/repo/.cernerc')).toBeNull()
+    // test.count só aceita Projeto: em Host, a linha mostra o arquivo em que ela vive.
+    expect(within(row('Retry count')).getByText('/repo/.cernerc')).toBeInTheDocument()
   })
 
   it('sem arquivo para o escopo (fora de um projeto), não há bloco', async () => {
     fetchSettings.mockResolvedValue(fixture({ files: { host: '/home/u/.config/cerne/settings.toml' } }))
     render(<Settings />)
     await screen.findByRole('listitem', { name: 'Grafo' })
-    expect(screen.queryByText('Arquivo:')).toBeNull()
+    expect(topFile()).toBeUndefined()
   })
 
   it('valor inválido guardado num escopo é dito na linha — é onde o usuário vai ao arquivo', async () => {
@@ -589,5 +596,20 @@ describe('Settings — valor inválido visível e removível (F-0315, crítica C
     fireEvent.click(within(wiki).getByRole('button', { name: 'Editar em Host' }))
     fireEvent.click(within(row('Wiki')).getByRole('button', { name: 'Remover valor inválido' }))
     await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('wiki.enabled', 'host'))
+  })
+})
+
+describe('Settings — a linha diz o escopo em que age (F-0315, críticas C10 e C18)', () => {
+  it('chave só-host com Projeto selecionado: o redefinir nomeia Host (global) e o arquivo é o do host', async () => {
+    fetchSettings.mockResolvedValue(withKey('channel.human_name', { value: 'Ana', origin: 'host', stored: { host: 'Ana' } }))
+    render(<Settings />)
+    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
+    expect(within(scopeGroup()).getByRole('button', { name: 'Projeto' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(channel).queryByRole('button', { name: 'Redefinir neste escopo' })).toBeNull()
+    expect(within(channel).getByRole('button', { name: 'Redefinir em Host (global)' })).toBeInTheDocument()
+    expect(within(channel).getByText('Arquivo:')).toBeInTheDocument()
+    expect(within(channel).getByText('/home/u/.config/cerne/settings.toml')).toBeInTheDocument()
+    // Linhas que gravam no escopo selecionado não repetem o arquivo do topo.
+    expect(within(row('Grafo')).queryByText('Arquivo:')).toBeNull()
   })
 })

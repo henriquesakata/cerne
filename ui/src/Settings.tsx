@@ -375,6 +375,14 @@ function SettingRow({
           {ws !== scope && <span>{ts.writesTo(label(ws))}</span>}
         </p>
       )}
+      {/* The top escape shows the selected scope's file; a row writing
+          elsewhere shows its own (critic C18). */}
+      {ws !== scope && files[ws] && (
+        <div className="settings-file">
+          <span>{ts.file}</span>
+          <FixBlock command={files[ws]} />
+        </div>
+      )}
       {control}
       {/* A stored value the resolution skipped (critic C9): said in text —
           scope, file and value — and removable in the scope being edited;
@@ -416,7 +424,8 @@ function SettingRow({
             aria-disabled={lock}
             onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
           >
-            {ts.reset}
+            {/* Named when it acts outside the selected scope (critic C10). */}
+            {ws === scope ? ts.reset : ts.resetIn(label(ws))}
           </button>
         )}
       </p>

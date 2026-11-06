@@ -849,6 +849,7 @@ const ptBR = {
     editIn: (scope: string) => `Editar em ${scope}`,
     writesTo: (scope: string) => `Grava em ${scope}`,
     reset: 'Redefinir neste escopo',
+    resetIn: (scope: string) => `Redefinir em ${scope}`,
     writeError: (e: string) => `Não foi possível gravar: ${e}`,
     // Recusas conhecidas do servidor (F-0314), pelo status (crítica C17).
     refusals: {
@@ -1703,6 +1704,7 @@ const en: Messages = {
     editIn: (scope: string) => `Edit in ${scope}`,
     writesTo: (scope: string) => `Writes to ${scope}`,
     reset: 'Reset in this scope',
+    resetIn: (scope: string) => `Reset in ${scope}`,
     writeError: (e: string) => `Could not save: ${e}`,
     refusals: {
       busy: (lock: string) =>
