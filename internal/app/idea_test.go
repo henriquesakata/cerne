@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -309,6 +310,42 @@ func TestListIdeasSearchEveryWord(t *testing.T) {
 		}
 		if err != nil || !slices.Equal(ids, want) {
 			t.Fatalf("search %q = %v, %v; want %v", term, ids, err, want)
+		}
+	}
+}
+
+// C1: promote racing drop. Checking the state, minting the candidate and
+// marking the idea happen in ONE mutation under the backend lock, so exactly
+// one side wins and a lost promote never leaves an orphan candidate (the old
+// two-step promote did, about one round in six).
+func TestPromoteIdeaRaceDropNoOrphan(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	for n := 0; n < 20; n++ {
+		i, err := CreateIdea(repoDir, projDir, fmt.Sprintf("alvo de corrida %d", n), nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, _ := store.LoadAllFeatures(repoDir)
+		var perr, derr error
+		var f store.Feature
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); _, f, perr = PromoteIdea(repoDir, projDir, i.ID, "", true) }()
+		go func() { defer wg.Done(); _, derr = DropIdea(repoDir, projDir, i.ID, "corrida") }()
+		wg.Wait()
+		stored, _ := store.LoadIdea(repoDir, i.ID)
+		after, _ := store.LoadAllFeatures(repoDir)
+		switch {
+		case perr == nil && errors.Is(derr, ErrIdeaNotActive):
+			if stored.State != domain.IdeaPromoted || stored.PromotedTo != f.ID || len(after) != len(before)+1 {
+				t.Fatalf("round %d: promote won but idea = %+v, features %d -> %d", n, stored, len(before), len(after))
+			}
+		case derr == nil && errors.Is(perr, ErrIdeaNotActive):
+			if stored.State != domain.IdeaDropped || len(after) != len(before) {
+				t.Fatalf("round %d: drop won but left %d orphan candidate(s) (promote err: %v)", n, len(after)-len(before), perr)
+			}
+		default:
+			t.Fatalf("round %d: promote err %v, drop err %v — want exactly one winner", n, perr, derr)
 		}
 	}
 }

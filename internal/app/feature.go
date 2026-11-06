@@ -155,17 +155,7 @@ func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, 
 // committed-parent required. Everything else — guards, stub, event, sync — is
 // identical across the three.
 func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return store.Feature{}, fmt.Errorf("the feature title cannot be empty")
-	}
-	normFacets, err := domain.NormalizeFacets(facets)
-	if err != nil {
-		return store.Feature{}, err
-	}
-	normComponents := domain.NormalizeComponents(components)
-	owner = strings.TrimSpace(owner)
-	normPriority, err := domain.NormalizePriority(priority)
+	n, err := prepareFeature(prefix, title, module, parent, facets, components, specBody, force, owner, priority)
 	if err != nil {
 		return store.Feature{}, err
 	}
@@ -174,28 +164,71 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 	// concurrent local process can neither sweep the half-written state into
 	// its own commit nor mint the same id.
 	var f store.Feature
-	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	err = MutateAndSnapshot(repoDir, projDir, func() (msg string, err error) {
+		f, msg, err = n.mint(repoDir)
+		return msg, err
+	})
+	if err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
+// newFeature is a creation request already normalized outside the lock;
+// mint writes it inside the caller's critical section, so a caller with its
+// own mutation (an idea's promotion, F-0312) creates the feature atomically
+// with its other writes.
+type newFeature struct {
+	prefix, title, module, parent, specBody, owner, priority string
+	facets, components                                       []string
+	force                                                    bool
+}
+
+func prepareFeature(prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (newFeature, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return newFeature{}, fmt.Errorf("the feature title cannot be empty")
+	}
+	normFacets, err := domain.NormalizeFacets(facets)
+	if err != nil {
+		return newFeature{}, err
+	}
+	normPriority, err := domain.NormalizePriority(priority)
+	if err != nil {
+		return newFeature{}, err
+	}
+	return newFeature{prefix: prefix, title: title, module: module, parent: parent, specBody: specBody,
+		owner: strings.TrimSpace(owner), priority: normPriority, facets: normFacets,
+		components: domain.NormalizeComponents(components), force: force}, nil
+}
+
+// mint runs the guards, mints the id and writes entity, spec and event; it
+// returns the backend commit message. The caller holds the backend lock.
+func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
+	prefix, title, module, parent, specBody, force := n.prefix, n.title, n.module, n.parent, n.specBody, n.force
+	var f store.Feature
+	err := func() error {
 		proj, err := store.LoadProject(repoDir)
 		if err != nil {
-			return "", err
+			return err
 		}
 		if err := ValidateModule(module, proj.Modules); err != nil {
-			return "", err
+			return err
 		}
 		if err := checkDuplicateTitle(repoDir, title); err != nil {
-			return "", err
+			return err
 		}
 		forced, err := guardRegistration(repoDir, title, force)
 		if err != nil {
-			return "", err
+			return err
 		}
 		id, err := store.NextID(repoDir, prefix)
 		if err != nil {
-			return "", err
+			return err
 		}
 		if parent != "" {
 			if err := validateParent(repoDir, id, parent); err != nil {
-				return "", err
+				return err
 			}
 		}
 		state := domain.StateCandidate
@@ -204,10 +237,10 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 			// therefore must be committed (past candidacy) itself.
 			p, err := store.LoadFeature(repoDir, parent)
 			if err != nil {
-				return "", err
+				return err
 			}
 			if p.State == domain.StateCandidate {
-				return "", fmt.Errorf("%w: %s — approve the PRD before decomposing it", ErrParentNotCommitted, parent)
+				return fmt.Errorf("%w: %s — approve the PRD before decomposing it", ErrParentNotCommitted, parent)
 			}
 			state = domain.StateApproved
 		}
@@ -218,22 +251,22 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 			Module:     module,
 			Parent:     parent,
 			State:      state,
-			Facets:     normFacets,
-			Components: normComponents,
-			Owner:      owner,
-			Priority:   normPriority,
+			Facets:     n.facets,
+			Components: n.components,
+			Owner:      n.owner,
+			Priority:   n.priority,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
-			return "", err
+			return err
 		}
 		if strings.TrimSpace(specBody) != "" {
 			if err := writeSpecBody(repoDir, id, specBody); err != nil {
-				return "", err
+				return err
 			}
 		} else if err := writeSpecStub(repoDir, id, title); err != nil {
-			return "", err
+			return err
 		}
 		// F-0235: a parent gaining its first (or another) child is decomposition —
 		// scaffold its plan-with-execution-map now, not only at approve (F-0213),
@@ -242,10 +275,10 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 		if parent != "" {
 			p, err := store.LoadFeature(repoDir, parent)
 			if err != nil {
-				return "", err
+				return err
 			}
 			if err := writePlanStub(repoDir, parent, p.Title); err != nil {
-				return "", err
+				return err
 			}
 		}
 		payload := map[string]string{"title": title, "module": module}
@@ -258,15 +291,12 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 			payload["guard"] = "forced"
 		}
 		ev := domain.NewEvent(id, "feature.created", payload, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
-	})
+		return store.AppendEvent(repoDir, ev)
+	}()
 	if err != nil {
-		return store.Feature{}, err
+		return store.Feature{}, "", err
 	}
-	return f, nil
+	return f, fmt.Sprintf("cerne: create %s (%s)", f.ID, title), nil
 }
 
 // RetagFeature sets the tag axes of a feature in the backend clone at repoDir.
