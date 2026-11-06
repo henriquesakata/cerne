@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,32 @@ func newHookChannelCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&point, "point", "session-start", "contact point: session-start|subagent")
+	return cmd
+}
+
+// newHookEnvelopeCmd wraps stdin text in the additionalContext envelope of
+// --event, built with encoding/json: a shell hook that only has text (the
+// SubagentStart script) never hand-escapes JSON, so a control character in a
+// channel message cannot break the envelope (critic C1).
+func newHookEnvelopeCmd() *cobra.Command {
+	var event string
+	cmd := &cobra.Command{
+		Use:    "envelope",
+		Short:  "Hook plumbing: wrap stdin text in a hookSpecificOutput additionalContext envelope (F-0325)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			text, err := io.ReadAll(cmd.InOrStdin())
+			if err != nil {
+				return err
+			}
+			var c sessionContext
+			c.HookSpecificOutput.HookEventName = event
+			c.HookSpecificOutput.AdditionalContext = string(text)
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(c)
+		},
+	}
+	cmd.Flags().StringVar(&event, "event", "SubagentStart", "hookEventName of the envelope")
 	return cmd
 }
 

@@ -33,11 +33,7 @@ if [ -n "$channel" ]; then
 $channel"
 fi
 
-# JSON-escape with bash parameter expansion only — no jq dependency.
-ctx=${ctx//\\/\\\\}
-ctx=${ctx//\"/\\\"}
-ctx=${ctx//$'\r'/}
-ctx=${ctx//$'\t'/\\t}
-ctx=${ctx//$'\n'/\\n}
-
-printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' "$ctx"
+# The JSON envelope is built in Go (encoding/json): every control character a
+# channel message may carry is escaped, so the envelope is always valid.
+printf '%s' "$ctx" | cerne hook envelope --event SubagentStart 2>/dev/null || true
+exit 0

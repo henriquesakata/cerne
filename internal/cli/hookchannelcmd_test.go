@@ -202,3 +202,24 @@ func TestStatusActiveLeadsWithChannel(t *testing.T) {
 	}
 	assertLeadsWithChannel(t, repoDir, block, "status", "--active", "--dir", projDir)
 }
+
+// TestHookEnvelopeEscapesControlChars (F-0325, critic C1): the subagent hook
+// builds its JSON envelope in Go, so a channel message carrying ESC or other
+// control characters (pasted ANSI build output) still yields valid JSON that
+// round-trips the exact text.
+func TestHookEnvelopeEscapesControlChars(t *testing.T) {
+	text := "rules\n#7 W-0001: build output: \x1b[31mFAIL\x1b[0m \x01\x02\x1f tab\there \"quoted\" \\ back"
+	out, err := execCerneStdin(t, text, "hook", "envelope", "--event", "SubagentStart")
+	if err != nil {
+		t.Fatalf("hook envelope: %v\n%s", err, out)
+	}
+	c := channelEnvelope(t, out)
+	if c.HookSpecificOutput.HookEventName != "SubagentStart" || c.HookSpecificOutput.AdditionalContext != text {
+		t.Fatalf("envelope = %+v", c)
+	}
+	for _, b := range []byte(out[:len(out)-1]) {
+		if b < 0x20 {
+			t.Fatalf("raw control byte %#x in the JSON:\n%q", b, out)
+		}
+	}
+}
