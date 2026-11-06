@@ -1,8 +1,13 @@
 package app
 
 import (
+	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/room"
@@ -119,4 +124,371 @@ func TestChannelExpiry(t *testing.T) {
 			}
 		})
 	}
+}
+
+// chanFixture is a project cache with a channel: me (session "s1") works as
+// W-0001 scoped to internal/server/**; W-0002 and W-0003 are other live works.
+type chanFixture struct {
+	t                 *testing.T
+	cacheDir, repoDir string
+	ch                room.Channel
+	at                time.Time
+}
+
+func newChanFixture(t *testing.T) *chanFixture {
+	t.Helper()
+	t.Setenv("CERNE_ACTOR", "agent")
+	f := &chanFixture{t: t, cacheDir: t.TempDir(), repoDir: t.TempDir(), at: chanT0}
+	f.ch = room.OpenChannel(filepath.Join(f.cacheDir, "rooms"))
+	saveChanWork(t, f.repoDir, "W-0001", []string{"F-0325"}, []string{"internal/server/**"})
+	saveChanWork(t, f.repoDir, "W-0002", nil, nil)
+	saveChanWork(t, f.repoDir, "W-0003", nil, nil)
+	for sess, id := range map[string]string{"s1": "W-0001", "s2": "W-0002", "s3": "W-0003"} {
+		if err := BindSession(f.cacheDir, sess, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return f
+}
+
+// post appends a message one second after the previous one.
+func (f *chanFixture) post(nick, body string, human bool) int {
+	f.t.Helper()
+	f.at = f.at.Add(time.Second)
+	m, err := f.ch.Append(room.Message{Type: "message", Nick: nick, Body: body, Human: human, Time: f.at})
+	if err != nil {
+		f.t.Fatalf("Append: %v", err)
+	}
+	return m.Seq
+}
+
+func (f *chanFixture) inject(sess string, consume bool) string {
+	f.t.Helper()
+	out, err := ChannelInject(f.cacheDir, f.repoDir, sess, consume, f.at.Add(time.Minute))
+	if err != nil {
+		f.t.Fatalf("ChannelInject(%s): %v", sess, err)
+	}
+	return out
+}
+
+func (f *chanFixture) deliveries() []room.Delivery {
+	f.t.Helper()
+	dels, err := f.ch.Deliveries()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return dels
+}
+
+// TestChannelInjectSilentWhenNothingNew (crit. 5): with no new traffic the
+// second injection is zero bytes and records nothing.
+func TestChannelInjectSilentWhenNothingNew(t *testing.T) {
+	f := newChanFixture(t)
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("empty channel injected %q", out)
+	}
+	f.post("W-0002", "build verde no main", false)
+	if out := f.inject("s1", true); !strings.HasPrefix(out, "cerne channel:\n") {
+		t.Fatalf("first injection = %q", out)
+	}
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("second injection = %q, want zero bytes", out)
+	}
+	if n := len(f.deliveries()); n != 1 {
+		t.Fatalf("%d delivery lines, want 1", n)
+	}
+}
+
+// TestChannelInjectWatermark (crit. 4): background delivered to a session does
+// not come back to it, still reaches a new session, and the next injection
+// carries only what is newer.
+func TestChannelInjectWatermark(t *testing.T) {
+	f := newChanFixture(t)
+	f.post("W-0002", "primeira", false)
+	if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002: primeira") {
+		t.Fatalf("s1 injection = %q", out)
+	}
+	if out := f.inject("s3", true); !strings.Contains(out, "#1 W-0002: primeira") {
+		t.Fatalf("new session s3 did not get #1: %q", out)
+	}
+	f.post("W-0002", "segunda", false)
+	out := f.inject("s1", true)
+	if !strings.Contains(out, "#2 W-0002: segunda") || strings.Contains(out, "#1") {
+		t.Fatalf("s1 second injection = %q, want only #2", out)
+	}
+	if out := f.inject("s2", true); out != "" {
+		t.Fatalf("sender got its own messages: %q", out)
+	}
+}
+
+// TestChannelInjectDirectedRepeatsUntilAnswered (crit. 9/10): a message
+// addressed to the session comes back at every injection until the session
+// posts after it — or, separately, acks it.
+func TestChannelInjectDirectedRepeatsUntilAnswered(t *testing.T) {
+	t.Run("answered by a later message", func(t *testing.T) {
+		f := newChanFixture(t)
+		f.post("W-0002", "vou mexer em internal/server/rooms.go, segura", false)
+		for i := range 3 {
+			if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002 → you: vou mexer") {
+				t.Fatalf("injection %d = %q, want the addressed message", i+1, out)
+			}
+		}
+		f.post("W-0001", "ok, seguro", false)
+		if out := f.inject("s1", true); out != "" {
+			t.Fatalf("after answering: %q, want zero bytes", out)
+		}
+	})
+	t.Run("acked", func(t *testing.T) {
+		f := newChanFixture(t)
+		f.post("W-0002", "W-0001 pode consumir o contrato", false)
+		f.inject("s1", true)
+		if err := f.ch.Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
+			return &room.Delivery{Session: "s1", Work: "W-0001", Ack: []int{1}, At: f.at}, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if out := f.inject("s1", true); out != "" {
+			t.Fatalf("after ack: %q, want zero bytes", out)
+		}
+	})
+	t.Run("background is delivered once", func(t *testing.T) {
+		f := newChanFixture(t)
+		f.post("W-0002", "build verde", false)
+		f.inject("s1", true)
+		if out := f.inject("s1", true); out != "" {
+			t.Fatalf("background repeated: %q", out)
+		}
+	})
+}
+
+// injectedBodies returns the body of every message line, keyed by seq.
+func injectedBodies(out string) map[int]string {
+	bodies := map[int]string{}
+	for _, line := range strings.Split(out, "\n") {
+		var seq int
+		if _, err := fmt.Sscanf(line, "#%d ", &seq); err != nil {
+			continue
+		}
+		bodies[seq] = line[strings.Index(line, ": ")+2:]
+	}
+	return bodies
+}
+
+// TestChannelInjectTruncatesAt280 (crit. 6): an inline body is cut at 280
+// runes and marked with an ellipsis.
+func TestChannelInjectTruncatesAt280(t *testing.T) {
+	f := newChanFixture(t)
+	for range 3 {
+		f.post("W-0002", strings.Repeat("a", 400), false)
+	}
+	bodies := injectedBodies(f.inject("s1", true))
+	if len(bodies) != 3 {
+		t.Fatalf("%d inline, want 3", len(bodies))
+	}
+	for seq, b := range bodies {
+		if b != strings.Repeat("a", 280)+"…" {
+			t.Fatalf("#%d body = %d runes %q…, want 280 + …", seq, utf8.RuneCountInString(b), b[:10])
+		}
+	}
+}
+
+// TestChannelInjectCountLine (crit. 6): over the 5-inline cap the rest is one
+// count line pointing at the full read.
+func TestChannelInjectCountLine(t *testing.T) {
+	f := newChanFixture(t)
+	for i := range 9 {
+		f.post("W-0002", fmt.Sprintf("ruído %d", i+1), false)
+	}
+	out := f.inject("s1", true)
+	if n := len(injectedBodies(out)); n != 5 {
+		t.Fatalf("%d inline, want 5:\n%s", n, out)
+	}
+	if !strings.Contains(out, "\n+4 more — cerne msg read\n") {
+		t.Fatalf("count line missing:\n%s", out)
+	}
+}
+
+// TestChannelInjectCutsBackgroundFirst (crit. 7): over the cap, human and
+// addressed messages stay inline and the cut falls on background, oldest
+// first; display goes human, addressed, background.
+func TestChannelInjectCutsBackgroundFirst(t *testing.T) {
+	f := newChanFixture(t)
+	bg := []int{f.post("W-0003", "fundo 1", false), f.post("W-0003", "fundo 2", false)}
+	h1 := f.post("Henrique", "humano 1", true)
+	d1 := f.post("W-0002", "W-0001 segura", false)
+	bg = append(bg, f.post("W-0003", "fundo 3", false))
+	d2 := f.post("W-0002", "F-0325 contrato pronto", false)
+	h2 := f.post("Henrique", "humano 2", true)
+	bg = append(bg, f.post("W-0003", "fundo 4", false))
+
+	out := f.inject("s1", true)
+	bodies := injectedBodies(out)
+	for _, seq := range []int{h1, h2, d1, d2, bg[3]} {
+		if _, ok := bodies[seq]; !ok {
+			t.Fatalf("#%d not inline:\n%s", seq, out)
+		}
+	}
+	if len(bodies) != 5 || !strings.Contains(out, "+3 more") {
+		t.Fatalf("want 5 inline + 3 more:\n%s", out)
+	}
+	var order []int
+	for _, line := range strings.Split(out, "\n") {
+		var seq int
+		if _, err := fmt.Sscanf(line, "#%d ", &seq); err == nil {
+			order = append(order, seq)
+		}
+	}
+	if want := []int{h1, h2, d1, d2, bg[3]}; !slices.Equal(order, want) {
+		t.Fatalf("display order = %v, want %v", order, want)
+	}
+}
+
+// TestChannelInjectProtocolLineOnlyWithDirected (crit. 17).
+func TestChannelInjectProtocolLineOnlyWithDirected(t *testing.T) {
+	f := newChanFixture(t)
+	f.post("W-0003", "build verde", false)
+	if out := f.inject("s1", true); strings.Contains(out, "↳") {
+		t.Fatalf("protocol line with background only:\n%s", out)
+	}
+	seq := f.post("W-0002", "W-0001 segura", false)
+	out := f.inject("s1", true)
+	want := fmt.Sprintf("↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %d\n", seq)
+	if strings.Count(out, "↳") != 1 || !strings.HasSuffix(out, want) {
+		t.Fatalf("protocol line missing or repeated:\n%s", out)
+	}
+	f.post("W-0001", "ok", false)
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("empty injection = %q", out)
+	}
+	hs := f.post("Henrique", "W-0001, para tudo", true)
+	if out := f.inject("s1", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) → you: ", hs)) || !strings.Contains(out, "↳") {
+		t.Fatalf("addressed human message without protocol line:\n%s", out)
+	}
+}
+
+// TestChannelInjectRecordsDeliveries (crit. 11): the injection itself writes
+// who was shown what, when, and how far the session has seen.
+func TestChannelInjectRecordsDeliveries(t *testing.T) {
+	f := newChanFixture(t)
+	for i := range 7 {
+		f.post("W-0002", fmt.Sprintf("m%d", i+1), false)
+	}
+	f.post("W-0001", "minha", false)
+	f.inject("s1", true)
+	dels := f.deliveries()
+	if len(dels) != 1 {
+		t.Fatalf("%d delivery lines, want 1", len(dels))
+	}
+	d := dels[0]
+	if d.Session != "s1" || d.Work != "W-0001" || !slices.Equal(d.Seqs, []int{3, 4, 5, 6, 7}) ||
+		d.Through != 8 || !d.At.Equal(f.at.Add(time.Minute)) {
+		t.Fatalf("delivery = %+v", d)
+	}
+}
+
+// TestChannelInjectPeekKeepsWatermark: a subagent's peek records what it was
+// shown but leaves the parent session's watermark where it was.
+func TestChannelInjectPeekKeepsWatermark(t *testing.T) {
+	f := newChanFixture(t)
+	f.post("W-0002", "build verde", false)
+	if out := f.inject("s1", false); !strings.Contains(out, "#1 W-0002: build verde") {
+		t.Fatalf("peek = %q", out)
+	}
+	if d := f.deliveries(); len(d) != 1 || d[0].Through != 0 || !slices.Equal(d[0].Seqs, []int{1}) {
+		t.Fatalf("peek delivery = %+v", d)
+	}
+	if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002: build verde") {
+		t.Fatalf("parent lost the background after a peek: %q", out)
+	}
+}
+
+// ptBody fills prefix to n runes of multibyte pt-BR text.
+func ptBody(prefix string, n int) string {
+	b := []rune(prefix)
+	filler := []rune(" ação não — coordenação")
+	for i := 0; len(b) < n; i++ {
+		b = append(b, filler[i%len(filler)])
+	}
+	return string(b[:n])
+}
+
+// TestChannelInjectWorstCaseWithin400Tokens (crit. 8): a saturated channel —
+// humans over the cap, addressed and background traffic, every body at 400
+// multibyte runes — still injects within 400 tokens (bytes/4), with every
+// human message inline, the exact overflow count and the protocol line.
+func TestChannelInjectWorstCaseWithin400Tokens(t *testing.T) {
+	t.Run("humans over the cap", func(t *testing.T) {
+		f := newChanFixture(t)
+		var humans []int
+		for i := range 20 {
+			f.post("W-0003", ptBody(fmt.Sprintf("fundo %d", i), 400), false)
+		}
+		for i := range 6 {
+			f.post("W-0002", ptBody(fmt.Sprintf("W-0001 dirigida %d", i), 400), false)
+		}
+		for i := range 8 {
+			humans = append(humans, f.post("Henrique", ptBody(fmt.Sprintf("humano %d", i), 400), true))
+		}
+		out := f.inject("s1", true)
+		if tokens := (len(out) + 3) / 4; tokens > 400 {
+			t.Fatalf("injection = %d tokens (%d bytes), want <= 400:\n%s", tokens, len(out), out)
+		}
+		bodies := injectedBodies(out)
+		for _, seq := range humans {
+			if _, ok := bodies[seq]; !ok {
+				t.Fatalf("human #%d not inline:\n%s", seq, out)
+			}
+		}
+		if !strings.Contains(out, "\n+26 more — cerne msg read\n") || !strings.Contains(out, "↳ addressed to you") {
+			t.Fatalf("count or protocol line missing:\n%s", out)
+		}
+		t.Logf("worst case: %d bytes, %d tokens", len(out), (len(out)+3)/4)
+	})
+	t.Run("no humans", func(t *testing.T) {
+		f := newChanFixture(t)
+		var directed []int
+		for i := range 20 {
+			f.post("W-0003", ptBody(fmt.Sprintf("fundo %d", i), 400), false)
+		}
+		for i := range 10 {
+			directed = append(directed, f.post("W-0002", ptBody(fmt.Sprintf("W-0001 dirigida %d", i), 400), false))
+		}
+		out := f.inject("s1", true)
+		if tokens := (len(out) + 3) / 4; tokens > 400 {
+			t.Fatalf("injection = %d tokens, want <= 400:\n%s", tokens, out)
+		}
+		bodies := injectedBodies(out)
+		if len(bodies) != 5 {
+			t.Fatalf("%d inline, want 5:\n%s", len(bodies), out)
+		}
+		for _, seq := range directed[5:] {
+			if _, ok := bodies[seq]; !ok {
+				t.Fatalf("newest addressed #%d not inline:\n%s", seq, out)
+			}
+		}
+		if !strings.Contains(out, "\n+25 more — cerne msg read\n") {
+			t.Fatalf("count line missing:\n%s", out)
+		}
+	})
+	t.Run("humans past the body floor", func(t *testing.T) {
+		f := newChanFixture(t)
+		var humans []int
+		for i := range 30 {
+			humans = append(humans, f.post("Henrique", ptBody(fmt.Sprintf("humano %d", i), 400), true))
+		}
+		out := f.inject("s1", true)
+		if tokens := (len(out) + 3) / 4; tokens > 400 {
+			t.Fatalf("injection = %d tokens, want <= 400:\n%s", tokens, out)
+		}
+		bodies := injectedBodies(out)
+		if _, ok := bodies[humans[29]]; !ok || len(bodies) == 30 {
+			t.Fatalf("want the newest humans inline and the oldest counted:\n%s", out)
+		}
+		if _, ok := bodies[humans[0]]; ok {
+			t.Fatalf("oldest human kept over a newer one:\n%s", out)
+		}
+		if !strings.Contains(out, fmt.Sprintf("\n+%d more — cerne msg read\n", 30-len(bodies))) {
+			t.Fatalf("count line missing:\n%s", out)
+		}
+	})
 }
