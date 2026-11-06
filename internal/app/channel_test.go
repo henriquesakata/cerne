@@ -754,3 +754,29 @@ func TestChannelPeekIsNoDelivery(t *testing.T) {
 		}
 	}
 }
+
+// TestChannelStopReminderIsADelivery (critic C3): the Stop reminder shows the
+// message, so it records a delivery — a reply after it, as the reminder
+// instructs, answers the message and nothing is injected again.
+func TestChannelStopReminderIsADelivery(t *testing.T) {
+	f := newChanFixture(t)
+	seq := f.post("W-0002", "W-0001 please hold off internal/server/rooms.go until I merge", false)
+	f.at = f.at.Add(time.Second)
+	text, mark := ChannelStopReminder(f.cacheDir, f.repoDir, "s1", f.at)
+	if !strings.Contains(text, fmt.Sprintf("#%d", seq)) {
+		t.Fatalf("reminder = %q", text)
+	}
+	mark()
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, seq); got.State != ChannelDelivered {
+		t.Fatalf("after the reminder: %+v, want delivered", got)
+	}
+	f.post("W-0001", "ok, holding", false)
+	msgs, _ = f.read("")
+	if got := stateOf(t, msgs, seq); got.State != ChannelAnswered {
+		t.Fatalf("reply after the reminder: %+v, want answered", got)
+	}
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("answered message injected again: %q", out)
+	}
+}

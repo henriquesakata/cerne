@@ -192,6 +192,17 @@ func (cs channelState) answered(m room.Message, work string) bool {
 	return false
 }
 
+// shownTo reports whether a delivery (not a peek) showed m to session sess —
+// an injection, an explicit read or a Stop reminder.
+func (cs channelState) shownTo(m room.Message, sess string) bool {
+	for _, d := range cs.dels {
+		if d.Session == sess && !d.Peek && slices.Contains(d.Seqs, m.Seq) {
+			return true
+		}
+	}
+	return false
+}
+
 // watermark is the highest seq session sess has seen.
 func (cs channelState) watermark(sess string) int {
 	wm := 0
@@ -232,7 +243,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 				continue
 			}
 			directed := directedTo(m, id) && !cs.answered(m, id.Work)
-			if m.Seq <= wm && !directed {
+			if !directed && (m.Seq <= wm || cs.shownTo(m, sess)) {
 				continue
 			}
 			group := groupBackground
@@ -628,6 +639,16 @@ func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string,
 	text := fmt.Sprintf("cerne channel: still unanswered and addressed to you — %s. Reply with cerne msg send \"<text>\" (any later message of yours counts) or silence it with cerne msg ack %s.",
 		strings.Join(due, "; "), strings.Join(seqs, " "))
 	return text, func() {
+		// The reminder showed these messages to the session: a delivery like
+		// any injection, so the reply it asks for answers them (critic C3).
+		// It moves no watermark: it carries nothing but addressed messages.
+		shown := make([]int, len(seqs))
+		for i, seq := range seqs {
+			shown[i], _ = strconv.Atoi(seq)
+		}
+		_ = ch.Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
+			return &room.Delivery{Session: sess, Work: id.Work, Seqs: shown, At: now}, nil
+		})
 		if os.MkdirAll(filepath.Dir(marker), 0o755) == nil {
 			_ = os.WriteFile(marker, []byte(strings.Join(append(reminded, seqs...), "\n")+"\n"), 0o644)
 		}
