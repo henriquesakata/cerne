@@ -3,7 +3,9 @@ import { createIdea, dropIdea, fetchIdeas, promoteIdea, type Idea } from './api'
 import { useT } from './i18n'
 import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 
-type Submission = { body: string; facets: string[]; components: string[]; token: string }
+// A submission keeps the fields as typed (raw), so success clears only what
+// was not edited while it was in flight (C4).
+type Submission = { body: string; facets: string[]; components: string[]; token: string; raw: [string, string, string] }
 
 // newToken identifies one capture submission (C2). Not crypto.randomUUID: a
 // remote `cerne serve` over plain http is not a secure context.
@@ -41,9 +43,10 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
     setFailed(null)
     createIdea(sub.body, sub.facets, sub.components, sub.token)
       .then(() => {
-        setText('')
-        setFacets('')
-        setComponents('')
+        const [rt, rf, rc] = sub.raw
+        setText((cur) => (cur === rt ? '' : cur))
+        setFacets((cur) => (cur === rf ? '' : cur))
+        setComponents((cur) => (cur === rc ? '' : cur))
         return load.reload()
       })
       .catch((err: unknown) => setFailed({ error: err instanceof Error ? err.message : String(err), sub }))
@@ -53,7 +56,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
     e.preventDefault()
     const body = text.trim()
     if (body === '') return
-    send({ body, facets: csv(facets), components: csv(components), token: newToken() })
+    send({ body, facets: csv(facets), components: csv(components), token: newToken(), raw: [text, facets, components] })
   }
 
   const act = (id: string, run: () => Promise<unknown>, after?: () => void) => {
@@ -90,7 +93,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
           onChange={(e) => setText(e.target.value)}
         />
         <button type="submit" disabled={sending || text.trim() === ''}>
-          {t.ideas.capture}
+          {sending ? t.ideas.saving : t.ideas.capture}
         </button>
         <details>
           <summary>{t.ideas.tags}</summary>

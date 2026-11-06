@@ -97,6 +97,19 @@ describe('IdeasPanel (F-0312)', () => {
     expect(createIdea.mock.calls[1][3]).not.toBe(createIdea.mock.calls[0][3])
   })
 
+  it('texto digitado durante o envio é mantido (C4)', async () => {
+    let land: (i: Idea) => void = () => {}
+    createIdea.mockImplementation(() => new Promise<Idea>((resolve) => (land = resolve)))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('primeira ideia')
+    expect(await screen.findByRole('button', { name: 'Salvando…' })).toBeInTheDocument()
+    fireEvent.change(input(), { target: { value: 'primeira ideia e a segunda' } })
+    land(idea('I-0001', 'primeira ideia'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Anotar' })).toBeInTheDocument())
+    expect(input().value).toBe('primeira ideia e a segunda')
+  })
+
   it('lista ativas com texto, data, promover e descartar', async () => {
     ideas = [idea('I-0002', 'segunda ideia'), idea('I-0001', 'primeira ideia')]
     promoteIdea.mockResolvedValue({ idea: { ...ideas[1], state: 'promoted' }, feature: {} as Feature })
