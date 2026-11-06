@@ -39,6 +39,10 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 			rb, err := CreateRunbook(r, p, fmt.Sprintf("Runbook %d", i), fmt.Sprintf("corpo %d\n", i))
 			return rb.ID, err
 		}, func(id string) string { return "content/runbooks/" + id + ".md" }},
+		{"idea", func(r, p string, i int) (string, error) {
+			idea, err := CreateIdea(r, p, fmt.Sprintf("corpo %d", i), nil, nil)
+			return idea.ID, err
+		}, func(id string) string { return "entities/ideas/" + id + ".json" }},
 	}
 	for _, k := range kinds {
 		t.Run(k.name, func(t *testing.T) {
