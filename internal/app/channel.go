@@ -129,6 +129,7 @@ const (
 	channelBudgetBytes = 400 * 4
 	channelInlineCap   = 5
 	channelBodyRunes   = 280
+	channelNameRunes   = 24
 	// ponytail: per-body floor of 60 bytes; below it (only with ~17+ human
 	// messages pending) the oldest humans fall into the count line instead
 	// of shrinking every body further.
@@ -151,7 +152,9 @@ type injItem struct {
 func (it injItem) prefix() string {
 	who := it.m.Nick
 	if it.m.Human {
-		who += " (human)"
+		// channel.human_name may be 64 wide runes: cut, so a long name can't
+		// starve the inline set (critic C6).
+		who = truncateBody(who, channelNameRunes, 1<<10) + " (human)"
 	}
 	if it.directed {
 		who += " → you"

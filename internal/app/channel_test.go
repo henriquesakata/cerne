@@ -841,3 +841,21 @@ func TestChannelHumansNeverSilentlyConsumed(t *testing.T) {
 		}
 	}
 }
+
+// TestChannelLongHumanNameKeepsTheCap (critic C6): channel.human_name may be
+// 64 four-byte runes; in the block it is cut to 24 runes, so the prefix can't
+// starve the inline set below the cap of 5.
+func TestChannelLongHumanNameKeepsTheCap(t *testing.T) {
+	f := newChanFixture(t)
+	name := strings.Repeat("𝕳", 64)
+	for i := range 8 {
+		f.post(name, ptBody(fmt.Sprintf("humano %d", i), 400), true)
+	}
+	out := f.inject("s2", true)
+	if n := len(injectedBodies(out)); n < 5 {
+		t.Fatalf("%d inline with a long human name, want >= 5:\n%s", n, out)
+	}
+	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human): ") {
+		t.Fatalf("name not cut to 24 runes, or over budget:\n%s", out)
+	}
+}
