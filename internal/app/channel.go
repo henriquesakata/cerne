@@ -61,7 +61,10 @@ func sessionWork(cacheDir, repoDir, sess string) (channelIdentity, bool) {
 	return channelIdentity{}, false
 }
 
-var channelRefRe = regexp.MustCompile(`\b[WFTE]-\d{4,}\b`)
+var (
+	channelRefRe  = regexp.MustCompile(`\b[WFTE]-\d{4,}\b`)
+	channelLineRe = regexp.MustCompile(`(:\d+)+$`)
+)
 
 // directedTo reports whether m is addressed to id (criterion 9): it names
 // id's work or one of its refs, or a path inside id's declared scope. A
@@ -80,12 +83,14 @@ func directedTo(m room.Message, id channelIdentity) bool {
 	}
 	for _, tok := range strings.Fields(m.Body) {
 		tok = strings.TrimRight(strings.TrimLeft(tok, "`'\"([{<"), "`'\")]}>,.;:!?")
-		tok = strings.TrimPrefix(tok, "./")
+		tok = channelLineRe.ReplaceAllString(strings.TrimPrefix(tok, "./"), "") // file.go:42[:7]
 		if !strings.Contains(tok, "/") {
 			continue
 		}
 		for _, p := range id.Paths {
-			if globsOverlap(tok, p) {
+			// A declared path without /** is a file or a directory: a path
+			// under it is in scope too (critic C18).
+			if globsOverlap(tok, p) || strings.HasPrefix(tok, strings.TrimSuffix(p, "/")+"/") {
 				return true
 			}
 		}

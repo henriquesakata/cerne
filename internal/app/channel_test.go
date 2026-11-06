@@ -74,7 +74,7 @@ func TestSessionWork(t *testing.T) {
 // when it names the session's work, one of the work's refs, or a path inside
 // its declared scope — never by a near-miss id, and never to its own sender.
 func TestChannelDirectedTo(t *testing.T) {
-	me := channelIdentity{Work: "W-0290", Refs: []string{"F-0325"}, Paths: []string{"internal/server/**", "ui/src/App.tsx"}}
+	me := channelIdentity{Work: "W-0290", Refs: []string{"F-0325"}, Paths: []string{"internal/server/**", "ui/src/App.tsx", "internal/app"}}
 	for _, tc := range []struct {
 		name string
 		nick string
@@ -90,6 +90,10 @@ func TestChannelDirectedTo(t *testing.T) {
 		{"exact declared path", "W-0291", "mexendo em ui/src/App.tsx", true},
 		{"path outside my scope", "W-0291", "vou mexer em internal/cli/root.go", false},
 		{"near-miss id", "W-0291", "W-02901 terminou", false},
+		{"file inside a declared dir (critic C18)", "W-0291", "heads up: touching internal/app/channel.go now", true},
+		{"sibling of a declared dir", "W-0291", "mexendo em internal/application/x.go", false},
+		{"path:line", "W-0291", "quebrou em internal/server/rooms.go:42", true},
+		{"exact file:line:col", "W-0291", "erro em ui/src/App.tsx:10:3", true},
 		{"own message", "W-0290", "W-0290 aqui, mexendo em internal/server/rooms.go", false},
 		{"background", "W-0291", "build verde no main", false},
 	} {
