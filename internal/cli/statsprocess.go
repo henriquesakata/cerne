@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -56,7 +57,7 @@ func renderProcess(out io.Writer, r stats.ProcessReport) {
 			if m.Cost != "" {
 				fmt.Fprintf(out, "    guards: returned %s · escaped %s\n", m.Returned, m.Escaped)
 			}
-			fmt.Fprintf(out, "    verdict: %s — %s\n", m.Verdict, m.Reason)
+			fmt.Fprintf(out, "    verdict: %s%s — %s\n", m.Verdict, unguarded(m), m.Reason)
 		}
 	}
 	fmt.Fprintln(out)
@@ -87,4 +88,20 @@ func tokens(v float64) string {
 		return fmt.Sprintf("%.1fk", v/1e3)
 	}
 	return fmt.Sprintf("%.0f", v)
+}
+
+// unguarded qualifies a melhorou whose guards were not both evaluated (C9):
+// it must not read like a guarded one.
+func unguarded(m stats.MarkerReport) string {
+	if m.Verdict != "melhorou" || m.Guarded {
+		return ""
+	}
+	var lack []string
+	if m.Returned == "inconclusivo" {
+		lack = append(lack, "returned inconclusive")
+	}
+	if m.Escaped == "pending" {
+		lack = append(lack, "escaped pending")
+	}
+	return " (unguarded: " + strings.Join(lack, ", ") + ")"
 }

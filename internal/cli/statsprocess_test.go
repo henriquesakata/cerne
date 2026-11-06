@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/stats"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -146,7 +147,8 @@ const processGolden = `{
       },
       "verdict": "inconclusivo",
       "code": "small_sample",
-      "reason": "small sample (n=0 before, n=2 after; 8 per side needed)"
+      "reason": "small sample (n=0 before, n=2 after; 8 per side needed)",
+      "guarded": false
     }
   ],
   "excluded_no_cost": 1,
@@ -175,5 +177,18 @@ func TestStatsProcessRefusesSince(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	if _, err := execCerne(t, "stats", "--process", "--since", "90d", "--dir", projDir); err == nil {
 		t.Fatalf("stats --process --since succeeded, want the exclusive-flags error")
+	}
+}
+
+// TestRenderProcessQualifiesUnguarded pins C9 in the text: an unguarded
+// melhorou names the guards it still lacks next to the verdict.
+func TestRenderProcessQualifiesUnguarded(t *testing.T) {
+	var out strings.Builder
+	renderProcess(&out, stats.ProcessReport{Weeks: []stats.WeekCost{}, Markers: []stats.MarkerReport{{
+		Marker: stats.Marker{ID: "D-0001"}, Verdict: "melhorou", Code: "cost", Reason: "median ratio 0.60 (90% CI 0.39–0.91), cost down 40%",
+		Cost: "melhorou", Returned: "inconclusivo", Escaped: "pending",
+	}}})
+	if !strings.Contains(out.String(), "verdict: melhorou (unguarded: returned inconclusive, escaped pending) — median ratio") {
+		t.Fatalf("render =\n%s\nwant the unguarded qualifier next to melhorou", out.String())
 	}
 }

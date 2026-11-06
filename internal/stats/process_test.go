@@ -457,3 +457,26 @@ func TestProcessNullCalibration(t *testing.T) {
 		}
 	}
 }
+
+// TestProcessUnguardedVerdictIsQualified pins C9: a verdict whose guards were
+// not both evaluated (pending or too thin) carries guarded=false, so a bare
+// melhorou never reads like a guarded one.
+func TestProcessUnguardedVerdictIsQualified(t *testing.T) {
+	before, after := spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
+	for i := range 30 {
+		before[i].HasGauntlet, after[i].HasGauntlet = i < 3, i < 3
+	}
+	young := after[29].CompletedAt.AddDate(0, 0, 10)
+	m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, young).Markers[0]
+	if m.Verdict != "melhorou" || m.Guarded || m.Returned != "inconclusivo" || m.Escaped != "pending" {
+		t.Fatalf("unguarded = %s guarded %v returned %s escaped %s, want melhorou guarded=false", m.Verdict, m.Guarded, m.Returned, m.Escaped)
+	}
+	b, _ := json.Marshal(m)
+	if !strings.Contains(string(b), `"guarded":false`) {
+		t.Fatalf("json = %s, want guarded:false", b)
+	}
+	before, after = spread(20e6, 30, at(2)), spread(12e6, 30, at(30))
+	if m := ComputeProcess(append(before, after...), []Marker{marker("D-0001", at(30))}, 0, mature).Markers[0]; m.Verdict != "melhorou" || !m.Guarded {
+		t.Fatalf("guarded = %s guarded %v, want melhorou guarded=true", m.Verdict, m.Guarded)
+	}
+}

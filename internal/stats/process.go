@@ -86,6 +86,7 @@ type MarkerReport struct {
 	Verdict        string    `json:"verdict"` // melhorou | piorou | inconclusivo
 	Code           string    `json:"code"`    // small_sample | within_noise | cost | quality_guard
 	Reason         string    `json:"reason"`
+	Guarded        bool      `json:"guarded"`            // both guards evaluated: neither pending nor too thin (C9)
 	Cost           string    `json:"cost,omitempty"`     // n >= 8 only
 	Returned       string    `json:"returned,omitempty"` // ok | piorou | inconclusivo
 	Escaped        string    `json:"escaped,omitempty"`  // ok | piorou | pending
@@ -209,6 +210,8 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 		m.Escaped, m.EscapedDiffCI = guard("escaped share", escapes(before), escapes(after))
 	}
 
+	evaluated := func(g string) bool { return g != inconclusive && g != guardPending }
+	m.Guarded = evaluated(m.Returned) && evaluated(m.Escaped)
 	dir := "down"
 	if ratio > 1 {
 		dir = "up"
