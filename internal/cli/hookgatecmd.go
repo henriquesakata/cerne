@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -179,14 +180,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		}
 	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)
-	if err != nil || !cfg.Gates.WorkGateEnabled() {
-		return
-	}
-	var ti struct {
-		FilePath string `json:"file_path"`
-	}
-	_ = json.Unmarshal(in.ToolInput, &ti)
-	if ti.FilePath == "" {
+	if err != nil {
 		return
 	}
 	cacheDir, err := project.CacheDir(cfg.ProjectID)
@@ -194,8 +188,17 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
+	var ti struct {
+		FilePath string `json:"file_path"`
+	}
+	_ = json.Unmarshal(in.ToolInput, &ti)
+	if !cfg.Gates.WorkGateEnabled() || ti.FilePath == "" {
+		injectGateChannel(cmd, format, cacheDir, repoDir, in.SessionID)
+		return
+	}
 	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, ti.FilePath, cfg.Gates.WorkGateAllow)
 	if allow {
+		injectGateChannel(cmd, format, cacheDir, repoDir, in.SessionID)
 		return
 	}
 	// F-0170: the deny message is also a teaching moment — append the
@@ -220,4 +223,23 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	if err := enc.Encode(payload); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), err)
 	}
+}
+
+// injectGateChannel delivers the session's pending channel messages on an
+// allowed edit (F-0325): the instant a collision would happen. PreToolUse
+// additionalContext is documented for Claude Code (R-0034) and Codex shares
+// the envelope (R-0035); Cursor and Gemini document no context on an allowed
+// preToolUse, so they get none. Fail-open: any error is silence.
+func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, sess string) {
+	if format != "claude" && format != "codex" {
+		return
+	}
+	block, err := app.ChannelInject(cacheDir, repoDir, sess, true, time.Now().UTC())
+	if err != nil || block == "" {
+		return
+	}
+	var c sessionContext
+	c.HookSpecificOutput.HookEventName = "PreToolUse"
+	c.HookSpecificOutput.AdditionalContext = block
+	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(c)
 }

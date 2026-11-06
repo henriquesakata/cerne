@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/room"
 )
 
 // execCerneStdin runs the CLI with args feeding stdin — the hook plumbing
@@ -241,4 +243,155 @@ func TestHookWorkGateDenyHint(t *testing.T) {
 	if strings.Contains(out, "convention catalog") {
 		t.Fatalf("reason should have no hint:\n%s", out)
 	}
+}
+
+// seedChannel posts body to the project's permanent channel as nick, now.
+func seedChannel(t *testing.T, repoDir, nick, body string) int {
+	t.Helper()
+	m, err := room.OpenChannel(filepath.Join(filepath.Dir(repoDir), "rooms")).
+		Append(room.Message{Type: "message", Nick: nick, Body: body, Time: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+	return m.Seq
+}
+
+// channelEnvelope decodes a PreToolUse additionalContext envelope.
+func channelEnvelope(t *testing.T, out string) sessionContext {
+	t.Helper()
+	var c sessionContext
+	if err := json.Unmarshal([]byte(out), &c); err != nil {
+		t.Fatalf("not a context envelope: %v\n%s", err, out)
+	}
+	return c
+}
+
+// TestHookWorkGateInjectsChannel (F-0325 crit. 15): an allowed Edit carries the
+// session's pending channel messages as PreToolUse additionalContext — the
+// exact moment a collision would happen.
+func TestHookWorkGateInjectsChannel(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	enableWorkGate(t, projDir)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor", "--paths", "internal/server/**")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "vou mexer em internal/server/rooms.go, segura")
+
+	stdin := hookJSON(t, "sess-a", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "internal", "a.go")}, nil)
+	out, err := execCerneStdin(t, stdin, "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("hook work-gate: %v\n%s", err, out)
+	}
+	c := channelEnvelope(t, out)
+	if c.HookSpecificOutput.HookEventName != "PreToolUse" ||
+		!strings.HasPrefix(c.HookSpecificOutput.AdditionalContext, "cerne channel:\n#1 "+b+" → you: vou mexer") {
+		t.Fatalf("envelope = %+v", c)
+	}
+	if strings.Contains(out, "permissionDecision") {
+		t.Fatalf("an allow must not carry a decision:\n%s", out)
+	}
+}
+
+// TestHookWorkGateInjectsWithGateOff: the channel rides the gate hook even when
+// the gate itself is off, and for codex too (same envelope, R-0035).
+func TestHookWorkGateInjectsWithGateOff(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "build verde no main")
+
+	for _, args := range [][]string{{"hook", "work-gate"}, {"hook", "work-gate", "--format", "codex"}} {
+		sess := "sess-a"
+		if len(args) > 2 {
+			sess = "sess-c" // an unregistered session still hears the channel
+		}
+		stdin := hookJSON(t, sess, projDir, "Write", map[string]any{"file_path": filepath.Join(projDir, "x.go")}, nil)
+		out, err := execCerneStdin(t, stdin, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+		if c := channelEnvelope(t, out); !strings.Contains(c.HookSpecificOutput.AdditionalContext, "#1 "+b+": build verde no main") {
+			t.Fatalf("%v: envelope = %+v", args, c)
+		}
+	}
+	for _, format := range []string{"cursor", "gemini"} {
+		stdin := hookJSON(t, "sess-d", projDir, "Write", map[string]any{"file_path": filepath.Join(projDir, "x.go")}, nil)
+		if out, err := execCerneStdin(t, stdin, "hook", "work-gate", "--format", format); err != nil || out != "" {
+			t.Fatalf("%s: no documented allow context — want silence, got %v\n%s", format, err, out)
+		}
+	}
+}
+
+// TestHookWorkGateDenyUnchanged: a deny is byte-for-byte what it was, and
+// consumes nothing from the channel.
+func TestHookWorkGateDenyUnchanged(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	enableWorkGate(t, projDir)
+	stdin := hookJSON(t, "sess-unbound", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "internal", "a.go")}, nil)
+	before, err := execCerneStdin(t, stdin, "hook", "work-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "build verde no main")
+	after, err := execCerneStdin(t, stdin, "hook", "work-gate")
+	if err != nil || after != before || !strings.Contains(after, `"permissionDecision":"deny"`) {
+		t.Fatalf("deny changed:\nbefore %s\nafter  %s", before, after)
+	}
+	if dels, _ := room.OpenChannel(filepath.Join(filepath.Dir(repoDir), "rooms")).Deliveries(); len(dels) != 0 {
+		t.Fatalf("a deny consumed the channel: %+v", dels)
+	}
+}
+
+// TestHookWorkGateChannelSilent (crit. 5): nothing pending is zero bytes.
+func TestHookWorkGateChannelSilent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	stdin := hookJSON(t, "sess-a", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "a.go")}, nil)
+	if out, err := execCerneStdin(t, stdin, "hook", "work-gate"); err != nil || out != "" {
+		t.Fatalf("no channel: %v %q", err, out)
+	}
+	seedChannel(t, repoDir, b, "build verde")
+	if out, _ := execCerneStdin(t, stdin, "hook", "work-gate"); out == "" {
+		t.Fatal("first edit got nothing")
+	}
+	if out, err := execCerneStdin(t, stdin, "hook", "work-gate"); err != nil || out != "" {
+		t.Fatalf("second edit: %v %q, want zero bytes", err, out)
+	}
+}
+
+// TestHookWorkGateChannelFailOpen (crit. 19, N-0021): a corrupt, unreadable or
+// locked channel never breaks the Edit — exit 0, nothing printed.
+func TestHookWorkGateChannelFailOpen(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "build verde")
+	chDir := filepath.Join(filepath.Dir(repoDir), "rooms", "channel")
+	stdin := hookJSON(t, "sess-a", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "a.go")}, nil)
+	run := func(name string) {
+		t.Helper()
+		if out, err := execCerneStdin(t, stdin, "hook", "work-gate"); err != nil || out != "" {
+			t.Fatalf("%s: %v %q, want silent exit 0", name, err, out)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(chDir, "lock"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("locked")
+	if err := os.Remove(filepath.Join(chDir, "lock")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(chDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	run("unreadable")
+	if err := os.Chmod(chDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(chDir, "messages.jsonl"), []byte("garbage{\n\x00\x01"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("corrupt")
 }
