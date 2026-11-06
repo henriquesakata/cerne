@@ -1094,6 +1094,8 @@ export type Room = {
   // permanent marca o canal permanente do projeto (F-0325): sem abrir,
   // fechar, objetivo ou ata; participantes = works ativos.
   permanent?: boolean
+  // error: the channel could not be read; the formal rooms still list.
+  error?: string
 }
 
 // RoomMessage espelha room.Message: um evento do transcript — abertura,
@@ -1288,7 +1290,9 @@ export async function readRoomMessages(
 // por ninguém: não entregue, entregue e sem resposta, respondida.
 export type ChannelState = 'not_delivered' | 'delivered' | 'answered'
 
-export type ChannelTarget = { work: string; state: ChannelState }
+// acked: answered by `cerne msg ack`, not by a reply; closed: the work closed
+// and will never receive it.
+export type ChannelTarget = { work: string; state: ChannelState; acked?: boolean; closed?: boolean }
 
 // ChannelMessage espelha app.ChannelMessage: a mensagem viva com o estado
 // dela e, para uma dirigida, cada work destinatário com o seu.

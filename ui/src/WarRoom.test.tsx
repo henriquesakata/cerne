@@ -114,6 +114,16 @@ describe('WarRoom (T-0003)', () => {
     expect(screen.getByText('0 participante(s)')).toBeInTheDocument()
   })
 
+  it('canal ilegível aparece com o erro e as salas formais continuam (crítico C8)', async () => {
+    fetchRooms.mockResolvedValue([
+      room({ id: 'channel', topic: '', permanent: true, error: 'permission denied' }),
+      room({ id: 'R1', topic: 'Fila serial' }),
+    ])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('Fila serial')).toBeInTheDocument())
+    expect(screen.getByText(/canal indisponível: permission denied/i)).toBeInTheDocument()
+  })
+
   it('o canal vem antes das salas formais', async () => {
     fetchRooms.mockResolvedValue([
       room({ id: 'channel', topic: '', permanent: true }),

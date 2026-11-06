@@ -101,12 +101,13 @@ export default function Channel() {
 
 function ChannelLine({ m }: { m: ChannelMessage }) {
   const { t } = useT()
-  const target = (tg: ChannelTarget) =>
-    tg.state === 'answered'
-      ? t.channel.targetAnswered(tg.work)
-      : tg.state === 'delivered'
-        ? t.channel.targetDelivered(tg.work)
-        : t.channel.targetNotDelivered(tg.work)
+  const target = (tg: ChannelTarget) => {
+    if (tg.closed) return t.channel.targetClosed(tg.work)
+    if (tg.acked) return t.channel.targetAcked(tg.work)
+    if (tg.state === 'answered') return t.channel.targetAnswered(tg.work)
+    if (tg.state === 'delivered') return t.channel.targetDelivered(tg.work)
+    return t.channel.targetNotDelivered(tg.work)
+  }
   return (
     <div className="backlog-chat-msg">
       <p>

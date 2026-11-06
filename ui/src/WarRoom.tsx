@@ -112,6 +112,7 @@ export default function WarRoom() {
             </span>
             <span className="card-title">{t.channel.title}</span>
             <span className="muted">{t.warRoom.participants(channel.participants.length)}</span>
+            {channel.error && <span className="muted">{t.channel.unavailable(channel.error)}</span>}
           </a>
         </div>
       )}

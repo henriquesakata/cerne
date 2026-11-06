@@ -105,6 +105,20 @@ describe('Channel (F-0325)', () => {
     expect(screen.getByText('ok, seguro')).toBeInTheDocument()
   })
 
+  it('reconhecimento e work encerrado têm rótulos próprios (crítico C17)', async () => {
+    snapshot = {
+      messages: [
+        msg({ directed: true, state: 'answered', targets: [{ work: 'W-0291', state: 'answered', acked: true }] }),
+        msg({ seq: 2, directed: true, state: 'not_delivered', targets: [{ work: 'W-0004', state: 'not_delivered', closed: true }] }),
+      ],
+      version: 2,
+    }
+    render(<Channel />)
+    await waitFor(() => expect(screen.getByText('W-0291 reconheceu')).toBeInTheDocument())
+    expect(screen.queryByText('W-0291 respondeu')).toBeNull()
+    expect(screen.getByText('W-0004 encerrado — não vai receber')).toBeInTheDocument()
+  })
+
   it('a versão ao vivo (F-0031) também refaz a carga — some a mensagem de um work fechado (critério 24)', async () => {
     const projects: ProjectInfo[] = [
       { pid: 'p1', name: 'P1' },
