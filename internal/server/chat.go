@@ -209,7 +209,9 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// (the turn is short, and its terminal line is a valid one-event stream).
 	if tc, ok := prov.(llm.ToolCaller); ok && confirmed && channel {
 		var runs []chatRun
-		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true, Conversation: req.ConversationID, Turn: turn}
+		// C3: the confirmation covers the card's commands, nothing else.
+		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true,
+			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn}
 		reply, err := tc.CompleteTools(ctx, prompt, chatTools(CommandTree), toolRun(env, &runs))
 		truncated := errors.Is(err, llm.ErrTruncated)
 		if err != nil && !truncated {

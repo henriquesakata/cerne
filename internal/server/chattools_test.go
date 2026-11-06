@@ -606,3 +606,60 @@ func TestChatConfirmedTurnReportsNothingExecuted(t *testing.T) {
 		})
 	}
 }
+
+// TestCardKeys (F-0323 C3): the confirmed card is read the way a shell would —
+// quotes, comments, heredoc bodies — into the keys of its commands.
+func TestCardKeys(t *testing.T) {
+	setTree(t, fixtureTree)
+	card := "Vou rodar:\n```cerne-comando\n" +
+		"cerne reference new \"Ref A\" --url https://example.com/a   # a fonte\n" +
+		"cerne reference new 'it''s' --url=u\n" +
+		"cerne zz-probe <<'SPEC'\nlinha que não é comando\ncerne feature approve F-0001\nSPEC\n" +
+		"rm -rf /\n" +
+		"cerne reference new \"sem fim\n" +
+		"```\nfim"
+	key := func(argv ...string) string {
+		k, err := verbs.Key(fixtureTree(), argv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	want := []string{
+		key("reference", "new", "Ref A", "--url=https://example.com/a"),
+		key("reference", "new", "its", "--url", "u"),
+		key("zz-probe"),
+	}
+	if got := cardKeys(card); !slices.Equal(got, want) {
+		t.Fatalf("cardKeys = %q\nwant      %q", got, want)
+	}
+}
+
+// TestChatCallsOutsideTheCardAreRefused (F-0323 C3): the confirmation covers
+// the card's commands only — the card's own command passes the gate, another
+// chat verb is not_in_card and an operational one local_only; neither runs.
+func TestChatCallsOutsideTheCardAreRefused(t *testing.T) {
+	calls := []string{
+		`{"verb":"reference new","args":["T","--url=https://example.com"]}`,
+		`{"verb":"zz-probe"}`,
+		`{"verb":"pull","args":["--force"]}`,
+	}
+	h, _, _, _ := toolTurnSetup(t, func(round int, _ map[string]any) string {
+		if round < len(calls) {
+			return toolUse(calls[round])
+		}
+		return endTurn("ok")
+	})
+	setRunVerb(t, func(ctx context.Context, root *cobra.Command, c verbs.Call, env verbs.Env) verbs.Result {
+		env.Bin = "/nonexistent"
+		return verbs.Run(ctx, root, c, env)
+	})
+	got := confirmedTurnOf(t, h)
+	var codes []string
+	for _, r := range got.Runs {
+		codes = append(codes, r.Result.Error.Code)
+	}
+	if !slices.Equal(codes, []string{"exec_failed", "not_in_card", "local_only"}) {
+		t.Fatalf("codes = %v, want the card's command through the gate and the others refused", codes)
+	}
+}

@@ -1152,6 +1152,21 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     expect(sent[sent.length - 1].role).toBe('user')
   })
 
+  // F-0323 C3: a dica do card só promete o que o modo cumpre — no modo API o
+  // servidor executa só os comandos do card; no modo assinatura, não.
+  it('a dica do card é verdadeira em cada modo', async () => {
+    fetchLLMOptions.mockResolvedValue(opts({ models: [], defaultModel: '', providers: [] }))
+    await sendAndGetReply(commandReply)
+    expect(await screen.findByText(/só executa os comandos desta lista/i)).toBeInTheDocument()
+
+    cleanup()
+    fetchLLMOptions.mockResolvedValue(opts({ mode: 'claude-cli', models: [], defaultModel: '', providers: [] }))
+    nextConvId += 1
+    await sendAndGetReply(commandReply)
+    expect(await screen.findByText(/modo assinatura/i)).toBeInTheDocument()
+    expect(screen.queryByText(/só executa os comandos desta lista/i)).not.toBeInTheDocument()
+  })
+
   // F-0323 critérios 5/8: a confirmação vai presa ao card — o id da conversa
   // e o índice da mensagem do agente que o trazia.
   it('Executar envia conversation_id e confirm_turn', async () => {

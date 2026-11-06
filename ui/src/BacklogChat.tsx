@@ -568,6 +568,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [defaultModel, setDefaultModel] = useState('')
   const [providers, setProviders] = useState<string[]>([])
   const [provider, setProvider] = useState('')
+  // F-0323 C3: só o canal de tools prende a execução ao card; no modo
+  // assinatura o agente recebe o cerne no turno, e a dica tem de dizer isso.
+  const [cardBound, setCardBound] = useState(true)
   const [model, setModel] = useState(conversation.model)
   const [effort, setEffort] = useState(conversation.effort)
   const [, forceTick] = useState(0)
@@ -587,6 +590,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     fetchLLMOptions()
       .then((opts) => {
         setNeedsProvider(opts.mode === 'delegation')
+        setCardBound(opts.mode !== 'claude-cli')
         // F-0311: o provedor inicial é a preferência persistida (critério 16),
         // se o projeto ainda o alcança; senão o primeiro configurado.
         const prov = opts.providers.includes(opts.preferredProvider)
@@ -949,7 +953,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
                     />
                   )}
                   {commands && (
-                    <CommandProposal commands={commands} busy={busy} onConfirm={confirmCommands} />
+                    <CommandProposal commands={commands} busy={busy} bound={cardBound} onConfirm={confirmCommands} />
                   )}
                   {fenced && m.noExec && <CopyCommands commands={fenced} />}
                   {(m.runs || m.noRuns || m.truncated) && (

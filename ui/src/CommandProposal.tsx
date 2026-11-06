@@ -19,10 +19,13 @@ type Props = {
   commands: string[]
   // busy: já há um turno em voo; autorizar duas vezes duplicaria a escrita.
   busy: boolean
+  // bound (F-0323 C3): o servidor executa só estes comandos (canal de tools);
+  // false no modo assinatura, onde o turno recebe o cerne inteiro.
+  bound: boolean
   onConfirm: () => void
 }
 
-export default function CommandProposal({ commands, busy, onConfirm }: Props) {
+export default function CommandProposal({ commands, busy, bound, onConfirm }: Props) {
   const { t } = useT()
 
   return (
@@ -30,7 +33,7 @@ export default function CommandProposal({ commands, busy, onConfirm }: Props) {
       <header className="command-proposal-head">
         <h4>{t.commandProposal.title}</h4>
       </header>
-      <p className="muted">{t.commandProposal.hint}</p>
+      <p className="muted">{bound ? t.commandProposal.hint : t.commandProposal.hintUnbound}</p>
       <ol className="command-proposal-list">
         {commands.map((c, i) => (
           <li key={i}>

@@ -144,7 +144,11 @@ func confirmedChat(t *testing.T, p parityProject, steps []parityStep) parityTerm
 	var card strings.Builder
 	card.WriteString("Vou rodar:\n```cerne-comando\n")
 	for _, s := range steps {
-		fmt.Fprintf(&card, "cerne %s %s\n", s.Verb, strings.Join(s.Args, " "))
+		line := append(strings.Fields(s.Verb), s.Args...)
+		for i, a := range line {
+			line[i] = shQuote(a)
+		}
+		fmt.Fprintf(&card, "cerne %s\n", strings.Join(line, " "))
 	}
 	card.WriteString("```")
 	body, _ := json.Marshal(map[string]any{
@@ -168,6 +172,15 @@ func confirmedChat(t *testing.T, p parityProject, steps []parityStep) parityTerm
 		t.Fatalf("terminal %q: %v", lines[len(lines)-1], err)
 	}
 	return term
+}
+
+// shQuote quotes a word for the card the way the agent would: the server binds
+// the confirmation to the card's commands, read like a shell (C3).
+func shQuote(w string) string {
+	if w != "" && !strings.ContainsAny(w, " \t'\"\\$`#;&|<>()*?[]{}~!") {
+		return w
+	}
+	return "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
 }
 
 // entitySet is what both modes must produce: every reference, note and

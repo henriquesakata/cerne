@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -28,6 +29,7 @@ var (
 	ErrLifecycleDenied      = errors.New("lifecycle verb denied: lifecycle is a human act, hand the command to the human to run in a terminal")
 	ErrLocalOnly            = errors.New("verb not offered in the chat: operational or unclassified verbs run only in the human's terminal")
 	ErrConfirmationRequired = errors.New("confirmation required: the human has not confirmed this turn's command card")
+	ErrNotInCard            = errors.New("command not in the confirmed card: the confirmation covers only the commands the human saw")
 	ErrCommandFailed        = errors.New("command failed")
 	ErrLockConflict         = errors.New("backend lock held by another process")
 	ErrTimeout              = errors.New("command timed out")
@@ -43,6 +45,7 @@ var codes = []struct {
 	{ErrLifecycleDenied, "lifecycle_denied"},
 	{ErrLocalOnly, "local_only"},
 	{ErrConfirmationRequired, "confirmation_required"},
+	{ErrNotInCard, "not_in_card"},
 	{ErrCommandFailed, "command_failed"},
 	{ErrLockConflict, "lock_conflict"},
 	{ErrTimeout, "timeout"},
@@ -78,6 +81,7 @@ type Env struct {
 	ProjDir      string        // the child's cwd: the chat's project
 	RepoDir      string        // the backend clone: read for the call's events and lock
 	Confirmed    bool          // the human confirmed this turn's command card
+	Card         []string      // Key of each command of that card: the only calls allowed (nil allows none)
 	Conversation string        // provenance stamped on every event the call writes
 	Turn         int           // index of the confirmed card message
 	Timeout      time.Duration // per call; 0 → defaultTimeout
@@ -112,7 +116,8 @@ func fail(err error, out string) Result {
 // Run executes call under the chat gate. Order: resolve what cobra would run
 // (unknown_verb), lifecycle (denied before anything, confirmed or not), any
 // class but chat (local_only — unclassified fails closed),
-// confirmation, cobra validation on root (invalid_arguments), then the cerne
+// confirmation, cobra validation on root (invalid_arguments), the confirmed
+// card (not_in_card: only its commands run), then the cerne
 // binary as a child with CERNE_ACTOR=agent and the provenance env. Run parses
 // flags into root: pass a fresh tree per call.
 func Run(ctx context.Context, root *cobra.Command, call Call, env Env) Result {
@@ -135,7 +140,33 @@ func Run(ctx context.Context, root *cobra.Command, call Call, env Env) Result {
 	if err := validate(cmd, rest); err != nil {
 		return fail(fmt.Errorf("%w: %v", ErrInvalidArguments, err), "")
 	}
+	if !slices.Contains(env.Card, keyOf(cmd)) {
+		return fail(fmt.Errorf("%w: cerne %s %s", ErrNotInCard, call.Verb, strings.Join(call.Args, " ")), "")
+	}
 	return execute(ctx, argv, call.Stdin, env)
+}
+
+// Key is the canonical form of a command line (argv without "cerne"): the
+// resolved command, its positionals and its set flags with their values, so
+// `--url u` and `--url=u`, or flags in another order, are the same command
+// (C3). The server keys the confirmed card's lines with it; Run keys each call.
+func Key(root *cobra.Command, argv []string) (string, error) {
+	cmd, rest, err := root.Find(argv)
+	if err != nil || cmd == root {
+		return "", fmt.Errorf("%w: %q", ErrUnknownVerb, argv)
+	}
+	cmd.InitDefaultHelpFlag()
+	if err := cmd.ParseFlags(rest); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidArguments, err)
+	}
+	return keyOf(cmd), nil
+}
+
+// keyOf keys a command whose flags are already parsed.
+func keyOf(cmd *cobra.Command) string {
+	var flags []string
+	cmd.Flags().Visit(func(f *pflag.Flag) { flags = append(flags, f.Name+"="+f.Value.String()) }) // set flags, sorted
+	return strings.Join([]string{cmd.CommandPath(), strings.Join(cmd.Flags().Args(), "\x1f"), strings.Join(flags, "\x1f")}, "\x00")
 }
 
 func hidden(c *cobra.Command) bool {

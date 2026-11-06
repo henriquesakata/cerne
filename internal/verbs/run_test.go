@@ -64,9 +64,44 @@ func newProject(t *testing.T) verbs.Env {
 	return verbs.Env{Bin: bin, ProjDir: proj, RepoDir: filepath.Join(cache, "repo"), Confirmed: true}
 }
 
+// run executes a call whose own command is the confirmed card — the real
+// flow: the human confirmed exactly this command.
 func run(t *testing.T, env verbs.Env, verb string, stdin string, args ...string) verbs.Result {
 	t.Helper()
+	if key, err := verbs.Key(cli.Root(), append(strings.Fields(verb), args...)); err == nil {
+		env.Card = append(env.Card, key)
+	}
 	return verbs.Run(context.Background(), cli.Root(), verbs.Call{Verb: verb, Args: args, Stdin: stdin}, env)
+}
+
+// TestRunRefusesCallsOutsideTheCard (F-0323 C3): a confirmation authorizes the
+// commands of the confirmed card and nothing else — same command in another
+// spelling passes, any other command is not_in_card and never runs.
+func TestRunRefusesCallsOutsideTheCard(t *testing.T) {
+	card, err := verbs.Key(cli.Root(), []string{"reference", "new", "Ref A", "--url", "https://example.com/a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := verbs.Env{Bin: "/nonexistent", Confirmed: true, Card: []string{card}}
+	call := func(verb string, args ...string) verbs.Result {
+		return verbs.Run(context.Background(), cli.Root(), verbs.Call{Verb: verb, Args: args}, env)
+	}
+	if res := call("reference new", "--url=https://example.com/a", "Ref A"); !errors.Is(res.Err, verbs.ErrExecFailed) {
+		t.Fatalf("the card's own command = %+v, want it to pass the gate (exec_failed on the bogus Bin)", res)
+	}
+	for _, c := range [][]string{
+		{"reference new", "Ref B", "--url", "https://example.com/a"},
+		{"reference new", "Ref A", "--url", "https://example.com/a", "--force"},
+		{"note new", "Nota", "--facet", "process", "--component", "chat"},
+	} {
+		if res := call(c[0], c[1:]...); !errors.Is(res.Err, verbs.ErrNotInCard) || res.Error.Code != "not_in_card" {
+			t.Fatalf("%v = %+v, want not_in_card", c, res)
+		}
+	}
+	env.Card = nil // no card: fail closed
+	if res := call("reference new", "Ref A", "--url", "https://example.com/a"); !errors.Is(res.Err, verbs.ErrNotInCard) {
+		t.Fatalf("no card = %+v, want not_in_card", res)
+	}
 }
 
 func TestRunCreatesAndReturnsID(t *testing.T) {

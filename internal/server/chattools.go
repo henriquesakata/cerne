@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/verbs"
 )
@@ -225,4 +226,101 @@ func toolRun(env verbs.Env, runs *[]chatRun) func(context.Context, llm.ToolCall)
 		out, _ := json.Marshal(res)
 		return string(out), !res.OK
 	}
+}
+
+// cardKeys reads the confirmed card — the agent message at confirm_turn — into
+// the verbs.Key of each of its commands (F-0323 C3): the only calls the turn
+// may run. Lines are read like a shell: quotes, # comments, heredoc bodies
+// (stdin, not commands); a line that is not a cerne command, or does not parse,
+// authorizes nothing. Never nil: a card with no command binds to none.
+func cardKeys(card string) []string {
+	keys := []string{}
+	open := strings.Index(card, "```"+app.ChatCommandFence)
+	if open < 0 {
+		return keys
+	}
+	body := card[open+3+len(app.ChatCommandFence):]
+	if end := strings.Index(body, "```"); end >= 0 {
+		body = body[:end]
+	}
+	lines := strings.Split(body, "\n")
+	for i := 0; i < len(lines); i++ {
+		argv, heredoc, err := shellSplit(lines[i])
+		if heredoc != "" { // skip the body: it is the command's stdin
+			for i++; i < len(lines) && strings.TrimSpace(lines[i]) != heredoc; i++ {
+			}
+		}
+		if err != nil || len(argv) < 2 || argv[0] != "cerne" {
+			continue
+		}
+		if k, err := verbs.Key(CommandTree(), argv[1:]); err == nil {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
+// shellSplit splits one command line the way sh would for a plain command:
+// single quotes literal, double quotes with \" \\ \$ \` escapes, backslash
+// escapes outside quotes, an unquoted # starting a comment. A <<DELIM / <<'DELIM'
+// redirect is removed and its delimiter returned. Anything else (pipes, &&, $(…))
+// is left as literal words, which no catalog command accepts — fail closed.
+func shellSplit(line string) (argv []string, heredoc string, err error) {
+	var word strings.Builder
+	inWord, quote := false, byte(0)
+	flush := func() {
+		if inWord {
+			argv = append(argv, word.String())
+		}
+		word.Reset()
+		inWord = false
+	}
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			} else {
+				word.WriteByte(c)
+			}
+		case quote == '"':
+			if c == '"' {
+				quote = 0
+			} else if c == '\\' && i+1 < len(line) && strings.IndexByte("\"\\$`", line[i+1]) >= 0 {
+				i++
+				word.WriteByte(line[i])
+			} else {
+				word.WriteByte(c)
+			}
+		case c == '\'' || c == '"':
+			quote, inWord = c, true
+		case c == '\\' && i+1 < len(line):
+			i++
+			word.WriteByte(line[i])
+			inWord = true
+		case c == ' ' || c == '\t':
+			flush()
+		case c == '#' && !inWord:
+			i = len(line)
+		default:
+			word.WriteByte(c)
+			inWord = true
+		}
+	}
+	if quote != 0 {
+		return nil, "", fmt.Errorf("unterminated quote in %q", line)
+	}
+	flush()
+	for i, w := range argv {
+		if !strings.HasPrefix(w, "<<") {
+			continue
+		}
+		delim, end := strings.TrimLeft(strings.TrimPrefix(w, "<<"), "-"), i+1
+		if delim == "" && i+1 < len(argv) {
+			delim, end = argv[i+1], i+2
+		}
+		return append(argv[:i:i], argv[end:]...), delim, nil
+	}
+	return argv, "", nil
 }
