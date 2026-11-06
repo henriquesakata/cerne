@@ -19,7 +19,7 @@ func TestCerneAuthoringDocumentsIdeas(t *testing.T) {
 		"cerne idea promote",
 		"not a demand",
 		"--search",
-		"on demand",
+		"On demand only (agents)", // not "on demand": that one is on main already (C17)
 		"never pull ideas in unasked",
 	} {
 		if !strings.Contains(c, sub) {
