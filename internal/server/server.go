@@ -908,8 +908,11 @@ func safeWikiRel(rel string) bool {
 // handleWikiIndex lists the compiled pages under content/wiki/ — the top-level
 // pages (project/decisions/references) and the nested modules/ pages — so the
 // human can browse the synthesis. An absent wiki dir is an empty list, not an
-// error. Staleness is computed only with the wiki off: on, compile_on_push
-// owns freshness and the index does not pay for hashing every source.
+// error. Staleness is computed only with the wiki off — the stale banner is
+// the off state's signal (F-0316 criteria 6 and 8). With the wiki on nothing
+// here reports it: compile_on_push is opt-in and off by default, so freshness
+// is whoever runs `cerne compile` (or opts in), and the index does not pay for
+// hashing every source.
 func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 	wikiDir := filepath.Join(repoDir, "content", "wiki")
 	pages := []wikiPageRef{}

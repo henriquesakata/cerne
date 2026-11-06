@@ -229,7 +229,7 @@ func TestWikiIndexStaleWhenWikiOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := index(); len(got.Stale) != 0 {
-		t.Fatalf("wiki on (default), page dirty: stale = %v, want none — compile_on_push owns freshness", got.Stale)
+		t.Fatalf("wiki on (default), page dirty: stale = %v, want none — the banner is the wiki-off signal", got.Stale)
 	}
 }
 
