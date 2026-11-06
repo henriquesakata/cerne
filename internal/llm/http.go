@@ -320,8 +320,8 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 // any other is answered as not executed (C11), one tool_result each in a single
 // user turn; the assistant turn is
 // echoed verbatim (thinking blocks included, as the API requires). Calls run
-// only on stop_reason tool_use — a turn cut by max_tokens never executes a
-// possibly truncated input. Returns the final turn's text.
+// only on stop_reason tool_use — a turn cut by max_tokens executes nothing and
+// returns ErrTruncated with its partial text (C5). Returns the final turn's text.
 func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools []Tool, call func(context.Context, ToolCall) (string, bool)) (string, error) {
 	defs := make([]anthropicTool, len(tools))
 	for i, t := range tools {
@@ -359,6 +359,9 @@ func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools [
 			case "tool_use":
 				uses = append(uses, b)
 			}
+		}
+		if parsed.StopReason == "max_tokens" {
+			return text.String(), ErrTruncated
 		}
 		if parsed.StopReason != "tool_use" || len(uses) == 0 {
 			return text.String(), nil

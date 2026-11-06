@@ -1208,6 +1208,17 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     expect(screen.getByText('cerne reference new T --url u')).toBeInTheDocument()
   })
 
+  // F-0323 C5: um turno confirmado que não executou nada não parece sucesso.
+  it('turno confirmado sem execuções e resposta truncada avisam que nada rodou', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'Pronto! Registrei a R-0042.', no_runs: true, truncated: true })
+    renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Registra' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+
+    expect(await screen.findByText(/nenhum comando foi executado/i)).toBeInTheDocument()
+    expect(screen.getByText(/truncated/)).toBeInTheDocument()
+  })
+
   it('resposta sem bloco de comando não renderiza card', async () => {
     await sendAndGetReply('Me conta mais sobre o formato.')
     await waitFor(() => expect(screen.getByText('Me conta mais sobre o formato.')).toBeInTheDocument())

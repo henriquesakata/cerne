@@ -116,6 +116,10 @@ type chatResponse struct {
 	// Runs (F-0323) are the confirmed turn's tool executions, each with its
 	// structured result — what the UI shows as ✓ id or ✗ code.
 	Runs []chatRun `json:"runs,omitempty"`
+	// NoRuns marks a confirmed tool-channel turn that executed nothing, and
+	// Truncated one whose model output was cut by the token limit (C5).
+	NoRuns    bool `json:"no_runs,omitempty"`
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -207,13 +211,16 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		var runs []chatRun
 		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true, Conversation: req.ConversationID, Turn: turn}
 		reply, err := tc.CompleteTools(ctx, prompt, chatTools(CommandTree), toolRun(env, &runs))
-		if err != nil {
+		truncated := errors.Is(err, llm.ErrTruncated)
+		if err != nil && !truncated {
 			// Whatever already ran is reported with the failure: a write must
 			// never go unreported because a later round broke.
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error(), "runs": runs})
 			return
 		}
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs})
+		// C5: a confirmed turn that executed nothing says so — never a silent
+		// success, whatever the reply claims.
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated})
 		return
 	}
 

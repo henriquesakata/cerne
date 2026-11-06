@@ -572,3 +572,37 @@ func TestToolRunSurvivesClientDisconnect(t *testing.T) {
 		t.Fatalf("the executor got a canceled context (%v): the child would die with the connection", callErr)
 	}
 }
+
+// TestChatConfirmedTurnReportsNothingExecuted (F-0323 C5): a confirmed turn
+// that ran nothing never looks like a success — a model cut by max_tokens is
+// reported as truncated, and a reply with no tool call (even one claiming an
+// id) carries no_runs.
+func TestChatConfirmedTurnReportsNothingExecuted(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		reply     string
+		truncated bool
+	}{
+		{"cut by max_tokens", `{"stop_reason":"max_tokens","content":[{"type":"text","text":"Vou"},{"type":"tool_use","id":"tu_1","name":"cerne","input":{"verb":"zz-probe"}}]}`, true},
+		{"claims an id without a call", endTurn("Pronto! Registrei a R-0042 conforme pedido."), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _, _ := toolTurnSetup(t, func(int, map[string]any) string { return tc.reply })
+			setRunVerb(t, func(context.Context, *cobra.Command, verbs.Call, verbs.Env) verbs.Result {
+				t.Fatal("nothing may run")
+				return verbs.Result{}
+			})
+			var got struct {
+				Answered  bool `json:"answered"`
+				NoRuns    bool `json:"no_runs"`
+				Truncated bool `json:"truncated"`
+			}
+			if rec := doJSON(t, h, http.MethodPost, "/api/chat", confirmedBody, &got); rec.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+			}
+			if !got.Answered || !got.NoRuns || got.Truncated != tc.truncated {
+				t.Fatalf("terminal = %+v, want no_runs (truncated %v)", got, tc.truncated)
+			}
+		})
+	}
+}

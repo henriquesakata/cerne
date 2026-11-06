@@ -730,7 +730,16 @@ export type ChatRun = { tool: string; verb: string; args?: string[]; result: Cha
 
 // runs e noExec ficam na mensagem do agente (storage local) e nunca voltam ao
 // servidor: o transcript enviado é só role/content.
-export type ChatMsg = { role: 'user' | 'assistant'; content: string; runs?: ChatRun[]; noExec?: boolean }
+// noRuns/truncated (F-0323 C5): o turno confirmado não executou nada, ou a
+// saída do modelo foi cortada — nunca um sucesso silencioso.
+export type ChatMsg = {
+  role: 'user' | 'assistant'
+  content: string
+  runs?: ChatRun[]
+  noExec?: boolean
+  noRuns?: boolean
+  truncated?: boolean
+}
 
 // ChatAnswer espelha o payload de POST /api/chat. answered é false quando o
 // projeto não tem um provider [llm] configurado (delegação): nenhuma
@@ -742,6 +751,8 @@ export type ChatAnswer = {
   runs?: ChatRun[]
   // no_exec (F-0323): o modo não tem canal de execução — sem card de Executar.
   no_exec?: boolean
+  no_runs?: boolean
+  truncated?: boolean
 }
 
 // ChatOverride (F-0218) carrega a escolha do seletor de modelo/esforço do

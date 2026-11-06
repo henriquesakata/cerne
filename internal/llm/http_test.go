@@ -467,7 +467,7 @@ func TestAnthropicCompleteToolsRunsCallsOnlyOnToolUse(t *testing.T) {
 		t.Fatal("call ran on a max_tokens turn")
 		return "", false
 	})
-	if err != nil || got != "parcial" {
-		t.Fatalf("CompleteTools = %q, %v", got, err)
+	if !errors.Is(err, ErrTruncated) || got != "parcial" {
+		t.Fatalf("CompleteTools = %q, %v; want the partial text with ErrTruncated (C5)", got, err)
 	}
 }

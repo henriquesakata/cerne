@@ -952,7 +952,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
                     <CommandProposal commands={commands} busy={busy} onConfirm={confirmCommands} />
                   )}
                   {fenced && m.noExec && <CopyCommands commands={fenced} />}
-                  {m.runs && <ToolRuns runs={m.runs} />}
+                  {(m.runs || m.noRuns || m.truncated) && (
+                    <ToolRuns runs={m.runs ?? []} noRuns={m.noRuns} truncated={m.truncated} />
+                  )}
                 </>
               )}
             </div>

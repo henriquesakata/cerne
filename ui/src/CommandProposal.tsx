@@ -61,11 +61,15 @@ export function CopyCommands({ commands }: { commands: string[] }) {
 // ToolRuns (F-0323 critérios 1/3) lista o que o turno confirmado executou: o
 // comando e o resultado estruturado — o id que o cerne devolveu ou o erro
 // nomeado. É o que o humano confere contra a prosa do agente.
-export function ToolRuns({ runs }: { runs: ChatRun[] }) {
+// noRuns/truncated (C5): o turno confirmado que não executou nada diz isso, em
+// vez de parecer sucesso — inclusive quando a prosa do agente afirma um id.
+export function ToolRuns({ runs, noRuns, truncated }: { runs: ChatRun[]; noRuns?: boolean; truncated?: boolean }) {
   const { t } = useT()
   return (
     <section className="tool-runs">
       <h4>{t.toolRuns.title}</h4>
+      {noRuns && <p className="tool-runs-warning">{t.toolRuns.none}</p>}
+      {truncated && <p className="tool-runs-warning">{t.toolRuns.truncated}</p>}
       <ul>
         {runs.map((r, i) => (
           <li key={i} className={r.result.ok ? 'tool-run-ok' : 'tool-run-failed'}>

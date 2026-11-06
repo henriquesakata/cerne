@@ -671,6 +671,7 @@ h2 {
 .tool-runs li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
 .tool-runs code { overflow-wrap: anywhere; }
 .tool-run-failed span { color: var(--danger); }
+.tool-runs-warning { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--danger); }
 
 /* Referência ao painel na transcrição (F-0255 critério 1). */
 .backlog-chat-proposal-ref {

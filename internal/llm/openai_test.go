@@ -140,8 +140,8 @@ func TestOpenAICompleteToolsRunsCallsOnlyWhenComplete(t *testing.T) {
 		t.Fatal("call ran on a length-cut completion")
 		return "", false
 	})
-	if err != nil || got != "parcial" {
-		t.Fatalf("CompleteTools = %q, %v", got, err)
+	if !errors.Is(err, ErrTruncated) || got != "parcial" {
+		t.Fatalf("CompleteTools = %q, %v; want the partial text with ErrTruncated (C5)", got, err)
 	}
 }
 

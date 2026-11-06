@@ -289,6 +289,8 @@ const ptBR = {
     ok: (id: string) => `✓ ${id}`,
     noEntity: '✓ sem entidade',
     failed: (code: string, message: string) => `✗ ${code}: ${message}`,
+    none: 'Nenhum comando foi executado neste turno — confira antes de confiar em qualquer id da resposta.',
+    truncated: 'A resposta do modelo foi cortada (truncated): nada da rodada cortada foi executado.',
   },
   channel: {
     title: 'Canal do projeto',
@@ -1158,6 +1160,8 @@ const en: Messages = {
     ok: (id: string) => `✓ ${id}`,
     noEntity: '✓ no entity',
     failed: (code: string, message: string) => `✗ ${code}: ${message}`,
+    none: 'No command was run in this turn — check before trusting any id in the reply.',
+    truncated: 'The model output was cut (truncated): nothing in the cut round was run.',
   },
   channel: {
     title: 'Project channel',

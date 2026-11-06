@@ -75,8 +75,15 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
   let appended = false
   // F-0323: o terminal traz as execuções e a ausência de canal; elas ficam na
   // mensagem do agente (só quando presentes, para não sujar as demais).
-  const writeAssistant = (content: string, runs?: ChatRun[], noExec?: boolean) => {
-    const msg: ChatMsg = { role: 'assistant', content, ...(runs?.length ? { runs } : {}), ...(noExec ? { noExec } : {}) }
+  const writeAssistant = (content: string, res?: { runs?: ChatRun[]; no_exec?: boolean; no_runs?: boolean; truncated?: boolean }) => {
+    const msg: ChatMsg = {
+      role: 'assistant',
+      content,
+      ...(res?.runs?.length ? { runs: res.runs } : {}),
+      ...(res?.no_exec ? { noExec: true } : {}),
+      ...(res?.no_runs ? { noRuns: true } : {}),
+      ...(res?.truncated ? { truncated: true } : {}),
+    }
     patchMessages(convId, (current) => {
       const last = current[current.length - 1]
       if (appended && last?.role === 'assistant') {
@@ -98,7 +105,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
       if (res.needs_provider) {
         outcomes.set(convId, { kind: 'needs_provider' })
       } else {
-        writeAssistant(res.reply ?? '', res.runs, res.no_exec)
+        writeAssistant(res.reply ?? '', res)
         outcomes.set(convId, { kind: 'success' })
       }
       notify(convId)

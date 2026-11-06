@@ -33,6 +33,11 @@ type ToolCaller interface {
 // ErrToolRounds is returned when the model keeps calling tools past maxToolRounds.
 var ErrToolRounds = errors.New("tool-use loop exceeded its round limit")
 
+// ErrTruncated is returned, with the partial text, when the model's output was
+// cut by the token limit (F-0323 C5): nothing in the cut round was executed,
+// and the caller must say so instead of presenting the turn as done.
+var ErrTruncated = errors.New("model output truncated by the token limit: nothing in the cut round was executed")
+
 const maxToolRounds = 16
 
 // notExecuted answers every tool call of a round but the first (F-0323 C11):

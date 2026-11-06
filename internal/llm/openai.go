@@ -118,8 +118,8 @@ func (p *openaiProvider) Complete(ctx context.Context, prompt string) (string, e
 // tools as function.parameters; while the model returns tool_calls, the
 // round's first runs through call and any other is answered as not executed
 // (C11), one role:tool message each, the assistant turn echoed with
-// only the request-side fields. A completion cut by the length limit never
-// executes its (possibly truncated) arguments.
+// only the request-side fields. A completion cut by the length limit executes
+// nothing and returns ErrTruncated with its partial text (C5).
 func (p *openaiProvider) CompleteTools(ctx context.Context, prompt string, tools []Tool, call func(context.Context, ToolCall) (string, bool)) (string, error) {
 	defs := make([]openaiTool, len(tools))
 	for i, t := range tools {
@@ -137,7 +137,10 @@ func (p *openaiProvider) CompleteTools(ctx context.Context, prompt string, tools
 		}
 		var calls []openaiToolCall
 		_ = json.Unmarshal(msg.ToolCalls, &calls)
-		if len(calls) == 0 || finish == "length" {
+		if finish == "length" {
+			return text(msg), ErrTruncated
+		}
+		if len(calls) == 0 {
 			return text(msg), nil
 		}
 		msgs = append(msgs, openaiMessage{Role: "assistant", Content: msg.Content, ToolCalls: msg.ToolCalls})
