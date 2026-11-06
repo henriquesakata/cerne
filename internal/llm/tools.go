@@ -34,3 +34,9 @@ type ToolCaller interface {
 var ErrToolRounds = errors.New("tool-use loop exceeded its round limit")
 
 const maxToolRounds = 16
+
+// notExecuted answers every tool call of a round but the first (F-0323 C11):
+// one call per round runs, so the model reads each real result — an id, an
+// error — before it can aim the next write at it. Both adapters also ask the
+// API for a single call per round; this covers a provider that ignores it.
+const notExecuted = `{"ok":false,"output":"","error":{"code":"not_executed","message":"only the first tool call of a round runs: call it again after reading the previous result"}}`

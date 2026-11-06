@@ -384,13 +384,18 @@ func TestAnthropicCompleteToolsLoop(t *testing.T) {
 	tools := []Tool{{Name: "cerne", Description: "roda um verbo", Schema: map[string]any{"type": "object"}}}
 	got, err := prov.CompleteTools(context.Background(), "p", tools, func(_ context.Context, c ToolCall) (string, bool) {
 		calls = append(calls, c)
-		return `{"ok":` + map[bool]string{true: "true", false: "false"}[len(calls) == 1] + `}`, len(calls) == 2
+		return `{"ok":true}`, false
 	})
 	if err != nil || got != "Registrei R-0001." {
 		t.Fatalf("CompleteTools = %q, %v", got, err)
 	}
-	if len(calls) != 2 || string(calls[0].Input) != `{"verb":"reference new","args":["T"]}` || string(calls[1].Input) != `{"verb":"status"}` {
-		t.Fatalf("calls = %+v", calls)
+	// C11: one call per round — the second tool_use of the round is answered
+	// as not executed, never run.
+	if len(calls) != 1 || string(calls[0].Input) != `{"verb":"reference new","args":["T"]}` {
+		t.Fatalf("calls = %+v, want only the round's first", calls)
+	}
+	if tc, ok := bodies[0]["tool_choice"].(map[string]any); !ok || tc["type"] != "auto" || tc["disable_parallel_tool_use"] != true {
+		t.Fatalf("tool_choice = %v, want auto with disable_parallel_tool_use", bodies[0]["tool_choice"])
 	}
 	if len(bodies) != 2 {
 		t.Fatalf("requests = %d, want 2", len(bodies))
@@ -418,6 +423,9 @@ func TestAnthropicCompleteToolsLoop(t *testing.T) {
 		if r["type"] != "tool_result" || r["tool_use_id"] != []string{"tu_1", "tu_2"}[i] || r["is_error"] != wantErr || r["content"] == "" {
 			t.Fatalf("result %d = %v", i, r)
 		}
+	}
+	if !strings.Contains(results[1].(map[string]any)["content"].(string), "not_executed") {
+		t.Fatalf("second result = %v, want not_executed", results[1])
 	}
 }
 

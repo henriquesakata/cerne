@@ -132,6 +132,13 @@ type messagesRequest struct {
 	Stream    bool             `json:"stream,omitempty"`
 	Messages  []messagesMember `json:"messages"`
 	Tools     []anthropicTool  `json:"tools,omitempty"`
+	// ToolChoice asks for one tool call per round (F-0323 C11).
+	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
+}
+
+type anthropicToolChoice struct {
+	Type                   string `json:"type"`
+	DisableParallelToolUse bool   `json:"disable_parallel_tool_use"`
 }
 
 // messagesMember.Content is a string for plain turns and a block list for the
@@ -309,8 +316,9 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 }
 
 // CompleteTools implements ToolCaller over the Messages API (F-0323): while
-// the model stops on tool_use, every tool_use block is answered by call, in
-// order, with one tool_result each in a single user turn; the assistant turn is
+// the model stops on tool_use, the round's first tool_use runs through call and
+// any other is answered as not executed (C11), one tool_result each in a single
+// user turn; the assistant turn is
 // echoed verbatim (thinking blocks included, as the API requires). Calls run
 // only on stop_reason tool_use — a turn cut by max_tokens never executes a
 // possibly truncated input. Returns the final turn's text.
@@ -321,7 +329,11 @@ func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools [
 	}
 	msgs := []messagesMember{{Role: "user", Content: prompt}}
 	for range maxToolRounds {
-		resp, err := p.post(ctx, messagesRequest{Model: p.model, MaxTokens: p.maxTokens, Messages: msgs, Tools: defs})
+		req := messagesRequest{Model: p.model, MaxTokens: p.maxTokens, Messages: msgs, Tools: defs}
+		if len(defs) > 0 {
+			req.ToolChoice = &anthropicToolChoice{Type: "auto", DisableParallelToolUse: true}
+		}
+		resp, err := p.post(ctx, req)
 		if err != nil {
 			return "", err
 		}
@@ -353,7 +365,10 @@ func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools [
 		}
 		results := make([]toolResultBlock, len(uses))
 		for i, u := range uses {
-			content, isErr := call(ctx, ToolCall{Name: u.Name, Input: u.Input})
+			content, isErr := notExecuted, true
+			if i == 0 { // C11: one call per round
+				content, isErr = call(ctx, ToolCall{Name: u.Name, Input: u.Input})
+			}
 			results[i] = toolResultBlock{Type: "tool_result", ToolUseID: u.ID, Content: content, IsError: isErr}
 		}
 		msgs = append(msgs, messagesMember{Role: "assistant", Content: parsed.Content}, messagesMember{Role: "user", Content: results})

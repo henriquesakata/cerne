@@ -35,6 +35,8 @@ type openaiRequest struct {
 	Model    string       `json:"model"`
 	Messages []any        `json:"messages"`
 	Tools    []openaiTool `json:"tools,omitempty"`
+	// ParallelToolCalls=false asks for one tool call per round (F-0323 C11).
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
 }
 
 type openaiTool struct {
@@ -113,8 +115,9 @@ func (p *openaiProvider) Complete(ctx context.Context, prompt string) (string, e
 }
 
 // CompleteTools implements ToolCaller over Chat Completions: the same neutral
-// tools as function.parameters; while the model returns tool_calls, each is
-// answered by call with one role:tool message, the assistant turn echoed with
+// tools as function.parameters; while the model returns tool_calls, the
+// round's first runs through call and any other is answered as not executed
+// (C11), one role:tool message each, the assistant turn echoed with
 // only the request-side fields. A completion cut by the length limit never
 // executes its (possibly truncated) arguments.
 func (p *openaiProvider) CompleteTools(ctx context.Context, prompt string, tools []Tool, call func(context.Context, ToolCall) (string, bool)) (string, error) {
@@ -124,7 +127,11 @@ func (p *openaiProvider) CompleteTools(ctx context.Context, prompt string, tools
 	}
 	msgs := []any{openaiMessage{Role: "user", Content: &prompt}}
 	for range maxToolRounds {
-		finish, msg, err := p.complete(ctx, openaiRequest{Model: p.model, Messages: msgs, Tools: defs})
+		req := openaiRequest{Model: p.model, Messages: msgs, Tools: defs}
+		if len(defs) > 0 {
+			req.ParallelToolCalls = new(bool)
+		}
+		finish, msg, err := p.complete(ctx, req)
 		if err != nil {
 			return "", err
 		}
@@ -134,12 +141,15 @@ func (p *openaiProvider) CompleteTools(ctx context.Context, prompt string, tools
 			return text(msg), nil
 		}
 		msgs = append(msgs, openaiMessage{Role: "assistant", Content: msg.Content, ToolCalls: msg.ToolCalls})
-		for _, c := range calls {
+		for i, c := range calls {
 			args := c.Function.Arguments
 			if args == "" {
 				args = "{}"
 			}
-			content, _ := call(ctx, ToolCall{Name: c.Function.Name, Input: json.RawMessage(args)})
+			content := notExecuted
+			if i == 0 { // C11: one call per round
+				content, _ = call(ctx, ToolCall{Name: c.Function.Name, Input: json.RawMessage(args)})
+			}
 			msgs = append(msgs, openaiMessage{Role: "tool", Content: &content, ToolCallID: c.ID})
 		}
 	}

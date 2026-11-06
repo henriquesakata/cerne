@@ -89,8 +89,11 @@ func TestOpenAICompleteToolsLoop(t *testing.T) {
 	if err != nil || got != "Registrei R-0001." {
 		t.Fatalf("CompleteTools = %q, %v", got, err)
 	}
-	if len(calls) != 2 || string(calls[0].Input) != `{"verb":"reference new","args":["T"]}` || calls[1].Name != "cerne" {
-		t.Fatalf("calls = %+v", calls)
+	if len(calls) != 1 || string(calls[0].Input) != `{"verb":"reference new","args":["T"]}` {
+		t.Fatalf("calls = %+v, want only the round's first (C11)", calls)
+	}
+	if bodies[0]["parallel_tool_calls"] != false {
+		t.Fatalf("parallel_tool_calls = %v, want false", bodies[0]["parallel_tool_calls"])
 	}
 	fn := bodies[0]["tools"].([]any)[0].(map[string]any)
 	if fn["type"] != "function" || !jsonEqual(fn["function"].(map[string]any)["parameters"], schema) || fn["function"].(map[string]any)["name"] != "cerne" {
@@ -109,7 +112,8 @@ func TestOpenAICompleteToolsLoop(t *testing.T) {
 	}
 	for i, id := range []string{"call_1", "call_2"} {
 		m := msgs[2+i].(map[string]any)
-		if m["role"] != "tool" || m["tool_call_id"] != id || m["content"] != `{"ok":true}` {
+		want := []string{`{"ok":true}`, notExecuted}[i]
+		if m["role"] != "tool" || m["tool_call_id"] != id || m["content"] != want {
 			t.Fatalf("tool message %d = %v", i, m)
 		}
 	}
