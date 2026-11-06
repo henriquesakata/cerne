@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { ProcessPerfCard } from './Dashboard'
-import type { ProcessReport, ProcessSide } from './api'
+import type { ProcessMarker, ProcessReport, ProcessSide } from './api'
 
 // Card do painel de desempenho do processo (F-0321): série semanal em SVG,
 // uma linha por marco, a tabela antes/depois com veredito e razão, e os
@@ -11,52 +11,55 @@ import type { ProcessReport, ProcessSide } from './api'
 const side = (n: number, extra: Partial<ProcessSide> = {}): ProcessSide => ({
   from: '2026-10-05T00:00:00Z',
   to: '2026-11-02T00:00:00Z',
+  delivered: n,
+  excluded_no_cost: 0,
+  excluded_epic: 0,
+  excluded_no_gauntlet: 0,
   n,
   median: 4.1e6,
   p25: 3.2e6,
   p75: 6e6,
   raw_median: { input: 300, cache_creation: 339857, cache_read: 28934595, output: 150077 },
+  unattributed_median: 0,
+  coverage: 1,
   with_gauntlet: n,
   returned_share: 0,
   escaped_share: 0,
   ...extra,
 })
 
-const full: ProcessReport = {
+const mk = (id: string, extra: Partial<ProcessMarker>): ProcessMarker => ({
+  id,
+  title: `Mudança ${id}`,
+  at: '2026-10-28T15:44:00Z',
+  before: side(30),
+  after: side(30),
+  verdict: 'inconclusivo',
+  code: 'no_detectable_difference',
+  reason: 'reason in English',
+  guarded: true,
+  cost: 'inconclusivo',
+  returned: 'ok',
+  escaped: 'ok',
+  cost_ratio_ci: [0.87, 1.22],
+  returned_diff_ci: [-0.1, 0.1],
+  escaped_diff_ci: [-0.1, 0.1],
+  ...extra,
+})
+
+const report = (markers: ProcessMarker[], extra: Partial<ProcessReport> = {}): ProcessReport => ({
   weeks: [
-    { week: '2026-W44', start: '2026-10-26T00:00:00Z', median: 4.4e6, n: 3 },
-    { week: '2026-W45', start: '2026-11-02T00:00:00Z', median: 6.6e6, n: 2 },
+    { week: '2026-W44', start: '2026-10-26T00:00:00Z', median: 4.4e6, n: 3, delivered: 5 },
+    { week: '2026-W45', start: '2026-11-02T00:00:00Z', median: 6.6e6, n: 2, delivered: 2 },
   ],
-  markers: [
-    {
-      id: 'D-0061',
-      title: 'Partida enxuta',
-      at: '2026-10-28T15:44:00Z',
-      before: side(30),
-      after: side(30, { returned_share: 0.5 }),
-      verdict: 'piorou',
-      code: 'quality_guard',
-      reason: 'quality guard: returned share +50 pp (90% CI +31 to +68) vetoes median ratio 0.60 (90% CI 0.47–0.77)',
-      cost: 'melhorou',
-      returned: 'piorou',
-      escaped: 'pending',
-      cost_ratio_ci: [0.47, 0.77],
-      returned_diff_ci: [0.31, 0.68],
-    },
-    {
-      id: 'D-0062',
-      title: 'Outra mudança',
-      at: '2026-11-03T17:52:00Z',
-      before: side(3),
-      after: side(0, { cut_by: 'D-0063' }),
-      verdict: 'inconclusivo',
-      code: 'small_sample',
-      reason: 'small sample (n=3 before, n=0 after; 8 per side needed)',
-    },
-  ],
+  markers,
   excluded_no_cost: 273,
+  excluded_epic: 1,
   excluded_no_gauntlet: 0,
-}
+  min_sample: 8,
+  guard_level: 0.975,
+  ...extra,
+})
 
 const payload = vi.hoisted(() => ({ current: null as unknown }))
 vi.mock('./api', async (importOriginal) => ({
@@ -69,24 +72,102 @@ beforeEach(() => cleanup())
 
 describe('ProcessPerfCard (F-0321)', () => {
   it('mostra série, marcos, tabela e veredito', async () => {
-    payload.current = full
+    payload.current = report([
+      mk('D-0061', {
+        verdict: 'piorou',
+        code: 'quality_guard',
+        cost: 'melhorou',
+        cost_ratio_ci: [0.47, 0.77],
+        after: side(30, { median: 2.46e6, returned_share: 0.5, escaped_share: 0.2 }),
+        returned: 'piorou',
+        returned_diff_ci: [0.31, 0.68],
+        escaped: 'piorou',
+        escaped_diff_ci: [0.05, 0.38],
+      }),
+      mk('D-0062', {
+        at: '2026-11-03T17:52:00Z',
+        before: side(3),
+        after: side(0, { cut_by: 'D-0063', from: '2026-11-03T17:52:00Z', to: '2026-11-03T20:00:00Z' }),
+        code: 'window_cut',
+        cut_side: 'after',
+        guarded: false,
+        cost: undefined,
+        returned: undefined,
+        escaped: undefined,
+      }),
+    ])
     const { container } = render(<ProcessPerfCard />)
     expect(await screen.findByText(/273 entregue\(s\) sem custo carimbado/)).toBeInTheDocument()
     expect(container.querySelectorAll('svg circle').length).toBe(2)
     expect(screen.getAllByText('D-0061').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText('piorou').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/guarda de qualidade/)).toBeInTheDocument()
-    expect(screen.getByText(/amostra pequena \(n=3 antes, n=0 depois\)/)).toBeInTheDocument()
+    // C17: both guards that act are named, with their intervals (C2: the
+    // guard's own level); "veta" only where the cost improved.
+    expect(
+      screen.getByText(
+        /guarda de qualidade: devolução \+50 pp \(IC 97,5% \+31 a \+68\); defeito escapado \+20 pp \(IC 97,5% \+5 a \+38\) veta o ganho de custo/,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/janela depois cortada por D-0063: .* — este marco não pode ter veredito/)).toBeInTheDocument()
     expect(screen.getByText('cortada em D-0063')).toBeInTheDocument()
   })
 
+  it('cada código tem a sua frase', async () => {
+    payload.current = report([
+      mk('D-0001', {
+        verdict: 'melhorou',
+        code: 'quality_better_cost_flat',
+        returned: 'melhorou',
+        before: side(30, { returned_share: 0.6 }),
+        returned_diff_ci: [-0.8, -0.4],
+      }),
+      mk('D-0002', {
+        verdict: 'piorou',
+        code: 'quality_worse_cost_flat',
+        returned: 'piorou',
+        after: side(30, { returned_share: 0.3 }),
+        returned_diff_ci: [0.05, 0.5],
+      }),
+      mk('D-0003', {
+        verdict: 'piorou',
+        code: 'cost_and_quality_worse',
+        cost: 'piorou',
+        returned: 'piorou',
+        after: side(30, { median: 5.74e6, returned_share: 0.3 }),
+        returned_diff_ci: [0.05, 0.5],
+      }),
+      mk('D-0004', { verdict: 'melhorou', code: 'cost', cost: 'melhorou', after: side(30, { median: 2.46e6 }), cost_ratio_ci: [0.47, 0.77] }),
+      mk('D-0005', {
+        verdict: 'melhorou',
+        code: 'cost',
+        cost: 'melhorou',
+        after: side(30, { median: 2.46e6, escaped_share: null }),
+        cost_ratio_ci: [0.47, 0.77],
+        guarded: false,
+        escaped: 'pending',
+      }),
+      mk('D-0006', {}),
+      mk('D-0007', { before: side(3), after: side(9), code: 'small_sample', guarded: false }),
+    ])
+    render(<ProcessPerfCard />)
+    await screen.findByText(/273 entregue/)
+    expect(screen.getByText(/qualidade melhorou, custo sem diferença detectável: devolução -60 pp \(IC 97,5% -80 a -40\)/)).toBeInTheDocument()
+    expect(screen.getByText(/qualidade piorou, custo sem diferença detectável: devolução \+30 pp/)).toBeInTheDocument()
+    expect(screen.getByText(/custo e qualidade pioraram: custo subiu 40%; devolução \+30 pp/)).toBeInTheDocument()
+    expect(screen.getAllByText(/razão das medianas 0,60 \(IC 90% 0,47–0,77\): custo caiu 40%/).length).toBe(2)
+    expect(screen.getByText('melhorou (guardas pendentes: defeito escapado pendente)')).toBeInTheDocument()
+    expect(
+      screen.getByText(/sem diferença detectável: IC 90% 0,87–1,22 — efeitos nessa faixa não são distinguíveis com n=30 antes, n=30 depois/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/amostra pequena \(n=3 antes, n=9 depois; 8 por lado necessárias\)/)).toBeInTheDocument()
+    expect(screen.queryByText(/veta/)).toBeNull()
+  })
+
   it('estado vazio sem gráfico', async () => {
-    payload.current = {
-      ...full,
+    payload.current = report([mk('D-0062', { before: side(3), after: side(0), code: 'small_sample', guarded: false })], {
       reason: 'no feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp)',
       weeks: [],
-      markers: [full.markers[1]],
-    }
+    })
     const { container } = render(<ProcessPerfCard />)
     expect(await screen.findByText(/Nenhuma feature com custo carimbado — depende da F-0309/)).toBeInTheDocument()
     expect(container.querySelector('svg')).toBeNull()

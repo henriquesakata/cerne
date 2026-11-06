@@ -315,20 +315,26 @@ export async function fetchFlowStats(): Promise<FlowMetrics> {
 // Painel de desempenho do processo (F-0321) — espelho de stats.ProcessReport.
 // Os vereditos são os literais da spec; a UI só os rotula.
 export type ProcessVerdict = 'melhorou' | 'piorou' | 'inconclusivo'
-export type ProcessGuard = 'ok' | 'piorou' | 'inconclusivo' | 'pending'
+export type ProcessGuard = 'ok' | 'melhorou' | 'piorou' | 'inconclusivo' | 'pending'
 
 export type ProcessSide = {
   from: string
   to: string
   cut_by?: string
+  delivered: number
+  excluded_no_cost: number
+  excluded_epic: number
+  excluded_no_gauntlet: number
   n: number
   median: number
   p25: number
   p75: number
   raw_median: { input: number; cache_creation: number; cache_read: number; output: number }
+  unattributed_median: number
+  coverage: number
   with_gauntlet: number
   returned_share: number
-  escaped_share: number
+  escaped_share: number | null // null while the side's deliveries are under 28 days old
 }
 
 export type ProcessMarker = {
@@ -338,8 +344,18 @@ export type ProcessMarker = {
   before: ProcessSide
   after: ProcessSide
   verdict: ProcessVerdict
-  code: 'small_sample' | 'within_noise' | 'cost' | 'quality_guard'
+  code:
+    | 'small_sample'
+    | 'window_cut'
+    | 'no_detectable_difference'
+    | 'cost'
+    | 'quality_guard'
+    | 'quality_worse_cost_flat'
+    | 'quality_better_cost_flat'
+    | 'cost_and_quality_worse'
   reason: string
+  guarded: boolean
+  cut_side?: 'before' | 'after'
   cost?: ProcessVerdict
   returned?: ProcessGuard
   escaped?: ProcessGuard
@@ -350,10 +366,13 @@ export type ProcessMarker = {
 
 export type ProcessReport = {
   reason?: string
-  weeks: { week: string; start: string; median: number; n: number }[]
+  weeks: { week: string; start: string; median: number; n: number; delivered: number }[]
   markers: ProcessMarker[]
   excluded_no_cost: number
+  excluded_epic: number
   excluded_no_gauntlet: number
+  min_sample: number
+  guard_level: number
 }
 
 export async function fetchProcessPerf(): Promise<ProcessReport> {

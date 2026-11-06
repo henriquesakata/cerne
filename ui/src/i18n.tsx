@@ -113,16 +113,29 @@ const ptBR = {
     processNoMarkers: 'Nenhum marco: nenhuma decisão com facet process e component metric.',
     processCols: { marker: 'Marco', before: 'Antes', after: 'Depois', guard: 'Guarda', verdict: 'Veredito' },
     processVerdicts: { melhorou: 'melhorou', piorou: 'piorou', inconclusivo: 'inconclusivo' },
-    processGuards: { ok: 'ok', piorou: 'piorou', inconclusivo: 'inconclusivo', pending: 'pendente' },
+    processGuards: { ok: 'ok', melhorou: 'melhorou', piorou: 'piorou', inconclusivo: 'inconclusivo', pending: 'pendente' },
+    processSideName: { before: 'antes', after: 'depois' },
+    processDown: 'caiu',
+    processUp: 'subiu',
+    processGuardLine: (label: string, pp: string, level: string, lo: string, hi: string) => `${label} ${pp} pp (IC ${level}% ${lo} a ${hi})`,
+    processUnguarded: (lack: string) => `(guardas pendentes: ${lack})`,
+    processLackReturned: 'devolução sem amostra',
+    processLackEscaped: 'defeito escapado pendente',
     processReturned: 'devolução',
     processEscaped: 'defeito escapado',
     processCut: (id: string) => `cortada em ${id}`,
     processReason: {
-      small_sample: (b: number, a: number) => `amostra pequena (n=${b} antes, n=${a} depois)`,
-      within_noise: (r: string, lo: string, hi: string) => `diferença dentro do ruído: razão ${r} (IC 90% ${lo}–${hi})`,
-      cost: (r: string, lo: string, hi: string) => `razão das medianas ${r} (IC 90% ${lo}–${hi})`,
-      quality_guard: (qual: string, pp: string, lo: string, hi: string) =>
-        `guarda de qualidade: ${qual} ${pp} pp (IC 90% ${lo} a ${hi}) veta o custo`,
+      small_sample: (b: number, a: number, need: number) => `amostra pequena (n=${b} antes, n=${a} depois; ${need} por lado necessárias)`,
+      window_cut: (side: string, by: string, from: string, to: string, n: number) =>
+        `janela ${side} cortada por ${by}: ${from} → ${to} (n=${n}) — este marco não pode ter veredito`,
+      no_detectable_difference: (lo: string, hi: string, b: number, a: number) =>
+        `sem diferença detectável: IC 90% ${lo}–${hi} — efeitos nessa faixa não são distinguíveis com n=${b} antes, n=${a} depois`,
+      cost: (r: string, lo: string, hi: string, dir: string, pct: number) => `razão das medianas ${r} (IC 90% ${lo}–${hi}): custo ${dir} ${pct}%`,
+      quality_guard: (guards: string, r: string, lo: string, hi: string) =>
+        `guarda de qualidade: ${guards} veta o ganho de custo (razão das medianas ${r}, IC 90% ${lo}–${hi})`,
+      quality_worse_cost_flat: (guards: string) => `qualidade piorou, custo sem diferença detectável: ${guards}`,
+      quality_better_cost_flat: (guards: string) => `qualidade melhorou, custo sem diferença detectável: ${guards}`,
+      cost_and_quality_worse: (pct: number, guards: string) => `custo e qualidade pioraram: custo subiu ${pct}%; ${guards}`,
     },
     processExcluded: (noCost: number, noG: number) =>
       `${noCost} entregue(s) sem custo carimbado · ${noG} sem registro de Gauntlet (fora só da guarda de devolução)`,
@@ -1054,16 +1067,29 @@ const en: Messages = {
     processNoMarkers: 'No markers: no decision has facet process and component metric.',
     processCols: { marker: 'Marker', before: 'Before', after: 'After', guard: 'Guard', verdict: 'Verdict' },
     processVerdicts: { melhorou: 'improved', piorou: 'worse', inconclusivo: 'inconclusive' },
-    processGuards: { ok: 'ok', piorou: 'worse', inconclusivo: 'inconclusive', pending: 'pending' },
+    processGuards: { ok: 'ok', melhorou: 'better', piorou: 'worse', inconclusivo: 'inconclusive', pending: 'pending' },
+    processSideName: { before: 'before', after: 'after' },
+    processDown: 'down',
+    processUp: 'up',
+    processGuardLine: (label: string, pp: string, level: string, lo: string, hi: string) => `${label} ${pp} pp (${level}% CI ${lo} to ${hi})`,
+    processUnguarded: (lack: string) => `(unguarded: ${lack})`,
+    processLackReturned: 'returns too thin',
+    processLackEscaped: 'escaped defects pending',
     processReturned: 'returns',
     processEscaped: 'escaped defects',
     processCut: (id: string) => `cut at ${id}`,
     processReason: {
-      small_sample: (b: number, a: number) => `small sample (n=${b} before, n=${a} after)`,
-      within_noise: (r: string, lo: string, hi: string) => `difference within noise: ratio ${r} (90% CI ${lo}–${hi})`,
-      cost: (r: string, lo: string, hi: string) => `median ratio ${r} (90% CI ${lo}–${hi})`,
-      quality_guard: (qual: string, pp: string, lo: string, hi: string) =>
-        `quality guard: ${qual} ${pp} pp (90% CI ${lo} to ${hi}) vetoes the cost`,
+      small_sample: (b: number, a: number, need: number) => `small sample (n=${b} before, n=${a} after; ${need} per side needed)`,
+      window_cut: (side: string, by: string, from: string, to: string, n: number) =>
+        `${side} window cut at ${by}: ${from} → ${to} (n=${n}) — this marker cannot get a verdict`,
+      no_detectable_difference: (lo: string, hi: string, b: number, a: number) =>
+        `no detectable difference: 90% CI ${lo}–${hi} — changes in that range are not distinguishable with n=${b} before, n=${a} after`,
+      cost: (r: string, lo: string, hi: string, dir: string, pct: number) => `median ratio ${r} (90% CI ${lo}–${hi}): cost ${dir} ${pct}%`,
+      quality_guard: (guards: string, r: string, lo: string, hi: string) =>
+        `quality guard: ${guards} vetoes the cost gain (median ratio ${r}, 90% CI ${lo}–${hi})`,
+      quality_worse_cost_flat: (guards: string) => `quality worse, no detectable cost difference: ${guards}`,
+      quality_better_cost_flat: (guards: string) => `quality better, no detectable cost difference: ${guards}`,
+      cost_and_quality_worse: (pct: number, guards: string) => `cost and quality worse: cost up ${pct}%; ${guards}`,
     },
     processExcluded: (noCost: number, noG: number) =>
       `${noCost} delivered without a stamped cost · ${noG} without a Gauntlet record (out of the returns guard only)`,

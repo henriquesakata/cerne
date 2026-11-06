@@ -437,32 +437,72 @@ function fmtMtok(v: number, lang: string): string {
   return `${(v / 1e6).toLocaleString(lang, { maximumFractionDigits: 1 })} M`
 }
 
-// processReasonText builds the verdict's pt-BR sentence from the code and the
-// numeric fields — the verdict order lives in the server, never here.
-function processReasonText(m: ProcessMarker, t: Messages, lang: string): string {
-  const r = t.dashboard.processReason
-  const ratio = (v: number) => v.toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// fmtWhen renders an instant of a window, in UTC: windows cut by a marker
+// hours away need the time, not only the day.
+function fmtWhen(iso: string, lang: string): string {
+  return `${new Date(iso).toLocaleString(lang, { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`
+}
+
+// processReasonText builds the verdict's sentence from the code and the
+// numeric fields — the verdict order lives in the server, never here. Every
+// guard that decided is named with its interval (C17).
+function processReasonText(m: ProcessMarker, report: ProcessReport, t: Messages, lang: string): string {
+  const d = t.dashboard
+  const R = d.processReason
+  const num = (v: number) => v.toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const pp = (v: number) => {
     const n = Math.round(v * 100)
     return `${n > 0 ? '+' : ''}${n.toLocaleString(lang)}`
   }
+  const level = (report.guard_level * 100).toLocaleString(lang, { maximumFractionDigits: 1 })
+  const guardLine = (g: 'returned' | 'escaped') => {
+    const ci = (g === 'returned' ? m.returned_diff_ci : m.escaped_diff_ci) ?? [0, 0]
+    const diff =
+      g === 'returned'
+        ? m.after.returned_share - m.before.returned_share
+        : (m.after.escaped_share ?? 0) - (m.before.escaped_share ?? 0)
+    return d.processGuardLine(g === 'returned' ? d.processReturned : d.processEscaped, pp(diff), level, pp(ci[0]), pp(ci[1]))
+  }
+  const deciding = (v: 'melhorou' | 'piorou') =>
+    (['returned', 'escaped'] as const)
+      .filter((g) => m[g] === v)
+      .map(guardLine)
+      .join('; ')
+  const ci = m.cost_ratio_ci ?? [0, 0]
+  const ratio = m.after.median / m.before.median
+  const pct = Math.round(Math.abs(ratio - 1) * 100)
   switch (m.code) {
     case 'small_sample':
-      return r.small_sample(m.before.n, m.after.n)
-    case 'quality_guard': {
-      const returned = m.returned === 'piorou'
-      const ci = (returned ? m.returned_diff_ci : m.escaped_diff_ci) ?? [0, 0]
-      const diff = returned
-        ? m.after.returned_share - m.before.returned_share
-        : m.after.escaped_share - m.before.escaped_share
-      const qual = returned ? t.dashboard.processReturned : t.dashboard.processEscaped
-      return r.quality_guard(qual, pp(diff), pp(ci[0]), pp(ci[1]))
+      return R.small_sample(m.before.n, m.after.n, report.min_sample)
+    case 'window_cut': {
+      const cut = m.cut_side ?? 'after'
+      const s = m[cut]
+      return R.window_cut(d.processSideName[cut], s.cut_by ?? '', fmtWhen(s.from, lang), fmtWhen(s.to, lang), s.n)
     }
-    default: {
-      const ci = m.cost_ratio_ci ?? [0, 0]
-      return r[m.code](ratio(m.after.median / m.before.median), ratio(ci[0]), ratio(ci[1]))
-    }
+    case 'no_detectable_difference':
+      return R.no_detectable_difference(num(ci[0]), num(ci[1]), m.before.n, m.after.n)
+    case 'cost':
+      return R.cost(num(ratio), num(ci[0]), num(ci[1]), ratio < 1 ? d.processDown : d.processUp, pct)
+    case 'quality_guard':
+      return R.quality_guard(deciding('piorou'), num(ratio), num(ci[0]), num(ci[1]))
+    case 'quality_worse_cost_flat':
+      return R.quality_worse_cost_flat(deciding('piorou'))
+    case 'quality_better_cost_flat':
+      return R.quality_better_cost_flat(deciding('melhorou'))
+    case 'cost_and_quality_worse':
+      return R.cost_and_quality_worse(pct, deciding('piorou'))
   }
+}
+
+// unguardedText qualifies a melhorou whose guards were not both evaluated
+// (C9): it must not read like a guarded one.
+function unguardedText(m: ProcessMarker, t: Messages): string {
+  if (m.verdict !== 'melhorou' || m.guarded) return ''
+  const lack = [
+    m.returned === 'inconclusivo' && t.dashboard.processLackReturned,
+    m.escaped === 'pending' && t.dashboard.processLackEscaped,
+  ].filter(Boolean)
+  return ` ${t.dashboard.processUnguarded(lack.join(', '))}`
 }
 
 function ProcessSideCell({ side }: { side: ProcessSide }) {
@@ -576,9 +616,12 @@ export function ProcessPerfCard() {
                     </td>
                     <td>{guards(m)}</td>
                     <td>
-                      <strong>{t.dashboard.processVerdicts[m.verdict]}</strong>
+                      <strong>
+                        {t.dashboard.processVerdicts[m.verdict]}
+                        {unguardedText(m, t)}
+                      </strong>
                       <br />
-                      {processReasonText(m, t, lang)}
+                      {processReasonText(m, data, t, lang)}
                     </td>
                   </tr>
                 ))}
