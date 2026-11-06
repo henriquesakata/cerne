@@ -3,12 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -16,28 +13,39 @@ import (
 	"gitlab.com/rockt/cerne/internal/wiki"
 )
 
-// TestWikiOnDemand is F-0316's named trio over one fixture in two states: a
-// compile_on_push project with a callable provider whose only lint finding is
-// a wiki debt (a page citing F-0999, which does not exist), first with
-// wiki.enabled on, then off, then on again.
-func TestWikiOnDemand(t *testing.T) {
-	projDir, _, repoDir := setupProject(t)
-	var calls atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"content":[{"type":"text","text":"# Wiki\n\nSíntese."}]}`)
-	}))
-	defer srv.Close()
-	t.Setenv("CERNE_TEST_KEY", "test-key")
+// recordSpawns replaces the detached compile spawn with a counter for the
+// test's lifetime: under go test the real spawn is skipped, so the decision to
+// spawn is what a test can observe.
+func recordSpawns(t *testing.T) *int {
+	t.Helper()
+	n := 0
+	orig := startBackgroundCompile
+	startBackgroundCompile = func(projCtx) error { n++; return nil }
+	t.Cleanup(func() { startBackgroundCompile = orig })
+	return &n
+}
+
+// compileOnPushCallable opts projDir into compile_on_push with a callable
+// [llm] mode; no provider is ever reached (the spawn is recorded, not run).
+func compileOnPushCallable(t *testing.T, projDir string) {
+	t.Helper()
 	rc := filepath.Join(projDir, ".cernerc")
 	data, err := os.ReadFile(rc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A top-level key goes first: appended after a table it would land inside it.
-	mustWrite(t, rc, "compile_on_push = true\n"+string(data)+
-		fmt.Sprintf("\n[llm]\nmode = \"byo-key\"\nbase_url = %q\nkey_env = \"CERNE_TEST_KEY\"\n", srv.URL))
+	mustWrite(t, rc, "compile_on_push = true\n"+string(data)+"\n[llm]\nmode = \"byo-key\"\nbase_url = \"http://127.0.0.1:1\"\nkey_env = \"CERNE_TEST_KEY\"\n")
+}
+
+// TestWikiOnDemand is F-0316's named trio over one fixture in two states: a
+// compile_on_push project with a callable provider whose only lint finding is
+// a wiki debt (a page citing F-0999, which does not exist), first with
+// wiki.enabled on, then off, then on again.
+func TestWikiOnDemand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	spawns := recordSpawns(t)
+	compileOnPushCallable(t, projDir)
 
 	cerneOK := func(t *testing.T, args ...string) string {
 		t.Helper()
@@ -83,8 +91,8 @@ func TestWikiOnDemand(t *testing.T) {
 		mustWrite(t, spec, string(data)+"\nMais uma linha.\n")
 	}
 
-	if out := cerneOK(t, "push"); !strings.Contains(out, "Wiki recompiling in background") {
-		t.Fatalf("control: push with wiki on must start the compile:\n%s", out)
+	if out := cerneOK(t, "push"); !strings.Contains(out, "Wiki recompiling in background") || *spawns != 1 {
+		t.Fatalf("control: push with wiki on must spawn the compile (spawns = %d):\n%s", *spawns, out)
 	}
 	out, err := execCerne(t, "lint", "--dir", projDir)
 	if err == nil || err.Error() != "1 problem(s) found" || !strings.Contains(out, "WIKI-SOURCE-UNKNOWN (1)\n") || !strings.Contains(out, "Total: 1 problem(s).") {
@@ -121,8 +129,8 @@ func TestWikiOnDemand(t *testing.T) {
 		if !strings.Contains(out, "Sent: 1 document(s)") || strings.Contains(out, "Wiki recompiling in background") || strings.Contains(out, "compile_on_push") {
 			t.Fatalf("push with wiki off must send without starting the compile:\n%s", out)
 		}
-		if n := calls.Load(); n != 0 {
-			t.Fatalf("provider called %d time(s)", n)
+		if *spawns != 1 {
+			t.Fatalf("push with wiki off spawned the compile: spawns = %d, want still 1", *spawns)
 		}
 	})
 
@@ -150,8 +158,8 @@ func TestWikiOnDemand(t *testing.T) {
 		if rules := debts(t); !hasWikiDebt(rules) {
 			t.Fatalf("next --json debts with wiki back on = %v, want %s", rules, lint.RuleWikiSourceUnknown)
 		}
-		if out := cerneOK(t, "push"); !strings.Contains(out, "Wiki recompiling in background") {
-			t.Fatalf("push with wiki back on must start the compile:\n%s", out)
+		if out := cerneOK(t, "push"); !strings.Contains(out, "Wiki recompiling in background") || *spawns != 2 {
+			t.Fatalf("push with wiki back on must spawn the compile (spawns = %d):\n%s", *spawns, out)
 		}
 	})
 }

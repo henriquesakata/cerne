@@ -87,7 +87,8 @@ func (l *compileLock) release() {
 // child is deliberately never Wait()ed: it outlives this process, reparented
 // to init. Its streams go to a log file, never to the parent's stdout/stderr,
 // so a harness reading the push's output is not held open by the child's pipe.
-func startBackgroundCompile(ctx projCtx) error {
+// A var so tests record the spawn decision (F-0316) instead of running it.
+var startBackgroundCompile = func(ctx projCtx) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
