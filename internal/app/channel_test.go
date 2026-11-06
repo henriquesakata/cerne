@@ -859,3 +859,21 @@ func TestChannelLongHumanNameKeepsTheCap(t *testing.T) {
 		t.Fatalf("name not cut to 24 runes, or over budget:\n%s", out)
 	}
 }
+
+// TestChannelProtocolLineTruthful (critic C15): when the addressed message
+// fell into the count line, the protocol line points at the full read, not
+// at an `ack <seq>` the reader cannot see.
+func TestChannelProtocolLineTruthful(t *testing.T) {
+	f := newChanFixture(t)
+	f.post("W-0002", "W-0001 segura o rooms.go", false)
+	for i := range 5 {
+		f.post("Henrique", fmt.Sprintf("humano %d", i), true)
+	}
+	out := f.inject("s1", true)
+	if strings.Contains(out, "→ you") || !strings.Contains(out, "+1 more") {
+		t.Fatalf("want the addressed message counted, not inline:\n%s", out)
+	}
+	if !strings.HasSuffix(out, "↳ addressed to you, not shown above: read it with cerne msg read\n") || strings.Contains(out, "ack") {
+		t.Fatalf("protocol line not pointing at the read:\n%s", out)
+	}
+}

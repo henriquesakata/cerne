@@ -355,12 +355,12 @@ func injectionTail(sel []injItem, more int, anyDirected bool) string {
 		}
 	}
 	slices.Sort(directed)
-	ack := "<seq>"
-	if len(directed) > 0 {
-		ack = strings.Trim(fmt.Sprint(directed), "[]")
-	}
-	if anyDirected {
-		fmt.Fprintf(&b, "↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %s\n", ack)
+	switch {
+	case len(directed) > 0:
+		fmt.Fprintf(&b, "↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %s\n",
+			strings.Trim(fmt.Sprint(directed), "[]"))
+	case anyDirected: // only in the count line: never an ack the reader cannot see (critic C15)
+		b.WriteString("↳ addressed to you, not shown above: read it with cerne msg read\n")
 	}
 	return b.String()
 }
