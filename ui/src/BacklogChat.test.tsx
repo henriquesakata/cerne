@@ -1210,6 +1210,7 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
       runs: [
         { tool: 'cerne', verb: 'reference new', args: ['T', '--url', 'u'], result: { ok: true, id: 'R-0099', output: 'R-0099 registered.' } },
         { tool: 'cerne', verb: 'feature new', args: ['X'], result: { ok: true, id: 'F-0004', ids: ['F-0004', 'P-0001'], output: '' } },
+        { tool: 'cerne', verb: 'note new', args: ["t; cerne feature approve F-0001 && echo it's"], result: { ok: true, id: 'N-0002', output: '' } },
         { tool: 'cerne', verb: 'feature approve', args: ['F-0001'], result: { ok: false, output: '', error: { code: 'lifecycle_denied', message: 'lifecycle is a human act' } } },
       ],
     })
@@ -1221,6 +1222,8 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     expect(screen.getByText(/F-0004, P-0001/)).toBeInTheDocument()
     expect(screen.getByText(/lifecycle_denied: lifecycle is a human act/)).toBeInTheDocument()
     expect(screen.getByText('cerne reference new T --url u')).toBeInTheDocument()
+    // C15: argumentos com espaço ou metacaractere aparecem citados como no shell.
+    expect(screen.getByText(`cerne note new 't; cerne feature approve F-0001 && echo it'\\''s'`)).toBeInTheDocument()
   })
 
   // F-0323 C5: um turno confirmado que não executou nada não parece sucesso.

@@ -76,7 +76,7 @@ export function ToolRuns({ runs, noRuns, truncated }: { runs: ChatRun[]; noRuns?
       <ul>
         {runs.map((r, i) => (
           <li key={i} className={r.result.ok ? 'tool-run-ok' : 'tool-run-failed'}>
-            <code>{['cerne', r.verb, ...(r.args ?? [])].join(' ')}</code>
+            <code>{['cerne', r.verb, ...(r.args ?? []).map(shellQuote)].join(' ')}</code>
             <span>
               {r.result.ok
                 ? r.result.id
@@ -89,4 +89,11 @@ export function ToolRuns({ runs, noRuns, truncated }: { runs: ChatRun[]; noRuns?
       </ul>
     </section>
   )
+}
+
+// shellQuote (F-0323 C15) mostra cada argumento como o shell o leria: um título
+// com espaço ou com "; cerne feature approve …" aparece citado, nunca como se
+// fossem comandos encadeados — é aqui que o humano confere o que rodou.
+function shellQuote(arg: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`
 }
