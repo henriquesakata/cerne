@@ -245,6 +245,12 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	if err != nil {
 		return nil, err
 	}
+	// Ideas (F-0312) are loaded only to resolve [[I-NNNN]] wiki-links: raw
+	// material feeds no rule — a deliberate exclusion, not an omission.
+	ideas, err := store.LoadAllIdeas(repoDir)
+	if err != nil {
+		return nil, err
+	}
 
 	needles, err := buildNeedles(repoDir, features, decisions, references, runbooks, notes, historicals)
 	if err != nil {
@@ -261,6 +267,9 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	ids := knownEntityIDs(features, decisions, references, runbooks, notes, historicals)
 	for _, p := range pendings {
 		ids[mdlink.CanonicalID(p.ID)] = true
+	}
+	for _, i := range ideas {
+		ids[mdlink.CanonicalID(i.ID)] = true
 	}
 	var findings []Finding
 	for _, d := range docs {

@@ -184,9 +184,9 @@ func BuildGraph(repoDir string) (Graph, error) {
 		// F-0167: id-form wiki-links are citations too — same edge type, same
 		// dedupe; resolution goes through the shared canonical-id helper, so
 		// lint and graph canonicalize ids the same way. The id sets differ on
-		// purpose: lint also resolves P- (pendings, F-0322), which are not graph
-		// nodes (the graph is a UI surface), so a [[P-…]] is a valid link with
-		// no edge here.
+		// purpose: lint also resolves P- (pendings, F-0322) and I- (ideas,
+		// F-0312), which are not graph nodes (the graph is a UI surface), so a
+		// [[P-…]] or [[I-…]] is a valid link with no edge here.
 		wikiResolved, _ := mdlink.WikiLinks(string(data), func(target string) (string, bool) {
 			id := mdlink.CanonicalID(target)
 			return id, nodeSet[id]
