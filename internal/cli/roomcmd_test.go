@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -745,5 +746,23 @@ func TestRoomMinutesRegister(t *testing.T) {
 	}
 	if !strings.Contains(out, "N-0001") || !strings.Contains(out, "N-0002") {
 		t.Fatalf("note list --component ata = %q, want both registered minutes", out)
+	}
+}
+
+// TestRoomCloseRefusesPermanentChannel (F-0325 crit. 2): the permanent channel
+// has no close — refused up front, before the facilitator check and without a
+// server.
+func TestRoomCloseRefusesPermanentChannel(t *testing.T) {
+	out, err := execCerne(t, "room", "close", "channel", "--dir", t.TempDir(), "--port", "1")
+	if !errors.Is(err, room.ErrPermanentRoom) || !strings.Contains(err.Error(), "permanent") {
+		t.Fatalf("room close channel: err = %v\n%s", err, out)
+	}
+}
+
+// TestRoomMinutesRegisterRefusesChannel (crit. 2): nor minutes.
+func TestRoomMinutesRegisterRefusesChannel(t *testing.T) {
+	out, err := execCerne(t, "room", "minutes", "register", "channel", "--dir", t.TempDir(), "--port", "1")
+	if !errors.Is(err, room.ErrPermanentRoom) {
+		t.Fatalf("room minutes register channel: err = %v\n%s", err, out)
 	}
 }
