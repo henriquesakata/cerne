@@ -254,9 +254,9 @@ const ChatNoChannelMarker = "SEM CANAL DE EXECUÇÃO"
 // confirmed card into silence (R-0046).
 const chatNoChannelContract = ChatNoChannelMarker + `
 
-Neste modo você NÃO consegue executar comandos do cerne: não há canal de execução, e o usuário não verá card de execução. Quando a conversa pedir uma escrita no cerne (registrar referência, nota ou feature; atualizar uma feature existente), entregue os comandos num bloco para o usuário copiar e rodar no terminal dele:
+Neste modo você NÃO consegue executar comandos do cerne: não há canal de execução, e o usuário não verá card de execução. Quando a conversa pedir uma escrita no cerne (registrar referência, nota ou feature; atualizar uma feature existente), entregue os comandos neste bloco, uma linha por comando — a interface o mostra para o usuário copiar e rodar no terminal dele:
 
-` + "```bash" + `
+` + "```" + ChatCommandFence + `
 cerne reference new "<título>" --url <url> --informs F-NNNN
 ` + "```" + `
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -735,5 +736,33 @@ func TestServeChatHasNoExecChannel(t *testing.T) {
 	}
 	if _, offered := (*bodies)[0]["tools"]; offered {
 		t.Fatalf("remote chat offered tools: %v", (*bodies)[0]["tools"])
+	}
+}
+
+// TestChatDeclaredNoFunctionCallingDegrades (F-0323 C7): an OpenAI-compatible
+// gateway without tools is declared in [llm]; the chat then degrades honestly —
+// no-channel prompt, no tools, no_exec — even on a confirmed turn.
+func TestChatDeclaredNoFunctionCallingDegrades(t *testing.T) {
+	h, _, projDir, bodies := toolTurnSetup(t, scripted(`{"verb":"zz-probe"}`, "ok"))
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.LLM.NoFunctionCalling = true
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		NoExec bool  `json:"no_exec"`
+		Runs   []any `json:"runs"`
+	}
+	doChatStream(t, h, confirmedBody, &got)
+	body := (*bodies)[0]
+	if _, offered := body["tools"]; offered || !got.NoExec || len(got.Runs) != 0 {
+		t.Fatalf("terminal = %+v, tools offered = %v; want no_exec without tools", got, offered)
+	}
+	prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
+	if !strings.Contains(prompt, app.ChatNoChannelMarker) {
+		t.Fatal("prompt lacks the no-channel contract")
 	}
 }

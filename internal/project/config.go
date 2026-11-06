@@ -309,6 +309,10 @@ type LLMConfig struct {
 	BaseURL   string `toml:"base_url,omitempty"`   // API base URL; default "https://api.anthropic.com"
 	MaxTokens int    `toml:"max_tokens,omitzero"`  // max output tokens; default 8000
 	ClaudeBin string `toml:"claude_bin,omitempty"` // claude-cli binary path; default "claude"
+	// NoFunctionCalling declares a byo-key endpoint without tool use (an
+	// OpenAI-compatible gateway or model that ignores or rejects tools): the
+	// chat then has no execution channel and degrades honestly (F-0323 C7).
+	NoFunctionCalling bool `toml:"no_function_calling,omitempty"`
 }
 
 // LLM defaults applied by withDefaults when a byo-key field is empty/zero.

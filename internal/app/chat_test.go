@@ -250,7 +250,9 @@ func TestBuildChatSystemPromptNoChannel(t *testing.T) {
 			t.Fatalf("no-channel prompt promises execution (%q):\n%s", banned, prompt)
 		}
 	}
-	for _, want := range []string{ChatNoChannelMarker, "```bash", "não executou"} {
+	// C7: the copy-only commands use the same fence the UI renders as a
+	// copyable block (never an execution card) when the turn has no channel.
+	for _, want := range []string{ChatNoChannelMarker, "```" + ChatCommandFence, "não executou"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("no-channel prompt missing %q:\n%s", want, prompt)
 		}

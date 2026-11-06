@@ -35,13 +35,14 @@ var CommandTree func() *cobra.Command
 
 // execChannel reports whether the active mode can execute cerne commands
 // (F-0323 crit. 7): claude-cli runs them through its own Bash tool; any other
-// mode needs a function-calling provider and the injected command tree.
-func execChannel(mode string, prov llm.Provider) bool {
-	if llm.ResolveMode(mode) == llm.ModeClaudeCLI {
+// mode needs a function-calling provider, not declared without tools in [llm]
+// (C7), and the injected command tree.
+func execChannel(cfg project.LLMConfig, prov llm.Provider) bool {
+	if llm.ResolveMode(cfg.Mode) == llm.ModeClaudeCLI {
 		return true
 	}
 	_, ok := prov.(llm.ToolCaller)
-	return ok && CommandTree != nil
+	return ok && !cfg.NoFunctionCalling && CommandTree != nil
 }
 
 // chatMessage is one turn of the Backlog chat transcript (F-0210), as sent by
@@ -185,7 +186,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	channel := execChannel(cfg.LLM.Mode, prov) && !remote
+	channel := execChannel(cfg.LLM, prov) && !remote
 
 	sysPrompt, err := app.BuildChatSystemPrompt(repoDir, projDir, cfg, channel)
 	if err != nil {
