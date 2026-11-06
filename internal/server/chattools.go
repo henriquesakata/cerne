@@ -47,9 +47,12 @@ type chatRun struct {
 // a typed tool generated for each verb marked verbs.MarkChatTool — the tree is
 // the only list (crit. 6), and only verbs classified chat are offered.
 func chatTools(tree func() *cobra.Command) []llm.Tool {
-	var enum []string
+	var enum, lifecycle []string
 	var typed []llm.Tool
 	for _, v := range verbs.From(tree()) {
+		if v.Lifecycle {
+			lifecycle = append(lifecycle, v.Path[strings.LastIndex(v.Path, " ")+1:])
+		}
 		if v.Class != verbs.ClassChat {
 			continue // lifecycle, local and unclassified are never offered (C4)
 		}
@@ -61,7 +64,8 @@ func chatTools(tree func() *cobra.Command) []llm.Tool {
 			typed = append(typed, t)
 		}
 	}
-	return append([]llm.Tool{genericTool(enum)}, typed...)
+	slices.Sort(lifecycle)
+	return append([]llm.Tool{genericTool(enum, slices.Compact(lifecycle))}, typed...)
 }
 
 // typedTool generates a verb's typed schema from its definition: positionals
@@ -100,13 +104,15 @@ func jsonType(pflagType string) map[string]any {
 	return map[string]any{"type": "string"}
 }
 
-func genericTool(enum []string) llm.Tool {
+// genericTool is the tool over the whole offered catalog; the refused
+// lifecycle verbs it names come from the marks (C19), never a hand list.
+func genericTool(enum, lifecycle []string) llm.Tool {
 	return llm.Tool{
 		Name: chatToolName,
 		Description: "Executa um comando do cerne neste projeto, no turno que o usuário confirmou no card. " +
 			"O resultado é JSON: ok, id (a entidade criada ou alterada, quando houver), output (a saída do cerne) " +
 			"ou error {code, message}. Relate SEMPRE o id do campo id, nunca um id suposto; em erro, relate o code e a mensagem. " +
-			"Verbos de ciclo de vida (approve, start, complete, accept, reject, revert, substituir, deliver, retire) " +
+			"Verbos de ciclo de vida (" + strings.Join(lifecycle, ", ") + ") e os operacionais não são oferecidos e " +
 			"são recusados: devolva o comando para o usuário rodar no terminal.",
 		Schema: map[string]any{
 			"type": "object",

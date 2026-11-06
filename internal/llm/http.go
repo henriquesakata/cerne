@@ -111,7 +111,8 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
 		tools := AgentReadTools
 		denied := AgentDeniedPaths
-		if write {
+		// F-0323: no derived refusals, no broad grant (fail closed).
+		if write && len(AgentDeniedCommands) > 0 {
 			tools = append(append([]string{}, AgentReadTools...), AgentWriteTools...)
 			// F-0269: the broad grant only makes sense paired with the refusals —
 			// an unconfirmed turn has no write to refuse.

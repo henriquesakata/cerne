@@ -359,6 +359,12 @@ func TestChatToolCatalogFollowsCommandTree(t *testing.T) {
 	if got := enumOf(); !slices.Equal(got, []string{"reference new", "zz-probe"}) {
 		t.Fatalf("enum = %v, want the non-lifecycle verbs of the tree", got)
 	}
+	// C19: the refused lifecycle verbs named to the model come from the marks
+	// too — the fixture marks only approve.
+	desc := (*bodies)[len(*bodies)-1]["tools"].([]any)[0].(map[string]any)["description"].(string)
+	if !strings.Contains(desc, "approve") || strings.Contains(desc, "deliver") {
+		t.Fatalf("description %q must name exactly the tree's lifecycle verbs", desc)
+	}
 
 	setTree(t, func() *cobra.Command {
 		root := fixtureTree()

@@ -20,13 +20,31 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/server"
 	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
 // The chat's tool channel (F-0323) derives its verb catalog from this very
-// tree; server cannot import cli, so the tree is injected here.
-func init() { server.CommandTree = Root }
+// tree, and the claude-cli agent its refusals; server and llm cannot import
+// cli, so both are injected here.
+func init() {
+	server.CommandTree = Root
+	llm.AgentDeniedCommands = agentDeniedCommands(Root())
+}
+
+// agentDeniedCommands is the claude-cli refusal list derived from the chat
+// classes: every verb that is not ClassChat (lifecycle, local, unclassified).
+func agentDeniedCommands(root *cobra.Command) []string {
+	var rules []string
+	for _, v := range verbs.From(root) {
+		if v.Class != verbs.ClassChat {
+			rules = append(rules, "Bash(cerne "+v.Path+":*)")
+		}
+	}
+	return rules
+}
 
 func newUICmd() *cobra.Command {
 	var dir string

@@ -133,30 +133,23 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 	}
 }
 
-// TestAgentDeniedCommandsCoverLifecycleMarks keeps the claude-cli harness
-// refusals (the one hand-kept list) an exact projection of the lifecycle marks
-// (F-0323 criterion 4, "in any mode"): every marked verb has its rule, and no
-// rule outlives its verb.
+// TestAgentDeniedCommandsCoverLifecycleMarks: the claude-cli harness refusals
+// are derived from the command classes (F-0323 C19, criterion 4 "in any
+// mode"): every verb the chat channel denies — lifecycle, local, unclassified —
+// has its rule, and no chat verb is refused.
 func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
 	rules := map[string]bool{}
 	for _, r := range llm.AgentDeniedCommands {
 		rules[r] = true
 	}
-	marked := map[string]bool{}
 	for _, v := range verbs.From(Root()) {
-		if !v.Lifecycle {
-			continue
-		}
 		rule := "Bash(cerne " + v.Path + ":*)"
-		marked[rule] = true
-		if !rules[rule] {
-			t.Errorf("llm.AgentDeniedCommands lacks %q for lifecycle verb %q", rule, v.Path)
+		if denied := v.Class != verbs.ClassChat; denied != rules[rule] {
+			t.Errorf("%q (class %q): refused by the harness = %v, want %v", v.Path, v.Class, rules[rule], denied)
 		}
 	}
-	for r := range rules {
-		if !marked[r] {
-			t.Errorf("llm.AgentDeniedCommands has orphan rule %q (no marked verb)", r)
-		}
+	if !rules["Bash(cerne feature approve:*)"] || !rules["Bash(cerne import:*)"] {
+		t.Fatalf("derived rules miss the lifecycle or local verbs: %v", llm.AgentDeniedCommands)
 	}
 }
 
