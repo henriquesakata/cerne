@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -1012,5 +1013,38 @@ func TestChatInvalidConfirmationIs422(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("provider built %d times, want 0", calls)
+	}
+}
+
+// TestChatNoChannelDegrades (F-0323 crit. 7): a provider without function
+// calling gets the no-channel contract, no tools, and a terminal event marked
+// no_exec — even when the user confirmed a card, the turn stays a plain
+// completion and nothing pretends to execute.
+func TestChatNoChannelDegrades(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+	fake := &llm.Fake{Reply: "```bash\ncerne reference new \"T\" --url https://example.com\n```\nNão executei nada."}
+	orig := newAgentProvider
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return fake, nil }
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	h := New(repoDir, projDir, "proj-chat")
+	for _, body := range []string{
+		`{"messages":[{"role":"user","content":"registra a referência"}]}`,
+		`{"messages":[` + confirmedTranscript + `],"conversation_id":"c1","confirm_turn":1,"confirm":true}`,
+	} {
+		fake.Prompts = nil
+		var got struct {
+			Answered bool   `json:"answered"`
+			NoExec   bool   `json:"no_exec"`
+			Reply    string `json:"reply"`
+		}
+		rec := doJSON(t, h, http.MethodPost, "/api/chat", body, &got)
+		if rec.Code != http.StatusOK || !got.Answered || !got.NoExec || got.Reply != fake.Reply {
+			t.Fatalf("status=%d terminal=%+v, want 200 answered no_exec with the reply", rec.Code, got)
+		}
+		if len(fake.Prompts) != 1 || !strings.Contains(fake.Prompts[0], app.ChatNoChannelMarker) || strings.Contains(fake.Prompts[0], app.ChatCommandMarker) {
+			t.Fatalf("prompt must carry the no-channel contract and not the write one (prompts=%d)", len(fake.Prompts))
+		}
 	}
 }

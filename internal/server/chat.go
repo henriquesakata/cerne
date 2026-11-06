@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/llm"
 	"gitlab.com/rockt/cerne/internal/project"
@@ -23,6 +25,23 @@ var capabilityIDPattern = regexp.MustCompile(`^C-\d+$`)
 // inject a provider without the Streamer capability (the F-0240 fallback path,
 // unreachable otherwise without shelling out to a claude binary).
 var newAgentProvider = llm.NewAgentProvider
+
+// CommandTree is the cerne command tree the chat's tool channel derives its
+// verb catalog from (F-0323). The server cannot import internal/cli (cli
+// imports server), so cli injects it at init; nil means no tool channel — the
+// byo-key chat then degrades honestly instead of promising execution.
+var CommandTree func() *cobra.Command
+
+// execChannel reports whether the active mode can execute cerne commands
+// (F-0323 crit. 7): claude-cli runs them through its own Bash tool; any other
+// mode needs a function-calling provider and the injected command tree.
+func execChannel(mode string, prov llm.Provider) bool {
+	if llm.ResolveMode(mode) == llm.ModeClaudeCLI {
+		return true
+	}
+	_, ok := prov.(llm.ToolCaller)
+	return ok && CommandTree != nil
+}
 
 // chatMessage is one turn of the Backlog chat transcript (F-0210), as sent by
 // the browser — the server is stateless, so the whole transcript travels on
@@ -90,6 +109,9 @@ type chatResponse struct {
 	Answered      bool   `json:"answered"`
 	NeedsProvider bool   `json:"needs_provider,omitempty"`
 	Reply         string `json:"reply,omitempty"`
+	// NoExec (F-0323 crit. 7) marks a turn whose mode has no execution
+	// channel: the UI draws no execution card and offers the commands to copy.
+	NoExec bool `json:"no_exec,omitempty"`
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -137,7 +159,18 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		cfg.LLM.Model = req.Model
 	}
 
-	sysPrompt, err := app.BuildChatSystemPrompt(repoDir, projDir, cfg)
+	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
+	// the budget covers chained cerne queries, not just one shot. F-0260: the
+	// confirmed turn — and only it — also gets the cerne creation commands.
+	// F-0323: built before the prompt, which depends on its execution channel.
+	prov, err := newAgentProvider(cfg.LLM, projDir, confirmed)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	channel := execChannel(cfg.LLM.Mode, prov)
+
+	sysPrompt, err := app.BuildChatSystemPrompt(repoDir, projDir, cfg, channel)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -159,14 +192,6 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 	}
 
-	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
-	// the budget covers chained cerne queries, not just one shot. F-0260: the
-	// confirmed turn — and only it — also gets the cerne creation commands.
-	prov, err := newAgentProvider(cfg.LLM, projDir, confirmed)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
 	defer cancel()
 	prompt := app.BuildChatPrompt(sysPrompt, msgs)
@@ -178,7 +203,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt)
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel)
 			return
 		}
 	}
@@ -187,7 +212,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message
@@ -220,7 +245,7 @@ func writeChatLine(w http.ResponseWriter, status int, v any) {
 // {"error":...} when the stream broke after output already went out (the
 // partial the client holds stays valid; F-0240 criterion 8). An error before
 // any delta still becomes the plain 500 JSON of the single-shot path.
-func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string) {
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	wrote := false
@@ -241,7 +266,7 @@ func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Fl
 		flusher.Flush()
 		return
 	}
-	_ = enc.Encode(chatResponse{Answered: true, Reply: reply})
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec})
 	flusher.Flush()
 }
 

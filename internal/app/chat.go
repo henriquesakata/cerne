@@ -106,7 +106,11 @@ type ChatMessage struct {
 // and the capability tree — for the agent to ground a proposal in what
 // already exists, and instructions for how to format that proposal so the UI
 // can offer it for confirmation.
-func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string, error) {
+//
+// channel (F-0323) is whether the active mode can execute cerne commands: only
+// then does the prompt carry the write contract; without it the agent is told
+// it has no channel and hands copyable commands to the human instead.
+func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel bool) (string, error) {
 	persona, err := cfg.Agent.Resolve(projDir)
 	if err != nil {
 		return "", err
@@ -232,9 +236,31 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config) (string,
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
 	b.WriteString(chatNoteContract)
 	b.WriteString("\n\n")
-	b.WriteString(chatCommandContract)
+	if channel {
+		b.WriteString(chatCommandContract)
+	} else {
+		b.WriteString(chatNoChannelContract)
+	}
 	return b.String(), nil
 }
+
+// ChatNoChannelMarker heads the no-channel contract (F-0323 crit. 7). Exported
+// for the tests that assert which contract a mode received.
+const ChatNoChannelMarker = "SEM CANAL DE EXECUÇÃO"
+
+// chatNoChannelContract replaces chatCommandContract when the mode has no
+// execution channel (a provider without function calling): the prompt must
+// not promise an execution that cannot happen — that promise is what turned a
+// confirmed card into silence (R-0046).
+const chatNoChannelContract = ChatNoChannelMarker + `
+
+Neste modo você NÃO consegue executar comandos do cerne: não há canal de execução, e o usuário não verá card de execução. Quando a conversa pedir uma escrita no cerne (registrar referência, nota ou feature; atualizar uma feature existente), entregue os comandos num bloco para o usuário copiar e rodar no terminal dele:
+
+` + "```bash" + `
+cerne reference new "<título>" --url <url> --informs F-NNNN
+` + "```" + `
+
+Diga explicitamente que você não executou nada. Nunca afirme que registrou e nunca invente nem suponha um id: o id só existe depois que o usuário rodar o comando e te contar a saída real.`
 
 // chatNoteFence is the second fenced block of the chat surface (F-0249):
 // durable knowledge proposed as a note. Same detection mechanism as
