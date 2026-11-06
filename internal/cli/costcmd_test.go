@@ -133,6 +133,7 @@ func TestCostCommandJSONStable(t *testing.T) {
   "messages": 2,
   "sessions": 2,
   "sessions_without_transcript": 1,
+  "sessions_recovered": 0,
   "first": "2026-11-01T10:02:00Z",
   "last": "2026-11-01T10:03:00Z",
   "unattributed": {

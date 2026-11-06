@@ -255,3 +255,64 @@ func TestHookStopCheckChannelFailOpen(t *testing.T) {
 		t.Fatalf("corrupt channel: %v %q", err, out)
 	}
 }
+
+// TestHookStopCheckHarvestsCost (F-0309 clarification): the Stop hook harvests
+// the session's cost snapshot for its live feature, from the payload's
+// transcript_path, and keeps its reminder intact; a transcript it cannot parse
+// or read changes neither the output nor the exit (fail-open, N-0021).
+func TestHookStopCheckHarvestsCost(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0042", Title: "coisa", State: domain.StateInDevelopment, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Dir(repoDir)
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	ts := now.Add(time.Minute).Format(time.RFC3339Nano)
+	stop := func(sess string, lines ...string) string {
+		t.Helper()
+		if err := app.BindSession(cacheDir, sess, "F-0042"); err != nil {
+			t.Fatal(err)
+		}
+		writeTranscript(t, root, sess+".jsonl", lines...)
+		main := filepath.Join(root, "projects", "-tmp-p", sess+".jsonl")
+		payload := strings.Replace(stopPayload(t, sess, projDir), "{", `{"transcript_path":`+strconv.Quote(main)+`,`, 1)
+		out, err := execCerneStdin(t, payload, "hook", "stop-check")
+		if err != nil {
+			t.Fatalf("%s: stop-check: %v\n%s", sess, err, out)
+		}
+		for _, want := range []string{"F-0042", "plan", "result", "cerne sync"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("%s: reminder lost %q:\n%s", sess, want, out)
+			}
+		}
+		if strings.Contains(out, "transcript") {
+			t.Fatalf("%s: harvest leaked output:\n%s", sess, out)
+		}
+		return main
+	}
+
+	stop("sess-cost", costLine(ts, "m1", "claude-opus-5-5", "", 1, 2, 3, 4))
+	if _, err := os.Stat(filepath.Join(cacheDir, "cost", "F-0042.json")); err != nil {
+		t.Fatalf("no cost snapshot: %v", err)
+	}
+
+	stop("sess-broken", `{"type":"assistant","usage" broken`)
+	if os.Geteuid() != 0 {
+		main := stop("sess-locked") // bound and harvested once, then changed and made unreadable
+		later := time.Now().Add(time.Hour)
+		if err := os.Chtimes(main, later, later); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(main, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(main, 0o644) })
+		payload := strings.Replace(stopPayload(t, "sess-locked", projDir), "{", `{"transcript_path":`+strconv.Quote(main)+`,`, 1)
+		if out, err := execCerneStdin(t, payload, "hook", "stop-check"); err != nil || strings.Contains(out, "transcript") {
+			t.Fatalf("unreadable transcript: err=%v\n%s", err, out)
+		}
+	}
+}

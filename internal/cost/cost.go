@@ -49,6 +49,7 @@ type Report struct {
 	Messages                  int                 `json:"messages"`
 	Sessions                  int                 `json:"sessions"`
 	SessionsWithoutTranscript int                 `json:"sessions_without_transcript"`
+	SessionsRecovered         int                 `json:"sessions_recovered"` // of those, read back from a snapshot
 	First                     string              `json:"first,omitempty"`
 	Last                      string              `json:"last,omitempty"`
 	Unattributed              Counters            `json:"unattributed"`
@@ -57,7 +58,7 @@ type Report struct {
 
 // Inputs locate what Compute reads.
 type Inputs struct {
-	CacheDir string   // per-project cerne cache: the ledger
+	CacheDir string   // per-project cerne cache: the ledger and the snapshots
 	RepoDir  string   // backend clone: resolves W- to features
 	Roots    []string // Claude Code config dirs (ClaudeRoots)
 }
@@ -173,10 +174,12 @@ func Compute(in Inputs, id string) (Report, error) {
 	}
 	var all []owned
 	kept := map[string]int{}
+	pruned := map[string]bool{}
 	for _, sess := range scope {
 		r.Sessions++
 		if len(files[sess]) == 0 {
 			r.SessionsWithoutTranscript++
+			pruned[sess] = true
 			continue
 		}
 		msgs, err := readSession(sess, files[sess])
@@ -211,8 +214,39 @@ func Compute(in Inputs, id string) (Report, error) {
 			agg[k].add(o.msg)
 		}
 	}
+	r.SessionsRecovered = fuseSnapshots(in.CacheDir, id, bySess, pruned, agg)
 	r.tally(agg)
 	return r, nil
+}
+
+// fuseSnapshots folds the harvested snapshots into the live shares, per
+// (entity, session, file): the snapshot replaces the live read only when it
+// saw more messages (a file pruned or truncated since) — replace, never sum:
+// a live transcript holds everything its snapshot saw. id "" reads every
+// snapshot. Returns how many pruned sessions came back from a snapshot.
+func fuseSnapshots(cacheDir, id string, bySess map[string][]Bind, pruned map[string]bool, agg map[aggKey]*fileAgg) int {
+	ids := []string{id}
+	if id == "" {
+		ids = snapshotIDs(cacheDir)
+	}
+	recovered := map[string]bool{}
+	for _, e := range ids {
+		for sess, ss := range loadSnapshot(cacheDir, e).Sessions {
+			if ss == nil || bySess[sess] == nil {
+				continue
+			}
+			for rel, f := range ss.Files {
+				k := aggKey{e, sess, rel}
+				if f != nil && (agg[k] == nil || f.Messages > agg[k].Messages) {
+					agg[k] = f
+					if pruned[sess] {
+						recovered[sess] = true
+					}
+				}
+			}
+		}
+	}
+	return len(recovered)
 }
 
 // tally folds the per-file shares into the report.

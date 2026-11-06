@@ -74,20 +74,31 @@ func sessionFiles(roots, sessions []string) (map[string][]tfile, error) {
 				if !names[sess] {
 					continue
 				}
-				subDir := filepath.Join(dir, sess, "subagents")
-				subs, err := readDir(subDir)
+				subs, err := subagentFiles(dir, slug.Name(), sess)
 				if err != nil {
 					return nil, err
 				}
-				for _, e := range subs {
-					if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
-						add(sess, slug.Name()+"/"+sess+"/subagents/"+e.Name(), filepath.Join(subDir, e.Name()))
-					}
+				for _, f := range subs {
+					add(sess, f.rel, f.abs)
 				}
 			}
 		}
 	}
 	return files, nil
+}
+
+// subagentFiles lists <dir>/<sess>/subagents/*.jsonl, dir being the project
+// slug's directory.
+func subagentFiles(dir, slug, sess string) ([]tfile, error) {
+	subDir := filepath.Join(dir, sess, "subagents")
+	entries, err := readDir(subDir)
+	var files []tfile
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+			files = append(files, tfile{rel: slug + "/" + sess + "/subagents/" + e.Name(), abs: filepath.Join(subDir, e.Name())})
+		}
+	}
+	return files, err
 }
 
 // readDir lists dir: a missing dir is empty; any other failure is

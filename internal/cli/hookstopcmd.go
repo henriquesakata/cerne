@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/cost"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 )
@@ -67,6 +68,11 @@ func runHookStopCheck(cmd *cobra.Command) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
+
+	// F-0309: keep the session's live features' cost snapshot current, so a
+	// pruned transcript does not lose it before the stamp. Silent, fail-open.
+	// ponytail: a changed transcript is re-read whole each Stop (~95 ms for a 30 MB main file); a byte-offset tail if Stop latency shows up.
+	_ = cost.Harvest(cost.Inputs{CacheDir: cacheDir, RepoDir: repoDir, Roots: cost.ClaudeRoots()}, in.SessionID, in.TranscriptPath, time.Now().UTC())
 
 	// Each part decides and rations itself; whatever is due goes out in ONE
 	// envelope — a single continuation of the turn, never two.
