@@ -276,7 +276,11 @@ func TestChatConfirmArmsWriteTools(t *testing.T) {
 	}{
 		{"absent", `{"messages":[{"role":"user","content":"registra a candidata"}]}`, false},
 		{"explicitly false", `{"messages":[{"role":"user","content":"oi"}],"confirm":false}`, false},
-		{"confirmed", `{"messages":[{"role":"user","content":"confirmo"}],"confirm":true}`, true},
+		{"confirmed", `{"messages":[` + confirmedTranscript + `],"conversation_id":"c1","confirm_turn":1,"confirm":true}`, true},
+		// F-0323 crit. 5: the grant dies with the card's turn — the transcript
+		// moves on with no new card and no confirmation, so no write tools.
+		{"confirmed turn then no new card", `{"messages":[` + confirmedTranscript +
+			`,{"role":"assistant","content":"Registrei R-0001."},{"role":"user","content":"agora registra outra"}],"conversation_id":"c1","confirm_turn":1}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gotWrite = nil
@@ -935,5 +939,78 @@ func TestChatNoteUnknownInforms(t *testing.T) {
 	}
 	if notes, _ := store.LoadAllNotes(repoDir); len(notes) != 0 {
 		t.Fatalf("dangling informs wrote %d note(s), want 0", len(notes))
+	}
+}
+
+// confirmedTranscript is the minimal valid confirmed turn (F-0323): the agent's
+// card at index 1, then the user's confirmation as the last message.
+const confirmedTranscript = `{"role":"user","content":"registra a referência"},` +
+	`{"role":"assistant","content":"Vou rodar:\n` + "```" + `cerne-comando\ncerne reference new \"T\" --url https://example.com\n` + "```" + `"},` +
+	`{"role":"user","content":"Confirmado — pode executar."}`
+
+func TestConfirmedTurn(t *testing.T) {
+	card := chatMessage{Role: "assistant", Content: "Vou rodar:\n```cerne-comando\ncerne status\n```"}
+	user := chatMessage{Role: "user", Content: "oi"}
+	valid := func() chatRequest {
+		return chatRequest{Messages: []chatMessage{user, card, user}, ConversationID: "c1", ConfirmTurn: 1, Confirm: true}
+	}
+	if turn, err := confirmedTurn(valid()); err != nil || turn != 1 {
+		t.Fatalf("valid confirmation = (%d, %v), want (1, nil)", turn, err)
+	}
+	for _, tc := range []struct {
+		name string
+		edit func(*chatRequest)
+	}{
+		{"no confirm", func(r *chatRequest) { r.Confirm = false }},
+		{"no conversation_id", func(r *chatRequest) { r.ConversationID = "" }},
+		{"conversation_id with space", func(r *chatRequest) { r.ConversationID = "c 1" }},
+		{"conversation_id of 65 chars", func(r *chatRequest) { r.ConversationID = strings.Repeat("a", 65) }},
+		{"stale confirm_turn", func(r *chatRequest) {
+			r.Messages = append(r.Messages, chatMessage{Role: "assistant", Content: "ok"}, user)
+		}},
+		{"card message without the fence", func(r *chatRequest) {
+			r.Messages[1] = chatMessage{Role: "assistant", Content: "sem cerca"}
+		}},
+		{"card turn is the user's", func(r *chatRequest) {
+			r.Messages[1] = chatMessage{Role: "user", Content: card.Content}
+		}},
+		{"last message is the agent's", func(r *chatRequest) {
+			r.Messages = []chatMessage{user, card, card}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := valid()
+			tc.edit(&r)
+			if turn, err := confirmedTurn(r); err == nil {
+				t.Fatalf("confirmedTurn = (%d, nil), want a refusal", turn)
+			}
+		})
+	}
+}
+
+// TestChatInvalidConfirmationIs422: a confirm:true that does not bind to the
+// card's turn is refused loudly, never silently downgraded to a read-only turn,
+// and no provider is even built.
+func TestChatInvalidConfirmationIs422(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+	calls := 0
+	orig := newAgentProvider
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) {
+		calls++
+		return &llm.Fake{Reply: "ok"}, nil
+	}
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	var got struct {
+		Error string `json:"error"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[`+confirmedTranscript+`],"conversation_id":"c1","confirm_turn":0,"confirm":true}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "invalid confirmation") {
+		t.Fatalf("status = %d, error = %q; want 422 invalid confirmation", rec.Code, got.Error)
+	}
+	if calls != 0 {
+		t.Fatalf("provider built %d times, want 0", calls)
 	}
 }

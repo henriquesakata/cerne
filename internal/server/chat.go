@@ -50,6 +50,37 @@ type chatRequest struct {
 	// earlier turn, never inferred from the message text — so the zero value
 	// keeps the chat read-only (criterion 3: a proposal is not a permission).
 	Confirm bool `json:"confirm,omitempty"`
+	// ConversationID and ConfirmTurn (F-0323) bind Confirm to one card: the
+	// browser's conversation id (provenance of every write the turn makes) and
+	// the transcript index of the agent message that carried the card. A
+	// confirmation is valid only for the turn right after that card.
+	ConversationID string `json:"conversation_id,omitempty"`
+	ConfirmTurn    int    `json:"confirm_turn,omitempty"`
+}
+
+var conversationIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// confirmedTurn validates the request's confirmation against its own
+// transcript (F-0323 crit. 5) and returns the card's turn index. It holds only
+// when the user confirms the card the agent JUST showed: confirm set, a valid
+// conversation id, confirm_turn == len(messages)-2 naming an assistant message
+// with a cerne-comando fence, and the user's message last. A later turn has no
+// card at len-2, so a grant never outlives its turn.
+func confirmedTurn(req chatRequest) (int, error) {
+	n, t := len(req.Messages), req.ConfirmTurn
+	switch {
+	case !req.Confirm:
+		return 0, errors.New("confirm is not set")
+	case !conversationIDPattern.MatchString(req.ConversationID):
+		return 0, fmt.Errorf("conversation_id must match %s", conversationIDPattern)
+	case t != n-2 || t < 0:
+		return 0, fmt.Errorf("confirm_turn %d is not the card turn right before the last message (%d)", t, n-2)
+	case req.Messages[t].Role != "assistant" || !strings.Contains(req.Messages[t].Content, "```"+app.ChatCommandFence):
+		return 0, fmt.Errorf("messages[%d] is not an agent message carrying a %s card", t, app.ChatCommandFence)
+	case req.Messages[n-1].Role != "user":
+		return 0, errors.New("the last message must be the user's")
+	}
+	return t, nil
 }
 
 // chatResponse mirrors askResponse/generateDiagramResponse: Answered is false
@@ -74,6 +105,14 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	}
 	if len(req.Messages) == 0 {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("messages must not be empty"))
+		return
+	}
+	// F-0323: a confirmation that does not bind to the card's turn is refused
+	// loudly — never silently downgraded to a read-only turn.
+	_, confirmErr := confirmedTurn(req)
+	confirmed := confirmErr == nil
+	if req.Confirm && !confirmed {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("invalid confirmation: "+confirmErr.Error()+" (send conversation_id and confirm_turn with confirm)"))
 		return
 	}
 
@@ -123,7 +162,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
 	// the budget covers chained cerne queries, not just one shot. F-0260: the
 	// confirmed turn — and only it — also gets the cerne creation commands.
-	prov, err := newAgentProvider(cfg.LLM, projDir, req.Confirm)
+	prov, err := newAgentProvider(cfg.LLM, projDir, confirmed)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

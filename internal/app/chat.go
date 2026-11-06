@@ -269,10 +269,12 @@ Sem facet e sem ao menos um component o registro é RECUSADO pelo servidor — n
 
 A nota só é gravada com a confirmação do usuário no card. Sem esse clique nada foi escrito: não diga que registrou, não invente o id.`
 
-// chatCommandFence is the chat surface's third fenced block (F-0260): the
+// ChatCommandFence is the chat surface's third fenced block (F-0260): the
 // commands the agent intends to run, echoed for the user to confirm. Same
 // detection mechanism as the other two — the UI parses all three alike.
-const chatCommandFence = "cerne-comando"
+// Exported for the server, which binds a confirmation to the turn carrying it
+// (F-0323).
+const ChatCommandFence = "cerne-comando"
 
 // ChatCommandMarker is the heading of the write contract. Exported for the same
 // reason as ChatRoleBoundaryMarker: the tests assert on the block's presence and
@@ -295,7 +297,7 @@ O caminho normal de registro é o card: você propõe, o usuário clica. Quando 
 
 1. Neste turno, ECOE o que pretende rodar num bloco cercado, uma linha por comando, e pare. NÃO execute nada neste turno, nem afirme que registrou.
 
-` + "```" + chatCommandFence + `
+` + "```" + ChatCommandFence + `
 cerne feature new "<título>" --context "<por quê>" --facet <facet> --component <comp>
 ` + "```" + `
 
@@ -305,7 +307,7 @@ Comandos de CRIAÇÃO: ` + "`cerne feature new`" + `, ` + "`cerne note new`" + `
 
 Comandos de ATUALIZAÇÃO de uma feature que JÁ existe (F-0265) — use quando o usuário pedir para mudar uma feature pelo id, em vez de propor bloco (o bloco continua sendo o caminho da candidata NOVA):
 
-` + "```" + chatCommandFence + `
+` + "```" + ChatCommandFence + `
 cerne feature spec F-NNNN <<'SPEC'   # reescreve a spec inteira pelo stdin (só em candidate)
 <spec completa>
 SPEC
