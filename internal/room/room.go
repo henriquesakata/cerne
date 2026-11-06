@@ -60,6 +60,9 @@ type Room struct {
 	// MinutesNote is the id of the note (N-NNNN) this room's closing minutes
 	// were registered as, set by SetMinutesNote (F-0238). Empty until then.
 	MinutesNote string `json:"minutes_note,omitempty"`
+	// Permanent marks the project's permanent channel (F-0325): no
+	// open/close/minutes, roster derived from the active works.
+	Permanent bool `json:"permanent,omitempty"`
 }
 
 // Participant is one joined nick.

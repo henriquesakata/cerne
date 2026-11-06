@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/room"
 )
@@ -70,17 +71,73 @@ func handleRoomOpen(w http.ResponseWriter, r *http.Request, projectID string) {
 	writeJSON(w, http.StatusCreated, map[string]any{"room": rm, "facilitator_id": facilitatorID})
 }
 
-func handleRoomList(w http.ResponseWriter, projectID string) {
+// handleRoomList lists the war rooms behind the permanent channel, which is
+// always first (F-0325) — present before its first message, its participants
+// the active works.
+func handleRoomList(w http.ResponseWriter, repoDir, projectID string) {
 	m, err := roomManagerFor(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	rooms := m.List()
-	if rooms == nil {
-		rooms = []room.Room{}
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rooms": rooms})
+	msgs, roster, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	channel := room.Room{ID: room.ChannelID, Permanent: true, MessageCount: len(msgs), Participants: []room.Participant{}}
+	for _, r := range roster {
+		channel.Participants = append(channel.Participants, room.Participant{Nick: r.Work, Bio: r.Title})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rooms": append([]room.Room{channel}, m.List()...)})
+}
+
+// handleChannelRead serves the permanent channel (F-0325): every live message
+// with its derived state, plus the channel's version. ?since=N filters like a
+// war room read. With follow=1 it long-polls: on ?version=V until the channel
+// changes at all (a delivery a hook recorded counts — that is how the UI sees
+// "delivered"), without a version until a message past since arrives.
+// Reading never records a delivery.
+func handleChannelRead(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
+	q := r.URL.Query()
+	since, _ := strconv.Atoi(q.Get("since"))
+	follow := q.Get("follow") == "1"
+	want, err := strconv.ParseInt(q.Get("version"), 10, 64)
+	hasVersion := err == nil
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	ch := room.OpenChannel(filepath.Join(cacheDir, "rooms"))
+	deadline := time.Now().Add(roomReadTimeout)
+	for {
+		version := ch.Version()
+		all, _, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		out := []app.ChannelMessage{}
+		for _, m := range all {
+			if m.Seq > since {
+				out = append(out, m)
+			}
+		}
+		remaining := time.Until(deadline)
+		done := !follow || remaining <= 0 || r.Context().Err() != nil ||
+			(hasVersion && version != want) || (!hasVersion && len(out) > 0)
+		if done {
+			writeJSON(w, http.StatusOK, map[string]any{"messages": out, "version": version})
+			return
+		}
+		ch.Wait(r.Context(), version, remaining)
+	}
 }
 
 type joinRoomRequest struct {
@@ -196,7 +253,11 @@ type roomEventView struct {
 	Own *bool `json:"own,omitempty"`
 }
 
-func handleRoomRead(w http.ResponseWriter, r *http.Request, projectID, id string) {
+func handleRoomRead(w http.ResponseWriter, r *http.Request, repoDir, projectID, id string) {
+	if id == room.ChannelID {
+		handleChannelRead(w, r, repoDir, projectID)
+		return
+	}
 	since, _ := strconv.Atoi(r.URL.Query().Get("since")) // missing/invalid → 0, the full transcript
 	follow := r.URL.Query().Get("follow") == "1"
 

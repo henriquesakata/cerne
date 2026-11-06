@@ -4,10 +4,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/room"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // roomJSON/messageJSON mirror the HTTP contract of the war room endpoints
@@ -627,7 +635,146 @@ func TestListedRoomIncludesMinutesNote(t *testing.T) {
 		} `json:"rooms"`
 	}
 	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
-	if rec.Code != http.StatusOK || len(got.Rooms) != 1 || got.Rooms[0].MinutesNote != "N-0009" {
+	// Rooms[0] is the pinned permanent channel (F-0325).
+	if rec.Code != http.StatusOK || len(got.Rooms) != 2 || got.Rooms[1].MinutesNote != "N-0009" {
 		t.Fatalf("list status=%d body=%+v, want the room carrying minutes_note", rec.Code, got)
+	}
+}
+
+// --- F-0325: the permanent channel over the room endpoints ---
+
+// newChannelServer is a room server whose backend has two active works
+// (W-0001, W-0002) and one done (W-0003); it returns the backend dir and the
+// project cache dir that hold the channel.
+func newChannelServer(t *testing.T, projectID string) (h http.Handler, repoDir, cacheDir string) {
+	t.Helper()
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	now := time.Now().UTC()
+	for id, state := range map[string]domain.WorkState{"W-0001": domain.WorkActive, "W-0002": domain.WorkActive, "W-0003": domain.WorkDone} {
+		if err := store.SaveWork(repoDir, store.Work{ID: id, Title: "atividade " + id, State: state, Actor: "agent", CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return New(repoDir, projDir, projectID), repoDir, cacheDir
+}
+
+func seedServerChannel(t *testing.T, cacheDir, nick, body string, at time.Time) {
+	t.Helper()
+	if _, err := room.OpenChannel(filepath.Join(cacheDir, "rooms")).Append(room.Message{Type: "message", Nick: nick, Body: body, Time: at}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type channelReadJSON struct {
+	Messages []struct {
+		Seq      int    `json:"seq"`
+		Nick     string `json:"nick"`
+		Body     string `json:"body"`
+		Human    bool   `json:"human"`
+		State    string `json:"state"`
+		Directed bool   `json:"directed"`
+		Targets  []struct {
+			Work  string `json:"work"`
+			State string `json:"state"`
+		} `json:"targets"`
+	} `json:"messages"`
+	Version int64 `json:"version"`
+}
+
+// TestRoomListPinsChannel (crit. 3/21): the room list always starts with the
+// permanent channel — even before its first message — whose participants are
+// the active works.
+func TestRoomListPinsChannel(t *testing.T) {
+	h, _, _ := newChannelServer(t, "proj-channel-list")
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &openJSON{})
+	var got struct {
+		Rooms []struct {
+			ID           string            `json:"id"`
+			Permanent    bool              `json:"permanent"`
+			Participants []participantJSON `json:"participants"`
+		} `json:"rooms"`
+	}
+	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
+	if rec.Code != http.StatusOK || len(got.Rooms) != 2 || got.Rooms[0].ID != "channel" || !got.Rooms[0].Permanent || got.Rooms[1].ID != "R1" || got.Rooms[1].Permanent {
+		t.Fatalf("rooms = %+v", got.Rooms)
+	}
+	var nicks []string
+	for _, p := range got.Rooms[0].Participants {
+		nicks = append(nicks, p.Nick)
+	}
+	if !slices.Equal(nicks, []string{"W-0001", "W-0002"}) {
+		t.Fatalf("channel participants = %v, want the active works", nicks)
+	}
+}
+
+// TestChannelReadServesStates (crit. 13/20): the channel read carries each
+// live message's derived state and targets, and drops what expired.
+func TestChannelReadServesStates(t *testing.T) {
+	h, _, cacheDir := newChannelServer(t, "proj-channel-read")
+	now := time.Now().UTC()
+	seedServerChannel(t, cacheDir, "W-0002", "velha", now.Add(-25*time.Hour))
+	seedServerChannel(t, cacheDir, "W-0003", "de work fechado", now)
+	seedServerChannel(t, cacheDir, "W-0002", "W-0001 segura", now)
+	var got channelReadJSON
+	rec := doJSON(t, h, http.MethodGet, "/api/rooms/channel/messages", "", &got)
+	if rec.Code != http.StatusOK || len(got.Messages) != 1 || got.Version == 0 {
+		t.Fatalf("status %d, read = %+v", rec.Code, got)
+	}
+	m := got.Messages[0]
+	if m.Seq != 3 || m.State != "not_delivered" || !m.Directed || len(m.Targets) != 1 || m.Targets[0].Work != "W-0001" {
+		t.Fatalf("message = %+v", m)
+	}
+}
+
+// TestChannelReadSince: ?since=N keeps `cerne room read channel` working.
+func TestChannelReadSince(t *testing.T) {
+	h, _, cacheDir := newChannelServer(t, "proj-channel-since")
+	for _, b := range []string{"um", "dois", "três"} {
+		seedServerChannel(t, cacheDir, "W-0002", b, time.Now().UTC())
+	}
+	var got channelReadJSON
+	doJSON(t, h, http.MethodGet, "/api/rooms/channel/messages?since=1", "", &got)
+	if len(got.Messages) != 2 || got.Messages[0].Seq != 2 {
+		t.Fatalf("since=1 read = %+v", got.Messages)
+	}
+}
+
+// TestChannelReadFollowWakesOnDelivery (crit. 24, server): a follow read
+// parked on a version wakes when a hook records a delivery — no new message
+// needed — and returns the new state.
+func TestChannelReadFollowWakesOnDelivery(t *testing.T) {
+	h, repoDir, cacheDir := newChannelServer(t, "proj-channel-follow")
+	seedServerChannel(t, cacheDir, "W-0002", "W-0001 segura", time.Now().UTC())
+	if err := app.BindSession(cacheDir, "s1", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	var first channelReadJSON
+	doJSON(t, h, http.MethodGet, "/api/rooms/channel/messages", "", &first)
+
+	done := make(chan channelReadJSON, 1)
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "/api/rooms/channel/messages?follow=1&version="+strconv.FormatInt(first.Version, 10), nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var got channelReadJSON
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		done <- got
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if _, err := app.ChannelInject(cacheDir, repoDir, "s1", true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-done:
+		if got.Version == first.Version || len(got.Messages) != 1 || got.Messages[0].State != "delivered" {
+			t.Fatalf("woken read = %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("follow read did not wake on the delivery")
 	}
 }
