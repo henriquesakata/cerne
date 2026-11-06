@@ -147,6 +147,12 @@ func sessionBindings(projDir string) map[string]string {
 	if err != nil {
 		return nil
 	}
+	return sessionBindingsIn(cacheDir)
+}
+
+// sessionBindingsIn reads the session→entity bindings under cacheDir as is
+// (no liveness check); nil when there are none.
+func sessionBindingsIn(cacheDir string) map[string]string {
 	entries, err := os.ReadDir(filepath.Join(cacheDir, sessionsSubdir))
 	if err != nil {
 		return nil

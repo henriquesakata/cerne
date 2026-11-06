@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -354,4 +355,219 @@ func truncateBody(body string, maxRunes, maxBytes int) string {
 		runes++
 	}
 	return body[:n] + ellipsis
+}
+
+// ErrNoChannelIdentity is the sentinel for a channel write from a session with
+// no live registration: on the channel an agent speaks as its work.
+var ErrNoChannelIdentity = errors.New("this session has no live cerne registration to speak on the channel as")
+
+// Derived delivery states (criterion 13), worst to best.
+const (
+	ChannelNotDelivered = "not_delivered"
+	ChannelDelivered    = "delivered"
+	ChannelAnswered     = "answered"
+)
+
+// ChannelTarget is one work a message reached (or is addressed to) and how far
+// it got there.
+type ChannelTarget struct {
+	Work  string `json:"work"`
+	State string `json:"state"`
+}
+
+// ChannelMessage is a live channel message with its derived state: the worst
+// of its targets' (none: not_delivered). An addressed message's targets are
+// the works it names; anything else's are the works it was delivered to.
+type ChannelMessage struct {
+	room.Message
+	State    string          `json:"state"`
+	Directed bool            `json:"directed,omitempty"`
+	Targets  []ChannelTarget `json:"targets,omitempty"`
+}
+
+// ChannelMember is one roster entry: an active work, live when a session on
+// this machine is bound to it (criterion 3 — no join).
+type ChannelMember struct {
+	Work  string `json:"work"`
+	Title string `json:"title"`
+	Actor string `json:"actor"`
+	Live  bool   `json:"live"`
+}
+
+func channelOf(cacheDir string) room.Channel {
+	return room.OpenChannel(filepath.Join(cacheDir, "rooms"))
+}
+
+// ChannelSend posts body as session sess's work, creating the channel on
+// demand (criterion 1), and returns the bound ids of the other live sessions
+// that will receive it (criterion 12) — empty when nobody is around.
+func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Message, []string, error) {
+	if strings.TrimSpace(body) == "" {
+		return room.Message{}, nil, errors.New("the message cannot be empty")
+	}
+	if safeSessionID(sess) != nil {
+		return room.Message{}, nil, ErrNoChannelIdentity
+	}
+	id, ok := sessionWork(cacheDir, repoDir, sess)
+	if !ok {
+		return room.Message{}, nil, ErrNoChannelIdentity
+	}
+	m, err := channelOf(cacheDir).Append(room.Message{Type: "message", Nick: id.Work, Body: body, Time: now})
+	if err != nil {
+		return room.Message{}, nil, err
+	}
+	bindings := sessionBindingsIn(cacheDir)
+	mine := bindings[sess]
+	var to []string
+	for s, bound := range bindings {
+		if s != sess && bound != mine && bindingLive(repoDir, bound) {
+			to = append(to, bound)
+		}
+	}
+	slices.Sort(to)
+	return m, to, nil
+}
+
+// ChannelPost posts body as the human named name (criterion 22).
+func ChannelPost(cacheDir, name, body string, now time.Time) (room.Message, error) {
+	if strings.TrimSpace(body) == "" {
+		return room.Message{}, errors.New("the message cannot be empty")
+	}
+	return channelOf(cacheDir).Append(room.Message{Type: "message", Nick: name, Body: body, Human: true, Time: now})
+}
+
+// ChannelAck silences addressed messages seqs for session sess's work without
+// a reply (criterion 10).
+func ChannelAck(cacheDir, repoDir, sess string, seqs []int, now time.Time) error {
+	if safeSessionID(sess) != nil {
+		return ErrNoChannelIdentity
+	}
+	id, ok := sessionWork(cacheDir, repoDir, sess)
+	if !ok {
+		return ErrNoChannelIdentity
+	}
+	return channelOf(cacheDir).Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
+		return &room.Delivery{Session: sess, Work: id.Work, Ack: seqs, At: now}, nil
+	})
+}
+
+// ChannelRead is the explicit read (criterion 18): every live message with its
+// derived state, plus the roster. With a session it also records that the
+// session saw all of it, so no injection repeats what was just read; without
+// one (the UI) it writes nothing.
+func ChannelRead(cacheDir, repoDir, sess string, now time.Time) ([]ChannelMessage, []ChannelMember, error) {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	var active []store.Work
+	for _, w := range works {
+		if w.State == domain.WorkActive {
+			active = append(active, w)
+		}
+	}
+	ch := channelOf(cacheDir)
+	msgs, err := ch.Messages()
+	if err != nil {
+		return nil, nil, err
+	}
+	dels, err := ch.Deliveries()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(msgs) > 0 && safeSessionID(sess) == nil {
+		id, _ := sessionWork(cacheDir, repoDir, sess) // unregistered: still a session that saw it
+		err := ch.Update(func(lockedMsgs []room.Message, lockedDels []room.Delivery) (*room.Delivery, error) {
+			msgs, dels = lockedMsgs, lockedDels
+			d := &room.Delivery{Session: sess, Work: id.Work, At: now}
+			for _, m := range liveMessages(repoDir, msgs, now) {
+				d.Through = max(d.Through, m.Seq)
+				if m.Human || m.Nick != id.Work {
+					d.Seqs = append(d.Seqs, m.Seq)
+				}
+			}
+			if len(d.Seqs) == 0 {
+				return nil, nil
+			}
+			dels = append(dels, *d)
+			return d, nil
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	cs := channelState{msgs: msgs, dels: dels}
+	var out []ChannelMessage
+	for _, m := range liveMessages(repoDir, msgs, now) {
+		out = append(out, cs.derive(m, active))
+	}
+	return out, channelRoster(cacheDir, active), nil
+}
+
+// derive computes m's targets and state against the active works.
+func (cs channelState) derive(m room.Message, active []store.Work) ChannelMessage {
+	cm := ChannelMessage{Message: m}
+	for _, w := range active {
+		if directedTo(m, identityOf(w)) {
+			cm.Directed = true
+			cm.Targets = append(cm.Targets, ChannelTarget{Work: w.ID})
+		}
+	}
+	if !cm.Directed {
+		seen := map[string]bool{}
+		for _, d := range cs.dels {
+			if d.Work != "" && d.Work != m.Nick && !seen[d.Work] && slices.Contains(d.Seqs, m.Seq) {
+				seen[d.Work] = true
+				cm.Targets = append(cm.Targets, ChannelTarget{Work: d.Work})
+			}
+		}
+	}
+	rank := map[string]int{ChannelNotDelivered: 0, ChannelDelivered: 1, ChannelAnswered: 2}
+	cm.State = ChannelAnswered
+	for i, t := range cm.Targets {
+		switch {
+		case cs.answered(m, t.Work):
+			t.State = ChannelAnswered
+		case cs.delivered(m, t.Work):
+			t.State = ChannelDelivered
+		default:
+			t.State = ChannelNotDelivered
+		}
+		cm.Targets[i] = t
+		if rank[t.State] < rank[cm.State] {
+			cm.State = t.State
+		}
+	}
+	if len(cm.Targets) == 0 {
+		cm.State = ChannelNotDelivered
+	}
+	return cm
+}
+
+// delivered reports whether m was ever shown to a session working as work.
+func (cs channelState) delivered(m room.Message, work string) bool {
+	for _, d := range cs.dels {
+		if d.Work == work && slices.Contains(d.Seqs, m.Seq) {
+			return true
+		}
+	}
+	return false
+}
+
+// channelRoster lists the active works, marking those a local session is bound
+// to (directly, or through the feature of an auto work).
+func channelRoster(cacheDir string, active []store.Work) []ChannelMember {
+	bound := map[string]bool{}
+	for _, id := range sessionBindingsIn(cacheDir) {
+		bound[id] = true
+	}
+	out := make([]ChannelMember, 0, len(active))
+	for _, w := range active {
+		live := bound[w.ID]
+		if w.Auto {
+			live = live || slices.ContainsFunc(w.Refs, func(r string) bool { return bound[r] })
+		}
+		out = append(out, ChannelMember{Work: w.ID, Title: w.Title, Actor: w.Actor, Live: live})
+	}
+	return out
 }

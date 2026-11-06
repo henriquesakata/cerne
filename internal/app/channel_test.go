@@ -1,7 +1,10 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -491,4 +494,184 @@ func TestChannelInjectWorstCaseWithin400Tokens(t *testing.T) {
 			t.Fatalf("count line missing:\n%s", out)
 		}
 	})
+}
+
+func (f *chanFixture) send(sess, body string) (room.Message, []string) {
+	f.t.Helper()
+	f.at = f.at.Add(time.Second)
+	m, to, err := ChannelSend(f.cacheDir, f.repoDir, sess, body, f.at)
+	if err != nil {
+		f.t.Fatalf("ChannelSend(%s): %v", sess, err)
+	}
+	return m, to
+}
+
+func (f *chanFixture) read(sess string) ([]ChannelMessage, []ChannelMember) {
+	f.t.Helper()
+	msgs, roster, err := ChannelRead(f.cacheDir, f.repoDir, sess, f.at.Add(time.Minute))
+	if err != nil {
+		f.t.Fatalf("ChannelRead: %v", err)
+	}
+	return msgs, roster
+}
+
+// TestChannelSendCreatesRoomOnDemand (crit. 1): the first send materializes
+// the channel — there is no open.
+func TestChannelSendCreatesRoomOnDemand(t *testing.T) {
+	f := newChanFixture(t)
+	m, _ := f.send("s1", "segura internal/server")
+	if m.Seq != 1 || m.Nick != "W-0001" || m.Human {
+		t.Fatalf("message = %+v", m)
+	}
+	if _, err := os.Stat(filepath.Join(f.cacheDir, "rooms", "channel", "messages.jsonl")); err != nil {
+		t.Fatalf("channel not created on demand: %v", err)
+	}
+}
+
+// TestChannelSendRequiresRegistration: a session without a live registration
+// has no identity to speak as, and writes nothing.
+func TestChannelSendRequiresRegistration(t *testing.T) {
+	f := newChanFixture(t)
+	_, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-unbound", "oi", f.at)
+	if !errors.Is(err, ErrNoChannelIdentity) {
+		t.Fatalf("err = %v, want ErrNoChannelIdentity", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.cacheDir, "rooms", "channel")); !os.IsNotExist(err) {
+		t.Fatalf("refused send created the channel: %v", err)
+	}
+}
+
+// TestChannelSendReportsLiveRecipients (crit. 12): the sender learns which
+// other live sessions will receive it — none is an explicit empty answer.
+func TestChannelSendReportsLiveRecipients(t *testing.T) {
+	f := newChanFixture(t)
+	bindTestWork(t, f.repoDir, "W-0009", domain.WorkDone)
+	if err := BindSession(f.cacheDir, "s9", "W-0009"); err != nil {
+		t.Fatal(err)
+	}
+	if _, to := f.send("s1", "oi"); !slices.Equal(to, []string{"W-0002", "W-0003"}) {
+		t.Fatalf("recipients = %v, want [W-0002 W-0003]", to)
+	}
+
+	alone := newChanFixture(t)
+	for _, s := range []string{"s2", "s3"} {
+		if err := os.Remove(filepath.Join(alone.cacheDir, "sessions", s)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, to := alone.send("s1", "oi"); len(to) != 0 {
+		t.Fatalf("recipients = %v, want none", to)
+	}
+}
+
+func stateOf(t *testing.T, msgs []ChannelMessage, seq int) ChannelMessage {
+	t.Helper()
+	for _, m := range msgs {
+		if m.Seq == seq {
+			return m
+		}
+	}
+	t.Fatalf("#%d not in read", seq)
+	return ChannelMessage{}
+}
+
+// TestChannelStatesDerived (crit. 13/14): an addressed message moves
+// not_delivered -> delivered -> answered from the injection and the target's
+// own later post alone — no receipt typed by anyone, and an anonymous read
+// changes nothing.
+func TestChannelStatesDerived(t *testing.T) {
+	f := newChanFixture(t)
+	m, _ := f.send("s2", "W-0001 segura o rooms.go")
+	want := func(state string) {
+		t.Helper()
+		msgs, _ := f.read("")
+		got := stateOf(t, msgs, m.Seq)
+		if got.State != state || !got.Directed || len(got.Targets) != 1 ||
+			got.Targets[0] != (ChannelTarget{Work: "W-0001", State: state}) {
+			t.Fatalf("#%d = %+v, want directed to W-0001 in %s", m.Seq, got, state)
+		}
+	}
+	want(ChannelNotDelivered)
+	want(ChannelNotDelivered) // reading without a session records nothing
+	f.inject("s1", true)
+	want(ChannelDelivered)
+	f.send("s1", "ok, seguro")
+	want(ChannelAnswered)
+
+	bg, _ := f.send("s3", "build verde")
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, bg.Seq); got.State != ChannelNotDelivered || got.Directed || len(got.Targets) != 0 {
+		t.Fatalf("undelivered background = %+v", got)
+	}
+	f.inject("s1", true)
+	msgs, _ = f.read("")
+	if got := stateOf(t, msgs, bg.Seq); got.State != ChannelDelivered || len(got.Targets) != 1 || got.Targets[0].Work != "W-0001" {
+		t.Fatalf("delivered background = %+v", got)
+	}
+}
+
+// TestChannelAckSilencesDirected (crit. 10): the explicit ack stops the
+// repeats and reads as answered.
+func TestChannelAckSilencesDirected(t *testing.T) {
+	f := newChanFixture(t)
+	m, _ := f.send("s2", "W-0001 pode consumir")
+	if out := f.inject("s1", true); !strings.Contains(out, "→ you") {
+		t.Fatalf("injection = %q", out)
+	}
+	if err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{m.Seq}, f.at); err != nil {
+		t.Fatalf("ChannelAck: %v", err)
+	}
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("after ack: %q", out)
+	}
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, m.Seq); got.State != ChannelAnswered {
+		t.Fatalf("acked = %+v", got)
+	}
+	if err := ChannelAck(f.cacheDir, f.repoDir, "s-unbound", []int{m.Seq}, f.at); !errors.Is(err, ErrNoChannelIdentity) {
+		t.Fatalf("unbound ack: %v", err)
+	}
+}
+
+// TestChannelRosterFromActiveWorks (crit. 3): the roster is the active works,
+// live when a local session is bound to them — no join.
+func TestChannelRosterFromActiveWorks(t *testing.T) {
+	f := newChanFixture(t)
+	bindTestWork(t, f.repoDir, "W-0004", domain.WorkDone)
+	if err := os.Remove(filepath.Join(f.cacheDir, "sessions", "s3")); err != nil {
+		t.Fatal(err)
+	}
+	_, roster := f.read("")
+	got := map[string]bool{}
+	for _, m := range roster {
+		got[m.Work] = m.Live
+	}
+	want := map[string]bool{"W-0001": true, "W-0002": true, "W-0003": false}
+	if !maps.Equal(got, want) {
+		t.Fatalf("roster = %+v, want %v", roster, want)
+	}
+}
+
+// TestChannelReadFullLiveHistory (crit. 18): an explicit read is the whole
+// live history, past the inline cap, minus what expired.
+func TestChannelReadFullLiveHistory(t *testing.T) {
+	f := newChanFixture(t)
+	if _, err := f.ch.Append(room.Message{Type: "message", Nick: "W-0002", Body: "velha", Time: chanT0.Add(-25 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	bindTestWork(t, f.repoDir, "W-0005", domain.WorkDone)
+	if _, err := f.ch.Append(room.Message{Type: "message", Nick: "W-0005", Body: "de work fechado", Time: chanT0}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 12 {
+		f.post("W-0002", fmt.Sprintf("viva %d", i), false)
+	}
+	msgs, _ := f.read("s1")
+	if len(msgs) != 12 {
+		t.Fatalf("read %d messages, want 12 live", len(msgs))
+	}
+	// The session saw everything it read: no injection repeats it.
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("injection after a full read = %q", out)
+	}
 }
