@@ -86,16 +86,28 @@ func handleRoomList(w http.ResponseWriter, repoDir, projectID string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	// The formal rooms never depend on the channel's health (critic C8): an
+	// unreadable channel is still listed, carrying its error.
+	channel := channelRoomView{Room: room.Room{ID: room.ChannelID, Permanent: true, Participants: []room.Participant{}}}
 	msgs, roster, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
+		channel.Error = err.Error()
 	}
-	channel := room.Room{ID: room.ChannelID, Permanent: true, MessageCount: len(msgs), Participants: []room.Participant{}}
+	channel.MessageCount = len(msgs)
 	for _, r := range roster {
 		channel.Participants = append(channel.Participants, room.Participant{Nick: r.Work, Bio: r.Title})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rooms": append([]room.Room{channel}, m.List()...)})
+	rooms := []any{channel}
+	for _, r := range m.List() {
+		rooms = append(rooms, r)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rooms": rooms})
+}
+
+// channelRoomView is the channel's entry in the room list.
+type channelRoomView struct {
+	room.Room
+	Error string `json:"error,omitempty"`
 }
 
 // handleChannelRead serves the permanent channel (F-0325): every live message

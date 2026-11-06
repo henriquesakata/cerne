@@ -882,3 +882,28 @@ func TestChannelPostWithSessionIsTheAgent(t *testing.T) {
 		t.Fatalf("channel = %+v, %v", msgs, err)
 	}
 }
+
+// TestRoomListSurvivesABrokenChannel (F-0325, critic C8): the War Room list
+// never depends on the channel's health — an unreadable channel is listed
+// with its error, and the formal rooms still come back.
+func TestRoomListSurvivesABrokenChannel(t *testing.T) {
+	h, _, cacheDir := newChannelServer(t, "proj-channel-broken")
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &openJSON{})
+	seedServerChannel(t, cacheDir, "W-0002", "oi", time.Now().UTC())
+	chDir := filepath.Join(cacheDir, "rooms", "channel")
+	if err := os.Chmod(chDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(chDir, 0o755) })
+	var got struct {
+		Rooms []struct {
+			ID        string `json:"id"`
+			Permanent bool   `json:"permanent"`
+			Error     string `json:"error"`
+		} `json:"rooms"`
+	}
+	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
+	if rec.Code != http.StatusOK || len(got.Rooms) != 2 || got.Rooms[0].ID != "channel" || got.Rooms[0].Error == "" || got.Rooms[1].ID != "R1" {
+		t.Fatalf("list = %d %s, want 200 with the channel marked errored and R1", rec.Code, rec.Body.String())
+	}
+}
