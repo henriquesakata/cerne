@@ -881,8 +881,8 @@ const ptBR = {
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
       'Wiki': 'Wiki',
-      'Not wired yet (F-0316): off will stop compiling the wiki on push and counting its debt as pending work. Today it changes nothing.':
-        'Ainda não ligado (F-0316): desligado deixará de compilar a wiki no push e de contar a dívida dela como trabalho pendente. Hoje não muda nada.',
+      "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.":
+        "Desligado, para o compile_on_push e transforma a dívida de lint da wiki em achados informativos, fora do 'cerne next'; a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
     } as Record<string, string>,
   },
 }
