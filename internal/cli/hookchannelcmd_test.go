@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,4 +131,62 @@ func TestHookChannelSubagentPeek(t *testing.T) {
 	if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "session-start"); err != nil || out != want {
 		t.Fatalf("parent lost the background to a peek: %v %q", err, out)
 	}
+}
+
+// channelContactFixture: sess-a and sess-b on live works, one background
+// message from b pending for sess-a.
+func channelContactFixture(t *testing.T) (projDir, repoDir, block string) {
+	t.Helper()
+	projDir, _, repoDir = setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "build verde")
+	return projDir, repoDir, "cerne channel:\n#1 " + b + ": build verde\n"
+}
+
+// assertLeadsWithChannel runs args with and without CERNE_SESSION: the text
+// output gains the block plus a blank line on top and is otherwise unchanged;
+// --json never changes; no session never consumes; a locked channel changes
+// nothing (crit. 15/19).
+func assertLeadsWithChannel(t *testing.T, repoDir, block string, args ...string) {
+	t.Helper()
+	run := func(sess string, extra ...string) string {
+		t.Helper()
+		t.Setenv("CERNE_SESSION", sess)
+		out, err := execCerne(t, append(slices.Clone(args), extra...)...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+		return out
+	}
+	baseline := run("")
+	if strings.Contains(baseline, "cerne channel:") {
+		t.Fatalf("no session consumed the channel:\n%s", baseline)
+	}
+	if jsonOut := run("sess-a", "--json"); jsonOut != run("", "--json") {
+		t.Fatalf("--json changed with a session:\n%s", jsonOut)
+	}
+	lockPath := filepath.Join(filepath.Dir(repoDir), "rooms", "channel", "lock")
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := run("sess-a"); out != baseline {
+		t.Fatalf("locked channel changed the output:\n%s", out)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	if out := run("sess-a"); out != block+"\n"+baseline {
+		t.Fatalf("output does not lead with the channel block:\n%s", out)
+	}
+	if out := run("sess-a"); out != baseline {
+		t.Fatalf("block delivered twice:\n%s", out)
+	}
+}
+
+// TestNextLeadsWithChannel (F-0325 crit. 15): an agent's `cerne next` opens
+// with its session's pending channel messages.
+func TestNextLeadsWithChannel(t *testing.T) {
+	projDir, repoDir, block := channelContactFixture(t)
+	assertLeadsWithChannel(t, repoDir, block, "next", "--dir", projDir)
 }

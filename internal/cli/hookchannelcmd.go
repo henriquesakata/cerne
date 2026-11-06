@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,4 +87,14 @@ func exportSession(sess string) {
 	}
 	defer f.Close()
 	fmt.Fprintf(f, "export CERNE_SESSION=%s\n", sess)
+}
+
+// printChannelLead opens an agent's text view (next, status --active) with its
+// session's pending channel block and a blank line. Only CERNE_SESSION names
+// the session — a human's terminal has none, so it never consumes anyone's
+// watermark — and any failure prints nothing.
+func printChannelLead(out io.Writer, projectID string) {
+	if block := channelBlock(projectID, os.Getenv("CERNE_SESSION"), true); block != "" {
+		fmt.Fprintln(out, block)
+	}
 }
