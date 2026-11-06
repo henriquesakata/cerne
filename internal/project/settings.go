@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 )
@@ -88,6 +89,11 @@ type SettingsView struct {
 // endpoint and the UI all derive from it. Kept in id order.
 var settingsRegistry = []Setting{
 	{
+		ID: "channel.human_name", Title: "Channel name", Type: "string", Default: "",
+		Scopes:      []string{ScopeHost},
+		Description: "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.",
+	},
+	{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Not wired yet (F-0315): off will hide the Graph tab in the UI. Today it changes nothing.",
@@ -133,10 +139,9 @@ func ResolveSettings(projDir string) SettingsView {
 		for _, scope := range scopes {
 			tbl, _ := layers[scope][table].(map[string]any)
 			v, ok := tbl[key]
-			_, isBool := v.(bool)
 			switch {
 			case !ok:
-			case !isBool:
+			case !hasSettingType(s, v):
 				raw := fmt.Sprint(v)
 				if str, isStr := v.(string); isStr {
 					raw = strconv.Quote(str)
@@ -158,24 +163,57 @@ func ResolveSettings(projDir string) SettingsView {
 	return view
 }
 
-// SetSetting writes raw ("true"/"false") as id's value in scope: the
-// project's .cernerc or the host settings.toml, editing only that key's line.
-// Key, scope and value are validated before any file is read, so a refusal
-// writes nothing.
+// hasSettingType reports whether v is a value of s's declared type.
+func hasSettingType(s Setting, v any) bool {
+	switch v.(type) {
+	case bool:
+		return s.Type == "bool"
+	case string:
+		return s.Type == "string"
+	}
+	return false
+}
+
+// maxSettingString bounds a string setting (a display name, F-0325).
+const maxSettingString = 64
+
+// SetSetting writes the CLI literal raw as id's value in scope: "true"/"false"
+// for a bool key, the text itself for a string key. See SetSettingValue.
 func SetSetting(projDir, id, scope, raw string) error {
 	if err := checkDeclared(id, scope); err != nil {
 		return err
 	}
-	// Every declared setting is a bool; a new type adds its parse here.
-	if raw != "true" && raw != "false" {
-		return fmt.Errorf("%s: %w %q: want true or false", id, ErrInvalidSettingValue, raw)
+	var v any = raw
+	if declared(id).Type == "bool" {
+		if raw != "true" && raw != "false" {
+			return fmt.Errorf("%s: %w %q: want true or false", id, ErrInvalidSettingValue, raw)
+		}
+		v = raw == "true"
+	}
+	return SetSettingValue(projDir, id, scope, v)
+}
+
+// SetSettingValue writes v as id's value in scope: the project's .cernerc or
+// the host settings.toml, editing only that key's line. Key, scope and value
+// (its type; a string is one non-blank line of at most 64 runes) are
+// validated before any file is read, so a refusal writes nothing.
+func SetSettingValue(projDir, id, scope string, v any) error {
+	if err := checkDeclared(id, scope); err != nil {
+		return err
+	}
+	s := declared(id)
+	if !hasSettingType(s, v) {
+		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, s.Type)
+	}
+	if str, ok := v.(string); ok && (strings.TrimSpace(str) == "" || strings.ContainsAny(str, "\r\n") || utf8.RuneCountInString(str) > maxSettingString) {
+		return fmt.Errorf("%s: %w %q: want one non-blank line of at most %d characters", id, ErrInvalidSettingValue, str, maxSettingString)
 	}
 	path, err := settingsFile(projDir, scope)
 	if err != nil {
 		return err
 	}
 	table, key, _ := strings.Cut(id, ".")
-	_, err = editTOMLFile(path, table, key, raw == "true")
+	_, err = editTOMLFile(path, table, key, v)
 	return err
 }
 
@@ -196,6 +234,11 @@ func UnsetSetting(projDir, id, scope string) error {
 		return fmt.Errorf("%w: %s is not set in %s scope", ErrSettingNotSet, id, scope)
 	}
 	return err
+}
+
+// declared returns id's declaration; id must have passed checkDeclared.
+func declared(id string) Setting {
+	return settingsRegistry[slices.IndexFunc(settingsRegistry, func(s Setting) bool { return s.ID == id })]
 }
 
 // checkDeclared refuses an id the registry does not declare, or a scope the

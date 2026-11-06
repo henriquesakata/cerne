@@ -81,11 +81,16 @@ export default function WarRoom() {
       })
   }
 
+  // The permanent channel (F-0325) is pinned above the formal rooms and is
+  // not one of them: the count and the empty state are about the rooms.
+  const channel = rooms?.find((r) => r.permanent)
+  const formal = rooms?.filter((r) => !r.permanent) ?? null
+
   return (
     <main className="kanban">
       <header className="kanban-header">
         <h1>{t.warRoom.title}</h1>
-        {rooms && <p className="counts">{t.warRoom.participants(rooms.length)}</p>}
+        {formal && <p className="counts">{t.warRoom.participants(formal.length)}</p>}
       </header>
       <form className="backlog-chat-form" onSubmit={open}>
         <input
@@ -99,10 +104,22 @@ export default function WarRoom() {
       </form>
       {error && <p className="status error">{t.warRoom.loadError(error)}</p>}
       {!error && !rooms && <p className="status">{t.common.loading}</p>}
-      {rooms && rooms.length === 0 && <p className="status">{t.warRoom.empty}</p>}
-      {rooms && rooms.length > 0 && (
+      {channel && (
         <div className="epic-lane-cards">
-          {rooms.map((r) => (
+          <a className="card room-card" href={`#/rooms/${channel.id}`}>
+            <span className="card-meta">
+              <span className="badge room-badge-open">{t.channel.pinnedBadge}</span>
+            </span>
+            <span className="card-title">{t.channel.title}</span>
+            <span className="muted">{t.warRoom.participants(channel.participants.length)}</span>
+            {channel.error && <span className="muted">{t.channel.unavailable(channel.error)}</span>}
+          </a>
+        </div>
+      )}
+      {formal && formal.length === 0 && <p className="status">{t.warRoom.empty}</p>}
+      {formal && formal.length > 0 && (
+        <div className="epic-lane-cards">
+          {formal.map((r) => (
             <a key={r.id} className="card room-card" href={`#/rooms/${r.id}`}>
               <span className="card-meta">
                 <span className="card-id">{r.id}</span>

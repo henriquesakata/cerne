@@ -100,6 +100,41 @@ describe('WarRoom (T-0003)', () => {
     expect(screen.getAllByRole('link')).toHaveLength(2)
   })
 
+  it('fixa o canal permanente no topo, com selo, fora da contagem e do vazio (F-0325 critério 21)', async () => {
+    fetchRooms.mockResolvedValue([
+      room({ id: 'channel', topic: '', permanent: true, participants: [{ nick: 'W-0290', joined_at: '' }] }),
+    ])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText(/canal do projeto/i)).toBeInTheDocument())
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute('href', '#/rooms/channel')
+    expect(links[0]).toHaveTextContent(/permanente/i)
+    expect(screen.getByText(/nenhuma sala aberta/i)).toBeInTheDocument()
+    expect(screen.getByText('0 participante(s)')).toBeInTheDocument()
+  })
+
+  it('canal ilegível aparece com o erro e as salas formais continuam (crítico C8)', async () => {
+    fetchRooms.mockResolvedValue([
+      room({ id: 'channel', topic: '', permanent: true, error: 'permission denied' }),
+      room({ id: 'R1', topic: 'Fila serial' }),
+    ])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('Fila serial')).toBeInTheDocument())
+    expect(screen.getByText(/canal indisponível: permission denied/i)).toBeInTheDocument()
+  })
+
+  it('o canal vem antes das salas formais', async () => {
+    fetchRooms.mockResolvedValue([
+      room({ id: 'channel', topic: '', permanent: true }),
+      room({ id: 'R1', topic: 'Fila serial' }),
+    ])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('Fila serial')).toBeInTheDocument())
+    const links = screen.getAllByRole('link')
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['#/rooms/channel', '#/rooms/R1'])
+  })
+
   it('mostra estado vazio quando não há salas', async () => {
     fetchRooms.mockResolvedValue([])
     render(<WarRoom />)

@@ -62,6 +62,11 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 			t.Errorf("%s = %+v, want bool, default true, scopes [project host], a title and a description", id, s)
 		}
 	}
+	// F-0325: the channel's human display name is the person's, not the
+	// project's — host scope only — and is resolved at use when empty.
+	if s := byID["channel.human_name"]; s.Type != "string" || s.Default != "" || !slices.Equal(s.Scopes, []string{ScopeHost}) || s.Title == "" || s.Description == "" {
+		t.Errorf("channel.human_name = %+v, want string, default \"\", scopes [host], a title and a description", s)
+	}
 	// Critic C9: a key nothing consumes yet must not claim an effect. When
 	// F-0315 (graph) or F-0316 (wiki) wires one, its description and this
 	// list change together.
@@ -594,5 +599,72 @@ func TestResolveSettingsReportsEveryScopeValue(t *testing.T) {
 				t.Errorf("mindmap.enabled = %v from %s, stored %v; want %v from %s, stored %v", got.Value, got.Origin, got.Stored, tc.wantValue, tc.wantOrigin, tc.want)
 			}
 		})
+	}
+}
+
+// withStringSetting adds a string-typed test key to the registry for one test.
+func withStringSetting(t *testing.T) {
+	t.Helper()
+	saved := settingsRegistry
+	settingsRegistry = append(slices.Clone(saved), Setting{
+		ID: "test.name", Title: "Name", Type: "string", Default: "",
+		Scopes: []string{ScopeProject, ScopeHost}, Description: "test key",
+	})
+	t.Cleanup(func() { settingsRegistry = saved })
+}
+
+// TestResolveSettingsStringType (F-0325): a string key takes a stored string;
+// a bool stored under it is skipped as invalid, like a string under a bool.
+func TestResolveSettingsStringType(t *testing.T) {
+	withStringSetting(t)
+	projDir, _ := settingsFixture(t, "[test]\nname = true\n", "[test]\nname = \"Henrique\"\n", false)
+	r := findSetting(t, ResolveSettings(projDir), "test.name")
+	if r.Value != "Henrique" || r.Origin != ScopeHost {
+		t.Fatalf("test.name = %v from %s, want Henrique from host", r.Value, r.Origin)
+	}
+	if len(r.Invalid) != 1 || r.Invalid[0].Scope != ScopeProject || r.Invalid[0].Raw != "true" {
+		t.Fatalf("invalid = %+v, want the project bool", r.Invalid)
+	}
+}
+
+// TestSetSettingStringValue: a string round-trips through both write paths;
+// empty, multi-line, over-64-rune or non-string values are refused and write
+// nothing.
+func TestSetSettingStringValue(t *testing.T) {
+	withStringSetting(t)
+	projDir, hostDir := settingsFixture(t, "", "", false)
+	if err := SetSetting(projDir, "test.name", ScopeHost, "Henrique Sakata"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if r := findSetting(t, ResolveSettings(projDir), "test.name"); r.Value != "Henrique Sakata" {
+		t.Fatalf("value = %v", r.Value)
+	}
+	if err := SetSettingValue(projDir, "test.name", ScopeHost, "Ana"); err != nil {
+		t.Fatalf("SetSettingValue: %v", err)
+	}
+	before, _ := os.ReadFile(filepath.Join(hostDir, "settings.toml"))
+	for name, v := range map[string]any{
+		"empty":    "",
+		"blank":    "   ",
+		"newline":  "a\nb",
+		"65 runes": strings.Repeat("ã", 65),
+		"bool":     true,
+		"number":   float64(3),
+	} {
+		if err := SetSettingValue(projDir, "test.name", ScopeHost, v); !errors.Is(err, ErrInvalidSettingValue) {
+			t.Errorf("%s: err = %v, want ErrInvalidSettingValue", name, err)
+		}
+	}
+	if err := SetSettingValue(projDir, "wiki.enabled", ScopeHost, "false"); !errors.Is(err, ErrInvalidSettingValue) {
+		t.Errorf("string under a bool key: err = %v", err)
+	}
+	if err := SetSettingValue(projDir, "test.name", ScopeHost, strings.Repeat("ã", 64)); err != nil {
+		t.Errorf("64 runes refused: %v", err)
+	}
+	if err := SetSettingValue(projDir, "test.name", ScopeHost, "Ana"); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(filepath.Join(hostDir, "settings.toml")); string(after) != string(before) {
+		t.Errorf("host file = %q, want %q", after, before)
 	}
 }

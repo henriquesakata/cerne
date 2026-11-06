@@ -1091,6 +1091,11 @@ export type Room = {
   // minutes_note é o id (N-NNNN) da nota governada em que a ata da sala foi
   // registrada via 'cerne room minutes register' (F-0238); vazio até então.
   minutes_note?: string
+  // permanent marca o canal permanente do projeto (F-0325): sem abrir,
+  // fechar, objetivo ou ata; participantes = works ativos.
+  permanent?: boolean
+  // error: the channel could not be read; the formal rooms still list.
+  error?: string
 }
 
 // RoomMessage espelha room.Message: um evento do transcript — abertura,
@@ -1277,6 +1282,57 @@ export async function readRoomMessages(
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/messages?${params}`, { signal })
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { messages: RoomMessage[] }).messages
+}
+
+// ---- canal permanente (F-0325) ----
+
+// ChannelState é o estado de entrega derivado no servidor — nunca digitado
+// por ninguém: não entregue, entregue e sem resposta, respondida.
+export type ChannelState = 'not_delivered' | 'delivered' | 'answered'
+
+// acked: answered by `cerne msg ack`, not by a reply; closed: the work closed
+// and will never receive it.
+export type ChannelTarget = { work: string; state: ChannelState; acked?: boolean; closed?: boolean }
+
+// ChannelMessage espelha app.ChannelMessage: a mensagem viva com o estado
+// dela e, para uma dirigida, cada work destinatário com o seu.
+export type ChannelMessage = {
+  seq: number
+  type: 'message'
+  nick: string
+  body: string
+  human?: boolean
+  time: string
+  state: ChannelState
+  directed?: boolean
+  targets?: ChannelTarget[]
+}
+
+export type ChannelSnapshot = { messages: ChannelMessage[]; version: number }
+
+// readChannel lê o canal inteiro (só o vivo); follow=true segura a resposta
+// até a versão mudar — mensagem nova ou entrega gravada por um hook — ou
+// ~25s de timeout.
+export async function readChannel(follow: boolean, version: number, signal?: AbortSignal): Promise<ChannelSnapshot> {
+  const params = new URLSearchParams()
+  if (follow) {
+    params.set('follow', '1')
+    params.set('version', String(version))
+  }
+  const r = await fetch(`${base()}/rooms/channel/messages?${params}`, { signal })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as ChannelSnapshot
+}
+
+// postChannel publica como o humano: o servidor dá o nome (channel.human_name).
+export async function postChannel(body: string): Promise<ChannelMessage> {
+  const r = await fetch(`${base()}/rooms/channel/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as ChannelMessage
 }
 
 // --- Harness (F-0251) ---

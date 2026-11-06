@@ -195,6 +195,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(q)
 	}
+	printChannelLead(out, ctx.cfg.ProjectID)
 
 	width := 0
 	for _, f := range features {

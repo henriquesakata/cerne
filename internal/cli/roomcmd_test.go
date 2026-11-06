@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -745,5 +746,61 @@ func TestRoomMinutesRegister(t *testing.T) {
 	}
 	if !strings.Contains(out, "N-0001") || !strings.Contains(out, "N-0002") {
 		t.Fatalf("note list --component ata = %q, want both registered minutes", out)
+	}
+}
+
+// TestRoomCloseRefusesPermanentChannel (F-0325 crit. 2): the permanent channel
+// has no close — refused up front, before the facilitator check and without a
+// server.
+func TestRoomCloseRefusesPermanentChannel(t *testing.T) {
+	out, err := execCerne(t, "room", "close", "channel", "--dir", t.TempDir(), "--port", "1")
+	if !errors.Is(err, room.ErrPermanentRoom) || !strings.Contains(err.Error(), "permanent") {
+		t.Fatalf("room close channel: err = %v\n%s", err, out)
+	}
+}
+
+// TestRoomMinutesRegisterRefusesChannel (crit. 2): nor minutes.
+func TestRoomMinutesRegisterRefusesChannel(t *testing.T) {
+	out, err := execCerne(t, "room", "minutes", "register", "channel", "--dir", t.TempDir(), "--port", "1")
+	if !errors.Is(err, room.ErrPermanentRoom) {
+		t.Fatalf("room minutes register channel: err = %v\n%s", err, out)
+	}
+}
+
+// TestRoomListShowsChannelPermanent (F-0325, critic C17): the pinned channel
+// is listed as permanent, never as an open room.
+func TestRoomListShowsChannelPermanent(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-list-channel")
+	out, err := runRoom(t, "list", "--dir", dir, "--port", strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !strings.HasPrefix(out, "channel  permanent") || strings.Contains(out, "channel  open") {
+		t.Fatalf("list output = %q, want the channel as permanent", out)
+	}
+}
+
+// TestRoomSayChannelPostsAsAgent (F-0325, critic C5): `cerne room say channel
+// --session` is the agent of that session, never the human.
+func TestRoomSayChannelPostsAsAgent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	a := startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	resolve := func(string) (string, string, string, string, error) { return repoDir, projDir, "demo", "Demo", nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	handler, err := server.NewUIMulti(ctx, resolve, 0, "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+
+	if out, err := runRoom(t, "say", "channel", "agent via room say", "--session", "sess-a", "--dir", projDir, "--port", u.Port()); err != nil {
+		t.Fatalf("room say channel: %v\n%s", err, out)
+	}
+	msgs, err := room.OpenChannel(filepath.Join(filepath.Dir(repoDir), "rooms")).Messages()
+	if err != nil || len(msgs) != 1 || msgs[0].Human || msgs[0].Nick != a {
+		t.Fatalf("stored = %+v, %v; want the agent %s", msgs, err, a)
 	}
 }

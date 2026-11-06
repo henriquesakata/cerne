@@ -10,7 +10,8 @@ import (
 
 // TestInstall_WritesSubagentContext (F-0150 crit. 2/3): install lays down the
 // SubagentStart context script — it must carry the condensed cerne rules, run
-// `cerne work list` for the live board, emit the documented JSON envelope, and
+// `cerne work list` for the live board, emit the documented JSON envelope (built
+// by `cerne hook envelope` since F-0325), and
 // degrade silently (exit 0, no output) when cerne or the project is absent.
 func TestInstall_WritesSubagentContext(t *testing.T) {
 	projDir := t.TempDir()
@@ -25,14 +26,19 @@ func TestInstall_WritesSubagentContext(t *testing.T) {
 	for _, frag := range []string{
 		"cerne work list",  // live board injected
 		"cerne work start", // registration rule
-		"hookSpecificOutput",
 		"additionalContext",
 		"SubagentStart",
 		"exit 0", // silent degradation path
+		"payload=$(cat)",
+		"cerne hook channel --point subagent", // F-0325: the session's pending channel messages, peeked
+		"cerne hook envelope --event SubagentStart", // F-0325 C1: JSON built in Go, every control char escaped
 	} {
 		if !strings.Contains(content, frag) {
 			t.Errorf("subagent context script missing fragment %q", frag)
 		}
+	}
+	if strings.Contains(content, "ctx=${ctx//") || strings.Contains(content, "printf '{\"hookSpecificOutput\"") {
+		t.Errorf("subagent context script still hand-escapes its JSON:\n%s", content)
 	}
 }
 

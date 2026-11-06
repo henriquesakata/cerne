@@ -60,6 +60,9 @@ type Room struct {
 	// MinutesNote is the id of the note (N-NNNN) this room's closing minutes
 	// were registered as, set by SetMinutesNote (F-0238). Empty until then.
 	MinutesNote string `json:"minutes_note,omitempty"`
+	// Permanent marks the project's permanent channel (F-0325): no
+	// open/close/minutes, roster derived from the active works.
+	Permanent bool `json:"permanent,omitempty"`
 }
 
 // Participant is one joined nick.
@@ -112,6 +115,11 @@ type Message struct {
 	Title   string   `json:"title,omitempty"`   // proposal|decision_request only
 	ItemID  string   `json:"item_id,omitempty"` // resolution only: the item it resolves
 	Minutes *Minutes `json:"minutes,omitempty"` // close only
+
+	Human bool `json:"human,omitempty"` // permanent channel (F-0325): posted by the human from the UI
+	// Session is the agent session that posted a channel message (F-0325):
+	// an answer counts only from the session that was shown the message.
+	Session string `json:"session,omitempty"`
 }
 
 // Manager owns every room for one project: in-memory state for concurrency

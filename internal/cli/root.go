@@ -79,5 +79,6 @@ func Root() *cobra.Command {
 	root.AddCommand(newGuardCmd())
 	root.AddCommand(newLockCmd())
 	root.AddCommand(newRoomCmd())
+	root.AddCommand(newMsgCmd())
 	return root
 }

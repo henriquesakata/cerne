@@ -118,3 +118,22 @@ func TestInstall_PreservesExistingSessionStart(t *testing.T) {
 		t.Fatalf("custom=%v reminder=%v, want both:\n%s", haveCustom, haveReminder, raw)
 	}
 }
+
+// TestInstall_RegisterReminderCallsChannel (F-0325): the SessionStart script
+// hands its payload to `cerne hook channel` (CERNE_SESSION export + pending
+// channel messages), guarded so a missing binary is a silent no-op.
+func TestInstall_RegisterReminderCallsChannel(t *testing.T) {
+	projDir := t.TempDir()
+	if _, err := Install(projDir); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(projDir, ".claude", "hooks", registerScript))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, frag := range []string{"command -v cerne >/dev/null 2>&1 || exit 0", "cerne hook channel --point session-start 2>/dev/null || true"} {
+		if !strings.Contains(string(data), frag) {
+			t.Errorf("register reminder missing %q", frag)
+		}
+	}
+}

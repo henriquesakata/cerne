@@ -99,6 +99,9 @@ func runStatus(cmd *cobra.Command, dir string, all, active, asJSON bool) error {
 			Historicals []store.Historical `json:"historicals"`
 		}{features, historicals})
 	}
+	if active {
+		printChannelLead(out, ctx.cfg.ProjectID)
+	}
 
 	if len(features) == 0 && !(all && len(historicals) > 0) {
 		fmt.Fprintln(out, "No features yet. Create the first one with 'cerne feature new'.")

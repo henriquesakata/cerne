@@ -17,18 +17,18 @@ func handleSettingsGet(w http.ResponseWriter, projDir string) {
 }
 
 // handleSettingsPut writes {"scope", "value"} for key id and answers with the
-// new view. value is passed as its raw JSON text, so `false` is the same
-// literal the CLI takes and a JSON string "false" is refused.
+// new view. value is typed JSON checked against the key's type: a bool key
+// takes `false`, never the JSON string "false"; a string key takes a string.
 func handleSettingsPut(w http.ResponseWriter, r *http.Request, projDir, id string) {
 	var req struct {
-		Scope string          `json:"scope"`
-		Value json.RawMessage `json:"value"`
+		Scope string `json:"scope"`
+		Value any    `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid body: "+err.Error()))
 		return
 	}
-	if err := project.SetSetting(projDir, id, req.Scope, string(req.Value)); err != nil {
+	if err := project.SetSettingValue(projDir, id, req.Scope, req.Value); err != nil {
 		writeConfigError(w, err)
 		return
 	}

@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/room"
 )
@@ -70,22 +72,100 @@ func handleRoomOpen(w http.ResponseWriter, r *http.Request, projectID string) {
 	writeJSON(w, http.StatusCreated, map[string]any{"room": rm, "facilitator_id": facilitatorID})
 }
 
-func handleRoomList(w http.ResponseWriter, projectID string) {
+// handleRoomList lists the war rooms behind the permanent channel, which is
+// always first (F-0325) — present before its first message, its participants
+// the active works.
+func handleRoomList(w http.ResponseWriter, repoDir, projectID string) {
 	m, err := roomManagerFor(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	rooms := m.List()
-	if rooms == nil {
-		rooms = []room.Room{}
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	// The formal rooms never depend on the channel's health (critic C8): an
+	// unreadable channel is still listed, carrying its error.
+	channel := channelRoomView{Room: room.Room{ID: room.ChannelID, Permanent: true, Participants: []room.Participant{}}}
+	msgs, roster, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
+	if err != nil {
+		channel.Error = err.Error()
+	}
+	channel.MessageCount = len(msgs)
+	for _, r := range roster {
+		channel.Participants = append(channel.Participants, room.Participant{Nick: r.Work, Bio: r.Title})
+	}
+	rooms := []any{channel}
+	for _, r := range m.List() {
+		rooms = append(rooms, r)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rooms": rooms})
+}
+
+// channelRoomView is the channel's entry in the room list.
+type channelRoomView struct {
+	room.Room
+	Error string `json:"error,omitempty"`
+}
+
+// handleChannelRead serves the permanent channel (F-0325): every live message
+// with its derived state, plus the channel's version. ?since=N filters like a
+// war room read. With follow=1 it long-polls: on ?version=V until the channel
+// changes at all (a delivery a hook recorded counts — that is how the UI sees
+// "delivered"), without a version until a message past since arrives.
+// Reading never records a delivery.
+func handleChannelRead(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
+	q := r.URL.Query()
+	since, _ := strconv.Atoi(q.Get("since"))
+	follow := q.Get("follow") == "1"
+	want, err := strconv.ParseInt(q.Get("version"), 10, 64)
+	hasVersion := err == nil
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	ch := room.OpenChannel(filepath.Join(cacheDir, "rooms"))
+	deadline := time.Now().Add(roomReadTimeout)
+	for {
+		version := ch.Version()
+		all, _, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		out := []app.ChannelMessage{}
+		for _, m := range all {
+			if m.Seq > since {
+				out = append(out, m)
+			}
+		}
+		remaining := time.Until(deadline)
+		done := !follow || remaining <= 0 || r.Context().Err() != nil ||
+			(hasVersion && version != want) || (!hasVersion && len(out) > 0)
+		if done {
+			writeJSON(w, http.StatusOK, map[string]any{"messages": out, "version": version})
+			return
+		}
+		ch.Wait(r.Context(), version, remaining)
+	}
 }
 
 type joinRoomRequest struct {
 	Nick string `json:"nick"`
 	Bio  string `json:"bio"`
+}
+
+// refuseChannelRite answers a war-room rite (join, close, minutes,
+// facilitation) aimed at the permanent channel with 409 (F-0325).
+func refuseChannelRite(w http.ResponseWriter, id string) bool {
+	if id != room.ChannelID {
+		return false
+	}
+	writeRoomErr(w, room.ErrPermanentRoom)
+	return true
 }
 
 func writeRoomErr(w http.ResponseWriter, err error) {
@@ -108,12 +188,23 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case errors.Is(err, room.ErrRoomOpen):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, room.ErrPermanentRoom):
+		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, app.ErrNoChannelIdentity):
+		writeJSON(w, http.StatusForbidden, errorBody(err.Error()+" — run `cerne work start \"<what you are doing>\"` in that session first"))
+	case errors.Is(err, room.ErrMessageTooLong):
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+	case errors.Is(err, room.ErrChannelBusy):
+		writeJSON(w, http.StatusServiceUnavailable, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	}
 }
 
 func handleRoomJoin(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req joinRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -163,10 +254,42 @@ type sayRequest struct {
 	Body      string `json:"body"`
 }
 
-func handleRoomSay(w http.ResponseWriter, r *http.Request, projectID, id string) {
+func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID, id string) {
 	var req sayRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	if id == room.ChannelID {
+		// F-0325: a post carrying a session is that session's agent, exactly
+		// like `cerne msg send` (`cerne room say channel --session` sends
+		// one); only a post with no session — the UI composer — is the human,
+		// named by the channel.human_name setting.
+		// ponytail: local trust model, like every room route — any process
+		// that can reach this localhost port may post as the human or as any
+		// session id it knows. Authenticate when the server leaves the machine.
+		if strings.TrimSpace(req.Body) == "" {
+			writeJSON(w, http.StatusBadRequest, errorBody("the message cannot be empty"))
+			return
+		}
+		cacheDir, err := project.CacheDir(projectID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		now := time.Now().UTC()
+		var msg room.Message
+		if req.SessionID != "" {
+			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Body, now)
+			msg.Session = "" // a session id is never served
+		} else {
+			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Body, now)
+		}
+		if err != nil {
+			writeRoomErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, msg)
 		return
 	}
 	if req.SessionID == "" {
@@ -196,7 +319,11 @@ type roomEventView struct {
 	Own *bool `json:"own,omitempty"`
 }
 
-func handleRoomRead(w http.ResponseWriter, r *http.Request, projectID, id string) {
+func handleRoomRead(w http.ResponseWriter, r *http.Request, repoDir, projectID, id string) {
+	if id == room.ChannelID {
+		handleChannelRead(w, r, repoDir, projectID)
+		return
+	}
 	since, _ := strconv.Atoi(r.URL.Query().Get("since")) // missing/invalid → 0, the full transcript
 	follow := r.URL.Query().Get("follow") == "1"
 
@@ -240,6 +367,9 @@ type handoffFacilitatorRequest struct {
 // atomically, so the caller can transfer control (e.g. to a human) by
 // handing over only the freshly minted id.
 func handleRoomFacilitatorHandoff(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req handoffFacilitatorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -268,6 +398,9 @@ type createItemRequest struct {
 // handleRoomCreateItem raises a proposal or decision-request item on behalf
 // of an authenticated participant (F-0228 criterion 2).
 func handleRoomCreateItem(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req createItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -301,6 +434,9 @@ func handleRoomCreateItem(w http.ResponseWriter, r *http.Request, projectID, id 
 // handleRoomPending lists the room's open facilitation items — the
 // facilitator's triage queue, no LLM synthesis (F-0228 criterion 3).
 func handleRoomPending(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	m, err := roomManagerFor(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -329,6 +465,9 @@ type resolveItemRequest struct {
 // handleRoomResolveItem resolves an open facilitation item; only the
 // facilitator may (F-0228 criterion 4).
 func handleRoomResolveItem(w http.ResponseWriter, r *http.Request, projectID, id, itemID string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req resolveItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -354,6 +493,9 @@ type closeRoomRequest struct {
 }
 
 func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req closeRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -389,6 +531,9 @@ type setMinutesNoteRequest struct {
 // overwrite an existing link unless Force — reporting the existing note id
 // either way, so the CLI can point the caller at it.
 func handleRoomSetMinutesNote(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
 	var req setMinutesNoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))

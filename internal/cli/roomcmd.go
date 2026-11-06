@@ -226,6 +226,9 @@ func newRoomCloseCmd() *cobra.Command {
 		Short: "Close a war room with structured minutes (say/join refused; read still works)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[0] == room.ChannelID {
+				return room.ErrPermanentRoom
+			}
 			if facilitator == "" {
 				facilitator = os.Getenv("CERNE_ROOM_FACILITATOR")
 			}
@@ -527,6 +530,9 @@ func newRoomMinutesRegisterCmd() *cobra.Command {
 			"(close it first) and a room whose minutes are already registered, unless --force.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[0] == room.ChannelID {
+				return room.ErrPermanentRoom
+			}
 			return runRoomMinutesRegister(cmd, dir, port, args[0], informs, facet, component, force)
 		},
 	}
@@ -608,7 +614,10 @@ func newRoomListCmd() *cobra.Command {
 			}
 			for _, rm := range rooms {
 				status := "open"
-				if rm.ClosedAt != nil {
+				switch {
+				case rm.Permanent: // F-0325: the project channel, never opened or closed
+					status = "permanent"
+				case rm.ClosedAt != nil:
 					status = "closed"
 				}
 				fmt.Fprintf(out, "%s  %-6s %d participant(s)  %s\n", rm.ID, status, len(rm.Participants), rm.Topic)
