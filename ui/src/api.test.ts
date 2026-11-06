@@ -62,7 +62,8 @@ describe('settings API (F-0315 critérios 5 e 8): escopo do projeto ativo da aba
     setApiProject('p2')
     const fetch = vi.fn().mockResolvedValue(ok())
     vi.stubGlobal('fetch', fetch)
-    await putSetting('mindmap.enabled', 'host', false)
+    // A resposta da escrita já é a view nova (F-0314): devolvida, não descartada (crítica C5).
+    expect(await putSetting('mindmap.enabled', 'host', false)).toEqual({ settings: [], files: {} })
     const [url, init] = fetch.mock.calls[0]
     expect(url).toBe('/api/projects/p2/settings/mindmap.enabled')
     expect(init.method).toBe('PUT')
@@ -73,7 +74,7 @@ describe('settings API (F-0315 critérios 5 e 8): escopo do projeto ativo da aba
     setApiProject('p2')
     const fetch = vi.fn().mockResolvedValue(ok())
     vi.stubGlobal('fetch', fetch)
-    await unsetSetting('graph.enabled', 'project')
+    expect(await unsetSetting('graph.enabled', 'project')).toEqual({ settings: [], files: {} })
     const [url, init] = fetch.mock.calls[0]
     expect(url).toBe('/api/projects/p2/settings/graph.enabled?scope=project')
     expect(init.method).toBe('DELETE')

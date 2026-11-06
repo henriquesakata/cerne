@@ -9,8 +9,8 @@ import type { ResolvedSetting, SettingScope, SettingsView } from './api'
 // é conhecida pela tela; título, descrição, tipo e escopos vêm do payload.
 
 const fetchSettings = vi.fn<() => Promise<SettingsView>>()
-const putSetting = vi.fn<(id: string, scope: SettingScope, value: unknown) => Promise<void>>()
-const unsetSetting = vi.fn<(id: string, scope: SettingScope) => Promise<void>>()
+const putSetting = vi.fn<(id: string, scope: SettingScope, value: unknown) => Promise<SettingsView>>()
+const unsetSetting = vi.fn<(id: string, scope: SettingScope) => Promise<SettingsView>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -103,8 +103,8 @@ beforeEach(() => {
   putSetting.mockReset()
   unsetSetting.mockReset()
   fetchSettings.mockResolvedValue(fixture())
-  putSetting.mockResolvedValue()
-  unsetSetting.mockResolvedValue()
+  putSetting.mockResolvedValue(fixture())
+  unsetSetting.mockResolvedValue(fixture())
 })
 
 describe('Settings — leitura derivada do registro (F-0315)', () => {
@@ -255,12 +255,13 @@ describe('Settings — edição por escopo (F-0315)', () => {
   it('c5: alternar grava no escopo selecionado, com booleano, e o novo efetivo aparece sem reload', async () => {
     render(<Settings />)
     const box = within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox')
-    fetchSettings.mockResolvedValue(withKey('mindmap.enabled', { value: false, origin: 'project', stored: { project: false } }))
+    putSetting.mockResolvedValue(withKey('mindmap.enabled', { value: false, origin: 'project', stored: { project: false } }))
     fireEvent.click(box)
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('mindmap.enabled', 'project', false))
     expect(await within(row('Mapa mental')).findByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
     expect(within(row('Mapa mental')).getByText('Modificado')).toBeInTheDocument()
-    expect(fetchSettings).toHaveBeenCalledTimes(2)
+    // A view vem na resposta da escrita: nada de reler (crítica C5).
+    expect(fetchSettings).toHaveBeenCalledTimes(1)
   })
 
   it('c5: com o seletor em Host, a escrita vai ao host', async () => {
@@ -288,7 +289,7 @@ describe('Settings — edição por escopo (F-0315)', () => {
     // test.extra só tem valor no host: em Projeto não há o que redefinir.
     expect(within(row('Extra toggle')).queryByRole('button', { name: 'Redefinir neste escopo' })).toBeNull()
     const reset = within(graph).getByRole('button', { name: 'Redefinir neste escopo' })
-    fetchSettings.mockResolvedValue(withKey('graph.enabled', { value: true, origin: 'default', stored: undefined }))
+    unsetSetting.mockResolvedValue(withKey('graph.enabled', { value: true, origin: 'default', stored: undefined }))
     reset.focus()
     fireEvent.click(reset)
     await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('graph.enabled', 'project'))
@@ -324,7 +325,7 @@ describe('Settings — edição por escopo (F-0315)', () => {
 
   it('c9: durante a escrita o controle fica aria-disabled (nunca disabled) e a linha aria-busy', async () => {
     let release = () => {}
-    putSetting.mockImplementationOnce(() => new Promise<void>((r) => (release = r)))
+    putSetting.mockImplementationOnce(() => new Promise<SettingsView>((r) => (release = () => r(fixture()))))
     render(<Settings />)
     const box = within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox')
     fireEvent.click(box)
@@ -386,8 +387,8 @@ function deferred<T>() {
 
 describe('Settings — escritas simultâneas (F-0315, crítica C1)', () => {
   it('cada linha guarda o próprio ocupado e a própria falha: uma escrita não destrava nem engole a outra', async () => {
-    const wiki = deferred<void>()
-    const graph = deferred<void>()
+    const wiki = deferred<SettingsView>()
+    const graph = deferred<SettingsView>()
     putSetting.mockImplementation((id) => (id === 'wiki.enabled' ? wiki.promise : graph.promise))
     render(<Settings />)
     fireEvent.click(within(await screen.findByRole('listitem', { name: 'Wiki' })).getByRole('checkbox'))
@@ -395,7 +396,7 @@ describe('Settings — escritas simultâneas (F-0315, crítica C1)', () => {
     await waitFor(() => expect(row('Grafo')).toHaveAttribute('aria-busy', 'true'))
     expect(row('Wiki')).toHaveAttribute('aria-busy', 'true')
 
-    graph.resolve()
+    graph.resolve(fixture())
     await waitFor(() => expect(row('Grafo')).not.toHaveAttribute('aria-busy'))
     // A Wiki segue em voo: continua ocupada e um novo clique não grava de novo.
     expect(row('Wiki')).toHaveAttribute('aria-busy', 'true')
@@ -429,5 +430,18 @@ describe('Settings — falha de escrita por chave e escopo (F-0315, crítica C6)
     fireEvent.click(within(status).getByRole('button', { name: 'Tentar de novo' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledTimes(2))
     expect(putSetting).toHaveBeenLastCalledWith('mindmap.enabled', 'project', false)
+  })
+})
+
+describe('Settings — a escrita aplica a view da própria resposta (F-0315, crítica C5)', () => {
+  it('escrita que gravou mostra o valor novo mesmo se uma releitura falharia', async () => {
+    render(<Settings />)
+    const wiki = await screen.findByRole('listitem', { name: 'Wiki' })
+    fetchSettings.mockRejectedValue(new Error('offline'))
+    putSetting.mockResolvedValue(withKey('wiki.enabled', { value: false, origin: 'project', stored: { project: false } }))
+    fireEvent.click(within(wiki).getByRole('checkbox'))
+    expect(await within(row('Wiki')).findByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
+    expect(within(row('Wiki')).getByRole('checkbox')).not.toBeChecked()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 })

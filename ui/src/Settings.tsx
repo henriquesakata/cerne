@@ -1,5 +1,12 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { fetchSettings, putSetting, unsetSetting, type ResolvedSetting, type SettingScope } from './api'
+import {
+  fetchSettings,
+  putSetting,
+  unsetSetting,
+  type ResolvedSetting,
+  type SettingScope,
+  type SettingsView,
+} from './api'
 import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useProjects } from './live'
 import { useT, type Messages } from './i18n'
@@ -56,6 +63,12 @@ export default function Settings() {
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
   const [failures, setFailures] = useState<Readonly<Record<string, Failure>>>({})
   const refocus = useRef<string | null>(null)
+  // The view a landed write answered with (critic C5), shown over the loaded
+  // one until a later load replaces that (`base` is the load it was written
+  // over). A failed refresh after the write leaves the written value up.
+  const [written, setWritten] = useState<{ base: SettingsView | null; view: SettingsView } | null>(null)
+  const latest = useRef({ data: load.data, pid: activePid })
+  latest.current = { data: load.data, pid: activePid }
   const hintId = useId()
 
   // After the commit that removed the pressed control, hand the focus to the
@@ -69,10 +82,11 @@ export default function Settings() {
     document.getElementById(controlId(id))?.focus()
   })
 
-  // write runs one settings write for key id, then re-reads the view; the nav
-  // follows through the SSE "projects" event the server sends (F-0315). A
-  // failure stays on the row with a retry that re-sends the same write.
-  const write = (id: string, scope: SettingScope, run: () => Promise<void>) => {
+  // write runs one settings write for key id and shows the view it answers
+  // with; the nav follows through the SSE "projects" event the server sends
+  // (F-0315). A failure stays on the row with a retry that re-sends it.
+  const write = (id: string, scope: SettingScope, run: () => Promise<SettingsView>) => {
+    const pid = activePid
     const fk = failureKey(id, scope)
     const settle = (failure: Failure | null) => {
       setFailures(({ [fk]: _, ...rest }) => (failure ? { ...rest, [fk]: failure } : rest))
@@ -80,8 +94,9 @@ export default function Settings() {
     }
     setBusy((b) => new Set(b).add(id))
     run().then(
-      async () => {
-        await load.reload()
+      (view) => {
+        // A write answering after a project switch belongs to the old project.
+        if (latest.current.pid === pid) setWritten({ base: latest.current.data, view })
         refocus.current = id
         settle(null)
       },
@@ -94,7 +109,7 @@ export default function Settings() {
     setScope(to)
   }
 
-  const view = load.data
+  const view = written && written.base === load.data ? written.view : load.data
   if (!view) return <LoadPending load={load} message={ts.loadError} />
 
   // Registry texts come in English; the catalog is keyed by the source text.
@@ -196,7 +211,7 @@ function SettingRow({
   tx: (src: string) => string
   busy: boolean
   failures: Readonly<Record<string, Failure>>
-  onWrite: (scope: SettingScope, run: () => Promise<void>) => void
+  onWrite: (scope: SettingScope, run: () => Promise<SettingsView>) => void
   onScope: (to: SettingScope) => void
 }) {
   const { t } = useT()

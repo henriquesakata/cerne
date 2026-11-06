@@ -1006,21 +1006,23 @@ export async function fetchSettings(): Promise<SettingsView> {
   return (await r.json()) as SettingsView
 }
 
-// putSetting grava value (JSON tipado: booleano para chave bool) no escopo.
-// A tela relê pelo useLiveLoad, então a resposta não é devolvida.
-export async function putSetting(id: string, scope: SettingScope, value: unknown): Promise<void> {
+// putSetting grava value (JSON tipado: booleano para chave bool) no escopo e
+// devolve a view nova que o servidor responde — a tela a aplica sem reler.
+export async function putSetting(id: string, scope: SettingScope, value: unknown): Promise<SettingsView> {
   const r = await fetch(`${base()}/settings/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scope, value }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as SettingsView
 }
 
-// unsetSetting remove a chave do escopo (idempotente no servidor).
-export async function unsetSetting(id: string, scope: SettingScope): Promise<void> {
+// unsetSetting remove a chave do escopo (idempotente no servidor) e devolve a view nova.
+export async function unsetSetting(id: string, scope: SettingScope): Promise<SettingsView> {
   const r = await fetch(`${base()}/settings/${encodeURIComponent(id)}?scope=${scope}`, { method: 'DELETE' })
   if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as SettingsView
 }
 
 // ---- referências externas (case 0020) ----
