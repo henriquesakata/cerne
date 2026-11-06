@@ -194,6 +194,31 @@ describe('ProcessPerfCard (F-0321)', () => {
     expect(screen.getByText(/não é comparável a uma série feita de todos os transcripts/)).toBeInTheDocument()
   })
 
+  // C17: close markers get their own label rows, the chart has a scale and a
+  // text alternative, the weekly values are reachable without hover, and the
+  // tables scroll instead of overflowing a phone-width card.
+  it('gráfico legível e acessível', async () => {
+    payload.current = report([
+      mk('D-0061', { at: '2026-11-02T15:44:00Z' }),
+      mk('D-0062', { at: '2026-11-02T17:52:00Z' }),
+    ])
+    const { container } = render(<ProcessPerfCard />)
+    await screen.findByText(/273 entregue/)
+    const svg = container.querySelector('svg')!
+    const labels = [...svg.querySelectorAll('text')].filter((n) => /^D-/.test(n.textContent ?? ''))
+    expect(labels.map((n) => n.textContent)).toEqual(['D-0061', 'D-0062'])
+    expect(labels[0].getAttribute('y')).not.toBe(labels[1].getAttribute('y'))
+    const ticks = [...svg.querySelectorAll('text.tick-label')].map((n) => n.textContent)
+    expect(ticks).toEqual(['0 M', '3,3 M', '6,6 M'])
+    expect(svg.getAttribute('aria-label')).toBe(
+      'Mediana semanal do custo por feature entregue, 2 semana(s), de 2026-W44 (4,4 M) a 2026-W45 (6,6 M); marcos D-0061, D-0062',
+    )
+    expect(screen.getByText('Valores semanais')).toBeInTheDocument()
+    const row = screen.getByText('2026-W44').closest('tr')!
+    expect([...row.querySelectorAll('td')].map((n) => n.textContent)).toEqual(['2026-W44', '4,4 M', '3', '5'])
+    expect(container.querySelectorAll('.dash-process-scroll table').length).toBe(2)
+  })
+
   it('estado vazio sem gráfico', async () => {
     payload.current = report([mk('D-0062', { before: side(3), after: side(0), code: 'small_sample', guarded: false })], {
       reason: 'no feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp)',

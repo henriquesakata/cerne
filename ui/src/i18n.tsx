@@ -107,6 +107,10 @@ const ptBR = {
     processPerf: 'Desempenho do processo',
     processSeries: 'Mediana semanal do custo por feature entregue',
     processWeek: (week: string, median: string, n: number) => `${week}: mediana ${median}, n=${n}`,
+    processSeriesLabel: (weeks: number, first: string, last: string, markers: string) =>
+      `Mediana semanal do custo por feature entregue, ${weeks} semana(s), de ${first} a ${last}${markers ? `; marcos ${markers}` : ''}`,
+    processWeeksTable: 'Valores semanais',
+    processWeekCols: { week: 'Semana', median: 'Mediana', n: 'Com custo', delivered: 'Entregues' },
     processEmpty: 'Nenhuma feature com custo carimbado — depende da F-0309 (cerne cost <id> --stamp).',
     processScope:
       'Tokens ponderados por feature entregue (entrada + 1,25×escrita de cache + 0,1×leitura + 5×saída), só das sessões ligadas à feature; a cobertura de cada lado diz quanto dessas sessões o painel vê. O nível não é comparável a uma série feita de todos os transcripts.',
@@ -1073,6 +1077,10 @@ const en: Messages = {
     processPerf: 'Process performance',
     processSeries: 'Weekly median cost per delivered feature',
     processWeek: (week: string, median: string, n: number) => `${week}: median ${median}, n=${n}`,
+    processSeriesLabel: (weeks: number, first: string, last: string, markers: string) =>
+      `Weekly median cost per delivered feature, ${weeks} week(s), from ${first} to ${last}${markers ? `; markers ${markers}` : ''}`,
+    processWeeksTable: 'Weekly values',
+    processWeekCols: { week: 'Week', median: 'Median', n: 'With cost', delivered: 'Delivered' },
     processEmpty: 'No feature with a stamped cost — depends on F-0309 (cerne cost <id> --stamp).',
     processScope:
       'Weighted tokens per delivered feature (input + 1.25×cache write + 0.1×cache read + 5×output), from the sessions bound to the feature only; each side\'s coverage says how much of those sessions the panel sees. The level is not comparable to a series built from all transcripts.',

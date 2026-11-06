@@ -553,30 +553,64 @@ function ProcessSideCell({ side }: { side: ProcessSide }) {
 
 // ProcessSeries: a weekly median per dot (no polyline — a week without a
 // delivery is not emitted, and a line would bridge the gap) and one dashed
-// line per marker, on a linear time axis. Inline SVG, no chart dependency.
+// line per marker, on a linear time axis with a y scale. Close markers get
+// their own label rows so they never overlap (C17). Inline SVG, no chart
+// dependency; the same values are in the weekly table, reachable without hover.
 function ProcessSeries({ report }: { report: ProcessReport }) {
   const { t, lang } = useT()
   const W = 640
-  const H = 180
-  const PAD = 24
+  const LEFT = 56
+  const RIGHT = 16
+  const BOTTOM = 16
+  const ROW = 14
+  const PLOT = 140
   const weekStart = report.weeks.map((w) => Date.parse(w.start))
   const markerAt = report.markers.map((m) => Date.parse(m.at))
   const lo = Math.min(...weekStart, ...markerAt)
   const hi = Math.max(...weekStart.map((s) => s + 7 * DAY_MS), ...markerAt)
-  const x = (ms: number) => PAD + ((ms - lo) / Math.max(hi - lo, 1)) * (W - 2 * PAD)
+  const x = (ms: number) => LEFT + ((ms - lo) / Math.max(hi - lo, 1)) * (W - LEFT - RIGHT)
+  const ends: number[] = [] // per label row, where its last label ends
+  const rowOf = report.markers.map((m, i) => {
+    const at = x(markerAt[i])
+    let row = ends.findIndex((end) => end < at)
+    if (row < 0) {
+      row = ends.length
+      ends.push(0)
+    }
+    ends[row] = at + 3 + 7.5 * m.id.length
+    return row
+  })
+  const TOP = 8 + ROW * Math.max(ends.length, 1)
+  const H = TOP + PLOT + BOTTOM
   const top = Math.max(...report.weeks.map((w) => w.median), 1)
-  const y = (v: number) => H - PAD - (v / top) * (H - 2 * PAD)
+  const y = (v: number) => TOP + PLOT - (v / top) * PLOT
+  const weeks = report.weeks
+  const label = t.dashboard.processSeriesLabel(
+    weeks.length,
+    `${weeks[0].week} (${fmtMtok(weeks[0].median, lang)})`,
+    `${weeks[weeks.length - 1].week} (${fmtMtok(weeks[weeks.length - 1].median, lang)})`,
+    report.markers.map((m) => m.id).join(', '),
+  )
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t.dashboard.processSeries}>
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
+      {[0, top / 2, top].map((v) => (
+        <g key={v}>
+          <line className="tick" x1={LEFT} x2={W - RIGHT} y1={y(v)} y2={y(v)} />
+          <text className="tick-label" x={LEFT - 6} y={y(v) + 4} textAnchor="end">
+            {fmtMtok(v, lang)}
+          </text>
+        </g>
+      ))}
+      <line className="axis" x1={LEFT} x2={LEFT} y1={TOP} y2={TOP + PLOT} />
       {report.markers.map((m, i) => (
         <g key={m.id}>
-          <line x1={x(markerAt[i])} x2={x(markerAt[i])} y1={PAD} y2={H - PAD} strokeDasharray="4 3" />
-          <text x={x(markerAt[i]) + 3} y={PAD - 6}>
+          <line x1={x(markerAt[i])} x2={x(markerAt[i])} y1={TOP} y2={TOP + PLOT} strokeDasharray="4 3" />
+          <text x={x(markerAt[i]) + 3} y={8 + ROW * rowOf[i] + 10}>
             {m.id}
           </text>
         </g>
       ))}
-      {report.weeks.map((w, i) => (
+      {weeks.map((w, i) => (
         <circle key={w.week} cx={x(weekStart[i] + 3.5 * DAY_MS)} cy={y(w.median)} r={3}>
           <title>{t.dashboard.processWeek(w.week, fmtMtok(w.median, lang), w.n)}</title>
         </circle>
@@ -611,51 +645,82 @@ export function ProcessPerfCard() {
           {data.weeks.length === 0 ? (
             <p className="muted">{t.dashboard.processEmpty}</p>
           ) : (
-            <ProcessSeries report={data} />
+            <>
+              <div className="dash-process-scroll">
+                <ProcessSeries report={data} />
+              </div>
+              <details className="dash-process-weeks">
+                <summary>{t.dashboard.processWeeksTable}</summary>
+                <div className="dash-process-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t.dashboard.processWeekCols.week}</th>
+                        <th>{t.dashboard.processWeekCols.median}</th>
+                        <th>{t.dashboard.processWeekCols.n}</th>
+                        <th>{t.dashboard.processWeekCols.delivered}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.weeks.map((w) => (
+                        <tr key={w.week}>
+                          <td>{w.week}</td>
+                          <td>{fmtMtok(w.median, lang)}</td>
+                          <td>{w.n}</td>
+                          <td>{w.delivered}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </>
           )}
           <p className="muted">{t.dashboard.processScope}</p>
           {data.markers.length === 0 ? (
             <p className="muted">{t.dashboard.processNoMarkers}</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>{cols.marker}</th>
-                  <th>{cols.before}</th>
-                  <th>{cols.after}</th>
-                  <th>{cols.guard}</th>
-                  <th>{cols.verdict}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.markers.map((m) => (
-                  <tr key={m.id}>
-                    <td>
-                      <strong>{m.id}</strong>
-                      <br />
-                      <span className="muted">
-                        {new Date(m.at).toLocaleDateString(lang, { timeZone: 'UTC' })} · {m.title}
-                      </span>
-                    </td>
-                    <td>
-                      <ProcessSideCell side={m.before} />
-                    </td>
-                    <td>
-                      <ProcessSideCell side={m.after} />
-                    </td>
-                    <td>{guards(m)}</td>
-                    <td>
-                      <strong>
-                        {t.dashboard.processVerdicts[m.verdict]}
-                        {unguardedText(m, t)}
-                      </strong>
-                      <br />
-                      {processReasonText(m, data, t, lang)}
-                    </td>
+            <div className="dash-process-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{cols.marker}</th>
+                    <th>{cols.before}</th>
+                    <th>{cols.after}</th>
+                    <th>{cols.guard}</th>
+                    <th>{cols.verdict}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.markers.map((m) => (
+                    <tr key={m.id}>
+                      <td>
+                        <strong>{m.id}</strong>
+                        <br />
+                        <span className="muted">
+                          {new Date(m.at).toLocaleDateString(lang, { timeZone: 'UTC' })} · {m.title}
+                        </span>
+                      </td>
+                      <td>
+                        <ProcessSideCell side={m.before} />
+                      </td>
+                      <td>
+                        <ProcessSideCell side={m.after} />
+                      </td>
+                      <td>{guards(m)}</td>
+                      <td>
+                        <strong>
+                          {t.dashboard.processVerdicts[m.verdict]}
+                          {unguardedText(m, t)}
+                        </strong>
+                        <br />
+                        {processReasonText(m, data, t, lang)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <p className="muted">
             {t.dashboard.processExcluded(data.excluded_no_cost, data.excluded_epic, data.excluded_no_gauntlet)}
