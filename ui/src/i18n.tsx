@@ -235,6 +235,8 @@ const ptBR = {
     drop: 'Descartar',
     module: 'Módulo',
     confirm: 'Confirmar',
+    similarIntro: 'Já existe candidata parecida — se for a mesma demanda, siga com ela:',
+    promoteAnyway: 'Promover mesmo assim',
   },
   backlog: {
     loadError: (e: string) => `Erro ao carregar o estado: ${e}`,
@@ -1130,6 +1132,8 @@ const en: Messages = {
     drop: 'Drop',
     module: 'Module',
     confirm: 'Confirm',
+    similarIntro: 'A similar feature already exists — if it is the same demand, carry on with it:',
+    promoteAnyway: 'Promote anyway',
   },
   backlog: {
     loadError: (e: string) => `Failed to load state: ${e}`,

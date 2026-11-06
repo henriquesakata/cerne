@@ -1505,12 +1505,26 @@ export async function fetchIdeas(): Promise<Idea[]> {
   return ((await r.json()) as { ideas: Idea[] }).ideas
 }
 
+// SimilarExists é uma promoção barrada pela guarda de duplicidade (F-0147,
+// 409): as parecidas vão junto, para o painel mostrá-las e oferecer forçar.
+export class SimilarExists extends Error {
+  matches: DupMatch[]
+  constructor(message: string, matches: DupMatch[]) {
+    super(message)
+    this.matches = matches
+  }
+}
+
 async function postIdea<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(`${base()}/ideas${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (r.status === 409) {
+    const b = (await r.json().catch(() => ({}))) as { error?: string; matches?: DupMatch[] }
+    throw new SimilarExists(b.error ?? `HTTP ${r.status}`, b.matches ?? [])
+  }
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as T
 }
@@ -1526,9 +1540,10 @@ export async function dropIdea(id: string): Promise<Idea> {
   return (await postIdea<{ idea: Idea }>(`/${encodeURIComponent(id)}/drop`, {})).idea
 }
 
-// promoteIdea cria a candidata; module só é exigido com 2+ módulos.
-export async function promoteIdea(id: string, module: string): Promise<{ idea: Idea; feature: Feature }> {
-  return postIdea(`/${encodeURIComponent(id)}/promote`, { module })
+// promoteIdea cria a candidata; module só é exigido com 2+ módulos; force
+// passa pela guarda de duplicidade (SimilarExists).
+export async function promoteIdea(id: string, module: string, force = false): Promise<{ idea: Idea; feature: Feature }> {
+  return postIdea(`/${encodeURIComponent(id)}/promote`, { module, force })
 }
 
 // --- Harness (F-0251) ---

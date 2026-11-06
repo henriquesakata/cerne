@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { createIdea, dropIdea, fetchIdeas, promoteIdea, type Idea } from './api'
+import { createIdea, dropIdea, fetchIdeas, promoteIdea, SimilarExists, type DupMatch, type Idea } from './api'
 import { useT } from './i18n'
 import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 
@@ -35,6 +35,8 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
   // Com 2+ módulos o core exige --module: o Promover abre o select primeiro.
   const [choosing, setChoosing] = useState<string | null>(null)
   const [module, setModule] = useState('')
+  // A promote refused by the duplicate guard (C9): its similars, and a force.
+  const [similar, setSimilar] = useState<{ id: string; matches: DupMatch[] } | null>(null)
   const needsModule = modules.length >= 2
 
   const send = (sub: Submission) => {
@@ -62,22 +64,28 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
   const act = (id: string, run: () => Promise<unknown>, after?: () => void) => {
     setBusy(id)
     setActionError(null)
+    setSimilar(null)
     run()
       .then(() => {
         setChoosing(null)
         after?.()
         return load.reload()
       })
-      .catch((err: unknown) => setActionError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => {
+        if (err instanceof SimilarExists) setSimilar({ id, matches: err.matches })
+        else setActionError(err instanceof Error ? err.message : String(err))
+      })
       .finally(() => setBusy(null))
   }
+  const promoteAs = (i: Idea, force: boolean) =>
+    act(i.id, () => promoteIdea(i.id, needsModule ? module : '', force), onPromoted)
   const promote = (i: Idea) => {
     if (needsModule && choosing !== i.id) {
       setChoosing(i.id)
       setModule(modules[0])
       return
     }
-    act(i.id, () => promoteIdea(i.id, needsModule ? module : ''), onPromoted)
+    promoteAs(i, false)
   }
 
   return (
@@ -139,6 +147,24 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                     {t.ideas.drop}
                   </button>
                 </span>
+                {similar?.id === i.id && (
+                  <div className="ideas-similar">
+                    <p>{t.ideas.similarIntro}</p>
+                    <ul>
+                      {similar.matches.map((m) => (
+                        <li key={m.id}>
+                          <a href={`#/f/${encodeURIComponent(m.id)}`}>{m.id}</a> [{m.state}] {m.title}
+                        </li>
+                      ))}
+                    </ul>
+                    <button type="button" disabled={busy !== null} onClick={() => promoteAs(i, true)}>
+                      {t.ideas.promoteAnyway}
+                    </button>
+                    <button type="button" onClick={() => setSimilar(null)}>
+                      {t.common.cancel}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
