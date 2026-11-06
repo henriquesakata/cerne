@@ -69,6 +69,8 @@ func TestStatsProcessText(t *testing.T) {
 	for _, want := range []string{
 		"Process performance",
 		"only sessions bound to the feature count",
+		"not comparable to a series built from all transcripts", // C5
+		"unattributed median 0 · coverage 100%",                 // C5
 		"2026-W10",
 		"D-0001",
 		"before",
@@ -132,6 +134,8 @@ const processGolden = `{
           "cache_read": 0,
           "output": 0
         },
+        "unattributed_median": 0,
+        "coverage": 0,
         "with_gauntlet": 0,
         "returned_share": 0,
         "escaped_share": null
@@ -153,6 +157,8 @@ const processGolden = `{
           "cache_read": 24467297.5,
           "output": 125038.5
         },
+        "unattributed_median": 0,
+        "coverage": 1,
         "with_gauntlet": 1,
         "returned_share": 1,
         "escaped_share": 0

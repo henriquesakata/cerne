@@ -43,13 +43,14 @@ const (
 // children, whose own anchor is only its orchestration, C12) — it still counts
 // as a delivery of its side and week (C13).
 type ProcessSample struct {
-	ID          string
-	CompletedAt time.Time   // first feature.completed
-	Excluded    string      // "" (sampled) | "no_cost" | "epic"
-	Raw         [4]int64    // input, cache_creation, cache_read, output — the F-0309 anchor
-	HasGauntlet bool        // false: out of the returns guard, never zero returns (crit. 5)
-	Returned    bool        // at least one "Rodada N — derrota"
-	Fixes       []time.Time // created_at of each feature whose fixes names ID (crit. 19)
+	ID           string
+	CompletedAt  time.Time   // first feature.completed
+	Excluded     string      // "" (sampled) | "no_cost" | "epic"
+	Raw          [4]int64    // input, cache_creation, cache_read, output — the F-0309 anchor
+	Unattributed [4]int64    // the anchor's unattributed counters: its sessions' spend outside the binding (C5)
+	HasGauntlet  bool        // false: out of the returns guard, never zero returns (crit. 5)
+	Returned     bool        // at least one "Rodada N — derrota"
+	Fixes        []time.Time // created_at of each feature whose fixes names ID (crit. 19)
 }
 
 // Marker is a process change: a decision with facet process + component metric.
@@ -75,15 +76,21 @@ type Side struct {
 	// Delivered is every delivery of the window; N the stamped ones sampled.
 	// The exclusions are counted per side (C13): a thin or skewed stamped
 	// subset shows next to its own numbers.
-	Delivered          int      `json:"delivered"`
-	ExcludedNoCost     int      `json:"excluded_no_cost"`
-	ExcludedEpic       int      `json:"excluded_epic"`
-	ExcludedNoGauntlet int      `json:"excluded_no_gauntlet"` // of N: out of the returns guard only
-	N                  int      `json:"n"`
-	Median             float64  `json:"median"`
-	P25                float64  `json:"p25"`
-	P75                float64  `json:"p75"`
-	RawMedian          Raw      `json:"raw_median"`
+	Delivered          int     `json:"delivered"`
+	ExcludedNoCost     int     `json:"excluded_no_cost"`
+	ExcludedEpic       int     `json:"excluded_epic"`
+	ExcludedNoGauntlet int     `json:"excluded_no_gauntlet"` // of N: out of the returns guard only
+	N                  int     `json:"n"`
+	Median             float64 `json:"median"`
+	P25                float64 `json:"p25"`
+	P75                float64 `json:"p75"`
+	RawMedian          Raw     `json:"raw_median"`
+	// Coverage (C5): the median weighted spend the bound sessions had outside
+	// the binding, and bound / (bound + unattributed) over the side — how
+	// much of those sessions the cost above sees. Sessions never bound to a
+	// feature are invisible to the panel either way.
+	UnattributedMedian float64  `json:"unattributed_median"`
+	Coverage           float64  `json:"coverage"`
 	WithGauntlet       int      `json:"with_gauntlet"`
 	ReturnedShare      float64  `json:"returned_share"` // of WithGauntlet
 	EscapedShare       *float64 `json:"escaped_share"`  // of N; null until the side's last delivery is 28 days old (C10)
@@ -350,6 +357,12 @@ func side(all []ProcessSample, from, to time.Time, cutBy string, now time.Time) 
 		}
 	}
 	s.RawMedian = Raw{median(raw[0]), median(raw[1]), median(raw[2]), median(raw[3])}
+	un := make([]float64, len(ss))
+	for i, x := range ss {
+		un[i] = weighted(x.Unattributed)
+	}
+	bound, total := sum(c), sum(c)+sum(un)
+	s.UnattributedMedian, s.Coverage = median(un), bound/total
 	r := returns(ss)
 	s.WithGauntlet, s.ReturnedShare, s.ExcludedNoGauntlet = len(r), mean(r), len(ss)-len(r)
 	// A delivery under 28 days old has not had time to reveal its defect: the
@@ -456,6 +469,14 @@ func bit(b bool) float64 {
 		return 1
 	}
 	return 0
+}
+
+func sum(v []float64) float64 {
+	var t float64
+	for _, x := range v {
+		t += x
+	}
+	return t
 }
 
 func mean(v []float64) float64 {

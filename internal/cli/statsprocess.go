@@ -35,7 +35,8 @@ func runProcessStats(cmd *cobra.Command, dir string, asJSON bool) error {
 func renderProcess(out io.Writer, r stats.ProcessReport) {
 	fmt.Fprintln(out, "Process performance — weighted tokens per delivered feature")
 	fmt.Fprintln(out, "  cost = input + 1.25×cache_creation + 0.1×cache_read + 5×output, from each feature's stamped cost anchor (F-0309);")
-	fmt.Fprintln(out, "  only sessions bound to the feature count — spend outside any binding is not in this panel.")
+	fmt.Fprintln(out, "  only sessions bound to the feature count — spend outside any binding is not in this panel; each side's coverage")
+	fmt.Fprintln(out, "  says how much of its bound sessions it sees. The level is not comparable to a series built from all transcripts.")
 	fmt.Fprintln(out)
 	if r.Reason != "" {
 		fmt.Fprintln(out, r.Reason)
@@ -82,9 +83,10 @@ func renderSide(out io.Writer, label string, s stats.Side) {
 	}
 	if s.N > 0 {
 		fmt.Fprintf(out, "  median %s  p25 %s  p75 %s · raw medians: input %.0f · cache_creation %.0f · cache_read %.0f · output %.0f"+
-			" · returned %.0f%% of %d with Gauntlet · escaped %s",
+			" · unattributed median %s · coverage %.0f%% · returned %.0f%% of %d with Gauntlet · escaped %s",
 			tokens(s.Median), tokens(s.P25), tokens(s.P75), s.RawMedian.Input, s.RawMedian.CacheCreation,
-			s.RawMedian.CacheRead, s.RawMedian.Output, s.ReturnedShare*100, s.WithGauntlet, escapedShare(s))
+			s.RawMedian.CacheRead, s.RawMedian.Output, tokens(s.UnattributedMedian), s.Coverage*100,
+			s.ReturnedShare*100, s.WithGauntlet, escapedShare(s))
 	}
 	if s.CutBy != "" {
 		fmt.Fprintf(out, "  (window cut at %s)", s.CutBy)

@@ -75,19 +75,20 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return stats.ProcessReport{}, fmt.Errorf("process panel: read the result of %s: %w", id, err)
 		}
-		c, ok := cost.AnchorCounters(string(body))
+		c, u, ok := cost.AnchorCounters(string(body))
 		if !ok || c == (cost.Counters{}) {
 			samples = append(samples, stats.ProcessSample{ID: id, CompletedAt: completed[id], Excluded: "no_cost"})
 			continue
 		}
 		has, derrotas := lint.GauntletRounds(body)
 		samples = append(samples, stats.ProcessSample{
-			ID:          id,
-			CompletedAt: completed[id],
-			Raw:         [4]int64{c.Input, c.CacheCreation, c.CacheRead, c.Output},
-			HasGauntlet: has,
-			Returned:    derrotas > 0,
-			Fixes:       fixes[id],
+			ID:           id,
+			CompletedAt:  completed[id],
+			Raw:          [4]int64{c.Input, c.CacheCreation, c.CacheRead, c.Output},
+			Unattributed: [4]int64{u.Input, u.CacheCreation, u.CacheRead, u.Output},
+			HasGauntlet:  has,
+			Returned:     derrotas > 0,
+			Fixes:        fixes[id],
 		})
 	}
 	return stats.ComputeProcess(samples, markers, now), nil

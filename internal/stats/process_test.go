@@ -576,3 +576,20 @@ func TestProcessExclusionsPerSide(t *testing.T) {
 		t.Fatalf("weeks = %+v, want W03 delivered 3 n 1 and W06 delivered 2 n 1", r.Weeks)
 	}
 }
+
+// TestProcessSideCoverage pins C5: a side shows how much of its bound
+// sessions' spend the anchors attribute — the median unattributed and the
+// coverage, bound / (bound + unattributed), in weighted tokens.
+func TestProcessSideCoverage(t *testing.T) {
+	var samples []ProcessSample
+	for i := range 4 {
+		s := sample(fmt.Sprintf("A%d", i), at(31+i), 300)
+		s.Unattributed = [4]int64{int64(100 * i), 0, 0, 0} // 0, 100, 200, 300
+		samples = append(samples, s)
+	}
+	a := ComputeProcess(samples, []Marker{marker("D-0001", at(30))}, mature).Markers[0].After
+	// bound 1200, unattributed 600: coverage 2/3; unattributed median (100+200)/2
+	if a.UnattributedMedian != 150 || math.Abs(a.Coverage-2.0/3) > 1e-12 {
+		t.Fatalf("after = unattributed median %v coverage %v, want 150 / 0.667", a.UnattributedMedian, a.Coverage)
+	}
+}

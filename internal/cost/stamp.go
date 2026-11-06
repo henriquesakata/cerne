@@ -68,11 +68,12 @@ func anchor(result string) (share, bool) {
 	return a, json.Unmarshal([]byte(raw), &a) == nil
 }
 
-// AnchorCounters reads the own counters of result's v1 cost anchor (the
-// process panel's one reader, F-0321): false with no real "## Custo" anchor.
-func AnchorCounters(result string) (Counters, bool) {
+// AnchorCounters reads the own and the unattributed counters of result's v1
+// cost anchor — the process panel's one reader (F-0321), which shows its
+// coverage from the second: false with no real "## Custo" anchor.
+func AnchorCounters(result string) (own, unattributed Counters, ok bool) {
 	a, ok := anchor(result)
-	return a.Counters, ok
+	return a.Counters, a.Unattributed, ok
 }
 
 // custoSection locates the real "## Custo" section of result, ignoring fenced

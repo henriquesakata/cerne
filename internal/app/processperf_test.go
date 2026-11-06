@@ -206,3 +206,19 @@ func TestProcessPerfExcludesEpics(t *testing.T) {
 			r.ExcludedEpic, a.ExcludedEpic, a.N, a.Delivered, a.Median)
 	}
 }
+
+// TestProcessPerfReadsUnattributed pins C5 in the collector: the anchor's
+// unattributed counters reach the side's coverage.
+func TestProcessPerfReadsUnattributed(t *testing.T) {
+	repoDir := newPanelBackend(t)
+	seedDecision(t, repoDir, "D-0001", panelAt(0), domain.DecisionActive, []string{"process"}, []string{"metric"})
+	body, err := cost.Stamp("# F-0001\n", cost.Report{Counters: cost.Counters{Input: 3000}, Unattributed: cost.Counters{Input: 1000}, Messages: 1})
+	if err != nil {
+		t.Fatalf("Stamp: %v", err)
+	}
+	seedDelivered(t, repoDir, "F-0001", panelAt(1), body)
+
+	if a := mustProcessPerf(t, repoDir).Markers[0].After; a.UnattributedMedian != 1000 || a.Coverage != 0.75 {
+		t.Fatalf("after = unattributed %v coverage %v, want 1000 / 0.75", a.UnattributedMedian, a.Coverage)
+	}
+}
