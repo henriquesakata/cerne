@@ -147,9 +147,9 @@ func decodeToolCall(root *cobra.Command, tc llm.ToolCall) (verbs.Call, error) {
 	return c, fmt.Errorf("%w: no tool named %q", verbs.ErrUnknownVerb, tc.Name)
 }
 
-// decodeTyped turns a typed input into the generic argv: positionals in Use
-// order, then --flag=value sorted by name (a bool true is --flag, a list
-// repeats the flag).
+// decodeTyped turns a typed input into the generic argv: --flag=value sorted
+// by name (a bool true is --flag, a list repeats the flag), then "--" and the
+// positionals in Use order.
 func decodeTyped(v verbs.Verb, input json.RawMessage) (verbs.Call, error) {
 	call := verbs.Call{Verb: v.Path}
 	if v.Class != verbs.ClassChat {
@@ -172,12 +172,13 @@ func decodeTyped(v verbs.Verb, input json.RawMessage) (verbs.Call, error) {
 		}
 		delete(in, "stdin")
 	}
+	var positionals []string
 	for _, p := range pos {
 		s, ok := in[p].(string)
 		if !ok {
 			return bad("%s is required (string)", p)
 		}
-		call.Args = append(call.Args, s)
+		positionals = append(positionals, s)
 		delete(in, p)
 	}
 	for _, name := range slices.Sorted(maps.Keys(in)) {
@@ -202,6 +203,9 @@ func decodeTyped(v verbs.Verb, input json.RawMessage) (verbs.Call, error) {
 		default:
 			return bad("field %q has an unsupported type", name)
 		}
+	}
+	if len(positionals) > 0 { // C13: after "--", a value is never read as a flag
+		call.Args = append(append(call.Args, "--"), positionals...)
 	}
 	return call, nil
 }

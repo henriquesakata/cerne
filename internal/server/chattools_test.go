@@ -468,8 +468,26 @@ func TestTypedToolDecodesToSameArgv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if typed.Verb != generic.Verb || !slices.Equal(typed.Args, generic.Args) || typed.Stdin != generic.Stdin {
+	keyOf := func(c verbs.Call) string {
+		k, err := verbs.Key(typedTree(), append(strings.Fields(c.Verb), c.Args...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	if typed.Verb != generic.Verb || keyOf(typed) != keyOf(generic) || typed.Stdin != generic.Stdin {
 		t.Fatalf("typed = %+v, generic = %+v", typed, generic)
+	}
+	// C13: positional values go after "--", so a value is never read as a flag.
+	if i := slices.Index(typed.Args, "--"); i < 0 || !slices.Equal(typed.Args[i+1:], []string{"T"}) {
+		t.Fatalf("typed argv = %q, want the positionals after --", typed.Args)
+	}
+	sneaky, err := decodeToolCall(typedTree(), llm.ToolCall{Name: "cerne_reference_new", Input: json.RawMessage(`{"title":"--help=false","url":"u"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := verbs.Key(typedTree(), []string{"reference", "new", "--url=u", "--", "--help=false"}); keyOf(sneaky) != want {
+		t.Fatalf("typed title %q was not kept a positional: %q", "--help=false", sneaky.Args)
 	}
 
 	if _, err := decodeToolCall(typedTree(), llm.ToolCall{Name: "cerne_nope", Input: json.RawMessage(`{}`)}); !errors.Is(err, verbs.ErrUnknownVerb) {
