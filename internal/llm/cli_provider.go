@@ -61,13 +61,13 @@ var AgentReadTools = []string{
 var AgentWriteTools = []string{"Bash(cerne:*)"}
 
 // AgentDeniedCommands are the --disallowedTools rules that keep the broad grant
-// above away from everything the chat must not run (F-0269 criterion 2): the
-// lifecycle — transitions, accept, deliver, retire, substituir — and, since
-// F-0323, every operational or unclassified verb. With a broad allowlist this
-// list IS the gate, so it is never hand-kept: internal/cli derives it at init
-// from the chat class each command carries (verbs.Mark*), the same classes the
-// API-token tool channel enforces, so both modes deny the same verbs. Nil — a
-// process that never linked the tree — means NewAgentProvider grants no write.
+// above away from the lifecycle (F-0269 criterion 2): transitions, accept,
+// deliver, retire, substituir, import. With a broad allowlist this list IS the
+// gate, so it is never hand-kept: internal/cli derives it at init from the
+// lifecycle marks (verbs.MarkLifecycle), the same class the API-token tool
+// channel refuses, so both modes deny the lifecycle alike (F-0323 crit. 4).
+// Nil — a process that never linked the tree — means NewAgentProvider grants
+// no write.
 //
 // It is the FIRST layer, not the only one: these rules match by prefix, and a
 // prefix rule is brittle (command chaining, spacing). app.CheckHumanGate refuses

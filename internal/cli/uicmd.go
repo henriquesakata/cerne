@@ -34,12 +34,14 @@ func init() {
 	llm.AgentDeniedCommands = agentDeniedCommands(Root())
 }
 
-// agentDeniedCommands is the claude-cli refusal list derived from the chat
-// classes: every verb that is not ClassChat (lifecycle, local, unclassified).
+// agentDeniedCommands is the claude-cli refusal list derived from the
+// lifecycle marks (crit. 4: lifecycle refused in every mode). Only lifecycle:
+// local verbs stay allowed in the subscription mode, whose write policy
+// (F-0260/F-0267/F-0269) this feature does not change.
 func agentDeniedCommands(root *cobra.Command) []string {
 	var rules []string
 	for _, v := range verbs.From(root) {
-		if v.Class != verbs.ClassChat {
+		if v.Lifecycle {
 			rules = append(rules, "Bash(cerne "+v.Path+":*)")
 		}
 	}

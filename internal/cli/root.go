@@ -58,7 +58,7 @@ func Root() *cobra.Command {
 	root.AddCommand(verbs.MarkLocal(newPullCmd()))
 	root.AddCommand(verbs.MarkLocal(newPushCmd()))
 	root.AddCommand(verbs.MarkLocal(newSyncCmd()))
-	root.AddCommand(verbs.MarkLocal(newImportCmd()))
+	root.AddCommand(verbs.MarkLifecycle(newImportCmd())) // mints entities in any state, past every gate
 	root.AddCommand(verbs.MarkChat(newClassifyCmd()))
 	root.AddCommand(verbs.MarkChat(newLintCmd()))
 	root.AddCommand(newClarifyCmd())

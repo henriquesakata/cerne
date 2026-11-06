@@ -214,9 +214,9 @@ func TestRunDeniesLifecycleWithoutExec(t *testing.T) {
 // exec.
 func TestRunDeniesNonChatVerbs(t *testing.T) {
 	env := verbs.Env{Bin: "/nonexistent", Confirmed: true}
-	res := verbs.Run(context.Background(), cli.Root(), verbs.Call{Verb: "import", Args: []string{"--yes"}}, env)
+	res := verbs.Run(context.Background(), cli.Root(), verbs.Call{Verb: "pull", Args: []string{"--force"}}, env)
 	if !errors.Is(res.Err, verbs.ErrLocalOnly) || res.Error == nil || res.Error.Code != "local_only" {
-		t.Fatalf("import --yes = %+v, want local_only", res)
+		t.Fatalf("pull --force = %+v, want local_only", res)
 	}
 	root := cli.Root()
 	root.AddCommand(&cobra.Command{Use: "zz-raw", RunE: func(*cobra.Command, []string) error { return nil }})

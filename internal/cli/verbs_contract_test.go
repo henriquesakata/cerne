@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -109,6 +111,9 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 	cat := catalogByPath(Root())
 	verbOf := map[domain.Action]string{domain.ActionSupersede: "substituir"}
 	featureVerbs := map[string]bool{"feature accept": true, "feature deliver": true}
+	// import mints entities straight into any state (implemented, superseded),
+	// past every human gate — lifecycle in every mode (F-0323 crit. 4).
+	gateBypass := map[string]bool{"import": true}
 	for _, a := range domain.FeatureActions() {
 		v, ok := verbOf[a]
 		if !ok {
@@ -127,29 +132,45 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 		if byName && !v.Lifecycle {
 			t.Errorf("(b) %q is a %s and is not marked lifecycle", path, name)
 		}
-		if v.Lifecycle && !byName && !featureVerbs[path] {
-			t.Errorf("(c) %q is marked lifecycle but is neither a feature transition nor a retire/substituir", path)
+		if gateBypass[path] && !v.Lifecycle {
+			t.Errorf("(d) %q bypasses the gates and is not marked lifecycle", path)
+		}
+		if v.Lifecycle && !byName && !featureVerbs[path] && !gateBypass[path] {
+			t.Errorf("(c) %q is marked lifecycle but is neither a feature transition, a retire/substituir nor a gate bypass", path)
 		}
 	}
 }
 
 // TestAgentDeniedCommandsCoverLifecycleMarks: the claude-cli harness refusals
-// are derived from the command classes (F-0323 C19, criterion 4 "in any
-// mode"): every verb the chat channel denies — lifecycle, local, unclassified —
-// has its rule, and no chat verb is refused.
+// are exactly the lifecycle-marked verbs (F-0323 crit. 4, "in any mode"),
+// derived, never hand-kept — and nothing more: local verbs stay allowed in the
+// subscription mode, whose write policy (F-0260/F-0267/F-0269) is unchanged.
 func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
-	rules := map[string]bool{}
-	for _, r := range llm.AgentDeniedCommands {
-		rules[r] = true
-	}
+	var want []string
 	for _, v := range verbs.From(Root()) {
-		rule := "Bash(cerne " + v.Path + ":*)"
-		if denied := v.Class != verbs.ClassChat; denied != rules[rule] {
-			t.Errorf("%q (class %q): refused by the harness = %v, want %v", v.Path, v.Class, rules[rule], denied)
+		if v.Lifecycle {
+			want = append(want, "Bash(cerne "+v.Path+":*)")
 		}
 	}
-	if !rules["Bash(cerne feature approve:*)"] || !rules["Bash(cerne import:*)"] {
-		t.Fatalf("derived rules miss the lifecycle or local verbs: %v", llm.AgentDeniedCommands)
+	got := slices.Clone(llm.AgentDeniedCommands)
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("claude-cli refusals = %v\nwant the lifecycle-marked set %v", got, want)
+	}
+}
+
+// TestImportIsRefusedInBothModes (F-0323 crit. 4): import --yes mints
+// implemented features past every gate, so it is lifecycle — refused by the
+// tool channel and by the claude-cli harness alike.
+func TestImportIsRefusedInBothModes(t *testing.T) {
+	res := verbs.Run(context.Background(), Root(), verbs.Call{Verb: "import", Args: []string{"--yes"}},
+		verbs.Env{Bin: "/nonexistent", Confirmed: true})
+	if !errors.Is(res.Err, verbs.ErrLifecycleDenied) {
+		t.Fatalf("tool channel: import --yes = %+v, want lifecycle_denied", res)
+	}
+	if !slices.Contains(llm.AgentDeniedCommands, "Bash(cerne import:*)") {
+		t.Fatalf("claude-cli harness does not refuse import: %v", llm.AgentDeniedCommands)
 	}
 }
 
