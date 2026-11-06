@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -80,6 +81,11 @@ type chatRequest struct {
 }
 
 var conversationIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// usedConfirmations holds the (backend, conversation, card turn) confirmations
+// already spent in this process (F-0323 C9).
+// ponytail: in memory and unbounded (a few bytes per confirmed turn), reset on restart; persist if replays across restarts matter.
+var usedConfirmations sync.Map
 
 // refuseConfirmation is the 422 of a confirmation that does not hold, with the
 // stable code of the tool contract (F-0323 C8) next to the explanation.
@@ -158,6 +164,13 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	if req.Confirm && !confirmed {
 		refuseConfirmation(w, "invalid confirmation: "+confirmErr.Error()+" (send conversation_id and confirm_turn with confirm)")
 		return
+	}
+	// C9: a confirmation is single-use — a replayed body runs nothing.
+	if confirmed {
+		if _, used := usedConfirmations.LoadOrStore(fmt.Sprintf("%s\x00%s\x00%d", repoDir, req.ConversationID, turn), true); used {
+			refuseConfirmation(w, "invalid confirmation: this card's confirmation was already used")
+			return
+		}
 	}
 
 	// F-0256: the refine context is resolved before anything else — a feature

@@ -372,7 +372,8 @@ func TestChatToolCatalogFollowsCommandTree(t *testing.T) {
 		root.AddCommand(verbs.MarkChat(&cobra.Command{Use: "zz-other", RunE: func(*cobra.Command, []string) error { return nil }}))
 		return root
 	})
-	confirmedTurnOf(t, h)
+	var again toolTurn // a confirmation is single-use (C9): another conversation
+	doJSON(t, h, http.MethodPost, "/api/chat", strings.Replace(confirmedBody, `"c1"`, `"c2"`, 1), &again)
 	if got := enumOf(); !slices.Contains(got, "zz-other") || slices.Contains(got, "feature approve") {
 		t.Fatalf("enum = %v, want zz-other in and feature approve out", got)
 	}
@@ -764,5 +765,24 @@ func TestChatDeclaredNoFunctionCallingDegrades(t *testing.T) {
 	prompt := body["messages"].([]any)[0].(map[string]any)["content"].(string)
 	if !strings.Contains(prompt, app.ChatNoChannelMarker) {
 		t.Fatal("prompt lacks the no-channel contract")
+	}
+}
+
+// TestChatConfirmationIsSingleUse (F-0323 C9): replaying the same confirmed
+// body runs nothing the second time — it is refused with confirmation_required.
+func TestChatConfirmationIsSingleUse(t *testing.T) {
+	h, _, _, _ := toolTurnSetup(t, scripted(`{"verb":"zz-probe"}`, "ok"))
+	calls := 0
+	setRunVerb(t, func(context.Context, *cobra.Command, verbs.Call, verbs.Env) verbs.Result {
+		calls++
+		return verbs.Result{OK: true}
+	})
+	confirmedTurnOf(t, h)
+	var got struct {
+		Code string `json:"code"`
+	}
+	rec := doJSON(t, h, http.MethodPost, "/api/chat", confirmedBody, &got)
+	if rec.Code != http.StatusUnprocessableEntity || got.Code != "confirmation_required" || calls != 1 {
+		t.Fatalf("replay = %d %+v (calls %d), want 422 confirmation_required and one run", rec.Code, got, calls)
 	}
 }
