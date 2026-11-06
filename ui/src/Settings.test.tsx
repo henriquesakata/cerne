@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -636,5 +637,50 @@ describe('Settings — chave só-host grava e redefine no host (F-0315, crítica
     const flag = await screen.findByRole('listitem', { name: 'Host flag' })
     fireEvent.click(within(flag).getByRole('button', { name: 'Redefinir em Host (global)' }))
     await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('test.hostflag', 'host'))
+  })
+})
+
+// Contraste WCAG (crítica C13): o texto pequeno da tela — Efetivo/Padrão, a dica
+// do escopo, "Arquivo:" — usa um token com 4.5:1 sobre o fundo da página e o da
+// linha em foco, nos dois temas; nunca a classe .muted (--faint, 3.08:1 no claro).
+describe('Settings — contraste do texto secundário (F-0315, crítica C13)', () => {
+  const css = readFileSync('src/app.css', 'utf8')
+  const tokens = (block: string) =>
+    Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{3,6})/gi)].map((m) => [m[1], m[2]]))
+  const light = tokens(/:root \{[^}]*\}/.exec(css)![0])
+  const dark = tokens(/\[data-theme='dark'\] \{[^}]*\}/.exec(css)![0])
+  const lum = (hex: string) => {
+    const h = hex.length === 4 ? hex.replace(/\w/g, (c) => c + c).slice(1) : hex.slice(1)
+    const [r, g, b] = [0, 2, 4].map((i) => {
+      const c = parseInt(h.slice(i, i + 2), 16) / 255
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  it.each(['.settings-meta', '.settings-hint', '.settings-file > span'])('%s alcança 4.5:1 nos dois temas', (sel) => {
+    const rule = new RegExp(`${sel.replace(/[.>]/g, (c) => `\\${c}`)} \\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+    const token = /color: var\(--([\w-]+)\)/.exec(rule)?.[1]
+    expect(token, `${sel} has no color token`).toBeDefined()
+    for (const theme of [light, { ...light, ...dark }]) {
+      for (const bg of ['bg', 'surface-2']) {
+        expect(contrast(theme[token!], theme[bg])).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('nenhum desses textos usa a classe .muted', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    const nodes = [
+      within(row('Grafo')).getByText('Padrão: ligado').parentElement!,
+      screen.getByText(/versionado/),
+      topFile()!,
+    ]
+    for (const n of nodes) expect(n).not.toHaveClass('muted')
   })
 })

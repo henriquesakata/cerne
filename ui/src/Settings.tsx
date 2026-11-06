@@ -160,7 +160,7 @@ export default function Settings() {
     <main className="page settings-page">
       <LoadNotice load={load} />
       <h1>{ts.title}</h1>
-      <p className="muted settings-project">
+      <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
       <div className="settings-scope">
@@ -180,7 +180,7 @@ export default function Settings() {
             </button>
           ))}
         </span>
-        <p id={hintId} className="muted settings-hint">
+        <p id={hintId} className="settings-hint">
           {ts.scopeHint[scope]}
         </p>
       </div>
@@ -188,7 +188,7 @@ export default function Settings() {
           for whoever would rather edit it by hand. */}
       {view.files[scope] && (
         <div className="settings-file">
-          <span className="muted">{ts.file}</span>
+          <span>{ts.file}</span>
           <FixBlock command={view.files[scope]} />
         </div>
       )}
@@ -208,11 +208,11 @@ export default function Settings() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <p className="counts muted" aria-live="polite">
+      <p className="counts" aria-live="polite">
         {ts.count(shown.length, view.settings.length)}
       </p>
       {shown.length === 0 ? (
-        <p className="muted">{ts.noMatch(query.trim())}</p>
+        <p className="settings-empty">{ts.noMatch(query.trim())}</p>
       ) : (
         <ul className="settings-list">
           {shown.map((s) => (
@@ -335,7 +335,7 @@ function SettingRow({
           </form>
         ) : (
           <p className="settings-readonly">
-            <code>{fmt(current)}</code> <span className="muted">{ts.readOnly}</span>
+            <code>{fmt(current)}</code> <span className="settings-note">{ts.readOnly}</span>
           </p>
         )}
       </>
@@ -409,7 +409,7 @@ function SettingRow({
           )}
         </p>
       ))}
-      <p className="settings-meta muted">
+      <p className="settings-meta">
         <span>
           {s.origin === 'default'
             ? ts.effectiveDefault(fmt(s.value))
