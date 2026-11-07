@@ -1940,8 +1940,11 @@ export type Lang = 'pt-BR' | 'en'
 // year = 365 d). The year band starts at 12 months (360 d) with a floor of
 // 1 year: 360-364 d would otherwise read "0 years ago". Plural forms come
 // from Intl, not a hand-written table; numeric 'always' keeps "1 day ago"
-// instead of "yesterday".
+// instead of "yesterday". A non-finite age (missing or corrupted stamp in
+// storage) renders a neutral "—": Intl throws on it, and that took the whole
+// Backlog down (F-0310 C3).
 function ageLabel(min: number, lang: Lang, now: string): string {
+  if (!Number.isFinite(min)) return '—'
   if (min < 1) return now
   const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'always' })
   const m = Math.floor(min)

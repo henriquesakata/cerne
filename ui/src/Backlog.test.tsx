@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Backlog from './Backlog'
-import { readChats } from './useBacklogChats'
+import { readChats, writeChats, type Conversation } from './useBacklogChats'
 import type { ChatAnswer, ChatOverride, ChatTitle, CreateOutcome, Feature, Idea, LLMOptions, StateResponse } from './api'
 
 const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
@@ -234,6 +234,22 @@ describe('Backlog (F-0202)', () => {
 // F-0310: o título da conversa nasce truncado com a primeira mensagem e é
 // trocado pelo resumo quando ele chega, sem mexer no id da conversa (F-0323).
 describe('Backlog — título da conversa (F-0310)', () => {
+  // C3: uma conversa gravada sem updatedAt (corrupção, edição à mão) não
+  // derruba a tela: a linha aparece com a idade neutra. Ela fica inativa — a
+  // ativa é recarimbada pelo updateActive da montagem.
+  it('C3: conversa corrompida no storage não derruba o Backlog', async () => {
+    writeChats(
+      [
+        { id: 'ok1', title: 'conversa boa', updatedAt: Date.now(), messages: [], model: '', effort: '' },
+        { id: 'corrupt1', title: 'sem carimbo', messages: [], model: '', effort: '' } as unknown as Conversation,
+      ],
+      'ok1',
+    )
+    render(<Backlog />)
+    await waitFor(() => expect(within(list()).getByText('sem carimbo')).toBeInTheDocument())
+    expect(within(list()).getByText('—')).toBeInTheDocument()
+  })
+
   const list = () => document.querySelector('.conversation-list') as HTMLElement
 
   async function send(text: string) {

@@ -69,4 +69,11 @@ describe('t.notif.age (F-0310)', () => {
       for (const min of samples) expect(f(min)).not.toMatch(/(?<!\p{L})(min|h|d)(?!\p{L})/u)
     }
   })
+
+  // C3: um carimbo ausente ou corrompido no storage chega aqui como NaN; o
+  // formatador não pode lançar (derrubava a tela do Backlog inteira).
+  it.each([NaN, Infinity, -Infinity])('C3: idade não finita (%s) vira "—" sem lançar', (min) => {
+    expect(age('pt-BR')(min)).toBe('—')
+    expect(age('en')(min)).toBe('—')
+  })
 })
