@@ -221,18 +221,30 @@ export function useBacklogChats(): UseBacklogChats {
   // F-0310: um resumo gravado fora do React (applySummaryTitle) entra na
   // lista montada sem esperar um select ou reload.
   useEffect(() => {
+    // Sem título novo devolve prev: nada re-renderiza nem regrava (C12 —
+    // senão duas abas regravariam uma à outra sem fim).
     const adopt = () => {
       const stored = readChats().chats
-      setChats((prev) =>
-        prev.map((c) => {
+      setChats((prev) => {
+        let changed = false
+        const next = prev.map((c) => {
           const s = stored.find((s) => s.id === c.id)
-          return s ? strongerTitle(c, c, s) : c
-        }),
-      )
+          const won = s ? strongerTitle(c, c, s) : c
+          if (won !== c) changed = true
+          return won
+        })
+        return changed ? next : prev
+      })
+    }
+    // C12: renames e resumos de outra aba chegam pelo evento storage.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === chatsKey()) adopt()
     }
     titleListeners.add(adopt)
+    window.addEventListener('storage', onStorage)
     return () => {
       titleListeners.delete(adopt)
+      window.removeEventListener('storage', onStorage)
     }
   }, [])
 

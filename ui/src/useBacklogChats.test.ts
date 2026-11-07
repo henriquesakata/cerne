@@ -362,6 +362,38 @@ describe('useBacklogChats (F-0310)', () => {
     expect(reloaded.result.current.chats.find((c) => c.id === 'x')).toMatchObject({ title: 'Segundo nome', titleSource: 'human' })
   })
 
+  // C12: outra aba renomeia ou resume e grava o storage; esta aba recebe o
+  // evento storage e adota o título sem recarregar.
+  it('C12: o título gravado por outra aba entra na lista montada', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+    const idx = readChats()
+    writeChats(
+      idx.chats.map((c) => ({ ...c, title: 'Nome da aba 2', titleSource: 'human' as const, titledAt: Date.now() })),
+      idx.activeId,
+    )
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'cerne.chats.proj-x' }))
+    })
+    expect(result.current.active).toMatchObject({ title: 'Nome da aba 2', titleSource: 'human' })
+  })
+
+  // C12: sem título novo, o evento não regrava o storage — senão duas abas com
+  // model/effort diferentes regravariam uma à outra sem fim.
+  it('C12: evento storage sem título novo não regrava (sem pingue-pongue entre abas)', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    renderHook(() => useBacklogChats())
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key: 'cerne.chats.proj-x' }))
+      })
+      expect(setItem).not.toHaveBeenCalled()
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
   it('critério 18: rename vazio ou só de espaços não muda nada', () => {
     writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
     const { result } = renderHook(() => useBacklogChats())
