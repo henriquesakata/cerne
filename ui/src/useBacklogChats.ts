@@ -16,6 +16,10 @@ export type Conversation = {
   // candidata — o turno leva o id ao servidor e a confirmação atualiza o
   // documento dela em vez de registrar uma candidata nova.
   featureId?: string
+  // titleSource (F-0310): quem escreveu o título. Ausente = derivado da
+  // primeira mensagem ou registro legado (crit. 21); 'summary' = resumo do
+  // LLM, congelado (crit. 11); 'human' = rename, terminal (crit. 17).
+  titleSource?: 'summary' | 'human'
 }
 
 const MAX_CONVERSATIONS = 50
@@ -35,9 +39,24 @@ function newId(): string {
   return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
+// truncateTitle conta caracteres renderizáveis (grafemas, F-0310 crit. 10):
+// cortar por unidade UTF-16 partia emoji.
 function truncateTitle(text: string): string {
   const trimmed = text.trim()
-  return trimmed.length > TITLE_MAX_CHARS ? trimmed.slice(0, TITLE_MAX_CHARS).trimEnd() + '…' : trimmed
+  const chars = Array.from(new Intl.Segmenter().segment(trimmed), (s) => s.segment)
+  return chars.length > TITLE_MAX_CHARS ? chars.slice(0, TITLE_MAX_CHARS).join('').trimEnd() + '…' : trimmed
+}
+
+// titleRank (F-0310): humano > resumo > derivado; sem marca = derivado.
+function titleRank(c: Conversation): number {
+  return c.titleSource === 'human' ? 2 : c.titleSource === 'summary' ? 1 : 0
+}
+
+// strongerTitle devolve base com o título do lado de marca mais forte entre
+// a e b; no empate fica o de base — o comportamento de antes da F-0310.
+function strongerTitle(base: Conversation, a: Conversation, b: Conversation): Conversation {
+  const top = titleRank(a) > titleRank(b) ? a : titleRank(b) > titleRank(a) ? b : base
+  return top === base ? base : { ...base, title: top.title, titleSource: top.titleSource }
 }
 
 function deriveTitle(messages: ChatMsg[]): string {
@@ -89,6 +108,23 @@ export function appendAssistantToFeatureChat(featureId: string, content: string)
   return true
 }
 
+const titleListeners = new Set<() => void>()
+
+// applySummaryTitle (F-0310): grava o resumo só sobre título derivado (sem
+// marca, sem vínculo de candidata), lido no instante da escrita como o
+// patchMessages; não toca updatedAt (título não é transcript). Os hooks
+// montados são avisados e adotam o título na hora (crit. 9/14).
+export function applySummaryTitle(id: string, summary: string): void {
+  const { chats, activeId } = readChats()
+  const c = chats.find((c) => c.id === id)
+  const title = truncateTitle(summary)
+  if (!c || c.titleSource || c.featureId || title === '') return
+  c.title = title
+  c.titleSource = 'summary'
+  writeChats(chats, activeId)
+  titleListeners.forEach((fn) => fn())
+}
+
 // loadStored lê a lista nova; na ausência dela, migra a chave única da F-0218
 // (se houver) como a primeira entrada, e remove a chave antiga — upgrade
 // transparente, sem perda (decisão da spec).
@@ -131,6 +167,7 @@ export type UseBacklogChats = {
   updateActive: (patch: { messages?: ChatMsg[]; model?: string; effort?: string }) => void
   appendRegisteredId: (featureId: string) => void
   refineFeature: (featureId: string) => void
+  renameConversation: (id: string, title: string) => void
 }
 
 // useBacklogChats (F-0219) centraliza o modelo de dados da lista de conversas
@@ -157,14 +194,36 @@ export function useBacklogChats(): UseBacklogChats {
   // então a entrada mais nova do storage traz o transcript, mas a seleção
   // corrente continua sendo a local — senão trocar de modelo com uma resposta
   // em voo nunca chegaria a persistir.
+  // F-0310: o título não segue o carimbo — vem do lado de marca mais forte
+  // (strongerTitle), senão um rename feito com o stream em voo sumiria.
   useEffect(() => {
     const stored = readChats().chats
     const merged = chats.map((c) => {
-      const fresher = stored.find((s) => s.id === c.id)
-      return fresher && fresher.updatedAt > c.updatedAt ? { ...fresher, model: c.model, effort: c.effort } : c
+      const s = stored.find((s) => s.id === c.id)
+      if (!s) return c
+      const base = s.updatedAt > c.updatedAt ? { ...s, model: c.model, effort: c.effort } : c
+      return strongerTitle(base, c, s)
     })
     writeChats(merged, activeId)
   }, [chats, activeId])
+
+  // F-0310: um resumo gravado fora do React (applySummaryTitle) entra na
+  // lista montada sem esperar um select ou reload.
+  useEffect(() => {
+    const adopt = () => {
+      const stored = readChats().chats
+      setChats((prev) =>
+        prev.map((c) => {
+          const s = stored.find((s) => s.id === c.id)
+          return s ? strongerTitle(c, c, s) : c
+        }),
+      )
+    }
+    titleListeners.add(adopt)
+    return () => {
+      titleListeners.delete(adopt)
+    }
+  }, [])
 
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
 
@@ -237,7 +296,10 @@ export function useBacklogChats(): UseBacklogChats {
   const appendRegisteredId = (featureId: string) => {
     setChats((prev) =>
       prev.map((c) =>
-        c.id === activeId && !c.featureId ? { ...c, title: `${c.title} → ${featureId}`, featureId } : c,
+        c.id === activeId && !c.featureId
+          ? // F-0310 crit. 17: título humano não ganha sufixo, mas o vínculo fica.
+            { ...c, title: c.titleSource === 'human' ? c.title : `${c.title} → ${featureId}`, featureId }
+          : c,
       ),
     )
   }
@@ -262,5 +324,24 @@ export function useBacklogChats(): UseBacklogChats {
     setActiveId(fresh.id)
   }
 
-  return { chats, active, select, newConversation, deleteConversation, updateActive, appendRegisteredId, refineFeature }
+  // renameConversation (F-0310): o nome do humano é terminal (crit. 17); vazio
+  // ou só espaços não muda nada nem marca (crit. 18). Não toca updatedAt:
+  // renomear não é transcript nem joga a conversa pro topo.
+  const renameConversation = (id: string, title: string) => {
+    const next = title.trim()
+    if (next === '') return
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title: next, titleSource: 'human' } : c)))
+  }
+
+  return {
+    chats,
+    active,
+    select,
+    newConversation,
+    deleteConversation,
+    updateActive,
+    appendRegisteredId,
+    refineFeature,
+    renameConversation,
+  }
 }
