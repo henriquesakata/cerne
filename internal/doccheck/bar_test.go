@@ -31,6 +31,20 @@ func TestSpecBar(t *testing.T) {
 		{"empty bar with trailing blanks before another line refuses", "# t\n\nBarra: \t\nMétodo: x\n", ErrBarMalformed, ""},
 		{"crlf empty bar before another line refuses", "# t\r\n\r\nBarra:\r\nMétodo: x\r\n", ErrBarMalformed, ""},
 		{"empty bar does not swallow the next bar line", "# t\n\nBarra:\nBarra: não aplicável\n", ErrBarMalformed, ""},
+		// A template placeholder "<…>" is not a value, as the bar line itself
+		// or as an exemption's parenthesized text (F-0327).
+		{"template placeholder bar refuses", "# t\n\nBarra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>\n", ErrBarMalformed, ""},
+		{"short placeholder bar refuses", "# t\n\nBarra: <referência + acesso>\n", ErrBarMalformed, ""},
+		{"emphasized placeholder bar refuses", "# t\n\nBarra: **<referência>**\n", ErrBarMalformed, ""},
+		{"placeholder first bar does not veto a valid later one", "# t\n\nBarra: <referência + acesso>\n\n## Verificação\n\nBarra: R-0008 — docs/design/x.png\n", nil, "Barra: R-0008 — docs/design/x.png"},
+		{"placeholder inside a named reference passes", "# t\n\nBarra: R-0008 <recorte do painel Summary>\n", nil, "Barra: R-0008 <recorte do painel Summary>"},
+		{"nao aplicavel template line refuses", "# t\n\nBarra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>\n", ErrBarMalformed, ""},
+		{"nao aplicavel placeholder justification refuses", "# t\n\nBarra: não aplicável (<justificativa de 1 linha, confirmada pelo humano>)\n", ErrBarMalformed, ""},
+		{"dispensada template line refuses", "# t\n\nBarra: dispensada por decisão humana (<citação curta da fala que dispensou>)\n", ErrBarMalformed, ""},
+		{"dispensada quoted placeholder refuses", "# t\n\nBarra: dispensada por decisão humana ( \"<citação>\" )\n", ErrBarMalformed, ""},
+		{"justification naming a tag passes", "# t\n\nBarra: não aplicável (só troca o texto do <title>, sem artefato comparável) — padrão alternativo: teste de unidade\n", nil, "Barra: não aplicável (só troca o texto do <title>, sem artefato comparável) — padrão alternativo: teste de unidade"},
+		// Out of the spec's scope: the "padrão alternativo" is taught, not required.
+		{"placeholder alternative after a filled justification passes", "# t\n\nBarra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>\n", nil, "Barra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>"},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante\n", nil, "Barra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante"},
 		{"crlf line endings trim", "# t\r\n\r\nBarra: referência — acesso\r\n", nil, "Barra: referência — acesso"},
 	}
