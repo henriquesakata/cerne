@@ -216,6 +216,22 @@ func TestResolveSettingsIsolatesBadValues(t *testing.T) {
 	}
 }
 
+// TestResolveSettingsIgnoresUndeclaredScope (F-0333, critic C2): a value
+// stored in a scope the key does not declare — a committed .cernerc naming
+// the host-only channel.human_name — is never applied: it is reported as
+// invalid with the scope refusal, and the key resolves from its own scopes.
+func TestResolveSettingsIgnoresUndeclaredScope(t *testing.T) {
+	projDir, _ := settingsFixture(t, "[channel]\nhuman_name = \"Bob\"\n", "[channel]\nhuman_name = \"Ana\"\n", false)
+	got := findSetting(t, ResolveSettings(projDir), "channel.human_name")
+	if got.Value != "Ana" || got.Origin != ScopeHost || !maps.Equal(got.Stored, map[string]any{ScopeHost: "Ana"}) {
+		t.Errorf("channel.human_name = %v from %s, stored %v; want Ana from host, only host stored", got.Value, got.Origin, got.Stored)
+	}
+	want := []SettingProblem{{Scope: ScopeProject, File: filepath.Join(projDir, ".cernerc"), Raw: `"Bob"`, Error: `unknown scope "project" (allowed: host)`}}
+	if !slices.Equal(got.Invalid, want) {
+		t.Errorf("invalid = %+v, want %+v", got.Invalid, want)
+	}
+}
+
 // TestResolveSettingsSkipsUnreadableFile (critic C2/C3): a malformed file
 // empties its scope for every key and is reported once, file-level; the other
 // scope still resolves. A .cernerc that is valid TOML but does not fit the

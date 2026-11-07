@@ -142,8 +142,9 @@ func WikiEnabled(projDir string) (on bool, warning string) {
 // ResolveSettings resolves every declared setting for the project at (or
 // above) projDir: project > host > default. It never fails as a whole: an
 // unreadable scope file is reported once in Errors and leaves that scope
-// empty; a stored value outside the key's type is reported on that key, which
-// falls through to the next valid scope. No .cernerc leaves the project
+// empty; a stored value outside the key's type or in a scope the key does not
+// declare (F-0333: a .cernerc naming a host-only key) is reported on that key,
+// which falls through to the next valid scope. No .cernerc leaves the project
 // scope empty; an absent host file leaves the host scope empty.
 func ResolveSettings(projDir string) SettingsView {
 	scopes := []string{ScopeProject, ScopeHost}
@@ -168,23 +169,29 @@ func ResolveSettings(projDir string) SettingsView {
 		for _, scope := range scopes {
 			tbl, _ := layers[scope][table].(map[string]any)
 			v, ok := tbl[key]
-			switch {
-			case !ok:
-			case !hasSettingType(s, v):
+			if !ok {
+				continue
+			}
+			problem := ""
+			if err := checkDeclared(s.ID, scope); err != nil {
+				problem = err.Error()
+			} else if !hasSettingType(s, v) {
+				problem = fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, s.Type)
+			}
+			if problem != "" {
 				raw := fmt.Sprint(v)
 				if str, isStr := v.(string); isStr {
 					raw = strconv.Quote(str)
 				}
-				r.Invalid = append(r.Invalid, SettingProblem{Scope: scope, File: view.Files[scope], Raw: raw,
-					Error: fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, s.Type)})
-			default:
-				if r.Stored == nil {
-					r.Stored = map[string]any{}
-				}
-				r.Stored[scope] = v
-				if r.Origin == OriginDefault {
-					r.Value, r.Origin = v, scope
-				}
+				r.Invalid = append(r.Invalid, SettingProblem{Scope: scope, File: view.Files[scope], Raw: raw, Error: problem})
+				continue
+			}
+			if r.Stored == nil {
+				r.Stored = map[string]any{}
+			}
+			r.Stored[scope] = v
+			if r.Origin == OriginDefault {
+				r.Value, r.Origin = v, scope
 			}
 		}
 		view.Settings = append(view.Settings, r)

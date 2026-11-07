@@ -451,6 +451,25 @@ func TestSettingsChannelFallback(t *testing.T) {
 	}
 }
 
+// TestSettingsChannelIgnoresCernerc (F-0333, critic C2): a committed .cernerc
+// naming channel.human_name does not sign anyone's messages in that project;
+// the screen shows it as an ignored value and the channel keeps the OS user.
+func TestSettingsChannelIgnoresCernerc(t *testing.T) {
+	h, projDir, _ := settingsBackend(t, "[channel]\nhuman_name = \"Bob\"\n")
+	t.Setenv("USER", "ana")
+	var view project.SettingsView
+	if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &view); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	s := resolvedByID(view)["channel.human_name"]
+	if s.Value != "" || s.Origin != project.OriginDefault || len(s.Invalid) != 1 || s.Invalid[0].Scope != project.ScopeProject {
+		t.Errorf("channel.human_name = %+v, want the default with the project value reported invalid", s)
+	}
+	if got := app.ChannelHumanName(projDir); got != "ana" {
+		t.Errorf("channel signs as %q, want the OS user ana", got)
+	}
+}
+
 // projectNameUI is a cerne ui over one fresh backend (pid proj-a) with an
 // open SSE stream whose connect frame was already consumed.
 func projectNameUI(t *testing.T) (ui http.Handler, url string, events <-chan string, repoA, projA string) {
