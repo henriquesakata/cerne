@@ -14,7 +14,7 @@ var ValidPriorities = []string{"p0", "p1", "p2", "p3"}
 
 // ErrInvalidPriority is returned by NormalizePriority for a value outside
 // ValidPriorities.
-var ErrInvalidPriority = errors.New("prioridade inválida")
+var ErrInvalidPriority = errors.New("invalid priority")
 
 func validPriority(p string) bool {
 	for _, v := range ValidPriorities {
@@ -34,7 +34,7 @@ func NormalizePriority(in string) (string, error) {
 		return "", nil
 	}
 	if !validPriority(p) {
-		return "", fmt.Errorf("%w: %s (válidas: %s)", ErrInvalidPriority, p, strings.Join(ValidPriorities, ", "))
+		return "", fmt.Errorf("%w: %s (valid: %s)", ErrInvalidPriority, p, strings.Join(ValidPriorities, ", "))
 	}
 	return p, nil
 }

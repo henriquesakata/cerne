@@ -23,7 +23,7 @@ import (
 
 // ErrUnknownDoc is returned by SaveFeatureDoc for a doc name outside the
 // spec/plan/result lifecycle set.
-var ErrUnknownDoc = errors.New("documento de feature desconhecido")
+var ErrUnknownDoc = errors.New("unknown feature document")
 
 // ErrNotCandidate is returned by the Backlog chat's refine path (F-0256) and
 // 'cerne feature spec' for a feature past approval: in development the spec is

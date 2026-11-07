@@ -151,7 +151,7 @@ func TestFeatureNewWithParent(t *testing.T) {
 	}
 	// F-0235 crit.1/5: the parent's plan is scaffolded right away (candidate,
 	// no approve yet) and the CLI advises filling it.
-	if !strings.Contains(out, "plano do épico scaffoldado — preencha antes do approve (N-0031)") {
+	if !strings.Contains(out, "epic plan scaffolded — fill it in before approve (N-0031)") {
 		t.Fatalf("output missing epic-scaffold advisory:\n%s", out)
 	}
 	if _, err := execCerne(t, "feature", "new", "X", "--context", "ctx de teste", "--parent", "F-9999", "--dir", projDir); err == nil {
