@@ -50,7 +50,7 @@ func TestFeatureReparent(t *testing.T) {
 }
 
 // TestFeatureReparentEchoesCanonicalParent (F-0326): the confirmation and the
-// epic-plan advisory use the id as stored (canonical), not as typed.
+// epic-plan advisory use the ids as stored (canonical), not as typed.
 func TestFeatureReparentEchoesCanonicalParent(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	for _, title := range []string{"Épico", "Filha"} {
@@ -59,7 +59,7 @@ func TestFeatureReparentEchoesCanonicalParent(t *testing.T) {
 		}
 	}
 
-	out, err := execCerne(t, "feature", "reparent", "F-0002", " f-0001 ", "--dir", projDir)
+	out, err := execCerne(t, "feature", "reparent", "f-0002", " f-0001 ", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("reparent: %v\n%s", err, out)
 	}

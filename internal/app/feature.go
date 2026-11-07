@@ -479,6 +479,7 @@ func validateParent(repoDir, childID, parent string) error {
 // The parent is stored canonical (domain.CanonicalID). store.ErrNotFound (wrapped) for an unknown feature; the validateParent
 // sentinels for an invalid link.
 func SetFeatureParent(repoDir, projDir, id, parent string) error {
+	id = domain.CanonicalID(id) // the child's event and commit carry the stored id
 	if c := domain.CanonicalID(parent); c != "" {
 		parent = c // a blank parent stays raw so validateParent refuses it, never a silent clear
 	}

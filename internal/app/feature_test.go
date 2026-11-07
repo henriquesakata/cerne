@@ -428,6 +428,31 @@ func TestFeatureParentRefusesPathShapedID(t *testing.T) {
 	}
 }
 
+// TestSetFeatureParentCanonicalChildID (F-0326): the child id is canonical
+// too, on any filesystem: the reparent applies and its event is recorded
+// under the stored id, so readers keyed by F-NNNN never miss it.
+func TestSetFeatureParentCanonicalChildID(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child, err := CreateFeature(repoDir, projDir, "Avulsa", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, " "+strings.ToLower(child.ID)+" ", epic.ID); err != nil {
+		t.Fatalf("SetFeatureParent with a lowercase child id: %v", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, child.ID); got.Parent != epic.ID {
+		t.Fatalf("parent = %q, want %q", got.Parent, epic.ID)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if last := evs[len(evs)-1]; last.Type != "feature.reparented" || last.EntityID != child.ID {
+		t.Fatalf("event = %+v, want feature.reparented on %s", last, child.ID)
+	}
+}
+
 func TestRenameFeatureLive(t *testing.T) {
 	for _, st := range []domain.FeatureState{
 		domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment,

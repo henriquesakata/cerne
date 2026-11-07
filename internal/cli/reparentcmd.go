@@ -24,7 +24,7 @@ func newFeatureReparentCmd(dir *string) *cobra.Command {
 }
 
 func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) error {
-	id := args[0]
+	id := domain.CanonicalID(args[0]) // echoed as stored
 	parent := ""
 	switch {
 	case clear:
