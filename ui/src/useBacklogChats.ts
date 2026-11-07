@@ -44,7 +44,8 @@ function newId(): string {
 function truncateTitle(text: string): string {
   const trimmed = text.trim()
   const chars = Array.from(new Intl.Segmenter().segment(trimmed), (s) => s.segment)
-  return chars.length > TITLE_MAX_CHARS ? chars.slice(0, TITLE_MAX_CHARS).join('').trimEnd() + '…' : trimmed
+  // A reticência conta no teto (C14): 39 grafemas + "…" = 40.
+  return chars.length > TITLE_MAX_CHARS ? chars.slice(0, TITLE_MAX_CHARS - 1).join('').trimEnd() + '…' : trimmed
 }
 
 // titleRank (F-0310): humano > resumo > derivado; sem marca = derivado.

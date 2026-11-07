@@ -51,7 +51,7 @@ describe('useBacklogChats (F-0219)', () => {
     act(() => {
       result.current.updateActive({ messages: [{ role: 'user', content: long }] })
     })
-    expect(result.current.active.title.length).toBeLessThanOrEqual(41) // 40 + ellipsis
+    expect(result.current.active.title.length).toBeLessThanOrEqual(40) // 39 + ellipsis (C14)
     expect(result.current.active.title.startsWith('Preciso de um jeito de exportar')).toBe(true)
 
     // Uma segunda mensagem do usuário não deve trocar um título já definido.
@@ -235,16 +235,24 @@ function conv(id: string, extra: Partial<Conversation> = {}): Conversation {
 }
 
 describe('useBacklogChats (F-0310)', () => {
+  // C14: "no máximo 40 caracteres renderizáveis" inclui a reticência.
   it('critério 10: o resumo é cortado em 40 caracteres renderizáveis, com elipse', () => {
-    writeChats([conv('c1'), conv('c2')], 'c1')
+    const graphemes = (t: string) => Array.from(new Intl.Segmenter().segment(t)).length
+    writeChats([conv('c1'), conv('c2'), conv('c3')], 'c1')
     applySummaryTitle('c1', 'x'.repeat(60))
-    expect(getConversation('c1')!.title).toBe('x'.repeat(40) + '…')
+    expect(getConversation('c1')!.title).toBe('x'.repeat(39) + '…')
+    expect(graphemes(getConversation('c1')!.title)).toBe(40)
 
-    // Um emoji ZWJ cruzando a posição 40 conta como UM caractere e não é partido.
+    // Exatamente 40 cabe inteiro, sem reticência.
+    applySummaryTitle('c3', 'y'.repeat(40))
+    expect(getConversation('c3')!.title).toBe('y'.repeat(40))
+
+    // Um emoji ZWJ na última posição mantida conta como UM caractere e não é partido.
     const family = '👨‍👩‍👧'
-    applySummaryTitle('c2', 'a'.repeat(39) + family + 'bbbb')
+    applySummaryTitle('c2', 'a'.repeat(38) + family + 'bbbb')
     const title = getConversation('c2')!.title
-    expect(title).toBe('a'.repeat(39) + family + '…')
+    expect(title).toBe('a'.repeat(38) + family + '…')
+    expect(graphemes(title)).toBe(40)
     expect(title).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
   })
 
