@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -92,14 +93,28 @@ func chatTitlePrompt(msgs []chatMessage) string {
 	return b.String()
 }
 
-// cleanTitle normalizes a model reply to one title line: the first non-empty
-// line without markdown heading marks, quotes, backticks, bold or a final
-// period. The 40-char cap is the client's (truncateTitle), not repeated here.
+var (
+	titleHeadingRe = regexp.MustCompile(`^#{1,6}\s+`)             // "# X", never "#123"
+	titleListRe    = regexp.MustCompile(`^(?:[-*+•]|\d+[.)])\s+`) // "- X", "* X", "1. X"
+	titleLabelRe   = regexp.MustCompile(`(?i)^(?:t[íi]tulo|title)\s*:\s*`)
+	titleMarkdown  = strings.NewReplacer("*", "", "`", "")
+)
+
+// titleQuotes are trimmed around the title (and the "_" of _emphasis_).
+const titleQuotes = "\"'“”‘’«»_ "
+
+// cleanTitle normalizes a model reply to one title line (F-0310 C5): the
+// first line that is neither empty nor a preamble ending in ":" ("Claro! Aqui
+// está o título:"), without heading marks, list markers, bold/code markdown,
+// a "Título:"/"Title:" label, surrounding quotes or a final period. The
+// 40-char cap is the client's (truncateTitle), not repeated here.
 func cleanTitle(reply string) string {
 	for _, line := range strings.Split(reply, "\n") {
-		line = strings.TrimLeft(strings.TrimSpace(line), "# ")
-		line = strings.Trim(line, "\"'`*“”‘’ ")
-		if line = strings.TrimSpace(strings.TrimRight(line, ".")); line != "" {
+		line = titleListRe.ReplaceAllString(titleHeadingRe.ReplaceAllString(strings.TrimSpace(line), ""), "")
+		line = strings.Trim(titleMarkdown.Replace(line), titleQuotes)
+		line = strings.Trim(titleLabelRe.ReplaceAllString(line, ""), titleQuotes)
+		line = strings.TrimSpace(strings.TrimRight(line, "."))
+		if line != "" && !strings.HasSuffix(line, ":") {
 			return line
 		}
 	}

@@ -192,6 +192,21 @@ func TestCleanTitle(t *testing.T) {
 		{"\n\n  X  \n", "X"},
 		{" \n ", ""},
 		{"**Exportar PDF**", "Exportar PDF"},
+		// C5: model preamble, label prefixes, list markers, markdown residue and
+		// guillemets are stripped; a meaningful leading "#" (an issue ref) stays.
+		{"Claro! Aqui está o título:\n\nExportar PDF", "Exportar PDF"},
+		{"Here's a title:\nExport PDF", "Export PDF"},
+		{"Título: Exportar relatórios", "Exportar relatórios"},
+		{"**Título:** Exportar PDF", "Exportar PDF"},
+		{`Title: "Export PDF"`, "Export PDF"},
+		{"- Exportar PDF", "Exportar PDF"},
+		{"1. Exportar PDF", "Exportar PDF"},
+		{"* Exportar PDF", "Exportar PDF"},
+		{"_Exportar PDF_", "Exportar PDF"},
+		{"«Exportar PDF»", "Exportar PDF"},
+		{"#123 corrigir bug", "#123 corrigir bug"},
+		{"Renomear snake_case_fn", "Renomear snake_case_fn"},
+		{"Título:", ""},
 	} {
 		if got := cleanTitle(tc.in); got != tc.want {
 			t.Errorf("cleanTitle(%q) = %q, want %q", tc.in, got, tc.want)
