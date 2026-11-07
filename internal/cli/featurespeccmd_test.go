@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -130,4 +131,89 @@ func TestFeatureSpecRefusals(t *testing.T) {
 			t.Fatal("a spec in development must not be rewritten by the verb")
 		}
 	})
+}
+
+// TestFeatureSpecKeepsOneFrontmatter (F-0328 crit. 1): the natural revision —
+// start from `cerne show --doc spec`, edit, write it back — stores ONE block,
+// the body's own; a quoted id is stored unquoted and an extra key is kept.
+func TestFeatureSpecKeepsOneFrontmatter(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	path := filepath.Join(t.TempDir(), "spec.md")
+	specPath := app.FeatureDocPath(repoDir, "F-0001", "spec.md")
+	write := func(body string) string {
+		t.Helper()
+		mustWrite(t, path, body)
+		if out, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir); err != nil {
+			t.Fatalf("feature spec: %v\noutput: %s", err, out)
+		}
+		got, _ := os.ReadFile(specPath)
+		return string(got)
+	}
+
+	if got := write(specBody); got != specBody {
+		t.Fatalf("spec.md = %q, want the body's own single block %q", got, specBody)
+	}
+	shown, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, shown)
+	}
+	got := write(strings.Replace(shown, "Versão revisada pelo agente.", "Revista a partir do show.", 1))
+	if strings.Count(got, "cerne_id:") != 1 || !strings.HasPrefix(got, "---\ncerne_id: F-0001\n---\n") || !strings.Contains(got, "Revista a partir do show.") {
+		t.Fatalf("spec.md after a show round trip = %q, want one block and the edit", got)
+	}
+
+	want := "---\ncerne_id: F-0001\nowner: x\n---\n\n## Problema\n\nCom chave extra.\n"
+	if got := write("---\ncerne_id: \"F-0001\"\nowner: x\n---\n\n## Problema\n\nCom chave extra.\n"); got != want {
+		t.Fatalf("spec.md = %q, want %q", got, want)
+	}
+}
+
+// TestFeatureSpecRefusesForeignFrontmatter (F-0328 crit. 2-3): a block naming
+// another feature, a block without cerne_id and a block that never closes are
+// refused before anything is written, the error saying which — spec.md, the
+// event log and origin all left as they were.
+func TestFeatureSpecRefusesForeignFrontmatter(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	specPath := app.FeatureDocPath(repoDir, "F-0001", "spec.md")
+	before, _ := os.ReadFile(specPath)
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	for _, tc := range []struct {
+		name, body string
+		want       []string
+	}{
+		{"other id", "---\ncerne_id: F-0002\n---\n\n## Problema\n\nDe outra.\n", []string{`cerne_id "F-0002", not F-0001`, "another feature's spec"}},
+		{"block without id", "---\ntitle: x\n---\n\n## Problema\n\nSem id.\n", []string{"without cerne_id", "--doc spec"}},
+		{"block never closes", "---\ncerne_id: F-0001\n\n## Problema\n\nAberto.\n", []string{"never closes"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "spec.md")
+			mustWrite(t, path, tc.body)
+			_, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir)
+			if !errors.Is(err, app.ErrBodyFrontmatter) {
+				t.Fatalf("err = %v, want ErrBodyFrontmatter", err)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Fatalf("err = %v, want it to say %q", err, w)
+				}
+			}
+			if after, _ := os.ReadFile(specPath); string(after) != string(before) {
+				t.Fatalf("spec.md changed on a refusal: %q", after)
+			}
+			if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+				t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+			}
+			if h, _ := gitback.HeadSHA(origin); h != head0 {
+				t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
+			}
+		})
+	}
 }

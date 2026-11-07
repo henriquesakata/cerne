@@ -850,6 +850,22 @@ func TestChatRegisterUpdateRefusals(t *testing.T) {
 	if err != nil || !strings.Contains(string(spec), "Contrato aprovado.") {
 		t.Fatalf("spec.md changed on a refused update: %q (%v)", string(spec), err)
 	}
+
+	// F-0328 crit. 2: a body carrying another feature's frontmatter is the
+	// user's input, refused as such (422, not 500), the spec untouched.
+	seedFeature(t, repoDir, "F-0003", "Candidata", domain.StateCandidate)
+	seedSpec(t, repoDir, "F-0003", "## Problema\n\nOriginal.\n")
+	var refused struct {
+		Error string `json:"error"`
+	}
+	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0009\n---\n\n## Problema\n\nDe outra.\n"}`, &refused)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, `cerne_id "F-0009", not F-0003`) {
+		t.Fatalf("foreign frontmatter status = %d, want 422 naming F-0009; body: %s", rec.Code, rec.Body.String())
+	}
+	if spec, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0003", "spec.md")); !strings.Contains(string(spec), "Original.") || strings.Contains(string(spec), "F-0009") {
+		t.Fatalf("spec.md changed on a refused frontmatter: %q", spec)
+	}
 }
 
 // TestChatNote (F-0249 criteria 3/7): confirming a proposed note writes it to

@@ -367,7 +367,7 @@ func writeRefineError(w http.ResponseWriter, err error) bool {
 		return true
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
-	case errors.Is(err, app.ErrNotCandidate):
+	case errors.Is(err, app.ErrNotCandidate), errors.Is(err, app.ErrBodyFrontmatter):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))

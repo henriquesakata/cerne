@@ -283,14 +283,16 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
-		if err := store.SaveFeature(repoDir, f); err != nil {
-			return err
-		}
+		// The spec goes first: a body writeSpecBody refuses (F-0328) must leave
+		// nothing behind, and the go-git reset does not clean untracked files.
 		if strings.TrimSpace(specBody) != "" {
 			if err := writeSpecBody(repoDir, id, specBody); err != nil {
 				return err
 			}
 		} else if err := writeSpecStub(repoDir, id, title); err != nil {
+			return err
+		}
+		if err := store.SaveFeature(repoDir, f); err != nil {
 			return err
 		}
 		// F-0235: a parent gaining its first (or another) child is decomposition —
@@ -829,15 +831,20 @@ func loadCandidate(repoDir, id string) (store.Feature, error) {
 	return f, nil
 }
 
-// writeSpecBody creates content/features/<id>/spec.md as cerne's stamped
-// cerne_id frontmatter followed by the provided body — the one-shot spec of
-// CreateFeatureWithSpec, mirroring writeNoteBody.
+// writeSpecBody writes content/features/<id>/spec.md as stampedDoc's single
+// cerne_id frontmatter followed by the provided body — the one write path of
+// every whole-body spec: the one-shot spec of CreateFeatureWithSpec and the
+// rewrite of UpdateCandidateSpec. A body stampedDoc refuses is returned before
+// anything is written.
 func writeSpecBody(repoDir, id, body string) error {
+	content, err := stampedDoc(id, "spec", body)
+	if err != nil {
+		return err
+	}
 	path := FeatureDocPath(repoDir, id, "spec.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 

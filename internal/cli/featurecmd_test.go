@@ -249,6 +249,39 @@ func TestFeatureNewTags(t *testing.T) {
 	}
 }
 
+// TestFeatureNewFileFrontmatter (F-0328 crit. 5): `feature new --file` shares
+// the spec rule — a block naming the id being minted is the one block kept,
+// extra keys and all; another feature's id is refused before anything is
+// minted: no entity, no spec dir, origin unmoved.
+func TestFeatureNewFileFrontmatter(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	specFile := filepath.Join(t.TempDir(), "spec.md")
+	own := "---\ncerne_id: F-0001\nx: y\n---\n\n# Título\n\n## Problema\n\nCom bloco próprio.\n"
+	mustWrite(t, specFile, own)
+	if out, err := execCerne(t, "feature", "new", "Título", "--file", specFile, "--dir", projDir); err != nil {
+		t.Fatalf("feature new --file: %v\noutput: %s", err, out)
+	}
+	if spec, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")); string(spec) != own {
+		t.Fatalf("spec.md = %q, want the body's own single block %q", spec, own)
+	}
+
+	head0, _ := gitback.HeadSHA(origin)
+	mustWrite(t, specFile, "---\ncerne_id: F-0009\n---\n\n# Outra\n\n## Problema\n\nDe outra feature.\n")
+	_, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir)
+	if !errors.Is(err, app.ErrBodyFrontmatter) || !strings.Contains(err.Error(), `cerne_id "F-0009", not F-0002`) {
+		t.Fatalf("err = %v, want ErrBodyFrontmatter naming F-0009 and F-0002", err)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1 (a refused body must not mint)", len(features))
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "features", "F-0002")); !os.IsNotExist(err) {
+		t.Fatalf("content/features/F-0002 exists after a refusal (stat err %v)", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
+	}
+}
+
 // TestFeatureNewOneShotSpec pins the one-shot path (F-0120 criterion 1):
 // --file births the candidate with the real spec committed and pushed —
 // nothing left to fill or push.
