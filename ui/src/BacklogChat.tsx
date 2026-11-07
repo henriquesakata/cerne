@@ -751,6 +751,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
     // próximo caractere. Limpar o inline devolve a altura ao CSS (rows=1).
     if (textareaRef.current) textareaRef.current.style.height = ''
     sendMessages(next)
+    // F-0310 crit. 14: o título truncado nasce com a primeira mensagem; antes
+    // do primeiro delta não há escritor concorrente (F-0248 crit. 8), e chamar
+    // depois do send deixa o carimbo local ≥ o do storage.
+    onUpdate({ messages: next })
   }
 
   const retry = () => {

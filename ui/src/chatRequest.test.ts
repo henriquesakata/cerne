@@ -1,20 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { consumeOutcome, send, status } from './chatRequest'
-import { readChats, writeChats } from './useBacklogChats'
-import { ChatRunsError, setApiProject, type ChatAnswer } from './api'
+import { getConversation, readChats, writeChats } from './useBacklogChats'
+import { ChatRunsError, setApiProject, type ChatAnswer, type ChatTitle } from './api'
 
 const streamChat = vi.fn<(messages: unknown, override: unknown, onDelta: (d: string) => void) => Promise<ChatAnswer>>()
+// F-0310: nenhum teste depende de fetch real para o resumo do título.
+const summarizeChatTitle = vi.fn<(messages: unknown) => Promise<ChatTitle>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   streamChat: (messages: unknown, override: unknown, onDelta: (d: string) => void) =>
     streamChat(messages, override, onDelta),
+  summarizeChatTitle: (messages: unknown) => summarizeChatTitle(messages),
 }))
 
 beforeEach(() => {
   localStorage.clear()
   setApiProject('proj-x')
   streamChat.mockReset()
+  summarizeChatTitle.mockReset()
+  summarizeChatTitle.mockResolvedValue({ generated: false })
 })
 
 function seedConversation(id: string) {
@@ -222,5 +227,114 @@ describe('chatRequest (F-0323 C6): a falha não esconde o que já rodou', () => 
       { role: 'assistant', content: '', runs },
     ])
     expect(consumeOutcome('c10')).toEqual({ kind: 'error', message: 'tool-use loop exceeded its round limit' })
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => (resolve = r))
+  return { promise, resolve }
+}
+
+const flush = () => new Promise((r) => setTimeout(r, 0))
+
+describe('chatRequest (F-0310): resumo do primeiro par', () => {
+  it('critério 9: o primeiro par concluído pede o resumo uma vez e o grava como título', async () => {
+    seedConversation('t1')
+    streamChat.mockResolvedValue({ answered: true, reply: 'Claro.' })
+    const title = deferred<ChatTitle>()
+    summarizeChatTitle.mockReturnValue(title.promise)
+
+    send('t1', [{ role: 'user', content: 'Preciso exportar PDF' }], {})
+    await vi.waitFor(() => expect(summarizeChatTitle).toHaveBeenCalledTimes(1))
+    expect(summarizeChatTitle).toHaveBeenCalledWith([
+      { role: 'user', content: 'Preciso exportar PDF' },
+      { role: 'assistant', content: 'Claro.' },
+    ])
+    const before = getConversation('t1')!
+
+    title.resolve({ generated: true, title: 'Exportar PDF' })
+    await vi.waitFor(() => expect(getConversation('t1')!.title).toBe('Exportar PDF'))
+    const after = getConversation('t1')!
+    expect(after.titleSource).toBe('summary')
+    expect(after.messages).toEqual(before.messages)
+    expect(after.updatedAt).toBe(before.updatedAt)
+  })
+
+  it('critério 11: o segundo par não pede outro resumo', async () => {
+    seedConversation('t2')
+    streamChat.mockResolvedValue({ answered: true, reply: 'R' })
+    summarizeChatTitle.mockResolvedValue({ generated: true, title: 'Exportar PDF' })
+    send('t2', [{ role: 'user', content: 'P1' }], {})
+    await vi.waitFor(() => expect(getConversation('t2')!.title).toBe('Exportar PDF'))
+
+    send('t2', [...getConversation('t2')!.messages, { role: 'user', content: 'P2' }], {})
+    await vi.waitFor(() => expect(getConversation('t2')!.messages).toHaveLength(4))
+    await flush()
+    expect(summarizeChatTitle).toHaveBeenCalledTimes(1)
+    expect(getConversation('t2')!.title).toBe('Exportar PDF')
+  })
+
+  it.each([
+    ['não gerado', () => Promise.resolve<ChatTitle>({ generated: false, needs_provider: true })],
+    ['com erro', () => Promise.reject(new Error('provider morto'))],
+    ['pendurado', () => new Promise<ChatTitle>(() => {})],
+  ])('critérios 12 e 13: resumo %s mantém o título e não prende o chat', async (name, impl) => {
+    const id = `t3-${name}`
+    writeChats([{ id, title: 'P1', updatedAt: 0, messages: [], model: '', effort: '' }], id)
+    streamChat.mockResolvedValue({ answered: true, reply: 'R1' })
+    summarizeChatTitle.mockImplementation(impl)
+
+    send(id, [{ role: 'user', content: 'P1' }], {})
+    await vi.waitFor(() => expect(summarizeChatTitle).toHaveBeenCalledTimes(1))
+    await flush()
+    expect(status(id).pending).toBe(false)
+    expect(getConversation(id)!.title).toBe('P1')
+    expect(getConversation(id)!.titleSource).toBeUndefined()
+
+    // O chat segue: o próximo turno vai ao servidor, e o resumo não é repedido.
+    send(id, [...getConversation(id)!.messages, { role: 'user', content: 'P2' }], {})
+    expect(streamChat).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(status(id).pending).toBe(false))
+    expect(summarizeChatTitle).toHaveBeenCalledTimes(1)
+  })
+
+  it('critério 12: o chat sem provider nunca pede resumo', async () => {
+    seedConversation('t4')
+    streamChat.mockResolvedValue({ answered: false, needs_provider: true })
+    send('t4', [{ role: 'user', content: 'P1' }], {})
+    await vi.waitFor(() => expect(status('t4').pending).toBe(false))
+    await flush()
+    expect(summarizeChatTitle).not.toHaveBeenCalled()
+  })
+
+  it('conversa de refino (featureId) não é resumida', async () => {
+    writeChats(
+      [{ id: 't5', title: 'Refinando F-0010', updatedAt: 0, messages: [], model: '', effort: '', featureId: 'F-0010' }],
+      't5',
+    )
+    streamChat.mockResolvedValue({ answered: true, reply: 'R' })
+    send('t5', [{ role: 'user', content: 'P' }], { featureId: 'F-0010' })
+    await vi.waitFor(() => expect(status('t5').pending).toBe(false))
+    await flush()
+    expect(summarizeChatTitle).not.toHaveBeenCalled()
+  })
+
+  it('critério 17: o rename feito enquanto o resumo voava vence', async () => {
+    seedConversation('t6')
+    streamChat.mockResolvedValue({ answered: true, reply: 'R' })
+    const title = deferred<ChatTitle>()
+    summarizeChatTitle.mockReturnValue(title.promise)
+    send('t6', [{ role: 'user', content: 'P' }], {})
+    await vi.waitFor(() => expect(summarizeChatTitle).toHaveBeenCalledTimes(1))
+
+    const idx = readChats()
+    writeChats(
+      idx.chats.map((c) => (c.id === 't6' ? { ...c, title: 'Meu nome', titleSource: 'human' as const } : c)),
+      idx.activeId,
+    )
+    title.resolve({ generated: true, title: 'Resumo' })
+    await flush()
+    expect(getConversation('t6')).toMatchObject({ title: 'Meu nome', titleSource: 'human' })
   })
 })

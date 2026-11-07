@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
-import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
+import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type ChatTitle, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
 const streamChat = vi.fn<
@@ -32,6 +32,8 @@ const registerChatNote = vi.fn<
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
 const fetchFeature = vi.fn<(id: string) => Promise<FeatureDetail>>()
 const setPreferredProvider = vi.fn<(p: string) => Promise<void>>()
+// F-0310: nenhum teste depende de fetch real para o resumo do título.
+const summarizeChatTitle = vi.fn<() => Promise<ChatTitle>>(async () => ({ generated: false }))
 
 // CATALOG (F-0311): o catálogo como o servidor o serve — correntes, legados
 // (submenu), um delistado (nunca ofertado) e um segundo provedor.
@@ -72,6 +74,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchLLMOptions: () => fetchLLMOptions(),
   fetchFeature: (id: string) => fetchFeature(id),
   setPreferredProvider: (p: string) => setPreferredProvider(p),
+  summarizeChatTitle: () => summarizeChatTitle(),
 }))
 
 let nextConvId = 0
@@ -865,6 +868,27 @@ describe('BacklogChat (F-0248): sair da tela com resposta em voo', () => {
       { role: 'user', content: 'Preciso de X' },
       { role: 'assistant', content: 'resposta completa do agente' },
     ])
+  })
+})
+
+describe('BacklogChat (F-0310): título desde a primeira mensagem', () => {
+  it('F-0310 critério 14: o envio repassa o transcript com a mensagem do usuário antes da resposta', async () => {
+    streamChat.mockReturnValue(new Promise(() => {}))
+    const { onUpdate } = renderChat()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Preciso de X.' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ messages: [{ role: 'user', content: 'Preciso de X.' }] }),
+    )
+  })
+
+  it('F-0310 critério 14 (Harness): durante a pendência a conversa já tem o título truncado', async () => {
+    streamChat.mockReturnValue(new Promise(() => {}))
+    writeChats([{ id: 'c-title', title: '', updatedAt: 0, messages: [], model: '', effort: '' }], 'c-title')
+    render(<Harness />)
+    fireEvent.change(await screen.findByPlaceholderText(/descreva/i), { target: { value: 'Preciso de X.' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(getConversation('c-title')?.title).toBe('Preciso de X.'))
   })
 })
 

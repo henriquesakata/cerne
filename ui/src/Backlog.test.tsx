@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Backlog from './Backlog'
-import type { ChatAnswer, ChatOverride, CreateOutcome, Feature, Idea, LLMOptions, StateResponse } from './api'
+import type { ChatAnswer, ChatOverride, ChatTitle, CreateOutcome, Feature, Idea, LLMOptions, StateResponse } from './api'
 
 const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
   id,
@@ -38,6 +38,8 @@ const registerChatCandidate = vi.fn<
   ) => Promise<CreateOutcome>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
+// F-0310: nenhum teste depende de fetch real para o resumo do título.
+const summarizeChatTitle = vi.fn<() => Promise<ChatTitle>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -54,6 +56,7 @@ vi.mock('./api', async (importOriginal) => ({
     featureId?: string,
   ) => registerChatCandidate(title, specBody, facets, components, capability, parent, featureId),
   fetchLLMOptions: () => fetchLLMOptions(),
+  summarizeChatTitle: () => summarizeChatTitle(),
 }))
 
 beforeEach(() => {
@@ -65,6 +68,8 @@ beforeEach(() => {
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
   fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], defaultModel: '', providers: [], preferredProvider: '' })
+  summarizeChatTitle.mockReset()
+  summarizeChatTitle.mockResolvedValue({ generated: false })
 })
 
 describe('Backlog (F-0202)', () => {
@@ -184,6 +189,47 @@ describe('Backlog (F-0202)', () => {
     await waitFor(() =>
       expect(screen.getByText(/Preciso exportar relatórios em CSV.*→ F-0221/)).toBeInTheDocument(),
     )
+  })
+})
+
+// F-0310: o título da conversa nasce truncado com a primeira mensagem e é
+// trocado pelo resumo quando ele chega, sem mexer no id da conversa (F-0323).
+describe('Backlog — título da conversa (F-0310)', () => {
+  const list = () => document.querySelector('.conversation-list') as HTMLElement
+
+  async function send(text: string) {
+    fireEvent.change(await screen.findByPlaceholderText(/descreva/i), { target: { value: text } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+  }
+
+  it('F-0310 critério 14: a lista mostra o título truncado durante o primeiro turno', async () => {
+    streamChat.mockReturnValue(new Promise(() => {}))
+    render(<Backlog />)
+    await send('Preciso de X')
+    await waitFor(() => expect(within(list()).getByText('Preciso de X')).toBeInTheDocument())
+    expect(within(list()).queryByText('(sem título)')).not.toBeInTheDocument()
+  })
+
+  it('F-0310 critério 9: o resumo substitui o título truncado quando chega', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
+    summarizeChatTitle.mockResolvedValue({ generated: true, title: 'Exportar PDF' })
+    render(<Backlog />)
+    await send('Preciso exportar relatórios')
+    await waitFor(() => expect(within(list()).getByText('Exportar PDF')).toBeInTheDocument())
+  })
+
+  it('F-0310 / F-0323: o resumo não muda o conversation_id do turno seguinte', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
+    summarizeChatTitle.mockResolvedValue({ generated: true, title: 'Exportar PDF' })
+    render(<Backlog />)
+    await send('Preciso exportar relatórios')
+    await waitFor(() => expect(within(list()).getByText('Exportar PDF')).toBeInTheDocument())
+    const firstId = (streamChat.mock.calls[0][1] as ChatOverride).conversationId
+    expect(firstId).toBeTruthy()
+
+    await send('Em PDF')
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(streamChat.mock.calls[1][1]).toEqual(expect.objectContaining({ conversationId: firstId }))
   })
 })
 

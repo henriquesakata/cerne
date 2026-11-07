@@ -869,6 +869,20 @@ function runsSummary(runs: ChatRun[] | undefined, noRuns: boolean | undefined): 
   return '\n\n[execuções deste turno]\n' + (lines.length ? lines.join('\n') : '- nenhuma')
 }
 
+export type ChatTitle = { generated: boolean; title?: string; needs_provider?: boolean }
+
+// summarizeChatTitle (F-0310): resumo de uma linha do primeiro par pelo
+// provider do projeto. Só role/content — as execuções não descrevem a tarefa.
+export async function summarizeChatTitle(messages: ChatMsg[]): Promise<ChatTitle> {
+  const r = await fetch(`${base()}/chat/title`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })) }),
+  })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return (await r.json()) as ChatTitle
+}
+
 // streamChat (F-0240) envia o transcript inteiro (o servidor é stateless —
 // case 0210 decidiu reenviar em vez de manter sessão) e consome a resposta
 // NDJSON: cada linha {"delta":...} vira onDelta; a última linha é o evento
