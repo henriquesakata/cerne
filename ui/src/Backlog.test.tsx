@@ -220,7 +220,12 @@ describe('Backlog (F-0202)', () => {
     fireEvent.click(screen.getByRole('button', { name: /renomear "Preciso exportar relatórios em CSV"/i }))
     const input = screen.getByRole('textbox', { name: /novo nome/i })
     fireEvent.change(input, { target: { value: 'Meu nome' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    // C1/C17: como no navegador, um Enter não cancelado ativa o botão que
+    // recebeu o foco no keydown.
+    if (fireEvent.keyDown(input, { key: 'Enter' }) && document.activeElement instanceof HTMLButtonElement) {
+      fireEvent.click(document.activeElement)
+    }
+    expect(screen.queryByRole('textbox', { name: /novo nome/i })).not.toBeInTheDocument()
 
     fireEvent.click(registerButton)
     // O vínculo F-0256 chegou (appendRegisteredId rodou), e o título ficou.

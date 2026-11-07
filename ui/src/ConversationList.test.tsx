@@ -83,6 +83,50 @@ describe('ConversationList — renomear (F-0310)', () => {
   const openRename = () => fireEvent.click(renameButton())
   const input = () => screen.getByRole('textbox', { name: /novo nome/i }) as HTMLInputElement
 
+  // pressEnter (C1/C17) reproduz o navegador: a tecla vai a quem tem o foco
+  // DEPOIS do keydown — se o keydown não foi cancelado e o foco foi para um
+  // botão, o keypress do mesmo Enter o ativa (click). O jsdom não faz isso
+  // sozinho, e era por aí que o editor reabria.
+  function pressEnter(el: HTMLElement) {
+    const notCancelled = fireEvent.keyDown(el, { key: 'Enter', code: 'Enter', charCode: 13 })
+    const target = document.activeElement as HTMLElement
+    if (notCancelled) {
+      fireEvent.keyPress(target, { key: 'Enter', code: 'Enter', charCode: 13 })
+      if (target instanceof HTMLButtonElement) fireEvent.click(target)
+    }
+    fireEvent.keyUp(document.activeElement as HTMLElement, { key: 'Enter', code: 'Enter' })
+  }
+
+  // clickWhileEditing (C15) reproduz o clique: o mousedown tira o foco do
+  // campo (blur) antes do click — a não ser que o mousedown seja cancelado.
+  function clickWhileEditing(btn: HTMLElement) {
+    const field = input()
+    if (fireEvent.mouseDown(btn)) fireEvent.blur(field)
+    fireEvent.mouseUp(btn)
+    fireEvent.click(btn)
+  }
+
+  it('C1: Enter confirma, fecha o editor e não o reabre (sequência real do navegador)', () => {
+    const p = setup()
+    openRename()
+    fireEvent.change(input(), { target: { value: 'Novo' } })
+    pressEnter(input())
+    expect(p.onRename).toHaveBeenCalledTimes(1)
+    expect(p.onRename).toHaveBeenCalledWith('a', 'Novo')
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(renameButton()).toHaveFocus()
+  })
+
+  it('C15: clicar no ✎ durante a edição fecha o editor (confirma como o Enter) sem reabrir', () => {
+    const p = setup()
+    openRename()
+    fireEvent.change(input(), { target: { value: 'Pelo lápis' } })
+    clickWhileEditing(renameButton())
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(p.onRename).toHaveBeenCalledTimes(1)
+    expect(p.onRename).toHaveBeenCalledWith('a', 'Pelo lápis')
+  })
+
   it('critério 16: renomear edita em linha e confirma com Enter', () => {
     const p = setup()
     openRename()
@@ -153,7 +197,8 @@ describe('ConversationList — renomear (F-0310)', () => {
     setup()
     openRename()
     expect(input()).toHaveFocus()
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    pressEnter(input())
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(renameButton()).toHaveFocus()
     openRename()
     fireEvent.keyDown(input(), { key: 'Escape' })

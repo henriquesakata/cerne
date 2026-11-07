@@ -27,6 +27,7 @@ export default function ConversationList({ conversations, activeId, onSelect, on
   const [editingId, setEditingId] = useState<string | null>(null)
   const settled = useRef(false)
   const renameBtn = useRef<HTMLButtonElement | null>(null)
+  const field = useRef<HTMLInputElement | null>(null)
 
   const startRename = (id: string, btn: HTMLButtonElement) => {
     settled.current = false
@@ -61,14 +62,19 @@ export default function ConversationList({ conversations, activeId, onSelect, on
           >
             {editingId === c.id ? (
               <input
+                ref={field}
                 className="conversation-item-rename-input"
                 aria-label={t.backlogChat.renameInput}
                 defaultValue={c.title}
                 autoFocus
                 onFocus={(e) => e.currentTarget.select()}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') finish(c, e.currentTarget.value, true)
-                  else if (e.key === 'Escape') finish(c, null, true)
+                  if (e.key === 'Enter') {
+                    // C1: cancelar o keydown suprime o keypress do mesmo Enter,
+                    // que senão ativaria o ✎ recém-focado e reabriria o editor.
+                    e.preventDefault()
+                    finish(c, e.currentTarget.value, true)
+                  } else if (e.key === 'Escape') finish(c, null, true)
                 }}
                 onBlur={(e) => finish(c, e.currentTarget.value, false)}
               />
@@ -84,7 +90,15 @@ export default function ConversationList({ conversations, activeId, onSelect, on
               className="conversation-item-rename"
               aria-label={t.backlogChat.renameConversation(c.title || t.backlogChat.untitledConversation)}
               title={t.backlogChat.renameConversation(c.title || t.backlogChat.untitledConversation)}
-              onClick={(e) => startRename(c.id, e.currentTarget)}
+              // C15: durante a edição o ✎ alterna — o mousedown mantém o foco
+              // no campo (sem o blur que confirmaria) e o click fecha o editor,
+              // confirmando como o Enter.
+              onMouseDown={(e) => {
+                if (editingId === c.id) e.preventDefault()
+              }}
+              onClick={(e) =>
+                editingId === c.id ? finish(c, field.current?.value ?? null, true) : startRename(c.id, e.currentTarget)
+              }
             >
               ✎
             </button>
