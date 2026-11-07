@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 )
 
 func newFeatureReparentCmd(dir *string) *cobra.Command {
@@ -45,6 +46,7 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 	if parent == "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s detached from its epic.\n", id)
 	} else {
+		parent = domain.CanonicalID(parent) // as stored
 		fmt.Fprintf(cmd.OutOrStdout(), "%s is now a child of %s.\n", id, parent)
 		if app.EpicPlanStub(ctx.repoDir, parent) {
 			fmt.Fprintf(cmd.OutOrStdout(), "plano do épico scaffoldado — preencha antes do approve (N-0031)\n")

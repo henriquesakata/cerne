@@ -311,6 +311,92 @@ func TestSetFeatureParentErrors(t *testing.T) {
 	}
 }
 
+// TestFeatureParentStoredCanonical (F-0326 crit. 1): the epic link is written
+// canonical whatever the caller typed — on create, on reparent, in the events —
+// and the "unchanged" check of a reparent compares canonically. A blank parent
+// is still refused, never a silent "no epic" or a silent clear.
+func TestFeatureParentStoredCanonical(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	lower := strings.ToLower(epic.ID)
+
+	child, err := CreateFeature(repoDir, projDir, "Filha", "", lower, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, child.ID); child.Parent != epic.ID || got.Parent != epic.ID {
+		t.Fatalf("parent returned %q, persisted %q; want %q", child.Parent, got.Parent, epic.ID)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if last := evs[len(evs)-1]; last.Type != "feature.created" || last.Payload["parent"] != epic.ID {
+		t.Fatalf("event = %+v, want feature.created carrying parent %s", last, epic.ID)
+	}
+
+	other, err := CreateFeature(repoDir, projDir, "Avulsa", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature other: %v", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, other.ID, " "+lower+" "); err != nil {
+		t.Fatalf("SetFeatureParent: %v", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, other.ID); got.Parent != epic.ID {
+		t.Fatalf("reparented parent = %q, want %q", got.Parent, epic.ID)
+	}
+	evs, _ = store.ReadEvents(repoDir)
+	if last := evs[len(evs)-1]; last.Type != "feature.reparented" || last.Payload["to"] != epic.ID {
+		t.Fatalf("event = %+v, want feature.reparented to %s", last, epic.ID)
+	}
+
+	head, _ := gitback.HeadSHA(origin)
+	if err := SetFeatureParent(repoDir, projDir, other.ID, lower); err != nil {
+		t.Fatalf("same parent in another case: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head {
+		t.Fatalf("reparent to the same epic in another case committed; want a no-op")
+	}
+
+	if _, err := CreateFeature(repoDir, projDir, "Branca", "", "  ", nil, nil); !errors.Is(err, ErrParentNotFound) {
+		t.Fatalf("blank parent on create: err = %v, want ErrParentNotFound", err)
+	}
+	if err := SetFeatureParent(repoDir, projDir, other.ID, "  "); !errors.Is(err, ErrParentNotFound) {
+		t.Fatalf("blank parent on reparent: err = %v, want ErrParentNotFound", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, other.ID); got.Parent != epic.ID {
+		t.Fatalf("blank reparent changed the parent to %q, want %q kept", got.Parent, epic.ID)
+	}
+}
+
+// TestReparentRefusesCycleThroughLegacyParent (F-0326 crit. 2): a parent
+// stored in another case before the canonical write still closes a cycle.
+func TestReparentRefusesCycleThroughLegacyParent(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	a, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature A: %v", err)
+	}
+	b, err := CreateFeature(repoDir, projDir, "Filha", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature B: %v", err)
+	}
+	b.Parent = strings.ToLower(a.ID) // legacy data: B under A, written lowercase
+	if err := store.SaveFeature(repoDir, b); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "legacy lowercase parent"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	if err := SetFeatureParent(repoDir, projDir, a.ID, b.ID); !errors.Is(err, domain.ErrParentCycle) {
+		t.Fatalf("err = %v, want ErrParentCycle", err)
+	}
+	if got, _ := store.LoadFeature(repoDir, a.ID); got.Parent != "" {
+		t.Fatalf("A.Parent = %q after a refused cycle, want empty", got.Parent)
+	}
+}
+
 func TestRenameFeatureLive(t *testing.T) {
 	for _, st := range []domain.FeatureState{
 		domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment,

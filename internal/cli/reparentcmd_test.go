@@ -48,3 +48,28 @@ func TestFeatureReparent(t *testing.T) {
 		t.Fatalf("reparent without parent or --clear succeeded, want error")
 	}
 }
+
+// TestFeatureReparentEchoesCanonicalParent (F-0326): the confirmation and the
+// epic-plan advisory use the id as stored (canonical), not as typed.
+func TestFeatureReparentEchoesCanonicalParent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for _, title := range []string{"Épico", "Filha"} {
+		if out, err := execCerne(t, "feature", "new", title, "--context", "ctx de teste", "--dir", projDir); err != nil {
+			t.Fatalf("feature new %s: %v\n%s", title, err, out)
+		}
+	}
+
+	out, err := execCerne(t, "feature", "reparent", "F-0002", " f-0001 ", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("reparent: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "F-0002 is now a child of F-0001.\n") {
+		t.Fatalf("confirmation does not name the canonical epic:\n%s", out)
+	}
+	if !strings.Contains(out, "plano do épico scaffoldado") {
+		t.Fatalf("epic-plan advisory missing for the canonical epic:\n%s", out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "F-0001" {
+		t.Fatalf("parent = %q, want F-0001", f.Parent)
+	}
+}
