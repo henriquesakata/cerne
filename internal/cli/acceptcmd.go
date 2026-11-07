@@ -48,7 +48,7 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 		return fmt.Errorf("--all-implemented and an <id> are mutually exclusive")
 	}
 	if !allImplemented && id == "" {
-		return fmt.Errorf("informe um <id> ou use --all-implemented")
+		return fmt.Errorf("provide an <id> or use --all-implemented")
 	}
 	if allImplemented && reason == "" {
 		return fmt.Errorf("--reason is required with --all-implemented")
@@ -92,11 +92,11 @@ func runFeatureAcceptAllImplemented(cmd *cobra.Command, ctx projCtx, reason stri
 		}
 		out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, f.ID, domain.ActionAccept, "", reason, nil)
 		if err != nil {
-			return fmt.Errorf("aceitando %s: %w", f.ID, err)
+			return fmt.Errorf("accepting %s: %w", f.ID, err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 		accepted++
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%d feature(s) aceita(s).\n", accepted)
+	fmt.Fprintf(cmd.OutOrStdout(), "%d feature(s) accepted.\n", accepted)
 	return nil
 }
