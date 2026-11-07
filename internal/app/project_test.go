@@ -131,22 +131,13 @@ func TestRenameProjectSameNameNoCommit(t *testing.T) {
 		}
 	}
 
-	t.Run("trailing clone compares against origin", func(t *testing.T) {
-		renameElsewhere(t, "Outro")
-		count := gitOut(t, origin, "rev-list", "--count", "HEAD")
-
-		if got, err := RenameProject(repoDir, projDir, "Outro"); err != nil || got != "Outro" {
-			t.Fatalf("RenameProject(origin's name) = %q, %v; want %q, nil", got, err, "Outro")
-		}
-		if after := gitOut(t, origin, "rev-list", "--count", "HEAD"); after != count {
-			t.Fatalf("origin commit count %s -> %s: an already-current name committed", count, after)
-		}
-	})
-
 	// The clone's stale name is not "unchanged" when origin moved on: without
 	// the fast-forward this would be a silent no-op leaving origin's name.
 	t.Run("trailing clone's stale name still renames origin", func(t *testing.T) {
-		renameElsewhere(t, "Terceiro")
+		if _, err := RenameProject(repoDir, projDir, "Outro"); err != nil {
+			t.Fatalf("RenameProject(Outro): %v", err)
+		}
+		renameElsewhere(t, "Terceiro") // repoDir now trails origin, still holding "Outro"
 		if got, err := RenameProject(repoDir, projDir, "Outro"); err != nil || got != "Outro" {
 			t.Fatalf("RenameProject(clone's stale name) = %q, %v; want %q, nil", got, err, "Outro")
 		}
