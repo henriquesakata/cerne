@@ -1105,6 +1105,10 @@ func errataKind(owner string) string {
 }
 
 // errataEntryRe matches the heading store.AppendErrata writes atop each entry.
+// It is deliberately not the result rules' cut (nextHeadingRe, any "## "
+// heading): that closes one Gauntlet section, while an entry may carry "## "
+// headings of its own (a Gauntlet record in an erratum, F-0305). Cutting there
+// would split one entry and let its marker cover the lines above it.
 var errataEntryRe = regexp.MustCompile(`^## errata \d{4}-\d{2}-\d{2} — `)
 
 // errataAckFrom returns where an errata document's mentions of id start being
