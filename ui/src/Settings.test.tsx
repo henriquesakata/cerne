@@ -510,12 +510,60 @@ describe('Settings — texto vazio é redefinir (F-0315, crítica C7)', () => {
 })
 
 describe('Settings — o nome que o canal usa quando vazio (F-0333 crit. 3)', () => {
+  const channelRow = () => screen.findByRole('listitem', { name: 'Seu nome no canal' })
+  const ana = { value: 'Ana', origin: 'host' as const, stored: { host: 'Ana' }, fallback: 'ana' }
+
   it('com fallback do servidor e valor vazio, o campo mostra o fallback como placeholder, sem valor', async () => {
     fetchSettings.mockResolvedValue(withKey('channel.human_name', { fallback: 'ana' }))
     render(<Settings />)
-    const input = within(await screen.findByRole('listitem', { name: 'Seu nome no canal' })).getByRole('textbox')
+    const input = within(await channelRow()).getByRole('textbox')
     expect(input).toHaveAttribute('placeholder', 'ana')
     expect(input).toHaveValue('')
+  })
+
+  // Crítica C3: o nome usado sai em texto na linha de efetivo, não só no
+  // placeholder, e a linha não diz mais "(vazio)" quando o canal assina "ana".
+  it('com fallback e valor vazio, a linha de efetivo diz o nome usado', async () => {
+    fetchSettings.mockResolvedValue(withKey('channel.human_name', { fallback: 'ana' }))
+    render(<Settings />)
+    const channel = await channelRow()
+    expect(within(channel).getByText('Efetivo: ana (seu usuário do sistema)')).toBeInTheDocument()
+    expect(within(channel).queryByText('Efetivo: (vazio) (padrão)')).toBeNull()
+  })
+
+  // Crítica C6: um valor só de espaços (arquivo editado à mão) também é vazio.
+  it('valor só com espaços: a linha de efetivo diz o fallback', async () => {
+    fetchSettings.mockResolvedValue(
+      withKey('channel.human_name', { value: '   ', origin: 'host', stored: { host: '   ' }, fallback: 'ana' }),
+    )
+    render(<Settings />)
+    expect(within(await channelRow()).getByText('Efetivo: ana (seu usuário do sistema)')).toBeInTheDocument()
+  })
+
+  // Crítica C4: com um nome gravado, o placeholder já está lá para quando o
+  // campo for apagado; a linha de efetivo diz o nome gravado.
+  it('com nome gravado, o placeholder é o fallback e o efetivo é o nome', async () => {
+    fetchSettings.mockResolvedValue(withKey('channel.human_name', ana))
+    render(<Settings />)
+    const channel = await channelRow()
+    expect(within(channel).getByRole('textbox')).toHaveAttribute('placeholder', 'ana')
+    expect(within(channel).getByText('Efetivo: Ana, de Host')).toBeInTheDocument()
+  })
+
+  // Crítica C11: depois de redefinir, a resposta do DELETE traz o fallback, e
+  // o campo vazio volta a mostrá-lo.
+  it('depois de redefinir, o campo vazio mostra o fallback', async () => {
+    fetchSettings.mockResolvedValue(withKey('channel.human_name', ana))
+    unsetSetting.mockResolvedValue(withKey('channel.human_name', { fallback: 'ana' }))
+    render(<Settings />)
+    const channel = await channelRow()
+    fireEvent.change(within(channel).getByRole('textbox'), { target: { value: '' } })
+    fireEvent.click(within(channel).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('channel.human_name', 'host'))
+    await waitFor(() => expect(within(row('Seu nome no canal')).getByText('Efetivo: ana (seu usuário do sistema)')).toBeInTheDocument())
+    const input = within(row('Seu nome no canal')).getByRole('textbox')
+    expect(input).toHaveValue('')
+    expect(input).toHaveAttribute('placeholder', 'ana')
   })
 
   it('sem fallback, o campo não tem placeholder', async () => {
