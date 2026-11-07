@@ -291,7 +291,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := app.WriteStampedDraft(app.DecisionDocPath(ctx.repoDir, id), id, body); err != nil {
+		if err := app.WriteStampedDraft(app.DecisionDocPath(ctx.repoDir, id), id, "decision", body); err != nil {
 			return "", err
 		}
 		return "cerne: draft decision " + id, nil
