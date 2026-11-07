@@ -1076,6 +1076,10 @@ func TestUpdateCandidateSpecIdenticalIsNoOp(t *testing.T) {
 	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", body); err != nil || !changed {
 		t.Fatalf("first rewrite: changed %v, err %v — want a write", changed, err)
 	}
+	// The rewrite's backend commit is named for what it touched (judge, F-0328).
+	if subject := gitOut(t, origin, "log", "-1", "--format=%s"); subject != "cerne: update F-0001/spec.md" {
+		t.Fatalf("commit subject = %q, want %q", subject, "cerne: update F-0001/spec.md")
+	}
 	path := FeatureDocPath(repoDir, "F-0001", "spec.md")
 	stored, _ := os.ReadFile(path)
 	evs0, _ := store.ReadEvents(repoDir)
@@ -1161,6 +1165,28 @@ func TestUpdateCandidateSpecRefusals(t *testing.T) {
 	}
 	if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-9999", "x"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("err = %v, want store.ErrNotFound", err)
+	}
+}
+
+// TestUpdateCandidateSpecIdenticalPastApprovalRefused (judge, F-0328): the
+// state check comes before the identity check — a feature past approval is
+// refused even when the body is exactly its stored spec, never answered with
+// a no-op that would read as "accepted, nothing to do".
+func TestUpdateCandidateSpecIdenticalPastApprovalRefused(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md")
+	stored := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+	_, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", stored)
+	if !errors.Is(err, ErrNotCandidate) || changed {
+		t.Fatalf("identical body past approval: changed %v, err %v — want ErrNotCandidate", changed, err)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
 	}
 }
 
