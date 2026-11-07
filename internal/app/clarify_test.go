@@ -223,7 +223,7 @@ func TestAnswerClarificationByIndex(t *testing.T) {
 	seedClarifyFixture(t, repoDir)
 
 	// Index 3 is the bare [ESCLARECER] in plan.md.
-	ans, err := AnswerClarification(repoDir, projDir, "F-0001", 3, "resposta livre")
+	ans, err := AnswerClarification(repoDir, projDir, "F-0001", 3, "", "resposta livre")
 	if err != nil {
 		t.Fatalf("AnswerClarification: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestAnswerClarificationByIndex(t *testing.T) {
 		t.Errorf("plan after answer = %q", plan)
 	}
 
-	if _, err := AnswerClarification(repoDir, projDir, "F-0001", 99, "x"); !errors.Is(err, ErrClarificationGone) {
+	if _, err := AnswerClarification(repoDir, projDir, "F-0001", 99, "", "x"); !errors.Is(err, ErrClarificationGone) {
 		t.Fatalf("out-of-range err = %v, want ErrClarificationGone", err)
 	}
 }

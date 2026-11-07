@@ -64,7 +64,7 @@ func TestApproveClarifyRefusalNumbersQuestions(t *testing.T) {
 		}
 		n := strconv.Itoa(c.Index)
 		line := lineWith(msg, c.Question)
-		cmd := `→ cerne clarify answer F-0007 ` + n + ` --answer "..."`
+		cmd := `→ cerne clarify answer F-0007 ` + n + ` --expect ` + markerKey(c.Raw) + ` --answer "..."`
 		if !strings.HasPrefix(strings.TrimSpace(line), n+". "+c.Question) || !strings.Contains(line, cmd) {
 			t.Errorf("question %q (index %d): line %q, want it numbered %s with %q", c.Question, c.Index, line, n, cmd)
 		}
@@ -90,7 +90,7 @@ func TestApproveClarifyGateCanonicalAndFailClosed(t *testing.T) {
 func TestApproveClarifyRefusalShowsOptions(t *testing.T) {
 	_, err := clarifyGateFixture(t, "[ESCLARECER: a barra cobre a CLI e a UI? | só CLI | as duas]\n")
 	line := lineWith(err.Error(), "a barra cobre a CLI e a UI?")
-	for _, want := range []string{"cerne clarify answer F-0007 1 --pick <k>", "(1: só CLI, 2: as duas)"} {
+	for _, want := range []string{"cerne clarify answer F-0007 1 --expect ", " --pick <k>", "(1: só CLI, 2: as duas)"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("question line %q missing %q", line, want)
 		}
@@ -115,5 +115,35 @@ func TestApproveClarifyRefusalSaysRerunAndForce(t *testing.T) {
 	}
 	if rerun < 0 || force < 0 || force < rerun {
 		t.Fatalf("want the re-approve line, then the --force line (rerun=%d force=%d):\n%s", rerun, force, err)
+	}
+}
+
+// F-0330 (critic C1): an expect key names the marker a command was printed
+// for; when the n-th open marker is another one — the numbering moved — the
+// answer is refused before anything is written.
+func TestAnswerClarificationExpectRefusesMovedMarker(t *testing.T) {
+	repoDir, projDir := newSnapshotBackend(t, false)
+	seedClarifyFixture(t, repoDir)
+	items, err := ListClarifications(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("ListClarifications: %v", err)
+	}
+	specPath := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	before, _ := os.ReadFile(specPath)
+
+	_, err = AnswerClarification(repoDir, projDir, "F-0001", 2, markerKey(items[0].Raw), "x")
+	if !errors.Is(err, ErrClarificationMoved) {
+		t.Fatalf("moved marker: err = %v, want ErrClarificationMoved", err)
+	}
+	for _, want := range []string{items[1].Question, "nothing was written", "'cerne feature approve F-0001'"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal missing %q: %v", want, err)
+		}
+	}
+	if after, _ := os.ReadFile(specPath); string(after) != string(before) {
+		t.Fatalf("a refused answer wrote the spec:\n%s", after)
+	}
+	if _, err := AnswerClarification(repoDir, projDir, "F-0001", 1, markerKey(items[0].Raw), "sincrona"); err != nil {
+		t.Fatalf("matching key: %v", err)
 	}
 }

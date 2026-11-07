@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,6 +21,11 @@ import (
 // the current document — the doc advanced between list and answer, or the
 // index never existed. Nothing is written; re-list and retry.
 var ErrClarificationGone = errors.New("clarification not found at the given anchor")
+
+// ErrClarificationMoved is the --expect guard's refusal (F-0330): the n-th open
+// marker is no longer the one the command was printed for — an answer
+// elsewhere renumbered the open markers — so nothing is written.
+var ErrClarificationMoved = errors.New("clarification numbering moved")
 
 // ErrEntityNotLive is the sentinel for an answer aimed at a terminal entity:
 // its docs are immutable history (errata is the correction path), so open
@@ -383,16 +390,41 @@ func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 	return Answered{Entity: id, Doc: doc, Question: target.Question, Answer: answer}, nil
 }
 
+// markerKey is a short, stable fingerprint of one marker's text — what an
+// --expect guard compares (F-0330). Shell-safe and copy-pasteable, unlike the
+// question itself.
+func markerKey(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:3])
+}
+
+// ExpectedClarification refuses when expect is set and c — id's n-th open
+// clarification — is not the marker it fingerprints (ErrClarificationMoved).
+func ExpectedClarification(id string, n int, c OpenClarification, expect string) error {
+	if expect == "" || markerKey(c.Raw) == expect {
+		return nil
+	}
+	q := c.Question
+	if q == "" {
+		q = c.Raw
+	}
+	return fmt.Errorf("%w: %s #%d is now %q, not the question this command was printed for — nothing was written; for fresh numbers re-run 'cerne feature approve %s' (or 'cerne clarify list %s')", ErrClarificationMoved, id, n, q, id, id)
+}
+
 // AnswerClarification is the index-addressed wrapper the CLI uses: it resolves
 // id's n-th open clarification (1-based, ListClarifications order) to its
-// anchor and delegates to AnswerClarificationAt.
-func AnswerClarification(repoDir, projDir, id string, n int, answer string) (Answered, error) {
+// anchor and delegates to AnswerClarificationAt — after the expect guard, when
+// one is given (ExpectedClarification).
+func AnswerClarification(repoDir, projDir, id string, n int, expect, answer string) (Answered, error) {
 	items, err := ListClarifications(repoDir, id)
 	if err != nil {
 		return Answered{}, err
 	}
 	for _, c := range items {
 		if c.Index == n {
+			if err := ExpectedClarification(id, n, c, expect); err != nil {
+				return Answered{}, err
+			}
 			return AnswerClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer)
 		}
 	}

@@ -50,7 +50,7 @@ func CheckOpenClarifications(repoDir, id string) error {
 	var b strings.Builder
 	for i := len(open) - 1; i >= 0; i-- {
 		c := open[i]
-		fmt.Fprintf(&b, "\n  %d. %-*s  → cerne clarify answer %s %d ", c.Index, width, c.Question, id, c.Index)
+		fmt.Fprintf(&b, "\n  %d. %-*s  → cerne clarify answer %s %d --expect %s ", c.Index, width, c.Question, id, c.Index, markerKey(c.Raw))
 		if len(c.Options) == 0 {
 			b.WriteString(`--answer "..."`)
 			continue

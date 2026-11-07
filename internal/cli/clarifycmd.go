@@ -98,7 +98,7 @@ func newClarifyListCmd() *cobra.Command {
 }
 
 func newClarifyAnswerCmd() *cobra.Command {
-	var dir, answer string
+	var dir, answer, expect string
 	var pick int
 	cmd := &cobra.Command{
 		Use:   "answer <id> <n>",
@@ -106,7 +106,9 @@ func newClarifyAnswerCmd() *cobra.Command {
 		Long: "Rewrites the n-th open [ESCLARECER]/[CLARIFY] marker of the entity to its\n" +
 			"resolved form ([ESCLARECIDO: question → answer]) and pushes through the\n" +
 			"standard pipeline. Use --answer for free text or --pick to choose one of the\n" +
-			"marker's proposed options (see 'cerne clarify list').",
+			"marker's proposed options (see 'cerne clarify list'). --expect <key> (printed\n" +
+			"by the approve refusal) refuses, writing nothing, when the n-th open marker\n" +
+			"is no longer the one the command was printed for.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -139,6 +141,10 @@ func newClarifyAnswerCmd() *cobra.Command {
 				if target == nil {
 					return fmt.Errorf("%w: %s has no open clarification #%d", app.ErrClarificationGone, id, n)
 				}
+				// The guard first: a moved number's options belong to another marker.
+				if err := app.ExpectedClarification(id, n, *target, expect); err != nil {
+					return err
+				}
 				if len(target.Options) == 0 {
 					return fmt.Errorf("clarification #%d has no proposed options — use --answer", n)
 				}
@@ -147,7 +153,7 @@ func newClarifyAnswerCmd() *cobra.Command {
 				}
 				answer = target.Options[pick-1]
 			}
-			ans, err := app.AnswerClarification(ctx.repoDir, ctx.projDir, id, n, answer)
+			ans, err := app.AnswerClarification(ctx.repoDir, ctx.projDir, id, n, expect, answer)
 			if err != nil {
 				if errors.Is(err, app.ErrClarificationGone) {
 					return fmt.Errorf("%w — the document may have advanced; re-run 'cerne clarify list %s'", err, id)
@@ -164,6 +170,7 @@ func newClarifyAnswerCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&answer, "answer", "", "free-text answer to the question")
 	cmd.Flags().IntVar(&pick, "pick", 0, "choose the k-th proposed option as the answer")
+	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the n-th open marker is still the one this key names (printed by the approve refusal)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	return cmd

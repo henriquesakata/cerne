@@ -149,13 +149,13 @@ func TestApproveClarifyRefusalNumbersMatchAnswer(t *testing.T) {
 	if missing, _ := missingCommands(msg); len(missing) > 0 {
 		t.Errorf("refusal names commands that do not exist: %v", missing)
 	}
-	lines := regexp.MustCompile(`(?m)^\s+\d+\. (.+?)\s+→ (cerne clarify answer \S+ \d+ (?:--pick <k>|--answer "\.\.\."))`).FindAllStringSubmatch(msg, -1)
+	lines := refusalCommands(msg)
 	if len(lines) != 3 {
 		t.Fatalf("want 3 answer lines, got %d:\n%s", len(lines), msg)
 	}
 	answered := map[string]string{}
 	for i, m := range lines {
-		cmdline, ans := m[2], fmt.Sprintf("resp-%d", i+1)
+		cmdline, ans := m[3], fmt.Sprintf("resp-%d", i+1)
 		if strings.Contains(cmdline, "<k>") {
 			cmdline, ans = strings.Replace(cmdline, "<k>", "1", 1), "só CLI"
 		} else {
@@ -165,12 +165,12 @@ func TestApproveClarifyRefusalNumbersMatchAnswer(t *testing.T) {
 		if out, err := execCerne(t, append(args[1:], "--dir", projDir)...); err != nil {
 			t.Fatalf("%s: %v\n%s", cmdline, err, out)
 		}
-		answered[m[1]] = ans
+		answered[m[2]] = ans
 		spec := readBackendSpec(t, repoDir)
 		for _, o := range lines {
-			want := "[ESCLARECER: " + o[1]
-			if a, ok := answered[o[1]]; ok {
-				want = "[ESCLARECIDO: " + o[1] + " → " + a + "]"
+			want := "[ESCLARECER: " + o[2]
+			if a, ok := answered[o[2]]; ok {
+				want = "[ESCLARECIDO: " + o[2] + " → " + a + "]"
 			}
 			if !strings.Contains(spec, want) {
 				t.Fatalf("after %q the spec lacks %q:\n%s", cmdline, want, spec)
@@ -199,5 +199,59 @@ func TestApproveClarifyGateLowercaseID(t *testing.T) {
 	}
 	if f, err := store.LoadFeature(repoDir, "F-0001"); err != nil || f.State != domain.StateCandidate {
 		t.Fatalf("after the refusal: %+v, %v; want candidate", f, err)
+	}
+}
+
+// refusalCommandRe takes one answer row of the approve refusal: number,
+// question and the command as printed.
+var refusalCommandRe = regexp.MustCompile(`(?m)^\s+(\d+)\. (.+?)\s+→ (cerne clarify answer \S+ \d+ --expect \S+ (?:--pick <k>|--answer "\.\.\."))`)
+
+// refusalCommands returns the refusal's answer rows in printed order.
+func refusalCommands(msg string) [][]string { return refusalCommandRe.FindAllStringSubmatch(msg, -1) }
+
+// F-0330 (critic C1): the printed commands run in natural number order
+// (1, 2, 3) — not the printed one — never write a wrong marker. #1 is right;
+// #2 and #3 now name other markers (the third one in the plan, which the
+// refusal never showed), so each is refused with nothing written.
+func TestClarifyAnswerExpectNaturalOrder(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Ordem natural",
+		"# Ordem natural\n\n## Problema\n\nContexto real.\n\n"+
+			"[ESCLARECER: pergunta A?]\n\n[ESCLARECER: pergunta B? | sim | não]\n\n[ESCLARECER: pergunta C?]\n\n"+
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	writeDoc(t, repoDir, "F-0001", "plan.md", "---\ncerne_id: F-0001\n---\n\n[ESCLARECER: pergunta do plano?]\n")
+	commitBackend(t, repoDir)
+
+	_, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
+	if !errors.Is(err, app.ErrOpenClarifications) {
+		t.Fatalf("err = %v, want ErrOpenClarifications", err)
+	}
+	byNumber := map[string]string{}
+	for _, m := range refusalCommands(err.Error()) {
+		byNumber[m[1]] = strings.NewReplacer("<k>", "1", `"..."`, `"resp-`+m[1]+`"`).Replace(m[3])
+	}
+	if len(byNumber) != 3 {
+		t.Fatalf("want 3 printed commands, got %v:\n%v", byNumber, err)
+	}
+	run := func(n string) error {
+		args := regexpSplit(byNumber[n])
+		_, err := execCerne(t, append(args[1:], "--dir", projDir)...)
+		return err
+	}
+	if err := run("1"); err != nil {
+		t.Fatalf("#1: %v", err)
+	}
+	spec := readBackendSpec(t, repoDir)
+	plan, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "plan.md"))
+	for _, n := range []string{"2", "3"} {
+		if err := run(n); !errors.Is(err, app.ErrClarificationMoved) {
+			t.Fatalf("#%s after #1: err = %v, want ErrClarificationMoved", n, err)
+		}
+	}
+	if got := readBackendSpec(t, repoDir); got != spec || !strings.Contains(got, "[ESCLARECIDO: pergunta A? → resp-1]") {
+		t.Fatalf("a refused command wrote the spec:\n%s", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "plan.md")); string(got) != string(plan) {
+		t.Fatalf("a refused command wrote the plan:\n%s", got)
 	}
 }
