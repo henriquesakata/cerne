@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
@@ -147,7 +148,7 @@ type Resolver func(dir string) (repoDir, projDir, projectID, name string, err er
 // live-refresh goroutines.
 type registryEntry struct {
 	pid     string
-	name    string
+	name    string // the name read at registration; list's fallback when project.json can't be read
 	repoDir string
 	projDir string
 	cancel  context.CancelFunc
@@ -271,7 +272,13 @@ func (r *registry) list() (infos []projectInfo, def string) {
 	infos = make([]projectInfo, 0, len(r.order))
 	for _, pid := range r.order {
 		if e, ok := r.projects[pid]; ok {
-			infos = append(infos, newProjectInfo(e.pid, e.name, e.projDir))
+			// Read the name per list (F-0331): a rename by this ui, another
+			// clone (pulled) or a hand edit shows without a restart.
+			name := e.name
+			if p, err := store.LoadProject(e.repoDir); err == nil && p.Name != "" {
+				name = p.Name
+			}
+			infos = append(infos, newProjectInfo(e.pid, name, e.projDir))
 		}
 	}
 	if len(r.order) > 0 {

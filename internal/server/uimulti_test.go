@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func getJSON(t *testing.T, url string, v any) {
@@ -302,5 +305,53 @@ func TestUIMultiRegisterUnknownDir(t *testing.T) {
 	r.Body.Close()
 	if r.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("register unknown dir: status %d, want 422", r.StatusCode)
+	}
+}
+
+// TestProjectsListReadsNameFromBackend pins F-0331 crit. 3: GET /api/projects
+// serves the backend's project.json name on every list — a rename landing by
+// pull shows without restarting the ui; the registered name is only the
+// fallback when project.json cannot be read.
+func TestProjectsListReadsNameFromBackend(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	repoA, projA, _ := newGitBackendNoClean(t)
+	resolve := func(string) (string, string, string, string, error) {
+		return repoA, projA, "proj-a", "Projeto A", nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handler, err := NewUIMulti(ctx, resolve, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	name := func() string {
+		t.Helper()
+		var list projectsList
+		getJSON(t, srv.URL+"/api/projects", &list)
+		if len(list.Projects) != 1 {
+			t.Fatalf("list = %+v, want one project", list)
+		}
+		return list.Projects[0].Name
+	}
+	if got := name(); got != "Projeto Demo" {
+		t.Fatalf("name = %q, want the backend's %q", got, "Projeto Demo")
+	}
+
+	if err := store.SaveProject(repoA, store.Project{Name: "Renomeado"}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	commitBackend(t, repoA) // the state a pull would bring (N-0023)
+	if got := name(); got != "Renomeado" {
+		t.Fatalf("name after backend rename = %q, want %q without restart", got, "Renomeado")
+	}
+
+	if err := os.Remove(filepath.Join(repoA, "project.json")); err != nil {
+		t.Fatalf("Remove project.json: %v", err)
+	}
+	if got := name(); got != "Projeto A" {
+		t.Fatalf("name without project.json = %q, want the registered fallback %q", got, "Projeto A")
 	}
 }
