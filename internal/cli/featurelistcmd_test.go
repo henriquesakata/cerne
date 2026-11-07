@@ -355,3 +355,68 @@ func TestFeatureListEmpty(t *testing.T) {
 		t.Fatalf("no-match message missing:\n%s", out)
 	}
 }
+
+// TestFeatureListParentUnknown (F-0326): --parent naming no feature in the
+// backend — an unknown id, a decision id, a blank — is an error naming the
+// (normalized) id, in text and JSON mode alike, never an empty "no match"
+// with exit 0. An existing epic keeps today's output, terminal or childless
+// included, and a legacy lowercase parent still counts as its child.
+func TestFeatureListParentUnknown(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Épico", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filha A", Parent: "F-0001", State: domain.StateApproved},
+		{ID: "F-0003", Title: "Filha legada", Parent: "f-0001", State: domain.StateCandidate},
+		{ID: "F-0004", Title: "Épico rejeitado", State: domain.StateRejected},
+	} {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	d := store.Decision{ID: "D-0006", Title: "Uma decisão", State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveDecision(repoDir, d); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed parent fixtures"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	refusals := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"unknown feature", []string{"--parent", "F-9999"}, "feature F-9999 not found in backend"},
+		{"decision id is not a feature", []string{"--parent", "D-0006"}, "feature D-0006 not found in backend"},
+		{"normalized in the message", []string{"--parent", " f-9999 "}, "feature F-9999 not found in backend"},
+		{"json mode", []string{"--parent", "F-9999", "--json"}, "feature F-9999 not found in backend"},
+		{"blank", []string{"--parent", "  "}, "--parent needs a feature id"},
+	}
+	for _, tc := range refusals {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := execCerne(t, append([]string{"feature", "list"}, append(tc.args, "--dir", projDir)...)...)
+			if err == nil || err.Error() != tc.wantErr {
+				t.Fatalf("err = %v, want %q\n%s", err, tc.wantErr, out)
+			}
+			if strings.Contains(out, "No features match") || strings.Contains(out, `"features"`) {
+				t.Fatalf("false green:\n%s", out)
+			}
+		})
+	}
+
+	out, err := execCerne(t, "feature", "list", "--parent", " f-0001 ", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("--parent ' f-0001 ': %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "F-0002  [approved]") || !strings.Contains(out, "F-0003  [candidate]") || strings.Contains(out, "Épico\n") {
+		t.Fatalf("--parent ' f-0001 ' should list both children, legacy one included:\n%s", out)
+	}
+	for _, id := range []string{"F-0002", "F-0004"} { // childless; terminal epic
+		out, err := execCerne(t, "feature", "list", "--parent", id, "--dir", projDir)
+		if err != nil || out != "No features match the filters.\n" {
+			t.Fatalf("--parent %s: err = %v, out = %q; want exit 0 and the no-match line", id, err, out)
+		}
+	}
+}
