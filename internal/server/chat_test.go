@@ -399,6 +399,28 @@ func TestChatRegister(t *testing.T) {
 	}
 }
 
+// TestChatRegisterCreateRefusesFrontmatter (F-0328 critic C4): a proposal
+// whose body carries a frontmatter cerne will not store is 422 — the id it
+// would have minted is never named, and no CLI hint reaches the browser.
+func TestChatRegisterCreateRefusesFrontmatter(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	head0, _ := gitback.HeadSHA(origin)
+	var got struct {
+		Error string `json:"error"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-reg-fm"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"---\ntitle: y\n---\n\n# Exportar\n\n## Problema\nFalta exportação.\n"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "without cerne_id") || strings.Contains(got.Error, "cerne show") || strings.Contains(got.Error, "F-0002") {
+		t.Fatalf("status = %d, error %q — want 422 with no show hint and no unminted id", rec.Code, got.Error)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1 (a refused body must not mint)", len(features))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
+	}
+}
+
 // TestChatRegisterExistingCapability: F-0223 criterion 2 — a proposal that
 // names an existing C- id links it to the new candidate in the same act.
 func TestChatRegisterExistingCapability(t *testing.T) {

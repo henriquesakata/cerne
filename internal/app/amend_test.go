@@ -168,7 +168,7 @@ func TestStampedDocFrontmatter(t *testing.T) {
 		{"block never closes, spec", "spec", "---\ncerne_id: F-0001\n# R\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := stampedDoc("F-0001", tc.doc, tc.body)
+			got, err := stampedDoc("F-0001", tc.doc, tc.body, false)
 			if tc.refusal != "" {
 				// The full text is pinned: the result's messages are the amend's own,
 				// unchanged since F-0305 — the sentinel matches without a prefix.
@@ -180,8 +180,32 @@ func TestStampedDocFrontmatter(t *testing.T) {
 			if err != nil || got != tc.want {
 				t.Fatalf("got %q, %v — want %q", got, err, tc.want)
 			}
-			if again, err := stampedDoc("F-0001", tc.doc, got+"\n"); err != nil || again != got {
+			if again, err := stampedDoc("F-0001", tc.doc, got+"\n", false); err != nil || again != got {
 				t.Fatalf("not a fixed point: %q, %v — want %q", again, err, got)
+			}
+		})
+	}
+}
+
+// TestStampedDocNewFeature (F-0328 critic C4): on creation the id is not
+// minted yet, so a refusal names only what the body carries and never points
+// at a `cerne show` of a feature that does not exist; a block naming the id
+// about to be minted is kept like any own block.
+func TestStampedDocNewFeature(t *testing.T) {
+	const rest = "\n# R\n\nCorpo.\n"
+	if got, err := stampedDoc("F-0002", "spec", "---\ncerne_id: F-0002\nx: y\n---\n"+rest, true); err != nil || got != "---\ncerne_id: F-0002\nx: y\n---\n"+rest {
+		t.Fatalf("own block on creation: %q, %v", got, err)
+	}
+	for _, tc := range []struct{ name, body, refusal string }{
+		{"other id", "---\ncerne_id: F-0009\n---\n" + rest, "the body carries cerne_id F-0009 — a new feature's spec cannot carry another feature's frontmatter: drop the block"},
+		{"own block, then another feature's", "---\ncerne_id: F-0002\n---\n\n---\ncerne_id: F-0009\n---\n" + rest, "the body carries cerne_id F-0009 — a new feature's spec cannot carry another feature's frontmatter: drop the block"},
+		{"block without id", "---\ntitle: x\n---\n" + rest, "the body opens a '---' block without cerne_id: drop it — cerne stamps a new feature's spec itself"},
+		{"block never closes", "---\ncerne_id: F-0002\n# R\n", "the body's '---' block never closes: close it with a '---' line, or drop it"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := stampedDoc("F-0002", "spec", tc.body, true)
+			if !errors.Is(err, ErrBodyFrontmatter) || err.Error() != tc.refusal {
+				t.Fatalf("err = %v, want ErrBodyFrontmatter saying exactly %q", err, tc.refusal)
 			}
 		})
 	}

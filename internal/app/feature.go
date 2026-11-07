@@ -288,7 +288,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		// The spec goes first: a body writeSpecBody refuses (F-0328) must leave
 		// nothing behind, and the go-git reset does not clean untracked files.
 		if strings.TrimSpace(specBody) != "" {
-			if _, err := writeSpecBody(repoDir, id, specBody); err != nil {
+			if _, err := writeSpecBody(repoDir, id, specBody, true); err != nil {
 				return err
 			}
 		} else if err := writeSpecStub(repoDir, id, title); err != nil {
@@ -694,7 +694,7 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (f store.Feature
 		}
 		f = cur
 		// Detected here, not by captureChanges: the event below is itself a change.
-		wrote, err := writeSpecBody(repoDir, id, specBody)
+		wrote, err := writeSpecBody(repoDir, id, specBody, false)
 		if err != nil {
 			return "", err
 		}
@@ -745,7 +745,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 	if strings.TrimSpace(body) == "" {
 		return store.Feature{}, false, errors.New("empty result body: pass the full result via --file <result.md> or on stdin")
 	}
-	content, err := stampedDoc(id, "result", body)
+	content, err := stampedDoc(id, "result", body, false)
 	if err != nil {
 		return store.Feature{}, false, err
 	}
@@ -840,18 +840,23 @@ func dropBlank(lines []string) []string {
 // document — and so is a '---' opening with no cerne_id, or one that opens no
 // block at all (see leadingBlock), which cerne cannot tell from a rule. CRLF is
 // stored as LF, and a BOM is dropped wherever the leading blank lines put it.
-// The rule of the amend (F-0305), shared with every spec write since F-0328.
-func stampedDoc(id, doc, body string) (string, error) {
+// fresh marks a new feature's spec: id is not minted yet, so a refusal names
+// only what the body carries and points at no `cerne show` of it (C4). The rule
+// of the amend (F-0305), shared with every spec write since F-0328.
+func stampedDoc(id, doc, body string, fresh bool) (string, error) {
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	body = strings.TrimSpace(strings.TrimLeft(body, "\ufeff \t\r\n"))
 	inner, rest, opens, closed := leadingBlock(strings.Split(body, "\n"))
 	if !opens {
 		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
 	}
+	if !closed && fresh {
+		return "", frontmatterRefusal("the body's '---' block never closes: close it with a '---' line, or drop it")
+	}
 	if !closed {
 		return "", frontmatterRefusal(fmt.Sprintf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", id, doc))
 	}
-	i, err := ownBlock(inner, id, doc)
+	i, err := ownBlock(inner, id, doc, fresh)
 	if err != nil {
 		return "", err
 	}
@@ -872,7 +877,7 @@ func stampedDoc(id, doc, body string) (string, error) {
 		if !opens || !closed {
 			break
 		}
-		if _, err := ownBlock(next, id, doc); err != nil {
+		if _, err := ownBlock(next, id, doc, fresh); err != nil {
 			return "", err
 		}
 		rest = after
@@ -887,18 +892,23 @@ var okfProjectionKeys = materialize.OKFKeys()
 
 // ownBlock returns the index of the cerne_id line of a block's inner lines,
 // refusing the block when that id is not id or there is none (an empty value
-// counts as none).
-func ownBlock(inner []string, id, doc string) (int, error) {
+// counts as none). fresh words the refusal for a feature not minted yet.
+func ownBlock(inner []string, id, doc string, fresh bool) (int, error) {
 	for i, l := range inner {
 		k, v, _ := strings.Cut(l, ":")
 		got := strings.Trim(strings.TrimSpace(v), `"'`)
-		if k != "cerne_id" || got == "" {
+		switch {
+		case k != "cerne_id" || got == "":
 			continue
+		case got == id:
+			return i, nil
+		case fresh:
+			return -1, frontmatterRefusal(fmt.Sprintf("the body carries cerne_id %s — a new feature's spec cannot carry another feature's frontmatter: drop the block", got))
 		}
-		if got != id {
-			return -1, frontmatterRefusal(fmt.Sprintf("the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", got, id, doc))
-		}
-		return i, nil
+		return -1, frontmatterRefusal(fmt.Sprintf("the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", got, id, doc))
+	}
+	if fresh {
+		return -1, frontmatterRefusal("the body opens a '---' block without cerne_id: drop it — cerne stamps a new feature's spec itself")
 	}
 	return -1, frontmatterRefusal(fmt.Sprintf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", id, doc))
 }
@@ -921,10 +931,10 @@ func loadCandidate(repoDir, id string) (store.Feature, error) {
 // cerne_id frontmatter followed by the provided body — the one write path of
 // every whole-body spec: the one-shot spec of CreateFeatureWithSpec and the
 // rewrite of UpdateCandidateSpec. A body stampedDoc refuses is returned before
-// anything is written; changed is false when spec.md already holds exactly
+// anything is written (fresh: a new feature's, see stampedDoc); changed is false when spec.md already holds exactly
 // that content, and then nothing is written.
-func writeSpecBody(repoDir, id, body string) (changed bool, err error) {
-	content, err := stampedDoc(id, "spec", body)
+func writeSpecBody(repoDir, id, body string, fresh bool) (changed bool, err error) {
+	content, err := stampedDoc(id, "spec", body, fresh)
 	if err != nil {
 		return false, err
 	}

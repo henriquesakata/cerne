@@ -268,8 +268,16 @@ func TestFeatureNewFileFrontmatter(t *testing.T) {
 	head0, _ := gitback.HeadSHA(origin)
 	mustWrite(t, specFile, "---\ncerne_id: F-0009\n---\n\n# Outra\n\n## Problema\n\nDe outra feature.\n")
 	_, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir)
-	if !errors.Is(err, app.ErrBodyFrontmatter) || !strings.Contains(err.Error(), `cerne_id "F-0009", not F-0002`) {
-		t.Fatalf("err = %v, want ErrBodyFrontmatter naming F-0009 and F-0002", err)
+	// F-0002 was never minted: the refusal names only the body's id and sends
+	// nobody to `cerne show` a feature that does not exist (critic C4).
+	if !errors.Is(err, app.ErrBodyFrontmatter) || !strings.Contains(err.Error(), "the body carries cerne_id F-0009 — a new feature's spec cannot carry another feature's frontmatter") ||
+		strings.Contains(err.Error(), "F-0002") || strings.Contains(err.Error(), "cerne show") {
+		t.Fatalf("err = %v, want ErrBodyFrontmatter naming only F-0009, no show hint", err)
+	}
+	mustWrite(t, specFile, "---\ntitle: x\n---\n\n# Outra\n\n## Problema\n\nSem id.\n")
+	if _, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir); !errors.Is(err, app.ErrBodyFrontmatter) ||
+		!strings.Contains(err.Error(), "without cerne_id") || strings.Contains(err.Error(), "cerne show") {
+		t.Fatalf("block without id: err = %v, want a refusal with no show hint", err)
 	}
 	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
 		t.Fatalf("features = %d, want 1 (a refused body must not mint)", len(features))
