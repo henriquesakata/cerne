@@ -185,3 +185,19 @@ func TestApproveClarifyRefusalNumbersMatchAnswer(t *testing.T) {
 		t.Fatalf("approve after following the refusal: %v\n%s", err, out)
 	}
 }
+
+// F-0330 (critic C2): 'approve f-0001' on a spec with an open question is
+// refused like 'approve F-0001' — before, the gate read the lowercase id as
+// unknown and let it pass, and a case-insensitive filesystem approved it.
+func TestApproveClarifyGateLowercaseID(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Minuscula",
+		"# Minuscula\n\n## Problema\n\nContexto real. [ESCLARECER: qual o prazo?]\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	_, err := execCerne(t, "feature", "approve", "f-0001", "--dir", projDir)
+	if !errors.Is(err, app.ErrOpenClarifications) {
+		t.Fatalf("approve f-0001: %v, want ErrOpenClarifications", err)
+	}
+	if f, err := store.LoadFeature(repoDir, "F-0001"); err != nil || f.State != domain.StateCandidate {
+		t.Fatalf("after the refusal: %+v, %v; want candidate", f, err)
+	}
+}

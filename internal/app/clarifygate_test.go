@@ -69,8 +69,19 @@ func TestApproveClarifyRefusalNumbersQuestions(t *testing.T) {
 			t.Errorf("question %q (index %d): line %q, want it numbered %s with %q", c.Question, c.Index, line, n, cmd)
 		}
 	}
-	if err := CheckOpenClarifications(repoDir, "F-9999"); err != nil {
-		t.Errorf("unknown feature: %v, want nil (the core names it)", err)
+}
+
+// F-0330 (critic C2): the gate refuses whatever id the core accepts — a
+// lowercase id is canonicalized, not read as unknown — and an id it cannot
+// load fails closed instead of passing.
+func TestApproveClarifyGateCanonicalAndFailClosed(t *testing.T) {
+	repoDir, _ := clarifyGateFixture(t, "[ESCLARECER: qual o prazo?]\n")
+	err := CheckOpenClarifications(repoDir, "f-0007")
+	if !errors.Is(err, ErrOpenClarifications) || !strings.Contains(err.Error(), "cerne clarify answer F-0007 1") {
+		t.Errorf("lowercase id: %v, want the refusal with the canonical id", err)
+	}
+	if err := CheckOpenClarifications(repoDir, "F-9999"); !errors.Is(err, store.ErrNotFound) || !strings.Contains(err.Error(), "F-9999") {
+		t.Errorf("unknown feature: %v, want a not-found error naming it (fail closed)", err)
 	}
 }
 

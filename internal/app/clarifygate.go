@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"gitlab.com/rockt/cerne/internal/domain"
 )
 
 // ErrOpenClarifications is the sentinel for an approve attempted over a spec
@@ -21,15 +21,15 @@ var ErrOpenClarifications = errors.New("open clarifications in the spec")
 // answers it (F-0330). The numbers are the Index ListClarifications assigns —
 // the one 'cerne clarify answer <id> <n>' resolves — and the questions are
 // listed last first: an answer renumbers the open markers after it, so the
-// commands stay right when run top to bottom. A missing spec or feature
-// passes — doc presence and existence are the core's concern, not this one's.
+// commands stay right when run top to bottom. A missing spec passes — doc
+// presence is the core's concern — but the id is canonicalized first and one
+// the gate cannot load fails closed: the core accepts a lowercase id, so the
+// gate must too, never read it as unknown and let it through.
 func CheckOpenClarifications(repoDir, id string) error {
+	id = domain.CanonicalID(id)
 	items, err := ListClarifications(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil
-	}
 	if err != nil {
-		return err
+		return fmt.Errorf("checking open clarifications of %s: %w", id, err)
 	}
 	spec := "content/features/" + id + "/spec.md"
 	var open []OpenClarification
