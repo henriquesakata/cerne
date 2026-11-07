@@ -97,6 +97,19 @@ func newClarifyListCmd() *cobra.Command {
 	return cmd
 }
 
+// errPlaceholderAnswer refuses an answer that is still a command template's
+// slot (F-0330): the approve refusal prints --answer "...", and run as typed it
+// would record "..." as the human's answer.
+var errPlaceholderAnswer = errors.New("the answer is still a placeholder")
+
+// placeholderAnswer reports "...", "…" or an angle-bracketed slot like "<k>".
+// ponytail: local check; doccheck.Unwritten (F-0327, not in this base) can
+// replace it once merged.
+func placeholderAnswer(a string) bool {
+	a = strings.TrimSpace(a)
+	return a == "..." || a == "…" || (len(a) > 2 && strings.HasPrefix(a, "<") && strings.HasSuffix(a, ">"))
+}
+
 func newClarifyAnswerCmd() *cobra.Command {
 	var dir, answer, expect string
 	var pick int
@@ -121,6 +134,9 @@ func newClarifyAnswerCmd() *cobra.Command {
 			}
 			if answer == "" && pick <= 0 {
 				return errors.New("provide the answer with --answer \"...\" or --pick <k>")
+			}
+			if placeholderAnswer(answer) {
+				return fmt.Errorf("%w: %q — replace it with the actual answer (or choose an option with --pick <k>)", errPlaceholderAnswer, answer)
 			}
 			ctx, err := resolveProject(dir)
 			if err != nil {

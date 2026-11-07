@@ -206,3 +206,21 @@ func TestClarifyCorrectIndexOutOfRange(t *testing.T) {
 		t.Fatalf("err = %v, want ErrClarificationGone", err)
 	}
 }
+
+// F-0330 (critic C8): the refusal's command run as typed would record its
+// placeholder as the human's answer; clarify answer refuses "...", "…" and
+// "<…>" and writes nothing.
+func TestClarifyAnswerRefusesPlaceholder(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Com perguntas", clarifySpecBody())
+	before := readBackendSpec(t, repoDir)
+	for _, ph := range []string{"...", " … ", "<resposta>"} {
+		_, err := execCerne(t, "clarify", "answer", "F-0001", "2", "--answer", ph, "--dir", projDir)
+		if !errors.Is(err, errPlaceholderAnswer) {
+			t.Errorf("--answer %q: err = %v, want errPlaceholderAnswer", ph, err)
+		}
+	}
+	if got := readBackendSpec(t, repoDir); got != before {
+		t.Fatalf("a placeholder answer wrote the spec:\n%s", got)
+	}
+}
