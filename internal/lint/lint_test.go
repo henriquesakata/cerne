@@ -684,3 +684,37 @@ func TestRunConfigFlagsStaleReady(t *testing.T) {
 		t.Fatalf("stale-ready findings = %+v, want exactly one for F-0001", stale)
 	}
 }
+
+// TestParentRulesResolveLegacyParent (F-0326): a parent stored in another case
+// or padded resolves to its epic for every parent rule in the same run — no
+// parent-not-found next to an epic rule that counts the same child, and a
+// legacy child of a dead epic is parent-terminal.
+func TestParentRulesResolveLegacyParent(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Épico aprovado", State: domain.StateApproved},
+		{ID: "F-0002", Title: "Filha legada", Parent: "f-0001", State: domain.StateInDevelopment},
+		{ID: "F-0003", Title: "Filha com espaços", Parent: " f-0001 ", State: domain.StateCandidate},
+		{ID: "F-0004", Title: "Épico rejeitado", State: domain.StateRejected},
+		{ID: "F-0005", Title: "Filha de épico morto", Parent: "f-0004", State: domain.StateCandidate},
+	} {
+		if err := store.SaveFeature(dir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	got, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	rules := map[string]string{}
+	for _, f := range got {
+		switch f.Rule {
+		case RuleParentNotFound, RuleParentTerminal, RuleEpicBehindChildren:
+			rules[f.Entity] = f.Rule
+		}
+	}
+	want := map[string]string{"F-0001": RuleEpicBehindChildren, "F-0005": RuleParentTerminal}
+	if !reflect.DeepEqual(rules, want) {
+		t.Fatalf("parent rules = %v, want %v", rules, want)
+	}
+}

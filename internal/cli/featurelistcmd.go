@@ -128,7 +128,7 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 		if moduleQ != "" && strings.ToLower(f.Module) != moduleQ {
 			continue
 		}
-		if parentQ != "" && domain.CanonicalID(f.Parent) != parentQ {
+		if parentQ != "" && f.Parent != parentQ { // the store loads parents canonical
 			continue
 		}
 		if facetQ != "" && !slices.Contains(f.Facets, facetQ) {

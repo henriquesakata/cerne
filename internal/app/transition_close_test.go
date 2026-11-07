@@ -7,6 +7,8 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // F-0214: completing the last alive child of an epic scaffolds the epic's
@@ -133,4 +135,37 @@ func TestEpicCloseNoopWithoutParent(t *testing.T) {
 // for assertions — a thin wrapper over FeatureDocPath.
 func readFeatureDoc(repoDir, id, filename string) ([]byte, error) {
 	return os.ReadFile(FeatureDocPath(repoDir, id, filename))
+}
+
+// F-0326: children whose stored parent is a legacy lowercase id are still the
+// epic's children, so completing one while a sibling is live never declares
+// the epic ready to close, and completing the last one does.
+func TestEpicCloseSeesLegacyLowercaseChildren(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic := seedApproved(t, repoDir, projDir, "Épico", "")
+	child1 := seedApproved(t, repoDir, projDir, "Fase 1", epic.ID)
+	child2 := seedApproved(t, repoDir, projDir, "Fase 2", epic.ID)
+	mustStart(t, repoDir, projDir, child1.ID)
+	mustStart(t, repoDir, projDir, child2.ID)
+	for _, id := range []string{child1.ID, child2.ID} {
+		f := reload(t, repoDir, id)
+		f.Parent = strings.ToLower(epic.ID)
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", id, err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "legacy lowercase parents"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	if out := mustComplete(t, repoDir, projDir, child1.ID); out.EpicReadyToClose != "" {
+		t.Fatalf("EpicReadyToClose = %q with a live sibling, want empty", out.EpicReadyToClose)
+	}
+	if out := mustComplete(t, repoDir, projDir, child2.ID); out.EpicReadyToClose != epic.ID {
+		t.Fatalf("EpicReadyToClose = %q on the last child, want %s", out.EpicReadyToClose, epic.ID)
+	}
+	body := epicResultBody(t, repoDir, epic.ID)
+	if !strings.Contains(body, child1.ID) || !strings.Contains(body, child2.ID) {
+		t.Fatalf("epic result.md roster misses the legacy children:\n%s", body)
+	}
 }

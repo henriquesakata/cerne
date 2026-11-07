@@ -369,6 +369,7 @@ func TestFeatureListParentUnknown(t *testing.T) {
 		{ID: "F-0002", Title: "Filha A", Parent: "F-0001", State: domain.StateApproved},
 		{ID: "F-0003", Title: "Filha legada", Parent: "f-0001", State: domain.StateCandidate},
 		{ID: "F-0004", Title: "Épico rejeitado", State: domain.StateRejected},
+		{ID: "F-0005", Title: "Filha acolchoada", Parent: " f-0001 ", State: domain.StateCandidate},
 	} {
 		f.CreatedAt, f.UpdatedAt = now, now
 		if err := store.SaveFeature(repoDir, f); err != nil {
@@ -412,6 +413,11 @@ func TestFeatureListParentUnknown(t *testing.T) {
 	}
 	if !strings.Contains(out, "F-0002  [approved]") || !strings.Contains(out, "F-0003  [candidate]") || strings.Contains(out, "Épico\n") {
 		t.Fatalf("--parent ' f-0001 ' should list both children, legacy one included:\n%s", out)
+	}
+	// A padded legacy parent is listed too, and its epic marker shows the
+	// canonical id, not the stored string.
+	if !strings.Contains(out, "F-0005  [candidate]  Filha acolchoada  · epic F-0001\n") {
+		t.Fatalf("padded legacy child missing or shown raw:\n%s", out)
 	}
 	for _, id := range []string{"F-0002", "F-0004"} { // childless; terminal epic
 		out, err := execCerne(t, "feature", "list", "--parent", id, "--dir", projDir)
