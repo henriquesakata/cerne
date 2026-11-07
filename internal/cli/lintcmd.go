@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -119,7 +120,7 @@ func lintFailure(findings []lint.Finding) error {
 // findings are kept, plus the label shown in the output. --parent covers the
 // epic and every descendant; the visited set guards against a parent cycle.
 func lintScope(repoDir, feature, parent string) (ids map[string]bool, label string, err error) {
-	id := strings.ToUpper(strings.TrimSpace(feature + parent))
+	id := domain.CanonicalID(feature + parent)
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return nil, "", err
@@ -138,14 +139,7 @@ func lintScope(repoDir, feature, parent string) (ids map[string]bool, label stri
 	if parent == "" {
 		return ids, id, nil
 	}
-	// Stored parents may differ in case (feature new --parent f-0001 on a
-	// case-insensitive filesystem), so index them normalized.
-	norm := make([]store.Feature, len(features))
-	for i, f := range features {
-		f.Parent = strings.ToUpper(strings.TrimSpace(f.Parent))
-		norm[i] = f
-	}
-	children := store.ChildrenByParent(norm)
+	children := store.ChildrenByParent(features) // parents load canonical (F-0326)
 	queue := []string{id}
 	for len(queue) > 0 {
 		cur := queue[0]
