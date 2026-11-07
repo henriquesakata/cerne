@@ -1,0 +1,179 @@
+{
+  "_comment": "Shared project-name rules (F-0331), read by internal/app/project_test.go (Go) and ui/src/projectName.test.ts (TS): the rule is duplicated on purpose (the UI refuses in its own language, the server stays the authority) and this corpus keeps the two in step. rule is empty|long|control, or \"\" for a valid name, stored (trimmed) as stored.",
+  "cases": [
+    {
+      "name": "trimmed spaces",
+      "in": "  Cerne  ",
+      "rule": "",
+      "stored": "Cerne"
+    },
+    {
+      "name": "emoji",
+      "in": "Backend \ud83d\ude80",
+      "rule": "",
+      "stored": "Backend \ud83d\ude80"
+    },
+    {
+      "name": "ZWJ family emoji",
+      "in": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
+      "rule": "",
+      "stored": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67"
+    },
+    {
+      "name": "64 runes",
+      "in": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+      "rule": "",
+      "stored": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+    },
+    {
+      "name": "trailing NEL trimmed",
+      "in": "abc\u0085",
+      "rule": "",
+      "stored": "abc"
+    },
+    {
+      "name": "leading BOM trimmed",
+      "in": "\ufeffBOM",
+      "rule": "",
+      "stored": "BOM"
+    },
+    {
+      "name": "trailing line separator trimmed",
+      "in": "a\u2028",
+      "rule": "",
+      "stored": "a"
+    },
+    {
+      "name": "NBSP and ideographic space trimmed",
+      "in": "\u00a0Nome\u3000",
+      "rule": "",
+      "stored": "Nome"
+    },
+    {
+      "name": "empty",
+      "in": "",
+      "rule": "empty",
+      "stored": ""
+    },
+    {
+      "name": "spaces only",
+      "in": "   ",
+      "rule": "empty",
+      "stored": ""
+    },
+    {
+      "name": "ZWSP only",
+      "in": "\u200b",
+      "rule": "empty",
+      "stored": ""
+    },
+    {
+      "name": "ZWSP between spaces",
+      "in": " \u200b ",
+      "rule": "empty",
+      "stored": ""
+    },
+    {
+      "name": "BOM only",
+      "in": "\ufeff",
+      "rule": "empty",
+      "stored": ""
+    },
+    {
+      "name": "combining mark only",
+      "in": "\u0301",
+      "rule": "empty",
+      "stored": ""
+    },
+    {
+      "name": "65 runes",
+      "in": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+      "rule": "long",
+      "stored": ""
+    },
+    {
+      "name": "line feed",
+      "in": "a\nb",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "tab",
+      "in": "a\tb",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "carriage return",
+      "in": "a\rb",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "NEL inside",
+      "in": "a\u0085b",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "line separator inside",
+      "in": "a\u2028b",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "paragraph separator inside",
+      "in": "a\u2029b",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "RLO inside",
+      "in": "a\u202eb",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "RLO leading",
+      "in": "\u202eenrec",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "LRE",
+      "in": "a\u202ab",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "LRM",
+      "in": "a\u200eb",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "RLM",
+      "in": "a\u200fb",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "LRI",
+      "in": "a\u2066b",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "PDI",
+      "in": "a\u2069b",
+      "rule": "control",
+      "stored": ""
+    },
+    {
+      "name": "arabic letter mark",
+      "in": "a\u061cb",
+      "rule": "control",
+      "stored": ""
+    }
+  ]
+}
