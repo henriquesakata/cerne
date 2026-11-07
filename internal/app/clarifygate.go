@@ -62,7 +62,7 @@ func CheckOpenClarifications(repoDir, id string) error {
 		fmt.Fprintf(&b, "--pick <k>   (%s)", strings.Join(opts, ", "))
 	}
 	if len(open) > 1 {
-		b.WriteString("\nrun them top to bottom: each answer renumbers the questions after it.")
+		b.WriteString("\nanswer them top to bottom: each answer renumbers only the questions listed above it (a command whose number moved is refused, nothing written).")
 	}
 	fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
 	b.WriteString("\nthe UI answers the same markers too (each one is a clickable chip in the spec).")

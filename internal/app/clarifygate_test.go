@@ -147,3 +147,28 @@ func TestAnswerClarificationExpectRefusesMovedMarker(t *testing.T) {
 		t.Fatalf("matching key: %v", err)
 	}
 }
+
+// orderLine is the refusal's line on order, true as displayed (critic C3):
+// rows are last first, so an answer renumbers the rows above it.
+const orderLine = "answer them top to bottom: each answer renumbers only the questions listed above it (a command whose number moved is refused, nothing written)."
+
+// F-0330 (critic C10): the rows are printed last first and the order line
+// says so — reverting to document order, or dropping the line, fails here.
+func TestApproveClarifyRefusalOrderAndGuardLine(t *testing.T) {
+	_, err := clarifyGateFixture(t, "[ESCLARECER: pergunta A?]\n\n[ESCLARECER: pergunta B?]\n\n[ESCLARECER: pergunta C?]\n")
+	var rows []string
+	for _, l := range strings.Split(err.Error(), "\n") {
+		if strings.Contains(l, "→ cerne clarify answer") {
+			rows = append(rows, strings.Fields(l)[0])
+		}
+	}
+	if strings.Join(rows, " ") != "3. 2. 1." {
+		t.Errorf("rows printed %v, want 3. 2. 1. (last first)", rows)
+	}
+	if lineWith(err.Error(), "top to bottom") != orderLine {
+		t.Errorf("order line = %q, want %q", lineWith(err.Error(), "top to bottom"), orderLine)
+	}
+	if _, err := clarifyGateFixture(t, "[ESCLARECER: só uma?]\n"); strings.Contains(err.Error(), "top to bottom") {
+		t.Errorf("one question needs no order line:\n%v", err)
+	}
+}
