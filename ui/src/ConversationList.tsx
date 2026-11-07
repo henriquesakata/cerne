@@ -83,7 +83,14 @@ export default function ConversationList({ conversations, activeId, onSelect, on
                 onBlur={(e) => finish(c, e.currentTarget.value, false)}
               />
             ) : (
-              <button type="button" className="conversation-item-select" onClick={() => onSelect(c.id)}>
+              <button
+                type="button"
+                className="conversation-item-select"
+                // C9: a coluna corta o título (reticência de CSS); o tooltip mostra
+                // o nome inteiro, que o nome acessível (o conteúdo) já carrega.
+                title={c.title || t.backlogChat.untitledConversation}
+                onClick={() => onSelect(c.id)}
+              >
                 <span className="conversation-item-title">{c.title || t.backlogChat.untitledConversation}</span>
                 {/* ponytail: sem tick — aba ociosa mostra a idade do último render; um intervalo de 60 s resolve se incomodar. */}
                 <span className="conversation-item-age">{t.notif.age(ageMinutes(c.updatedAt))}</span>

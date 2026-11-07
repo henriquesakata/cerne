@@ -185,6 +185,16 @@ describe('ConversationList — renomear (F-0310)', () => {
     expect(p.onRename).not.toHaveBeenCalled()
   })
 
+  // C9: a coluna corta o título com reticência de CSS; o nome inteiro fica no
+  // tooltip e no nome acessível da linha.
+  it('C9: título cortado pela coluna expõe o nome inteiro (tooltip e nome acessível)', () => {
+    const full = 'Exportar relatórios detalhados em PDF para a auditoria anual'
+    render(<ConversationList conversations={[conv('a', full, 1000)]} activeId="a" onSelect={vi.fn()} onNew={vi.fn()} onDelete={vi.fn()} onRename={vi.fn()} />)
+    const row = screen.getByRole('button', { name: new RegExp(`^${full}`) })
+    expect(row).toHaveAttribute('title', full)
+    expect(row).toHaveAccessibleName(expect.stringContaining(full))
+  })
+
   it('critério 20: rótulo acessível nos dois idiomas, sem disparar seleção nem exclusão', () => {
     const p = setup()
     expect(renameButton()).toHaveAccessibleName('Renomear "Conversa A"')
