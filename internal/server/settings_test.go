@@ -3,15 +3,21 @@ package server
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // settingsBackend is a single-project server whose .cernerc carries extra and
@@ -407,5 +413,193 @@ func TestSettingsPutStringValue(t *testing.T) {
 	}
 	if rec := doJSON(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
 		t.Fatalf("string under a bool key: status %d", rec.Code)
+	}
+}
+
+// projectNameUI is a cerne ui over one fresh backend (pid proj-a) with an
+// open SSE stream whose connect frame was already consumed.
+func projectNameUI(t *testing.T) (ui http.Handler, url string, events <-chan string, repoA, projA string) {
+	t.Helper()
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	repoA, projA, _ = newGitBackendNoClean(t)
+	resolve := func(dir string) (string, string, string, string, error) {
+		if dir == "A" {
+			return repoA, projA, "proj-a", "Projeto A", nil
+		}
+		return "", "", "", "", fmt.Errorf("dir desconhecido: %s", dir)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ui, err := NewUIMulti(ctx, resolve, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	srv := httptest.NewServer(ui)
+	t.Cleanup(srv.Close)
+
+	sctx, scancel := context.WithCancel(context.Background())
+	t.Cleanup(scancel)
+	req, _ := http.NewRequestWithContext(sctx, http.MethodGet, srv.URL+"/api/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/stream: %v", err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	ch := make(chan string, 8)
+	go func() {
+		br := bufio.NewReader(resp.Body)
+		for {
+			d, err := readSSEData(br)
+			if err != nil {
+				return
+			}
+			ch <- d
+		}
+	}()
+	if got := waitEvent(t, ch); got != "" {
+		t.Fatalf("connect frame data = %q, want empty (projects event)", got)
+	}
+	return ui, srv.URL, ch, repoA, projA
+}
+
+// TestProjectNamePutAnnouncesProjects pins F-0331 crit. 1 and 2: a rename from
+// the local ui answers the stored name and announces a projects refresh, after
+// which /api/projects (the selector) and /state (Kanban, Mindmap) carry it.
+func TestProjectNamePutAnnouncesProjects(t *testing.T) {
+	ui, url, events, _, _ := projectNameUI(t)
+
+	var got struct {
+		Name string `json:"name"`
+	}
+	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/project/name", `{"name":"  Núcleo  "}`, &got); rec.Code != http.StatusOK || got.Name != "Núcleo" {
+		t.Fatalf("PUT = %d %s, want 200 {name: Núcleo}", rec.Code, rec.Body.String())
+	}
+	// The commit advances HEAD, so a change frame (non-empty data) may come
+	// first: skip to the projects event (empty data).
+	for d := waitEvent(t, events); d != ""; d = waitEvent(t, events) {
+	}
+
+	var list projectsList
+	getJSON(t, url+"/api/projects", &list)
+	if list.Projects[0].Name != "Núcleo" {
+		t.Errorf("/api/projects name = %q, want Núcleo", list.Projects[0].Name)
+	}
+	var state struct {
+		Project struct {
+			Name string `json:"name"`
+		} `json:"project"`
+	}
+	getJSON(t, url+"/api/projects/proj-a/state", &state)
+	if state.Project.Name != "Núcleo" {
+		t.Errorf("/state project.name = %q, want Núcleo", state.Project.Name)
+	}
+}
+
+// TestProjectNamePutFailureAnnouncesProjects pins critic C3: every outcome
+// announces a projects refresh. Here the push lands and the docs.lock tail
+// then fails (500): without the event, every other tab keeps the old name.
+func TestProjectNamePutFailureAnnouncesProjects(t *testing.T) {
+	ui, url, events, _, projA := projectNameUI(t)
+	if err := os.WriteFile(filepath.Join(projA, "docs.lock"), []byte("nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/project/name", `{"name":"Parcial"}`, &body); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("PUT = %d %s, want 500 from the snapshot tail", rec.Code, rec.Body.String())
+	}
+	for d := waitEvent(t, events); d != ""; d = waitEvent(t, events) {
+	}
+	var list projectsList
+	getJSON(t, url+"/api/projects", &list)
+	if list.Projects[0].Name != "Parcial" {
+		t.Errorf("/api/projects name = %q, want the landed Parcial", list.Projects[0].Name)
+	}
+}
+
+// TestProjectNamePutRefusesInvalid pins F-0331 crit. 4 over HTTP: each broken
+// rule is a 400 naming it, and nothing reaches the backend.
+func TestProjectNamePutRefusesInvalid(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	head0, _ := gitback.HeadSHA(origin)
+	for _, tc := range []struct{ in, want string }{
+		{"", "empty"},
+		{"   ", "empty"},
+		{strings.Repeat("é", 65), "64"},
+		{"a\nb", "control"},
+		{"a\tb", "control"},
+	} {
+		body, _ := json.Marshal(map[string]string{"name": tc.in})
+		var got struct {
+			Error string `json:"error"`
+		}
+		if rec := doJSON(t, h, http.MethodPut, "/api/project/name", string(body), &got); rec.Code != http.StatusBadRequest || !strings.Contains(got.Error, tc.want) {
+			t.Errorf("PUT %q = %d %q, want 400 mentioning %q", tc.in, rec.Code, got.Error, tc.want)
+		}
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("a refused rename reached origin: %s -> %s", head0, h)
+	}
+}
+
+// TestProjectNamePutRefusesCrossOrigin pins F-0331 crit. 9: the same
+// sameOriginJSON guard as the other UI JSON writes.
+func TestProjectNamePutRefusesCrossOrigin(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	head0, _ := gitback.HeadSHA(origin)
+	for _, hdr := range []map[string]string{
+		{"Origin": "https://evil.example", "Content-Type": "application/json"},
+		{"Content-Type": "text/plain"},
+	} {
+		req := httptest.NewRequest(http.MethodPut, "/api/project/name", strings.NewReader(`{"name":"Plantado"}`))
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("PUT %v = %d, want 403", hdr, rec.Code)
+		}
+	}
+	if p, _ := store.LoadProject(repoDir); p.Name != "Projeto Demo" {
+		t.Fatalf("a refused request renamed the project to %q", p.Name)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("a refused request reached origin: %s -> %s", head0, h)
+	}
+}
+
+// TestProjectNameRouteLocalOnly pins F-0331 crit. 9: the rename lives on the
+// local `cerne ui`, never on the remote `cerne serve`.
+func TestProjectNameRouteLocalOnly(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	serve := NewMultiProject(mpSecret)
+	doMP(t, serve, http.MethodPut, "/api/projects/proj-a", regBody(t, seedBareBackend(t, "Projeto A")), mpSecret, nil)
+	if rec := doMP(t, serve, http.MethodPut, "/api/projects/proj-a/project/name", `{"name":"X"}`, mpSecret, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("serve PUT /project/name: status %d, want 404", rec.Code)
+	}
+}
+
+// TestProjectNameStatus pins F-0331 crit. 7 (HTTP side): a busy lock, a
+// concurrent change or lost push races (critic C10) are a retryable 409, a
+// broken rule a 400, the rest a 500.
+// The lock timeout is a 150 s const, so the mapping is pinned on the errors.
+func TestProjectNameStatus(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{fmt.Errorf("%w: x", app.ErrInvalidProjectName), http.StatusBadRequest},
+		{fmt.Errorf("%w: x", gitback.ErrLockTimeout), http.StatusConflict},
+		{&app.ConflictError{Conflicts: []app.Conflict{{Path: "project.json"}}}, http.StatusConflict},
+		{fmt.Errorf("%w: 6 attempts", app.ErrTooConcurrent), http.StatusConflict},
+		{errors.New("push rejected"), http.StatusInternalServerError},
+	} {
+		if got := projectNameStatus(tc.err); got != tc.want {
+			t.Errorf("projectNameStatus(%v) = %d, want %d", tc.err, got, tc.want)
+		}
 	}
 }

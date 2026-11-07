@@ -168,6 +168,10 @@ func dataRoutes() []dataRoute {
 		{"DELETE", "/settings/{id}", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
 			handleSettingsDelete(w, r, projDir, r.PathValue("id"))
 		}},
+		// Project rename (F-0331): local ui only, like /settings.
+		{"PUT", "/project/name", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleProjectNamePut(w, r, repoDir, projDir)
+		}},
 		{"GET", "/wiki", true, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
 			handleWikiIndex(w, repoDir, projDir)
 		}},

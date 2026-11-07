@@ -5,13 +5,55 @@ import (
 	"errors"
 	"net/http"
 
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/project"
 )
 
-// settingsBroadcast announces a landed settings write (F-0315): the tab gates
-// ride GET /api/projects, so a write changes that payload. The `cerne ui`
-// server injects the SSE hub's broadcast, everywhere else no-op.
+// settingsBroadcast announces a landed settings write (F-0315) or project
+// rename (F-0331): the tab gates and the project name ride GET /api/projects,
+// so a write changes that payload. The `cerne ui` server injects the SSE hub's
+// broadcast, everywhere else no-op.
 var settingsBroadcast = func() {}
+
+// handleProjectNamePut renames the project from the local ui (F-0331): writes
+// {"name"} to the backend's project.json and answers {"name"} as stored.
+func handleProjectNamePut(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	name, err := app.RenameProject(repoDir, projDir, req.Name)
+	// Every outcome re-reads the list (critic C3): a rename can land and still
+	// fail its tail (docs.lock), and a tab must not keep a name the backend
+	// does not have. The re-read is idempotent.
+	settingsBroadcast()
+	if err != nil {
+		writeJSON(w, projectNameStatus(err), errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"name": name})
+}
+
+// projectNameStatus maps a refused rename: a broken rule is the caller's 400; a
+// busy lock, a concurrent change or lost push races are a retryable 409; the
+// rest is a 500.
+func projectNameStatus(err error) int {
+	switch {
+	case errors.Is(err, app.ErrInvalidProjectName):
+		return http.StatusBadRequest
+	case errors.Is(err, gitback.ErrLockTimeout), errors.Is(err, app.ErrConflict), errors.Is(err, app.ErrTooConcurrent):
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
+}
 
 // handleSettingsGet serves the settings registry resolved for projDir
 // (F-0314): every key's declaration, effective value and winning scope, plus

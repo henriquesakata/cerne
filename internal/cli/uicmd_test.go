@@ -1,14 +1,21 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
+
+	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 func TestUICmdPullIntervalFlag(t *testing.T) {
@@ -143,5 +150,53 @@ func TestRegisterAndDeregisterProject(t *testing.T) {
 	}
 	if err := deregisterProject(srv.URL, pid); err != nil {
 		t.Fatalf("deregisterProject: %v", err)
+	}
+}
+
+// TestRenameProjectKeepsIdentity pins F-0331 crit. 6: a rename changes only the
+// display name — the cache path, the project_id (the UI routes' pid), the
+// .cernerc and the entity ids are the same before and after.
+func TestRenameProjectKeepsIdentity(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newFeature(t, projDir, "Parcelamento", 1)
+
+	ids := func(repoDir string) []string {
+		t.Helper()
+		fs, err := store.LoadAllFeatures(repoDir)
+		if err != nil {
+			t.Fatalf("LoadAllFeatures: %v", err)
+		}
+		var out []string
+		for _, f := range fs {
+			out = append(out, f.ID)
+		}
+		return out
+	}
+	repo0, _, pid0, name0, err := uiResolver(projDir)
+	if err != nil || name0 != "demo" {
+		t.Fatalf("uiResolver before = name %q, %v; want demo", name0, err)
+	}
+	rc0, err := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+	if err != nil {
+		t.Fatalf("read .cernerc: %v", err)
+	}
+	ids0 := ids(repo0)
+
+	if _, err := app.RenameProject(repo0, projDir, "Cerne Demo"); err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+
+	repo1, _, pid1, name1, err := uiResolver(projDir)
+	if err != nil {
+		t.Fatalf("uiResolver after: %v", err)
+	}
+	if repo1 != repo0 || pid1 != pid0 || name1 != "Cerne Demo" {
+		t.Fatalf("after rename = (%s, %s, %q), want (%s, %s, %q)", repo1, pid1, name1, repo0, pid0, "Cerne Demo")
+	}
+	if rc1, _ := os.ReadFile(filepath.Join(projDir, ".cernerc")); !bytes.Equal(rc0, rc1) {
+		t.Fatalf(".cernerc changed:\n%s\n->\n%s", rc0, rc1)
+	}
+	if ids1 := ids(repo1); !reflect.DeepEqual(ids0, ids1) {
+		t.Fatalf("feature ids %v -> %v", ids0, ids1)
 	}
 }

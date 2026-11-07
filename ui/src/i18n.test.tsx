@@ -80,3 +80,35 @@ describe('t.notif.age (F-0310)', () => {
     expect(age('en')(min)).toBe('—')
   })
 })
+
+// F-0331 crit. 10: o bloco "Nome do projeto" existe nas duas línguas, com
+// textos distintos entre elas, e o rótulo diz projeto — não o "Channel name".
+describe('t.settings.projectName (F-0331 crit. 10)', () => {
+  const messages = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.settings
+  }
+  // leaves achata as folhas em caminho → texto; uma função é chamada com 'x'.
+  const leaves = (o: object, at = ''): Record<string, string> =>
+    Object.fromEntries(
+      Object.entries(o).flatMap(([k, v]) =>
+        typeof v === 'object' && v !== null
+          ? Object.entries(leaves(v, `${at}${k}.`))
+          : [[`${at}${k}`, typeof v === 'function' ? String(v('x')) : String(v)]],
+      ),
+    )
+
+  it('mesmas chaves, textos diferentes, "projeto"/"project" e distinto de Channel name', () => {
+    const pt = messages('pt-BR')
+    const en = messages('en')
+    const lp = leaves(pt.projectName)
+    const le = leaves(en.projectName)
+    expect(Object.keys(lp).sort()).toEqual(Object.keys(le).sort())
+    for (const k of Object.keys(lp)) expect(lp[k], k).not.toBe(le[k])
+    expect(pt.projectName.title.toLowerCase()).toContain('projeto')
+    expect(en.projectName.title.toLowerCase()).toContain('project')
+    expect(pt.projectName.title).not.toBe(pt.text['Channel name'])
+    expect(en.projectName.title).not.toBe('Channel name')
+  })
+})

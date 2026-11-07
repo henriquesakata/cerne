@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -670,5 +671,24 @@ func TestPullAndErrataMessagesNameRealPaths(t *testing.T) {
 	}
 	if want := "erratum appended to F-0001 — already synced. Read it with 'cerne show F-0001'."; !strings.Contains(out, want) || strings.Contains(out, "cerne pull") {
 		t.Fatalf("errata confirmation = %q, want %q and no 'cerne pull'", out, want)
+	}
+}
+
+// TestPullContextUsesRenamedProject pins F-0331 crit. 8: the next pull titles
+// CONTEXT.md with the renamed project.
+func TestPullContextUsesRenamedProject(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := app.RenameProject(repoDir, projDir, "Cerne Demo"); err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(filepath.Join(projDir, ".docs", "CONTEXT.md"))
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+	if first, _, _ := strings.Cut(string(data), "\n"); first != "# Cerne Demo — current state" {
+		t.Fatalf("CONTEXT.md first line = %q", first)
 	}
 }

@@ -117,6 +117,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         setLastChange((c) => ({ pid, seq: c.seq + 1 }))
         if (pid === activeRef.current) setVersion((v) => v + 1)
         else setChanged((s) => new Set(s).add(pid))
+        // A backend advance may carry a rename pulled from another clone
+        // (F-0331 critic C1): the pull tick only sends "change", so re-read
+        // the list too, or the selector and the name field go stale.
+        void reload()
       },
       onProjects: () => void reload(),
       onModels: setModelsChange,

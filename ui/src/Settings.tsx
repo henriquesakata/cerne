@@ -1,8 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import {
   fetchSettings,
   HTTPError,
   putSetting,
+  renameProject,
   unsetSetting,
   type ResolvedSetting,
   type SettingScope,
@@ -13,6 +14,7 @@ import { useProjects } from './live'
 import { useT, type Messages } from './i18n'
 import { norm } from './Palette'
 import { FixBlock } from './Harness'
+import { checkProjectName } from './projectName'
 
 // Settings (F-0315): the active project's settings, derived from the registry
 // F-0314 serves. The screen knows no key: title, description, type and scopes
@@ -146,92 +148,207 @@ export default function Settings() {
   }
 
   const view = written && written.base === load.data ? written.view : load.data
-  if (!view) return <LoadPending load={load} message={ts.loadError} />
+  const name = projects.find((p) => p.pid === activePid)?.name ?? activePid
 
   // Registry texts come in English; the catalog is keyed by the source text.
   const tx = (src: string) => ts.text[src] ?? src
   const q = norm(query.trim())
-  const shown = view.settings.filter(
+  const shown = (view?.settings ?? []).filter(
     (s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q),
   )
-  const name = projects.find((p) => p.pid === activePid)?.name ?? activePid
 
+  // The name block does not hang on the settings registry (critic C13): it
+  // shows while that load is pending or failed, at the same place in the tree,
+  // so what the user typed survives the load landing.
   return (
     <main className="page settings-page">
-      <LoadNotice load={load} />
+      {view && <LoadNotice load={load} />}
       <h1>{ts.title}</h1>
       <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
-      <div className="settings-scope">
-        <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
-          {ORDER.map((sc) => (
-            <button
-              key={sc}
-              type="button"
-              className={sc === scope ? 'lang-option active' : 'lang-option'}
-              aria-pressed={sc === scope}
-              title={sc === 'host' ? ts.hostGlobalTitle : undefined}
-              onClick={() => setScope(sc)}
-            >
-              {ts.scopes[sc]}
-              {/* The space keeps the accessible name "Host global". */}
-              {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
-            </button>
-          ))}
-        </span>
-        <p id={hintId} className="settings-hint">
-          {ts.scopeHint[scope]}
-        </p>
-      </div>
-      {/* The escape to the raw file (R-0042): where the selected scope lives,
-          for whoever would rather edit it by hand. */}
-      {view.files[scope] && (
-        <div className="settings-file">
-          <span>{ts.file}</span>
-          <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
-        </div>
-      )}
-      {(view.errors ?? []).map((e) => (
-        <Notice
-          key={`${e.scope}:${e.file}`}
-          message={ts.fileError(e.file, e.error)}
-          onRetry={load.retry}
-          busy={load.retrying}
-        />
-      ))}
-      <input
-        type="search"
-        className="settings-search"
-        aria-label={ts.search}
-        placeholder={ts.search}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <p className="counts" aria-live="polite">
-        {ts.count(shown.length, view.settings.length)}
-      </p>
-      {shown.length === 0 ? (
-        <p className="settings-empty">{ts.noMatch(query.trim())}</p>
-      ) : (
-        <ul className="settings-list">
-          {shown.map((s) => (
-            <SettingRow
-              key={s.id}
-              s={s}
-              scope={scope}
-              tx={tx}
-              files={view.files}
-              busy={busy.has(s.id)}
-              landed={landed[s.id] ?? 0}
-              failures={failures}
-              onWrite={(ws, run) => write(s.id, ws, run)}
-              onScope={(to) => switchScope(s.id, to)}
+      <ProjectName key={activePid} name={name} />
+      {view ? (
+        <>
+          <div className="settings-scope">
+            <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
+              {ORDER.map((sc) => (
+                <button
+                  key={sc}
+                  type="button"
+                  className={sc === scope ? 'lang-option active' : 'lang-option'}
+                  aria-pressed={sc === scope}
+                  title={sc === 'host' ? ts.hostGlobalTitle : undefined}
+                  onClick={() => setScope(sc)}
+                >
+                  {ts.scopes[sc]}
+                  {/* The space keeps the accessible name "Host global". */}
+                  {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
+                </button>
+              ))}
+            </span>
+            <p id={hintId} className="settings-hint">
+              {ts.scopeHint[scope]}
+            </p>
+          </div>
+          {/* The escape to the raw file (R-0042): where the selected scope lives,
+              for whoever would rather edit it by hand. */}
+          {view.files[scope] && (
+            <div className="settings-file">
+              <span>{ts.file}</span>
+              <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
+            </div>
+          )}
+          {(view.errors ?? []).map((e) => (
+            <Notice
+              key={`${e.scope}:${e.file}`}
+              message={ts.fileError(e.file, e.error)}
+              onRetry={load.retry}
+              busy={load.retrying}
             />
           ))}
-        </ul>
+          <input
+            type="search"
+            className="settings-search"
+            aria-label={ts.search}
+            placeholder={ts.search}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <p className="counts" aria-live="polite">
+            {ts.count(shown.length, view.settings.length)}
+          </p>
+          {shown.length === 0 ? (
+            <p className="settings-empty">{ts.noMatch(query.trim())}</p>
+          ) : (
+            <ul className="settings-list">
+              {shown.map((s) => (
+                <SettingRow
+                  key={s.id}
+                  s={s}
+                  scope={scope}
+                  tx={tx}
+                  files={view.files}
+                  busy={busy.has(s.id)}
+                  landed={landed[s.id] ?? 0}
+                  failures={failures}
+                  onWrite={(ws, run) => write(s.id, ws, run)}
+                  onScope={(to) => switchScope(s.id, to)}
+                />
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <LoadPending load={load} message={ts.loadError} />
       )}
     </main>
+  )
+}
+
+// focusIfLost focuses el only when the focus fell to the document.
+function focusIfLost(el: HTMLElement | null) {
+  const now = document.activeElement
+  if (el && (now === null || now === document.body)) el.focus()
+}
+
+// ProjectName renames the project (F-0331): the backend's project.json, shared
+// by every clone — not a scoped setting. The input is uncontrolled and keyed
+// by the backend's name, so it remounts only when the re-read project list
+// brings another name: a failed write keeps what the user typed.
+function ProjectName({ name }: { name: string }) {
+  const { t } = useT()
+  const tn = t.settings.projectName
+  const uid = useId()
+  const [titleId, hintId, errorId] = [`${uid}-title`, `${uid}-hint`, `${uid}-error`]
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const input = useRef<HTMLInputElement | null>(null)
+  const shown = useRef(name)
+  shown.current = name
+  // The remount that shows a saved name drops the focus to <body>: hand it
+  // back to the input (F-0302, critic C5), never stealing it from elsewhere.
+  // Stable, so React calls it on a real mount only, not on every render.
+  const refocus = useRef(false)
+  const attach = useCallback((el: HTMLInputElement | null) => {
+    input.current = el
+    if (el && refocus.current) {
+      refocus.current = false
+      focusIfLost(el)
+    }
+  }, [])
+  // Busy is aria-disabled, never disabled (F-0302).
+  const lock = saving || undefined
+  return (
+    <section aria-labelledby={titleId}>
+      <h2 id={titleId} className="settings-title">
+        {tn.title}
+      </h2>
+      <form
+        className="settings-string"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (saving) return
+          setSaved(false)
+          const { name: next, rule } = checkProjectName(String(new FormData(e.currentTarget).get('name') ?? ''))
+          if (rule) {
+            setError(tn.rules[rule])
+            return
+          }
+          setSaving(true)
+          setError(null)
+          renameProject(next).then(
+            (stored) => {
+              setSaving(false)
+              setSaved(true)
+              // The re-read list may already show it (the server announces
+              // before it answers): the remount happened, refocus now.
+              if (stored === shown.current) focusIfLost(input.current)
+              else refocus.current = true
+            },
+            (err: unknown) => {
+              setSaving(false)
+              // Only the first line (critic C9): a failed push carries git's
+              // multi-line stderr, with local paths.
+              const message = (err instanceof Error ? err.message : String(err)).split('\n')[0]
+              setError(err instanceof HTTPError && err.status === 409 ? tn.busy : tn.failed(message))
+            },
+          )
+        }}
+      >
+        <input
+          key={name}
+          ref={attach}
+          name="name"
+          type="text"
+          className="settings-text"
+          defaultValue={name}
+          aria-labelledby={titleId}
+          aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+          aria-invalid={error ? true : undefined}
+          aria-disabled={lock}
+          // Typing during the write would vanish in the success remount (critic C6).
+          readOnly={saving}
+        />
+        <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
+          {saving ? tn.saving : t.common.save}
+        </button>
+      </form>
+      <p id={hintId} className="settings-hint">
+        {tn.hint}
+      </p>
+      {saved && (
+        <p role="status" className="settings-hint">
+          {tn.saved}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} role="alert" className="form-error">
+          {error}
+        </p>
+      )}
+    </section>
   )
 }
 

@@ -12,12 +12,14 @@ import { HTTPError, type ResolvedSetting, type SettingScope, type SettingsView }
 const fetchSettings = vi.fn<() => Promise<SettingsView>>()
 const putSetting = vi.fn<(id: string, scope: SettingScope, value: unknown) => Promise<SettingsView>>()
 const unsetSetting = vi.fn<(id: string, scope: SettingScope) => Promise<SettingsView>>()
+const renameProject = vi.fn<(name: string) => Promise<string>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchSettings: () => fetchSettings(),
   putSetting: (id: string, scope: SettingScope, value: unknown) => putSetting(id, scope, value),
   unsetSetting: (id: string, scope: SettingScope) => unsetSetting(id, scope),
+  renameProject: (name: string) => renameProject(name),
 }))
 
 let liveVersion = 0
@@ -107,6 +109,7 @@ beforeEach(() => {
   fetchSettings.mockReset()
   putSetting.mockReset()
   unsetSetting.mockReset()
+  renameProject.mockReset()
   fetchSettings.mockResolvedValue(fixture())
   putSetting.mockResolvedValue(fixture())
   unsetSetting.mockResolvedValue(fixture())
@@ -697,5 +700,152 @@ describe('Settings — cópia que falha avisa e seleciona o caminho (F-0315, cr�
     fireEvent.click(within(top).getByRole('button', { name: 'Copiar bloco de código' }))
     expect(await within(top).findByText('Não foi possível copiar — selecione o caminho')).toBeInTheDocument()
     expect(window.getSelection()?.toString()).toBe('/repo/.cernerc')
+  })
+})
+
+describe('Settings — nome do projeto (F-0331)', () => {
+  const region = async () => {
+    render(<Settings />)
+    return screen.findByRole('region', { name: 'Nome do projeto' })
+  }
+  const submit = (r: HTMLElement, value: string) => {
+    fireEvent.change(within(r).getByRole('textbox', { name: 'Nome do projeto' }), { target: { value } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+  }
+
+  it('mostra o nome atual, o destino e grava o nome sem os espaços das pontas', async () => {
+    renameProject.mockResolvedValue('Núcleo')
+    const r = await region()
+    expect(within(r).getByRole('textbox', { name: 'Nome do projeto' })).toHaveValue('Projeto A')
+    expect(within(r).getByText('Grava no backend do projeto: vale para todo clone.')).toBeInTheDocument()
+    submit(r, '  Núcleo ')
+    await waitFor(() => expect(renameProject).toHaveBeenCalledWith('Núcleo'))
+  })
+
+  it.each([
+    ['   ', 'O nome do projeto não pode ficar vazio.'],
+    ['é'.repeat(65), 'O nome do projeto tem no máximo 64 caracteres.'],
+    ['a\tb', 'O nome do projeto não pode ter quebra de linha nem caractere de controle.'],
+  ])('crit. 4: %j é recusado na tela, com a regra, sem pedido', async (value, msg) => {
+    const r = await region()
+    submit(r, value)
+    expect(within(r).getByRole('alert')).toHaveTextContent(msg)
+    expect(renameProject).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [new HTTPError('could not acquire backend lock: /repo/.cerne.lock', 409), 'O backend está ocupado ou mudou por outro caminho. Tente de novo.'],
+    [new HTTPError('push rejected', 500), 'Não foi possível gravar o nome: push rejected'],
+  ])('crit. 7: a falha %s fica junto do campo, mantém o texto e o nome do backend', async (err, msg) => {
+    renameProject.mockRejectedValueOnce(err)
+    const r = await region()
+    submit(r, 'Novo nome')
+    expect(await within(r).findByRole('alert')).toHaveTextContent(msg)
+    expect(within(r).getByRole('textbox', { name: 'Nome do projeto' })).toHaveValue('Novo nome')
+    expect(document.querySelector('.settings-project strong')).toHaveTextContent('Projeto A')
+
+    renameProject.mockResolvedValueOnce('Novo nome')
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(renameProject).toHaveBeenCalledTimes(2))
+    expect(renameProject).toHaveBeenLastCalledWith('Novo nome')
+  })
+
+  it('crítica C9: da mensagem do servidor (stderr do git, multilinha) o alerta mostra só a primeira linha', async () => {
+    renameProject.mockRejectedValueOnce(
+      new HTTPError(
+        "git push --porcelain origin refs/heads/main: exit status 1\nremote: denied\nerror: failed to push some refs to '/private/tmp/x/backend.git'",
+        500,
+      ),
+    )
+    const r = await region()
+    submit(r, 'Novo nome')
+    const alert = await within(r).findByRole('alert')
+    expect(alert).toHaveTextContent(
+      /^Não foi possível gravar o nome: git push --porcelain origin refs\/heads\/main: exit status 1$/,
+    )
+  })
+
+  it('crit. 7: durante a escrita o botão diz Salvando… e um segundo clique não grava de novo', async () => {
+    const write = deferred<string>()
+    renameProject.mockReturnValue(write.promise)
+    const r = await region()
+    submit(r, 'Novo nome')
+    const btn = await within(r).findByRole('button', { name: 'Salvando…' })
+    expect(btn).toHaveAttribute('aria-disabled', 'true')
+    expect(btn).not.toBeDisabled()
+    fireEvent.click(btn)
+    expect(renameProject).toHaveBeenCalledTimes(1)
+    // Crítica C6: o que se digitasse agora sumiria na remontagem do sucesso.
+    const input = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(input).toHaveAttribute('readonly')
+    write.resolve('Novo nome')
+    expect(await within(r).findByRole('button', { name: 'Salvar' })).not.toHaveAttribute('aria-disabled')
+    expect(input).not.toHaveAttribute('readonly')
+  })
+
+  // Crítica C5: a lista relida remonta o campo com o nome novo; o foco não pode
+  // cair no <body>, e o sucesso precisa ser anunciado. As duas ordens são
+  // reais: o servidor emite "projects" antes de responder ao PUT.
+  it.each([
+    ['a resposta chega antes da lista relida', false],
+    ['a lista relida chega antes da resposta', true],
+  ])('crítica C5: %s — o foco volta ao campo remontado e o sucesso é anunciado', async (_, listFirst) => {
+    const write = deferred<string>()
+    renameProject.mockReturnValue(write.promise)
+    const { rerender } = render(<Settings />)
+    const r = await screen.findByRole('region', { name: 'Nome do projeto' })
+    const input = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Núcleo' } })
+    fireEvent.submit(input.closest('form')!)
+    const reread = () => {
+      mockProjects = [{ pid: 'p1', name: 'Núcleo' }]
+      rerender(<Settings />)
+    }
+    if (listFirst) reread()
+    write.resolve('Núcleo')
+    expect(await within(r).findByRole('status')).toHaveTextContent('Nome gravado.')
+    if (!listFirst) reread()
+    const fresh = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(fresh).not.toBe(input)
+    expect(fresh).toHaveValue('Núcleo')
+    await waitFor(() => expect(fresh).toHaveFocus())
+  })
+
+  it('crítica C5: a recusa fica ligada ao campo (aria-invalid e aria-describedby)', async () => {
+    const r = await region()
+    const input = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(input).not.toHaveAttribute('aria-invalid')
+    submit(r, '   ')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(input).toHaveAccessibleDescription(expect.stringContaining('O nome do projeto não pode ficar vazio.'))
+    expect(within(r).queryByRole('status')).toBeNull()
+  })
+
+  it('crítica C13: o bloco do nome não depende da carga dos settings, e o texto digitado sobrevive a ela', async () => {
+    fetchSettings.mockRejectedValueOnce(new Error('boom'))
+    render(<Settings />)
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Erro ao carregar as configurações: boom')
+    const field = () =>
+      within(screen.getByRole('region', { name: 'Nome do projeto' })).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(field()).toHaveValue('Projeto A')
+    fireEvent.change(field(), { target: { value: 'Digitado' } })
+    fireEvent.click(within(status).getByRole('button', { name: 'Tentar de novo' }))
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(field()).toHaveValue('Digitado')
+  })
+
+  it('crit. 10: com o I18nProvider (jsdom = en), rótulo, destino e regra saem em inglês', async () => {
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('region', { name: 'Project name' })
+    expect(within(r).getByText("Saved to the project's backend: applies to every clone.")).toBeInTheDocument()
+    fireEvent.change(within(r).getByRole('textbox', { name: 'Project name' }), { target: { value: ' ' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Save' }))
+    expect(within(r).getByRole('alert')).toHaveTextContent('The project name cannot be empty.')
   })
 })

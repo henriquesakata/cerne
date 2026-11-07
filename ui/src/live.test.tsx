@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, act, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, act, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { LiveProvider, useProjects } from './live'
-import { fetchProjects, subscribeLive } from './api'
+import { fetchProjects, HTTPError, renameProject, subscribeLive } from './api'
 import type { ProjectInfo } from './api'
 import Nav from './Nav'
+import Settings from './Settings'
 
 // F-0209: trocar de projeto pelo seletor sempre aterrissa no dashboard —
 // nenhuma rota de detalhe sobrevive à troca.
@@ -20,6 +21,8 @@ vi.mock('./api', async (importOriginal) => ({
   setApiProject: vi.fn(),
   subscribeLive: vi.fn(() => () => {}),
   fetchVersion: vi.fn(async () => ''),
+  fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
+  renameProject: vi.fn(),
 }))
 
 vi.mock('./NotificationBell', () => ({ default: () => null }))
@@ -231,5 +234,85 @@ describe('LiveProvider — releitura da lista que falha depois do boot (F-0315)'
     await act(async () => screen.getByRole('button', { name: /tentar de novo/i }).click())
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(screen.getByText('p1')).toBeInTheDocument()
+  })
+})
+
+// F-0331 crit. 2 e 7, elo UI: o rename faz o servidor emitir o evento
+// "projects" (elo servidor: TestProjectNamePutAnnouncesProjects); a aba relê
+// /api/projects e o seletor, o cabeçalho e o campo mostram o nome novo sem
+// reload. Na falha, nada muda fora do campo.
+describe('LiveProvider — nome do projeto ao vivo (F-0331)', () => {
+  const two = (p1: string) => async () => ({
+    projects: [
+      { pid: 'p1', name: p1 },
+      { pid: 'p2', name: 'P2' },
+    ],
+    default: 'p1',
+  })
+  let onProjects = () => {}
+  let onChange = (_pid: string) => {}
+  const mount = async () => {
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      onChange = h.onChange
+      return () => {}
+    })
+    vi.mocked(fetchProjects).mockImplementation(two('P1'))
+    vi.mocked(renameProject).mockReset()
+    render(
+      <LiveProvider>
+        <Nav hash="#/settings" />
+        <Settings />
+      </LiveProvider>,
+    )
+    const region = await screen.findByRole('region', { name: 'Nome do projeto' })
+    return { region, input: within(region).getByRole('textbox', { name: 'Nome do projeto' }) }
+  }
+
+  it('crit. 2: salvar e o evento projects trocam o nome no seletor, no cabeçalho e no campo', async () => {
+    const { region, input } = await mount()
+    const brand = screen.getByText('cerne')
+    vi.mocked(renameProject).mockResolvedValue('Núcleo')
+    fireEvent.change(input, { target: { value: '  Núcleo ' } })
+    fireEvent.click(within(region).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(renameProject).toHaveBeenCalledWith('Núcleo'))
+
+    vi.mocked(fetchProjects).mockImplementation(two('Núcleo'))
+    await act(async () => onProjects())
+    expect(await screen.findByRole('option', { name: 'Núcleo' })).toBeInTheDocument()
+    expect(document.querySelector('.settings-project strong')).toHaveTextContent('Núcleo')
+    expect(within(screen.getByRole('region', { name: 'Nome do projeto' })).getByRole('textbox')).toHaveValue('Núcleo')
+    // Mesma árvore: a nav não foi remontada (sem reload).
+    expect(screen.getByText('cerne')).toBe(brand)
+  })
+
+  // Crítica C1: o tick do pull só emite "change". Sem reler a lista nele, o
+  // campo ficava com o nome velho e um Salvar desfazia o rename do outro clone.
+  it('crítica C1: só um frame change (rename trazido por pull) troca o nome no seletor, no cabeçalho e no campo', async () => {
+    await mount()
+    vi.mocked(fetchProjects).mockImplementation(two('Renomeado Fora'))
+    await act(async () => onChange('p1'))
+    expect(await screen.findByRole('option', { name: 'Renomeado Fora' })).toBeInTheDocument()
+    expect(document.querySelector('.settings-project strong')).toHaveTextContent('Renomeado Fora')
+    expect(within(screen.getByRole('region', { name: 'Nome do projeto' })).getByRole('textbox')).toHaveValue(
+      'Renomeado Fora',
+    )
+  })
+
+  it('crit. 7: a recusa fica no campo, que mantém o texto, e o seletor mantém o nome do backend', async () => {
+    const { region, input } = await mount()
+    vi.mocked(renameProject).mockRejectedValue(new HTTPError('could not acquire backend lock', 409))
+    fireEvent.change(input, { target: { value: 'Núcleo' } })
+    fireEvent.click(within(region).getByRole('button', { name: 'Salvar' }))
+    expect(await within(region).findByRole('alert')).toHaveTextContent('O backend está ocupado')
+    await act(async () => onProjects())
+    expect(input).toHaveValue('Núcleo')
+    expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
+    expect(within(region).getByRole('alert')).toBeInTheDocument()
   })
 })
