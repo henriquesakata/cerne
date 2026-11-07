@@ -101,6 +101,19 @@ func TestFeatureSpecRefusals(t *testing.T) {
 		}
 	})
 
+	// F-0328 critic C5: only the frontmatter is no spec — refused by the core,
+	// past the CLI's raw-body check.
+	t.Run("frontmatter only", func(t *testing.T) {
+		pipeStdinBody(t, "---\ncerne_id: F-0001\n---\n")
+		_, err := execCerne(t, "feature", "spec", "F-0001", "--dir", projDir)
+		if !errors.Is(err, app.ErrEmptyBody) {
+			t.Fatalf("err = %v, want ErrEmptyBody", err)
+		}
+		if got, _ := os.ReadFile(app.FeatureDocPath(repoDir, "F-0001", "spec.md")); !strings.Contains(string(got), "## Problema") {
+			t.Fatalf("a frontmatter-only body must not write:\n%s", got)
+		}
+	})
+
 	t.Run("unknown id", func(t *testing.T) {
 		pipeStdinBody(t, specBody)
 		_, err := execCerne(t, "feature", "spec", "F-9999", "--dir", projDir)

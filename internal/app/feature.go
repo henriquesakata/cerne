@@ -792,6 +792,11 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 // or a block that never closes. The message says which (F-0328).
 var ErrBodyFrontmatter = errors.New("refused frontmatter")
 
+// ErrEmptyBody is returned by stampedDoc for a body with nothing but its
+// frontmatter (or nothing at all): it would store an empty document — wipe a
+// spec, or birth a feature with neither stub nor context (F-0328 critic C5).
+var ErrEmptyBody = errors.New("empty body")
+
 // frontmatterRefusal is one refusal's full text, matching ErrBodyFrontmatter
 // without prefixing it: the result's messages stay the amend's own words.
 type frontmatterRefusal string
@@ -847,6 +852,10 @@ func stampedDoc(id, doc, body string, fresh bool) (string, error) {
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	body = strings.TrimSpace(strings.TrimLeft(body, "\ufeff \t\r\n"))
 	inner, rest, opens, closed := leadingBlock(strings.Split(body, "\n"))
+	empty := fmt.Errorf("%w: the %s has no content besides its frontmatter", ErrEmptyBody, doc)
+	if !opens && body == "" {
+		return "", empty
+	}
 	if !opens {
 		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
 	}
@@ -881,6 +890,9 @@ func stampedDoc(id, doc, body string, fresh bool) (string, error) {
 			return "", err
 		}
 		rest = after
+	}
+	if len(rest) == 0 {
+		return "", empty
 	}
 	return "---\n" + strings.Join(kept, "\n") + "\n---\n\n" + strings.Join(rest, "\n") + "\n", nil
 }

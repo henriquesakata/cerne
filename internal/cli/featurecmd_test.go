@@ -279,6 +279,10 @@ func TestFeatureNewFileFrontmatter(t *testing.T) {
 		!strings.Contains(err.Error(), "without cerne_id") || strings.Contains(err.Error(), "cerne show") {
 		t.Fatalf("block without id: err = %v, want a refusal with no show hint", err)
 	}
+	mustWrite(t, specFile, "---\ncerne_id: F-0002\n---\n")
+	if _, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir); !errors.Is(err, app.ErrEmptyBody) {
+		t.Fatalf("frontmatter only: err = %v, want ErrEmptyBody (critic C5)", err)
+	}
 	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
 		t.Fatalf("features = %d, want 1 (a refused body must not mint)", len(features))
 	}

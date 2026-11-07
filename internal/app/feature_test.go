@@ -1163,3 +1163,32 @@ func TestUpdateCandidateSpecRefusals(t *testing.T) {
 		t.Fatalf("err = %v, want store.ErrNotFound", err)
 	}
 }
+
+// TestSpecBodyOnlyFrontmatterIsEmpty (F-0328 critic C5): a body that is only
+// its frontmatter is empty, refused by the core itself — the rewrite keeps the
+// spec it had, the creation mints nothing — whatever the caller checked.
+func TestSpecBodyOnlyFrontmatterIsEmpty(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil, "## Problema\n\nReal.", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
+	head0, _ := gitback.HeadSHA(origin)
+	for _, body := range []string{"", "\n  \n", "---\ncerne_id: F-0001\n---\n", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: F-0001\n---\n"} {
+		if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", body); !errors.Is(err, ErrEmptyBody) || err.Error() != "empty body: the spec has no content besides its frontmatter" {
+			t.Fatalf("rewrite %q: err = %v, want ErrEmptyBody", body, err)
+		}
+	}
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Outra", "", "", nil, nil, "---\ncerne_id: F-0002\n---\n", false, "", ""); !errors.Is(err, ErrEmptyBody) {
+		t.Fatalf("create: err = %v, want ErrEmptyBody", err)
+	}
+	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
+		t.Fatalf("spec.md changed on an empty body: %q", got)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1", len(features))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on an empty body: %s -> %s", head0, h)
+	}
+}
