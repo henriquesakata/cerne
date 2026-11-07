@@ -272,7 +272,7 @@ func TestChatUpdatesApprovedSpec(t *testing.T) {
 		t.Errorf("refine block does not warn that a new spec stales the approval:\n%s", block)
 	}
 
-	f, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão do chat.\n"+testBarTail)
+	f, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão do chat.\n"+testBarTail)
 	if err != nil {
 		t.Fatalf("chat write on approved: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestChatUpdatesApprovedSpec(t *testing.T) {
 	}
 
 	body := strings.TrimPrefix(approvedSpecA, "---\ncerne_id: F-0001\n---\n\n")
-	if f, err = UpdateCandidateSpec(repoDir, projDir, "F-0001", body); err != nil {
+	if f, _, err = UpdateCandidateSpec(repoDir, projDir, "F-0001", body); err != nil {
 		t.Fatalf("chat write back: %v", err)
 	}
 	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
@@ -304,7 +304,7 @@ func TestChatStillRefusesInDevelopment(t *testing.T) {
 	if _, err := BuildRefineBlock(repoDir, "F-0001"); !errors.Is(err, ErrNotCandidate) {
 		t.Fatalf("refine err = %v, want ErrNotCandidate", err)
 	}
-	_, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n")
+	_, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n")
 	if !errors.Is(err, ErrNotCandidate) || !strings.Contains(err.Error(), "cerne push") {
 		t.Fatalf("write err = %v, want ErrNotCandidate naming the push path", err)
 	}
@@ -382,7 +382,7 @@ func TestDoneFeatureKeepsErrataPath(t *testing.T) {
 	if !errors.Is(err, ErrAmendNotImplemented) || !strings.Contains(err.Error(), "cerne feature errata F-0001") {
 		t.Fatalf("amend on done err = %v, want ErrAmendNotImplemented naming the errata", err)
 	}
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nTarde.\n"); !errors.Is(err, ErrNotCandidate) || !strings.Contains(err.Error(), "cerne feature errata F-0001") {
+	if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nTarde.\n"); !errors.Is(err, ErrNotCandidate) || !strings.Contains(err.Error(), "cerne feature errata F-0001") {
 		t.Fatalf("spec verb on done err = %v, want ErrNotCandidate naming the errata", err)
 	}
 	if _, err := AddErrata(repoDir, projDir, "F-0001", "Correção depois do aceite.", "tester"); err != nil {

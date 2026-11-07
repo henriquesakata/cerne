@@ -547,6 +547,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const [messages, setMessages] = useState<ChatMsg[]>(conversation.messages)
   const [input, setInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // F-0328: aviso neutro (não erro) — a spec confirmada já era a gravada.
+  const [notice, setNotice] = useState<string | null>(null)
   const [failedMessages, setFailedMessages] = useState<ChatMsg[] | null>(null)
   const [needsProvider, setNeedsProvider] = useState(false)
   // F-0255: o rascunho não é estado próprio — as revisões saem do transcript
@@ -725,6 +727,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   // só o turno nascido do clique o carrega, e é ele que vira o confirm.
   const sendMessages = (next: ChatMsg[], confirmTurn?: number) => {
     setError(null)
+    setNotice(null)
     setFailedMessages(next)
     chatRequest.send(conversation.id, next, {
       model: model || undefined,
@@ -842,6 +845,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
   const confirmRegister = (proposal: ParsedProposal, linkTo = '') => {
     setRegistering(true)
     setError(null)
+    setNotice(null)
     setDupCandidates([])
     registerChatCandidate(
       proposal.title,
@@ -861,6 +865,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           // reescreveria a spec e venceria a aprovação (F-0318) num clique de
           // deduplicação. O chat só regrava aprovada numa conversa de refino.
           setDupCandidates((res.matches ?? []).filter((m) => m.state === 'candidate'))
+          return
+        }
+        // F-0328: a spec já era esta — nada gravado, nada registrado. A revisão
+        // está no backend, então o painel fecha; o aviso diz por quê.
+        if (res.unchanged) {
+          setNotice(t.backlogChat.specUnchanged)
+          setRegisteredRevisions(revisions.length)
           return
         }
         // F-0254: parent inválido não falha o registro — só avisa.
@@ -987,6 +998,11 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
           </p>
         )}
       </div>
+      {notice && (
+        <p className="status backlog-chat-notice" role="status">
+          {notice}
+        </p>
+      )}
       {error && (
         <p className="status error backlog-chat-error">
           {error}

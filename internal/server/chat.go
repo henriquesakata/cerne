@@ -367,7 +367,7 @@ func writeRefineError(w http.ResponseWriter, err error) bool {
 		return true
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
-	case errors.Is(err, app.ErrNotCandidate):
+	case errors.Is(err, app.ErrNotCandidate), errors.Is(err, app.ErrBodyFrontmatter), errors.Is(err, app.ErrEmptyBody):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -377,10 +377,12 @@ func writeRefineError(w http.ResponseWriter, err error) bool {
 
 // chatRegisterResponse is the 201 payload: the created feature, plus a warning
 // when something non-fatal was dropped on the way in (F-0254: an invalid
-// parent).
+// parent). Unchanged flags an update whose spec was already the stored one —
+// a success that wrote nothing, not a warning (F-0328).
 type chatRegisterResponse struct {
-	Feature store.Feature `json:"feature"`
-	Warning string        `json:"warning,omitempty"`
+	Feature   store.Feature `json:"feature"`
+	Warning   string        `json:"warning,omitempty"`
+	Unchanged bool          `json:"unchanged,omitempty"`
 }
 
 // dupMatch is one collision the duplicate guard refused on, as the UI needs
@@ -437,11 +439,11 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	// candidate. Same gate as the creation (an explicit click got here), same
 	// backend write path, but nothing is minted and no state moves.
 	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
-		f, err := app.UpdateCandidateSpec(repoDir, projDir, fid, req.SpecBody)
+		f, changed, err := app.UpdateCandidateSpec(repoDir, projDir, fid, req.SpecBody)
 		if !writeRefineError(w, err) {
 			return
 		}
-		writeJSON(w, http.StatusOK, chatRegisterResponse{Feature: f})
+		writeJSON(w, http.StatusOK, chatRegisterResponse{Feature: f, Unchanged: !changed})
 		return
 	}
 	capability := strings.TrimSpace(req.Capability)

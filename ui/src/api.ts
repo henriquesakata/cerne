@@ -960,7 +960,7 @@ export async function registerChatCandidate(
   capability = '',
   parent = '',
   featureId = '',
-): Promise<CreateOutcome & { warning?: string; matches?: DupMatch[] }> {
+): Promise<CreateOutcome & { warning?: string; unchanged?: boolean; matches?: DupMatch[] }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -984,8 +984,10 @@ export async function registerChatCandidate(
   }
   // F-0254: warning acompanha o 201 quando algo não-fatal foi descartado (um
   // parent inexistente ou fechado) — a candidata foi registrada mesmo assim.
-  const body = (await r.json()) as { feature: Feature; warning?: string }
-  return { ok: true, feature: body.feature, warning: body.warning }
+  // F-0328: unchanged marca a atualização cuja spec já era a gravada — nada
+  // foi escrito.
+  const body = (await r.json()) as { feature: Feature; warning?: string; unchanged?: boolean }
+  return { ok: true, feature: body.feature, warning: body.warning, unchanged: body.unchanged }
 }
 
 // registerChatNote (F-0249) grava a nota proposta pelo agente, só depois da

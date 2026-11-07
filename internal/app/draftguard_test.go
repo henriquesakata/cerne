@@ -59,7 +59,7 @@ func TestValidateDraftBody(t *testing.T) {
 func TestWriteStampedDraftRefusesPreamble(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "content", "features", "F-0287", "result.md")
 
-	err := WriteStampedDraft(path, "F-0287", preambleF0287)
+	err := WriteStampedDraft(path, "F-0287", "result", preambleF0287)
 	if !errors.Is(err, ErrNotADocument) {
 		t.Fatalf("WriteStampedDraft = %v, want errors.Is ErrNotADocument", err)
 	}
@@ -76,7 +76,7 @@ func TestWriteStampedDraftRefusesPreamble(t *testing.T) {
 func TestWriteStampedDraftStamps(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "content", "features", "F-0290", "spec.md")
 
-	if err := WriteStampedDraft(path, "F-0290", "\n\n"+draftSpec+"\n\n"); err != nil {
+	if err := WriteStampedDraft(path, "F-0290", "spec", "\n\n"+draftSpec+"\n\n"); err != nil {
 		t.Fatalf("WriteStampedDraft = %v, want nil", err)
 	}
 	data, err := os.ReadFile(path)
@@ -86,6 +86,28 @@ func TestWriteStampedDraftStamps(t *testing.T) {
 	want := "---\ncerne_id: F-0290\n---\n\n" + strings.TrimSpace(draftSpec) + "\n"
 	if string(data) != want {
 		t.Errorf("stamped draft =\n%q\nwant\n%q", data, want)
+	}
+}
+
+// TestWriteStampedDraftKeepsOneFrontmatter (F-0328 critic C8): the draft
+// prompt embeds the current document, frontmatter and all, so a model that
+// echoes the block gets one block stored, not cerne's stamp over its copy; a
+// block naming another document is refused and nothing is written.
+func TestWriteStampedDraftKeepsOneFrontmatter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "content", "features", "F-0290", "spec.md")
+	if err := WriteStampedDraft(path, "F-0290", "spec", "---\ncerne_id: F-0290\n---\n\n"+draftSpec); err != nil {
+		t.Fatalf("WriteStampedDraft = %v, want nil", err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "---\ncerne_id: F-0290\n---\n\n"+strings.TrimSpace(draftSpec)+"\n" {
+		t.Fatalf("echoed frontmatter stored as %q, want one block", data)
+	}
+	other := filepath.Join(t.TempDir(), "content", "features", "F-0291", "spec.md")
+	err := WriteStampedDraft(other, "F-0291", "spec", "---\ncerne_id: F-0007\n---\n\n"+draftSpec)
+	if !errors.Is(err, ErrBodyFrontmatter) || !strings.Contains(err.Error(), other) {
+		t.Fatalf("WriteStampedDraft = %v, want ErrBodyFrontmatter naming %s", err, other)
+	}
+	if _, statErr := os.Stat(other); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("os.Stat(%s) = %v, want ErrNotExist — the refused draft was written", other, statErr)
 	}
 }
 

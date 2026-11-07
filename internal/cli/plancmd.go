@@ -88,7 +88,7 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 		if _, err := app.CheckDocWritable(ctx.repoDir, id, "plan"); err != nil {
 			return "", err // closed while the provider was drafting
 		}
-		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "plan.md"), id, body); err != nil {
+		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "plan.md"), id, "plan", body); err != nil {
 			return "", err
 		}
 		return "cerne: draft plan " + id, nil

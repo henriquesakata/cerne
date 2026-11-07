@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -246,6 +247,82 @@ func TestFeatureNewTags(t *testing.T) {
 
 	if _, err := execCerne(t, "feature", "new", "Bad", "--context", "ctx de teste", "--facet", "bogus", "--dir", projDir); err == nil {
 		t.Fatalf("feature new with unknown facet succeeded, want error")
+	}
+}
+
+// TestFeatureNewRefusedFileLeavesCleanClone (F-0328 critic C7): a --file the
+// spec rule refuses is refused after the entity was written, and the
+// mutation's reset takes it back — no entity, no event, nothing untracked
+// left in the clone for the next operation to sweep in.
+func TestFeatureNewRefusedFileLeavesCleanClone(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+	specFile := filepath.Join(t.TempDir(), "spec.md")
+	mustWrite(t, specFile, "---\ncerne_id: F-0009\n---\n\n# Outra\n\n## Problema\n\nDe outra feature.\n")
+	if _, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir); !errors.Is(err, app.ErrBodyFrontmatter) {
+		t.Fatalf("err = %v, want ErrBodyFrontmatter", err)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1", len(features))
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	status, err := exec.Command("git", "-C", repoDir, "status", "--porcelain", "--untracked-files=all").Output()
+	if err != nil || len(status) != 0 {
+		t.Fatalf("clone not clean after a refusal (err %v):\n%s", err, status)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
+	}
+}
+
+// TestFeatureNewFileFrontmatter (F-0328 crit. 5): `feature new --file` shares
+// the spec rule — a block naming the id being minted is the one block kept,
+// extra keys and all; another feature's id is refused before anything is
+// minted: no entity, no spec dir, origin unmoved.
+func TestFeatureNewFileFrontmatter(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	specFile := filepath.Join(t.TempDir(), "spec.md")
+	own := "---\ncerne_id: F-0001\nx: y\n---\n\n# Título\n\n## Problema\n\nCom bloco próprio.\n"
+	mustWrite(t, specFile, own)
+	if out, err := execCerne(t, "feature", "new", "Título", "--file", specFile, "--dir", projDir); err != nil {
+		t.Fatalf("feature new --file: %v\noutput: %s", err, out)
+	}
+	if spec, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")); string(spec) != own {
+		t.Fatalf("spec.md = %q, want the body's own single block %q", spec, own)
+	}
+
+	head0, _ := gitback.HeadSHA(origin)
+	mustWrite(t, specFile, "---\ncerne_id: F-0009\n---\n\n# Outra\n\n## Problema\n\nDe outra feature.\n")
+	_, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir)
+	// F-0002 was never minted: the refusal names only the body's id and sends
+	// nobody to `cerne show` a feature that does not exist (critic C4).
+	if !errors.Is(err, app.ErrBodyFrontmatter) || !strings.Contains(err.Error(), "the body carries cerne_id F-0009 — a new feature's spec cannot carry another feature's frontmatter") ||
+		strings.Contains(err.Error(), "F-0002") || strings.Contains(err.Error(), "cerne show") {
+		t.Fatalf("err = %v, want ErrBodyFrontmatter naming only F-0009, no show hint", err)
+	}
+	mustWrite(t, specFile, "---\ntitle: x\n---\n\n# Outra\n\n## Problema\n\nSem id.\n")
+	if _, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir); !errors.Is(err, app.ErrBodyFrontmatter) ||
+		!strings.Contains(err.Error(), "without cerne_id") || strings.Contains(err.Error(), "cerne show") {
+		t.Fatalf("block without id: err = %v, want a refusal with no show hint", err)
+	}
+	mustWrite(t, specFile, "---\ncerne_id: F-0002\n---\n")
+	if _, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir); !errors.Is(err, app.ErrEmptyBody) {
+		t.Fatalf("frontmatter only: err = %v, want ErrEmptyBody (critic C5)", err)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1 (a refused body must not mint)", len(features))
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "features", "F-0002")); !os.IsNotExist(err) {
+		t.Fatalf("content/features/F-0002 exists after a refusal (stat err %v)", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
 	}
 }
 

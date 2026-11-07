@@ -172,6 +172,30 @@ func TestSpecDraftByoKeyWritesAndCommits(t *testing.T) {
 	}
 }
 
+// TestSpecDraftEchoedFrontmatterNotDuplicated (F-0328 critic C8): the draft
+// prompt carries the current spec raw, frontmatter included; a fake provider
+// that echoes that block back gets one block stored, not two.
+func TestSpecDraftEchoedFrontmatterNotDuplicated(t *testing.T) {
+	projDir, _, repoDir := setupProject(t, "finance")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"---\ncerne_id: F-0001\n---\n\n## Problema\n\nFalta gerar boletos. Hoje a cobrança sai por planilha e o time reconcilia à mão, o que já custou dois fechamentos atrasados.\n\n## Objetivo e critérios de sucesso\n\nGerar boletos válidos."}]}`)
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+
+	if out, err := execCerne(t, "spec", "draft", "F-0001", "--dir", projDir); err != nil {
+		t.Fatalf("spec draft: %v\n%s", err, out)
+	}
+	spec, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if strings.Count(string(spec), "cerne_id:") != 1 || !strings.HasPrefix(string(spec), "---\ncerne_id: F-0001\n---\n\n## Problema") {
+		t.Fatalf("drafted spec = %q, want one cerne_id block", spec)
+	}
+}
+
 // TestSpecDraftUnknownFeature errors when the id does not exist in the backend.
 func TestSpecDraftUnknownFeature(t *testing.T) {
 	projDir, _, _ := setupProject(t, "finance")

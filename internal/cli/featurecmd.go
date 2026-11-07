@@ -116,11 +116,15 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 	if err != nil {
 		return err
 	}
-	f, err := app.UpdateCandidateSpec(ctx.repoDir, ctx.projDir, id, body)
+	f, changed, err := app.UpdateCandidateSpec(ctx.repoDir, ctx.projDir, id, body)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	if !changed {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s spec unchanged — nothing to update.\n", f.ID)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s spec updated (%s) — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
+	}
 	if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale {
 		fmt.Fprintln(cmd.OutOrStdout(), approvalStaleLine(f.ID))
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -100,6 +101,19 @@ func TestFeatureSpecRefusals(t *testing.T) {
 		}
 	})
 
+	// F-0328 critic C5: only the frontmatter is no spec — refused by the core,
+	// past the CLI's raw-body check.
+	t.Run("frontmatter only", func(t *testing.T) {
+		pipeStdinBody(t, "---\ncerne_id: F-0001\n---\n")
+		_, err := execCerne(t, "feature", "spec", "F-0001", "--dir", projDir)
+		if !errors.Is(err, app.ErrEmptyBody) {
+			t.Fatalf("err = %v, want ErrEmptyBody", err)
+		}
+		if got, _ := os.ReadFile(app.FeatureDocPath(repoDir, "F-0001", "spec.md")); !strings.Contains(string(got), "## Problema") {
+			t.Fatalf("a frontmatter-only body must not write:\n%s", got)
+		}
+	})
+
 	t.Run("unknown id", func(t *testing.T) {
 		pipeStdinBody(t, specBody)
 		_, err := execCerne(t, "feature", "spec", "F-9999", "--dir", projDir)
@@ -130,4 +144,130 @@ func TestFeatureSpecRefusals(t *testing.T) {
 			t.Fatal("a spec in development must not be rewritten by the verb")
 		}
 	})
+}
+
+// TestFeatureSpecKeepsOneFrontmatter (F-0328 crit. 1): the natural revision —
+// start from `cerne show --doc spec`, edit, write it back — stores ONE block,
+// the body's own; a quoted id is stored unquoted and an extra key is kept.
+func TestFeatureSpecKeepsOneFrontmatter(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	path := filepath.Join(t.TempDir(), "spec.md")
+	specPath := app.FeatureDocPath(repoDir, "F-0001", "spec.md")
+	write := func(body string) string {
+		t.Helper()
+		mustWrite(t, path, body)
+		if out, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir); err != nil {
+			t.Fatalf("feature spec: %v\noutput: %s", err, out)
+		}
+		got, _ := os.ReadFile(specPath)
+		return string(got)
+	}
+
+	if got := write(specBody); got != specBody {
+		t.Fatalf("spec.md = %q, want the body's own single block %q", got, specBody)
+	}
+	shown, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, shown)
+	}
+	got := write(strings.Replace(shown, "Versão revisada pelo agente.", "Revista a partir do show.", 1))
+	if strings.Count(got, "cerne_id:") != 1 || !strings.HasPrefix(got, "---\ncerne_id: F-0001\n---\n") || !strings.Contains(got, "Revista a partir do show.") {
+		t.Fatalf("spec.md after a show round trip = %q, want one block and the edit", got)
+	}
+
+	// A spec doubled before F-0328 — cerne's stamp over the body's own block —
+	// heals on the next write instead of round-tripping as two blocks (C1).
+	if got := write("---\ncerne_id: F-0001\n---\n\n" + specBody); got != specBody {
+		t.Fatalf("doubled spec stored as %q, want one block %q", got, specBody)
+	}
+
+	want := "---\ncerne_id: F-0001\nowner: x\n---\n\n## Problema\n\nCom chave extra.\n"
+	if got := write("---\ncerne_id: \"F-0001\"\nowner: x\n---\n\n## Problema\n\nCom chave extra.\n"); got != want {
+		t.Fatalf("spec.md = %q, want %q", got, want)
+	}
+}
+
+// TestFeatureSpecRefusesForeignFrontmatter (F-0328 crit. 2-3): a block naming
+// another feature, a block without cerne_id and a block that never closes are
+// refused before anything is written, the error saying which — spec.md, the
+// event log and origin all left as they were.
+func TestFeatureSpecRefusesForeignFrontmatter(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	specPath := app.FeatureDocPath(repoDir, "F-0001", "spec.md")
+	before, _ := os.ReadFile(specPath)
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	for _, tc := range []struct {
+		name, body string
+		want       []string
+	}{
+		{"other id", "---\ncerne_id: F-0002\n---\n\n## Problema\n\nDe outra.\n", []string{`cerne_id "F-0002", not F-0001`, "another feature's spec"}},
+		{"block without id", "---\ntitle: x\n---\n\n## Problema\n\nSem id.\n", []string{"without cerne_id", "--doc spec"}},
+		{"block never closes", "---\ncerne_id: F-0001\n\n## Problema\n\nAberto.\n", []string{"never closes"}},
+		{"own block, then another feature's", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: F-0002\n---\n\n# Spec dupla\n\nCorpo.\n", []string{`cerne_id "F-0002", not F-0001`}},
+		{"block closed only by a later rule", "---\ncerne_id: F-0001\n\n# Spec toda na frontmatter\n\n## Problema\n\nTexto real do problema.\n\n---\n", []string{"never closes"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "spec.md")
+			mustWrite(t, path, tc.body)
+			_, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir)
+			if !errors.Is(err, app.ErrBodyFrontmatter) {
+				t.Fatalf("err = %v, want ErrBodyFrontmatter", err)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Fatalf("err = %v, want it to say %q", err, w)
+				}
+			}
+			if after, _ := os.ReadFile(specPath); string(after) != string(before) {
+				t.Fatalf("spec.md changed on a refusal: %q", after)
+			}
+			if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+				t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+			}
+			if h, _ := gitback.HeadSHA(origin); h != head0 {
+				t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
+			}
+		})
+	}
+}
+
+// TestFeatureSpecIdenticalSaysUnchanged (F-0328 crit. 4): writing back what
+// `cerne show --doc spec` printed is a no-op the CLI names — no event, no
+// commit, no "spec updated".
+func TestFeatureSpecIdenticalSaysUnchanged(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	path := filepath.Join(t.TempDir(), "spec.md")
+	mustWrite(t, path, specBody)
+	if out, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir); err != nil || !strings.Contains(out, "F-0001 spec updated") {
+		t.Fatalf("first write: %v\noutput: %s", err, out)
+	}
+	shown, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, shown)
+	}
+	mustWrite(t, path, shown)
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	out, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001 spec unchanged — nothing to update.") || strings.Contains(out, "spec updated") {
+		t.Fatalf("identical rewrite: err %v, output %q — want the unchanged line only", err, out)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
 }

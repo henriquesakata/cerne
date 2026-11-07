@@ -39,8 +39,8 @@ const DraftOutputContract = "Devolva SOMENTE o markdown do documento na saída p
 // corrupts the document): the body must contain a markdown heading, and it must
 // clear minDraftBodyRunes. Unlike compile.ValidatePageBody the heading need not
 // be on the first line — a drafted spec legitimately opens with the template's
-// **Tipo:** / **Origem:** / **Nível:** metadata lines, and frontmatter the model
-// volunteered is harmless here (cerne stamps its own on write anyway).
+// **Tipo:** / **Origem:** / **Nível:** metadata lines; frontmatter the model
+// volunteered is WriteStampedDraft's to keep or refuse (stampedDoc).
 func ValidateDraftBody(body string) error {
 	text := strings.TrimSpace(body)
 	if text == "" {
@@ -56,20 +56,24 @@ func ValidateDraftBody(body string) error {
 	return nil
 }
 
-// WriteStampedDraft is the single point where a drafted document is written:
-// it validates the body, then writes path as cerne's stamped cerne_id
-// frontmatter followed by the model's trimmed body. cerne stamps the
-// frontmatter itself — the model is never trusted to emit cerne_id. A refused
-// draft names the document it would have overwritten and leaves the file
-// untouched.
-func WriteStampedDraft(path, id, body string) error {
+// WriteStampedDraft is the single point where a drafted document (doc ∈
+// spec|plan|result|decision|runbook) is written: it validates the body, then
+// writes path in stampedDoc's form — the model is never trusted to emit
+// cerne_id. The draft prompt embeds the current document raw, so a model that
+// echoes its frontmatter gets one block stored, and one naming another
+// document is refused (F-0328 critic C8). A refused draft names the document
+// it would have overwritten and leaves the file untouched.
+func WriteStampedDraft(path, id, doc, body string) error {
 	if err := ValidateDraftBody(body); err != nil {
+		return fmt.Errorf("refusing to write %s: %w", path, err)
+	}
+	content, err := stampedDoc(id, doc, body, false)
+	if err != nil {
 		return fmt.Errorf("refusing to write %s: %w", path, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + strings.TrimSpace(body) + "\n"
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 

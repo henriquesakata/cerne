@@ -399,6 +399,28 @@ func TestChatRegister(t *testing.T) {
 	}
 }
 
+// TestChatRegisterCreateRefusesFrontmatter (F-0328 critic C4): a proposal
+// whose body carries a frontmatter cerne will not store is 422 — the id it
+// would have minted is never named, and no CLI hint reaches the browser.
+func TestChatRegisterCreateRefusesFrontmatter(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	head0, _ := gitback.HeadSHA(origin)
+	var got struct {
+		Error string `json:"error"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-reg-fm"), http.MethodPost, "/api/chat/register",
+		`{"title":"Exportar relatórios em CSV","spec_body":"---\ntitle: y\n---\n\n# Exportar\n\n## Problema\nFalta exportação.\n"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "without cerne_id") || strings.Contains(got.Error, "cerne show") || strings.Contains(got.Error, "F-0002") {
+		t.Fatalf("status = %d, error %q — want 422 with no show hint and no unminted id", rec.Code, got.Error)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1 (a refused body must not mint)", len(features))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
+	}
+}
+
 // TestChatRegisterExistingCapability: F-0223 criterion 2 — a proposal that
 // names an existing C- id links it to the new candidate in the same act.
 func TestChatRegisterExistingCapability(t *testing.T) {
@@ -826,6 +848,39 @@ func TestChatRegisterUpdate(t *testing.T) {
 	}
 }
 
+// TestChatRegisterUpdateIdenticalIsNoOp (F-0328 crit. 4): confirming the same
+// revision twice writes once — the second is a 200 flagged unchanged (no
+// warning: it is not an error, critic C12), with no event and no commit.
+func TestChatRegisterUpdateIdenticalIsNoOp(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	seedSpec(t, repoDir, "F-0001", "## Problema\n\nVersão antiga.\n")
+	h := New(repoDir, projDir, "proj-chat-upd-same")
+	const req = `{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n"}`
+	type resp struct {
+		Feature   store.Feature `json:"feature"`
+		Warning   string        `json:"warning"`
+		Unchanged bool          `json:"unchanged"`
+	}
+	var first resp
+	if rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &first); rec.Code != http.StatusOK || first.Warning != "" || first.Unchanged {
+		t.Fatalf("first update: status %d, warning %q, unchanged %v — want a plain 200", rec.Code, first.Warning, first.Unchanged)
+	}
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	var again resp
+	rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &again)
+	if rec.Code != http.StatusOK || again.Feature.ID != "F-0001" || !again.Unchanged || again.Warning != "" {
+		t.Fatalf("identical update: status %d, feature %q, unchanged %v, warning %q — want 200 flagged unchanged, no warning", rec.Code, again.Feature.ID, again.Unchanged, again.Warning)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
 // TestChatRegisterUpdateRefusals (F-0256 criterion 5, moved past approval by
 // F-0318): an unknown id is 404, a feature in development is 422, and neither
 // touches the backend.
@@ -849,6 +904,34 @@ func TestChatRegisterUpdateRefusals(t *testing.T) {
 	spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0002", "spec.md"))
 	if err != nil || !strings.Contains(string(spec), "Contrato aprovado.") {
 		t.Fatalf("spec.md changed on a refused update: %q (%v)", string(spec), err)
+	}
+
+	// F-0328 crit. 2: a body carrying another feature's frontmatter is the
+	// user's input, refused as such (422, not 500), the spec untouched.
+	seedFeature(t, repoDir, "F-0003", "Candidata", domain.StateCandidate)
+	seedSpec(t, repoDir, "F-0003", "## Problema\n\nOriginal.\n")
+	var refused struct {
+		Error string `json:"error"`
+	}
+	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0009\n---\n\n## Problema\n\nDe outra.\n"}`, &refused)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, `cerne_id "F-0009", not F-0003`) {
+		t.Fatalf("foreign frontmatter status = %d, want 422 naming F-0009; body: %s", rec.Code, rec.Body.String())
+	}
+	// Its own block first does not let another feature's in behind it (C1).
+	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0003\n---\n\n---\ncerne_id: F-0009\n---\n\n# x\n"}`, &refused)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, `cerne_id "F-0009", not F-0003`) {
+		t.Fatalf("second foreign block status = %d, want 422 naming F-0009; body: %s", rec.Code, rec.Body.String())
+	}
+	// A body that is only its frontmatter is empty (critic C5): 422, not a wipe.
+	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0003\n---\n"}`, &refused)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, "empty body") {
+		t.Fatalf("frontmatter-only status = %d, want 422 empty body; body: %s", rec.Code, rec.Body.String())
+	}
+	if spec, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0003", "spec.md")); !strings.Contains(string(spec), "Original.") || strings.Contains(string(spec), "F-0009") {
+		t.Fatalf("spec.md changed on a refused frontmatter: %q", spec)
 	}
 }
 

@@ -299,7 +299,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 	// Write and commit inside the backend lock (F-0122); the provider call
 	// above stays outside it.
 	err = app.MutateAndSnapshot(ctx.repoDir, ctx.projDir, func() (string, error) {
-		if err := app.WriteStampedDraft(app.RunbookDocPath(ctx.repoDir, id), id, body); err != nil {
+		if err := app.WriteStampedDraft(app.RunbookDocPath(ctx.repoDir, id), id, "runbook", body); err != nil {
 			return "", err
 		}
 		return "cerne: draft runbook " + id, nil

@@ -1205,6 +1205,46 @@ func readFeatureDocFile(t *testing.T, repoDir, id, file string) string {
 	return string(data)
 }
 
+// TestUpdateCandidateSpecIdenticalIsNoOp (F-0328 crit. 4): rewriting the spec
+// with what is already stored — the same body, or the stored file itself as
+// `cerne show --doc spec` prints it — is a successful no-op: changed false, no
+// feature.doc_edited, no commit. A different body still writes and says so.
+func TestUpdateCandidateSpecIdenticalIsNoOp(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
+		"## Problema\n\nVersão antiga.", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	const body = "## Problema\n\nVersão nova.\n"
+	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", body); err != nil || !changed {
+		t.Fatalf("first rewrite: changed %v, err %v — want a write", changed, err)
+	}
+	// The rewrite's backend commit is named for what it touched (judge, F-0328).
+	if subject := gitOut(t, origin, "log", "-1", "--format=%s"); subject != "cerne: update F-0001/spec.md" {
+		t.Fatalf("commit subject = %q, want %q", subject, "cerne: update F-0001/spec.md")
+	}
+	path := FeatureDocPath(repoDir, "F-0001", "spec.md")
+	stored, _ := os.ReadFile(path)
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	for name, again := range map[string]string{"same body": body, "stored file as show prints it": string(stored) + "\n"} {
+		f, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", again)
+		if err != nil || changed || f.ID != "F-0001" || f.State != domain.StateCandidate {
+			t.Fatalf("%s: f %s %s, changed %v, err %v — want a successful no-op", name, f.ID, f.State, changed, err)
+		}
+		if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+			t.Fatalf("%s: events = %d, want %d", name, len(evs), len(evs0))
+		}
+		if h, _ := gitback.HeadSHA(origin); h != head0 {
+			t.Fatalf("%s: origin moved: %s -> %s", name, head0, h)
+		}
+		if cur, _ := os.ReadFile(path); string(cur) != string(stored) {
+			t.Fatalf("%s: spec.md = %q, want %q", name, cur, stored)
+		}
+	}
+}
+
 // TestUpdateCandidateSpec (F-0256 criteria 3/5): a revision confirmed in the
 // Backlog chat rewrites the candidate's spec through the same gated write path
 // as the registration — cerne_id frontmatter restamped, lifecycle state
@@ -1217,7 +1257,7 @@ func TestUpdateCandidateSpec(t *testing.T) {
 	}
 	head0, _ := gitback.HeadSHA(origin)
 
-	f, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão nova.\n")
+	f, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão nova.\n")
 	if err != nil {
 		t.Fatalf("UpdateCandidateSpec: %v", err)
 	}
@@ -1260,13 +1300,88 @@ func TestUpdateCandidateSpecRefusals(t *testing.T) {
 	}
 	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
 
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
+	if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
 		t.Fatalf("err = %v, want ErrNotCandidate", err)
 	}
 	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
 		t.Fatalf("spec.md changed on a refused update: %q", got)
 	}
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-9999", "x"); !errors.Is(err, store.ErrNotFound) {
+	if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-9999", "x"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("err = %v, want store.ErrNotFound", err)
+	}
+}
+
+// TestUpdateCandidateSpecIdenticalPastApprovalRefused (judge, F-0328): the
+// state check comes before the identity check — a feature past approval is
+// refused even when the body is exactly its stored spec, never answered with
+// a no-op that would read as "accepted, nothing to do".
+func TestUpdateCandidateSpecIdenticalPastApprovalRefused(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md")
+	stored := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+	_, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", stored)
+	if !errors.Is(err, ErrNotCandidate) || changed {
+		t.Fatalf("identical body past approval: changed %v, err %v — want ErrNotCandidate", changed, err)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
+// TestUpdateCandidateSpecUnchangedIsJudgedAgainstOrigin (F-0328 critic C3): a
+// clone that trails origin does not call a body "unchanged" because its stale
+// copy matches — the rewrite looks at the backend first, so the body lands on
+// origin and says so; only then is the same body a no-op.
+func TestUpdateCandidateSpecUnchangedIsJudgedAgainstOrigin(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	const two = "## Problema\n\nVersão dois."
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil, two, false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	const rel = "content/features/F-0001/spec.md"
+	advanceRemote(t, origin, rel, "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão três.\n")
+
+	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", two); err != nil || !changed {
+		t.Fatalf("stale clone: changed %v, err %v — want a write, origin holds another spec", changed, err)
+	}
+	if got, _ := originHas(t, origin, rel); got != "---\ncerne_id: F-0001\n---\n\n"+two+"\n" {
+		t.Fatalf("origin spec = %q, want version two", got)
+	}
+	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", two); err != nil || changed {
+		t.Fatalf("now identical on origin: changed %v, err %v — want a no-op", changed, err)
+	}
+}
+
+// TestSpecBodyOnlyFrontmatterIsEmpty (F-0328 critic C5): a body that is only
+// its frontmatter is empty, refused by the core itself — the rewrite keeps the
+// spec it had, the creation mints nothing — whatever the caller checked.
+func TestSpecBodyOnlyFrontmatterIsEmpty(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil, "## Problema\n\nReal.", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
+	head0, _ := gitback.HeadSHA(origin)
+	for _, body := range []string{"", "\n  \n", "---\ncerne_id: F-0001\n---\n", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: F-0001\n---\n"} {
+		if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", body); !errors.Is(err, ErrEmptyBody) || err.Error() != "empty body: the spec has no content besides its frontmatter" {
+			t.Fatalf("rewrite %q: err = %v, want ErrEmptyBody", body, err)
+		}
+	}
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Outra", "", "", nil, nil, "---\ncerne_id: F-0002\n---\n", false, "", ""); !errors.Is(err, ErrEmptyBody) {
+		t.Fatalf("create: err = %v, want ErrEmptyBody", err)
+	}
+	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
+		t.Fatalf("spec.md changed on an empty body: %q", got)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1", len(features))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on an empty body: %s -> %s", head0, h)
 	}
 }

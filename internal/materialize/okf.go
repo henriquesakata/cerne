@@ -27,6 +27,22 @@ type okfMeta struct {
 	CerneID     string   // preserved cerne id; when "" it is read from the body's frontmatter
 }
 
+// OKFKeys are the frontmatter keys the OKF projection writes besides
+// cerne_id, read off okfFrontmatter with every field set — so a key added to
+// the projection is known here without a second list. They are projection,
+// not source: a body fed back from an OKF pull carries them (F-0328).
+func OKFKeys() []string {
+	full := okfFrontmatter(okfMeta{Type: "x", Title: "x", Description: "x", Timestamp: "x", Resource: "x",
+		Tags: []string{"x"}, State: "x", Parent: "x", External: true, Informs: []string{"x"}, CerneID: "x"}, nil)
+	var keys []string
+	for _, l := range strings.Split(string(full), "\n") {
+		if k, _, ok := strings.Cut(l, ":"); ok && k != "cerne_id" {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
 // okfTime formats an entity timestamp as the RFC3339 instant OKF's `timestamp`
 // field expects (e.g. 2026-05-28T14:30:00Z). The zero time yields "" so an
 // unset timestamp is omitted rather than emitted as the Go zero value.

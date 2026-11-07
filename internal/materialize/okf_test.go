@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -467,5 +468,20 @@ func TestMaterializeOKFAuthoredReservedNameWins(t *testing.T) {
 	idx := readDoc(t, docsDir, "current/features/F-0001-revamp/index.md")
 	if idx != authored {
 		t.Errorf("authored index.md must be preserved byte-for-byte over the generated one:\n--- got ---\n%s\n--- want ---\n%s", idx, authored)
+	}
+}
+
+// TestOKFKeys (F-0328 critic C14): the keys are read off okfFrontmatter, so
+// they are exactly what the projection writes besides cerne_id — what a body
+// fed back from an OKF pull carries and the source of truth must not keep.
+func TestOKFKeys(t *testing.T) {
+	keys := OKFKeys()
+	for _, want := range []string{"type", "title", "description", "timestamp", "resource", "tags", "state", "parent", "external", "informs"} {
+		if !slices.Contains(keys, want) {
+			t.Fatalf("OKFKeys() = %v, missing %q", keys, want)
+		}
+	}
+	if slices.Contains(keys, "cerne_id") || len(keys) != 10 {
+		t.Fatalf("OKFKeys() = %v, want the 10 projection keys and never cerne_id", keys)
 	}
 }

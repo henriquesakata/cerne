@@ -579,7 +579,7 @@ func TestBuildRefineBlock(t *testing.T) {
 
 	// Criterion 6: the block is rebuilt from the backend, so a spec that moved
 	// under the conversation is reflected on the next turn — no stale snapshot.
-	if _, err := UpdateCandidateSpec(repoDir, projDir, f.ID, "## Problema\n\nExportar também em XLSX.\n"); err != nil {
+	if _, _, err := UpdateCandidateSpec(repoDir, projDir, f.ID, "## Problema\n\nExportar também em XLSX.\n"); err != nil {
 		t.Fatalf("UpdateCandidateSpec: %v", err)
 	}
 	block2, err := BuildRefineBlock(repoDir, f.ID)
