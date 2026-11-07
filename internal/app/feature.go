@@ -790,6 +790,13 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 // or a block that never closes. The message says which (F-0328).
 var ErrBodyFrontmatter = errors.New("refused frontmatter")
 
+// frontmatterRefusal is one refusal's full text, matching ErrBodyFrontmatter
+// without prefixing it: the result's messages stay the amend's own words.
+type frontmatterRefusal string
+
+func (e frontmatterRefusal) Error() string        { return string(e) }
+func (e frontmatterRefusal) Is(target error) bool { return target == ErrBodyFrontmatter }
+
 // stampedDoc is the stored form of a whole-document body (doc ∈ spec|result),
 // under ONE cerne_id frontmatter: the body's own block when it already names
 // id (what `cerne show --doc <doc>` prints, extra keys kept; a quoted id is
@@ -815,15 +822,15 @@ func stampedDoc(id, doc, body string) (string, error) {
 			continue
 		}
 		if got != id {
-			return "", fmt.Errorf("%w: the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", ErrBodyFrontmatter, got, id, doc)
+			return "", frontmatterRefusal(fmt.Sprintf("the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", got, id, doc))
 		}
 		if end == len(lines) {
-			return "", fmt.Errorf("%w: the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", ErrBodyFrontmatter, id, doc)
+			return "", frontmatterRefusal(fmt.Sprintf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", id, doc))
 		}
 		lines[i] = "cerne_id: " + id
 		return strings.Join(lines, "\n") + "\n", nil
 	}
-	return "", fmt.Errorf("%w: the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", ErrBodyFrontmatter, id, doc)
+	return "", frontmatterRefusal(fmt.Sprintf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", id, doc))
 }
 
 // loadCandidate loads a feature and asserts its spec is still open to the chat

@@ -127,7 +127,8 @@ func TestAmendIdenticalIsNoOp(t *testing.T) {
 // or not, stored unquoted like every reader expects — and a refusal says what
 // is wrong with it, for the document being written: another feature's id, or a
 // '---' block (a frontmatter or a horizontal rule) that carries no cerne_id at
-// all, or one that never closes. Every accepted form is a fixed point: the
+// all, or one that never closes — in the amend's own words, with no sentinel
+// prefix. Every accepted form is a fixed point: the
 // stored file fed back (what `cerne show --doc` prints, one newline more) is
 // stored unchanged, which is what makes an identical rewrite detectable.
 func TestStampedDocFrontmatter(t *testing.T) {
@@ -140,20 +141,22 @@ func TestStampedDocFrontmatter(t *testing.T) {
 		{"double-quoted id", "result", "---\ncerne_id: \"F-0001\"\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
 		{"single-quoted id", "result", "---\ncerne_id: 'F-0001'\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
 		{"bom and blank lines", "spec", "\ufeff\n\n# R\n\nCorpo.\n\n\n", "---\ncerne_id: F-0001\n---\n\n# R\n\nCorpo.\n", ""},
-		{"other id", "result", "---\ncerne_id: F-0002\n---\n" + rest, "", `names cerne_id "F-0002", not F-0001 — is it another feature's result?`},
-		{"other id, spec", "spec", "---\ncerne_id: F-0002\n---\n" + rest, "", `names cerne_id "F-0002", not F-0001 — is it another feature's spec?`},
+		{"other id", "result", "---\ncerne_id: F-0002\n---\n" + rest, "", `the body's frontmatter names cerne_id "F-0002", not F-0001 — is it another feature's result?`},
+		{"other id, spec", "spec", "---\ncerne_id: F-0002\n---\n" + rest, "", `the body's frontmatter names cerne_id "F-0002", not F-0001 — is it another feature's spec?`},
 		{"block without id", "result", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
 		{"block without id, spec", "spec", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc spec' or drop the block"},
-		{"horizontal rule", "result", "---\n" + rest, "", "the body opens a '---' block without cerne_id"},
-		{"empty id", "result", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id"},
-		{"block never closes", "result", "---\ncerne_id: F-0001\n# R\n\nCorpo.\n", "", "the body's '---' block never closes"},
-		{"block never closes, spec", "spec", "---\ncerne_id: F-0001\n# R\n", "", "start from 'cerne show F-0001 --doc spec'"},
+		{"horizontal rule", "result", "---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
+		{"empty id", "result", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
+		{"block never closes", "result", "---\ncerne_id: F-0001\n# R\n\nCorpo.\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc result'"},
+		{"block never closes, spec", "spec", "---\ncerne_id: F-0001\n# R\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := stampedDoc("F-0001", tc.doc, tc.body)
 			if tc.refusal != "" {
-				if !errors.Is(err, ErrBodyFrontmatter) || !strings.Contains(err.Error(), tc.refusal) {
-					t.Fatalf("err = %v, want ErrBodyFrontmatter saying %q", err, tc.refusal)
+				// The full text is pinned: the result's messages are the amend's own,
+				// unchanged since F-0305 — the sentinel matches without a prefix.
+				if !errors.Is(err, ErrBodyFrontmatter) || err.Error() != tc.refusal {
+					t.Fatalf("err = %v, want ErrBodyFrontmatter saying exactly %q", err, tc.refusal)
 				}
 				return
 			}
