@@ -56,7 +56,7 @@ const ptBR = {
     empty: 'Sem notificações recentes',
     toggleOn: 'Notificações: ativadas',
     toggleOff: 'Notificações: desativadas',
-    age: (min: number) => (min < 1 ? 'agora' : `há ${min} min`),
+    age: (min: number) => ageLabel(min, 'pt-BR', 'agora'),
     nativeToggleOn: 'Notificações do sistema: ativadas',
     nativeToggleOff: 'Notificações do sistema: desativadas',
     nativeDenied: 'Permissão negada no navegador — reative nas configurações do site',
@@ -336,6 +336,8 @@ const ptBR = {
     conversationsTitle: 'Conversas',
     untitledConversation: '(sem título)',
     deleteConversation: 'Excluir',
+    renameConversation: (title: string) => `Renomear "${title}"`,
+    renameInput: 'Novo nome da conversa',
     confirmDeleteConversation: (title: string) =>
       `Excluir a conversa "${title}"? Essa ação não pode ser desfeita.`,
     confirmCapReached: (title: string, max: number) =>
@@ -1026,7 +1028,7 @@ const en: Messages = {
     empty: 'No recent notifications',
     toggleOn: 'Notifications: on',
     toggleOff: 'Notifications: off',
-    age: (min: number) => (min < 1 ? 'now' : `${min} min ago`),
+    age: (min: number) => ageLabel(min, 'en', 'now'),
     nativeToggleOn: 'System notifications: on',
     nativeToggleOff: 'System notifications: off',
     nativeDenied: 'Permission denied in the browser — re-enable it in the site settings',
@@ -1301,6 +1303,8 @@ const en: Messages = {
     conversationsTitle: 'Conversations',
     untitledConversation: '(untitled)',
     deleteConversation: 'Delete',
+    renameConversation: (title: string) => `Rename "${title}"`,
+    renameInput: 'New conversation name',
     confirmDeleteConversation: (title: string) =>
       `Delete the conversation "${title}"? This cannot be undone.`,
     confirmCapReached: (title: string, max: number) =>
@@ -1931,6 +1935,26 @@ const en: Messages = {
 }
 
 export type Lang = 'pt-BR' | 'en'
+
+// ageLabel (F-0310): the six-band ladder, always truncated (month = 30 d,
+// year = 365 d, crit. 6 read literally — C13): 360-364 d read "12 months
+// ago", years start at 365 d. Plural forms come from Intl, not a
+// hand-written table; numeric 'always' keeps "1 day ago"
+// instead of "yesterday". A non-finite age (missing or corrupted stamp in
+// storage) renders a neutral "—": Intl throws on it, and that took the whole
+// Backlog down (F-0310 C3).
+function ageLabel(min: number, lang: Lang, now: string): string {
+  if (!Number.isFinite(min)) return '—'
+  if (min < 1) return now
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'always' })
+  const m = Math.floor(min)
+  const d = Math.floor(m / 1440)
+  if (m < 60) return rtf.format(-m, 'minute')
+  if (m < 1440) return rtf.format(-Math.floor(m / 60), 'hour')
+  if (d < 30) return rtf.format(-d, 'day')
+  if (d < 365) return rtf.format(-Math.floor(d / 30), 'month')
+  return rtf.format(-Math.floor(d / 365), 'year')
+}
 
 const STORAGE_KEY = 'cerne-lang'
 const DICTS: Record<Lang, Messages> = { 'pt-BR': ptBR, en }

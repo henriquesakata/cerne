@@ -193,6 +193,17 @@ describe('NotificationBell', () => {
     expect(req).toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
+
+  // F-0310 critério 8: a régua nova chega ao sininho pelo formatador
+  // compartilhado, sem mudar o call site. O sino só mostra a janela de
+  // NOTIF_WINDOW_MS (15 min), então a prova é a unidade por extenso:
+  // "há 5 minutos" (a régua antiga dava "há 5 min").
+  it('F-0310 critério 8: o sininho usa a régua nova', async () => {
+    fetchEventsMock.mockResolvedValue([ev('e1', 5 * 60_000)])
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: /notificações/i }))
+    await waitFor(() => expect(screen.getByText(/há 5 minutos/)).toBeInTheDocument())
+  })
 })
 
 // F-0311 critério 22: o refresh do catálogo que mudou algo aparece no sino,

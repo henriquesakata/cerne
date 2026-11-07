@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Backlog from './Backlog'
-import type { ChatAnswer, ChatOverride, CreateOutcome, Feature, Idea, LLMOptions, StateResponse } from './api'
+import { readChats, writeChats, type Conversation } from './useBacklogChats'
+import type { ChatAnswer, ChatOverride, ChatTitle, CreateOutcome, Feature, Idea, LLMOptions, StateResponse } from './api'
 
 const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
   id,
@@ -38,6 +39,8 @@ const registerChatCandidate = vi.fn<
   ) => Promise<CreateOutcome>
 >()
 const fetchLLMOptions = vi.fn<() => Promise<LLMOptions>>()
+// F-0310: nenhum teste depende de fetch real para o resumo do título.
+const summarizeChatTitle = vi.fn<() => Promise<ChatTitle>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -54,6 +57,7 @@ vi.mock('./api', async (importOriginal) => ({
     featureId?: string,
   ) => registerChatCandidate(title, specBody, facets, components, capability, parent, featureId),
   fetchLLMOptions: () => fetchLLMOptions(),
+  summarizeChatTitle: () => summarizeChatTitle(),
 }))
 
 beforeEach(() => {
@@ -65,6 +69,8 @@ beforeEach(() => {
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
   fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], defaultModel: '', providers: [], preferredProvider: '' })
+  summarizeChatTitle.mockReset()
+  summarizeChatTitle.mockResolvedValue({ generated: false })
 })
 
 describe('Backlog (F-0202)', () => {
@@ -184,6 +190,121 @@ describe('Backlog (F-0202)', () => {
     await waitFor(() =>
       expect(screen.getByText(/Preciso exportar relatórios em CSV.*→ F-0221/)).toBeInTheDocument(),
     )
+  })
+
+  // F-0310 critério 17: o nome dado pelo humano é terminal — registrar a
+  // candidata vincula a conversa, mas não sufixa o título.
+  it('F-0310 critério 17: renomeada pela lista, a conversa não ganha o sufixo ao registrar a candidata', async () => {
+    const proposalReply =
+      'Aqui está:\n\n```cerne-proposta\n# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n```\n'
+    streamChat.mockResolvedValue({ answered: true, reply: proposalReply })
+    registerChatCandidate.mockResolvedValue({
+      ok: true,
+      feature: {
+        id: 'F-0221',
+        title: 'Exportar relatórios em CSV',
+        module: '',
+        state: 'candidate',
+        created_at: '2026-08-07T00:00:00Z',
+        updated_at: '2026-08-07T00:00:00Z',
+      },
+    })
+    render(<Backlog />)
+
+    fireEvent.change(await screen.findByPlaceholderText(/descreva/i), {
+      target: { value: 'Preciso exportar relatórios em CSV' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    const registerButton = await screen.findByRole('button', { name: /registrar candidata/i })
+
+    fireEvent.click(screen.getByRole('button', { name: /renomear "Preciso exportar relatórios em CSV"/i }))
+    const input = screen.getByRole('textbox', { name: /novo nome/i })
+    fireEvent.change(input, { target: { value: 'Meu nome' } })
+    // C1/C17: como no navegador, um Enter não cancelado ativa o botão que
+    // recebeu o foco no keydown.
+    if (fireEvent.keyDown(input, { key: 'Enter' }) && document.activeElement instanceof HTMLButtonElement) {
+      fireEvent.click(document.activeElement)
+    }
+    expect(screen.queryByRole('textbox', { name: /novo nome/i })).not.toBeInTheDocument()
+
+    fireEvent.click(registerButton)
+    // O vínculo F-0256 chegou (appendRegisteredId rodou), e o título ficou.
+    await waitFor(() => expect(readChats().chats.find((c) => c.featureId === 'F-0221')).toBeDefined())
+    expect(readChats().chats.find((c) => c.featureId === 'F-0221')).toMatchObject({ title: 'Meu nome', titleSource: 'human' })
+    expect(screen.getByRole('button', { name: /renomear "Meu nome"/i })).toBeInTheDocument()
+    expect(screen.queryByText(/→ F-0221/)).not.toBeInTheDocument()
+  })
+})
+
+// F-0310: o título da conversa nasce truncado com a primeira mensagem e é
+// trocado pelo resumo quando ele chega, sem mexer no id da conversa (F-0323).
+describe('Backlog — título da conversa (F-0310)', () => {
+  // Montar o Backlog não é atividade: a conversa ativa mantém o carimbo da
+  // última mensagem real (crit. 1-7 — sem "agora" falso a cada visita).
+  it('montar o Backlog não recarimba a conversa ativa', async () => {
+    const seeded = Date.now() - 20_000
+    writeChats(
+      [{ id: 'a1', title: 'Ativa', updatedAt: seeded, messages: [{ role: 'user', content: 'Oi' }, { role: 'assistant', content: 'Olá' }], model: '', effort: '' }],
+      'a1',
+    )
+    render(<Backlog />)
+    await screen.findByPlaceholderText(/descreva/i)
+    await waitFor(() => expect(fetchLLMOptions).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(readChats().chats.find((c) => c.id === 'a1')!.updatedAt).toBe(seeded)
+  })
+
+  // C3: uma conversa gravada sem updatedAt (corrupção, edição à mão) não
+  // derruba a tela: a linha aparece com a idade neutra. Ela fica inativa — a
+  // ativa é recarimbada pelo updateActive da montagem.
+  it('C3: conversa corrompida no storage não derruba o Backlog', async () => {
+    writeChats(
+      [
+        { id: 'ok1', title: 'conversa boa', updatedAt: Date.now(), messages: [], model: '', effort: '' },
+        { id: 'corrupt1', title: 'sem carimbo', messages: [], model: '', effort: '' } as unknown as Conversation,
+      ],
+      'ok1',
+    )
+    render(<Backlog />)
+    await waitFor(() => expect(within(list()).getByText('sem carimbo')).toBeInTheDocument())
+    expect(within(list()).getByText('—')).toBeInTheDocument()
+  })
+
+  const list = () => document.querySelector('.conversation-list') as HTMLElement
+
+  async function send(text: string) {
+    fireEvent.change(await screen.findByPlaceholderText(/descreva/i), { target: { value: text } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+  }
+
+  it('F-0310 critério 14: a lista mostra o título truncado durante o primeiro turno', async () => {
+    streamChat.mockReturnValue(new Promise(() => {}))
+    render(<Backlog />)
+    await send('Preciso de X')
+    await waitFor(() => expect(within(list()).getByText('Preciso de X')).toBeInTheDocument())
+    expect(within(list()).queryByText('(sem título)')).not.toBeInTheDocument()
+  })
+
+  it('F-0310 critério 9: o resumo substitui o título truncado quando chega', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
+    summarizeChatTitle.mockResolvedValue({ generated: true, title: 'Exportar PDF' })
+    render(<Backlog />)
+    await send('Preciso exportar relatórios')
+    await waitFor(() => expect(within(list()).getByText('Exportar PDF')).toBeInTheDocument())
+  })
+
+  it('F-0310 / F-0323: o resumo não muda o conversation_id do turno seguinte', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'Em qual formato?' })
+    summarizeChatTitle.mockResolvedValue({ generated: true, title: 'Exportar PDF' })
+    render(<Backlog />)
+    await send('Preciso exportar relatórios')
+    await waitFor(() => expect(within(list()).getByText('Exportar PDF')).toBeInTheDocument())
+    const firstId = (streamChat.mock.calls[0][1] as ChatOverride).conversationId
+    expect(firstId).toBeTruthy()
+
+    await send('Em PDF')
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(streamChat.mock.calls[1][1]).toEqual(expect.objectContaining({ conversationId: firstId }))
   })
 })
 

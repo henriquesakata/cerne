@@ -71,6 +71,7 @@ export default function Backlog() {
           onSelect={chats.select}
           onNew={() => chats.newConversation()}
           onDelete={(id) => chats.deleteConversation(id)}
+          onRename={chats.renameConversation}
         />
       </div>
       <BacklogChat

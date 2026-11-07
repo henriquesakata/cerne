@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
-import { getConversation, useBacklogChats, writeChats } from './useBacklogChats'
+import { act, cleanup, renderHook } from '@testing-library/react'
+import { applySummaryTitle, getConversation, readChats, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 import { setApiProject } from './api'
 
 beforeEach(() => {
+  // F-0310: hooks montados escutam o resumo (titleListeners, nível de módulo);
+  // um hook de um teste anterior ainda montado regravaria o storage deste.
+  cleanup()
   localStorage.clear()
   setApiProject('proj-x')
 })
@@ -48,7 +51,7 @@ describe('useBacklogChats (F-0219)', () => {
     act(() => {
       result.current.updateActive({ messages: [{ role: 'user', content: long }] })
     })
-    expect(result.current.active.title.length).toBeLessThanOrEqual(41) // 40 + ellipsis
+    expect(result.current.active.title.length).toBeLessThanOrEqual(40) // 39 + ellipsis (C14)
     expect(result.current.active.title.startsWith('Preciso de um jeito de exportar')).toBe(true)
 
     // Uma segunda mensagem do usuário não deve trocar um título já definido.
@@ -111,6 +114,7 @@ describe('useBacklogChats (F-0219)', () => {
       act(() => result.current.updateActive({ messages: [{ role: 'user', content: 'x' }] }))
       act(() => result.current.newConversation())
       act(() => result.current.deleteConversation(result.current.active.id, () => true))
+      act(() => result.current.renameConversation(result.current.active.id, 'Nome local'))
       expect(fetchSpy).not.toHaveBeenCalled()
     } finally {
       global.fetch = originalFetch
@@ -210,5 +214,219 @@ describe('useBacklogChats (F-0248): patch de model/effort não é escrita de tra
     expect(stored.updatedAt).toBe(200)
     expect(stored.model).toBe('claude-opus-5')
     expect(stored.effort).toBe('high')
+  })
+})
+
+// conv monta uma conversa gravada no formato do storage; sem titleSource é o
+// formato de antes da F-0310 (crit. 21).
+function conv(id: string, extra: Partial<Conversation> = {}): Conversation {
+  return {
+    id,
+    title: `Título ${id}`,
+    updatedAt: 100,
+    messages: [
+      { role: 'user', content: `Pergunta ${id}` },
+      { role: 'assistant', content: `Resposta ${id}` },
+    ],
+    model: '',
+    effort: '',
+    ...extra,
+  }
+}
+
+describe('useBacklogChats (F-0310)', () => {
+  // C14: "no máximo 40 caracteres renderizáveis" inclui a reticência.
+  it('critério 10: o resumo é cortado em 40 caracteres renderizáveis, com elipse', () => {
+    const graphemes = (t: string) => Array.from(new Intl.Segmenter().segment(t)).length
+    writeChats([conv('c1'), conv('c2'), conv('c3')], 'c1')
+    applySummaryTitle('c1', 'x'.repeat(60))
+    expect(getConversation('c1')!.title).toBe('x'.repeat(39) + '…')
+    expect(graphemes(getConversation('c1')!.title)).toBe(40)
+
+    // Exatamente 40 cabe inteiro, sem reticência.
+    applySummaryTitle('c3', 'y'.repeat(40))
+    expect(getConversation('c3')!.title).toBe('y'.repeat(40))
+
+    // Um emoji ZWJ na última posição mantida conta como UM caractere e não é partido.
+    const family = '👨‍👩‍👧'
+    applySummaryTitle('c2', 'a'.repeat(38) + family + 'bbbb')
+    const title = getConversation('c2')!.title
+    expect(title).toBe('a'.repeat(38) + family + '…')
+    expect(graphemes(title)).toBe(40)
+    expect(title).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
+  })
+
+  it('critério 9/14: o resumo gravado fora do React troca o título na lista montada', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+    const before = result.current.active
+
+    act(() => applySummaryTitle('c1', 'Exportar PDF'))
+
+    expect(result.current.active.title).toBe('Exportar PDF')
+    expect(result.current.active.titleSource).toBe('summary')
+    expect(result.current.active.updatedAt).toBe(before.updatedAt)
+    expect(result.current.active.messages).toEqual(before.messages)
+    expect(getConversation('c1')!.title).toBe('Exportar PDF')
+  })
+
+  it('critério 11: o resumo só grava sobre título derivado', () => {
+    writeChats(
+      [
+        conv('s', { title: 'Resumo antigo', titleSource: 'summary' }),
+        conv('h', { title: 'Nome humano', titleSource: 'human' }),
+        conv('f', { title: 'Refinando F-0010', featureId: 'F-0010' }),
+      ],
+      's',
+    )
+    const raw = localStorage.getItem('cerne.chats.proj-x')
+    for (const id of ['s', 'h', 'f']) applySummaryTitle(id, 'Outro resumo')
+    expect(localStorage.getItem('cerne.chats.proj-x')).toBe(raw)
+  })
+
+  it('critério 17: o rename persiste e resiste aos escritores automáticos', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+
+    act(() => result.current.renameConversation('c1', '  Meu nome  '))
+    expect(result.current.active.title).toBe('Meu nome')
+    expect(result.current.active.titleSource).toBe('human')
+    expect(readChats().chats[0]).toMatchObject({ title: 'Meu nome', titleSource: 'human' })
+
+    // deriveTitle (via updateActive com transcript novo).
+    act(() =>
+      result.current.updateActive({
+        messages: [...result.current.active.messages, { role: 'user', content: 'mais' }, { role: 'assistant', content: 'ok' }],
+      }),
+    )
+    expect(result.current.active.title).toBe('Meu nome')
+
+    // appendRegisteredId: sem sufixo, mas o vínculo F-0256 fica.
+    act(() => result.current.appendRegisteredId('F-0400'))
+    expect(result.current.active.title).toBe('Meu nome')
+    expect(result.current.active.featureId).toBe('F-0400')
+
+    // Resumo de LLM.
+    act(() => applySummaryTitle('c1', 'X'))
+    expect(result.current.active.title).toBe('Meu nome')
+    expect(getConversation('c1')!.title).toBe('Meu nome')
+  })
+
+  it('critério 17: refineFeature numa conversa de refino renomeada só seleciona', () => {
+    writeChats([conv('r', { title: 'Refinando F-0010', featureId: 'F-0010' }), conv('o')], 'o')
+    const { result } = renderHook(() => useBacklogChats())
+    act(() => result.current.renameConversation('r', 'Ajuste do login'))
+    act(() => result.current.refineFeature('F-0010'))
+    expect(result.current.active.id).toBe('r')
+    expect(result.current.active.title).toBe('Ajuste do login')
+    expect(result.current.chats).toHaveLength(2)
+  })
+
+  it('critério 17: o rename sobrevive à escrita concorrente do stream', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+    act(() => result.current.renameConversation('c1', 'Meu nome'))
+
+    // patchMessages que leu o storage antes do rename: transcript novo,
+    // carimbo mais novo, título antigo.
+    const streamed = [...conv('c1').messages, { role: 'user' as const, content: 'de novo' }, { role: 'assistant' as const, content: 'stream' }]
+    writeChats([conv('c1', { title: 'Pergunta c1', updatedAt: 500, messages: streamed })], 'c1')
+
+    act(() => result.current.updateActive({ model: 'm' }))
+
+    const stored = getConversation('c1')!
+    expect(stored.messages).toEqual(streamed)
+    expect(stored.title).toBe('Meu nome')
+    expect(stored.titleSource).toBe('human')
+  })
+
+  // C2: o segundo rename de uma conversa que já tem nome humano vence a cópia
+  // mais nova do storage (resposta em segundo plano) — também depois de recarregar.
+  it('C2: o rename mais novo vence, mesmo com o transcript do storage mais novo', () => {
+    writeChats([conv('x', { title: 'Pergunta x' }), conv('o', { title: 'Outra' })], 'x')
+    const { result, unmount } = renderHook(() => useBacklogChats())
+    act(() => result.current.renameConversation('x', 'Ideia (renomeada)'))
+    act(() => result.current.select('o'))
+
+    // A resposta em segundo plano chega: patchMessages parte do storage
+    // corrente ({...c}, com o primeiro nome) e carimba o transcript.
+    const idx = readChats()
+    const streamed = [...conv('x').messages, { role: 'user' as const, content: 'mais' }, { role: 'assistant' as const, content: 'resposta' }]
+    writeChats(idx.chats.map((c) => (c.id === 'x' ? { ...c, messages: streamed, updatedAt: Date.now() + 1000 } : c)), idx.activeId)
+
+    act(() => result.current.renameConversation('x', 'Segundo nome'))
+    expect(getConversation('x')).toMatchObject({ title: 'Segundo nome', titleSource: 'human', messages: streamed })
+
+    unmount()
+    const reloaded = renderHook(() => useBacklogChats())
+    expect(reloaded.result.current.chats.find((c) => c.id === 'x')).toMatchObject({ title: 'Segundo nome', titleSource: 'human' })
+  })
+
+  // C12: outra aba renomeia ou resume e grava o storage; esta aba recebe o
+  // evento storage e adota o título sem recarregar.
+  it('C12: o título gravado por outra aba entra na lista montada', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+    const idx = readChats()
+    writeChats(
+      idx.chats.map((c) => ({ ...c, title: 'Nome da aba 2', titleSource: 'human' as const, titledAt: Date.now() })),
+      idx.activeId,
+    )
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'cerne.chats.proj-x' }))
+    })
+    expect(result.current.active).toMatchObject({ title: 'Nome da aba 2', titleSource: 'human' })
+  })
+
+  // C12: sem título novo, o evento não regrava o storage — senão duas abas com
+  // model/effort diferentes regravariam uma à outra sem fim.
+  it('C12: evento storage sem título novo não regrava (sem pingue-pongue entre abas)', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    renderHook(() => useBacklogChats())
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key: 'cerne.chats.proj-x' }))
+      })
+      expect(setItem).not.toHaveBeenCalled()
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
+  it('critério 18: rename vazio ou só de espaços não muda nada', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+    act(() => result.current.renameConversation('c1', '   '))
+    act(() => result.current.renameConversation('c1', ''))
+    expect(result.current.active.title).toBe('Pergunta c1')
+    expect(result.current.active.titleSource).toBeUndefined()
+    expect(getConversation('c1')!.titleSource).toBeUndefined()
+  })
+
+  it('critério 21: conversa gravada sem a marca é lida como não renomeada', () => {
+    // Formato de antes da F-0310: nenhuma entrada tem titleSource.
+    writeChats([conv('a', { title: 'Pergunta a' }), conv('b', { title: 'Pergunta b' })], 'a')
+    const { result } = renderHook(() => useBacklogChats())
+
+    act(() => result.current.appendRegisteredId('F-0500'))
+    expect(result.current.active.title).toBe('Pergunta a → F-0500')
+
+    act(() => applySummaryTitle('b', 'Resumo de b'))
+    expect(result.current.chats.find((c) => c.id === 'b')!.title).toBe('Resumo de b')
+
+    act(() => result.current.renameConversation('b', 'Nome de b'))
+    expect(result.current.chats.find((c) => c.id === 'b')).toMatchObject({ title: 'Nome de b', titleSource: 'human' })
+  })
+
+  it('F-0323: rename e resumo preservam id, messages e updatedAt', () => {
+    writeChats([conv('c1', { title: 'Pergunta c1', updatedAt: 1234 })], 'c1')
+    const { result } = renderHook(() => useBacklogChats())
+    act(() => applySummaryTitle('c1', 'Resumo'))
+    act(() => result.current.renameConversation('c1', 'Nome'))
+    const stored = getConversation('c1')!
+    expect(stored).toMatchObject({ id: 'c1', updatedAt: 1234, title: 'Nome' })
+    expect(stored.messages).toEqual(conv('c1').messages)
+    expect(result.current.active).toMatchObject({ id: 'c1', updatedAt: 1234 })
   })
 })

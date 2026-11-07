@@ -398,7 +398,8 @@ h2 {
   color: var(--faint);
 }
 
-.conversation-item-delete {
+.conversation-item-delete,
+.conversation-item-rename {
   flex-shrink: 0;
   font: inherit;
   line-height: 1;
@@ -410,6 +411,15 @@ h2 {
 }
 
 .conversation-item-delete:hover { color: var(--danger); }
+.conversation-item-rename:hover { color: var(--fg); }
+
+.conversation-item-rename-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+}
 
 /* F-0218: max-height relativo ao viewport (não depende da cadeia de altura
    do #root/.kanban, que só tem min-height — um flex:1 ali não capa a

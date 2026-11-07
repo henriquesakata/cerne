@@ -1,5 +1,5 @@
-import { ChatRunsError, streamChat, type ChatMsg, type ChatOverride, type ChatRun } from './api'
-import { getConversation, readChats, writeChats } from './useBacklogChats'
+import { ChatRunsError, streamChat, summarizeChatTitle, type ChatMsg, type ChatOverride, type ChatRun } from './api'
+import { applySummaryTitle, getConversation, readChats, writeChats } from './useBacklogChats'
 
 // chatRequest (F-0230) é um singleton por conversa, fora do ciclo de vida do
 // React: o fetch continua mesmo que BacklogChat desmonte (navegação), grava a
@@ -109,6 +109,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
         outcomes.set(convId, { kind: 'success' })
       }
       notify(convId)
+      if (!res.needs_provider) summarizeFirstPair(convId)
     })
     .catch((err: unknown) => {
       statuses.set(convId, IDLE)
@@ -117,6 +118,19 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
       outcomes.set(convId, { kind: 'error', message: err instanceof Error ? err.message : String(err) })
       notify(convId)
     })
+}
+
+// F-0310: o primeiro par concluído pede o resumo — uma vez na vida da conversa
+// (só length 2 dispara), nunca sobre título marcado nem em conversa de refino.
+// Fogo-e-esquece depois do IDLE: falhar ou demorar nunca prende o chat.
+function summarizeFirstPair(convId: string) {
+  const c = getConversation(convId)
+  if (!c || c.messages.length !== 2 || c.titleSource || c.featureId) return
+  summarizeChatTitle(c.messages)
+    .then((r) => {
+      if (r.generated && r.title) applySummaryTitle(convId, r.title)
+    })
+    .catch(() => {})
 }
 
 export { getConversation }

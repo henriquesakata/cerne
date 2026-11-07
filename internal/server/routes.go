@@ -142,6 +142,11 @@ func dataRoutes() []dataRoute {
 		{"POST", "/chat/note", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleChatNote(w, r, repoDir, projDir)
 		}},
+		// Title summary (F-0310): spends the host's LLM — local ui only, like
+		// /wiki/compile.
+		{"POST", "/chat/title", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {
+			handleChatTitle(w, r, projDir)
+		}},
 		{"GET", "/config/llm", true, func(w http.ResponseWriter, _ *http.Request, _, projDir, _ string) {
 			handleLLMConfigGet(w, projDir)
 		}},
