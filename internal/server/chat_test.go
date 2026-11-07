@@ -849,28 +849,29 @@ func TestChatRegisterUpdate(t *testing.T) {
 }
 
 // TestChatRegisterUpdateIdenticalIsNoOp (F-0328 crit. 4): confirming the same
-// revision twice writes once — the second is a 200 that says the spec is
-// unchanged, with no event and no commit.
+// revision twice writes once — the second is a 200 flagged unchanged (no
+// warning: it is not an error, critic C12), with no event and no commit.
 func TestChatRegisterUpdateIdenticalIsNoOp(t *testing.T) {
 	repoDir, projDir, origin := newGitBackend(t)
 	seedSpec(t, repoDir, "F-0001", "## Problema\n\nVersão antiga.\n")
 	h := New(repoDir, projDir, "proj-chat-upd-same")
 	const req = `{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n"}`
 	type resp struct {
-		Feature store.Feature `json:"feature"`
-		Warning string        `json:"warning"`
+		Feature   store.Feature `json:"feature"`
+		Warning   string        `json:"warning"`
+		Unchanged bool          `json:"unchanged"`
 	}
 	var first resp
-	if rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &first); rec.Code != http.StatusOK || first.Warning != "" {
-		t.Fatalf("first update: status %d, warning %q — want 200 and no warning", rec.Code, first.Warning)
+	if rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &first); rec.Code != http.StatusOK || first.Warning != "" || first.Unchanged {
+		t.Fatalf("first update: status %d, warning %q, unchanged %v — want a plain 200", rec.Code, first.Warning, first.Unchanged)
 	}
 	evs0, _ := store.ReadEvents(repoDir)
 	head0, _ := gitback.HeadSHA(origin)
 
 	var again resp
 	rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &again)
-	if rec.Code != http.StatusOK || again.Feature.ID != "F-0001" || !strings.Contains(again.Warning, "unchanged") {
-		t.Fatalf("identical update: status %d, feature %q, warning %q — want 200 saying unchanged", rec.Code, again.Feature.ID, again.Warning)
+	if rec.Code != http.StatusOK || again.Feature.ID != "F-0001" || !again.Unchanged || again.Warning != "" {
+		t.Fatalf("identical update: status %d, feature %q, unchanged %v, warning %q — want 200 flagged unchanged, no warning", rec.Code, again.Feature.ID, again.Unchanged, again.Warning)
 	}
 	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
 		t.Fatalf("events = %d, want %d", len(evs), len(evs0))

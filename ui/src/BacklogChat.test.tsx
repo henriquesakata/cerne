@@ -18,7 +18,7 @@ const registerChatCandidate = vi.fn<
     capability?: string,
     parent?: string,
     featureId?: string,
-  ) => Promise<CreateOutcome>
+  ) => Promise<CreateOutcome & { warning?: string; unchanged?: boolean }>
 >()
 const registerChatNote = vi.fn<
   (
@@ -949,6 +949,22 @@ describe('BacklogChat — refino de candidata (F-0256)', () => {
         'F-0010',
       ),
     )
+  })
+
+  // F-0328 (crítico C12): a spec confirmada já é a gravada — o servidor não
+  // grava nada e responde "unchanged". Não é erro nem registro novo: aviso
+  // neutro, sem a faixa de erro, e onRegistered não dispara.
+  it('F-0328: spec igual mostra aviso neutro, não erro nem registro', async () => {
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0010'), unchanged: true })
+    const onRegistered = vi.fn()
+    renderChat({ featureId: 'F-0010', messages: [{ role: 'assistant', content: proposal }] }, { onRegistered })
+
+    fireEvent.click(screen.getByRole('button', { name: /atualizar spec/i }))
+
+    const notice = await screen.findByText('A spec já está igual; nada foi alterado.')
+    expect(notice).not.toHaveClass('error')
+    expect(notice.closest('.error')).toBeNull()
+    expect(onRegistered).not.toHaveBeenCalled()
   })
 
   it('conversa comum segue registrando candidata nova (sem id)', async () => {

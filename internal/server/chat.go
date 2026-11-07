@@ -377,10 +377,12 @@ func writeRefineError(w http.ResponseWriter, err error) bool {
 
 // chatRegisterResponse is the 201 payload: the created feature, plus a warning
 // when something non-fatal was dropped on the way in (F-0254: an invalid
-// parent).
+// parent). Unchanged flags an update whose spec was already the stored one —
+// a success that wrote nothing, not a warning (F-0328).
 type chatRegisterResponse struct {
-	Feature store.Feature `json:"feature"`
-	Warning string        `json:"warning,omitempty"`
+	Feature   store.Feature `json:"feature"`
+	Warning   string        `json:"warning,omitempty"`
+	Unchanged bool          `json:"unchanged,omitempty"`
 }
 
 // dupMatch is one collision the duplicate guard refused on, as the UI needs
@@ -441,11 +443,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 		if !writeRefineError(w, err) {
 			return
 		}
-		resp := chatRegisterResponse{Feature: f}
-		if !changed {
-			resp.Warning = "spec unchanged — the stored spec is already this body" // F-0328: no event, no commit
-		}
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, http.StatusOK, chatRegisterResponse{Feature: f, Unchanged: !changed})
 		return
 	}
 	capability := strings.TrimSpace(req.Capability)
