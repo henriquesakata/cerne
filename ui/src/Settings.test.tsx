@@ -750,6 +750,21 @@ describe('Settings — nome do projeto (F-0331)', () => {
     expect(renameProject).toHaveBeenLastCalledWith('Novo nome')
   })
 
+  it('crítica C9: da mensagem do servidor (stderr do git, multilinha) o alerta mostra só a primeira linha', async () => {
+    renameProject.mockRejectedValueOnce(
+      new HTTPError(
+        "git push --porcelain origin refs/heads/main: exit status 1\nremote: denied\nerror: failed to push some refs to '/private/tmp/x/backend.git'",
+        500,
+      ),
+    )
+    const r = await region()
+    submit(r, 'Novo nome')
+    const alert = await within(r).findByRole('alert')
+    expect(alert).toHaveTextContent(
+      /^Não foi possível gravar o nome: git push --porcelain origin refs\/heads\/main: exit status 1$/,
+    )
+  })
+
   it('crit. 7: durante a escrita o botão diz Salvando… e um segundo clique não grava de novo', async () => {
     const write = deferred<string>()
     renameProject.mockReturnValue(write.promise)

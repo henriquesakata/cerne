@@ -301,11 +301,10 @@ function ProjectName({ name }: { name: string }) {
             },
             (err: unknown) => {
               setSaving(false)
-              setError(
-                err instanceof HTTPError && err.status === 409
-                  ? tn.busy
-                  : tn.failed(err instanceof Error ? err.message : String(err)),
-              )
+              // Only the first line (critic C9): a failed push carries git's
+              // multi-line stderr, with local paths.
+              const message = (err instanceof Error ? err.message : String(err)).split('\n')[0]
+              setError(err instanceof HTTPError && err.status === 409 ? tn.busy : tn.failed(message))
             },
           )
         }}
