@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { consumeOutcome, send, status } from './chatRequest'
-import { getConversation, readChats, writeChats } from './useBacklogChats'
+import { act, renderHook } from '@testing-library/react'
+import { getConversation, readChats, useBacklogChats, writeChats } from './useBacklogChats'
 import { ChatRunsError, setApiProject, type ChatAnswer, type ChatTitle } from './api'
 
 const streamChat = vi.fn<(messages: unknown, override: unknown, onDelta: (d: string) => void) => Promise<ChatAnswer>>()
@@ -336,5 +337,27 @@ describe('chatRequest (F-0310): resumo do primeiro par', () => {
     title.resolve({ generated: true, title: 'Resumo' })
     await flush()
     expect(getConversation('t6')).toMatchObject({ title: 'Meu nome', titleSource: 'human' })
+  })
+
+  // C17: a mesma corrida, mas o rename passa pelo hook (renameConversation e o
+  // efeito de merge) com a cópia do hook atrasada em relação ao storage.
+  it('critério 17 (C17): o rename pelo hook durante o resumo vence, passando pelo merge', async () => {
+    seedConversation('t7')
+    const { result, unmount } = renderHook(() => useBacklogChats())
+    streamChat.mockResolvedValue({ answered: true, reply: 'R' })
+    const title = deferred<ChatTitle>()
+    summarizeChatTitle.mockReturnValue(title.promise)
+    send('t7', [{ role: 'user', content: 'P' }], {})
+    await vi.waitFor(() => expect(summarizeChatTitle).toHaveBeenCalledTimes(1))
+
+    act(() => result.current.renameConversation('t7', 'Meu nome'))
+    await act(async () => {
+      title.resolve({ generated: true, title: 'Resumo' })
+      await flush()
+    })
+    expect(getConversation('t7')).toMatchObject({ title: 'Meu nome', titleSource: 'human' })
+    expect(getConversation('t7')!.messages).toHaveLength(2)
+    expect(result.current.active.title).toBe('Meu nome')
+    unmount()
   })
 })
