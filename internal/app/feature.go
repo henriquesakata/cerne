@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"gitlab.com/rockt/cerne/internal/materialize"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -834,8 +835,8 @@ func dropBlank(lines []string) []string {
 // stampedDoc is the stored form of a whole-document body (doc ∈ spec|result),
 // under ONE cerne_id frontmatter: the body's own block when it already names
 // id (what `cerne show --doc <doc>` prints, extra keys kept; a quoted id is
-// stored unquoted, as every cerne_id reader expects), cerne's stamp when the
-// body has no block. A block naming another id is refused — it is another
+// stored unquoted, as every cerne_id reader expects; the keys an OKF pull
+// projects dropped), cerne's stamp when the body has no block. A block naming another id is refused — it is another
 // document — and so is a '---' opening with no cerne_id, or one that opens no
 // block at all (see leadingBlock), which cerne cannot tell from a rule. CRLF is
 // stored as LF, and a BOM is dropped wherever the leading blank lines put it.
@@ -854,7 +855,14 @@ func stampedDoc(id, doc, body string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	inner[i] = "cerne_id: " + id
+	kept := []string{}
+	for j, l := range inner {
+		if k, _, _ := strings.Cut(l, ":"); j == i {
+			kept = append(kept, "cerne_id: "+id)
+		} else if !slices.Contains(okfProjectionKeys, k) {
+			kept = append(kept, l)
+		}
+	}
 	// A block right after it is a second frontmatter (a spec doubled before
 	// F-0328, a re-fed file): never stored — ours again is dropped, anything else
 	// refused. A '---' that opens no block there is a rule, and stays (C1).
@@ -869,8 +877,13 @@ func stampedDoc(id, doc, body string) (string, error) {
 		}
 		rest = after
 	}
-	return "---\n" + strings.Join(inner, "\n") + "\n---\n\n" + strings.Join(rest, "\n") + "\n", nil
+	return "---\n" + strings.Join(kept, "\n") + "\n---\n\n" + strings.Join(rest, "\n") + "\n", nil
 }
+
+// okfProjectionKeys are the keys an OKF pull adds to a document's frontmatter
+// (type, state, timestamp…): stampedDoc drops them, so a projection fed back —
+// a state that goes stale on the next transition — never reaches the backend.
+var okfProjectionKeys = materialize.OKFKeys()
 
 // ownBlock returns the index of the cerne_id line of a block's inner lines,
 // refusing the block when that id is not id or there is none (an empty value

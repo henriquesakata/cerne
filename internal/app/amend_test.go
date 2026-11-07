@@ -125,7 +125,9 @@ func TestAmendIdenticalIsNoOp(t *testing.T) {
 // TestStampedDocFrontmatter (F-0328 crit. 1-3, the rule F-0305 wrote for the
 // amend): the body's opening block is kept when it names the feature — quoted
 // or not, stored unquoted like every reader expects — and a refusal says what
-// is wrong with it, for the document being written: another feature's id, or a
+// is wrong with it, for the document being written. The keys an OKF pull
+// projects (type, state, timestamp…) are dropped: a stale state must never
+// reach the backend (C14). Each refusal says what: another feature's id, or a
 // '---' block (a frontmatter or a horizontal rule) that carries no cerne_id at
 // all, or one that never closes — a block is only "key: value" and blank lines
 // up to its '---', so a later rule or code fence never closes it (F-0328
@@ -155,6 +157,7 @@ func TestStampedDocFrontmatter(t *testing.T) {
 		{"closed only by a later rule", "spec", "---\ncerne_id: F-0001\n\n# R\n\n## Problema\n\nTexto real.\n\n---\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
 		{"rule in the middle", "result", "---\ncerne_id: F-0001\n# R\n\n---\n\nMais.\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc result'"},
 		{"dashes inside a code fence", "spec", "---\ncerne_id: F-0001\n\n```yaml\n---\nx: 1\n```\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
+		{"okf projection fed back", "spec", "---\ntype: spec\ntitle: \"Login: Google\"\ndescription: x\ntimestamp: 2026-11-05T10:00:00Z\ntags: [a, b]\nstate: candidate\nowner: x\ncerne_id: F-0001\n---\n" + rest, "---\nowner: x\ncerne_id: F-0001\n---\n" + rest, ""},
 		{"own block twice", "spec", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: 'F-0001'\nx: y\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
 		{"own block, then a rule", "spec", "---\ncerne_id: F-0001\n---\n\n---\n" + rest, "---\ncerne_id: F-0001\n---\n\n---\n" + rest, ""},
 		{"own block, then another feature's", "spec", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: F-0002\n---\n" + rest, "", `the body's frontmatter names cerne_id "F-0002", not F-0001 — is it another feature's spec?`},
