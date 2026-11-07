@@ -286,7 +286,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		// The spec goes first: a body writeSpecBody refuses (F-0328) must leave
 		// nothing behind, and the go-git reset does not clean untracked files.
 		if strings.TrimSpace(specBody) != "" {
-			if err := writeSpecBody(repoDir, id, specBody); err != nil {
+			if _, err := writeSpecBody(repoDir, id, specBody); err != nil {
 				return err
 			}
 		} else if err := writeSpecStub(repoDir, id, title); err != nil {
@@ -678,11 +678,12 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 // no retitle. On an approved feature a different spec stales the approval
 // (lint.SpecChangedAfterApproval). Past approval it refuses with
 // ErrNotCandidate; the state is re-read inside the lock, so a concurrent start
-// cannot be raced. Returns the feature as stored.
-func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, error) {
-	f, err := loadCandidate(repoDir, id)
-	if err != nil {
-		return store.Feature{}, err
+// cannot be raced. A body whose stored form is already spec.md is a successful
+// no-op (changed false: no write, no event, no commit — F-0328), like
+// SaveFeatureDoc's byte-identical write. Returns the feature as stored.
+func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (f store.Feature, changed bool, err error) {
+	if f, err = loadCandidate(repoDir, id); err != nil {
+		return store.Feature{}, false, err
 	}
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cur, err := loadCandidate(repoDir, id)
@@ -690,8 +691,13 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, 
 			return "", err
 		}
 		f = cur
-		if err := writeSpecBody(repoDir, id, specBody); err != nil {
+		// Detected here, not by captureChanges: the event below is itself a change.
+		wrote, err := writeSpecBody(repoDir, id, specBody)
+		if err != nil {
 			return "", err
+		}
+		if !wrote {
+			return "", fmt.Errorf("%w: %s/spec.md", gitback.ErrNothingToCommit, id)
 		}
 		// Same trail as the feature-page editor (F-0262): the backend commit is not
 		// queryable by lint or by the entity history, so the write announces itself.
@@ -706,10 +712,13 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (store.Feature, 
 		}
 		return fmt.Sprintf("cerne: update %s/spec.md", id), nil
 	})
-	if err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
-		return store.Feature{}, err
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return f, false, nil // the stored spec is already this body
 	}
-	return f, nil
+	if err != nil {
+		return store.Feature{}, false, err
+	}
+	return f, true, nil
 }
 
 // ErrAmendNotImplemented is returned by AmendFeatureResult for a feature that is
@@ -835,17 +844,21 @@ func loadCandidate(repoDir, id string) (store.Feature, error) {
 // cerne_id frontmatter followed by the provided body — the one write path of
 // every whole-body spec: the one-shot spec of CreateFeatureWithSpec and the
 // rewrite of UpdateCandidateSpec. A body stampedDoc refuses is returned before
-// anything is written.
-func writeSpecBody(repoDir, id, body string) error {
+// anything is written; changed is false when spec.md already holds exactly
+// that content, and then nothing is written.
+func writeSpecBody(repoDir, id, body string) (changed bool, err error) {
 	content, err := stampedDoc(id, "spec", body)
 	if err != nil {
-		return err
+		return false, err
 	}
 	path := FeatureDocPath(repoDir, id, "spec.md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
+		return false, nil
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(path, []byte(content), 0o644)
 }
 
 // writeSpecStub creates content/features/<id>/spec.md scaffolded from the

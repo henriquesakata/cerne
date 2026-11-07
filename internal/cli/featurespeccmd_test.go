@@ -217,3 +217,36 @@ func TestFeatureSpecRefusesForeignFrontmatter(t *testing.T) {
 		})
 	}
 }
+
+// TestFeatureSpecIdenticalSaysUnchanged (F-0328 crit. 4): writing back what
+// `cerne show --doc spec` printed is a no-op the CLI names — no event, no
+// commit, no "spec updated".
+func TestFeatureSpecIdenticalSaysUnchanged(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	path := filepath.Join(t.TempDir(), "spec.md")
+	mustWrite(t, path, specBody)
+	if out, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir); err != nil || !strings.Contains(out, "F-0001 spec updated") {
+		t.Fatalf("first write: %v\noutput: %s", err, out)
+	}
+	shown, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, shown)
+	}
+	mustWrite(t, path, shown)
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	out, err := execCerne(t, "feature", "spec", "F-0001", "--file", path, "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001 spec unchanged — nothing to update.") || strings.Contains(out, "spec updated") {
+		t.Fatalf("identical rewrite: err %v, output %q — want the unchanged line only", err, out)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}

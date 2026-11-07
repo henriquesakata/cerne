@@ -437,11 +437,15 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	// candidate. Same gate as the creation (an explicit click got here), same
 	// backend write path, but nothing is minted and no state moves.
 	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
-		f, err := app.UpdateCandidateSpec(repoDir, projDir, fid, req.SpecBody)
+		f, changed, err := app.UpdateCandidateSpec(repoDir, projDir, fid, req.SpecBody)
 		if !writeRefineError(w, err) {
 			return
 		}
-		writeJSON(w, http.StatusOK, chatRegisterResponse{Feature: f})
+		resp := chatRegisterResponse{Feature: f}
+		if !changed {
+			resp.Warning = "spec unchanged — the stored spec is already this body" // F-0328: no event, no commit
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	capability := strings.TrimSpace(req.Capability)

@@ -826,6 +826,38 @@ func TestChatRegisterUpdate(t *testing.T) {
 	}
 }
 
+// TestChatRegisterUpdateIdenticalIsNoOp (F-0328 crit. 4): confirming the same
+// revision twice writes once — the second is a 200 that says the spec is
+// unchanged, with no event and no commit.
+func TestChatRegisterUpdateIdenticalIsNoOp(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	seedSpec(t, repoDir, "F-0001", "## Problema\n\nVersão antiga.\n")
+	h := New(repoDir, projDir, "proj-chat-upd-same")
+	const req = `{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n"}`
+	type resp struct {
+		Feature store.Feature `json:"feature"`
+		Warning string        `json:"warning"`
+	}
+	var first resp
+	if rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &first); rec.Code != http.StatusOK || first.Warning != "" {
+		t.Fatalf("first update: status %d, warning %q — want 200 and no warning", rec.Code, first.Warning)
+	}
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	var again resp
+	rec := doJSON(t, h, http.MethodPost, "/api/chat/register", req, &again)
+	if rec.Code != http.StatusOK || again.Feature.ID != "F-0001" || !strings.Contains(again.Warning, "unchanged") {
+		t.Fatalf("identical update: status %d, feature %q, warning %q — want 200 saying unchanged", rec.Code, again.Feature.ID, again.Warning)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
 // TestChatRegisterUpdateRefusals (F-0256 criterion 5, moved past approval by
 // F-0318): an unknown id is 404, a feature in development is 422, and neither
 // touches the backend.

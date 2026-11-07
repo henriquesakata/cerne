@@ -1062,6 +1062,42 @@ func readFeatureDocFile(t *testing.T, repoDir, id, file string) string {
 	return string(data)
 }
 
+// TestUpdateCandidateSpecIdenticalIsNoOp (F-0328 crit. 4): rewriting the spec
+// with what is already stored — the same body, or the stored file itself as
+// `cerne show --doc spec` prints it — is a successful no-op: changed false, no
+// feature.doc_edited, no commit. A different body still writes and says so.
+func TestUpdateCandidateSpecIdenticalIsNoOp(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil,
+		"## Problema\n\nVersão antiga.", false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	const body = "## Problema\n\nVersão nova.\n"
+	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", body); err != nil || !changed {
+		t.Fatalf("first rewrite: changed %v, err %v — want a write", changed, err)
+	}
+	path := FeatureDocPath(repoDir, "F-0001", "spec.md")
+	stored, _ := os.ReadFile(path)
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+
+	for name, again := range map[string]string{"same body": body, "stored file as show prints it": string(stored) + "\n"} {
+		f, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", again)
+		if err != nil || changed || f.ID != "F-0001" || f.State != domain.StateCandidate {
+			t.Fatalf("%s: f %s %s, changed %v, err %v — want a successful no-op", name, f.ID, f.State, changed, err)
+		}
+		if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+			t.Fatalf("%s: events = %d, want %d", name, len(evs), len(evs0))
+		}
+		if h, _ := gitback.HeadSHA(origin); h != head0 {
+			t.Fatalf("%s: origin moved: %s -> %s", name, head0, h)
+		}
+		if cur, _ := os.ReadFile(path); string(cur) != string(stored) {
+			t.Fatalf("%s: spec.md = %q, want %q", name, cur, stored)
+		}
+	}
+}
+
 // TestUpdateCandidateSpec (F-0256 criteria 3/5): a revision confirmed in the
 // Backlog chat rewrites the candidate's spec through the same gated write path
 // as the registration — cerne_id frontmatter restamped, lifecycle state
@@ -1074,7 +1110,7 @@ func TestUpdateCandidateSpec(t *testing.T) {
 	}
 	head0, _ := gitback.HeadSHA(origin)
 
-	f, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão nova.\n")
+	f, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nVersão nova.\n")
 	if err != nil {
 		t.Fatalf("UpdateCandidateSpec: %v", err)
 	}
@@ -1117,13 +1153,13 @@ func TestUpdateCandidateSpecRefusals(t *testing.T) {
 	}
 	before := readFeatureDocFile(t, repoDir, "F-0001", "spec.md")
 
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
+	if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", "## Problema\n\nBurlado.\n"); !errors.Is(err, ErrNotCandidate) {
 		t.Fatalf("err = %v, want ErrNotCandidate", err)
 	}
 	if got := readFeatureDocFile(t, repoDir, "F-0001", "spec.md"); got != before {
 		t.Fatalf("spec.md changed on a refused update: %q", got)
 	}
-	if _, err := UpdateCandidateSpec(repoDir, projDir, "F-9999", "x"); !errors.Is(err, store.ErrNotFound) {
+	if _, _, err := UpdateCandidateSpec(repoDir, projDir, "F-9999", "x"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("err = %v, want store.ErrNotFound", err)
 	}
 }
