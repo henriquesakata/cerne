@@ -30,8 +30,10 @@ describe('t.notif.age (F-0310)', () => {
     [60 * DAY, 'há 2 meses'],
     [330 * DAY, 'há 11 meses'],
     [359 * DAY, 'há 11 meses'],
-    [360 * DAY, 'há 1 ano'],
-    [364 * DAY, 'há 1 ano'],
+    // C13: crit. 6 conta o ano como 365 dias — 360-364 d ainda são meses.
+    [360 * DAY, 'há 12 meses'],
+    [364 * DAY, 'há 12 meses'],
+    [365 * DAY, 'há 1 ano'],
     [730 * DAY, 'há 2 anos'],
     [1094 * DAY, 'há 2 anos'],
   ])('critérios 1-6: régua de seis faixas e fronteiras exatas (pt-BR) — %i min → %s', (min, want) => {
@@ -53,8 +55,9 @@ describe('t.notif.age (F-0310)', () => {
     [60 * DAY, '2 months ago'],
     [330 * DAY, '11 months ago'],
     [359 * DAY, '11 months ago'],
-    [360 * DAY, '1 year ago'],
-    [364 * DAY, '1 year ago'],
+    [360 * DAY, '12 months ago'],
+    [364 * DAY, '12 months ago'],
+    [365 * DAY, '1 year ago'],
     [730 * DAY, '2 years ago'],
     [1094 * DAY, '2 years ago'],
   ])('critérios 1-6: régua de seis faixas e fronteiras exatas (en) — %i min → %s', (min, want) => {

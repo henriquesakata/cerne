@@ -1937,9 +1937,9 @@ const en: Messages = {
 export type Lang = 'pt-BR' | 'en'
 
 // ageLabel (F-0310): the six-band ladder, always truncated (month = 30 d,
-// year = 365 d). The year band starts at 12 months (360 d) with a floor of
-// 1 year: 360-364 d would otherwise read "0 years ago". Plural forms come
-// from Intl, not a hand-written table; numeric 'always' keeps "1 day ago"
+// year = 365 d, crit. 6 read literally — C13): 360-364 d read "12 months
+// ago", years start at 365 d. Plural forms come from Intl, not a
+// hand-written table; numeric 'always' keeps "1 day ago"
 // instead of "yesterday". A non-finite age (missing or corrupted stamp in
 // storage) renders a neutral "—": Intl throws on it, and that took the whole
 // Backlog down (F-0310 C3).
@@ -1952,8 +1952,8 @@ function ageLabel(min: number, lang: Lang, now: string): string {
   if (m < 60) return rtf.format(-m, 'minute')
   if (m < 1440) return rtf.format(-Math.floor(m / 60), 'hour')
   if (d < 30) return rtf.format(-d, 'day')
-  if (d < 360) return rtf.format(-Math.floor(d / 30), 'month')
-  return rtf.format(-Math.max(1, Math.floor(d / 365)), 'year')
+  if (d < 365) return rtf.format(-Math.floor(d / 30), 'month')
+  return rtf.format(-Math.floor(d / 365), 'year')
 }
 
 const STORAGE_KEY = 'cerne-lang'
