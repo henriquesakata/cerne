@@ -83,7 +83,7 @@ func CheckOpenClarifications(repoDir, id string) error {
 		for k, o := range c.Options {
 			opts[k] = fmt.Sprintf("%d: %s", k+1, o)
 		}
-		fmt.Fprintf(&b, "--pick <k>   (%s)", strings.Join(opts, ", "))
+		fmt.Fprintf(&b, "--pick <k>   (%s — or free text: --answer \"...\")", strings.Join(opts, ", "))
 	}
 	if len(open) > 1 {
 		b.WriteString("\nanswer them top to bottom: each answer renumbers only the questions listed above it (a command whose number moved is refused, nothing written).")

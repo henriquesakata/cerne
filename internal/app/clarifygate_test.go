@@ -98,11 +98,12 @@ func TestApproveClarifyGateCanonicalAndFailClosed(t *testing.T) {
 }
 
 // F-0330 crit. 2: a marker with options shows them numbered and the --pick
-// form on the question's own line.
+// form on the question's own line — and that free text is accepted too
+// (critic C7).
 func TestApproveClarifyRefusalShowsOptions(t *testing.T) {
 	_, err := clarifyGateFixture(t, "[ESCLARECER: a barra cobre a CLI e a UI? | só CLI | as duas]\n")
 	line := lineWith(err.Error(), "a barra cobre a CLI e a UI?")
-	for _, want := range []string{"cerne clarify answer F-0007 1 --expect ", " --pick <k>", "(1: só CLI, 2: as duas)"} {
+	for _, want := range []string{"cerne clarify answer F-0007 1 --expect ", " --pick <k>", "(1: só CLI, 2: as duas — or free text: --answer \"...\")"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("question line %q missing %q", line, want)
 		}
