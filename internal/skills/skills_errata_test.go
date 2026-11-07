@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -26,9 +27,23 @@ func TestSkillErrataTeachesMarker(t *testing.T) {
 	for _, old := range []string{
 		"points at the successor",
 		"cannot carry the `lint:ok-superseded` marker",
+		"clears the debt",
 	} {
 		if strings.Contains(sec, old) {
 			t.Errorf("Errata section still says %q", old)
 		}
 	}
+	// The false promise in any wording: no sentence may say that naming or
+	// pointing at the successor clears a finding (spec problem 3).
+	for _, sentence := range sentenceSplit.Split(sec, -1) {
+		if successorRe.MatchString(sentence) && clearRe.MatchString(sentence) {
+			t.Errorf("Errata section still ties the successor to clearing a finding: %q", sentence)
+		}
+	}
 }
+
+var (
+	sentenceSplit = regexp.MustCompile(`[.!?]\s+|\n`)
+	successorRe   = regexp.MustCompile(`(?i)\bsuccessor`)
+	clearRe       = regexp.MustCompile(`(?i)\bclear(s|ed|ing)?\b`)
+)
