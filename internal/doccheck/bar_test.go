@@ -70,6 +70,15 @@ func TestSpecBar(t *testing.T) {
 		{"hyphenated nao aplicavel with placeholder refuses", "# t\n\nBarra: não-aplicável (<justificativa>)\n", ErrBarMalformed, ""},
 		{"bold nao aplicavel with justification passes", "# t\n\nBarra: **não aplicável** (refator sem comportamento novo)\n", nil, "Barra: **não aplicável** (refator sem comportamento novo)"},
 		{"hyphenated nao aplicavel with justification passes", "# t\n\nBarra: não-aplicável (refator sem comportamento novo)\n", nil, "Barra: não-aplicável (refator sem comportamento novo)"},
+		// The line layouts the result reader takes: list, quote, heading and
+		// table markers, a bold label, a short qualifier (F-0327).
+		{"list item bar passes", "# t\n\n- Barra: R-0008 — docs/design/x.png\n", nil, "Barra: R-0008 — docs/design/x.png"},
+		{"bold label bar passes", "# t\n\n**Barra:** R-0008 — docs/design/x.png\n", nil, "Barra: R-0008 — docs/design/x.png"},
+		{"bold list label bar passes", "# t\n\n- **Barra:** R-0008 — docs/design/x.png\n", nil, "Barra: R-0008 — docs/design/x.png"},
+		{"qualified label bar passes", "# t\n\nBarra (da spec): R-0008 — docs/design/x.png\n", nil, "Barra: R-0008 — docs/design/x.png"},
+		{"lowercase label bar passes", "# t\n\nbarra: R-0008 — docs/design/x.png\n", nil, "Barra: R-0008 — docs/design/x.png"},
+		{"bold label placeholder refuses", "# t\n\n**Barra:** <referência + acesso>\n", ErrBarMalformed, ""},
+		{"plural label is no bar line", "# t\n\nBarras: R-0008 — docs/design/x.png\n", ErrBarMissing, ""},
 		// Out of the spec's scope: the "padrão alternativo" is taught, not required.
 		{"placeholder alternative after a filled justification passes", "# t\n\nBarra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>\n", nil, "Barra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>"},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante\n", nil, "Barra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante"},

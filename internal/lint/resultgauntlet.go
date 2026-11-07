@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -42,7 +43,6 @@ var (
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
 	roundAnchorRe = regexp.MustCompile(`^Rodada[\s\x{00A0}]+(\d+)\b`)
-	barLineRe     = regexp.MustCompile(`(?i)^Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[\s\x{00A0}*_]*([^\s\x{00A0}*_].*)$`)
 	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da)[*_]*:`)
 	criticLineRe  = regexp.MustCompile(`(?i)^Achados? do cr(?:í|i\x{0301}|i)tico`)
 	headingRe     = regexp.MustCompile(`^\s*#{1,6}(\s|$)`)
@@ -187,10 +187,10 @@ func parseGauntlet(section string) gauntletRecord {
 		s := lineMarkersRe.ReplaceAllString(line, "")
 		// Bar and header lines are consumed first, even inside a critic block
 		// and even when they cite a verdict (accepted limit).
-		if m := barLineRe.FindStringSubmatch(s); m != nil {
-			value := strings.TrimSpace(emphasis.Replace(m[1]))
-			if rec.bar == "" && !placeholderRe.MatchString(value) {
-				rec.bar = m[1]
+		if bar, ok := doccheck.BarLine(line); ok {
+			value := strings.TrimSpace(emphasis.Replace(bar))
+			if rec.bar == "" && value != "" && !placeholderRe.MatchString(value) {
+				rec.bar = bar
 			}
 			rec.exempt = rec.exempt || (exemptionRe.MatchString("Barra: "+value) && !placeholderParenRe.MatchString(value))
 			continue

@@ -19,9 +19,11 @@ var (
 // spelling, mirroring the lint-side mention matching.
 var (
 	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
-	// [ \t], not \s: RE2's \s crosses the newline, so an empty "Barra:" took
-	// the next line as its value (F-0327).
-	barLineRe            = regexp.MustCompile(`(?m)^[ \t]*Barra:[ \t]*(.*)$`)
+	// A "Barra:" line in any layout both readers take (F-0327): list, quote,
+	// heading or table markers, emphasis around the label, a short qualifier
+	// before the colon ("Barra (da spec):"). Matched per line: across lines,
+	// RE2's \s let an empty "Barra:" take the next line as its value.
+	barLineRe            = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
 	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel\s*\(\s*([^)]+)\)`)
 	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*([^)]+)\)`)
 	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`)
@@ -87,21 +89,30 @@ func exemptionError(form *regexp.Regexp, plain, need string) error {
 // the caller's job (the document gate). A template placeholder "<…>" is not a
 // value, nor an exemption's justification or quote.
 func SpecBar(body []byte) (string, error) {
-	text := htmlCommentRe.ReplaceAllString(string(body), "")
-	matches := barLineRe.FindAllStringSubmatch(text, -1)
-	if len(matches) == 0 {
-		return "", ErrBarMissing
-	}
-	var firstInvalid error
-	for _, m := range matches {
-		value := strings.TrimSpace(m[1])
+	firstInvalid := ErrBarMissing
+	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
+		value, ok := BarLine(line)
+		if !ok {
+			continue
+		}
 		err := barValueError(value)
 		if err == nil {
 			return "Barra: " + value, nil
 		}
-		if firstInvalid == nil {
+		if firstInvalid == ErrBarMissing {
 			firstInvalid = err
 		}
 	}
 	return "", firstInvalid
+}
+
+// BarLine reads one line as a "Barra:" line, in any layout the approve gate
+// and the result reader take: ok, and the text after the colon (past the
+// label's closing emphasis), trimmed.
+func BarLine(line string) (value string, ok bool) {
+	m := barLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
 }

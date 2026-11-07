@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -57,6 +58,35 @@ func TestSpecMissingBarRule(t *testing.T) {
 				if !strings.Contains(bar[0].Detail, want) {
 					t.Fatalf("detail %q lacks %q", bar[0].Detail, want)
 				}
+			}
+		})
+	}
+}
+
+// TestBarReadersAgreeOnLineLayouts pins one bar-line recognizer for the
+// approve gate (doccheck.SpecBar) and the result reader (parseGauntlet):
+// the same line is a bar line to both or to neither (F-0327).
+func TestBarReadersAgreeOnLineLayouts(t *testing.T) {
+	for line, want := range map[string]bool{
+		"Barra: R-0008 — docs/design/x.png":           true,
+		"- Barra: R-0008 — docs/design/x.png":         true,
+		"**Barra:** R-0008 — docs/design/x.png":       true,
+		"- **Barra:** R-0008 — docs/design/x.png":     true,
+		"> Barra: R-0008 — docs/design/x.png":         true,
+		"1. Barra: R-0008 — docs/design/x.png":        true,
+		"### Barra: R-0008 — docs/design/x.png":       true,
+		"barra: R-0008 — docs/design/x.png":           true,
+		"Barra (da spec): R-0008 — docs/design/x.png": true,
+		"Barras: R-0008 — docs/design/x.png":          false,
+		"Barra:":                                      false,
+		"A Barra: R-0008 — docs/design/x.png":         false,
+	} {
+		t.Run(line, func(t *testing.T) {
+			_, err := doccheck.SpecBar([]byte("# t\n\n" + line + "\n"))
+			spec := err == nil
+			result := parseGauntlet(line).bar != ""
+			if spec != want || result != want {
+				t.Fatalf("approve gate %v, result reader %v, want both %v", spec, result, want)
 			}
 		})
 	}
