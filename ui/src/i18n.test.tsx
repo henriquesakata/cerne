@@ -109,6 +109,8 @@ describe('t.settings.projectName (F-0331 crit. 10)', () => {
     for (const k of Object.keys(lp)) expect(lp[k], k).not.toBe(le[k])
     expect(pt.projectName.title.toLowerCase()).toContain('projeto')
     expect(en.projectName.title.toLowerCase()).toContain('project')
+    // Crítica C8: sem a chave pt, o not.toBe passaria contra undefined.
+    expect(pt.text['Your name in the channel']).toBeDefined()
     expect(pt.projectName.title).not.toBe(pt.text['Your name in the channel'])
     expect(en.projectName.title).not.toBe('Your name in the channel')
   })
