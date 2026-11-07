@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Backlog from './Backlog'
+import { readChats } from './useBacklogChats'
 import type { ChatAnswer, ChatOverride, ChatTitle, CreateOutcome, Feature, Idea, LLMOptions, StateResponse } from './api'
 
 const feature = (id: string, extra: Partial<Feature> = {}): Feature => ({
@@ -189,6 +190,44 @@ describe('Backlog (F-0202)', () => {
     await waitFor(() =>
       expect(screen.getByText(/Preciso exportar relatórios em CSV.*→ F-0221/)).toBeInTheDocument(),
     )
+  })
+
+  // F-0310 critério 17: o nome dado pelo humano é terminal — registrar a
+  // candidata vincula a conversa, mas não sufixa o título.
+  it('F-0310 critério 17: renomeada pela lista, a conversa não ganha o sufixo ao registrar a candidata', async () => {
+    const proposalReply =
+      'Aqui está:\n\n```cerne-proposta\n# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n```\n'
+    streamChat.mockResolvedValue({ answered: true, reply: proposalReply })
+    registerChatCandidate.mockResolvedValue({
+      ok: true,
+      feature: {
+        id: 'F-0221',
+        title: 'Exportar relatórios em CSV',
+        module: '',
+        state: 'candidate',
+        created_at: '2026-08-07T00:00:00Z',
+        updated_at: '2026-08-07T00:00:00Z',
+      },
+    })
+    render(<Backlog />)
+
+    fireEvent.change(await screen.findByPlaceholderText(/descreva/i), {
+      target: { value: 'Preciso exportar relatórios em CSV' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    const registerButton = await screen.findByRole('button', { name: /registrar candidata/i })
+
+    fireEvent.click(screen.getByRole('button', { name: /renomear "Preciso exportar relatórios em CSV"/i }))
+    const input = screen.getByRole('textbox', { name: /novo nome/i })
+    fireEvent.change(input, { target: { value: 'Meu nome' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    fireEvent.click(registerButton)
+    // O vínculo F-0256 chegou (appendRegisteredId rodou), e o título ficou.
+    await waitFor(() => expect(readChats().chats.find((c) => c.featureId === 'F-0221')).toBeDefined())
+    expect(readChats().chats.find((c) => c.featureId === 'F-0221')).toMatchObject({ title: 'Meu nome', titleSource: 'human' })
+    expect(screen.getByRole('button', { name: /renomear "Meu nome"/i })).toBeInTheDocument()
+    expect(screen.queryByText(/→ F-0221/)).not.toBeInTheDocument()
   })
 })
 

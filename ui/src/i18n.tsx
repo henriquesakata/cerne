@@ -336,6 +336,8 @@ const ptBR = {
     conversationsTitle: 'Conversas',
     untitledConversation: '(sem título)',
     deleteConversation: 'Excluir',
+    renameConversation: (title: string) => `Renomear "${title}"`,
+    renameInput: 'Novo nome da conversa',
     confirmDeleteConversation: (title: string) =>
       `Excluir a conversa "${title}"? Essa ação não pode ser desfeita.`,
     confirmCapReached: (title: string, max: number) =>
@@ -1301,6 +1303,8 @@ const en: Messages = {
     conversationsTitle: 'Conversations',
     untitledConversation: '(untitled)',
     deleteConversation: 'Delete',
+    renameConversation: (title: string) => `Rename "${title}"`,
+    renameInput: 'New conversation name',
     confirmDeleteConversation: (title: string) =>
       `Delete the conversation "${title}"? This cannot be undone.`,
     confirmCapReached: (title: string, max: number) =>
