@@ -481,7 +481,7 @@ func validateParent(repoDir, childID, parent string) error {
 func SetFeatureParent(repoDir, projDir, id, parent string) error {
 	id = domain.CanonicalID(id) // the child's event and commit carry the stored id
 	if c := domain.CanonicalID(parent); c != "" {
-		parent = c // a blank parent stays raw so validateParent refuses it, never a silent clear
+		parent = c // a whitespace-only parent stays raw so validateParent refuses it ("" alone clears)
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)

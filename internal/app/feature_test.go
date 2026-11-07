@@ -313,8 +313,9 @@ func TestSetFeatureParentErrors(t *testing.T) {
 
 // TestFeatureParentStoredCanonical (F-0326 crit. 1): the epic link is written
 // canonical whatever the caller typed — on create, on reparent, in the events —
-// and the "unchanged" check of a reparent compares canonically. A blank parent
-// is still refused, never a silent "no epic" or a silent clear.
+// and the "unchanged" check of a reparent compares canonically. A
+// whitespace-only parent is still refused, never a silent "no epic" or a
+// silent clear ("" alone is the API's explicit clear).
 func TestFeatureParentStoredCanonical(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)

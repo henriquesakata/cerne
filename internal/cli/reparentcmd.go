@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +33,9 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 			return fmt.Errorf("--clear does not take a <parent-id>")
 		}
 	case len(args) == 2:
+		if strings.TrimSpace(args[1]) == "" { // detaching is --clear, never a blank id
+			return fmt.Errorf("<parent-id> needs a feature id (use --clear to detach)")
+		}
 		parent = args[1]
 	default:
 		return fmt.Errorf("pass the <parent-id> or use --clear")

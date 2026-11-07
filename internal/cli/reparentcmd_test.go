@@ -73,3 +73,28 @@ func TestFeatureReparentEchoesCanonicalParent(t *testing.T) {
 		t.Fatalf("parent = %q, want F-0001", f.Parent)
 	}
 }
+
+// TestFeatureReparentBlankParentRefused (F-0326): an empty or blank
+// <parent-id> is refused with a pointer to --clear, like a blank
+// "feature list --parent", instead of silently detaching the feature.
+func TestFeatureReparentBlankParentRefused(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for _, args := range [][]string{
+		{"feature", "new", "Épico", "--context", "ctx de teste"},
+		{"feature", "new", "Filha", "--context", "ctx de teste"},
+		{"feature", "reparent", "F-0002", "F-0001"},
+	} {
+		if out, err := execCerne(t, append(args, "--dir", projDir)...); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+	for _, blank := range []string{"", "  "} {
+		out, err := execCerne(t, "feature", "reparent", "F-0002", blank, "--dir", projDir)
+		if want := "<parent-id> needs a feature id (use --clear to detach)"; err == nil || err.Error() != want {
+			t.Fatalf("reparent %q: err = %v, want %q\n%s", blank, err, want, out)
+		}
+		if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "F-0001" {
+			t.Fatalf("reparent %q changed the parent to %q, want F-0001 kept", blank, f.Parent)
+		}
+	}
+}
