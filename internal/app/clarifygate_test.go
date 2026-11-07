@@ -12,9 +12,20 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
-// clarifyGateFixture seeds candidate F-0007 with spec (and an open marker in
-// the plan, which the gate must not list) and returns the gate's refusal.
+// gateBarTail gives a fixture spec a valid bar, so the refusal has no hard
+// impediment behind it.
+const gateBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+
+// clarifyGateFixture seeds candidate F-0007 with spec plus a valid bar (and an
+// open marker in the plan, which the gate must not list) and returns the
+// gate's refusal.
 func clarifyGateFixture(t *testing.T, spec string) (repoDir string, err error) {
+	t.Helper()
+	return clarifyGateSeed(t, spec+gateBarTail)
+}
+
+// clarifyGateSeed is clarifyGateFixture with the spec exactly as given.
+func clarifyGateSeed(t *testing.T, spec string) (repoDir string, err error) {
 	t.Helper()
 	repoDir = t.TempDir()
 	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0007", Title: "x", State: domain.StateCandidate}); err != nil {
@@ -170,5 +181,25 @@ func TestApproveClarifyRefusalOrderAndGuardLine(t *testing.T) {
 	}
 	if _, err := clarifyGateFixture(t, "[ESCLARECER: só uma?]\n"); strings.Contains(err.Error(), "top to bottom") {
 		t.Errorf("one question needs no order line:\n%v", err)
+	}
+}
+
+// F-0330 (critic C4): with a hard impediment behind the questions the refusal
+// leads with it, and neither the re-approve nor --force is told as if it
+// would succeed.
+func TestApproveClarifyRefusalLeadsWithHardImpediments(t *testing.T) {
+	_, err := clarifyGateSeed(t, "[ESCLARECER: qual o limite?]\n")
+	lines := strings.Split(err.Error(), "\n")
+	if len(lines) < 3 || !strings.Contains(lines[1], "bar-missing") || !strings.Contains(lines[1], "answering them (or --force) is not enough") || !strings.Contains(lines[1], "'cerne feature approve F-0007 --check'") {
+		t.Fatalf("the hard impediment must come right after the header:\n%v", err)
+	}
+	if l := lineWith(err.Error(), "then run 'cerne feature approve F-0007' again"); l != "" {
+		t.Errorf("unconditional re-approve with a hard impediment: %q", l)
+	}
+	if l := lineWith(err.Error(), "--force "); strings.Contains(l, "approves") || !strings.Contains(l, "bar-missing") {
+		t.Errorf("--force line = %q, want it to say it does not get past bar-missing", l)
+	}
+	if l := lineWith(err.Error(), "run 'cerne feature approve F-0007' again"); !strings.Contains(l, "--check") {
+		t.Errorf("re-approve line = %q, want it conditioned on the check", l)
 	}
 }

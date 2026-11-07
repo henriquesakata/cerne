@@ -47,7 +47,21 @@ func CheckOpenClarifications(repoDir, id string) error {
 	if len(open) == 0 {
 		return nil
 	}
+	// Hard impediments lead (critic C4): answering, or --force, does not get
+	// past them, so the refusal says so before the questions.
+	var hard []string
+	if imps, err := ApproveReadiness(repoDir, id); err == nil {
+		for _, im := range imps {
+			if im.Hard {
+				hard = append(hard, im.Code)
+			}
+		}
+	}
+	hardList := strings.Join(hard, ", ")
 	var b strings.Builder
+	if len(hard) > 0 {
+		fmt.Fprintf(&b, "\nfirst: the approve also refuses on %s — answering them (or --force) is not enough; see 'cerne feature approve %s --check'.", hardList, id)
+	}
 	for i := len(open) - 1; i >= 0; i-- {
 		c := open[i]
 		fmt.Fprintf(&b, "\n  %d. %-*s  → cerne clarify answer %s %d --expect %s ", c.Index, width, c.Question, id, c.Index, markerKey(c.Raw))
@@ -64,8 +78,13 @@ func CheckOpenClarifications(repoDir, id string) error {
 	if len(open) > 1 {
 		b.WriteString("\nanswer them top to bottom: each answer renumbers only the questions listed above it (a command whose number moved is refused, nothing written).")
 	}
-	fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
 	b.WriteString("\nthe UI answers the same markers too (each one is a clickable chip in the spec).")
-	b.WriteString("\n--force skips this check only: it approves with these questions still open in the spec; the other approve gates still apply.")
+	if len(hard) > 0 {
+		fmt.Fprintf(&b, "\nonce 'cerne feature approve %s --check' shows no hard impediment, run 'cerne feature approve %s' again.", id, id)
+		fmt.Fprintf(&b, "\n--force skips this check only; it does not get past %s.", hardList)
+	} else {
+		fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
+		b.WriteString("\n--force skips this check only: it approves with these questions still open in the spec; the other approve gates still apply.")
+	}
 	return fmt.Errorf("%w — %d pending question(s):%s", ErrOpenClarifications, len(open), b.String())
 }
