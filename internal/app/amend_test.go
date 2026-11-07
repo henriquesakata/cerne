@@ -122,35 +122,46 @@ func TestAmendIdenticalIsNoOp(t *testing.T) {
 	}
 }
 
-// TestAmendedResultFrontmatter: the body's opening block is kept when it names
-// the feature — quoted or not, stored unquoted like every reader expects — and
-// a refusal says what is wrong with it: another feature's id, or a '---' block
-// (a frontmatter or a horizontal rule) that carries no cerne_id at all.
-func TestAmendedResultFrontmatter(t *testing.T) {
+// TestStampedDocFrontmatter (F-0328 crit. 1-3, the rule F-0305 wrote for the
+// amend): the body's opening block is kept when it names the feature — quoted
+// or not, stored unquoted like every reader expects — and a refusal says what
+// is wrong with it, for the document being written: another feature's id, or a
+// '---' block (a frontmatter or a horizontal rule) that carries no cerne_id at
+// all, or one that never closes. Every accepted form is a fixed point: the
+// stored file fed back (what `cerne show --doc` prints, one newline more) is
+// stored unchanged, which is what makes an identical rewrite detectable.
+func TestStampedDocFrontmatter(t *testing.T) {
 	const rest = "\n# R\n\nCorpo.\n"
 	for _, tc := range []struct {
-		name, body, want, refusal string
+		name, doc, body, want, refusal string
 	}{
-		{"no block", "# R\n\nCorpo.\n", "---\ncerne_id: F-0001\n---\n\n# R\n\nCorpo.\n", ""},
-		{"plain id", "---\ncerne_id: F-0001\nx: y\n---\n" + rest, "---\ncerne_id: F-0001\nx: y\n---\n" + rest, ""},
-		{"double-quoted id", "---\ncerne_id: \"F-0001\"\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
-		{"single-quoted id", "---\ncerne_id: 'F-0001'\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
-		{"other id", "---\ncerne_id: F-0002\n---\n" + rest, "", `names cerne_id "F-0002", not F-0001 — is it another feature's result?`},
-		{"block without id", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
-		{"horizontal rule", "---\n" + rest, "", "the body opens a '---' block without cerne_id"},
-		{"empty id", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id"},
-		{"block never closes", "---\ncerne_id: F-0001\n# R\n\nCorpo.\n", "", "the body's '---' block never closes"},
+		{"no block", "result", "# R\n\nCorpo.\n", "---\ncerne_id: F-0001\n---\n\n# R\n\nCorpo.\n", ""},
+		{"plain id", "result", "---\ncerne_id: F-0001\nx: y\n---\n" + rest, "---\ncerne_id: F-0001\nx: y\n---\n" + rest, ""},
+		{"double-quoted id", "result", "---\ncerne_id: \"F-0001\"\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
+		{"single-quoted id", "result", "---\ncerne_id: 'F-0001'\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
+		{"bom and blank lines", "spec", "\ufeff\n\n# R\n\nCorpo.\n\n\n", "---\ncerne_id: F-0001\n---\n\n# R\n\nCorpo.\n", ""},
+		{"other id", "result", "---\ncerne_id: F-0002\n---\n" + rest, "", `names cerne_id "F-0002", not F-0001 — is it another feature's result?`},
+		{"other id, spec", "spec", "---\ncerne_id: F-0002\n---\n" + rest, "", `names cerne_id "F-0002", not F-0001 — is it another feature's spec?`},
+		{"block without id", "result", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
+		{"block without id, spec", "spec", "---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc spec' or drop the block"},
+		{"horizontal rule", "result", "---\n" + rest, "", "the body opens a '---' block without cerne_id"},
+		{"empty id", "result", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id"},
+		{"block never closes", "result", "---\ncerne_id: F-0001\n# R\n\nCorpo.\n", "", "the body's '---' block never closes"},
+		{"block never closes, spec", "spec", "---\ncerne_id: F-0001\n# R\n", "", "start from 'cerne show F-0001 --doc spec'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := amendedResult("F-0001", tc.body)
+			got, err := stampedDoc("F-0001", tc.doc, tc.body)
 			if tc.refusal != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.refusal) {
-					t.Fatalf("err = %v, want %q", err, tc.refusal)
+				if !errors.Is(err, ErrBodyFrontmatter) || !strings.Contains(err.Error(), tc.refusal) {
+					t.Fatalf("err = %v, want ErrBodyFrontmatter saying %q", err, tc.refusal)
 				}
 				return
 			}
 			if err != nil || got != tc.want {
 				t.Fatalf("got %q, %v — want %q", got, err, tc.want)
+			}
+			if again, err := stampedDoc("F-0001", tc.doc, got+"\n"); err != nil || again != got {
+				t.Fatalf("not a fixed point: %q, %v — want %q", again, err, got)
 			}
 		})
 	}

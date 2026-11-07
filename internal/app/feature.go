@@ -732,7 +732,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 	if strings.TrimSpace(body) == "" {
 		return store.Feature{}, false, errors.New("empty result body: pass the full result via --file <result.md> or on stdin")
 	}
-	content, err := amendedResult(id, body)
+	content, err := stampedDoc(id, "result", body)
 	if err != nil {
 		return store.Feature{}, false, err
 	}
@@ -774,14 +774,20 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 	return f, true, nil
 }
 
-// amendedResult is the stored form of an amend body, under ONE cerne_id
-// frontmatter: the body's own block when it already names id (what
-// `cerne show --doc result` prints, extra keys kept; a quoted id is stored
-// unquoted, as every cerne_id reader expects), cerne's stamp when the body has
-// no block. A block naming another id is refused — it is another document —
-// and so is a '---' opening with no cerne_id (a frontmatter without it, or a
-// horizontal rule), which cerne cannot tell apart.
-func amendedResult(id, body string) (string, error) {
+// ErrBodyFrontmatter is returned by stampedDoc for a body whose opening '---'
+// block cerne will not store: another feature's cerne_id, no cerne_id at all,
+// or a block that never closes. The message says which (F-0328).
+var ErrBodyFrontmatter = errors.New("refused frontmatter")
+
+// stampedDoc is the stored form of a whole-document body (doc ∈ spec|result),
+// under ONE cerne_id frontmatter: the body's own block when it already names
+// id (what `cerne show --doc <doc>` prints, extra keys kept; a quoted id is
+// stored unquoted, as every cerne_id reader expects), cerne's stamp when the
+// body has no block. A block naming another id is refused — it is another
+// document — and so is a '---' opening with no cerne_id (a frontmatter without
+// it, or a horizontal rule), which cerne cannot tell apart. The rule of the
+// amend (F-0305), shared with every spec write since F-0328.
+func stampedDoc(id, doc, body string) (string, error) {
 	body = strings.TrimSpace(strings.TrimPrefix(body, "\ufeff"))
 	lines := strings.Split(body, "\n")
 	if strings.TrimSpace(lines[0]) != "---" {
@@ -798,15 +804,15 @@ func amendedResult(id, body string) (string, error) {
 			continue
 		}
 		if got != id {
-			return "", fmt.Errorf("the body's frontmatter names cerne_id %q, not %s — is it another feature's result?", got, id)
+			return "", fmt.Errorf("%w: the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", ErrBodyFrontmatter, got, id, doc)
 		}
 		if end == len(lines) {
-			return "", fmt.Errorf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc result'", id)
+			return "", fmt.Errorf("%w: the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", ErrBodyFrontmatter, id, doc)
 		}
 		lines[i] = "cerne_id: " + id
 		return strings.Join(lines, "\n") + "\n", nil
 	}
-	return "", fmt.Errorf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc result' or drop the block", id)
+	return "", fmt.Errorf("%w: the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", ErrBodyFrontmatter, id, doc)
 }
 
 // loadCandidate loads a feature and asserts its spec is still open to the chat
