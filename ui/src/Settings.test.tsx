@@ -822,6 +822,20 @@ describe('Settings — nome do projeto (F-0331)', () => {
     expect(within(r).queryByRole('status')).toBeNull()
   })
 
+  it('crítica C13: o bloco do nome não depende da carga dos settings, e o texto digitado sobrevive a ela', async () => {
+    fetchSettings.mockRejectedValueOnce(new Error('boom'))
+    render(<Settings />)
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Erro ao carregar as configurações: boom')
+    const field = () =>
+      within(screen.getByRole('region', { name: 'Nome do projeto' })).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(field()).toHaveValue('Projeto A')
+    fireEvent.change(field(), { target: { value: 'Digitado' } })
+    fireEvent.click(within(status).getByRole('button', { name: 'Tentar de novo' }))
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(field()).toHaveValue('Digitado')
+  })
+
   it('crit. 10: com o I18nProvider (jsdom = en), rótulo, destino e regra saem em inglês', async () => {
     render(
       <I18nProvider>

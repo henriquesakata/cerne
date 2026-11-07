@@ -148,91 +148,99 @@ export default function Settings() {
   }
 
   const view = written && written.base === load.data ? written.view : load.data
-  if (!view) return <LoadPending load={load} message={ts.loadError} />
+  const name = projects.find((p) => p.pid === activePid)?.name ?? activePid
 
   // Registry texts come in English; the catalog is keyed by the source text.
   const tx = (src: string) => ts.text[src] ?? src
   const q = norm(query.trim())
-  const shown = view.settings.filter(
+  const shown = (view?.settings ?? []).filter(
     (s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q),
   )
-  const name = projects.find((p) => p.pid === activePid)?.name ?? activePid
 
+  // The name block does not hang on the settings registry (critic C13): it
+  // shows while that load is pending or failed, at the same place in the tree,
+  // so what the user typed survives the load landing.
   return (
     <main className="page settings-page">
-      <LoadNotice load={load} />
+      {view && <LoadNotice load={load} />}
       <h1>{ts.title}</h1>
       <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
       <ProjectName key={activePid} name={name} />
-      <div className="settings-scope">
-        <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
-          {ORDER.map((sc) => (
-            <button
-              key={sc}
-              type="button"
-              className={sc === scope ? 'lang-option active' : 'lang-option'}
-              aria-pressed={sc === scope}
-              title={sc === 'host' ? ts.hostGlobalTitle : undefined}
-              onClick={() => setScope(sc)}
-            >
-              {ts.scopes[sc]}
-              {/* The space keeps the accessible name "Host global". */}
-              {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
-            </button>
-          ))}
-        </span>
-        <p id={hintId} className="settings-hint">
-          {ts.scopeHint[scope]}
-        </p>
-      </div>
-      {/* The escape to the raw file (R-0042): where the selected scope lives,
-          for whoever would rather edit it by hand. */}
-      {view.files[scope] && (
-        <div className="settings-file">
-          <span>{ts.file}</span>
-          <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
-        </div>
-      )}
-      {(view.errors ?? []).map((e) => (
-        <Notice
-          key={`${e.scope}:${e.file}`}
-          message={ts.fileError(e.file, e.error)}
-          onRetry={load.retry}
-          busy={load.retrying}
-        />
-      ))}
-      <input
-        type="search"
-        className="settings-search"
-        aria-label={ts.search}
-        placeholder={ts.search}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <p className="counts" aria-live="polite">
-        {ts.count(shown.length, view.settings.length)}
-      </p>
-      {shown.length === 0 ? (
-        <p className="settings-empty">{ts.noMatch(query.trim())}</p>
-      ) : (
-        <ul className="settings-list">
-          {shown.map((s) => (
-            <SettingRow
-              key={s.id}
-              s={s}
-              scope={scope}
-              tx={tx}
-              files={view.files}
-              busy={busy.has(s.id)}
-              landed={landed[s.id] ?? 0}
-              failures={failures}
-              onWrite={(ws, run) => write(s.id, ws, run)}
-              onScope={(to) => switchScope(s.id, to)}
+      {view ? (
+        <>
+          <div className="settings-scope">
+            <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
+              {ORDER.map((sc) => (
+                <button
+                  key={sc}
+                  type="button"
+                  className={sc === scope ? 'lang-option active' : 'lang-option'}
+                  aria-pressed={sc === scope}
+                  title={sc === 'host' ? ts.hostGlobalTitle : undefined}
+                  onClick={() => setScope(sc)}
+                >
+                  {ts.scopes[sc]}
+                  {/* The space keeps the accessible name "Host global". */}
+                  {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
+                </button>
+              ))}
+            </span>
+            <p id={hintId} className="settings-hint">
+              {ts.scopeHint[scope]}
+            </p>
+          </div>
+          {/* The escape to the raw file (R-0042): where the selected scope lives,
+              for whoever would rather edit it by hand. */}
+          {view.files[scope] && (
+            <div className="settings-file">
+              <span>{ts.file}</span>
+              <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
+            </div>
+          )}
+          {(view.errors ?? []).map((e) => (
+            <Notice
+              key={`${e.scope}:${e.file}`}
+              message={ts.fileError(e.file, e.error)}
+              onRetry={load.retry}
+              busy={load.retrying}
             />
           ))}
-        </ul>
+          <input
+            type="search"
+            className="settings-search"
+            aria-label={ts.search}
+            placeholder={ts.search}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <p className="counts" aria-live="polite">
+            {ts.count(shown.length, view.settings.length)}
+          </p>
+          {shown.length === 0 ? (
+            <p className="settings-empty">{ts.noMatch(query.trim())}</p>
+          ) : (
+            <ul className="settings-list">
+              {shown.map((s) => (
+                <SettingRow
+                  key={s.id}
+                  s={s}
+                  scope={scope}
+                  tx={tx}
+                  files={view.files}
+                  busy={busy.has(s.id)}
+                  landed={landed[s.id] ?? 0}
+                  failures={failures}
+                  onWrite={(ws, run) => write(s.id, ws, run)}
+                  onScope={(to) => switchScope(s.id, to)}
+                />
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <LoadPending load={load} message={ts.loadError} />
       )}
     </main>
   )
