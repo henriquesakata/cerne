@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChatRunsError, fetchSettings, HTTPError, putSetting, recompileWiki, setApiProject, streamChat, unsetSetting } from './api'
+import {
+  ChatRunsError,
+  fetchSettings,
+  HTTPError,
+  putSetting,
+  recompileWiki,
+  renameProject,
+  setApiProject,
+  streamChat,
+  unsetSetting,
+} from './api'
 
 function streamResponse(chunks: string[]): Response {
   const encoder = new TextEncoder()
@@ -167,5 +177,22 @@ describe('settings API (F-0315 critérios 5 e 8): escopo do projeto ativo da aba
     expect((err as HTTPError).status).toBe(422)
     const del = await unsetSetting('graph.enabled', 'project').catch((e: unknown) => e)
     expect((del as HTTPError).status).toBe(422)
+  })
+
+  it('renameProject faz PUT JSON no projeto ativo e devolve o nome gravado (F-0331)', async () => {
+    setApiProject('p2')
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ name: 'Núcleo' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await renameProject('Núcleo')).toBe('Núcleo')
+    const [url, init] = fetch.mock.calls[0]
+    expect(url).toBe('/api/projects/p2/project/name')
+    expect(init.method).toBe('PUT')
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
+    expect(init.body).toBe('{"name":"Núcleo"}')
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'busy' }), { status: 409 })))
+    const err = await renameProject('Núcleo').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(HTTPError)
+    expect((err as HTTPError).status).toBe(409)
   })
 })

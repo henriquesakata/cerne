@@ -1184,6 +1184,18 @@ export async function unsetSetting(id: string, scope: SettingScope): Promise<Set
   return (await r.json()) as SettingsView
 }
 
+// renameProject renames the active project in its backend (F-0331) and
+// returns the name as stored (trimmed by the server).
+export async function renameProject(name: string): Promise<string> {
+  const r = await fetch(`${base()}/project/name`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return ((await r.json()) as { name: string }).name
+}
+
 // ---- referências externas (case 0020) ----
 
 export type CreateReferenceOutcome =

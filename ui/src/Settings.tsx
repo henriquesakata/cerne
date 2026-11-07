@@ -3,6 +3,7 @@ import {
   fetchSettings,
   HTTPError,
   putSetting,
+  renameProject,
   unsetSetting,
   type ResolvedSetting,
   type SettingScope,
@@ -163,6 +164,7 @@ export default function Settings() {
       <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
+      <ProjectName key={activePid} name={name} />
       <div className="settings-scope">
         <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
           {ORDER.map((sc) => (
@@ -232,6 +234,85 @@ export default function Settings() {
         </ul>
       )}
     </main>
+  )
+}
+
+// ponytail: mirrors app.RenameProject's rules so a refusal reads in the UI's
+// language; the server stays the authority (a divergence shows its 400 in failed).
+function nameRule(s: string): 'empty' | 'long' | 'control' | null {
+  const v = s.trim()
+  if (v === '') return 'empty'
+  if ([...v].length > 64) return 'long'
+  if (/\p{Cc}/u.test(v)) return 'control'
+  return null
+}
+
+// ProjectName renames the project (F-0331): the backend's project.json, shared
+// by every clone — not a scoped setting. The input is uncontrolled and keyed
+// by the backend's name, so it remounts only when the re-read project list
+// brings another name: a failed write keeps what the user typed.
+function ProjectName({ name }: { name: string }) {
+  const { t } = useT()
+  const tn = t.settings.projectName
+  const uid = useId()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Busy is aria-disabled, never disabled (F-0302).
+  const lock = saving || undefined
+  return (
+    <section aria-labelledby={`${uid}-title`}>
+      <h2 id={`${uid}-title`} className="settings-title">
+        {tn.title}
+      </h2>
+      <form
+        className="settings-string"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (saving) return
+          const raw = String(new FormData(e.currentTarget).get('name') ?? '')
+          const rule = nameRule(raw)
+          if (rule) {
+            setError(tn.rules[rule])
+            return
+          }
+          setSaving(true)
+          setError(null)
+          renameProject(raw.trim()).then(
+            () => setSaving(false),
+            (err: unknown) => {
+              setSaving(false)
+              setError(
+                err instanceof HTTPError && err.status === 409
+                  ? tn.busy
+                  : tn.failed(err instanceof Error ? err.message : String(err)),
+              )
+            },
+          )
+        }}
+      >
+        <input
+          key={name}
+          name="name"
+          type="text"
+          className="settings-text"
+          defaultValue={name}
+          aria-labelledby={`${uid}-title`}
+          aria-describedby={`${uid}-hint`}
+          aria-disabled={lock}
+        />
+        <button type="submit" aria-describedby={`${uid}-title`} aria-disabled={lock}>
+          {saving ? tn.saving : t.common.save}
+        </button>
+      </form>
+      <p id={`${uid}-hint`} className="settings-hint">
+        {tn.hint}
+      </p>
+      {error && (
+        <p role="alert" className="form-error">
+          {error}
+        </p>
+      )}
+    </section>
   )
 }
 

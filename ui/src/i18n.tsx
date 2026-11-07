@@ -974,6 +974,18 @@ const ptBR = {
       project: 'Projeto',
       host: 'Host',
     } satisfies Record<SettingScope, string>,
+    projectName: {
+      title: 'Nome do projeto',
+      hint: 'Grava no backend do projeto: vale para todo clone.',
+      saving: 'Salvando…',
+      rules: {
+        empty: 'O nome do projeto não pode ficar vazio.',
+        long: 'O nome do projeto tem no máximo 64 caracteres.',
+        control: 'O nome do projeto não pode ter quebra de linha nem caractere de controle.',
+      },
+      busy: 'O backend está ocupado ou mudou por outro caminho. Tente de novo.',
+      failed: (e: string) => `Não foi possível gravar o nome: ${e}`,
+    },
     // Títulos e descrições do registro chegam em inglês (D-0006); a tradução é
     // indexada pelo texto-fonte (estilo gettext): texto novo ou alterado no
     // servidor cai no inglês, nunca numa tradução velha. Chaves SEMPRE entre
@@ -1937,6 +1949,18 @@ const en: Messages = {
     scopes: {
       project: 'Project',
       host: 'Host',
+    },
+    projectName: {
+      title: 'Project name',
+      hint: "Saved to the project's backend: applies to every clone.",
+      saving: 'Saving…',
+      rules: {
+        empty: 'The project name cannot be empty.',
+        long: 'The project name has at most 64 characters.',
+        control: 'The project name cannot contain line breaks or control characters.',
+      },
+      busy: 'The backend is busy or changed elsewhere. Try again.',
+      failed: (e: string) => `Could not save the name: ${e}`,
     },
     text: {},
   },
