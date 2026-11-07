@@ -192,6 +192,7 @@ func TestFeatureSpecRefusesForeignFrontmatter(t *testing.T) {
 		{"other id", "---\ncerne_id: F-0002\n---\n\n## Problema\n\nDe outra.\n", []string{`cerne_id "F-0002", not F-0001`, "another feature's spec"}},
 		{"block without id", "---\ntitle: x\n---\n\n## Problema\n\nSem id.\n", []string{"without cerne_id", "--doc spec"}},
 		{"block never closes", "---\ncerne_id: F-0001\n\n## Problema\n\nAberto.\n", []string{"never closes"}},
+		{"block closed only by a later rule", "---\ncerne_id: F-0001\n\n# Spec toda na frontmatter\n\n## Problema\n\nTexto real do problema.\n\n---\n", []string{"never closes"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "spec.md")

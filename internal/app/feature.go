@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -797,38 +798,69 @@ type frontmatterRefusal string
 func (e frontmatterRefusal) Error() string        { return string(e) }
 func (e frontmatterRefusal) Is(target error) bool { return target == ErrBodyFrontmatter }
 
+// frontmatterKeyLine is a top-level "key: value" line — with blank lines, the
+// only line a frontmatter block may hold before its closing '---'.
+var frontmatterKeyLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*:(\s|$)`)
+
+// leadingBlock reads the '---' frontmatter block lines open with: its inner
+// lines and the lines after its closing '---'. opens is false when the first
+// line is not '---'. closed is false when that '---' opens no block — a line
+// that is neither blank nor "key: value" comes before any closing '---' (prose,
+// a heading, a code fence), or no '---' follows at all — so a later rule or
+// fence never closes it and swallows the document (F-0328 critic C2).
+func leadingBlock(lines []string) (inner, rest []string, opens, closed bool) {
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return nil, lines, false, false
+	}
+	for i := 1; i < len(lines); i++ {
+		switch l := lines[i]; {
+		case strings.TrimSpace(l) == "---":
+			return lines[1:i], lines[i+1:], true, true
+		case strings.TrimSpace(l) != "" && !frontmatterKeyLine.MatchString(l):
+			return nil, lines, true, false
+		}
+	}
+	return nil, lines, true, false
+}
+
+// dropBlank drops the blank lines lines open with.
+func dropBlank(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	return lines
+}
+
 // stampedDoc is the stored form of a whole-document body (doc ∈ spec|result),
 // under ONE cerne_id frontmatter: the body's own block when it already names
 // id (what `cerne show --doc <doc>` prints, extra keys kept; a quoted id is
 // stored unquoted, as every cerne_id reader expects), cerne's stamp when the
 // body has no block. A block naming another id is refused — it is another
-// document — and so is a '---' opening with no cerne_id (a frontmatter without
-// it, or a horizontal rule), which cerne cannot tell apart. The rule of the
-// amend (F-0305), shared with every spec write since F-0328.
+// document — and so is a '---' opening with no cerne_id, or one that opens no
+// block at all (see leadingBlock), which cerne cannot tell from a rule. CRLF is
+// stored as LF, and a BOM is dropped wherever the leading blank lines put it.
+// The rule of the amend (F-0305), shared with every spec write since F-0328.
 func stampedDoc(id, doc, body string) (string, error) {
-	body = strings.TrimSpace(strings.TrimPrefix(body, "\ufeff"))
-	lines := strings.Split(body, "\n")
-	if strings.TrimSpace(lines[0]) != "---" {
+	body = strings.ReplaceAll(body, "\r\n", "\n")
+	body = strings.TrimSpace(strings.TrimLeft(body, "\ufeff \t\r\n"))
+	inner, rest, opens, closed := leadingBlock(strings.Split(body, "\n"))
+	if !opens {
 		return "---\ncerne_id: " + id + "\n---\n\n" + body + "\n", nil
 	}
-	end := 1
-	for end < len(lines) && strings.TrimSpace(lines[end]) != "---" {
-		end++
+	if !closed {
+		return "", frontmatterRefusal(fmt.Sprintf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", id, doc))
 	}
-	for i := 1; i < end; i++ {
-		v, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), "cerne_id:")
+	for i, l := range inner {
+		k, v, _ := strings.Cut(l, ":")
 		got := strings.Trim(strings.TrimSpace(v), `"'`)
-		if !ok || got == "" {
+		if k != "cerne_id" || got == "" {
 			continue
 		}
 		if got != id {
 			return "", frontmatterRefusal(fmt.Sprintf("the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", got, id, doc))
 		}
-		if end == len(lines) {
-			return "", frontmatterRefusal(fmt.Sprintf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", id, doc))
-		}
-		lines[i] = "cerne_id: " + id
-		return strings.Join(lines, "\n") + "\n", nil
+		inner[i] = "cerne_id: " + id
+		return "---\n" + strings.Join(inner, "\n") + "\n---\n\n" + strings.Join(dropBlank(rest), "\n") + "\n", nil
 	}
 	return "", frontmatterRefusal(fmt.Sprintf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", id, doc))
 }
