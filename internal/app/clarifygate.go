@@ -3,12 +3,10 @@ package app
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/clarify"
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // ErrOpenClarifications is the sentinel for an approve attempted over a spec
@@ -19,27 +17,55 @@ import (
 var ErrOpenClarifications = errors.New("open clarifications in the spec")
 
 // CheckOpenClarifications refuses when the feature's spec has unresolved
-// [ESCLARECER] markers, listing the pending questions. A missing spec passes —
-// doc presence is the document gate's concern, not this one's.
+// [ESCLARECER] markers, giving each pending question the exact command that
+// answers it (F-0330). The numbers are the Index ListClarifications assigns —
+// the one 'cerne clarify answer <id> <n>' resolves — and the questions are
+// listed last first: an answer renumbers the open markers after it, so the
+// commands stay right when run top to bottom. A missing spec or feature
+// passes — doc presence and existence are the core's concern, not this one's.
 func CheckOpenClarifications(repoDir, id string) error {
-	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
-	if errors.Is(err, fs.ErrNotExist) {
+	items, err := ListClarifications(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	open := clarify.Open(string(data))
+	spec := "content/features/" + id + "/spec.md"
+	var open []OpenClarification
+	width := 0
+	for _, c := range items {
+		if c.Doc != spec {
+			continue
+		}
+		if c.Question == "" {
+			c.Question = c.Raw
+		}
+		open = append(open, c)
+		width = max(width, utf8.RuneCountInString(c.Question))
+	}
 	if len(open) == 0 {
 		return nil
 	}
 	var b strings.Builder
-	for _, c := range open {
-		q := c.Question
-		if q == "" {
-			q = c.Raw
+	for i := len(open) - 1; i >= 0; i-- {
+		c := open[i]
+		fmt.Fprintf(&b, "\n  %d. %-*s  → cerne clarify answer %s %d ", c.Index, width, c.Question, id, c.Index)
+		if len(c.Options) == 0 {
+			b.WriteString(`--answer "..."`)
+			continue
 		}
-		fmt.Fprintf(&b, "\n  - %s", q)
+		opts := make([]string, len(c.Options))
+		for k, o := range c.Options {
+			opts[k] = fmt.Sprintf("%d: %s", k+1, o)
+		}
+		fmt.Fprintf(&b, "--pick <k>   (%s)", strings.Join(opts, ", "))
 	}
-	return fmt.Errorf("%w — %d pending question(s):%s\nanswer them with 'cerne clarify list %s' + 'cerne clarify answer %s <n> --answer \"...\"', in the UI (each marker is a clickable chip), or re-run with --force", ErrOpenClarifications, len(open), b.String(), id, id)
+	if len(open) > 1 {
+		b.WriteString("\nrun them top to bottom: each answer renumbers the questions after it.")
+	}
+	fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
+	b.WriteString("\nthe UI answers the same markers too (each one is a clickable chip in the spec).")
+	b.WriteString("\n--force skips this check only: it approves with these questions still open in the spec; the other approve gates still apply.")
+	return fmt.Errorf("%w — %d pending question(s):%s", ErrOpenClarifications, len(open), b.String())
 }
