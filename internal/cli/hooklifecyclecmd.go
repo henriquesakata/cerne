@@ -16,12 +16,15 @@ import (
 // the other hook subcommands it is hidden, silent on anything unexpected, and
 // always exits 0 (fail-open: a hook must never break the host session).
 
-var featureNewRe = regexp.MustCompile(`\bfeature\s+new\b`)
+// featureNewRe also covers `idea promote` (F-0312 C13): both mint a stub
+// candidate whose spec is still to be written.
+var featureNewRe = regexp.MustCompile(`\b(feature\s+new|idea\s+promote)\b`)
 
-// featureCreatedRe confirms a `feature new` actually minted an id: the
-// duplicate guard's refusal also CITES F- ids (the similar features), so the
-// id alone is not a success signal — require the creation wording next to it.
-var featureCreatedRe = regexp.MustCompile(`\b(F-\d{4,})\b[^\n]*\b(created|criada)\b`)
+// featureCreatedRe confirms a `feature new` (or `idea promote`) actually
+// minted an id: the duplicate guard's refusal also CITES F- ids (the similar
+// features), and a refused promote cites the existing one, so the id alone is
+// not a success signal — require the creation wording next to it.
+var featureCreatedRe = regexp.MustCompile(`\b(F-\d{4,})\b[^\n]*\b(created|criada)\b|promoted \((F-\d{4,})\)`)
 
 // postToolContext is the PostToolUse additionalContext envelope.
 type postToolContext struct {
@@ -34,7 +37,7 @@ type postToolContext struct {
 func newHookLifecycleReminderCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "lifecycle-reminder",
-		Short:  "PostToolUse plumbing: moment-of-action guidance after feature new/start (F-0170)",
+		Short:  "PostToolUse plumbing: moment-of-action guidance after feature new/start and idea promote (F-0170)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -66,7 +69,7 @@ func runHookLifecycleReminder(cmd *cobra.Command) {
 		if m == nil {
 			return
 		}
-		id := m[1]
+		id := m[1] + m[3] // one of the two alternatives matched
 		msg = fmt.Sprintf("cerne: %s registered as a candidate. Write its real spec NOW, in this same turn — `cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push` — then run `cerne feature approve %s --check`, fix the hard impediments it lists; leave open clarifications for the human, with the approve request. Only then ask a human to run `cerne feature approve %s` (approving accepts the `Barra:` line you proposed) and STOP. Do not implement an unapproved feature.", id, id, id, id)
 	case featureStartRe.MatchString(ti.Command):
 		if !strings.Contains(response, "in_development") {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/lint"
@@ -20,7 +22,7 @@ import (
 )
 
 // ErrUnknownIDPrefix is returned by `cerne show` when a cerne_id's prefix maps
-// to no known entity kind (F/D/R/N/RB/H/C/P).
+// to no known entity kind (F/D/R/N/RB/H/C/P/I).
 var ErrUnknownIDPrefix = errors.New("unknown cerne_id prefix")
 
 // ErrNoSuchDoc is returned by `cerne show --doc` when the requested document
@@ -53,8 +55,8 @@ func newShowCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
-		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending) by id",
-		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-) and prints the metadata plus the entity's " +
+		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea) by id",
+		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-/I-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
 			"already-implemented features that are not materialized in '.docs/'. Use --doc to print a single " +
 			"feature document raw (spec|plan|result), and --json for machine output.",
@@ -75,6 +77,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	id = strings.ToUpper(strings.TrimSpace(id)) // ids are stored upper-case: i-0001 is I-0001
 	res, err := resolveEntity(ctx.repoDir, id)
 	if err != nil {
 		return err
@@ -106,6 +109,28 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 			res.content = append(res.content, showDoc{name: "pending", body: strings.Join(lines, "\n")})
 		}
 	}
+	if res.kind == "idea" {
+		// C20: the idea's own trail, from the raw log — idea.* never reaches
+		// the funnel's ReadEvents (History, heatmap).
+		evs, err := store.ReadAllEvents(ctx.repoDir)
+		if err != nil {
+			return err
+		}
+		var lines []string
+		for _, ev := range evs {
+			if ev.EntityID != id {
+				continue
+			}
+			line := fmt.Sprintf("%s  %s  %s", ev.At.Format(time.RFC3339), ev.Type, ev.Actor)
+			for _, k := range slices.Sorted(maps.Keys(ev.Payload)) {
+				line += fmt.Sprintf("  %s=%s", k, ev.Payload[k])
+			}
+			lines = append(lines, line)
+		}
+		if len(lines) > 0 {
+			res.content = append(res.content, showDoc{name: "history", body: strings.Join(lines, "\n")})
+		}
+	}
 	w := cmd.OutOrStdout()
 	if doc != "" {
 		if err := res.selectDoc(doc); err != nil {
@@ -130,7 +155,11 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 // has no real content.
 func (r *showResult) selectDoc(name string) error {
 	if r.kind != "feature" {
-		return fmt.Errorf("%w: only features have spec/plan/result documents (this is a %s)", ErrNoSuchDoc, r.kind)
+		article := "a"
+		if strings.ContainsRune("aeiou", rune(r.kind[0])) {
+			article = "an"
+		}
+		return fmt.Errorf("%w: only features have spec/plan/result documents (this is %s %s)", ErrNoSuchDoc, article, r.kind)
 	}
 	if !slices.Contains(featureDocNames, name) {
 		return fmt.Errorf("%w: valid: %s", ErrNoSuchDoc, strings.Join(featureDocNames, ", "))
@@ -169,6 +198,8 @@ func kindForID(id string) (string, bool) {
 		return "capability", true
 	case "P":
 		return "pending", true
+	case "I":
+		return "idea", true
 	}
 	return "", false
 }
@@ -233,6 +264,15 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 			content = []showDoc{{"", p.Body}}
 		}
 		return showResult{kind, p, content, nil}, nil
+	case "idea":
+		if _, err := app.CanonicalIdeaID(id); err != nil {
+			return showResult{}, err
+		}
+		i, err := store.LoadIdea(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("idea %s: %w", id, err)
+		}
+		return showResult{kind, i, []showDoc{{"", i.Text}}, nil}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }
@@ -279,6 +319,9 @@ func (r showResult) renderText(w io.Writer) {
 		}
 		if e.Parent != "" {
 			fmt.Fprintf(w, "epic: %s\n", e.Parent)
+		}
+		if e.FromIdea != "" {
+			fmt.Fprintf(w, "from idea: %s\n", e.FromIdea)
 		}
 		if r.approvalStale != nil && *r.approvalStale {
 			fmt.Fprintln(w, approvalStaleLine(e.ID))
@@ -333,6 +376,24 @@ func (r showResult) renderText(w io.Writer) {
 	case store.Pending:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		fmt.Fprintf(w, "from: %s\n", e.From)
+		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
+		if e.ClosedAt != nil {
+			fmt.Fprintf(w, "closed: %s\n", e.ClosedAt.Format(time.DateOnly))
+		}
+		if len(e.Facets) > 0 {
+			fmt.Fprintf(w, "facets: %s\n", strings.Join(e.Facets, ", "))
+		}
+		if len(e.Components) > 0 {
+			fmt.Fprintf(w, "components: %s\n", strings.Join(e.Components, ", "))
+		}
+		if e.PromotedTo != "" {
+			fmt.Fprintf(w, "promoted to: %s\n", e.PromotedTo)
+		}
+		if e.Reason != "" {
+			fmt.Fprintf(w, "reason: %s\n", e.Reason)
+		}
+	case store.Idea:
+		fmt.Fprintf(w, "%s  %s  [%s]\n", e.ID, r.kind, e.State)
 		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
 		if e.ClosedAt != nil {
 			fmt.Fprintf(w, "closed: %s\n", e.ClosedAt.Format(time.DateOnly))

@@ -34,6 +34,7 @@ export type Feature = {
   capabilities?: string[] // F-0188: C- ids da taxonomia funcional
   owner?: string // F-0204: responsável (texto livre)
   priority?: string // F-0204: p0..p3 (conjunto fechado)
+  from_idea?: string // F-0312: a ideia (I-) de que a promoção a criou
   created_at: string
   updated_at: string
 }
@@ -1478,6 +1479,72 @@ export async function postChannel(body: string): Promise<ChannelMessage> {
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as ChannelMessage
+}
+
+// --- Ideias (F-0312) ---
+
+// Idea espelha store.Idea: matéria-prima fora do funil — texto e tags
+// opcionais, sem spec nem gates.
+export type Idea = {
+  id: string
+  text: string
+  state: 'active' | 'dropped' | 'promoted'
+  facets?: string[]
+  components?: string[]
+  created_at: string
+  updated_at: string
+  closed_at?: string
+  reason?: string
+  promoted_to?: string
+}
+
+// fetchIdeas lista as ideias ativas, mais novas primeiro.
+export async function fetchIdeas(): Promise<Idea[]> {
+  const r = await fetch(`${base()}/ideas`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { ideas: Idea[] }).ideas
+}
+
+// SimilarExists é uma promoção barrada pela guarda de duplicidade (F-0147,
+// 409): as parecidas vão junto, para o painel mostrá-las e oferecer forçar.
+export class SimilarExists extends Error {
+  matches: DupMatch[]
+  constructor(message: string, matches: DupMatch[]) {
+    super(message)
+    this.matches = matches
+  }
+}
+
+async function postIdea<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${base()}/ideas${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (r.status === 409) {
+    const b = (await r.json().catch(() => ({}))) as { error?: string; matches?: DupMatch[] }
+    throw new SimilarExists(b.error ?? `HTTP ${r.status}`, b.matches ?? [])
+  }
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return (await r.json()) as T
+}
+
+// createIdea tem o contrato do `cerne idea new`: só o texto é exigido. token
+// identifica o envio (C2): o "Tentar de novo" reenvia o mesmo, e o servidor
+// devolve a ideia já capturada em vez de duplicá-la.
+export async function createIdea(text: string, facets: string[], components: string[], token: string): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>('', { text, facets, components, token })).idea
+}
+
+// dropIdea descarta sem apagar; reason (opcional) aparece no `--all`.
+export async function dropIdea(id: string, reason: string): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>(`/${encodeURIComponent(id)}/drop`, { reason })).idea
+}
+
+// promoteIdea cria a candidata; module só é exigido com 2+ módulos; force
+// passa pela guarda de duplicidade (SimilarExists).
+export async function promoteIdea(id: string, module: string, force = false): Promise<{ idea: Idea; feature: Feature }> {
+  return postIdea(`/${encodeURIComponent(id)}/promote`, { module, force })
 }
 
 // --- Harness (F-0251) ---

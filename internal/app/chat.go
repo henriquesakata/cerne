@@ -100,6 +100,19 @@ type ChatMessage struct {
 	Content string
 }
 
+// chatIdeasPolicy keeps ideas (F-0312) out of the automatic context: the
+// agent reads them only when the user asks, through whatever path its mode has
+// to run cerne commands, and cites the I- ids it used.
+const chatIdeasPolicy = "Ideias (I-NNNN) são matéria-prima ainda não avaliada: não estão no roster nem no contexto recuperado. " +
+	"Só quando o usuário pedir ideias sobre um assunto, obtenha-as com `cerne idea list --search \"<termo>\"` " +
+	"(pelo caminho que este modo tiver para rodar comandos do cerne) e cite na resposta os ids I- que usar."
+
+// chatIdeasCardPolicy is chatIdeasPolicy for a tool channel (C8): the read is
+// a command of the confirmed card, like any other the agent runs.
+const chatIdeasCardPolicy = "Ideias (I-NNNN) são matéria-prima ainda não avaliada: não estão no roster nem no contexto recuperado. " +
+	"Só quando o usuário pedir ideias sobre um assunto, ECOE `cerne idea list --search \"<termo>\"` no bloco de comandos e pare; " +
+	"depois que ele confirmar no card, rode exatamente esse comando e cite na resposta os ids I- que usar."
+
 // BuildChatSystemPrompt assembles the Backlog chat's system prompt (F-0210):
 // the project's domain persona (cfg.Agent, falling back to
 // DefaultAgentPersona) plus enough project context — the live feature roster
@@ -165,7 +178,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// access — byo-key/delegation get no consultation instructions for
 		// commands they cannot execute (criterion 3).
 		b.WriteString("Você tem acesso de LEITURA ao cerne deste projeto via linha de comando. ")
-		b.WriteString("Comandos permitidos: cerne search \"<termos>\", cerne show <id> (qualquer F-/D-/R-/N-/RB-), cerne brief, cerne status, cerne note list, cerne note show <id>, cerne reference list, cerne decision list. ")
+		b.WriteString("Comandos permitidos: cerne search \"<termos>\", cerne show <id> (qualquer F-/D-/R-/N-/RB-/I-), cerne brief, cerne status, cerne note list, cerne note show <id>, cerne reference list, cerne decision list, cerne idea list --search \"<termo>\". ")
 		b.WriteString("Quando a resposta exigir detalhe além do roster acima — a spec de uma feature citada, uma decisão, uma nota, histórico — CONSULTE antes de responder, em vez de supor ou perguntar ao usuário o que o cerne responde. ")
 		// F-0258: reading code to specify is not implementing — the role
 		// boundary below still forbids emitting code, diffs or step-by-step
@@ -178,6 +191,16 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// while holding the verbs), so it now announces the capability and
 		// points at the contract instead of contradicting it.
 		b.WriteString("Escrever no cerne é possível, mas só sob confirmação do usuário: o caminho normal é o card de proposta, e o contrato dos comandos (criação e atualização) está no fim deste prompt.\n\n")
+		// F-0312 crit. 9: ideas are read on demand, by the agent itself here.
+		b.WriteString(chatIdeasPolicy)
+		b.WriteString("\n\n")
+	} else if channel {
+		// C8: a tool channel runs only the confirmed card's commands, so the
+		// read goes through the card (idea list is class chat). Delegation and
+		// a channel-less mode get nothing: no instruction for a command the
+		// mode cannot run (F-0224 crit. 3).
+		b.WriteString(chatIdeasCardPolicy)
+		b.WriteString("\n\n")
 	}
 
 	// F-0254: conduction, not interrogation — investigate the real problem,

@@ -514,3 +514,14 @@ describe('FeaturePage — falha de carga (F-0300)', () => {
     expect(await screen.findByText('Feature de teste')).toBeInTheDocument()
   })
 })
+
+// F-0312 C3: a feature promoted from an idea names it — the link is the
+// entity's from_idea, not the spec's prose.
+describe('FeaturePage from_idea (F-0312)', () => {
+  it('mostra a ideia de origem', async () => {
+    payload = detail('candidate')
+    payload.feature.from_idea = 'I-0007'
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Nasceu da ideia I-0007')).toBeInTheDocument()
+  })
+})

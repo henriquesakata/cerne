@@ -44,9 +44,12 @@ type Feature struct {
 	DeliveryMRURL     string `json:"delivery_mr_url,omitempty"`
 	// Capabilities lists the product-capability nodes (C-…) this feature
 	// contributes to (F-0188) — the functional axis, N:N, validated on link.
-	Capabilities []string  `json:"capabilities,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	// FromIdea is the idea (I-, F-0312) this feature was promoted from — the
+	// structured back-link; the spec's "**Origem:**" line is prose only.
+	FromIdea  string    `json:"from_idea,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Decision is the persisted form of a decision entity.
@@ -154,6 +157,7 @@ const (
 	worksSubdir        = "entities/works"
 	pendingsSubdir     = "entities/pendings"
 	capabilitiesSubdir = "entities/capabilities"
+	ideasSubdir        = "entities/ideas"
 )
 
 // SaveFeature writes the feature to entities/features/<ID>.json.
@@ -329,6 +333,43 @@ func LoadPending(backendDir, id string) (Pending, error) {
 // error) when entities/pendings/ is absent.
 func LoadAllPendings(backendDir string) ([]Pending, error) {
 	return loadAllEntities[Pending](backendDir, pendingsSubdir)
+}
+
+// Idea is the persisted form of an idea (F-0312): raw material nobody has
+// evaluated yet — text and optional tags, no spec, no gates. ClosedAt is
+// stamped by drop and promote; Reason (optional) by drop; PromotedTo holds
+// the candidate a promote created.
+type Idea struct {
+	ID         string           `json:"id"`
+	Text       string           `json:"text"`
+	State      domain.IdeaState `json:"state"`
+	Facets     []string         `json:"facets,omitempty"`
+	Components []string         `json:"components,omitempty"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+	ClosedAt   *time.Time       `json:"closed_at,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
+	PromotedTo string           `json:"promoted_to,omitempty"`
+	// Token is the capture's idempotency key (C2): a retry of the same
+	// submission returns this idea instead of minting a twin.
+	Token string `json:"token,omitempty"`
+}
+
+// SaveIdea writes the idea to entities/ideas/<ID>.json, creating the subdir
+// on demand.
+func SaveIdea(backendDir string, i Idea) error {
+	return saveEntity(backendDir, ideasSubdir, i.ID, i)
+}
+
+// LoadIdea reads one idea by id; ErrNotFound when the file is missing.
+func LoadIdea(backendDir, id string) (Idea, error) {
+	return loadEntity[Idea](backendDir, ideasSubdir, id)
+}
+
+// LoadAllIdeas returns all ideas sorted by ID ascending; empty (not an error)
+// when entities/ideas/ is absent.
+func LoadAllIdeas(backendDir string) ([]Idea, error) {
+	return loadAllEntities[Idea](backendDir, ideasSubdir)
 }
 
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.

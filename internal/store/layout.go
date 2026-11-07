@@ -35,6 +35,7 @@ var layoutSubdirsInit = []string{
 	historicalsSubdir,
 	worksSubdir,
 	pendingsSubdir,
+	ideasSubdir,
 	eventsSubdir,
 	"content/features",
 	"content/decisions",
@@ -60,6 +61,7 @@ var idSubdirs = map[string]string{
 	"W":  worksSubdir,
 	"C":  capabilitiesSubdir,
 	"P":  pendingsSubdir,
+	"I":  ideasSubdir,
 }
 
 // Project is the persisted form of project.json.
@@ -155,9 +157,26 @@ func stampOrigin(p map[string]string) map[string]string {
 	return out
 }
 
-// ReadEvents returns all events from events/*.ndjson in file-name then
-// line order; empty slice when the dir or files are absent.
+// ReadEvents is the funnel's log: every event except idea.*, which never
+// reaches an aggregation (F-0312). ReadAllEvents is the raw log, for the chat
+// channel's affected ids.
 func ReadEvents(backendDir string) ([]domain.Event, error) {
+	all, err := ReadAllEvents(backendDir)
+	if err != nil {
+		return nil, err
+	}
+	events := all[:0]
+	for _, ev := range all {
+		if !strings.HasPrefix(ev.Type, domain.IdeaEventPrefix) {
+			events = append(events, ev)
+		}
+	}
+	return events, nil
+}
+
+// ReadAllEvents returns all events from events/*.ndjson in file-name then
+// line order; empty slice when the dir or files are absent.
+func ReadAllEvents(backendDir string) ([]domain.Event, error) {
 	dir := filepath.Join(backendDir, eventsSubdir)
 	dirEntries, err := os.ReadDir(dir) // sorted by filename
 	if errors.Is(err, os.ErrNotExist) {
@@ -189,7 +208,8 @@ func ReadEvents(backendDir string) ([]domain.Event, error) {
 	return events, nil
 }
 
-// NextID returns the next sequential ID for the prefix ("F", "D" or "R"),
+// NextID returns the next sequential ID for the prefix (a key of idSubdirs:
+// "F", "D", "P", "I", …),
 // zero-padded to 4 digits: max existing numeric suffix + 1, or 0001 when
 // the entity dir is empty or absent.
 func NextID(backendDir, prefix string) (string, error) {

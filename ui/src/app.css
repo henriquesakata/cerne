@@ -278,6 +278,23 @@ h2 {
    discreto abaixo dele, fora do <a>. */
 .backlog-card { display: flex; flex-direction: column; gap: 0.25rem; }
 
+/* F-0312: painel de ideias — matéria-prima, visualmente fora das candidatas. */
+.ideas-panel { margin: 0 0 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+.ideas-panel h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+.ideas-capture { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ideas-capture > input { flex: 1 1 12rem; min-width: 0; }
+.ideas-capture details { flex-basis: 100%; font-size: 0.8rem; }
+.ideas-capture details input { display: block; width: 100%; margin-top: 0.25rem; }
+.ideas-list { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 40vh; overflow-y: auto; }
+.ideas-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.ideas-text { flex: 1 1 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ideas-more { font: inherit; font-size: 0.72rem; margin-left: 0.4rem; padding: 0 0.3rem; }
+.ideas-meta { font-size: 0.75rem; }
+.ideas-actions { display: flex; gap: 0.3rem; margin-left: auto; }
+.ideas-drop, .ideas-similar { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; font-size: 0.8rem; }
+.ideas-drop input { flex: 1 1 10rem; min-width: 0; }
+.ideas-actions button, .ideas-actions select { font: inherit; font-size: 0.72rem; padding: 0.1rem 0.4rem; }
+
 .backlog-card-refine {
   align-self: flex-start;
   font: inherit;
