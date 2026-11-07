@@ -760,8 +760,12 @@ describe('Settings — nome do projeto (F-0331)', () => {
     expect(btn).not.toBeDisabled()
     fireEvent.click(btn)
     expect(renameProject).toHaveBeenCalledTimes(1)
+    // Crítica C6: o que se digitasse agora sumiria na remontagem do sucesso.
+    const input = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(input).toHaveAttribute('readonly')
     write.resolve('Novo nome')
     expect(await within(r).findByRole('button', { name: 'Salvar' })).not.toHaveAttribute('aria-disabled')
+    expect(input).not.toHaveAttribute('readonly')
   })
 
   // Crítica C5: a lista relida remonta o campo com o nome novo; o foco não pode

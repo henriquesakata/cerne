@@ -321,6 +321,8 @@ function ProjectName({ name }: { name: string }) {
           aria-describedby={error ? `${hintId} ${errorId}` : hintId}
           aria-invalid={error ? true : undefined}
           aria-disabled={lock}
+          // Typing during the write would vanish in the success remount (critic C6).
+          readOnly={saving}
         />
         <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
           {saving ? tn.saving : t.common.save}
