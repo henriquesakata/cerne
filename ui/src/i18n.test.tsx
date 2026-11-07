@@ -116,29 +116,39 @@ describe('t.settings.projectName (F-0331 crit. 10)', () => {
 
 // F-0333 crit. 1 e 2: o rótulo pt-BR do channel.human_name marca a pessoa, e a
 // ajuda diz, nesta ordem, que é você quem envia, em todos os projetos, que não
-// é o nome do projeto (que fica no campo Nome do projeto) e o que vale vazio.
+// é o nome do projeto (que fica no campo “Nome do projeto”) e o que vale vazio.
 describe("t.settings.text de channel.human_name (F-0333)", () => {
+  // O texto en do registro Go: é a chave do catálogo pt-BR, então uma chave
+  // presente prova que este literal é o do registro.
   const en =
-    "The name that signs the messages you send from the UI on the project's permanent channel. It applies to every project on this machine. It is not the project's name — that is the Project name field at the top of this screen. Empty uses your OS user name."
-  const pt = () => {
-    localStorage.setItem('cerne-lang', 'pt-BR')
+    "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name."
+  const settings = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
     const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
-    return result.current.t.settings.text
+    return result.current.t.settings
   }
 
   it('título "Seu nome no canal"', () => {
-    expect(pt()['Your name in the channel']).toBe('Seu nome no canal')
+    expect(settings('pt-BR').text['Your name in the channel']).toBe('Seu nome no canal')
   })
 
   it('descrição com os trechos do critério 2, em ordem', () => {
-    const d = (pt()[en] ?? '').toLowerCase()
+    const d = (settings('pt-BR').text[en] ?? '').toLowerCase()
     // Cada trecho é procurado depois do fim do anterior: "nome do projeto" é o
     // campo citado, não o pedaço de "não é o nome do projeto".
     let from = 0
-    for (const part of ['você envia', 'todos os projetos', 'não é o nome do projeto', 'nome do projeto', 'usuário do sistema']) {
+    for (const part of ['você envia', 'todos os projetos', 'não é o nome do projeto', '“nome do projeto”', 'usuário do sistema']) {
       const i = d.indexOf(part, from)
       expect(i, part).toBeGreaterThanOrEqual(from)
       from = i + part.length
     }
+  })
+
+  // Crítica C7: o campo citado é o título do bloco da F-0331, lido do
+  // dicionário, não um literal que envelhece se o título mudar.
+  it('cita entre aspas o título do bloco "Nome do projeto" de cada língua', () => {
+    const pt = settings('pt-BR')
+    expect(pt.text[en]).toContain(`“${pt.projectName.title}”`)
+    expect(en).toContain(`“${settings('en').projectName.title}”`)
   })
 })

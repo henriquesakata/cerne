@@ -92,12 +92,16 @@ func TestChannelHumanNameLabel(t *testing.T) {
 		t.Errorf("title = %q, want %q", s.Title, "Your name in the channel")
 	}
 	at := -1
-	for _, part := range []string{"you send", "every project", "not the project's name", "Project name", "OS user"} {
+	for _, part := range []string{"you send", "every project", "not the project's name", "“Project name”", "OS user"} {
 		i := strings.Index(s.Description, part)
 		if i <= at {
 			t.Errorf("description %q: %q missing or out of order", s.Description, part)
 		}
 		at = i
+	}
+	// Critic C5: the CLI prints this text too, so it names no screen of its own.
+	if strings.Contains(s.Description, "this screen") {
+		t.Errorf("description %q points at \"this screen\"; the CLI shares it", s.Description)
 	}
 	if s.ID != "channel.human_name" || !slices.Equal(s.Scopes, []string{ScopeHost}) || s.Type != "string" || s.Default != "" {
 		t.Errorf("channel.human_name = %+v, want id, scopes [host], string and default \"\" unchanged", s)

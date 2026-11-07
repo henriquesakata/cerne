@@ -57,7 +57,7 @@ function fixture(over: Partial<SettingsView> = {}): SettingsView {
         default: '',
         scopes: ['host'],
         description:
-          "The name that signs the messages you send from the UI on the project's permanent channel. It applies to every project on this machine. It is not the project's name — that is the Project name field at the top of this screen. Empty uses your OS user name.",
+          "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.",
         value: '',
       }),
       key({

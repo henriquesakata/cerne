@@ -994,8 +994,8 @@ const ptBR = {
     // contra o registro Go e falha quando uma tradução falta.
     text: {
       'Your name in the channel': 'Seu nome no canal',
-      "The name that signs the messages you send from the UI on the project's permanent channel. It applies to every project on this machine. It is not the project's name — that is the Project name field at the top of this screen. Empty uses your OS user name.":
-        'O nome que assina as mensagens que você envia pela UI no canal permanente do projeto. Vale para todos os projetos desta máquina. Não é o nome do projeto — esse fica no campo Nome do projeto, no topo desta tela. Vazio usa o seu usuário do sistema.',
+      "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.":
+        'O nome que assina as mensagens que você envia pela UI no canal permanente de um projeto. Vale para todos os projetos desta máquina. Não é o nome do projeto, que se define no campo “Nome do projeto” da tela de Configurações. Vazio usa o seu usuário do sistema.',
       'Graph': 'Grafo',
       'Shows the Graph tab in the UI. Off hides it.': 'Mostra a aba Grafo na UI. Desligado a esconde.',
       'Mindmap': 'Mapa mental',
