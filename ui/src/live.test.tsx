@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, act, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, act, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { LiveProvider, useProjects } from './live'
 import { fetchProjects, subscribeLive } from './api'
@@ -171,13 +171,10 @@ describe('LiveProvider — projeto ativo por aba (F-0288)', () => {
 // F-0315 critérios 6/7, elo UI: uma escrita de settings faz o servidor emitir
 // o evento SSE "projects" (elo servidor: TestSettingsWriteAnnouncesProjects);
 // a aba relê /api/projects e a nav esconde/reexibe o Grafo sem reload.
+// Desde o F-0332 o Grafo mora no grupo Explorar: o teste abre o grupo, que fica
+// aberto enquanto a lista de projetos é relida (só fecha ao navegar).
 describe('LiveProvider — gate do Grafo ao vivo (F-0315)', () => {
   it('evento projects com graph desligado tira a aba Grafo; religado, ela volta', async () => {
-    globalThis.ResizeObserver ??= class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver
     let onProjects = () => {}
     vi.mocked(subscribeLive).mockImplementation((h) => {
       onProjects = h.onProjects
@@ -190,6 +187,7 @@ describe('LiveProvider — gate do Grafo ao vivo (F-0315)', () => {
         <Nav hash="#/" />
       </LiveProvider>,
     )
+    fireEvent.click(await screen.findByRole('button', { name: /Explorar/ }))
     expect((await screen.findAllByText('Grafo')).length).toBeGreaterThan(0)
     const brand = screen.getByText('cerne')
 

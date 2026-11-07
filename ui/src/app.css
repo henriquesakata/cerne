@@ -1477,9 +1477,10 @@ h2 {
 
 .nav-brand { font-weight: 700; font-family: ui-monospace, monospace; }
 
-/* priority+ nav: uma única linha; o que não cabe vai para o dropdown "Mais". */
+/* nav agrupada (F-0332): Dashboard + um menu por grupo; em tela estreita quebra linha. */
 .nav-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   flex: 1 1 auto;
   min-width: 0;
@@ -1498,9 +1499,9 @@ h2 {
 .nav-link:hover { background: var(--surface-3); }
 .nav-link.active { background: var(--fg); color: var(--bg); }
 
-/* botão "Mais" + menu de overflow */
-.nav-more { position: relative; }
-.nav-more-btn {
+/* botão de grupo + menu do grupo */
+.nav-group { position: relative; }
+.nav-group-btn {
   cursor: pointer;
   border: none;
   background: transparent;
@@ -1510,7 +1511,7 @@ h2 {
   align-items: center;
   gap: 0.2rem;
 }
-.nav-more-menu {
+.nav-group-menu {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
@@ -1524,7 +1525,7 @@ h2 {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   z-index: 20;
 }
-.nav-more-item {
+.nav-group-item {
   padding: 0.4rem 0.7rem;
   border-radius: 6px;
   text-decoration: none;
@@ -1532,25 +1533,8 @@ h2 {
   font-size: 0.9rem;
   white-space: nowrap;
 }
-.nav-more-item:hover { background: var(--surface-3); }
-.nav-more-item.active { background: var(--fg); color: var(--bg); }
-
-/* Linha de medição: fora do fluxo, invisível, nunca quebra.
-   `fixed`, não `absolute` (F-0234): com nowrap ela é mais larga que a janela, e
-   um absolute estica a área rolável do documento — dava barra horizontal em
-   todas as rotas (scrollWidth 1679 num viewport de 1280). Caixa fixed não
-   entra no scrollable overflow do documento, e a largura dos filhos continua
-   vindo do conteúdo, então a medição do Nav não muda. */
-.nav-measure {
-  position: fixed;
-  top: 0;
-  left: 0;
-  display: flex;
-  gap: 0.25rem;
-  visibility: hidden;
-  pointer-events: none;
-  white-space: nowrap;
-}
+.nav-group-item:hover { background: var(--surface-3); }
+.nav-group-item.active { background: var(--fg); color: var(--bg); }
 
 /* versão do binário ao lado da marca (F-0129) */
 .nav-version {

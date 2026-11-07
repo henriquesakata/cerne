@@ -154,7 +154,7 @@ function stripFence(reply: string, fence: string): string {
 }
 
 // MenuSelect (F-0241): popup no lugar do <select> nativo, que não renderiza
-// marca de selecionado nem dígito de atalho. Reaproveita o padrão do .nav-more:
+// marca de selecionado nem dígito de atalho. Reaproveita o padrão dos menus de grupo da nav:
 // mousedown fora fecha, Escape fecha.
 //
 // Os dígitos capturam tecla APENAS com o menu aberto e focado — fechado, a

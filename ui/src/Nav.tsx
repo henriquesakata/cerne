@@ -1,32 +1,56 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useProjects } from './live'
 import { useTheme } from './theme'
 import { useT, type Lang, type Messages } from './i18n'
 import { fetchVersion } from './api'
 import NotificationBell from './NotificationBell'
 
-// Barra de navegação persistente: o shell que torna as páginas alcançáveis.
-const LINKS: { href: string; key: keyof Messages['nav'] }[] = [
-  { href: '#/', key: 'dashboard' },
-  { href: '#/kanban', key: 'kanban' },
-  { href: '#/backlog', key: 'backlog' },
-  { href: '#/rooms', key: 'warRoom' },
-  { href: '#/manage', key: 'manage' },
-  { href: '#/decisions', key: 'decisions' },
-  { href: '#/references', key: 'references' },
-  { href: '#/runbooks', key: 'runbooks' },
-  { href: '#/notes', key: 'notes' },
-  { href: '#/conventions', key: 'conventions' },
-  { href: '#/wiki', key: 'wiki' },
-  { href: '#/graph', key: 'graph' },
-  { href: '#/mindmap', key: 'mindmap' },
-  { href: '#/ask', key: 'ask' },
-  { href: '#/search', key: 'search' },
-  { href: '#/lint', key: 'lint' },
-  { href: '#/harness', key: 'harness' },
-  { href: '#/history', key: 'history' },
-  { href: '#/activity', key: 'activity' },
-  { href: '#/stats', key: 'stats' },
+type NavItem = { href: string; key: keyof Messages['nav'] }
+
+// Barra de navegação persistente (F-0332): o Dashboard solto, por ser a tela
+// inicial, e o resto em quatro grupos por assunto, cada um um menu por clique.
+// Cinco controles cabem em qualquer largura, então cada tela tem lugar fixo.
+const DASHBOARD: NavItem = { href: '#/', key: 'dashboard' }
+const GROUPS: { key: keyof Messages['nav']; items: NavItem[] }[] = [
+  {
+    key: 'groupWork',
+    items: [
+      { href: '#/kanban', key: 'kanban' },
+      { href: '#/backlog', key: 'backlog' },
+      { href: '#/manage', key: 'manage' },
+      { href: '#/rooms', key: 'warRoom' },
+      { href: '#/activity', key: 'activity' },
+    ],
+  },
+  {
+    key: 'groupKnowledge',
+    items: [
+      { href: '#/decisions', key: 'decisions' },
+      { href: '#/references', key: 'references' },
+      { href: '#/runbooks', key: 'runbooks' },
+      { href: '#/notes', key: 'notes' },
+      { href: '#/conventions', key: 'conventions' },
+    ],
+  },
+  {
+    key: 'groupExplore',
+    items: [
+      { href: '#/wiki', key: 'wiki' },
+      { href: '#/ask', key: 'ask' },
+      { href: '#/search', key: 'search' },
+      { href: '#/graph', key: 'graph' },
+      { href: '#/mindmap', key: 'mindmap' },
+    ],
+  },
+  {
+    key: 'groupHealth',
+    items: [
+      { href: '#/lint', key: 'lint' },
+      { href: '#/harness', key: 'harness' },
+      { href: '#/history', key: 'history' },
+      { href: '#/stats', key: 'stats' },
+    ],
+  },
 ]
 
 // activeHref mapeia a rota atual para o link de seção que deve ficar ativo.
@@ -52,7 +76,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/history')) return '#/history'
   if (hash.startsWith('#/activity')) return '#/activity'
   if (hash.startsWith('#/stats')) return '#/stats'
-  if (hash.startsWith('#/settings')) return '#/settings' // engrenagem, fora de LINKS
+  if (hash.startsWith('#/settings')) return '#/settings' // engrenagem, fora dos grupos
   return '#/' // dashboard (tela inicial, F-0132)
 }
 
@@ -74,82 +98,34 @@ export default function Nav({ hash }: { hash: string }) {
   )
 }
 
-// NavLinks é uma "priority+ navigation": mantém os links em uma única linha e
-// empurra os que não couberem para um dropdown "Mais". Quantos cabem é medido em
-// tempo real (ResizeObserver), então funciona em qualquer largura de monitor.
+// NavLinks renderiza o Dashboard e um botão por grupo; o clique abre o menu do
+// grupo, no máximo um por vez. O grupo da rota atual fica destacado.
 function NavLinks({ active, hash }: { active: string; hash: string }) {
-  const { t, lang } = useT()
+  const { t } = useT()
   const { projects, activePid } = useProjects()
   // graph.enabled (F-0315) / mindmap.enabled (F-0187/F-0314) = false no projeto
   // ativo esconde o item; flag ausente (servidor antigo) fica ligado. O valor
   // chega pelo /api/projects, relido no evento SSE "projects" de uma escrita.
   const info = projects.find((p) => p.pid === activePid)
   const off = { graph: info?.graph === false, mindmap: info?.mindmap === false }
-  const links = useMemo(
-    () => LINKS.filter((l) => !off[l.key as keyof typeof off]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [off.graph, off.mindmap],
-  )
+  const groups = GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((l) => !off[l.key as keyof typeof off]),
+  })).filter((g) => g.items.length > 0)
   const containerRef = useRef<HTMLDivElement>(null)
-  const measureRef = useRef<HTMLDivElement>(null)
-  const [visibleCount, setVisibleCount] = useState(links.length)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
 
-  // Mede a linha oculta (todos os links + botão "Mais") e decide quantos cabem
-  // na largura disponível do container, reservando espaço para o botão "Mais".
-  const recompute = useCallback(() => {
-    const container = containerRef.current
-    const measure = measureRef.current
-    if (!container || !measure) return
-    const avail = container.clientWidth
-    const items = Array.from(
-      measure.querySelectorAll<HTMLElement>('[data-nav-item]'),
-    )
-    const moreEl = measure.querySelector<HTMLElement>('[data-nav-more]')
-    const gap = parseFloat(getComputedStyle(container).columnGap) || 0
-    const widths = items.map((el) => el.getBoundingClientRect().width)
-    const moreW = moreEl ? moreEl.getBoundingClientRect().width : 0
-    const totalAll =
-      widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, widths.length - 1)
-    if (totalAll <= avail) {
-      setVisibleCount(items.length) // tudo cabe: sem dropdown
-      return
-    }
-    const budget = avail - moreW - gap // precisa do "Mais": reserva a largura dele
-    let acc = 0
-    let count = 0
-    for (const w of widths) {
-      const add = w + (count > 0 ? gap : 0)
-      if (acc + add <= budget) {
-        acc += add
-        count++
-      } else break
-    }
-    setVisibleCount(Math.max(1, count)) // sempre pelo menos 1 link visível
-  }, [])
-
-  // Recalcula ao montar, ao mudar idioma (larguras dos rótulos mudam) e sempre
-  // que o container é redimensionado.
-  useLayoutEffect(() => {
-    recompute()
-    const container = containerRef.current
-    if (!container) return
-    const ro = new ResizeObserver(recompute)
-    ro.observe(container)
-    return () => ro.disconnect()
-  }, [recompute, lang, links])
-
-  // Navegou → fecha o dropdown.
-  useEffect(() => setOpen(false), [hash])
+  // Navegou → fecha o menu.
+  useEffect(() => setOpen(null), [hash])
 
   // Fecha ao clicar fora ou apertar Esc.
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false)
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(null)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') setOpen(null)
     }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
@@ -159,66 +135,46 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
     }
   }, [open])
 
-  const visible = links.slice(0, visibleCount)
-  const overflow = links.slice(visibleCount)
-  const activeInOverflow = overflow.some((l) => l.href === active)
-
   return (
     <div className="nav-links" ref={containerRef}>
-      {visible.map((l) => (
-        <a
-          key={l.href}
-          href={l.href}
-          className={l.href === active ? 'nav-link active' : 'nav-link'}
-        >
-          {t.nav[l.key]}
-        </a>
-      ))}
-      {overflow.length > 0 && (
-        <div className="nav-more">
-          <button
-            type="button"
-            className={
-              activeInOverflow
-                ? 'nav-link nav-more-btn active'
-                : 'nav-link nav-more-btn'
-            }
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={() => setOpen((o) => !o)}
-          >
-            {t.nav.more} ▾
-          </button>
-          {open && (
-            <div className="nav-more-menu" role="menu">
-              {overflow.map((l) => (
-                <a
-                  key={l.href}
-                  href={l.href}
-                  role="menuitem"
-                  className={
-                    l.href === active ? 'nav-more-item active' : 'nav-more-item'
-                  }
-                  onClick={() => setOpen(false)}
-                >
-                  {t.nav[l.key]}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {/* Linha de medição oculta: replica todos os itens para calcular larguras. */}
-      <div className="nav-measure" ref={measureRef} aria-hidden="true">
-        {links.map((l) => (
-          <span key={l.href} data-nav-item className="nav-link">
-            {t.nav[l.key]}
-          </span>
-        ))}
-        <span data-nav-more className="nav-link nav-more-btn">
-          {t.nav.more} ▾
-        </span>
-      </div>
+      <a
+        href={DASHBOARD.href}
+        className={DASHBOARD.href === active ? 'nav-link active' : 'nav-link'}
+      >
+        {t.nav[DASHBOARD.key]}
+      </a>
+      {groups.map((g) => {
+        const isOpen = open === g.key
+        const isActive = g.items.some((l) => l.href === active)
+        return (
+          <div key={g.key} className="nav-group">
+            <button
+              type="button"
+              className={isActive ? 'nav-link nav-group-btn active' : 'nav-link nav-group-btn'}
+              aria-haspopup="menu"
+              aria-expanded={isOpen}
+              onClick={() => setOpen(isOpen ? null : g.key)}
+            >
+              {t.nav[g.key]} <span aria-hidden="true">▾</span>
+            </button>
+            {isOpen && (
+              <div className="nav-group-menu" role="menu">
+                {g.items.map((l) => (
+                  <a
+                    key={l.href}
+                    href={l.href}
+                    role="menuitem"
+                    className={l.href === active ? 'nav-group-item active' : 'nav-group-item'}
+                    onClick={() => setOpen(null)}
+                  >
+                    {t.nav[l.key]}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -243,7 +199,7 @@ function NavVersion() {
 }
 
 // Engrenagem das configurações do projeto ativo (F-0315): no cluster da direita,
-// como na barra (VS Code), e não em LINKS, onde cairia quase sempre no "Mais".
+// como na barra (VS Code), e não num dos grupos de navegação.
 function SettingsLink({ active }: { active: boolean }) {
   const { t } = useT()
   return (
