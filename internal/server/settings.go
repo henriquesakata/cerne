@@ -58,9 +58,18 @@ func projectNameStatus(err error) int {
 // handleSettingsGet serves the settings registry resolved for projDir
 // (F-0314): every key's declaration, effective value and winning scope, plus
 // the problems the resolution skipped. Always 200: a bad file is data the
-// settings screen shows so the user can fix it.
+// settings screen shows so the user can fix it. channel.human_name always
+// carries the name an empty value signs with (F-0333), from the function the
+// channel itself falls back to, so the field can say it even while a name is
+// stored.
 func handleSettingsGet(w http.ResponseWriter, projDir string) {
-	writeJSON(w, http.StatusOK, project.ResolveSettings(projDir))
+	view := project.ResolveSettings(projDir)
+	for i, s := range view.Settings {
+		if s.ID == "channel.human_name" {
+			view.Settings[i].Fallback = app.ChannelFallbackName()
+		}
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // handleSettingsPut writes {"scope", "value"} for key id and answers with the

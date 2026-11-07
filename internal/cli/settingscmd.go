@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -86,7 +87,13 @@ func newSettingsGetCmd(dir *string) *cobra.Command {
 			// outranks the one it fell back to: the user's value did not take.
 			for _, p := range s.Invalid {
 				if scopeRank[p.Scope] < scopeRank[s.Origin] {
-					return fmt.Errorf("%s = %s in %s scope (%s): %w: want %s", s.ID, p.Raw, p.Scope, p.File, project.ErrInvalidSettingValue, s.Type)
+					// A scope the key does not take (F-0333) is a scope
+					// refusal, not a type mismatch.
+					why := fmt.Errorf("%w: want %s", project.ErrInvalidSettingValue, s.Type)
+					if !slices.Contains(s.Scopes, p.Scope) {
+						why = fmt.Errorf("%w %q (allowed: %s)", project.ErrSettingScope, p.Scope, strings.Join(s.Scopes, ", "))
+					}
+					return fmt.Errorf("%s = %s in %s scope (%s): %w", s.ID, p.Raw, p.Scope, p.File, why)
 				}
 			}
 			defer printSettingProblems(cmd.ErrOrStderr(), view, s.ID)

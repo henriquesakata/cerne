@@ -1141,6 +1141,9 @@ export type ResolvedSetting = {
   origin: SettingScope | 'default'
   stored?: Partial<Record<SettingScope, unknown>>
   invalid?: SettingProblem[]
+  // Name used when the value is empty (F-0333); every /settings response
+  // carries it for channel.human_name, ResolveSettings never does.
+  fallback?: string
 }
 
 export type SettingsView = {

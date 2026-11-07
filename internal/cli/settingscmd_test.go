@@ -83,6 +83,19 @@ func TestSettingsListJSON(t *testing.T) {
 	}
 }
 
+// TestSettingsJSONCarriesNewLabel pins F-0333 criterion 6: the CLI reads the
+// same registry, so --json carries the new title and never the old one.
+func TestSettingsJSONCarriesNewLabel(t *testing.T) {
+	projDir, _ := settingsProject(t, "")
+	out, err := execCerne(t, "settings", "list", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("settings list --json: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `"Your name in the channel"`) || strings.Contains(out, "Channel name") {
+		t.Errorf("--json lacks the new title or keeps the old one:\n%s", out)
+	}
+}
+
 // TestSettingsSetProjectOverridesHost pins criterion 2 through the CLI.
 func TestSettingsSetProjectOverridesHost(t *testing.T) {
 	projDir, _ := settingsProject(t, "")
@@ -252,6 +265,18 @@ func TestSettingsGetFailsOnlyForItsOwnBadValue(t *testing.T) {
 		if err != nil || !strings.HasPrefix(out, want+"\n") {
 			t.Errorf("get %s = %q (%v), want %s", key, out, err, want)
 		}
+	}
+}
+
+// TestSettingsGetRefusesUndeclaredScopeValue (F-0333, critic C2): a value in a
+// scope the key does not take did not take; get says so with the scope
+// refusal, not a type mismatch.
+func TestSettingsGetRefusesUndeclaredScopeValue(t *testing.T) {
+	projDir, _ := settingsProject(t, "[channel]\nhuman_name = \"Bob\"\n")
+	_, err := execCerne(t, "settings", "get", "channel.human_name", "--dir", projDir)
+	if !errors.Is(err, project.ErrSettingScope) || !strings.Contains(err.Error(), `"Bob"`) || !strings.Contains(err.Error(), filepath.Join(projDir, ".cernerc")) ||
+		!strings.Contains(err.Error(), `(allowed: host)`) || strings.Contains(err.Error(), "want string") {
+		t.Errorf("get channel.human_name: err = %v, want ErrSettingScope naming .cernerc, \"Bob\" and the allowed scope", err)
 	}
 }
 

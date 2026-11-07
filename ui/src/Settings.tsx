@@ -442,6 +442,7 @@ function SettingRow({
               // Setting when a string key needs another one.
               maxLength={64}
               defaultValue={String(current)}
+              placeholder={s.fallback}
               aria-labelledby={titleId}
               aria-describedby={descId}
               aria-disabled={lock}
@@ -528,9 +529,13 @@ function SettingRow({
       ))}
       <p className="settings-meta">
         <span>
-          {s.origin === 'default'
-            ? ts.effectiveDefault(fmt(s.value))
-            : ts.effective(fmt(s.value), ts.scopes[s.origin])}
+          {/* An empty name (even only spaces) signs with the fallback: said
+              in text, not only in the placeholder (F-0333, critic C3). */}
+          {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
+            ? ts.effectiveFallback(s.fallback)
+            : s.origin === 'default'
+              ? ts.effectiveDefault(fmt(s.value))
+              : ts.effective(fmt(s.value), ts.scopes[s.origin])}
         </span>
         <span>{ts.defaultValue(fmt(s.default))}</span>
         {modified && (

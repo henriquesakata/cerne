@@ -416,6 +416,61 @@ func TestSettingsPutStringValue(t *testing.T) {
 	}
 }
 
+// TestSettingsChannelFallback pins F-0333 criterion 3 (and critic C4/C11):
+// every /settings answer — GET, PUT and DELETE — carries for channel.human_name
+// the name an empty value signs with, whatever is stored: empty, a name, or
+// only spaces (hand-edited), and it is the name the channel then uses.
+func TestSettingsChannelFallback(t *testing.T) {
+	h, projDir, hostDir := settingsBackend(t, "")
+	t.Setenv("USER", "ana")
+	channel := func(method, target, body string) project.ResolvedSetting {
+		t.Helper()
+		var view project.SettingsView
+		if rec := doJSON(t, h, method, target, body, &view); rec.Code != http.StatusOK {
+			t.Fatalf("%s %s: status %d: %s", method, target, rec.Code, rec.Body.String())
+		}
+		return resolvedByID(view)["channel.human_name"]
+	}
+	const key = "/api/settings/channel.human_name"
+	if s := channel(http.MethodGet, "/api/settings", ""); s.Fallback != "ana" || s.Fallback != app.ChannelHumanName(projDir) {
+		t.Errorf("empty value: fallback = %q, want ana, the name the channel signs with (%q)", s.Fallback, app.ChannelHumanName(projDir))
+	}
+	if s := channel(http.MethodPut, key, `{"scope":"host","value":"Bia"}`); s.Value != "Bia" || s.Fallback != "ana" {
+		t.Errorf("PUT Bia answers value %v, fallback %q; want Bia and ana", s.Value, s.Fallback)
+	}
+	if s := channel(http.MethodGet, "/api/settings", ""); s.Value != "Bia" || s.Fallback != "ana" {
+		t.Errorf("stored Bia: value %v, fallback %q; want Bia and ana", s.Value, s.Fallback)
+	}
+	if s := channel(http.MethodDelete, key+"?scope=host", ""); s.Value != "" || s.Fallback != "ana" {
+		t.Errorf("DELETE answers value %v, fallback %q; want empty and ana", s.Value, s.Fallback)
+	}
+	if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte("[channel]\nhuman_name = \"   \"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := channel(http.MethodGet, "/api/settings", ""); s.Value != "   " || s.Fallback != "ana" || app.ChannelHumanName(projDir) != "ana" {
+		t.Errorf("only spaces: value %q, fallback %q, channel %q; want the spaces, ana and ana", s.Value, s.Fallback, app.ChannelHumanName(projDir))
+	}
+}
+
+// TestSettingsChannelIgnoresCernerc (F-0333, critic C2): a committed .cernerc
+// naming channel.human_name does not sign anyone's messages in that project;
+// the screen shows it as an ignored value and the channel keeps the OS user.
+func TestSettingsChannelIgnoresCernerc(t *testing.T) {
+	h, projDir, _ := settingsBackend(t, "[channel]\nhuman_name = \"Bob\"\n")
+	t.Setenv("USER", "ana")
+	var view project.SettingsView
+	if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &view); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	s := resolvedByID(view)["channel.human_name"]
+	if s.Value != "" || s.Origin != project.OriginDefault || len(s.Invalid) != 1 || s.Invalid[0].Scope != project.ScopeProject {
+		t.Errorf("channel.human_name = %+v, want the default with the project value reported invalid", s)
+	}
+	if got := app.ChannelHumanName(projDir); got != "ana" {
+		t.Errorf("channel signs as %q, want the OS user ana", got)
+	}
+}
+
 // projectNameUI is a cerne ui over one fresh backend (pid proj-a) with an
 // open SSE stream whose connect frame was already consumed.
 func projectNameUI(t *testing.T) (ui http.Handler, url string, events <-chan string, repoA, projA string) {
