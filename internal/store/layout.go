@@ -108,6 +108,11 @@ func LoadProject(backendDir string) (Project, error) {
 	return p, nil
 }
 
+// SaveProject rewrites project.json whole (the rename path, F-0331).
+func SaveProject(backendDir string, p Project) error {
+	return writeJSONFile(backendDir, projectFilename, p)
+}
+
 // AppendEvent appends the event as one NDJSON line to
 // events/<YYYY-MM>.ndjson, partitioned by ev.At in UTC.
 func AppendEvent(backendDir string, ev domain.Event) error {
