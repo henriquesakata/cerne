@@ -250,6 +250,7 @@ describe('LiveProvider — nome do projeto ao vivo (F-0331)', () => {
     default: 'p1',
   })
   let onProjects = () => {}
+  let onChange = (_pid: string) => {}
   const mount = async () => {
     globalThis.ResizeObserver ??= class {
       observe() {}
@@ -258,6 +259,7 @@ describe('LiveProvider — nome do projeto ao vivo (F-0331)', () => {
     } as unknown as typeof ResizeObserver
     vi.mocked(subscribeLive).mockImplementation((h) => {
       onProjects = h.onProjects
+      onChange = h.onChange
       return () => {}
     })
     vi.mocked(fetchProjects).mockImplementation(two('P1'))
@@ -287,6 +289,19 @@ describe('LiveProvider — nome do projeto ao vivo (F-0331)', () => {
     expect(within(screen.getByRole('region', { name: 'Nome do projeto' })).getByRole('textbox')).toHaveValue('Núcleo')
     // Mesma árvore: a nav não foi remontada (sem reload).
     expect(screen.getByText('cerne')).toBe(brand)
+  })
+
+  // Crítica C1: o tick do pull só emite "change". Sem reler a lista nele, o
+  // campo ficava com o nome velho e um Salvar desfazia o rename do outro clone.
+  it('crítica C1: só um frame change (rename trazido por pull) troca o nome no seletor, no cabeçalho e no campo', async () => {
+    await mount()
+    vi.mocked(fetchProjects).mockImplementation(two('Renomeado Fora'))
+    await act(async () => onChange('p1'))
+    expect(await screen.findByRole('option', { name: 'Renomeado Fora' })).toBeInTheDocument()
+    expect(document.querySelector('.settings-project strong')).toHaveTextContent('Renomeado Fora')
+    expect(within(screen.getByRole('region', { name: 'Nome do projeto' })).getByRole('textbox')).toHaveValue(
+      'Renomeado Fora',
+    )
   })
 
   it('crit. 7: a recusa fica no campo, que mantém o texto, e o seletor mantém o nome do backend', async () => {
