@@ -122,6 +122,26 @@ func TestAmendIdenticalIsNoOp(t *testing.T) {
 	}
 }
 
+// TestAmendUnchangedIsJudgedAgainstOrigin (F-0328 critic C3): same as the
+// spec — an amend body that only matches a clone trailing origin is written,
+// not reported unchanged.
+func TestAmendUnchangedIsJudgedAgainstOrigin(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented, "spec.md", "result.md")
+	if _, changed, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "primeira"); err != nil || !changed {
+		t.Fatalf("first amend: changed %v, err %v", changed, err)
+	}
+	const rel = "content/features/F-0001/result.md"
+	advanceRemote(t, origin, rel, "---\ncerne_id: F-0001\n---\n\n# Outro resultado\n"+testGauntletTail)
+
+	if _, changed, err := AmendFeatureResult(repoDir, projDir, "F-0001", amendedBody, "de volta"); err != nil || !changed {
+		t.Fatalf("stale clone: changed %v, err %v — want a write, origin holds another result", changed, err)
+	}
+	if got, _ := originHas(t, origin, rel); got != "---\ncerne_id: F-0001\n---\n\n"+strings.TrimSpace(amendedBody)+"\n" {
+		t.Fatalf("origin result = %q, want the amended body", got)
+	}
+}
+
 // TestStampedDocFrontmatter (F-0328 crit. 1-3, the rule F-0305 wrote for the
 // amend): the body's opening block is kept when it names the feature — quoted
 // or not, stored unquoted like every reader expects — and a refusal says what

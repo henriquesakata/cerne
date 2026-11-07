@@ -680,12 +680,13 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 // ErrNotCandidate; the state is re-read inside the lock, so a concurrent start
 // cannot be raced. A body whose stored form is already spec.md is a successful
 // no-op (changed false: no write, no event, no commit — F-0328), like
-// SaveFeatureDoc's byte-identical write. Returns the feature as stored.
+// SaveFeatureDoc's byte-identical write — judged against origin, not a clone
+// that may trail it (mutateAndSnapshotLatest). Returns the feature as stored.
 func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (f store.Feature, changed bool, err error) {
 	if f, err = loadCandidate(repoDir, id); err != nil {
 		return store.Feature{}, false, err
 	}
-	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	err = mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
 		cur, err := loadCandidate(repoDir, id)
 		if err != nil {
 			return "", err
@@ -733,7 +734,8 @@ var ErrAmendNotImplemented = errors.New("only the result of an implemented featu
 // the previous result stays. A blank reason or body is refused before the
 // backend is touched. A body equal to the stored result is a successful no-op
 // (changed false: no write, no event, no commit), like SaveFeatureDoc's
-// byte-identical write — after the state check. Returns the feature as stored
+// byte-identical write — after the state check, judged against origin
+// (mutateAndSnapshotLatest). Returns the feature as stored
 // (state unchanged).
 func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feature, changed bool, err error) {
 	reason = strings.TrimSpace(reason)
@@ -747,7 +749,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 	if err != nil {
 		return store.Feature{}, false, err
 	}
-	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	err = mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
 		var err error
 		if f, err = store.LoadFeature(repoDir, id); err != nil {
 			return "", err

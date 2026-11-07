@@ -1164,6 +1164,30 @@ func TestUpdateCandidateSpecRefusals(t *testing.T) {
 	}
 }
 
+// TestUpdateCandidateSpecUnchangedIsJudgedAgainstOrigin (F-0328 critic C3): a
+// clone that trails origin does not call a body "unchanged" because its stale
+// copy matches — the rewrite looks at the backend first, so the body lands on
+// origin and says so; only then is the same body a no-op.
+func TestUpdateCandidateSpecUnchangedIsJudgedAgainstOrigin(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	const two = "## Problema\n\nVersão dois."
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Feature", "", "", nil, nil, two, false, "", ""); err != nil {
+		t.Fatalf("CreateFeatureWithSpec: %v", err)
+	}
+	const rel = "content/features/F-0001/spec.md"
+	advanceRemote(t, origin, rel, "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão três.\n")
+
+	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", two); err != nil || !changed {
+		t.Fatalf("stale clone: changed %v, err %v — want a write, origin holds another spec", changed, err)
+	}
+	if got, _ := originHas(t, origin, rel); got != "---\ncerne_id: F-0001\n---\n\n"+two+"\n" {
+		t.Fatalf("origin spec = %q, want version two", got)
+	}
+	if _, changed, err := UpdateCandidateSpec(repoDir, projDir, "F-0001", two); err != nil || changed {
+		t.Fatalf("now identical on origin: changed %v, err %v — want a no-op", changed, err)
+	}
+}
+
 // TestSpecBodyOnlyFrontmatterIsEmpty (F-0328 critic C5): a body that is only
 // its frontmatter is empty, refused by the core itself — the rewrite keeps the
 // spec it had, the creation mints nothing — whatever the caller checked.

@@ -83,8 +83,20 @@ func CommitAndSnapshot(repoDir, projDir, msg string) error {
 // It mints its own telemetry Op (kind "backend") so CLI one-shots record
 // phases too; the server path uses MutateAndSnapshotOp with the request's Op.
 func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) error {
+	return mutateAndSnapshot(repoDir, projDir, false, mutate)
+}
+
+// mutateAndSnapshotLatest is MutateAndSnapshot on a clone first fast-forwarded
+// to origin, so mutate compares against the backend, not a cache that may trail
+// it: a mutation that reports ErrNothingToCommit — "unchanged" — is then true of
+// origin, not just of this clone (F-0328 critic C3). It costs one fetch.
+func mutateAndSnapshotLatest(repoDir, projDir string, mutate func() (string, error)) error {
+	return mutateAndSnapshot(repoDir, projDir, true, mutate)
+}
+
+func mutateAndSnapshot(repoDir, projDir string, latest bool, mutate func() (string, error)) error {
 	op := telemetry.StartOp("backend")
-	err := MutateAndSnapshotOp(op, repoDir, projDir, mutate)
+	err := mutateAndSnapshotOp(op, repoDir, projDir, latest, mutate)
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -97,6 +109,10 @@ func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) e
 // reset, mutate, then the reconcile loop's fetch/merge/commit/push, snapshot)
 // on the caller's Op (F-0149) — nil-safe, the caller owns End().
 func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func() (string, error)) error {
+	return mutateAndSnapshotOp(op, repoDir, projDir, false, mutate)
+}
+
+func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool, mutate func() (string, error)) error {
 	var head string
 	var conflicts []Conflict
 	stopLockWait := op.Phase("lock_wait")
@@ -113,6 +129,11 @@ func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func(
 			err := gitback.ResetHard(repoDir, base)
 			stop()
 			if err != nil {
+				return err
+			}
+		}
+		if latest && base != "" {
+			if base, err = fastForwardToOrigin(op, repoDir, base); err != nil {
 				return err
 			}
 		}
@@ -148,6 +169,32 @@ func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func(
 		return err
 	}
 	return nil
+}
+
+// fastForwardToOrigin fetches and, when origin is ahead of base, moves the
+// clone onto it, returning the new base. A clone that diverged from origin
+// stays at base: that case belongs to the reconcile loop.
+func fastForwardToOrigin(op *telemetry.Op, repoDir, base string) (string, error) {
+	stop := op.Phase("fetch")
+	err := gitback.Fetch(repoDir)
+	stop()
+	if err != nil {
+		return base, err
+	}
+	theirs, err := gitback.TrackingHeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) || (err == nil && theirs == base) {
+		return base, nil
+	}
+	if err != nil {
+		return base, err
+	}
+	if ahead, err := gitback.IsAncestor(repoDir, base, theirs); err != nil || !ahead {
+		return base, err
+	}
+	if err := gitback.ResetHard(repoDir, theirs); err != nil {
+		return base, err
+	}
+	return theirs, nil
 }
 
 // PinAllowed reports whether the committed docs.lock pin may be written in
