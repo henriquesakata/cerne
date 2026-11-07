@@ -31,11 +31,14 @@ func handleProjectNamePut(w http.ResponseWriter, r *http.Request, repoDir, projD
 		return
 	}
 	name, err := app.RenameProject(repoDir, projDir, req.Name)
+	// Every outcome re-reads the list (critic C3): a rename can land and still
+	// fail its tail (docs.lock), and a tab must not keep a name the backend
+	// does not have. The re-read is idempotent.
+	settingsBroadcast()
 	if err != nil {
 		writeJSON(w, projectNameStatus(err), errorBody(err.Error()))
 		return
 	}
-	settingsBroadcast()
 	writeJSON(w, http.StatusOK, map[string]string{"name": name})
 }
 

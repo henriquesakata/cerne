@@ -416,12 +416,12 @@ func TestSettingsPutStringValue(t *testing.T) {
 	}
 }
 
-// TestProjectNamePutAnnouncesProjects pins F-0331 crit. 1 and 2: a rename from
-// the local ui answers the stored name and announces a projects refresh, after
-// which /api/projects (the selector) and /state (Kanban, Mindmap) carry it.
-func TestProjectNamePutAnnouncesProjects(t *testing.T) {
+// projectNameUI is a cerne ui over one fresh backend (pid proj-a) with an
+// open SSE stream whose connect frame was already consumed.
+func projectNameUI(t *testing.T) (ui http.Handler, url string, events <-chan string, repoA, projA string) {
+	t.Helper()
 	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
-	repoA, projA, _ := newGitBackendNoClean(t)
+	repoA, projA, _ = newGitBackendNoClean(t)
 	resolve := func(dir string) (string, string, string, string, error) {
 		if dir == "A" {
 			return repoA, projA, "proj-a", "Projeto A", nil
@@ -429,23 +429,23 @@ func TestProjectNamePutAnnouncesProjects(t *testing.T) {
 		return "", "", "", "", fmt.Errorf("dir desconhecido: %s", dir)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 	ui, err := NewUIMulti(ctx, resolve, 0, "A")
 	if err != nil {
 		t.Fatalf("NewUIMulti: %v", err)
 	}
 	srv := httptest.NewServer(ui)
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	sctx, scancel := context.WithCancel(context.Background())
-	defer scancel()
+	t.Cleanup(scancel)
 	req, _ := http.NewRequestWithContext(sctx, http.MethodGet, srv.URL+"/api/stream", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /api/stream: %v", err)
 	}
-	defer resp.Body.Close()
-	events := make(chan string, 8)
+	t.Cleanup(func() { resp.Body.Close() })
+	ch := make(chan string, 8)
 	go func() {
 		br := bufio.NewReader(resp.Body)
 		for {
@@ -453,12 +453,20 @@ func TestProjectNamePutAnnouncesProjects(t *testing.T) {
 			if err != nil {
 				return
 			}
-			events <- d
+			ch <- d
 		}
 	}()
-	if got := waitEvent(t, events); got != "" {
+	if got := waitEvent(t, ch); got != "" {
 		t.Fatalf("connect frame data = %q, want empty (projects event)", got)
 	}
+	return ui, srv.URL, ch, repoA, projA
+}
+
+// TestProjectNamePutAnnouncesProjects pins F-0331 crit. 1 and 2: a rename from
+// the local ui answers the stored name and announces a projects refresh, after
+// which /api/projects (the selector) and /state (Kanban, Mindmap) carry it.
+func TestProjectNamePutAnnouncesProjects(t *testing.T) {
+	ui, url, events, _, _ := projectNameUI(t)
 
 	var got struct {
 		Name string `json:"name"`
@@ -472,7 +480,7 @@ func TestProjectNamePutAnnouncesProjects(t *testing.T) {
 	}
 
 	var list projectsList
-	getJSON(t, srv.URL+"/api/projects", &list)
+	getJSON(t, url+"/api/projects", &list)
 	if list.Projects[0].Name != "Núcleo" {
 		t.Errorf("/api/projects name = %q, want Núcleo", list.Projects[0].Name)
 	}
@@ -481,9 +489,32 @@ func TestProjectNamePutAnnouncesProjects(t *testing.T) {
 			Name string `json:"name"`
 		} `json:"project"`
 	}
-	getJSON(t, srv.URL+"/api/projects/proj-a/state", &state)
+	getJSON(t, url+"/api/projects/proj-a/state", &state)
 	if state.Project.Name != "Núcleo" {
 		t.Errorf("/state project.name = %q, want Núcleo", state.Project.Name)
+	}
+}
+
+// TestProjectNamePutFailureAnnouncesProjects pins critic C3: every outcome
+// announces a projects refresh. Here the push lands and the docs.lock tail
+// then fails (500): without the event, every other tab keeps the old name.
+func TestProjectNamePutFailureAnnouncesProjects(t *testing.T) {
+	ui, url, events, _, projA := projectNameUI(t)
+	if err := os.WriteFile(filepath.Join(projA, "docs.lock"), []byte("nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/project/name", `{"name":"Parcial"}`, &body); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("PUT = %d %s, want 500 from the snapshot tail", rec.Code, rec.Body.String())
+	}
+	for d := waitEvent(t, events); d != ""; d = waitEvent(t, events) {
+	}
+	var list projectsList
+	getJSON(t, url+"/api/projects", &list)
+	if list.Projects[0].Name != "Parcial" {
+		t.Errorf("/api/projects name = %q, want the landed Parcial", list.Projects[0].Name)
 	}
 }
 
