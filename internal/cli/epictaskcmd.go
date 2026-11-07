@@ -134,7 +134,7 @@ func runFeatureLikeNew(cmd *cobra.Command, dir, title, module, parent, facet, co
 		return err
 	}
 	if f.Parent != "" && app.EpicPlanStub(ctx.repoDir, f.Parent) {
-		fmt.Fprintf(cmd.OutOrStdout(), "plano do épico scaffoldado — preencha antes do approve (N-0031)\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "epic plan scaffolded — fill it in before approve (N-0031)\n")
 	}
 	if hasBody {
 		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s created (%s) with spec — already synced. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)

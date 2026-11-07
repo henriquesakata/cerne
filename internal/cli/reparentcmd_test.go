@@ -26,7 +26,7 @@ func TestFeatureReparent(t *testing.T) {
 		t.Fatalf("output missing confirmation:\n%s", out)
 	}
 	// F-0235 crit.5: reparenting under a still-stub-planned epic prints the advisory.
-	if !strings.Contains(out, "plano do épico scaffoldado — preencha antes do approve (N-0031)") {
+	if !strings.Contains(out, "epic plan scaffolded — fill it in before approve (N-0031)") {
 		t.Fatalf("output missing epic-scaffold advisory:\n%s", out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "F-0001" {
@@ -66,7 +66,7 @@ func TestFeatureReparentEchoesCanonicalParent(t *testing.T) {
 	if !strings.Contains(out, "F-0002 is now a child of F-0001.\n") {
 		t.Fatalf("confirmation does not name the canonical epic:\n%s", out)
 	}
-	if !strings.Contains(out, "plano do épico scaffoldado") {
+	if !strings.Contains(out, "epic plan scaffolded") {
 		t.Fatalf("epic-plan advisory missing for the canonical epic:\n%s", out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.Parent != "F-0001" {

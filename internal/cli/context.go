@@ -62,9 +62,9 @@ func recreateCache(cacheDir, repoDir, backend string) error {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "cerne: clone de cache ausente — recriando de %s...\n", backend)
+	fmt.Fprintf(os.Stderr, "cerne: cache clone missing — re-cloning from %s...\n", backend)
 	if err := gitback.Clone(backend, repoDir); err != nil {
-		return fmt.Errorf("recriando o clone de cache de %s falhou: %w", backend, err)
+		return fmt.Errorf("re-cloning the cache clone from %s failed: %w", backend, err)
 	}
 	return nil
 }

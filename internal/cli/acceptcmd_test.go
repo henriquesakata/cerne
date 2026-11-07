@@ -158,6 +158,10 @@ func TestFeatureAcceptAllImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept --all-implemented: %v\noutput: %s", err, out)
 	}
+	// CLI output is English (F-0124): the bulk summary once read "aceita(s)".
+	if !strings.Contains(out, "2 feature(s) accepted.") {
+		t.Fatalf("output = %q, want the English bulk summary", out)
+	}
 	for _, id := range ids {
 		f, err := store.LoadFeature(repoDir, id)
 		if err != nil {
@@ -183,6 +187,16 @@ func TestFeatureAcceptAllImplementedRequiresReason(t *testing.T) {
 	_, err := execCerne(t, "feature", "accept", "--all-implemented", "--dir", projDir)
 	if err == nil || !strings.Contains(err.Error(), "reason") {
 		t.Fatalf("err = %v, want error naming --reason", err)
+	}
+}
+
+// TestFeatureAcceptRequiresIDOrAll: neither an id nor --all-implemented is
+// refused, in English (F-0124).
+func TestFeatureAcceptRequiresIDOrAll(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	_, err := execCerne(t, "feature", "accept", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "provide an <id> or use --all-implemented") {
+		t.Fatalf("err = %v, want the English id-or-all refusal", err)
 	}
 }
 

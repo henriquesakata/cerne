@@ -53,7 +53,7 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 		parent = domain.CanonicalID(parent) // as stored
 		fmt.Fprintf(cmd.OutOrStdout(), "%s is now a child of %s.\n", id, parent)
 		if app.EpicPlanStub(ctx.repoDir, parent) {
-			fmt.Fprintf(cmd.OutOrStdout(), "plano do épico scaffoldado — preencha antes do approve (N-0031)\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "epic plan scaffolded — fill it in before approve (N-0031)\n")
 		}
 	}
 	return nil
