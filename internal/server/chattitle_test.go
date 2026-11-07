@@ -74,6 +74,10 @@ func TestChatTitleByoKey(t *testing.T) {
 	if !strings.Contains(gotPrompt, "no máximo 40 caracteres") {
 		t.Fatalf("prompt lacks the 40-char rule: %s", gotPrompt)
 	}
+	// C10: the title follows the conversation's language, never a forced one.
+	if !strings.Contains(gotPrompt, "no mesmo idioma da conversa") || strings.Contains(gotPrompt, "em português") {
+		t.Fatalf("prompt must ask for the conversation's language, not force Portuguese: %s", gotPrompt)
+	}
 	if strings.Contains(gotPrompt, strings.Repeat("z", titleInputRunes)) {
 		t.Fatalf("prompt kept %d z's of the user message, want it cut to %d runes total", titleInputRunes, titleInputRunes)
 	}
