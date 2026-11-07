@@ -47,6 +47,32 @@ func TestValidateParentLink(t *testing.T) {
 			parentOf:  nil,
 			wantErr:   nil,
 		},
+		{
+			name:      "self reference across case",
+			child:     "F-0001",
+			newParent: " f-0001 ",
+			wantErr:   ErrParentSelf,
+		},
+		{
+			name:      "cycle through a legacy lowercase parent",
+			child:     "F-0001",
+			newParent: "f-0002",
+			parentOf:  map[string]string{"F-0002": "f-0001"},
+			wantErr:   ErrParentCycle,
+		},
+		{
+			name:      "self reference through a lowercase child id",
+			child:     "f-0003",
+			newParent: "F-0003",
+			wantErr:   ErrParentSelf,
+		},
+		{
+			name:      "cycle through a lowercase child id",
+			child:     " f-0001 ",
+			newParent: "F-0002",
+			parentOf:  map[string]string{"F-0002": "F-0001"},
+			wantErr:   ErrParentCycle,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

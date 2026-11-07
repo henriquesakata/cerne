@@ -167,13 +167,22 @@ func SaveFeature(backendDir string, f Feature) error {
 }
 
 // LoadFeature reads one feature by id; ErrNotFound when the file is missing.
+// The parent comes back canonical (domain.CanonicalID), so a legacy parent
+// stored in another case reads as its epic everywhere (F-0326).
 func LoadFeature(backendDir, id string) (Feature, error) {
-	return loadEntity[Feature](backendDir, featuresSubdir, id)
+	f, err := loadEntity[Feature](backendDir, featuresSubdir, id)
+	f.Parent = domain.CanonicalID(f.Parent)
+	return f, err
 }
 
-// LoadAllFeatures returns all features sorted by ID ascending.
+// LoadAllFeatures returns all features sorted by ID ascending, each parent
+// canonical like LoadFeature's.
 func LoadAllFeatures(backendDir string) ([]Feature, error) {
-	return loadAllEntities[Feature](backendDir, featuresSubdir)
+	fs, err := loadAllEntities[Feature](backendDir, featuresSubdir)
+	for i := range fs {
+		fs[i].Parent = domain.CanonicalID(fs[i].Parent)
+	}
+	return fs, err
 }
 
 // SaveDecision writes the decision to entities/decisions/<ID>.json.

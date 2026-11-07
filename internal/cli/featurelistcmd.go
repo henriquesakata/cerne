@@ -87,7 +87,12 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 		return fmt.Errorf("invalid state: %q (valid: %s)", state, joinFeatureStates())
 	}
 	moduleQ := strings.ToLower(strings.TrimSpace(module))
-	parentQ := strings.ToUpper(strings.TrimSpace(parent))
+	// --parent is a gate as much as a filter: a blank or unknown epic fails
+	// loudly instead of listing nothing (F-0326), like --state above.
+	parentQ := domain.CanonicalID(parent)
+	if cmd.Flags().Changed("parent") && parentQ == "" {
+		return fmt.Errorf("--parent needs a feature id")
+	}
 	// Normalize tag filters to the stored form (facet lowered, component slugged)
 	// so '--facet Infra'/'--component Gitback' match what's persisted.
 	facetQ := strings.ToLower(strings.TrimSpace(facet))
@@ -101,6 +106,9 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 	features, err := store.LoadAllFeatures(ctx.repoDir)
 	if err != nil {
 		return err
+	}
+	if parentQ != "" && !slices.ContainsFunc(features, func(f store.Feature) bool { return f.ID == parentQ }) {
+		return fmt.Errorf("feature %s not found in backend", parentQ)
 	}
 
 	shown := make([]store.Feature, 0, len(features))
@@ -120,7 +128,7 @@ func runFeatureList(cmd *cobra.Command, dir, state, module, parent, facet, compo
 		if moduleQ != "" && strings.ToLower(f.Module) != moduleQ {
 			continue
 		}
-		if parentQ != "" && strings.ToUpper(f.Parent) != parentQ {
+		if parentQ != "" && f.Parent != parentQ { // the store loads parents canonical
 			continue
 		}
 		if facetQ != "" && !slices.Contains(f.Facets, facetQ) {

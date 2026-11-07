@@ -221,3 +221,37 @@ func TestBuildGraphWikiLinkEdges(t *testing.T) {
 		t.Fatalf("link edges = %+v, want %+v", links, want)
 	}
 }
+
+// TestBuildGraphPartOfLegacyParent (F-0326): a child whose stored parent is a
+// legacy lowercase id still gets its part_of edge to the epic node.
+func TestBuildGraphPartOfLegacyParent(t *testing.T) {
+	repo := t.TempDir()
+	now := time.Now()
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Épico", State: domain.StateInDevelopment},
+		{ID: "F-0002", Title: "Filha legada", Parent: "f-0001", State: domain.StateApproved},
+		{ID: "F-0003", Title: "Filha com espaços", Parent: " F-0001 ", State: domain.StateApproved},
+	} {
+		f.CreatedAt, f.UpdatedAt = now, now
+		if err := store.SaveFeature(repo, f); err != nil {
+			t.Fatalf("SaveFeature %s: %v", f.ID, err)
+		}
+	}
+	g, err := BuildGraph(repo)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	var parts []Edge
+	for _, e := range g.Edges {
+		if e.Type == EdgePartOf {
+			parts = append(parts, e)
+		}
+	}
+	want := []Edge{
+		{From: "F-0002", To: "F-0001", Type: EdgePartOf},
+		{From: "F-0003", To: "F-0001", Type: EdgePartOf},
+	}
+	if !reflect.DeepEqual(parts, want) {
+		t.Fatalf("part_of edges = %+v, want %+v", parts, want)
+	}
+}

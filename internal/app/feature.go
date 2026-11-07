@@ -215,6 +215,9 @@ func prepareFeature(prefix, title, module, parent string, facets, components []s
 	if err != nil {
 		return newFeature{}, err
 	}
+	if c := domain.CanonicalID(parent); c != "" {
+		parent = c // a blank parent stays raw so validateParent refuses it
+	}
 	return newFeature{prefix: prefix, title: title, module: module, parent: parent, specBody: specBody,
 		owner: strings.TrimSpace(owner), priority: normPriority, facets: normFacets,
 		components: domain.NormalizeComponents(components), force: force}, nil
@@ -438,8 +441,14 @@ func validateFixes(repoDir, id, fixes string) error {
 // feature being (re)parented — pass the freshly minted ID on create, where a
 // cycle is impossible but the check stays uniform.
 func validateParent(repoDir, childID, parent string) error {
+	// The parent is an id, not a path: refuse a non-feature shape before the
+	// path-based load, and a value that only resolved as a path ("./F-0001",
+	// or "f-0001" on a case-insensitive filesystem) after it.
+	if !domain.IsFeatureID(parent) {
+		return fmt.Errorf("%w: %s", ErrParentNotFound, parent)
+	}
 	p, err := store.LoadFeature(repoDir, parent)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || (err == nil && p.ID != parent) {
 		return fmt.Errorf("%w: %s", ErrParentNotFound, parent)
 	}
 	if err != nil {
@@ -467,9 +476,13 @@ func validateParent(repoDir, childID, parent string) error {
 // SetFeatureParent reparents a feature under the epic parent (or clears it when
 // parent is empty), appends a feature.reparented event, then commits, pushes
 // and refreshes the docs.lock snapshot. A no-op when the parent is unchanged.
-// store.ErrNotFound (wrapped) for an unknown feature; the validateParent
+// The parent is stored canonical (domain.CanonicalID). store.ErrNotFound (wrapped) for an unknown feature; the validateParent
 // sentinels for an invalid link.
 func SetFeatureParent(repoDir, projDir, id, parent string) error {
+	id = domain.CanonicalID(id) // the child's event and commit carry the stored id
+	if c := domain.CanonicalID(parent); c != "" {
+		parent = c // a whitespace-only parent stays raw so validateParent refuses it ("" alone clears)
+	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)
 		if err != nil {

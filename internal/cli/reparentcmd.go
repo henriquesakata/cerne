@@ -2,10 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/domain"
 )
 
 func newFeatureReparentCmd(dir *string) *cobra.Command {
@@ -23,7 +25,7 @@ func newFeatureReparentCmd(dir *string) *cobra.Command {
 }
 
 func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) error {
-	id := args[0]
+	id := domain.CanonicalID(args[0]) // echoed as stored
 	parent := ""
 	switch {
 	case clear:
@@ -31,6 +33,9 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 			return fmt.Errorf("--clear does not take a <parent-id>")
 		}
 	case len(args) == 2:
+		if strings.TrimSpace(args[1]) == "" { // detaching is --clear, never a blank id
+			return fmt.Errorf("<parent-id> needs a feature id (use --clear to detach)")
+		}
 		parent = args[1]
 	default:
 		return fmt.Errorf("pass the <parent-id> or use --clear")
@@ -45,6 +50,7 @@ func runReparent(cmd *cobra.Command, dir string, args []string, clear bool) erro
 	if parent == "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s detached from its epic.\n", id)
 	} else {
+		parent = domain.CanonicalID(parent) // as stored
 		fmt.Fprintf(cmd.OutOrStdout(), "%s is now a child of %s.\n", id, parent)
 		if app.EpicPlanStub(ctx.repoDir, parent) {
 			fmt.Fprintf(cmd.OutOrStdout(), "plano do épico scaffoldado — preencha antes do approve (N-0031)\n")

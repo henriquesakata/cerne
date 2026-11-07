@@ -239,3 +239,25 @@ func TestProcessPerfIgnoresDeadFixers(t *testing.T) {
 		}
 	}
 }
+
+// TestProcessPerfExcludesEpicWithLegacyChildren (F-0326): children whose stored
+// parent is a legacy lowercase/padded id still make their epic an epic, so its
+// orchestration-only anchor stays out of the samples.
+func TestProcessPerfExcludesEpicWithLegacyChildren(t *testing.T) {
+	repoDir := newPanelBackend(t)
+	seedDecision(t, repoDir, "D-0001", panelAt(0), domain.DecisionActive, []string{"process"}, []string{"metric"})
+	seedDelivered(t, repoDir, "E-0001", panelAt(5), stamped(t, "# E-0001\n", cost.Counters{Input: 200_000}))
+	for i, id := range []string{"F-0001", "F-0002"} {
+		seedDelivered(t, repoDir, id, panelAt(1+i), stamped(t, "# "+id+"\n", cost.Counters{Input: 9_000_000}))
+		f, _ := store.LoadFeature(repoDir, id)
+		f.Parent = " e-0001 "
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature: %v", err)
+		}
+	}
+
+	r := mustProcessPerf(t, repoDir)
+	if a := r.Markers[0].After; r.ExcludedEpic != 1 || a.N != 2 || a.Median != 9_000_000 {
+		t.Fatalf("report = excluded_epic %d, n %d, median %v; want 1 / 2 / 9M", r.ExcludedEpic, a.N, a.Median)
+	}
+}
