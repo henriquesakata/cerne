@@ -1,0 +1,34 @@
+package skills
+
+import (
+	"strings"
+	"testing"
+)
+
+// TestSkillErrataTeachesMarker pins F-0329 crit. 5: the Errata section teaches
+// the real way to acknowledge a superseded mention in an append-only errata — a
+// new entry carrying the marker, which looks back only — not the old promise
+// that an entry pointing at the successor clears it.
+func TestSkillErrataTeachesMarker(t *testing.T) {
+	_, sec, ok := strings.Cut(All()[0].Content, "## Errata (correcting")
+	if !ok {
+		t.Fatal("skill has no Errata section")
+	}
+	sec, _, _ = strings.Cut(sec, "\n## ")
+	for _, sub := range []string{
+		"cerne <kind> errata <id> \"<!-- lint:ok-superseded X --> <why the mention is history>\"",
+		"never covers a later entry",
+	} {
+		if !strings.Contains(sec, sub) {
+			t.Errorf("Errata section missing %q", sub)
+		}
+	}
+	for _, old := range []string{
+		"points at the successor",
+		"cannot carry the `lint:ok-superseded` marker",
+	} {
+		if strings.Contains(sec, old) {
+			t.Errorf("Errata section still says %q", old)
+		}
+	}
+}

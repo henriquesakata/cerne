@@ -356,7 +356,13 @@ cerne runbook errata RB-0002 "<text>"
 
 The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per call, in chronological order): it never touches the original `spec.md`/`plan.md`/`result.md` or ADR body. It is read back wherever the entity is consumed — shown under `cerne show <id>`, folded into the wiki synthesis (`cerne compile`), and considered by `cerne lint` (scanned regardless of state, so an errata that points a stale reference at its successor clears the debt **at the source**, without editing the concluded spec). The result rules count it too: a `critério N` cited in an errata entry clears `result-missing-evidence` for that N, and a complete `## Gauntlet` section in any entry clears `result-missing-gauntlet` — the path for a result debt found after the accept. Only once the feature is closed: while it is live the result itself is the document to fix, and the `complete` gate ignores the errata. There is **no** edit/rewrite command — past the accept, errata is the only correction path, by design: annotate, never rewrite.
 
-One tolerance is automatic: an errata may **name what its own entity superseded** (e.g. F-0001's errata saying "this feature replaced F-0002") without `cerne lint` raising `ref-to-superseded` — that supersession record is legitimate history, and since the errata is immutable it cannot carry the `lint:ok-superseded` marker used in authored docs. This holds only for the errata's *own* predecessor: a stale reference to some **other** superseded entity in an errata is still flagged — clear it by appending a correcting entry that points at the successor.
+One tolerance is automatic: an errata may **name what its own entity superseded** (e.g. F-0001's errata saying "this feature replaced F-0002") without `cerne lint` raising `ref-to-superseded` — that supersession record is legitimate history. Any **other** superseded entity an errata names is still flagged, including one that was live when the entry was written and was superseded later. No command edits an entry, so the old line can never take the same-line marker; acknowledge it by **appending** an entry that carries the marker for that id:
+
+```
+cerne <kind> errata <id> "<!-- lint:ok-superseded X --> <why the mention is history>"
+```
+
+A marker in a later entry covers every mention of X in the entries **before** it. It never covers a later entry, and inside its own entry the same-line rule holds: keep any mention of X in the new entry on the marker's line. If the old entry is wrong rather than dated, say what is current on that same line.
 
 ## Drift: code moved, docs stood still
 
