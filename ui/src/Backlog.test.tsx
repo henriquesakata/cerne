@@ -239,6 +239,21 @@ describe('Backlog (F-0202)', () => {
 // F-0310: o título da conversa nasce truncado com a primeira mensagem e é
 // trocado pelo resumo quando ele chega, sem mexer no id da conversa (F-0323).
 describe('Backlog — título da conversa (F-0310)', () => {
+  // Montar o Backlog não é atividade: a conversa ativa mantém o carimbo da
+  // última mensagem real (crit. 1-7 — sem "agora" falso a cada visita).
+  it('montar o Backlog não recarimba a conversa ativa', async () => {
+    const seeded = Date.now() - 20_000
+    writeChats(
+      [{ id: 'a1', title: 'Ativa', updatedAt: seeded, messages: [{ role: 'user', content: 'Oi' }, { role: 'assistant', content: 'Olá' }], model: '', effort: '' }],
+      'a1',
+    )
+    render(<Backlog />)
+    await screen.findByPlaceholderText(/descreva/i)
+    await waitFor(() => expect(fetchLLMOptions).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(readChats().chats.find((c) => c.id === 'a1')!.updatedAt).toBe(seeded)
+  })
+
   // C3: uma conversa gravada sem updatedAt (corrupção, edição à mão) não
   // derruba a tela: a linha aparece com a idade neutra. Ela fica inativa — a
   // ativa é recarimbada pelo updateActive da montagem.

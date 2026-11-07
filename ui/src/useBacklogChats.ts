@@ -297,7 +297,9 @@ export function useBacklogChats(): UseBacklogChats {
       prev.map((c) => {
         if (c.id !== activeId) return c
         const next = { ...c, model: patch.model ?? c.model, effort: patch.effort ?? c.effort }
-        if (!patch.messages) return next
+        // F-0310: o mesmo transcript devolvido (o efeito de montagem do
+        // BacklogChat) não é atividade — recarimbar dava "agora" falso à ativa.
+        if (!patch.messages || patch.messages === c.messages) return next
         return {
           ...next,
           messages: patch.messages,
