@@ -209,12 +209,13 @@ func TestClarifyCorrectIndexOutOfRange(t *testing.T) {
 
 // F-0330 (critic C8): the refusal's command run as typed would record its
 // placeholder as the human's answer; clarify answer refuses "...", "…" and
-// "<…>" and writes nothing.
+// what doccheck.Unwritten reads as template — blank, <…> slots, quoted or
+// emphasized slots — and writes nothing. An autolink is a written answer.
 func TestClarifyAnswerRefusesPlaceholder(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	newFeatureWithSpec(t, projDir, "Com perguntas", clarifySpecBody())
 	before := readBackendSpec(t, repoDir)
-	for _, ph := range []string{"...", " … ", "<resposta>"} {
+	for _, ph := range []string{"...", " … ", "<resposta>", "   ", `""`, `"<resposta>"`, "“<k>”", "**<k>**", "`<k>`", "<a> / <b>"} {
 		_, err := execCerne(t, "clarify", "answer", "F-0001", "2", "--answer", ph, "--dir", projDir)
 		if !errors.Is(err, errPlaceholderAnswer) {
 			t.Errorf("--answer %q: err = %v, want errPlaceholderAnswer", ph, err)
@@ -222,5 +223,8 @@ func TestClarifyAnswerRefusesPlaceholder(t *testing.T) {
 	}
 	if got := readBackendSpec(t, repoDir); got != before {
 		t.Fatalf("a placeholder answer wrote the spec:\n%s", got)
+	}
+	if out, err := execCerne(t, "clarify", "answer", "F-0001", "2", "--answer", "<https://example.com/formato>", "--dir", projDir); err != nil {
+		t.Fatalf("an autolink is a written answer: %v\n%s", err, out)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
@@ -102,12 +103,13 @@ func newClarifyListCmd() *cobra.Command {
 // would record "..." as the human's answer.
 var errPlaceholderAnswer = errors.New("the answer is still a placeholder")
 
-// placeholderAnswer reports "...", "…" or an angle-bracketed slot like "<k>".
-// ponytail: local check; doccheck.Unwritten (F-0327, not in this base) can
-// replace it once merged.
+// placeholderAnswer reports an answer that is still a slot: what
+// doccheck.Unwritten reads as template (blank, <…> slots, quoted or
+// emphasized ones), or the bare ellipsis the refusal prints, which Unwritten
+// keeps as written text.
 func placeholderAnswer(a string) bool {
-	a = strings.TrimSpace(a)
-	return a == "..." || a == "…" || (len(a) > 2 && strings.HasPrefix(a, "<") && strings.HasSuffix(a, ">"))
+	t := strings.TrimSpace(a)
+	return doccheck.Unwritten(a) || t == "..." || t == "…"
 }
 
 func newClarifyAnswerCmd() *cobra.Command {
@@ -135,7 +137,7 @@ func newClarifyAnswerCmd() *cobra.Command {
 			if answer == "" && pick <= 0 {
 				return errors.New("provide the answer with --answer \"...\" or --pick <k>")
 			}
-			if placeholderAnswer(answer) {
+			if pick <= 0 && placeholderAnswer(answer) {
 				return fmt.Errorf("%w: %q — replace it with the actual answer (or choose an option with --pick <k>)", errPlaceholderAnswer, answer)
 			}
 			ctx, err := resolveProject(dir)
