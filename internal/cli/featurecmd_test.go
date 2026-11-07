@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -246,6 +247,37 @@ func TestFeatureNewTags(t *testing.T) {
 
 	if _, err := execCerne(t, "feature", "new", "Bad", "--context", "ctx de teste", "--facet", "bogus", "--dir", projDir); err == nil {
 		t.Fatalf("feature new with unknown facet succeeded, want error")
+	}
+}
+
+// TestFeatureNewRefusedFileLeavesCleanClone (F-0328 critic C7): a --file the
+// spec rule refuses is refused after the entity was written, and the
+// mutation's reset takes it back — no entity, no event, nothing untracked
+// left in the clone for the next operation to sweep in.
+func TestFeatureNewRefusedFileLeavesCleanClone(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\noutput: %s", err, out)
+	}
+	evs0, _ := store.ReadEvents(repoDir)
+	head0, _ := gitback.HeadSHA(origin)
+	specFile := filepath.Join(t.TempDir(), "spec.md")
+	mustWrite(t, specFile, "---\ncerne_id: F-0009\n---\n\n# Outra\n\n## Problema\n\nDe outra feature.\n")
+	if _, err := execCerne(t, "feature", "new", "Exportar relatório em PDF", "--file", specFile, "--dir", projDir); !errors.Is(err, app.ErrBodyFrontmatter) {
+		t.Fatalf("err = %v, want ErrBodyFrontmatter", err)
+	}
+	if features, _ := store.LoadAllFeatures(repoDir); len(features) != 1 {
+		t.Fatalf("features = %d, want 1", len(features))
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evs0) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evs0))
+	}
+	status, err := exec.Command("git", "-C", repoDir, "status", "--porcelain", "--untracked-files=all").Output()
+	if err != nil || len(status) != 0 {
+		t.Fatalf("clone not clean after a refusal (err %v):\n%s", err, status)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refusal: %s -> %s", head0, h)
 	}
 }
 

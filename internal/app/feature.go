@@ -285,16 +285,14 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
-		// The spec goes first: a body writeSpecBody refuses (F-0328) must leave
-		// nothing behind, and the go-git reset does not clean untracked files.
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return err
+		}
 		if strings.TrimSpace(specBody) != "" {
 			if _, err := writeSpecBody(repoDir, id, specBody, true); err != nil {
 				return err
 			}
 		} else if err := writeSpecStub(repoDir, id, title); err != nil {
-			return err
-		}
-		if err := store.SaveFeature(repoDir, f); err != nil {
 			return err
 		}
 		// F-0235: a parent gaining its first (or another) child is decomposition —
