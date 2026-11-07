@@ -1,6 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Conversation } from './useBacklogChats'
 import { useT } from './i18n'
+
+// AGE_TICK_MS (C8): a idade é recalculada a cada render; o tick garante um
+// render por minuto com a aba parada.
+const AGE_TICK_MS = 60_000
 
 function ageMinutes(at: number): number {
   return Math.max(0, Math.floor((Date.now() - at) / 60_000))
@@ -21,6 +25,11 @@ type Props = {
 export default function ConversationList({ conversations, activeId, onSelect, onNew, onDelete, onRename }: Props) {
   const { t } = useT()
   const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), AGE_TICK_MS)
+    return () => clearInterval(id)
+  }, [])
   // Rename em linha (F-0310): só o primeiro desfecho vale (settled) — o blur
   // que segue Enter/Escape não confirma de novo; Enter e Escape devolvem o
   // foco ao ✎ da linha, o blur não (não rouba o foco do que foi clicado).
@@ -92,7 +101,6 @@ export default function ConversationList({ conversations, activeId, onSelect, on
                 onClick={() => onSelect(c.id)}
               >
                 <span className="conversation-item-title">{c.title || t.backlogChat.untitledConversation}</span>
-                {/* ponytail: sem tick — aba ociosa mostra a idade do último render; um intervalo de 60 s resolve se incomodar. */}
                 <span className="conversation-item-age">{t.notif.age(ageMinutes(c.updatedAt))}</span>
               </button>
             )}

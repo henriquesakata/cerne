@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import ConversationList from './ConversationList'
 import { I18nProvider } from './i18n'
@@ -68,6 +68,29 @@ describe('ConversationList (F-0219)', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: /excluir/i }))
     expect(onDelete).toHaveBeenCalledWith('a')
+  })
+})
+
+describe('ConversationList — idade (F-0310)', () => {
+  // C8: aba parada não congela a idade — a lista re-renderiza a cada minuto
+  // enquanto está montada, e o intervalo morre com ela.
+  it('C8: a idade se atualiza a cada minuto e o intervalo é limpo no unmount', () => {
+    vi.useFakeTimers()
+    try {
+      const timersBefore = vi.getTimerCount()
+      const { unmount } = render(
+        <ConversationList conversations={[conv('a', 'Conversa A', Date.now() - 30_000)]} activeId="a" onSelect={vi.fn()} onNew={vi.fn()} onDelete={vi.fn()} onRename={vi.fn()} />,
+      )
+      expect(screen.getByText('agora')).toBeInTheDocument()
+      act(() => {
+        vi.advanceTimersByTime(60_000)
+      })
+      expect(screen.getByText('há 1 minuto')).toBeInTheDocument()
+      unmount()
+      expect(vi.getTimerCount()).toBe(timersBefore)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
