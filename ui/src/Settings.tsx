@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import {
   fetchSettings,
   HTTPError,
@@ -238,6 +238,12 @@ export default function Settings() {
   )
 }
 
+// focusIfLost focuses el only when the focus fell to the document.
+function focusIfLost(el: HTMLElement | null) {
+  const now = document.activeElement
+  if (el && (now === null || now === document.body)) el.focus()
+}
+
 // ProjectName renames the project (F-0331): the backend's project.json, shared
 // by every clone — not a scoped setting. The input is uncontrolled and keyed
 // by the backend's name, so it remounts only when the re-read project list
@@ -246,13 +252,29 @@ function ProjectName({ name }: { name: string }) {
   const { t } = useT()
   const tn = t.settings.projectName
   const uid = useId()
+  const [titleId, hintId, errorId] = [`${uid}-title`, `${uid}-hint`, `${uid}-error`]
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const input = useRef<HTMLInputElement | null>(null)
+  const shown = useRef(name)
+  shown.current = name
+  // The remount that shows a saved name drops the focus to <body>: hand it
+  // back to the input (F-0302, critic C5), never stealing it from elsewhere.
+  // Stable, so React calls it on a real mount only, not on every render.
+  const refocus = useRef(false)
+  const attach = useCallback((el: HTMLInputElement | null) => {
+    input.current = el
+    if (el && refocus.current) {
+      refocus.current = false
+      focusIfLost(el)
+    }
+  }, [])
   // Busy is aria-disabled, never disabled (F-0302).
   const lock = saving || undefined
   return (
-    <section aria-labelledby={`${uid}-title`}>
-      <h2 id={`${uid}-title`} className="settings-title">
+    <section aria-labelledby={titleId}>
+      <h2 id={titleId} className="settings-title">
         {tn.title}
       </h2>
       <form
@@ -260,6 +282,7 @@ function ProjectName({ name }: { name: string }) {
         onSubmit={(e) => {
           e.preventDefault()
           if (saving) return
+          setSaved(false)
           const { name: next, rule } = checkProjectName(String(new FormData(e.currentTarget).get('name') ?? ''))
           if (rule) {
             setError(tn.rules[rule])
@@ -268,7 +291,14 @@ function ProjectName({ name }: { name: string }) {
           setSaving(true)
           setError(null)
           renameProject(next).then(
-            () => setSaving(false),
+            (stored) => {
+              setSaving(false)
+              setSaved(true)
+              // The re-read list may already show it (the server announces
+              // before it answers): the remount happened, refocus now.
+              if (stored === shown.current) focusIfLost(input.current)
+              else refocus.current = true
+            },
             (err: unknown) => {
               setSaving(false)
               setError(
@@ -282,23 +312,30 @@ function ProjectName({ name }: { name: string }) {
       >
         <input
           key={name}
+          ref={attach}
           name="name"
           type="text"
           className="settings-text"
           defaultValue={name}
-          aria-labelledby={`${uid}-title`}
-          aria-describedby={`${uid}-hint`}
+          aria-labelledby={titleId}
+          aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+          aria-invalid={error ? true : undefined}
           aria-disabled={lock}
         />
-        <button type="submit" aria-describedby={`${uid}-title`} aria-disabled={lock}>
+        <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
           {saving ? tn.saving : t.common.save}
         </button>
       </form>
-      <p id={`${uid}-hint`} className="settings-hint">
+      <p id={hintId} className="settings-hint">
         {tn.hint}
       </p>
+      {saved && (
+        <p role="status" className="settings-hint">
+          {tn.saved}
+        </p>
+      )}
       {error && (
-        <p role="alert" className="form-error">
+        <p id={errorId} role="alert" className="form-error">
           {error}
         </p>
       )}

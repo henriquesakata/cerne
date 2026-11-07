@@ -764,6 +764,45 @@ describe('Settings — nome do projeto (F-0331)', () => {
     expect(await within(r).findByRole('button', { name: 'Salvar' })).not.toHaveAttribute('aria-disabled')
   })
 
+  // Crítica C5: a lista relida remonta o campo com o nome novo; o foco não pode
+  // cair no <body>, e o sucesso precisa ser anunciado. As duas ordens são
+  // reais: o servidor emite "projects" antes de responder ao PUT.
+  it.each([
+    ['a resposta chega antes da lista relida', false],
+    ['a lista relida chega antes da resposta', true],
+  ])('crítica C5: %s — o foco volta ao campo remontado e o sucesso é anunciado', async (_, listFirst) => {
+    const write = deferred<string>()
+    renameProject.mockReturnValue(write.promise)
+    const { rerender } = render(<Settings />)
+    const r = await screen.findByRole('region', { name: 'Nome do projeto' })
+    const input = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Núcleo' } })
+    fireEvent.submit(input.closest('form')!)
+    const reread = () => {
+      mockProjects = [{ pid: 'p1', name: 'Núcleo' }]
+      rerender(<Settings />)
+    }
+    if (listFirst) reread()
+    write.resolve('Núcleo')
+    expect(await within(r).findByRole('status')).toHaveTextContent('Nome gravado.')
+    if (!listFirst) reread()
+    const fresh = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(fresh).not.toBe(input)
+    expect(fresh).toHaveValue('Núcleo')
+    await waitFor(() => expect(fresh).toHaveFocus())
+  })
+
+  it('crítica C5: a recusa fica ligada ao campo (aria-invalid e aria-describedby)', async () => {
+    const r = await region()
+    const input = within(r).getByRole('textbox', { name: 'Nome do projeto' })
+    expect(input).not.toHaveAttribute('aria-invalid')
+    submit(r, '   ')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(input).toHaveAccessibleDescription(expect.stringContaining('O nome do projeto não pode ficar vazio.'))
+    expect(within(r).queryByRole('status')).toBeNull()
+  })
+
   it('crit. 10: com o I18nProvider (jsdom = en), rótulo, destino e regra saem em inglês', async () => {
     render(
       <I18nProvider>

@@ -978,6 +978,7 @@ const ptBR = {
       title: 'Nome do projeto',
       hint: 'Grava no backend do projeto: vale para todo clone.',
       saving: 'Salvando…',
+      saved: 'Nome gravado.',
       rules: {
         empty: 'O nome do projeto não pode ficar vazio.',
         long: 'O nome do projeto tem no máximo 64 caracteres.',
@@ -1954,6 +1955,7 @@ const en: Messages = {
       title: 'Project name',
       hint: "Saved to the project's backend: applies to every clone.",
       saving: 'Saving…',
+      saved: 'Name saved.',
       rules: {
         empty: 'The project name cannot be empty.',
         long: 'The project name has at most 64 characters.',
