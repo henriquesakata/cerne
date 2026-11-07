@@ -3,6 +3,8 @@ package skills
 import (
 	"strings"
 	"testing"
+
+	"gitlab.com/rockt/cerne/internal/doccheck"
 )
 
 // TestCerneAuthoringBarIsAProposal pins F-0308 crit. 10: the agent's Barra:
@@ -31,5 +33,24 @@ func TestCerneAuthoringBarIsAProposal(t *testing.T) {
 		if strings.Contains(c, gone) {
 			t.Errorf("skill still carries the old protocol %q", gone)
 		}
+	}
+}
+
+// The skill's fenced Barra: lines are what agents copy; copied verbatim, each
+// is still a template and the approve refuses it — the filled example is
+// prose of its own, outside the Barra: value (F-0327).
+func TestCerneAuthoringBarTemplatesRefusedVerbatim(t *testing.T) {
+	n := 0
+	for _, line := range strings.Split(All()[0].Content, "\n") {
+		if !strings.HasPrefix(line, "Barra:") {
+			continue
+		}
+		n++
+		if bar, err := doccheck.SpecBar([]byte("# t\n\n" + line + "\n")); err == nil {
+			t.Errorf("template line copied verbatim is accepted as %q", bar)
+		}
+	}
+	if n == 0 {
+		t.Fatal("skill has no Barra: template line")
 	}
 }

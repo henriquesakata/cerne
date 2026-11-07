@@ -76,9 +76,11 @@ Toda elaboração passa pela pergunta da barra de qualidade antes de fechar a pr
 - Antes de pedir o approve, a prontidão é conferida (` + "`cerne feature approve <id> --check`" + `, ou o painel de ações da página da feature): o impedimento que dá para ver antes não chega ao humano depois do clique.
 - Na seção "Verificação" da proposta, grave exatamente uma destas três formas:
 
-Barra: <referência nomeada + acesso> (exemplo preenchido: "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa")
+Barra: <referência nomeada + acesso>
 Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
 Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
+
+Exemplo preenchido da linha da barra (troque o <…> inteiro pelo valor): "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa"
 
 ou a linha "Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>"
 ou a linha "Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)".

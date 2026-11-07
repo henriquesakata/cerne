@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/ask"
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/project"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
@@ -677,5 +678,29 @@ func TestBuildChatSystemPromptIdeasOnDemand(t *testing.T) {
 	_, rest, _ := strings.Cut(cli, "Comandos permitidos:")
 	if allowed, _, _ := strings.Cut(rest, ". Quando"); !strings.Contains(allowed, "cerne idea list") {
 		t.Fatalf("claude-cli allowed commands lack idea list: %q", allowed)
+	}
+}
+
+// The analyst is told to write one of the prompt's Barra: lines; copied
+// verbatim, each is still a template and the approve refuses it — the filled
+// example sits on a line of its own, outside the Barra: value (F-0327).
+func TestChatPromptBarTemplatesRefusedVerbatim(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	n := 0
+	for _, line := range strings.Split(prompt, "\n") {
+		if !strings.HasPrefix(line, "Barra:") {
+			continue
+		}
+		n++
+		if bar, err := doccheck.SpecBar([]byte("# t\n\n" + line + "\n")); err == nil {
+			t.Errorf("template line copied verbatim is accepted as %q", bar)
+		}
+	}
+	if n == 0 {
+		t.Fatal("prompt has no Barra: template line")
 	}
 }

@@ -130,10 +130,12 @@ A bar is a named reference plus how to reach it (URL, command, a file a critic c
 The spec's **Verificação** section then carries exactly one of three literal forms — pt-BR, because they are written inside the spec:
 
 ```
-Barra: <referência nomeada + acesso>   (preenchido: "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa")
+Barra: <referência nomeada + acesso>
 Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
 Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
 ```
+
+Filled in, the whole `<…>` gives way to the value — `Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa`; a line that keeps the `<…>` is refused by the approve.
 
 — or the single line `Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>`, when the delivery has no comparable artifact (a point fix, pure backend with nothing observable): that classification is a proposal too, made in the open — the justification in the line, never a silent omission — and the human's approve confirms it; a human who disagrees does not approve. — or the single line `Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`, which exists only when a human refuses the bar on their own; you never suggest it, and the quoted words are what separate it from forgetting. A silent absence of a bar is never acceptable; a recorded exemption is.
 
