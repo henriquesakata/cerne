@@ -4,17 +4,21 @@ import {
   fetchLint,
   fetchSavings,
   fetchFlowStats,
+  fetchProcessPerf,
   fetchWork,
   fetchEvents,
   type Feature,
   type FeatureState,
   type Stats,
   type FlowMetrics,
+  type ProcessMarker,
+  type ProcessReport,
+  type ProcessSide,
   type Work,
   type LifecycleEvent,
 } from './api'
 import { useLiveVersion } from './live'
-import { useT } from './i18n'
+import { useT, type Messages } from './i18n'
 
 // Dashboard (F-0132): a resposta de um olhar a "como está o projeto?".
 // Cada card tem fetch/erro próprios — um endpoint falhando não derruba a
@@ -147,7 +151,8 @@ export default function Dashboard() {
           linha 1 = heatmap (F-0145, intocado); linha 2 = contadores 1/3 cada
           (F-0132, intocado); linha 3 = Épicos, o card mais denso, em largura
           total; linha 4 = Atividade + Eventos, duas listas equivalentes ao
-          meio; linha 5 = Flow Metrics como faixa rasa de números, não card. */}
+          meio; linha 5 = Flow Metrics como faixa rasa de números, não card;
+          linha 6 = Desempenho do processo (F-0321), largura total. */}
       <div className="dash-grid">
         <HeatmapCard />
         <RosterCard />
@@ -157,6 +162,7 @@ export default function Dashboard() {
         <ActivityCard />
         <EventsCard />
         <FlowStatsCard />
+        <ProcessPerfCard />
       </div>
     </main>
   )
@@ -420,6 +426,307 @@ function EventsCard() {
           </li>
         ))}
       </ul>
+    </Card>
+  )
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// fmtMtok renders weighted tokens in millions ("4,1 M").
+function fmtMtok(v: number, lang: string): string {
+  return `${(v / 1e6).toLocaleString(lang, { maximumFractionDigits: 1 })} M`
+}
+
+// fmtWhen renders an instant of a window, in UTC: windows cut by a marker
+// hours away need the time, not only the day.
+function fmtWhen(iso: string, lang: string): string {
+  return `${new Date(iso).toLocaleString(lang, { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' })} UTC`
+}
+
+// processReasonText builds the verdict's sentence from the code and the
+// numeric fields — the verdict order lives in the server, never here. Every
+// guard that decided is named with its interval (C17).
+function processReasonText(m: ProcessMarker, report: ProcessReport, t: Messages, lang: string): string {
+  const d = t.dashboard
+  const R = d.processReason
+  const num = (v: number) => v.toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const pp = (v: number) => {
+    const n = Math.round(v * 100)
+    return `${n > 0 ? '+' : ''}${n.toLocaleString(lang)}`
+  }
+  const level = (report.guard_level * 100).toLocaleString(lang, { maximumFractionDigits: 1 })
+  const guardLine = (g: 'returned' | 'escaped') => {
+    const ci = (g === 'returned' ? m.returned_diff_ci : m.escaped_diff_ci) ?? [0, 0]
+    const diff =
+      g === 'returned'
+        ? m.after.returned_share - m.before.returned_share
+        : (m.after.escaped_share ?? 0) - (m.before.escaped_share ?? 0)
+    return d.processGuardLine(g === 'returned' ? d.processReturned : d.processEscaped, pp(diff), level, pp(ci[0]), pp(ci[1]))
+  }
+  const deciding = (v: 'melhorou' | 'piorou') =>
+    (['returned', 'escaped'] as const)
+      .filter((g) => m[g] === v)
+      .map(guardLine)
+      .join('; ')
+  const ci = m.cost_ratio_ci ?? [0, 0]
+  const ratio = m.after.median / m.before.median
+  const pct = Math.round(Math.abs(ratio - 1) * 100)
+  switch (m.code) {
+    case 'small_sample':
+      return R.small_sample(m.before.n, m.after.n, report.min_sample)
+    case 'window_cut': {
+      const cut = m.cut_side ?? 'after'
+      const s = m[cut]
+      return R.window_cut(d.processSideName[cut], s.cut_by ?? '', fmtWhen(s.from, lang), fmtWhen(s.to, lang), s.n)
+    }
+    case 'within_noise':
+      return R.within_noise(num(ci[0]), num(ci[1]), m.before.n, m.after.n)
+    case 'cost':
+      return R.cost(num(ratio), num(ci[0]), num(ci[1]), ratio < 1 ? d.processDown : d.processUp, pct)
+    case 'quality_guard':
+      return R.quality_guard(deciding('piorou'), num(ratio), num(ci[0]), num(ci[1]))
+    case 'quality_worse_cost_flat':
+      return R.quality_worse_cost_flat(deciding('piorou'))
+    case 'quality_better_cost_flat':
+      return R.quality_better_cost_flat(deciding('melhorou'))
+    case 'cost_and_quality_worse':
+      return R.cost_and_quality_worse(pct, deciding('piorou'))
+  }
+}
+
+// unguardedText qualifies a melhorou whose guards were not both evaluated
+// (C9): it must not read like a guarded one.
+function unguardedText(m: ProcessMarker, t: Messages): string {
+  if (m.verdict !== 'melhorou' || m.guarded) return ''
+  const lack = [
+    m.returned === 'inconclusivo' && t.dashboard.processLackReturned,
+    m.escaped === 'pending' && t.dashboard.processLackEscaped,
+  ].filter(Boolean)
+  return ` ${t.dashboard.processUnguarded(lack.join(', '))}`
+}
+
+// ProcessSideCell: the side's headline in the summary and crit. 8's numbers
+// behind it (C4) — window, raw-counter medians, coverage (C5), returned and
+// escaped shares (the latter pending while young, C10), exclusions (C13).
+function ProcessSideCell({ side }: { side: ProcessSide }) {
+  const { t, lang } = useT()
+  const d = t.dashboard
+  const count = (v: number) => v.toLocaleString(lang, { maximumFractionDigits: 0 })
+  const pct = (v: number) => `${Math.round(v * 100).toLocaleString(lang)}%`
+  const raw = side.raw_median
+  return (
+    <>
+      <details className="dash-process-side">
+        <summary>
+          {d.processSideSummary(side.n, side.delivered)}
+          {side.n > 0 &&
+            ` · ${fmtMtok(side.median, lang)} (p25 ${fmtMtok(side.p25, lang)} – p75 ${fmtMtok(side.p75, lang)})`}
+        </summary>
+        <dl>
+          <dt>{d.processWindow}</dt>
+          <dd>{`${fmtWhen(side.from, lang)} → ${fmtWhen(side.to, lang)}`}</dd>
+          {side.n > 0 && (
+            <>
+              <dt>{d.processRaw}</dt>
+              <dd>{d.processRawLine(count(raw.input), count(raw.cache_creation), count(raw.cache_read), count(raw.output))}</dd>
+              <dt>{d.processCoverage}</dt>
+              <dd>{d.processCoverageLine(fmtMtok(side.unattributed_median, lang), pct(side.coverage))}</dd>
+              <dt>{d.processReturned}</dt>
+              <dd>{d.processReturnedLine(pct(side.returned_share), side.with_gauntlet)}</dd>
+              <dt>{d.processEscaped}</dt>
+              <dd>{side.escaped_share === null ? d.processGuards.pending : pct(side.escaped_share)}</dd>
+            </>
+          )}
+          <dt>{d.processExcludedSide}</dt>
+          <dd>{d.processExcludedSideLine(side.excluded_no_cost, side.excluded_epic, side.excluded_no_gauntlet)}</dd>
+        </dl>
+      </details>
+      {side.cut_by && (
+        <>
+          <br />
+          <span className="muted">{t.dashboard.processCut(side.cut_by)}</span>
+        </>
+      )}
+    </>
+  )
+}
+
+// ProcessSeries: a weekly median per dot (no polyline — a week without a
+// delivery is not emitted, and a line would bridge the gap) and one dashed
+// line per marker, on a linear time axis with a y scale. Close markers get
+// their own label rows so they never overlap (C17). Inline SVG, no chart
+// dependency; the same values are in the weekly table, reachable without hover.
+function ProcessSeries({ report }: { report: ProcessReport }) {
+  const { t, lang } = useT()
+  const W = 640
+  const LEFT = 56
+  const RIGHT = 16
+  const BOTTOM = 16
+  const ROW = 14
+  const PLOT = 140
+  const weekStart = report.weeks.map((w) => Date.parse(w.start))
+  const markerAt = report.markers.map((m) => Date.parse(m.at))
+  const lo = Math.min(...weekStart, ...markerAt)
+  const hi = Math.max(...weekStart.map((s) => s + 7 * DAY_MS), ...markerAt)
+  const x = (ms: number) => LEFT + ((ms - lo) / Math.max(hi - lo, 1)) * (W - LEFT - RIGHT)
+  const ends: number[] = [] // per label row, where its last label ends
+  const rowOf = report.markers.map((m, i) => {
+    const at = x(markerAt[i])
+    let row = ends.findIndex((end) => end < at)
+    if (row < 0) {
+      row = ends.length
+      ends.push(0)
+    }
+    ends[row] = at + 3 + 7.5 * m.id.length
+    return row
+  })
+  const TOP = 8 + ROW * Math.max(ends.length, 1)
+  const H = TOP + PLOT + BOTTOM
+  const top = Math.max(...report.weeks.map((w) => w.median), 1)
+  const y = (v: number) => TOP + PLOT - (v / top) * PLOT
+  const weeks = report.weeks
+  const label = t.dashboard.processSeriesLabel(
+    weeks.length,
+    `${weeks[0].week} (${fmtMtok(weeks[0].median, lang)})`,
+    `${weeks[weeks.length - 1].week} (${fmtMtok(weeks[weeks.length - 1].median, lang)})`,
+    report.markers.map((m) => m.id).join(', '),
+  )
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
+      {[0, top / 2, top].map((v) => (
+        <g key={v}>
+          <line className="tick" x1={LEFT} x2={W - RIGHT} y1={y(v)} y2={y(v)} />
+          <text className="tick-label" x={LEFT - 6} y={y(v) + 4} textAnchor="end">
+            {fmtMtok(v, lang)}
+          </text>
+        </g>
+      ))}
+      <line className="axis" x1={LEFT} x2={LEFT} y1={TOP} y2={TOP + PLOT} />
+      {report.markers.map((m, i) => (
+        <g key={m.id}>
+          <line x1={x(markerAt[i])} x2={x(markerAt[i])} y1={TOP} y2={TOP + PLOT} strokeDasharray="4 3" />
+          <text x={x(markerAt[i]) + 3} y={8 + ROW * rowOf[i] + 10}>
+            {m.id}
+          </text>
+        </g>
+      ))}
+      {weeks.map((w, i) => (
+        <circle key={w.week} cx={x(weekStart[i] + 3.5 * DAY_MS)} cy={y(w.median)} r={3}>
+          <title>{t.dashboard.processWeek(w.week, fmtMtok(w.median, lang), w.n)}</title>
+        </circle>
+      ))}
+    </svg>
+  )
+}
+
+// ProcessPerfCard (F-0321): custo ponderado por feature entregue, semana a
+// semana, e cada marco de processo (decisão process + metric) julgado
+// antes/depois. Sem custo carimbado, a razão explícita no lugar do gráfico.
+export function ProcessPerfCard() {
+  const { t, lang } = useT()
+  const { data, error } = useCard<ProcessReport>(fetchProcessPerf)
+  const cols = t.dashboard.processCols
+  const guards = (m: ProcessMarker) =>
+    [
+      m.returned && `${t.dashboard.processReturned}: ${t.dashboard.processGuards[m.returned]}`,
+      m.escaped && `${t.dashboard.processEscaped}: ${t.dashboard.processGuards[m.escaped]}`,
+    ]
+      .filter(Boolean)
+      .join(' · ') || '—'
+  return (
+    <Card
+      title={t.dashboard.processPerf}
+      href="#/history"
+      error={error}
+      className="dash-span-full dash-band dash-process"
+    >
+      {data && (
+        <>
+          {data.weeks.length === 0 ? (
+            <p className="muted">{t.dashboard.processEmpty}</p>
+          ) : (
+            <>
+              <div className="dash-process-scroll">
+                <ProcessSeries report={data} />
+              </div>
+              <details className="dash-process-weeks">
+                <summary>{t.dashboard.processWeeksTable}</summary>
+                <div className="dash-process-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t.dashboard.processWeekCols.week}</th>
+                        <th>{t.dashboard.processWeekCols.median}</th>
+                        <th>{t.dashboard.processWeekCols.n}</th>
+                        <th>{t.dashboard.processWeekCols.delivered}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.weeks.map((w) => (
+                        <tr key={w.week}>
+                          <td>{w.week}</td>
+                          <td>{fmtMtok(w.median, lang)}</td>
+                          <td>{w.n}</td>
+                          <td>{w.delivered}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </>
+          )}
+          <p className="muted">{t.dashboard.processScope}</p>
+          {data.markers.length === 0 ? (
+            <p className="muted">{t.dashboard.processNoMarkers}</p>
+          ) : (
+            <div className="dash-process-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{cols.marker}</th>
+                    <th>{cols.before}</th>
+                    <th>{cols.after}</th>
+                    <th>{cols.guard}</th>
+                    <th>{cols.verdict}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.markers.map((m) => (
+                    <tr key={m.id}>
+                      <td>
+                        <strong>{m.id}</strong>
+                        <br />
+                        <span className="muted">
+                          {new Date(m.at).toLocaleDateString(lang, { timeZone: 'UTC' })} · {m.title}
+                        </span>
+                      </td>
+                      <td>
+                        <ProcessSideCell side={m.before} />
+                      </td>
+                      <td>
+                        <ProcessSideCell side={m.after} />
+                      </td>
+                      <td>{guards(m)}</td>
+                      <td>
+                        <strong>
+                          {t.dashboard.processVerdicts[m.verdict]}
+                          {unguardedText(m, t)}
+                        </strong>
+                        <br />
+                        {processReasonText(m, data, t, lang)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted">
+            {t.dashboard.processExcluded(data.excluded_no_cost, data.excluded_epic, data.excluded_no_gauntlet)}
+          </p>
+        </>
+      )}
     </Card>
   )
 }

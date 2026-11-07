@@ -26,6 +26,7 @@ type Feature struct {
 	Title        string              `json:"title"`
 	Module       string              `json:"module"`
 	Parent       string              `json:"parent,omitempty"`
+	Fixes        string              `json:"fixes,omitempty"` // the feature whose delivered defect this one corrects (F-0321): an escaped defect for the process panel
 	State        domain.FeatureState `json:"state"`
 	SupersededBy string              `json:"superseded_by,omitempty"`
 	Reason       string              `json:"reason,omitempty"`

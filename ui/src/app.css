@@ -1851,6 +1851,25 @@ h2 {
    49 caracteres era esticado pela altura do vizinho (F-0233). */
 .dash-band { min-height: 0; }
 
+/* .dash-process (F-0321): série semanal em SVG inline e a tabela de marcos. */
+/* C17: below ~420px the chart and the tables scroll sideways instead of
+   shrinking the SVG text to 5px or overflowing the card. */
+.dash-process-scroll { overflow-x: auto; }
+.dash-process svg { width: 100%; min-width: 420px; height: auto; display: block; }
+.dash-process circle { fill: var(--accent); }
+.dash-process line { stroke: var(--muted); }
+.dash-process line.tick { stroke: var(--border-soft); }
+.dash-process line.axis { stroke: var(--border); }
+.dash-process text { fill: var(--muted); font-size: 12px; }
+.dash-process-weeks summary { cursor: pointer; }
+.dash-process table { width: 100%; border-collapse: collapse; }
+.dash-process th,
+.dash-process td { text-align: left; padding: 4px 8px; vertical-align: top; border-top: 1px solid var(--border-soft); }
+.dash-process-side summary { cursor: pointer; }
+.dash-process-side dl { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 0.9em; }
+.dash-process-side dt { color: var(--muted); }
+.dash-process-side dd { margin: 0; }
+
 .dash-stats {
   display: flex;
   flex-wrap: wrap;

@@ -399,3 +399,50 @@ func TestGauntletGrandfather(t *testing.T) {
 		})
 	}
 }
+
+// TestGauntletRoundsCountsDefeats pins F-0321's criteria 4-5: a result's
+// returns are its distinct rounds whose "Rodada N" line opens with derrota —
+// read by the same parser as result-missing-gauntlet — and an exemption or no
+// section is out of the guard, never zero returns.
+func TestGauntletRoundsCountsDefeats(t *testing.T) {
+	cases := []struct {
+		name     string
+		result   string
+		has      bool
+		derrotas int
+	}{
+		{"two defeats and a win", "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\nRodada 2 — derrota: \"b\"\nRodada 3 — vitória: \"c\"\n", true, 2},
+		{"same round on two lines", "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\nRodada 1 — derrota: \"a de novo\"\n", true, 1},
+		{"first verdict word decides", "## Gauntlet\n\nBarra: x\nRodada 1 — vitória: \"a derrota do outro\"\n", true, 0},
+		{"critic findings never count", "## Gauntlet\n\nBarra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1\n- Rodada 2 → a derrota que o crítico citou\n", true, 0},
+		{"scaffold comment never counts", "## Gauntlet\n\nBarra: x\n<!-- Rodada 1 — derrota -->\nRodada 1 — vitória: \"a\"\n", true, 0},
+		{"not applicable", "## Gauntlet\n\nBarra: não aplicável (sem barra comparável)\n", false, 0},
+		{"human waiver", "## Gauntlet\n\nBarra: dispensada por decisão humana (D-0001)\n", false, 0},
+		{"no section", "## Resultado\n\nfeito\n", false, 0},
+		// C6 — shapes copied (trimmed) from real hub records.
+		{"F-0594: VEREDITO literals over six rounds", "## Gauntlet\n\n**Barra:** o card IDENTIDADE/PREFER\u00caNCIAS de `/me/profile` como est\u00e1 no `main`\n" +
+			"**Rodadas:** 6. Derrotas em 1\u20135, vit\u00f3ria na 6.\n\n> **Rodada 1 \u2014 VEREDITO: B.** \"Sim, uma trai: **T2**.\"\n\n" +
+			"> **Rodada 4 \u2014 VEREDITO: B.** \"dois vocabul\u00e1rios de pill\"\n\n> **Rodada 6 \u2014 VEREDITO: A.** \"N\u00e3o.\"\n\n" +
+			"O que cada derrota comprou, na ordem em que os cr\u00edticos apontaram: se\u00e7\u00f5es da Vis\u00e3o geral\n", true, 2},
+		{"F-0602: implicit round with Resultado: DERROTA", "## Gauntlet\n\n**Barra:** `packages/platform-shell/src/server/session-guard.ts`\n" +
+			"**M\u00e9todo:** compara\u00e7\u00e3o cega lado a lado\n**Resultado: DERROTA.** Veredito citado:\n\n> VENCEDOR: artefato-1 \u2014 \"Artefato-1 p\u00f5e o gate\"\n", true, 1},
+		{"F-0601: SPLIT then VITÓRIA", "## Gauntlet\n\n**Barra:** [[F-0595]] \u2014 allow-list de post-logout\n\n" +
+			"**Rodada 1 \u2014 SPLIT: \"boa parte do diff \u00e9 justamente o 'melhora a mensagem'\"** (2026-08-28 \u2014 uma vit\u00f3ria e uma derrota, o que abre nova rodada)\n\n" +
+			"> \"O 409 de borda \u00e9 copy-paste id\u00eantico\"\n\n**Rodada 2 \u2014 VIT\u00d3RIA (2/2 para a entrega): \"Ataca as duas causas do 409\"**\n", true, 1},
+		{"F-0645: exempt bar with alternative-standard defeats", "## Gauntlet\nBarra: n\u00e3o aplic\u00e1vel (corre\u00e7\u00e3o de infraestrutura sem artefato compar\u00e1vel)\n" +
+			"Rodada 1 \u2014 derrota: \"VEREDITO: N\u00c3O \u2014 findings 1\u20133\"\nAchados do cr\u00edtico (rodada 1): 12 \u2014 corrigidos 1\n" +
+			"Rodada 2 \u2014 derrota: \"Verdict: N\u00c3O \u2014 #1 removes the fallback\"\nAchados do cr\u00edtico (rodada 2): 9 \u2014 corrigidos 1\n", true, 2},
+		{"verdict on the line after a heading", "## Gauntlet\n\nBarra: x\n\n### Rodada 1\n\nVeredito: derrota \u2014 \"o juiz\"\n\n### Rodada 2\n\nVeredito: vit\u00f3ria \u2014 \"ok\"\n", true, 1},
+		{"exempt section above a real record", "## Gauntlet\n\nBarra: n\u00e3o aplic\u00e1vel (s\u00f3 doc)\n\n## Gauntlet\n\nBarra: x\nRodada 1 \u2014 derrota: \"j\"\nRodada 2 \u2014 vit\u00f3ria: \"k\"\n", true, 1},
+		{"one round, outcome unreadable", "## Gauntlet\n\nBarra: x\nRodada 1 \u2014 SPLIT: \"um cr\u00edtico para cada lado\"\n", false, 0},
+		{"implicit round, outcome unreadable", "## Gauntlet\n\nBarra: x\nrodamos o loop, confia \"x\"\n", false, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			has, n := GauntletRounds([]byte(tc.result))
+			if has != tc.has || n != tc.derrotas {
+				t.Fatalf("GauntletRounds = (%v, %d), want (%v, %d)", has, n, tc.has, tc.derrotas)
+			}
+		})
+	}
+}

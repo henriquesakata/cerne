@@ -15,16 +15,22 @@ import (
 
 func newStatsCmd() *cobra.Command {
 	var dir, since string
-	var asJSON bool
+	var asJSON, process bool
 	cmd := &cobra.Command{
 		Use:   "stats",
 		Short: "Flow metrics (lead time, cycle time, throughput) from the event log",
 		Long: "Aggregates lead time (created -> implemented) and cycle time (started -> implemented) per " +
 			"completed feature, plus median/p90 and monthly throughput — computed purely from the event " +
 			"log (read-only, no writes). --since restricts the window to features completed at or after " +
-			"that date/duration (e.g. \"2026-01-01\" or \"90d\"); default is all time. --json for structured output.",
+			"that date/duration (e.g. \"2026-01-01\" or \"90d\"); default is all time. --json for structured output. " +
+			"--process prints the process panel instead (F-0321): the weekly median of weighted tokens per delivered " +
+			"feature, from the stamped cost anchors, and each change marker (a decision with facet process + component " +
+			"metric) judged before/after with its reason and quality guard.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if process {
+				return runProcessStats(cmd, dir, asJSON)
+			}
 			return runFlowStats(cmd, dir, since, asJSON)
 		},
 	}
@@ -32,6 +38,8 @@ func newStatsCmd() *cobra.Command {
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&since, "since", "", `restrict to features completed since this date (YYYY-MM-DD) or duration (e.g. "90d")`)
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	cmd.Flags().BoolVar(&process, "process", false, "process performance: weighted tokens per delivered feature, quality guard and change markers (F-0321)")
+	cmd.MarkFlagsMutuallyExclusive("process", "since")
 	return cmd
 }
 
