@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -15,6 +16,12 @@ import (
 // the doc with the markers rendered as chips, and answering them there is the
 // designed path.
 var ErrOpenClarifications = errors.New("open clarifications in the spec")
+
+// alignCap bounds the refusal's question column: a longer question is printed
+// whole but unpadded, so one long row does not push every command off screen.
+// ponytail: rune count, so wide (CJK/emoji) runes misalign; a display-width
+// library would fix it if such questions ever show up.
+const alignCap = 40
 
 // CheckOpenClarifications refuses when the feature's spec has unresolved
 // [ESCLARECER] markers, giving each pending question the exact command that
@@ -42,11 +49,14 @@ func CheckOpenClarifications(repoDir, id string) error {
 			c.Question = c.Raw
 		}
 		open = append(open, c)
-		width = max(width, utf8.RuneCountInString(c.Question))
+		if n := utf8.RuneCountInString(c.Question); n <= alignCap {
+			width = max(width, n)
+		}
 	}
 	if len(open) == 0 {
 		return nil
 	}
+	digits := len(strconv.Itoa(open[len(open)-1].Index))
 	// Hard impediments lead (critic C4): answering, or --force, does not get
 	// past them, so the refusal says so before the questions.
 	var hard []string
@@ -64,7 +74,7 @@ func CheckOpenClarifications(repoDir, id string) error {
 	}
 	for i := len(open) - 1; i >= 0; i-- {
 		c := open[i]
-		fmt.Fprintf(&b, "\n  %d. %-*s  → cerne clarify answer %s %d --expect %s ", c.Index, width, c.Question, id, c.Index, markerKey(c.Raw))
+		fmt.Fprintf(&b, "\n  %*d. %-*s  → cerne clarify answer %s %d --expect %s ", digits, c.Index, width, c.Question, id, c.Index, markerKey(c.Raw))
 		if len(c.Options) == 0 {
 			b.WriteString(`--answer "..."`)
 			continue

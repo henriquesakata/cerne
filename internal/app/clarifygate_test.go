@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/store"
@@ -201,5 +202,53 @@ func TestApproveClarifyRefusalLeadsWithHardImpediments(t *testing.T) {
 	}
 	if l := lineWith(err.Error(), "run 'cerne feature approve F-0007' again"); !strings.Contains(l, "--check") {
 		t.Errorf("re-approve line = %q, want it conditioned on the check", l)
+	}
+}
+
+// runeCol is the rune offset of sub in l (-1 when absent).
+func runeCol(l, sub string) int {
+	i := strings.Index(l, sub)
+	if i < 0 {
+		return -1
+	}
+	return utf8.RuneCountInString(l[:i])
+}
+
+// F-0330 (critic C5, C9): one long question does not push every command off
+// the screen — alignment is capped and a longer row is left unpadded, whole —
+// and with 10+ questions the numbers are right-aligned, so the question and
+// command columns line up between one- and two-digit rows.
+func TestApproveClarifyRefusalAlignment(t *testing.T) {
+	long := "pergunta longa " + strings.Repeat("muito ", 20) + "longa?"
+	var spec strings.Builder
+	for i := 1; i <= 11; i++ {
+		q := "pergunta curta " + strconv.Itoa(i) + "?"
+		if i == 5 {
+			q = long
+		}
+		spec.WriteString("[ESCLARECER: " + q + "]\n\n")
+	}
+	_, err := clarifyGateFixture(t, spec.String())
+	arrows, questions := map[int]bool{}, map[int]bool{}
+	for _, l := range strings.Split(err.Error(), "\n") {
+		if !strings.Contains(l, "→ cerne clarify answer") {
+			continue
+		}
+		if strings.Contains(l, long) {
+			if !strings.Contains(l, long+"  → cerne") {
+				t.Errorf("long row should be whole and unpadded: %q", l)
+			}
+			continue
+		}
+		arrows[runeCol(l, "→")] = true
+		questions[runeCol(l, "pergunta")] = true
+	}
+	if len(arrows) != 1 || len(questions) != 1 {
+		t.Fatalf("short rows misaligned: arrow cols %v, question cols %v\n%v", arrows, questions, err)
+	}
+	for col := range arrows {
+		if col > 60 {
+			t.Errorf("arrow at column %d: the long question padded every row\n%v", col, err)
+		}
 	}
 }
