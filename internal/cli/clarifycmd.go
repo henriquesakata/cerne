@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/rockt/cerne/internal/app"
+	"gitlab.com/rockt/cerne/internal/doccheck"
 	"gitlab.com/rockt/cerne/internal/verbs"
 )
 
@@ -97,8 +98,22 @@ func newClarifyListCmd() *cobra.Command {
 	return cmd
 }
 
+// errPlaceholderAnswer refuses an answer that is still a command template's
+// slot (F-0330): the approve refusal prints --answer "...", and run as typed it
+// would record "..." as the human's answer.
+var errPlaceholderAnswer = errors.New("the answer is still a placeholder")
+
+// placeholderAnswer reports an answer that is still a slot: what
+// doccheck.Unwritten reads as template (blank, <…> slots, quoted or
+// emphasized ones), or the bare ellipsis the refusal prints, which Unwritten
+// keeps as written text.
+func placeholderAnswer(a string) bool {
+	t := strings.TrimSpace(a)
+	return doccheck.Unwritten(a) || t == "..." || t == "…"
+}
+
 func newClarifyAnswerCmd() *cobra.Command {
-	var dir, answer string
+	var dir, answer, expect string
 	var pick int
 	cmd := &cobra.Command{
 		Use:   "answer <id> <n>",
@@ -106,7 +121,9 @@ func newClarifyAnswerCmd() *cobra.Command {
 		Long: "Rewrites the n-th open [ESCLARECER]/[CLARIFY] marker of the entity to its\n" +
 			"resolved form ([ESCLARECIDO: question → answer]) and pushes through the\n" +
 			"standard pipeline. Use --answer for free text or --pick to choose one of the\n" +
-			"marker's proposed options (see 'cerne clarify list').",
+			"marker's proposed options (see 'cerne clarify list'). --expect <key> (printed\n" +
+			"by the approve refusal) refuses, writing nothing, when the n-th open marker\n" +
+			"is no longer the one the command was printed for.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -119,6 +136,9 @@ func newClarifyAnswerCmd() *cobra.Command {
 			}
 			if answer == "" && pick <= 0 {
 				return errors.New("provide the answer with --answer \"...\" or --pick <k>")
+			}
+			if pick <= 0 && placeholderAnswer(answer) {
+				return fmt.Errorf("%w: %q — replace it with the actual answer (or choose an option with --pick <k>)", errPlaceholderAnswer, answer)
 			}
 			ctx, err := resolveProject(dir)
 			if err != nil {
@@ -139,6 +159,10 @@ func newClarifyAnswerCmd() *cobra.Command {
 				if target == nil {
 					return fmt.Errorf("%w: %s has no open clarification #%d", app.ErrClarificationGone, id, n)
 				}
+				// The guard first: a moved number's options belong to another marker.
+				if err := app.ExpectedClarification(id, n, *target, expect); err != nil {
+					return err
+				}
 				if len(target.Options) == 0 {
 					return fmt.Errorf("clarification #%d has no proposed options — use --answer", n)
 				}
@@ -147,7 +171,7 @@ func newClarifyAnswerCmd() *cobra.Command {
 				}
 				answer = target.Options[pick-1]
 			}
-			ans, err := app.AnswerClarification(ctx.repoDir, ctx.projDir, id, n, answer)
+			ans, err := app.AnswerClarification(ctx.repoDir, ctx.projDir, id, n, expect, answer)
 			if err != nil {
 				if errors.Is(err, app.ErrClarificationGone) {
 					return fmt.Errorf("%w — the document may have advanced; re-run 'cerne clarify list %s'", err, id)
@@ -164,6 +188,7 @@ func newClarifyAnswerCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&answer, "answer", "", "free-text answer to the question")
 	cmd.Flags().IntVar(&pick, "pick", 0, "choose the k-th proposed option as the answer")
+	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the n-th open marker is still the one this key names (printed by the approve refusal)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	return cmd

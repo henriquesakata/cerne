@@ -122,7 +122,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		// the UI path renders the markers as chips the human answers directly.
 		if !force {
 			if err := app.CheckOpenClarifications(ctx.repoDir, id); err != nil {
-				return withHardImpediments(err, ctx.repoDir, id)
+				return err
 			}
 		}
 	}
@@ -182,27 +182,6 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintf(cmd.OutOrStdout(), "↳ epic %s ready to close: fill content/features/%s/result.md and run 'cerne feature complete %s'\n", epic, epic, epic)
 	}
 	return nil
-}
-
-// withHardImpediments adds to a clarification refusal the hard impediments
-// waiting behind it (F-0308): the CLI refuses open clarifications before the
-// core checks the spec, so without this line the human answers the questions,
-// approves again, and only then meets the bar refusal.
-func withHardImpediments(refusal error, repoDir, id string) error {
-	imps, err := app.ApproveReadiness(repoDir, id)
-	if err != nil {
-		return refusal
-	}
-	var hard []string
-	for _, im := range imps {
-		if im.Hard {
-			hard = append(hard, im.Code)
-		}
-	}
-	if len(hard) == 0 {
-		return refusal
-	}
-	return fmt.Errorf("%w\nanswering them is not enough — the approve also refuses on: %s; see 'cerne feature approve %s --check'", refusal, strings.Join(hard, ", "), id)
 }
 
 // errCheckImpediments is the non-zero exit of an approve --check whose list

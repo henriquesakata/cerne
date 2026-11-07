@@ -193,10 +193,17 @@ func TestClarificationRefusalNamesHardImpediments(t *testing.T) {
 	if !errors.Is(err, app.ErrOpenClarifications) {
 		t.Fatalf("err = %v, want ErrOpenClarifications", err)
 	}
-	for _, want := range []string{"bar-missing", "cerne feature approve " + id + " --check"} {
+	for _, want := range []string{"bar-missing", "cerne feature approve " + id + " --check", "answering them (or --force) is not enough"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("clarification refusal does not name the hard impediment (%q):\n%v", want, err)
 		}
+	}
+	// F-0330 crit. 4: the refusal says --force does not cross the hard ones — true.
+	if out, err := execCerne(t, "feature", "approve", id, "--force", "--dir", projDir); err == nil {
+		t.Fatalf("approve --force crossed a hard impediment:\n%s", out)
+	}
+	if f, err := store.LoadFeature(repoDir, id); err != nil || f.State != domain.StateCandidate {
+		t.Fatalf("after a refused --force: %+v, %v; want candidate", f, err)
 	}
 
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real. [ESCLARECER: qual o limite?]"))
