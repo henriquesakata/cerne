@@ -359,8 +359,10 @@ The errata is **purely additive** (`content/errata/<id>.md`, one dated entry per
 One tolerance is automatic: an errata may **name what its own entity superseded** (e.g. F-0001's errata saying "this feature replaced F-0002") without `cerne lint` raising `ref-to-superseded` — that supersession record is legitimate history. Any **other** superseded entity an errata names is still flagged, including one that was live when the entry was written and was superseded later. No command edits an entry, so the old line can never take the same-line marker; acknowledge it by **appending** an entry that carries the marker for that id:
 
 ```
-cerne <kind> errata <id> "<!-- lint:ok-superseded X --> <why the mention is history>"
+cerne <kind> errata <id> '<!-- lint:ok-superseded X --> <why the mention is history>'
 ```
+
+Use single quotes: inside double quotes an interactive zsh expands the marker's `!` before cerne runs. For several ids, list them in one marker — `<!-- lint:ok-superseded X, Y -->` — since only the first marker on a line counts. The finding itself names this command, with the owner's kind and id filled in.
 
 A marker in a later entry covers every mention of X in the entries **before** it. It never covers a later entry, and inside its own entry the same-line rule holds: keep any mention of X in the new entry on the marker's line. If the old entry is wrong rather than dated, say what is current on that same line.
 

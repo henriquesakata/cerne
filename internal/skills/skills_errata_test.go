@@ -17,8 +17,12 @@ func TestSkillErrataTeachesMarker(t *testing.T) {
 	}
 	sec, _, _ = strings.Cut(sec, "\n## ")
 	for _, sub := range []string{
-		"cerne <kind> errata <id> \"<!-- lint:ok-superseded X --> <why the mention is history>\"",
+		// Single quotes: inside double quotes interactive zsh history-expands
+		// the marker's "!" before cerne runs.
+		"cerne <kind> errata <id> '<!-- lint:ok-superseded X --> <why the mention is history>'",
 		"never covers a later entry",
+		// Several ids go in one marker: only the first marker on a line counts.
+		"<!-- lint:ok-superseded X, Y -->",
 	} {
 		if !strings.Contains(sec, sub) {
 			t.Errorf("Errata section missing %q", sub)
@@ -28,6 +32,7 @@ func TestSkillErrataTeachesMarker(t *testing.T) {
 		"points at the successor",
 		"cannot carry the `lint:ok-superseded` marker",
 		"clears the debt",
+		"\"<!-- lint:ok-superseded",
 	} {
 		if strings.Contains(sec, old) {
 			t.Errorf("Errata section still says %q", old)
