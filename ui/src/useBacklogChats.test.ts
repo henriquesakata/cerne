@@ -340,6 +340,28 @@ describe('useBacklogChats (F-0310)', () => {
     expect(stored.titleSource).toBe('human')
   })
 
+  // C2: o segundo rename de uma conversa que já tem nome humano vence a cópia
+  // mais nova do storage (resposta em segundo plano) — também depois de recarregar.
+  it('C2: o rename mais novo vence, mesmo com o transcript do storage mais novo', () => {
+    writeChats([conv('x', { title: 'Pergunta x' }), conv('o', { title: 'Outra' })], 'x')
+    const { result, unmount } = renderHook(() => useBacklogChats())
+    act(() => result.current.renameConversation('x', 'Ideia (renomeada)'))
+    act(() => result.current.select('o'))
+
+    // A resposta em segundo plano chega: patchMessages parte do storage
+    // corrente ({...c}, com o primeiro nome) e carimba o transcript.
+    const idx = readChats()
+    const streamed = [...conv('x').messages, { role: 'user' as const, content: 'mais' }, { role: 'assistant' as const, content: 'resposta' }]
+    writeChats(idx.chats.map((c) => (c.id === 'x' ? { ...c, messages: streamed, updatedAt: Date.now() + 1000 } : c)), idx.activeId)
+
+    act(() => result.current.renameConversation('x', 'Segundo nome'))
+    expect(getConversation('x')).toMatchObject({ title: 'Segundo nome', titleSource: 'human', messages: streamed })
+
+    unmount()
+    const reloaded = renderHook(() => useBacklogChats())
+    expect(reloaded.result.current.chats.find((c) => c.id === 'x')).toMatchObject({ title: 'Segundo nome', titleSource: 'human' })
+  })
+
   it('critério 18: rename vazio ou só de espaços não muda nada', () => {
     writeChats([conv('c1', { title: 'Pergunta c1' })], 'c1')
     const { result } = renderHook(() => useBacklogChats())

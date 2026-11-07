@@ -20,6 +20,9 @@ export type Conversation = {
   // primeira mensagem ou registro legado (crit. 21); 'summary' = resumo do
   // LLM, congelado (crit. 11); 'human' = rename, terminal (crit. 17).
   titleSource?: 'summary' | 'human'
+  // titledAt (C2): carimbo do último rename — desempata dois nomes humanos
+  // (vence o mais novo). Não é updatedAt: renomear não é transcript.
+  titledAt?: number
 }
 
 const MAX_CONVERSATIONS = 50
@@ -53,11 +56,18 @@ function titleRank(c: Conversation): number {
   return c.titleSource === 'human' ? 2 : c.titleSource === 'summary' ? 1 : 0
 }
 
-// strongerTitle devolve base com o título do lado de marca mais forte entre
-// a e b; no empate fica o de base — o comportamento de antes da F-0310.
+// beats: a vence b pela marca; com a mesma marca, pelo rename mais novo (C2).
+function beats(a: Conversation, b: Conversation): boolean {
+  const ra = titleRank(a)
+  const rb = titleRank(b)
+  return ra !== rb ? ra > rb : (a.titledAt ?? 0) > (b.titledAt ?? 0)
+}
+
+// strongerTitle devolve base com o título do lado vencedor entre a e b; no
+// empate total fica o de base — o comportamento de antes da F-0310.
 function strongerTitle(base: Conversation, a: Conversation, b: Conversation): Conversation {
-  const top = titleRank(a) > titleRank(b) ? a : titleRank(b) > titleRank(a) ? b : base
-  return top === base ? base : { ...base, title: top.title, titleSource: top.titleSource }
+  const top = beats(a, b) ? a : beats(b, a) ? b : base
+  return top === base ? base : { ...base, title: top.title, titleSource: top.titleSource, titledAt: top.titledAt }
 }
 
 function deriveTitle(messages: ChatMsg[]): string {
@@ -331,7 +341,13 @@ export function useBacklogChats(): UseBacklogChats {
   const renameConversation = (id: string, title: string) => {
     const next = title.trim()
     if (next === '') return
-    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title: next, titleSource: 'human' } : c)))
+    setChats((prev) =>
+      prev.map((c) =>
+        // C2: o carimbo cresce estritamente, então dois renames no mesmo ms
+        // ainda ordenam.
+        c.id === id ? { ...c, title: next, titleSource: 'human', titledAt: Math.max(Date.now(), (c.titledAt ?? 0) + 1) } : c,
+      ),
+    )
   }
 
   return {
