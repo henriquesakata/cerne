@@ -441,8 +441,14 @@ func validateFixes(repoDir, id, fixes string) error {
 // feature being (re)parented — pass the freshly minted ID on create, where a
 // cycle is impossible but the check stays uniform.
 func validateParent(repoDir, childID, parent string) error {
+	// The parent is an id, not a path: refuse a non-feature shape before the
+	// path-based load, and a value that only resolved as a path ("./F-0001",
+	// or "f-0001" on a case-insensitive filesystem) after it.
+	if !domain.IsFeatureID(parent) {
+		return fmt.Errorf("%w: %s", ErrParentNotFound, parent)
+	}
 	p, err := store.LoadFeature(repoDir, parent)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || (err == nil && p.ID != parent) {
 		return fmt.Errorf("%w: %s", ErrParentNotFound, parent)
 	}
 	if err != nil {

@@ -397,6 +397,37 @@ func TestReparentRefusesCycleThroughLegacyParent(t *testing.T) {
 	}
 }
 
+// TestFeatureParentRefusesPathShapedID (F-0326): the parent is an entity id,
+// not a path. A value that only resolves as a file path ("./F-0001",
+// "F-0001/../F-0001") is refused before anything is written, instead of being
+// stored as a parent no reader resolves.
+func TestFeatureParentRefusesPathShapedID(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	epic, err := CreateFeature(repoDir, projDir, "Épico", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature epic: %v", err)
+	}
+	child, err := CreateFeature(repoDir, projDir, "Avulsa", "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("CreateFeature child: %v", err)
+	}
+	for _, bad := range []string{"./" + strings.ToLower(epic.ID), epic.ID + "/../" + epic.ID} {
+		if _, err := CreateFeature(repoDir, projDir, "Travessia "+bad, "", bad, nil, nil); !errors.Is(err, ErrParentNotFound) {
+			t.Fatalf("create with parent %q: err = %v, want ErrParentNotFound", bad, err)
+		}
+		if err := SetFeatureParent(repoDir, projDir, child.ID, bad); !errors.Is(err, ErrParentNotFound) {
+			t.Fatalf("reparent to %q: err = %v, want ErrParentNotFound", bad, err)
+		}
+	}
+	all, _ := store.LoadAllFeatures(repoDir)
+	if len(all) != 2 {
+		t.Fatalf("features = %d, want 2 (refused creations write nothing)", len(all))
+	}
+	if got, _ := store.LoadFeature(repoDir, child.ID); got.Parent != "" {
+		t.Fatalf("child parent = %q after refused reparents, want empty", got.Parent)
+	}
+}
+
 func TestRenameFeatureLive(t *testing.T) {
 	for _, st := range []domain.FeatureState{
 		domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment,
