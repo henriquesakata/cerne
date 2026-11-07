@@ -37,7 +37,8 @@ func TestCheckSpecBar(t *testing.T) {
 		{"bar inside code fence passes", "# t\n\n## Verificação\n\n```\nBarra: lint:i18n-baseline do CI (F-0484)\nMétodo: comparação cega\n```\n", false, ""},
 		{"unaccented nao aplicavel without parens refuses", "# t\n\nBarra: nao aplicavel\n", true, "justification"},
 		{"stub spec passes (document gate's refusal, not this one's)", "# t\n\n## Verificação\n<!-- guia do template -->\n", false, ""},
-		{"malformed first bar does not veto a valid later one", "# t\n\nBarra:\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", false, ""},
+		{"malformed first bar does not veto a valid later one", "# t\n\nBarra: não aplicável\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", false, ""},
+		{"empty bar followed by another line refuses", "# t\n\n## Verificação\n\nBarra:\nMétodo: comparação cega\n", true, "no value"},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) \u2014 padra\u0303o alternativo: invariante\n", false, ""},
 	}
 	for _, tc := range cases {

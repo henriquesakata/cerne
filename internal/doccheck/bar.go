@@ -18,8 +18,10 @@ var (
 // Accent alternations tolerate NFC, NFD (darwin paste) and the bare unaccented
 // spelling, mirroring the lint-side mention matching.
 var (
-	htmlCommentRe        = regexp.MustCompile(`(?s)<!--.*?-->`)
-	barLineRe            = regexp.MustCompile(`(?m)^\s*Barra:\s*(.*)$`)
+	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
+	// [ \t], not \s: RE2's \s crosses the newline, so an empty "Barra:" took
+	// the next line as its value (F-0327).
+	barLineRe            = regexp.MustCompile(`(?m)^[ \t]*Barra:[ \t]*(.*)$`)
 	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel\s*\(\s*[^)]+\)`)
 	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*[^)]+\)`)
 	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel`)

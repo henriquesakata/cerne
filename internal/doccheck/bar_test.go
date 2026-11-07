@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// TestSpecBar pins the bar predicate after its move out of internal/app
-// (F-0308): the same cases as app's TestCheckSpecBar, the same verdicts — the
-// move changes where the predicate lives, never what it accepts (holes are
-// F-0327's). Stub detection stays with the callers (the document gate).
+// TestSpecBar pins the bar predicate (moved out of internal/app by F-0308):
+// the cases of app's TestCheckSpecBar plus the accepted line. Stub detection
+// stays with the callers (the document gate).
 func TestSpecBar(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -26,10 +25,12 @@ func TestSpecBar(t *testing.T) {
 		{"bar only inside guide comment refuses", "# t\n\n## Problema\n\nProblema real descrito aqui.\n\n## Verificação\n<!-- uma das três formas: \"Barra: não\naplicável (<justificativa>)\" ou \"Barra: dispensada por decisão humana\". -->\n", ErrBarMissing, ""},
 		{"bar inside code fence passes", "# t\n\n## Verificação\n\n```\nBarra: lint:i18n-baseline do CI (F-0484)\nMétodo: comparação cega\n```\n", nil, "Barra: lint:i18n-baseline do CI (F-0484)"},
 		{"unaccented nao aplicavel without parens refuses", "# t\n\nBarra: nao aplicavel\n", ErrBarMalformed, ""},
-		// Known hole, kept on purpose (F-0327 fixes it): the \s* after "Barra:"
-		// crosses the newline, so an empty first line takes the next heading as
-		// its value. Same verdict as before the move; the line shows why.
-		{"malformed first bar does not veto a valid later one", "# t\n\nBarra:\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", nil, "Barra: ## Verificação"},
+		{"malformed first bar does not veto a valid later one", "# t\n\nBarra:\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", nil, "Barra: referência nomeada — acesso real"},
+		// An empty "Barra:" is empty even when another line follows (F-0327).
+		{"empty bar followed by another line refuses", "# t\n\n## Verificação\n\nBarra:\nMétodo: comparação cega\nSaída: vencer ou empatar\n", ErrBarMalformed, ""},
+		{"empty bar with trailing blanks before another line refuses", "# t\n\nBarra: \t\nMétodo: x\n", ErrBarMalformed, ""},
+		{"crlf empty bar before another line refuses", "# t\r\n\r\nBarra:\r\nMétodo: x\r\n", ErrBarMalformed, ""},
+		{"empty bar does not swallow the next bar line", "# t\n\nBarra:\nBarra: não aplicável\n", ErrBarMalformed, ""},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante\n", nil, "Barra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante"},
 		{"crlf line endings trim", "# t\r\n\r\nBarra: referência — acesso\r\n", nil, "Barra: referência — acesso"},
 	}
