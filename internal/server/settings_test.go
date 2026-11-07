@@ -416,6 +416,41 @@ func TestSettingsPutStringValue(t *testing.T) {
 	}
 }
 
+// TestSettingsChannelFallback pins F-0333 criterion 3: with channel.human_name
+// empty, GET carries the name the channel would sign with as its fallback,
+// from app.ChannelHumanName; with a stored value the key is absent.
+func TestSettingsChannelFallback(t *testing.T) {
+	h, projDir, _ := settingsBackend(t, "")
+	t.Setenv("USER", "ana")
+	channel := func() map[string]any {
+		t.Helper()
+		var got struct {
+			Settings []map[string]any `json:"settings"`
+		}
+		if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &got); rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		for _, s := range got.Settings {
+			if s["id"] == "channel.human_name" {
+				return s
+			}
+		}
+		t.Fatal("no channel.human_name served")
+		return nil
+	}
+	if got := channel()["fallback"]; got != "ana" || got != app.ChannelHumanName(projDir) {
+		t.Errorf("empty value: fallback = %v, want %q (app.ChannelHumanName)", got, app.ChannelHumanName(projDir))
+	}
+	var view project.SettingsView
+	if rec := doJSON(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":"Bia"}`, &view); rec.Code != http.StatusOK {
+		t.Fatalf("PUT status %d: %s", rec.Code, rec.Body.String())
+	}
+	s := channel()
+	if _, ok := s["fallback"]; ok || s["value"] != "Bia" {
+		t.Errorf("stored value: %v, want value Bia and no fallback key", s)
+	}
+}
+
 // projectNameUI is a cerne ui over one fresh backend (pid proj-a) with an
 // open SSE stream whose connect frame was already consumed.
 func projectNameUI(t *testing.T) (ui http.Handler, url string, events <-chan string, repoA, projA string) {

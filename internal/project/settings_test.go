@@ -78,6 +78,32 @@ func TestSettingsRegistryDeclaresCapabilities(t *testing.T) {
 	}
 }
 
+// TestChannelHumanNameLabel pins F-0333 criteria 1, 2 and 4: the label says
+// the name is yours, on every project, not the project's, with its fallback —
+// in that order — and the key's id, scope, type and default stay as stored.
+func TestChannelHumanNameLabel(t *testing.T) {
+	var s Setting
+	for _, r := range settingsRegistry {
+		if r.ID == "channel.human_name" {
+			s = r
+		}
+	}
+	if s.Title != "Your name in the channel" {
+		t.Errorf("title = %q, want %q", s.Title, "Your name in the channel")
+	}
+	at := -1
+	for _, part := range []string{"you send", "every project", "not the project's name", "Project name", "OS user"} {
+		i := strings.Index(s.Description, part)
+		if i <= at {
+			t.Errorf("description %q: %q missing or out of order", s.Description, part)
+		}
+		at = i
+	}
+	if s.ID != "channel.human_name" || !slices.Equal(s.Scopes, []string{ScopeHost}) || s.Type != "string" || s.Default != "" {
+		t.Errorf("channel.human_name = %+v, want id, scopes [host], string and default \"\" unchanged", s)
+	}
+}
+
 // TestWikiEnabled pins the one read of wiki.enabled every F-0316 consumer
 // shares: project > host > default, an invalid value or an unreadable scope
 // file falling through — and never silently: the warning names the scope, the

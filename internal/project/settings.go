@@ -64,6 +64,9 @@ type ResolvedSetting struct {
 	Origin  string           `json:"origin"`
 	Stored  map[string]any   `json:"stored,omitempty"`
 	Invalid []SettingProblem `json:"invalid,omitempty"`
+	// Fallback is the value used when this one is empty (F-0333). Only the
+	// edge serving the settings screen fills it; ResolveSettings never does.
+	Fallback string `json:"fallback,omitempty"`
 }
 
 // SettingProblem is what the resolution skipped instead of failing: a stored
@@ -89,9 +92,9 @@ type SettingsView struct {
 // endpoint and the UI all derive from it. Kept in id order.
 var settingsRegistry = []Setting{
 	{
-		ID: "channel.human_name", Title: "Channel name", Type: "string", Default: "",
+		ID: "channel.human_name", Title: "Your name in the channel", Type: "string", Default: "",
 		Scopes:      []string{ScopeHost},
-		Description: "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.",
+		Description: "The name that signs the messages you send from the UI on the project's permanent channel. It applies to every project on this machine. It is not the project's name — that is the Project name field at the top of this screen. Empty uses your OS user name.",
 	},
 	{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,

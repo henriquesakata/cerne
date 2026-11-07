@@ -83,6 +83,19 @@ func TestSettingsListJSON(t *testing.T) {
 	}
 }
 
+// TestSettingsJSONCarriesNewLabel pins F-0333 criterion 6: the CLI reads the
+// same registry, so --json carries the new title and never the old one.
+func TestSettingsJSONCarriesNewLabel(t *testing.T) {
+	projDir, _ := settingsProject(t, "")
+	out, err := execCerne(t, "settings", "list", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("settings list --json: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `"Your name in the channel"`) || strings.Contains(out, "Channel name") {
+		t.Errorf("--json lacks the new title or keeps the old one:\n%s", out)
+	}
+}
+
 // TestSettingsSetProjectOverridesHost pins criterion 2 through the CLI.
 func TestSettingsSetProjectOverridesHost(t *testing.T) {
 	projDir, _ := settingsProject(t, "")
