@@ -34,11 +34,7 @@ var (
 	// An opener written as code ("`<!--`") is not one, so a backtick before
 	// it disqualifies the match (the preceding byte is kept by the replace).
 	htmlCommentRe = regexp.MustCompile("(?s)(^|[^`])<!--.*?-->")
-	// A template placeholder left unfilled, e.g. "<referência + acesso>".
-	placeholderRe = regexp.MustCompile(`^<[^<>]*>$`)
-	// An exemption whose parenthesized justification is still a placeholder.
-	placeholderParenRe = regexp.MustCompile(`\(\s*<[^<>()]*>\s*\)`)
-	nextHeadingRe      = regexp.MustCompile(`(?m)^\s*##\s`)
+	nextHeadingRe = regexp.MustCompile(`(?m)^\s*##\s`)
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
@@ -179,7 +175,6 @@ func parseGauntlet(section string) gauntletRecord {
 	cur, curIdx := (*strings.Builder)(nil), -1 // the open round; nil/-1 = outside any
 	implicit := &strings.Builder{}
 	critic, criticList, criticIndent := false, false, 0
-	emphasis := strings.NewReplacer("*", "", "_", "", "\u00a0", " ")
 	for _, line := range strings.Split(section, "\n") {
 		if headingRe.MatchString(line) {
 			critic = false
@@ -187,12 +182,15 @@ func parseGauntlet(section string) gauntletRecord {
 		s := lineMarkersRe.ReplaceAllString(line, "")
 		// Bar and header lines are consumed first, even inside a critic block
 		// and even when they cite a verdict (accepted limit).
+		// The approve gate's rule (F-0327): a template slot or nothing
+		// written is no bar, and only a written exemption is one. A malformed
+		// exemption is still written text, so it stays a bar needing rounds.
 		if bar, ok := doccheck.BarLine(line); ok {
-			value := strings.TrimSpace(emphasis.Replace(bar))
-			if rec.bar == "" && value != "" && !placeholderRe.MatchString(value) {
+			if rec.bar == "" && !doccheck.Unwritten(bar) {
 				rec.bar = bar
 			}
-			rec.exempt = rec.exempt || (exemptionRe.MatchString("Barra: "+value) && !placeholderParenRe.MatchString(value))
+			exempt, err := doccheck.BarValue(bar)
+			rec.exempt = rec.exempt || (exempt && err == nil)
 			continue
 		}
 		if headerLineRe.MatchString(s) {
@@ -327,7 +325,7 @@ func gauntletVerdict(text string) bool {
 func gauntletQuote(text string) bool {
 	for _, q := range quoteRe.FindAllString(codeSpanRe.ReplaceAllString(text, ""), -1) {
 		inner := strings.TrimSpace(strings.Trim(q, "\"“”«»"))
-		if !placeholderRe.MatchString(inner) {
+		if !doccheck.Unwritten(inner) {
 			return true
 		}
 	}

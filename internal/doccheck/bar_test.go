@@ -69,6 +69,10 @@ func TestSpecBar(t *testing.T) {
 		{"bold dispensada keyword with placeholder refuses", "# t\n\nBarra: **dispensada** por decisão humana (<citação>)\n", ErrBarMalformed, ""},
 		{"hyphenated nao aplicavel with placeholder refuses", "# t\n\nBarra: não-aplicável (<justificativa>)\n", ErrBarMalformed, ""},
 		{"bold nao aplicavel with justification passes", "# t\n\nBarra: **não aplicável** (refator sem comportamento novo)\n", nil, "Barra: **não aplicável** (refator sem comportamento novo)"},
+		{"wrapped nao aplicavel justification passes", "# t\n\nBarra: não aplicável (correção pontual de backend, sem artefato\ncomparável) — padrão alternativo: testes\n", nil, "Barra: não aplicável (correção pontual de backend, sem artefato"},
+		{"open parenthesis with nothing after it refuses", "# t\n\nBarra: não aplicável (\njustificativa na linha seguinte)\n", ErrBarMalformed, ""},
+		{"nbsp inside nao aplicavel with placeholder refuses", "# t\n\nBarra: n\u00e3o\u00a0aplic\u00e1vel (<justificativa>)\n", ErrBarMalformed, ""},
+		{"nbsp inside nao aplicavel passes", "# t\n\nBarra: n\u00e3o\u00a0aplic\u00e1vel (refator sem comportamento novo)\n", nil, "Barra: n\u00e3o\u00a0aplic\u00e1vel (refator sem comportamento novo)"},
 		{"hyphenated nao aplicavel with justification passes", "# t\n\nBarra: não-aplicável (refator sem comportamento novo)\n", nil, "Barra: não-aplicável (refator sem comportamento novo)"},
 		// The line layouts the result reader takes: list, quote, heading and
 		// table markers, a bold label, a short qualifier (F-0327).

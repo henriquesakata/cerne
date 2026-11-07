@@ -91,3 +91,41 @@ func TestBarReadersAgreeOnLineLayouts(t *testing.T) {
 		})
 	}
 }
+
+// TestBarReadersAgreeOnValues pins one value rule for both readers (F-0327):
+// a template slot or nothing written is no bar to either, and the same
+// written exemptions are exemptions to both. A malformed exemption is refused
+// by the approve gate and is no exemption to the result reader, which still
+// keeps its written text as a bar that needs judged rounds.
+func TestBarReadersAgreeOnValues(t *testing.T) {
+	type want struct{ approve, resultBar, resultExempt bool }
+	for line, w := range map[string]want{
+		"Barra: R-0008 <recorte do painel>":                               {true, true, false},
+		"Barra: <https://kiro.dev/docs/specs>":                            {true, true, false},
+		"Barra: não aplicável (refator sem comportamento novo)":           {true, true, true},
+		"Barra: não-aplicável (refator sem comportamento novo)":           {true, true, true},
+		"Barra: **não aplicável** (refator sem comportamento novo)":       {true, true, true},
+		"Barra: n\u00e3o\u00a0aplic\u00e1vel (refator puro)":              {true, true, true},
+		"Barra: dispensada por decisão humana (\"pode seguir sem\")":      {true, true, true},
+		"Barra: não aplicável (correção pontual de backend, sem artefato": {true, true, true},
+		"Barra: <referência + acesso>":                                    {false, false, false},
+		"Barra: \"<referência + acesso>\"":                                {false, false, false},
+		"Barra: `<referência + acesso>`":                                  {false, false, false},
+		"Barra: <referência> — <acesso>":                                  {false, false, false},
+		"Barra: **":                                                       {false, false, false},
+		"Barra: não aplicável":                                            {false, true, false},
+		"Barra: não aplicável ( )":                                        {false, true, false},
+		"Barra: não aplicável (<justificativa>)":                          {false, true, false},
+		"Barra: **não aplicável** (<justificativa>)":                      {false, true, false},
+		"Barra: dispensada por decisão humana (\"<citação>\")":            {false, true, false},
+		"Barra: dispensada por decisão humana (“<citação>”)":              {false, true, false},
+	} {
+		t.Run(line, func(t *testing.T) {
+			_, err := doccheck.SpecBar([]byte("# t\n\n" + line + "\n"))
+			rec := parseGauntlet(line)
+			if got := (want{err == nil, rec.bar != "", rec.exempt}); got != w {
+				t.Fatalf("approve, result bar, result exempt = %+v, want %+v", got, w)
+			}
+		})
+	}
+}

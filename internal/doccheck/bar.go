@@ -16,7 +16,9 @@ var (
 
 // The three literal forms a spec may carry (cerne-authoring skill, F-0270).
 // Accent alternations tolerate NFC, NFD (darwin paste) and the bare unaccented
-// spelling, mirroring the lint-side mention matching.
+// spelling, mirroring the lint-side mention matching. An exemption's
+// parenthesized text runs to ")" or to the end of the line: hard-wrapped
+// markdown closes it on a later line.
 var (
 	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
 	// A "Barra:" line in any layout both readers take (F-0327): list, quote,
@@ -24,8 +26,8 @@ var (
 	// before the colon ("Barra (da spec):"). Matched per line: across lines,
 	// RE2's \s let an empty "Barra:" take the next line as its value.
 	barLineRe            = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel\s*\(\s*([^)]+)\)`)
-	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*([^)]+)\)`)
+	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel\s*\(([^)]*)`)
+	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(([^)]*)`)
 	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`)
 	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
 	// Template slots left unfilled, with only separators between them:
@@ -35,7 +37,7 @@ var (
 	autolinkRe = regexp.MustCompile(`^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>$`)
 	// Emphasis is read through, never as part of a form: "**não aplicável**
 	// (…)" is the exemption, not a named reference (F-0327).
-	emphasis = strings.NewReplacer("*", "", "_", "")
+	emphasis = strings.NewReplacer("*", "", "_", "", "\u00a0", " ")
 )
 
 // bare drops the emphasis, code and quote marks around a value: "**",
@@ -49,22 +51,32 @@ func slots(t string) bool {
 	return placeholderRe.MatchString(t) && !autolinkRe.MatchString(t)
 }
 
-// barValueError says why value, the text after "Barra:", is not a written bar
-// (nil when it is one). The message names the cause: nothing written, a
-// template slot, or an exemption form missing its parenthesized text.
-func barValueError(value string) error {
+// Unwritten reports text that holds nothing but template: empty, or only
+// <…> slots, once bare. The result reader applies it to the judge's citation;
+// BarValue, to the bar and an exemption's parenthesized text (F-0327).
+func Unwritten(s string) bool {
+	t := bare(s)
+	return t == "" || slots(t)
+}
+
+// BarValue reads value, the text after a "Barra:" label, by the rule the
+// approve gate and the result reader share (F-0327). err says why it is no
+// written bar, naming the cause: nothing written, a template slot, or an
+// exemption form missing its parenthesized text. exempt reports a value in
+// one of the two exemption forms.
+func BarValue(value string) (exempt bool, err error) {
 	plain := strings.TrimSpace(emphasis.Replace(value))
 	switch t := bare(value); {
 	case t == "":
-		return fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
+		return false, fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
 	case slots(t):
-		return fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
+		return false, fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
 	case naoAplicavelPrefixRe.MatchString(plain):
-		return exemptionError(naoAplicavelRe, plain, `"não aplicável" needs its one-line justification in parentheses`)
+		return true, exemptionError(naoAplicavelRe, plain, `"não aplicável" needs its one-line justification in parentheses`)
 	case dispensadaPrefixRe.MatchString(plain):
-		return exemptionError(dispensadaRe, plain, `"dispensada por decisão humana" needs the quoted words in parentheses`)
+		return true, exemptionError(dispensadaRe, plain, `"dispensada por decisão humana" needs the quoted words in parentheses`)
 	}
-	return nil
+	return false, nil
 }
 
 // exemptionError checks an exemption form's parenthesized text: missing or
@@ -95,7 +107,7 @@ func SpecBar(body []byte) (string, error) {
 		if !ok {
 			continue
 		}
-		err := barValueError(value)
+		_, err := BarValue(value)
 		if err == nil {
 			return "Barra: " + value, nil
 		}
