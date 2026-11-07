@@ -39,7 +39,7 @@ func TestCheckSpecBar(t *testing.T) {
 		{"stub spec passes (document gate's refusal, not this one's)", "# t\n\n## Verificação\n<!-- guia do template -->\n", false, ""},
 		{"malformed first bar does not veto a valid later one", "# t\n\nBarra: não aplicável\n\n## Verificação\n\nBarra: referência nomeada — acesso real\n", false, ""},
 		{"empty bar followed by another line refuses", "# t\n\n## Verificação\n\nBarra:\nMétodo: comparação cega\n", true, "no value"},
-		{"template placeholder bar refuses", "# t\n\nBarra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>\n", true, "template placeholder is not a value"},
+		{"template placeholder bar refuses", "# t\n\nBarra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>\n", true, `"Barra:" holds only a <…> template placeholder`},
 		{"nao aplicavel placeholder justification refuses", "# t\n\nBarra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>\n", true, "justification in parentheses, not a <…> template placeholder"},
 		{"dispensada placeholder quote refuses", "# t\n\nBarra: dispensada por decisão humana (<citação curta da fala que dispensou>)\n", true, "quoted words in parentheses, not a <…> template placeholder"},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) \u2014 padra\u0303o alternativo: invariante\n", false, ""},

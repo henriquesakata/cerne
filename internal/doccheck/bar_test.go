@@ -2,6 +2,7 @@ package doccheck
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +92,32 @@ func TestSpecBar(t *testing.T) {
 			}
 			if line != tc.wantLine {
 				t.Fatalf("line = %q, want %q", line, tc.wantLine)
+			}
+		})
+	}
+}
+
+// TestSpecBarMessageNamesItsCause pins the refusal wording (F-0327): "no value"
+// only for an empty bar, and a placeholder named only when one was found.
+func TestSpecBarMessageNamesItsCause(t *testing.T) {
+	cases := []struct{ name, bar, want, not string }{
+		{"empty", "Barra:", `no value after "Barra:"`, "placeholder"},
+		{"emphasis only", "Barra: **", `no value after "Barra:"`, "placeholder"},
+		{"placeholder", "Barra: <referência + acesso>", `"Barra:" holds only a <…> template placeholder`, "no value"},
+		{"nao aplicavel without parens", "Barra: não aplicável", `"não aplicável" needs its one-line justification in parentheses`, "placeholder"},
+		{"nao aplicavel blank parens", "Barra: não aplicável ( )", `"não aplicável" needs its one-line justification in parentheses`, "placeholder"},
+		{"nao aplicavel placeholder", "Barra: não aplicável (<justificativa>)", `"não aplicável" needs its one-line justification in parentheses, not a <…> template placeholder`, "no value"},
+		{"dispensada without quote", "Barra: dispensada por decisão humana", `"dispensada por decisão humana" needs the quoted words in parentheses`, "placeholder"},
+		{"dispensada placeholder", "Barra: dispensada por decisão humana (<citação>)", `"dispensada por decisão humana" needs the quoted words in parentheses, not a <…> template placeholder`, "no value"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := SpecBar([]byte("# t\n\n" + tc.bar + "\n"))
+			if !errors.Is(err, ErrBarMalformed) {
+				t.Fatalf("err = %v, want %v", err, ErrBarMalformed)
+			}
+			if msg := err.Error(); !strings.Contains(msg, tc.want) || strings.Contains(msg, tc.not) {
+				t.Fatalf("message %q: want %q, without %q", msg, tc.want, tc.not)
 			}
 		})
 	}

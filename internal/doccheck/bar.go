@@ -36,19 +36,46 @@ var (
 	emphasis = strings.NewReplacer("*", "", "_", "")
 )
 
-// unwritten reports text that holds no value: nothing, or only template
-// slots, once the emphasis, code and quote marks around it are dropped
-// ("**", "\"\"", "`<ref>`", "“<citação>”").
-func unwritten(s string) bool {
-	t := strings.Trim(s, " \t\u00a0*_`\"“”«»")
-	return t == "" || (placeholderRe.MatchString(t) && !autolinkRe.MatchString(t))
+// bare drops the emphasis, code and quote marks around a value: "**",
+// "\"\"", "`<ref>`" and "“<citação>”" keep only what is inside them.
+func bare(s string) string {
+	return strings.Trim(s, " \t\u00a0*_`\"“”«»")
 }
 
-// filled reports value is form re with its parenthesized text written:
-// present and not a template slot.
-func filled(re *regexp.Regexp, value string) bool {
-	m := re.FindStringSubmatch(value)
-	return m != nil && !unwritten(m[1])
+// slots reports bare text that is only template slots; an autolink is a value.
+func slots(t string) bool {
+	return placeholderRe.MatchString(t) && !autolinkRe.MatchString(t)
+}
+
+// barValueError says why value, the text after "Barra:", is not a written bar
+// (nil when it is one). The message names the cause: nothing written, a
+// template slot, or an exemption form missing its parenthesized text.
+func barValueError(value string) error {
+	plain := strings.TrimSpace(emphasis.Replace(value))
+	switch t := bare(value); {
+	case t == "":
+		return fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
+	case slots(t):
+		return fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
+	case naoAplicavelPrefixRe.MatchString(plain):
+		return exemptionError(naoAplicavelRe, plain, `"não aplicável" needs its one-line justification in parentheses`)
+	case dispensadaPrefixRe.MatchString(plain):
+		return exemptionError(dispensadaRe, plain, `"dispensada por decisão humana" needs the quoted words in parentheses`)
+	}
+	return nil
+}
+
+// exemptionError checks an exemption form's parenthesized text: missing or
+// blank gets need, a template slot is named as such.
+func exemptionError(form *regexp.Regexp, plain, need string) error {
+	m := form.FindStringSubmatch(plain)
+	if m == nil || bare(m[1]) == "" {
+		return fmt.Errorf("%w: %s", ErrBarMalformed, need)
+	}
+	if slots(bare(m[1])) {
+		return fmt.Errorf("%w: %s, not a <…> template placeholder", ErrBarMalformed, need)
+	}
+	return nil
 }
 
 // SpecBar returns the first valid bar line of a spec body, or the reason none
@@ -68,16 +95,8 @@ func SpecBar(body []byte) (string, error) {
 	var firstInvalid error
 	for _, m := range matches {
 		value := strings.TrimSpace(m[1])
-		plain := strings.TrimSpace(emphasis.Replace(value))
-		var err error
-		switch {
-		case unwritten(value):
-			err = fmt.Errorf(`%w: no value after "Barra:" (a <…> template placeholder is not a value)`, ErrBarMalformed)
-		case naoAplicavelPrefixRe.MatchString(plain) && !filled(naoAplicavelRe, plain):
-			err = fmt.Errorf(`%w: "não aplicável" needs its one-line justification in parentheses, not a <…> template placeholder`, ErrBarMalformed)
-		case dispensadaPrefixRe.MatchString(plain) && !filled(dispensadaRe, plain):
-			err = fmt.Errorf(`%w: "dispensada por decisão humana" needs the quoted words in parentheses, not a <…> template placeholder`, ErrBarMalformed)
-		default:
+		err := barValueError(value)
+		if err == nil {
 			return "Barra: " + value, nil
 		}
 		if firstInvalid == nil {
