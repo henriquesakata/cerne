@@ -60,6 +60,15 @@ func TestSpecBar(t *testing.T) {
 		{"autolink bar passes", "# t\n\nBarra: <https://kiro.dev/docs/specs>\n", nil, "Barra: <https://kiro.dev/docs/specs>"},
 		{"slots with words between them pass", "# t\n\nBarra: <Header> e <Footer> do design system — <https://storybook.example/header>\n", nil, "Barra: <Header> e <Footer> do design system — <https://storybook.example/header>"},
 		{"slot and words between them passes", "# t\n\nBarra: <Button> do design system — storybook/button\n", nil, "Barra: <Button> do design system — storybook/button"},
+		// Emphasis does not hide an exemption, and the hyphenated spelling is
+		// the same form (F-0327).
+		{"bold nao aplicavel keyword with placeholder refuses", "# t\n\nBarra: **não aplicável** (<justificativa de 1 linha>) — padrão alternativo: <teste>\n", ErrBarMalformed, ""},
+		{"italic nao aplicavel form with placeholder refuses", "# t\n\nBarra: *não aplicável (<justificativa>)*\n", ErrBarMalformed, ""},
+		{"bold nao aplicavel without parens refuses", "# t\n\nBarra: **não aplicável**\n", ErrBarMalformed, ""},
+		{"bold dispensada keyword with placeholder refuses", "# t\n\nBarra: **dispensada** por decisão humana (<citação>)\n", ErrBarMalformed, ""},
+		{"hyphenated nao aplicavel with placeholder refuses", "# t\n\nBarra: não-aplicável (<justificativa>)\n", ErrBarMalformed, ""},
+		{"bold nao aplicavel with justification passes", "# t\n\nBarra: **não aplicável** (refator sem comportamento novo)\n", nil, "Barra: **não aplicável** (refator sem comportamento novo)"},
+		{"hyphenated nao aplicavel with justification passes", "# t\n\nBarra: não-aplicável (refator sem comportamento novo)\n", nil, "Barra: não-aplicável (refator sem comportamento novo)"},
 		// Out of the spec's scope: the "padrão alternativo" is taught, not required.
 		{"placeholder alternative after a filled justification passes", "# t\n\nBarra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>\n", nil, "Barra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>"},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante\n", nil, "Barra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante"},

@@ -22,15 +22,18 @@ var (
 	// [ \t], not \s: RE2's \s crosses the newline, so an empty "Barra:" took
 	// the next line as its value (F-0327).
 	barLineRe            = regexp.MustCompile(`(?m)^[ \t]*Barra:[ \t]*(.*)$`)
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel\s*\(\s*([^)]+)\)`)
+	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel\s*\(\s*([^)]+)\)`)
 	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*([^)]+)\)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel`)
+	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`)
 	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
 	// Template slots left unfilled, with only separators between them:
 	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
 	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
 	// A CommonMark autolink ("<https://…>") is a written value, not a slot.
 	autolinkRe = regexp.MustCompile(`^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>$`)
+	// Emphasis is read through, never as part of a form: "**não aplicável**
+	// (…)" is the exemption, not a named reference (F-0327).
+	emphasis = strings.NewReplacer("*", "", "_", "")
 )
 
 // unwritten reports text that holds no value: nothing, or only template
@@ -65,13 +68,14 @@ func SpecBar(body []byte) (string, error) {
 	var firstInvalid error
 	for _, m := range matches {
 		value := strings.TrimSpace(m[1])
+		plain := strings.TrimSpace(emphasis.Replace(value))
 		var err error
 		switch {
 		case unwritten(value):
 			err = fmt.Errorf(`%w: no value after "Barra:" (a <…> template placeholder is not a value)`, ErrBarMalformed)
-		case naoAplicavelPrefixRe.MatchString(value) && !filled(naoAplicavelRe, value):
+		case naoAplicavelPrefixRe.MatchString(plain) && !filled(naoAplicavelRe, plain):
 			err = fmt.Errorf(`%w: "não aplicável" needs its one-line justification in parentheses, not a <…> template placeholder`, ErrBarMalformed)
-		case dispensadaPrefixRe.MatchString(value) && !filled(dispensadaRe, value):
+		case dispensadaPrefixRe.MatchString(plain) && !filled(dispensadaRe, plain):
 			err = fmt.Errorf(`%w: "dispensada por decisão humana" needs the quoted words in parentheses, not a <…> template placeholder`, ErrBarMalformed)
 		default:
 			return "Barra: " + value, nil
