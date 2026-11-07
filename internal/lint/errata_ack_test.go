@@ -151,3 +151,15 @@ func TestLintMarkerOutsideErrataUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// TestLintErrataFindingNamesMarkerExit: errata is append-only, so its finding
+// names the one way out — a new entry carrying the marker for that id (F-0329).
+// Details outside errata stay as they were (TestRunFindings pins them exactly).
+func TestLintErrataFindingNamesMarkerExit(t *testing.T) {
+	dir := errataAckFixture(t)
+	addErrata(t, dir, "siga D-0002\n")
+	want := `mentions D-0002 ("Regra velha"), which is superseded — use D-0005; append-only errata: acknowledge it with a new entry carrying <!-- lint:ok-superseded D-0002 -->`
+	if got := refsIn(t, dir, ownErrata); len(got) != 1 || got[0].Detail != want {
+		t.Fatalf("want one finding with detail\n%s\ngot %+v", want, got)
+	}
+}

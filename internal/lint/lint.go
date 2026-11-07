@@ -994,6 +994,9 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
+		if isErrata {
+			detail += "; append-only errata: acknowledge it with a new entry carrying <!-- lint:ok-superseded " + n.id + " -->"
+		}
 		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
 	}
 	return findings
