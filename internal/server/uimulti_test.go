@@ -310,8 +310,8 @@ func TestUIMultiRegisterUnknownDir(t *testing.T) {
 
 // TestProjectsListReadsNameFromBackend pins F-0331 crit. 3: GET /api/projects
 // serves the backend's project.json name on every list — a rename landing by
-// pull shows without restarting the ui; the registered name is only the
-// fallback when project.json cannot be read.
+// pull shows without restarting the ui; when project.json cannot be read, the
+// last name read stands in.
 func TestProjectsListReadsNameFromBackend(t *testing.T) {
 	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
 	repoA, projA, _ := newGitBackendNoClean(t)
@@ -351,7 +351,9 @@ func TestProjectsListReadsNameFromBackend(t *testing.T) {
 	if err := os.Remove(filepath.Join(repoA, "project.json")); err != nil {
 		t.Fatalf("Remove project.json: %v", err)
 	}
-	if got := name(); got != "Projeto A" {
-		t.Fatalf("name without project.json = %q, want the registered fallback %q", got, "Projeto A")
+	// The fallback is the last good read (critic C11), never the stale
+	// registration-time name this feature removes.
+	if got := name(); got != "Renomeado" {
+		t.Fatalf("name without project.json = %q, want the last good read %q", got, "Renomeado")
 	}
 }

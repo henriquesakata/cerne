@@ -148,7 +148,7 @@ type Resolver func(dir string) (repoDir, projDir, projectID, name string, err er
 // live-refresh goroutines.
 type registryEntry struct {
 	pid     string
-	name    string // the name read at registration; list's fallback when project.json can't be read
+	name    string // the last name read from project.json; list's fallback when it can't be read
 	repoDir string
 	projDir string
 	cancel  context.CancelFunc
@@ -273,12 +273,13 @@ func (r *registry) list() (infos []projectInfo, def string) {
 	for _, pid := range r.order {
 		if e, ok := r.projects[pid]; ok {
 			// Read the name per list (F-0331): a rename by this ui, another
-			// clone (pulled) or a hand edit shows without a restart.
-			name := e.name
+			// clone (pulled) or a hand edit shows without a restart. A good
+			// read is kept (under r.mu), so an unreadable project.json falls
+			// back to the last name read, not the registration-time one.
 			if p, err := store.LoadProject(e.repoDir); err == nil && p.Name != "" {
-				name = p.Name
+				e.name = p.Name
 			}
-			infos = append(infos, newProjectInfo(e.pid, name, e.projDir))
+			infos = append(infos, newProjectInfo(e.pid, e.name, e.projDir))
 		}
 	}
 	if len(r.order) > 0 {
