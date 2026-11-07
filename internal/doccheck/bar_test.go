@@ -43,6 +43,23 @@ func TestSpecBar(t *testing.T) {
 		{"dispensada template line refuses", "# t\n\nBarra: dispensada por decisão humana (<citação curta da fala que dispensou>)\n", ErrBarMalformed, ""},
 		{"dispensada quoted placeholder refuses", "# t\n\nBarra: dispensada por decisão humana ( \"<citação>\" )\n", ErrBarMalformed, ""},
 		{"justification naming a tag passes", "# t\n\nBarra: não aplicável (só troca o texto do <title>, sem artefato comparável) — padrão alternativo: teste de unidade\n", nil, "Barra: não aplicável (só troca o texto do <title>, sem artefato comparável) — padrão alternativo: teste de unidade"},
+		// Nothing left once emphasis and quote marks are dropped is no value,
+		// as the bar or inside an exemption's parentheses (F-0327).
+		{"emphasis-only bar refuses", "# t\n\nBarra: **\n", ErrBarMalformed, ""},
+		{"quotes-only bar refuses", "# t\n\nBarra: \"\"\n", ErrBarMalformed, ""},
+		{"blank nao aplicavel parens refuses", "# t\n\nBarra: não aplicável ( )\n", ErrBarMalformed, ""},
+		{"emphasis-only nao aplicavel parens refuses", "# t\n\nBarra: não aplicável (**)\n", ErrBarMalformed, ""},
+		{"empty quote in dispensada refuses", "# t\n\nBarra: dispensada por decisão humana (\"\")\n", ErrBarMalformed, ""},
+		// A slot wrapped in code, or several slots with only separators
+		// between them, is still the template; an autolink is a value.
+		{"backticked placeholder bar refuses", "# t\n\nBarra: `<referência + acesso>`\n", ErrBarMalformed, ""},
+		{"two-slot template bar refuses", "# t\n\nBarra: <referência> <acesso>\n", ErrBarMalformed, ""},
+		{"dashed two-slot template bar refuses", "# t\n\nBarra: <referência nomeada> — <acesso>\n", ErrBarMalformed, ""},
+		{"curly-quoted placeholder quote refuses", "# t\n\nBarra: dispensada por decisão humana (“<citação>”)\n", ErrBarMalformed, ""},
+		{"guillemet placeholder quote refuses", "# t\n\nBarra: dispensada por decisão humana («<citação>»)\n", ErrBarMalformed, ""},
+		{"autolink bar passes", "# t\n\nBarra: <https://kiro.dev/docs/specs>\n", nil, "Barra: <https://kiro.dev/docs/specs>"},
+		{"slots with words between them pass", "# t\n\nBarra: <Header> e <Footer> do design system — <https://storybook.example/header>\n", nil, "Barra: <Header> e <Footer> do design system — <https://storybook.example/header>"},
+		{"slot and words between them passes", "# t\n\nBarra: <Button> do design system — storybook/button\n", nil, "Barra: <Button> do design system — storybook/button"},
 		// Out of the spec's scope: the "padrão alternativo" is taught, not required.
 		{"placeholder alternative after a filled justification passes", "# t\n\nBarra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>\n", nil, "Barra: não aplicável (fix pontual sem artefato comparável) — padrão alternativo: <teste>"},
 		{"nfd accents pass", "# t\n\nBarra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante\n", nil, "Barra: na\u0303o aplica\u0301vel (sem artefato compara\u0301vel, confirmado) — padra\u0303o alternativo: invariante"},

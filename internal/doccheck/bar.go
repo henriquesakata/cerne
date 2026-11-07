@@ -26,22 +26,26 @@ var (
 	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(\s*([^)]+)\)`)
 	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel`)
 	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
-	// A template slot left unfilled ("<referência + acesso>"): the whole text
-	// is one <…> (F-0327).
-	placeholderRe = regexp.MustCompile(`^<[^<>]*>$`)
+	// Template slots left unfilled, with only separators between them:
+	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
+	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
+	// A CommonMark autolink ("<https://…>") is a written value, not a slot.
+	autolinkRe = regexp.MustCompile(`^<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>$`)
 )
 
-// isPlaceholder reports text that is only a template slot once the emphasis
-// and quote marks around it are dropped ("**<ref>**", "\"<citação>\"").
-func isPlaceholder(s string) bool {
-	return placeholderRe.MatchString(strings.Trim(s, " \t\u00a0*_\"“”«»"))
+// unwritten reports text that holds no value: nothing, or only template
+// slots, once the emphasis, code and quote marks around it are dropped
+// ("**", "\"\"", "`<ref>`", "“<citação>”").
+func unwritten(s string) bool {
+	t := strings.Trim(s, " \t\u00a0*_`\"“”«»")
+	return t == "" || (placeholderRe.MatchString(t) && !autolinkRe.MatchString(t))
 }
 
 // filled reports value is form re with its parenthesized text written:
 // present and not a template slot.
 func filled(re *regexp.Regexp, value string) bool {
 	m := re.FindStringSubmatch(value)
-	return m != nil && !isPlaceholder(m[1])
+	return m != nil && !unwritten(m[1])
 }
 
 // SpecBar returns the first valid bar line of a spec body, or the reason none
@@ -63,7 +67,7 @@ func SpecBar(body []byte) (string, error) {
 		value := strings.TrimSpace(m[1])
 		var err error
 		switch {
-		case value == "" || isPlaceholder(value):
+		case unwritten(value):
 			err = fmt.Errorf(`%w: no value after "Barra:" (a <…> template placeholder is not a value)`, ErrBarMalformed)
 		case naoAplicavelPrefixRe.MatchString(value) && !filled(naoAplicavelRe, value):
 			err = fmt.Errorf(`%w: "não aplicável" needs its one-line justification in parentheses, not a <…> template placeholder`, ErrBarMalformed)
