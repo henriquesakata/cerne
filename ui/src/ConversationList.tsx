@@ -28,21 +28,25 @@ export default function ConversationList({ conversations, activeId, onSelect, on
   const settled = useRef(false)
   const renameBtn = useRef<HTMLButtonElement | null>(null)
   const field = useRef<HTMLInputElement | null>(null)
+  // openedWith (C4): o título quando o editor abriu — "inalterado" é contra
+  // ele, não contra c.title, que o resumo pode trocar com o editor aberto.
+  const openedWith = useRef('')
 
-  const startRename = (id: string, btn: HTMLButtonElement) => {
+  const startRename = (c: Conversation, btn: HTMLButtonElement) => {
     settled.current = false
     renameBtn.current = btn
-    setEditingId(id)
+    openedWith.current = c.title
+    setEditingId(c.id)
   }
 
   // finish: value null = cancelar (crit. 19); vazio ou inalterado não chama
-  // onRename (crit. 18).
+  // onRename (crit. 18, C4).
   const finish = (c: Conversation, value: string | null, viaKey: boolean) => {
     if (settled.current) return
     settled.current = true
     setEditingId(null)
     const next = value?.trim() ?? ''
-    if (next !== '' && next !== c.title) onRename(c.id, next)
+    if (next !== '' && next !== openedWith.current.trim()) onRename(c.id, next)
     if (viaKey) renameBtn.current?.focus()
   }
 
@@ -97,7 +101,7 @@ export default function ConversationList({ conversations, activeId, onSelect, on
                 if (editingId === c.id) e.preventDefault()
               }}
               onClick={(e) =>
-                editingId === c.id ? finish(c, field.current?.value ?? null, true) : startRename(c.id, e.currentTarget)
+                editingId === c.id ? finish(c, field.current?.value ?? null, true) : startRename(c, e.currentTarget)
               }
             >
               ✎

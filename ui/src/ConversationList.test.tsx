@@ -170,6 +170,21 @@ describe('ConversationList — renomear (F-0310)', () => {
     expect(p.onRename).not.toHaveBeenCalled()
   })
 
+  // C4: o resumo chega com o editor aberto (o campo ainda mostra o texto de
+  // quando abriu). Sair sem editar não grava nada — nem por blur, nem por Enter.
+  it.each([
+    ['blur', (el: HTMLElement) => fireEvent.blur(el)],
+    ['Enter', (el: HTMLElement) => fireEvent.keyDown(el, { key: 'Enter' })],
+  ])('C4: sair sem editar (%s) depois do resumo não grava o título velho', (_how, leave) => {
+    const p = { onSelect: vi.fn(), onNew: vi.fn(), onDelete: vi.fn(), onRename: vi.fn() }
+    const { rerender } = render(<ConversationList conversations={[conv('a', 'Derivado', 1000)]} activeId="a" {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: /renomear "derivado"/i }))
+    rerender(<ConversationList conversations={[conv('a', 'Resumo do LLM', 1000)]} activeId="a" {...p} />)
+    expect(input()).toHaveValue('Derivado')
+    leave(input())
+    expect(p.onRename).not.toHaveBeenCalled()
+  })
+
   it('critério 20: rótulo acessível nos dois idiomas, sem disparar seleção nem exclusão', () => {
     const p = setup()
     expect(renameButton()).toHaveAccessibleName('Renomear "Conversa A"')
