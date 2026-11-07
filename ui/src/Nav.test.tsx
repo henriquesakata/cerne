@@ -140,25 +140,84 @@ describe('Nav agrupada (F-0332)', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  // Crítica F-0332 #4: "fora" é fora do grupo aberto, não fora da barra — o
+  // container .nav-links estica pela barra e o Dashboard em #/ não muda o hash.
+  it('critério 5: clique no Dashboard ou no vazio da barra fecha o menu', () => {
+    const { container } = render(<Nav hash="#/" />)
+    openGroup('Trabalho')
+    fireEvent.mouseDown(screen.getByText('Dashboard'))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    openGroup('Trabalho')
+    fireEvent.mouseDown(container.querySelector('.nav-links')!)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('critério 5: clique dentro do menu aberto não o fecha', () => {
+    render(<Nav hash="#/" />)
+    const menu = openGroup('Trabalho')
+    fireEvent.mouseDown(within(menu).getByText('Backlog'))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
+  // Crítica F-0332 #3: sair do menu com Tab é o "clique fora" do teclado.
+  it('critério 5: o foco saindo do grupo fecha o menu; foco entre itens não', () => {
+    render(<Nav hash="#/" />)
+    const menu = openGroup('Trabalho')
+    const [first, second] = within(menu).getAllByRole('menuitem')
+    fireEvent.blur(first, { relatedTarget: second })
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.blur(second, { relatedTarget: screen.getByText('Dashboard') })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  // Crítica F-0332 #1: Esc não pode jogar o foco no body.
+  it('critério 5: Esc devolve o foco ao botão do grupo', () => {
+    render(<Nav hash="#/" />)
+    const menu = openGroup('Trabalho')
+    within(menu).getAllByRole('menuitem')[0].focus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: /Trabalho/ })).toHaveFocus()
+  })
+
+  // Crítica F-0332 #6: todas as 19 telas, não uma amostra — uma rota sem prefixo
+  // em activeHref cairia no Dashboard em silêncio.
   it.each([
     ['#/kanban', 'Trabalho', 'Kanban'],
     ['#/f/F-0001', 'Trabalho', 'Kanban'],
+    ['#/backlog', 'Trabalho', 'Backlog'],
+    ['#/manage', 'Trabalho', 'Gestão'],
     ['#/new', 'Trabalho', 'Gestão'],
+    ['#/rooms', 'Trabalho', 'War Room'],
+    ['#/rooms/R1', 'Trabalho', 'War Room'],
     ['#/activity', 'Trabalho', 'Atividade'],
+    ['#/decisions', 'Conhecimento', 'Decisões'],
     ['#/d/D-0001', 'Conhecimento', 'Decisões'],
+    ['#/references', 'Conhecimento', 'Referências'],
     ['#/r/R-0001', 'Conhecimento', 'Referências'],
+    ['#/runbooks', 'Conhecimento', 'Runbooks'],
     ['#/rb/RB-0001', 'Conhecimento', 'Runbooks'],
+    ['#/notes', 'Conhecimento', 'Notas'],
     ['#/n/N-0001', 'Conhecimento', 'Notas'],
+    ['#/conventions', 'Conhecimento', 'Convenções'],
     ['#/wiki', 'Explorar', 'Wiki'],
+    ['#/ask', 'Explorar', 'Perguntar'],
+    ['#/search', 'Explorar', 'Busca'],
+    ['#/graph', 'Explorar', 'Grafo'],
+    ['#/mindmap', 'Explorar', 'Mapa mental'],
+    ['#/lint', 'Saúde', 'Lint'],
+    ['#/harness', 'Saúde', 'Harness'],
     ['#/history', 'Saúde', 'Histórico'],
+    ['#/stats', 'Saúde', 'Economia'],
   ])('critério 6: rota %s ativa o grupo %s e o item %s', (hash, group, item) => {
     render(<Nav hash={hash} />)
     const buttons = screen
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav-group-btn'))
     expect(buttons.filter((b) => b.classList.contains('active')).map(label)).toEqual([group])
+    expect(screen.getByText('Dashboard')).not.toHaveClass('active')
     const menu = openGroup(group)
     expect(within(menu).getByText(item)).toHaveClass('active')
+    expect(within(menu).getByText(item)).toHaveAttribute('aria-current', 'page')
     expect(within(menu).getAllByRole('menuitem').filter((a) => a.classList.contains('active'))).toHaveLength(1)
   })
 
@@ -166,13 +225,43 @@ describe('Nav agrupada (F-0332)', () => {
     const { container } = render(<Nav hash="#/" />)
     expect(container.querySelector('.nav-group-btn.active')).toBeNull()
     expect(screen.getByText('Dashboard')).toHaveClass('active')
+    expect(screen.getByText('Dashboard')).toHaveAttribute('aria-current', 'page')
   })
 
-  it('critério 8: sem linha de medição nem botão "Mais"', () => {
-    const { container } = render(<Nav hash="#/" />)
-    expect(container.querySelector('.nav-measure')).toBeNull()
-    expect(screen.queryByText(/^Mais/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/^More/)).not.toBeInTheDocument()
+  // Crítica F-0332 #7: link antigo para um item desligado ainda diz onde se está.
+  it('critério 6: rota de item desligado por flag ainda ativa o grupo', () => {
+    mockProjects = [{ pid: 'p1', name: 'P1', graph: false }]
+    render(<Nav hash="#/graph" />)
+    expect(screen.getByRole('button', { name: /Explorar/ })).toHaveClass('active')
+  })
+
+  it('critério 3: o menu aberto leva o nome do grupo', () => {
+    render(<Nav hash="#/" />)
+    openGroup('Conhecimento')
+    expect(screen.getByRole('menu', { name: 'Conhecimento' })).toBeInTheDocument()
+  })
+
+  // Crítica F-0332 #12: prova o não-uso com um espião, não com a ausência do jsdom.
+  it('critério 8: sem ResizeObserver, sem linha de medição nem botão "Mais"', () => {
+    const constructed = vi.fn()
+    globalThis.ResizeObserver = class {
+      constructor() {
+        constructed()
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    try {
+      const { container } = render(<Nav hash="#/" />)
+      openGroup('Explorar')
+      expect(constructed).not.toHaveBeenCalled()
+      expect(container.querySelector('.nav-measure')).toBeNull()
+      expect(screen.queryByText(/^Mais/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/^More/)).not.toBeInTheDocument()
+    } finally {
+      delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver
+    }
   })
 })
 

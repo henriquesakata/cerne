@@ -108,24 +108,28 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
   // chega pelo /api/projects, relido no evento SSE "projects" de uma escrita.
   const info = projects.find((p) => p.pid === activePid)
   const off = { graph: info?.graph === false, mindmap: info?.mindmap === false }
-  const groups = GROUPS.map((g) => ({
-    ...g,
-    items: g.items.filter((l) => !off[l.key as keyof typeof off]),
-  })).filter((g) => g.items.length > 0)
-  const containerRef = useRef<HTMLDivElement>(null)
+  // Grupo da rota atual sobre a lista completa: um link antigo para um item
+  // desligado por flag ainda diz em que grupo se está.
+  const activeGroup = GROUPS.find((g) => g.items.some((l) => l.href === active))?.key
   const [open, setOpen] = useState<string | null>(null)
+  // Apontam para o grupo aberto: "fora" é fora dele, não fora da barra inteira.
+  const openRef = useRef<HTMLDivElement>(null)
+  const openBtnRef = useRef<HTMLButtonElement>(null)
 
   // Navegou → fecha o menu.
   useEffect(() => setOpen(null), [hash])
 
-  // Fecha ao clicar fora ou apertar Esc.
+  // Fecha ao clicar fora do grupo aberto ou apertar Esc (que devolve o foco ao
+  // botão, para o teclado não cair no body).
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(null)
+      if (!openRef.current?.contains(e.target as Node)) setOpen(null)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(null)
+      if (e.key !== 'Escape') return
+      setOpen(null)
+      openBtnRef.current?.focus()
     }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
@@ -135,22 +139,33 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
     }
   }, [open])
 
+  const dashActive = DASHBOARD.href === active
   return (
-    <div className="nav-links" ref={containerRef}>
+    <div className="nav-links">
       <a
         href={DASHBOARD.href}
-        className={DASHBOARD.href === active ? 'nav-link active' : 'nav-link'}
+        className={dashActive ? 'nav-link active' : 'nav-link'}
+        aria-current={dashActive ? 'page' : undefined}
       >
         {t.nav[DASHBOARD.key]}
       </a>
-      {groups.map((g) => {
+      {GROUPS.map((g) => {
         const isOpen = open === g.key
-        const isActive = g.items.some((l) => l.href === active)
+        const items = g.items.filter((l) => !off[l.key as keyof typeof off])
         return (
-          <div key={g.key} className="nav-group">
+          <div
+            key={g.key}
+            className="nav-group"
+            ref={isOpen ? openRef : undefined}
+            // Tab para fora do grupo é o "clique fora" do teclado.
+            onBlur={(e) => {
+              if (isOpen && !e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(null)
+            }}
+          >
             <button
               type="button"
-              className={isActive ? 'nav-link nav-group-btn active' : 'nav-link nav-group-btn'}
+              ref={isOpen ? openBtnRef : undefined}
+              className={g.key === activeGroup ? 'nav-link nav-group-btn active' : 'nav-link nav-group-btn'}
               aria-haspopup="menu"
               aria-expanded={isOpen}
               onClick={() => setOpen(isOpen ? null : g.key)}
@@ -158,13 +173,14 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
               {t.nav[g.key]} <span aria-hidden="true">▾</span>
             </button>
             {isOpen && (
-              <div className="nav-group-menu" role="menu">
-                {g.items.map((l) => (
+              <div className="nav-group-menu" role="menu" aria-label={t.nav[g.key]}>
+                {items.map((l) => (
                   <a
                     key={l.href}
                     href={l.href}
                     role="menuitem"
                     className={l.href === active ? 'nav-group-item active' : 'nav-group-item'}
+                    aria-current={l.href === active ? 'page' : undefined}
                     onClick={() => setOpen(null)}
                   >
                     {t.nav[l.key]}

@@ -194,6 +194,8 @@ describe('LiveProvider — gate do Grafo ao vivo (F-0315)', () => {
     vi.mocked(fetchProjects).mockImplementation(gate(false))
     await act(async () => onProjects())
     await waitFor(() => expect(screen.queryByText('Grafo')).not.toBeInTheDocument())
+    // O menu segue aberto: o Grafo sumiu do menu, não porque o menu fechou.
+    expect(screen.getByRole('menu')).toHaveTextContent('Wiki')
 
     vi.mocked(fetchProjects).mockImplementation(gate(true))
     await act(async () => onProjects())
