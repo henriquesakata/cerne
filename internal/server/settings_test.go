@@ -583,8 +583,9 @@ func TestProjectNameRouteLocalOnly(t *testing.T) {
 	}
 }
 
-// TestProjectNameStatus pins F-0331 crit. 7 (HTTP side): a busy lock or a
-// concurrent change is a retryable 409, a broken rule a 400, the rest a 500.
+// TestProjectNameStatus pins F-0331 crit. 7 (HTTP side): a busy lock, a
+// concurrent change or lost push races (critic C10) are a retryable 409, a
+// broken rule a 400, the rest a 500.
 // The lock timeout is a 150 s const, so the mapping is pinned on the errors.
 func TestProjectNameStatus(t *testing.T) {
 	for _, tc := range []struct {
@@ -594,6 +595,7 @@ func TestProjectNameStatus(t *testing.T) {
 		{fmt.Errorf("%w: x", app.ErrInvalidProjectName), http.StatusBadRequest},
 		{fmt.Errorf("%w: x", gitback.ErrLockTimeout), http.StatusConflict},
 		{&app.ConflictError{Conflicts: []app.Conflict{{Path: "project.json"}}}, http.StatusConflict},
+		{fmt.Errorf("%w: 6 attempts", app.ErrTooConcurrent), http.StatusConflict},
 		{errors.New("push rejected"), http.StatusInternalServerError},
 	} {
 		if got := projectNameStatus(tc.err); got != tc.want {

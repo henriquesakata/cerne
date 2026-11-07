@@ -43,12 +43,13 @@ func handleProjectNamePut(w http.ResponseWriter, r *http.Request, repoDir, projD
 }
 
 // projectNameStatus maps a refused rename: a broken rule is the caller's 400; a
-// busy lock or a concurrent change is a retryable 409; the rest is a 500.
+// busy lock, a concurrent change or lost push races are a retryable 409; the
+// rest is a 500.
 func projectNameStatus(err error) int {
 	switch {
 	case errors.Is(err, app.ErrInvalidProjectName):
 		return http.StatusBadRequest
-	case errors.Is(err, gitback.ErrLockTimeout), errors.Is(err, app.ErrConflict):
+	case errors.Is(err, gitback.ErrLockTimeout), errors.Is(err, app.ErrConflict), errors.Is(err, app.ErrTooConcurrent):
 		return http.StatusConflict
 	}
 	return http.StatusInternalServerError
