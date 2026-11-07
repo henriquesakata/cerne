@@ -150,6 +150,9 @@ type Finding struct {
 	Entity string // entity ID the finding is about ("" for orphan files)
 	File   string // rel slash path of the offending file ("" when entity-level)
 	Detail string // human-readable pt-BR detail
+	// Fix: the command that clears the finding when File cannot be edited — an
+	// errata is append-only (F-0329) — so tools need not parse it from Detail.
+	Fix string
 	// Downgraded: wiki debt while wiki.enabled is off (F-0316) — advisory,
 	// outside cerne next.
 	Downgraded bool
@@ -962,10 +965,10 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		}
 		// F-0094: an entity's errata legitimately names what that entity
 		// superseded — the supersession record is not stale debt. Tolerate when
-		// the mention's successor (n.use) is the errata's own entity. Errata is
-		// not materialized for editing, so it cannot carry the F-0089 marker;
-		// this is its acknowledgment path. Other stale refs in an errata still
-		// surface (F-0072 keeps scanning errata of concluded entities).
+		// the mention's successor (n.use) is the errata's own entity, with no
+		// marker needed. Other stale refs in an errata still surface (F-0072
+		// keeps scanning errata of concluded entities) until a later entry
+		// acknowledges them (errataAckFrom, F-0329).
 		if isErrata && n.use != "" && n.use == d.entity {
 			continue
 		}
@@ -973,7 +976,8 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		// and naturally names the entity. When that entity is itself superseded
 		// — e.g. a runbook retired with no successor, so the F-0094 predecessor
 		// tolerance above (n.use == d.entity) does not apply — this self-mention
-		// is a record, not stale debt, and errata cannot carry the F-0089 marker.
+		// is a record, not stale debt, and the frontmatter line never carries the
+		// F-0089 marker.
 		if isErrata && n.id == d.entity {
 			continue
 		}
@@ -981,14 +985,24 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		// declares the reference as an intentional historical mention, not a
 		// debt. Suppress only when EVERY occurrence of n is acknowledged on its
 		// own line — an unmarked mention elsewhere is still a debt, and the
-		// marker's own line self-suppresses the id it names.
-		if allMentionsAcknowledged(text, n) {
+		// marker's own line self-suppresses the id it names. In an errata the
+		// entries before the last one marking n are acknowledged wholesale.
+		ack := text
+		if isErrata {
+			ack = text[errataAckFrom(text, n.id):]
+		}
+		if allMentionsAcknowledged(ack, n) {
 			continue
 		}
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
-		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
+		var fix string
+		if isErrata {
+			fix = fmt.Sprintf("cerne %s errata %s '<!-- lint:ok-superseded %s --> <why it is history; what is current>'", errataKind(d.entity), d.entity, n.id)
+			detail += "; append-only errata: clear it with " + fix + " and keep any other mention of " + n.id + " in that entry on the marker line"
+		}
+		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail, Fix: fix})
 	}
 	return findings
 }
@@ -1073,6 +1087,50 @@ func allMentionsAcknowledged(text string, n needle) bool {
 		}
 	}
 	return seen
+}
+
+// errataKind is the CLI noun whose `errata` verb appends to owner — one of the
+// errata-bearing kinds scannedDocs reads (feature/epic/task, decision, runbook,
+// note).
+func errataKind(owner string) string {
+	switch {
+	case domain.IsFeatureID(owner):
+		return "feature"
+	case strings.HasPrefix(owner, "D-"):
+		return "decision"
+	case strings.HasPrefix(owner, "RB-"):
+		return "runbook"
+	}
+	return "note"
+}
+
+// errataEntryRe matches the heading store.AppendErrata writes atop each entry.
+// It is deliberately not the result rules' cut (nextHeadingRe, any "## "
+// heading): that closes one Gauntlet section, while an entry may carry "## "
+// headings of its own (a Gauntlet record in an erratum, F-0305). Cutting there
+// would split one entry and let its marker cover the lines above it.
+var errataEntryRe = regexp.MustCompile(`^## errata \d{4}-\d{2}-\d{2} — `)
+
+// errataAckFrom returns where an errata document's mentions of id start being
+// judged line by line: the start of the last entry carrying a
+// lint:ok-superseded marker naming id, or 0 when none does. Errata is
+// append-only, so an old line never gains the F-0089 marker; a marker in a
+// later entry acknowledges every earlier entry instead (F-0329). The look is
+// backward only: in the marker's own entry and after it, the same-line rule
+// still holds.
+func errataAckFrom(text, id string) int {
+	entry, from := 0, 0
+	for off := 0; off < len(text); {
+		line, _, _ := strings.Cut(text[off:], "\n")
+		if errataEntryRe.MatchString(line) {
+			entry = off
+		}
+		if acknowledgedOnLine(line, id) {
+			from = entry
+		}
+		off += len(line) + 1
+	}
+	return from
 }
 
 // linkFindings reports markdown links whose relative target does not exist
