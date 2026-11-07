@@ -14,6 +14,7 @@ import { useProjects } from './live'
 import { useT, type Messages } from './i18n'
 import { norm } from './Palette'
 import { FixBlock } from './Harness'
+import { checkProjectName } from './projectName'
 
 // Settings (F-0315): the active project's settings, derived from the registry
 // F-0314 serves. The screen knows no key: title, description, type and scopes
@@ -237,16 +238,6 @@ export default function Settings() {
   )
 }
 
-// ponytail: mirrors app.RenameProject's rules so a refusal reads in the UI's
-// language; the server stays the authority (a divergence shows its 400 in failed).
-function nameRule(s: string): 'empty' | 'long' | 'control' | null {
-  const v = s.trim()
-  if (v === '') return 'empty'
-  if ([...v].length > 64) return 'long'
-  if (/\p{Cc}/u.test(v)) return 'control'
-  return null
-}
-
 // ProjectName renames the project (F-0331): the backend's project.json, shared
 // by every clone — not a scoped setting. The input is uncontrolled and keyed
 // by the backend's name, so it remounts only when the re-read project list
@@ -269,15 +260,14 @@ function ProjectName({ name }: { name: string }) {
         onSubmit={(e) => {
           e.preventDefault()
           if (saving) return
-          const raw = String(new FormData(e.currentTarget).get('name') ?? '')
-          const rule = nameRule(raw)
+          const { name: next, rule } = checkProjectName(String(new FormData(e.currentTarget).get('name') ?? ''))
           if (rule) {
             setError(tn.rules[rule])
             return
           }
           setSaving(true)
           setError(null)
-          renameProject(raw.trim()).then(
+          renameProject(next).then(
             () => setSaving(false),
             (err: unknown) => {
               setSaving(false)
