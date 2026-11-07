@@ -9,13 +9,16 @@ import (
 // ChildrenByParent groups features by their Parent ID. Features without a
 // parent are skipped; each child slice is sorted by ID. The result maps an
 // epic's ID to the features that decompose it — the inferred epic structure.
+// The key is the canonical parent id, so a legacy lowercase parent still
+// groups under its epic.
 func ChildrenByParent(features []Feature) map[string][]Feature {
 	byParent := map[string][]Feature{}
 	for _, f := range features {
-		if f.Parent == "" {
+		p := domain.CanonicalID(f.Parent)
+		if p == "" {
 			continue
 		}
-		byParent[f.Parent] = append(byParent[f.Parent], f)
+		byParent[p] = append(byParent[p], f)
 	}
 	for _, children := range byParent {
 		sort.Slice(children, func(i, j int) bool { return children[i].ID < children[j].ID })
