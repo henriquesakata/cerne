@@ -187,7 +187,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 // withHardImpediments adds to a clarification refusal the hard impediments
 // waiting behind it (F-0308): the CLI refuses open clarifications before the
 // core checks the spec, so without this line the human answers the questions,
-// approves again, and only then meets the bar refusal.
+// approves again, and only then meets the bar refusal. --force skips only the
+// clarification check, so the line says it does not get past these either (F-0330).
 func withHardImpediments(refusal error, repoDir, id string) error {
 	imps, err := app.ApproveReadiness(repoDir, id)
 	if err != nil {
@@ -202,7 +203,7 @@ func withHardImpediments(refusal error, repoDir, id string) error {
 	if len(hard) == 0 {
 		return refusal
 	}
-	return fmt.Errorf("%w\nanswering them is not enough — the approve also refuses on: %s; see 'cerne feature approve %s --check'", refusal, strings.Join(hard, ", "), id)
+	return fmt.Errorf("%w\nanswering them (or --force) is not enough — the approve also refuses on: %s; see 'cerne feature approve %s --check'", refusal, strings.Join(hard, ", "), id)
 }
 
 // errCheckImpediments is the non-zero exit of an approve --check whose list
