@@ -129,7 +129,8 @@ func TestAmendIdenticalIsNoOp(t *testing.T) {
 // '---' block (a frontmatter or a horizontal rule) that carries no cerne_id at
 // all, or one that never closes — a block is only "key: value" and blank lines
 // up to its '---', so a later rule or code fence never closes it (F-0328
-// critic C2) — in the amend's own words, with no sentinel
+// critic C2), and a block right after the first is a second frontmatter:
+// ours again is dropped, anything else refused (C1) — in the amend's own words, with no sentinel
 // prefix. Every accepted form is a fixed point: the
 // stored file fed back (what `cerne show --doc` prints, one newline more) is
 // stored unchanged, which is what makes an identical rewrite detectable.
@@ -154,6 +155,10 @@ func TestStampedDocFrontmatter(t *testing.T) {
 		{"closed only by a later rule", "spec", "---\ncerne_id: F-0001\n\n# R\n\n## Problema\n\nTexto real.\n\n---\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
 		{"rule in the middle", "result", "---\ncerne_id: F-0001\n# R\n\n---\n\nMais.\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc result'"},
 		{"dashes inside a code fence", "spec", "---\ncerne_id: F-0001\n\n```yaml\n---\nx: 1\n```\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
+		{"own block twice", "spec", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: 'F-0001'\nx: y\n---\n" + rest, "---\ncerne_id: F-0001\n---\n" + rest, ""},
+		{"own block, then a rule", "spec", "---\ncerne_id: F-0001\n---\n\n---\n" + rest, "---\ncerne_id: F-0001\n---\n\n---\n" + rest, ""},
+		{"own block, then another feature's", "spec", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: F-0002\n---\n" + rest, "", `the body's frontmatter names cerne_id "F-0002", not F-0001 — is it another feature's spec?`},
+		{"own block, then one without id", "spec", "---\ncerne_id: F-0001\n---\n\n---\ntitle: x\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc spec' or drop the block"},
 		{"indented key", "spec", "---\n  cerne_id: F-0001\n---\n" + rest, "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc spec'"},
 		{"empty id", "result", "---\ncerne_id:\n---\n" + rest, "", "the body opens a '---' block without cerne_id: start from 'cerne show F-0001 --doc result' or drop the block"},
 		{"block never closes", "result", "---\ncerne_id: F-0001\n# R\n\nCorpo.\n", "", "the body's '---' block never closes: close it with a '---' line, or start from 'cerne show F-0001 --doc result'"},

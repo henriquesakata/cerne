@@ -850,6 +850,32 @@ func stampedDoc(id, doc, body string) (string, error) {
 	if !closed {
 		return "", frontmatterRefusal(fmt.Sprintf("the body's '---' block never closes: close it with a '---' line, or start from 'cerne show %s --doc %s'", id, doc))
 	}
+	i, err := ownBlock(inner, id, doc)
+	if err != nil {
+		return "", err
+	}
+	inner[i] = "cerne_id: " + id
+	// A block right after it is a second frontmatter (a spec doubled before
+	// F-0328, a re-fed file): never stored — ours again is dropped, anything else
+	// refused. A '---' that opens no block there is a rule, and stays (C1).
+	for {
+		rest = dropBlank(rest)
+		next, after, opens, closed := leadingBlock(rest)
+		if !opens || !closed {
+			break
+		}
+		if _, err := ownBlock(next, id, doc); err != nil {
+			return "", err
+		}
+		rest = after
+	}
+	return "---\n" + strings.Join(inner, "\n") + "\n---\n\n" + strings.Join(rest, "\n") + "\n", nil
+}
+
+// ownBlock returns the index of the cerne_id line of a block's inner lines,
+// refusing the block when that id is not id or there is none (an empty value
+// counts as none).
+func ownBlock(inner []string, id, doc string) (int, error) {
 	for i, l := range inner {
 		k, v, _ := strings.Cut(l, ":")
 		got := strings.Trim(strings.TrimSpace(v), `"'`)
@@ -857,12 +883,11 @@ func stampedDoc(id, doc, body string) (string, error) {
 			continue
 		}
 		if got != id {
-			return "", frontmatterRefusal(fmt.Sprintf("the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", got, id, doc))
+			return -1, frontmatterRefusal(fmt.Sprintf("the body's frontmatter names cerne_id %q, not %s — is it another feature's %s?", got, id, doc))
 		}
-		inner[i] = "cerne_id: " + id
-		return "---\n" + strings.Join(inner, "\n") + "\n---\n\n" + strings.Join(dropBlank(rest), "\n") + "\n", nil
+		return i, nil
 	}
-	return "", frontmatterRefusal(fmt.Sprintf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", id, doc))
+	return -1, frontmatterRefusal(fmt.Sprintf("the body opens a '---' block without cerne_id: start from 'cerne show %s --doc %s' or drop the block", id, doc))
 }
 
 // loadCandidate loads a feature and asserts its spec is still open to the chat

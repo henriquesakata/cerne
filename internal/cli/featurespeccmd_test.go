@@ -165,6 +165,12 @@ func TestFeatureSpecKeepsOneFrontmatter(t *testing.T) {
 		t.Fatalf("spec.md after a show round trip = %q, want one block and the edit", got)
 	}
 
+	// A spec doubled before F-0328 — cerne's stamp over the body's own block —
+	// heals on the next write instead of round-tripping as two blocks (C1).
+	if got := write("---\ncerne_id: F-0001\n---\n\n" + specBody); got != specBody {
+		t.Fatalf("doubled spec stored as %q, want one block %q", got, specBody)
+	}
+
 	want := "---\ncerne_id: F-0001\nowner: x\n---\n\n## Problema\n\nCom chave extra.\n"
 	if got := write("---\ncerne_id: \"F-0001\"\nowner: x\n---\n\n## Problema\n\nCom chave extra.\n"); got != want {
 		t.Fatalf("spec.md = %q, want %q", got, want)
@@ -192,6 +198,7 @@ func TestFeatureSpecRefusesForeignFrontmatter(t *testing.T) {
 		{"other id", "---\ncerne_id: F-0002\n---\n\n## Problema\n\nDe outra.\n", []string{`cerne_id "F-0002", not F-0001`, "another feature's spec"}},
 		{"block without id", "---\ntitle: x\n---\n\n## Problema\n\nSem id.\n", []string{"without cerne_id", "--doc spec"}},
 		{"block never closes", "---\ncerne_id: F-0001\n\n## Problema\n\nAberto.\n", []string{"never closes"}},
+		{"own block, then another feature's", "---\ncerne_id: F-0001\n---\n\n---\ncerne_id: F-0002\n---\n\n# Spec dupla\n\nCorpo.\n", []string{`cerne_id "F-0002", not F-0001`}},
 		{"block closed only by a later rule", "---\ncerne_id: F-0001\n\n# Spec toda na frontmatter\n\n## Problema\n\nTexto real do problema.\n\n---\n", []string{"never closes"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
