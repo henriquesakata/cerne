@@ -153,13 +153,29 @@ func TestLintMarkerOutsideErrataUnchanged(t *testing.T) {
 }
 
 // TestLintErrataFindingNamesMarkerExit: errata is append-only, so its finding
-// names the one way out — a new entry carrying the marker for that id (F-0329).
-// Details outside errata stay as they were (TestRunFindings pins them exactly).
+// carries, as data (Fix), the errata command that clears it — owner's kind and
+// id, the marker for the mentioned id — and its detail says it, including that
+// any other mention in the new entry must sit on the marker line (F-0329).
+// Findings outside errata carry no Fix (TestRunFindings pins them exactly).
 func TestLintErrataFindingNamesMarkerExit(t *testing.T) {
-	dir := errataAckFixture(t)
-	addErrata(t, dir, "siga D-0002\n")
-	want := `mentions D-0002 ("Regra velha"), which is superseded — use D-0005; append-only errata: acknowledge it with a new entry carrying <!-- lint:ok-superseded D-0002 -->`
-	if got := refsIn(t, dir, ownErrata); len(got) != 1 || got[0].Detail != want {
-		t.Fatalf("want one finding with detail\n%s\ngot %+v", want, got)
+	for _, tc := range []struct{ name, owner, kind string }{
+		{"feature owner", "F-0001", "feature"},
+		{"decision owner", "D-0007", "decision"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := errataAckFixture(t)
+			if err := store.SaveDecision(dir, store.Decision{ID: "D-0007", Title: "Outra", State: domain.DecisionActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
+				t.Fatalf("SaveDecision: %v", err)
+			}
+			if err := store.AppendErrata(dir, tc.owner, "siga D-0002\n", "ator", time.Unix(0, 0).UTC()); err != nil {
+				t.Fatalf("AppendErrata: %v", err)
+			}
+			fix := "cerne " + tc.kind + " errata " + tc.owner + " '<!-- lint:ok-superseded D-0002 --> <why it is history; what is current>'"
+			want := `mentions D-0002 ("Regra velha"), which is superseded — use D-0005; append-only errata: clear it with ` + fix + ` and keep any other mention of D-0002 in that entry on the marker line`
+			got := refsIn(t, dir, "content/errata/"+tc.owner+".md")
+			if len(got) != 1 || got[0].Fix != fix || got[0].Detail != want {
+				t.Fatalf("want one finding with Fix\n%s\nand detail\n%s\ngot %+v", fix, want, got)
+			}
+		})
 	}
 }

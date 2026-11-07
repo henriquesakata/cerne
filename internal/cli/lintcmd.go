@@ -253,8 +253,13 @@ func printFixTasks(w io.Writer, findings []lint.Finding) {
 
 // taskAction turns a finding into an imperative maintenance task.
 // The ref-to-superseded and missing-gate-doc branches parse the Detail
-// formats produced by lint.Run; the lint package tests pin those formats.
+// formats produced by lint.Run; the lint package tests pin those formats. A
+// finding that carries its Fix (an append-only errata, F-0329) is never
+// parsed: its file cannot be edited, so the task is that command.
 func taskAction(f lint.Finding) string {
+	if f.Fix != "" {
+		return "append an errata entry (the errata is append-only): " + f.Fix
+	}
 	switch f.Rule {
 	case lint.RuleRefToSuperseded:
 		// "mentions <ID> ("<Title>"), which is <state>[ — use <X>]"

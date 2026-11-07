@@ -252,3 +252,46 @@ func TestLintStagedParityWithBackend(t *testing.T) {
 		t.Fatalf("expected the ref-to-superseded finding in both, got:\n%s", stagedOut)
 	}
 }
+
+// TestLintFixTasksErrataAppends pins F-0329 C1: an errata is append-only, so the
+// task for a superseded mention in it is the errata command the finding
+// carries — never "replace"/"remove the mention" — whether the mentioned entity
+// has a successor (superseded) or not (rejected), and the detail's hint never
+// leaks into the parsed successor or state.
+func TestLintFixTasksErrataAppends(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	for _, d := range []store.Decision{
+		{ID: "D-0001", Title: "Pagamentos", State: domain.DecisionActive, Facets: []string{"infra"}},
+		{ID: "D-0002", Title: "Fila Kafka", State: domain.DecisionSuperseded, SupersededBy: "D-0003"},
+		{ID: "D-0003", Title: "Fila SQS", State: domain.DecisionActive, Facets: []string{"infra"}},
+	} {
+		d.CreatedAt, d.UpdatedAt = now, now
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			t.Fatalf("SaveDecision %s: %v", d.ID, err)
+		}
+	}
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Recurso descartado", State: domain.StateRejected, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.AppendErrata(repoDir, "D-0001", "Os pagamentos passam pela D-0002 e pelo F-0001.", "ator", now); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+
+	out, _ := execCerne(t, "lint", "--fix-tasks", "--dir", projDir)
+	_, tasks, ok := strings.Cut(out, "## Maintenance tasks")
+	if !ok {
+		t.Fatalf("output missing fix-tasks block:\n%s", out)
+	}
+	for _, id := range []string{"D-0002", "F-0001"} {
+		want := "- [ ] content/errata/D-0001.md: append an errata entry (the errata is append-only): cerne decision errata D-0001 '<!-- lint:ok-superseded " + id + " --> <why it is history; what is current>'\n"
+		if !strings.Contains(tasks, want) {
+			t.Errorf("fix-tasks missing the append task for %s:\nwant %q\ngot:\n%s", id, want, tasks)
+		}
+	}
+	for _, line := range strings.Split(tasks, "\n") {
+		if strings.Contains(line, "content/errata/") && (strings.Contains(line, "replace the mention") || strings.Contains(line, "remove the mention") || strings.Count(line, "lint:ok-superseded") != 1) {
+			t.Errorf("errata task edits the mention or repeats the hint: %q", line)
+		}
+	}
+}

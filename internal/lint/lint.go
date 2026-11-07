@@ -150,6 +150,9 @@ type Finding struct {
 	Entity string // entity ID the finding is about ("" for orphan files)
 	File   string // rel slash path of the offending file ("" when entity-level)
 	Detail string // human-readable pt-BR detail
+	// Fix: the command that clears the finding when File cannot be edited — an
+	// errata is append-only (F-0329) — so tools need not parse it from Detail.
+	Fix string
 	// Downgraded: wiki debt while wiki.enabled is off (F-0316) — advisory,
 	// outside cerne next.
 	Downgraded bool
@@ -994,10 +997,12 @@ func refFindings(d scannedDoc, text string, needles []needle) []Finding {
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
+		var fix string
 		if isErrata {
-			detail += "; append-only errata: acknowledge it with a new entry carrying <!-- lint:ok-superseded " + n.id + " -->"
+			fix = fmt.Sprintf("cerne %s errata %s '<!-- lint:ok-superseded %s --> <why it is history; what is current>'", errataKind(d.entity), d.entity, n.id)
+			detail += "; append-only errata: clear it with " + fix + " and keep any other mention of " + n.id + " in that entry on the marker line"
 		}
-		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail})
+		findings = append(findings, Finding{Rule: RuleRefToSuperseded, Entity: d.entity, File: d.rel, Detail: detail, Fix: fix})
 	}
 	return findings
 }
@@ -1082,6 +1087,21 @@ func allMentionsAcknowledged(text string, n needle) bool {
 		}
 	}
 	return seen
+}
+
+// errataKind is the CLI noun whose `errata` verb appends to owner — one of the
+// errata-bearing kinds scannedDocs reads (feature/epic/task, decision, runbook,
+// note).
+func errataKind(owner string) string {
+	switch {
+	case domain.IsFeatureID(owner):
+		return "feature"
+	case strings.HasPrefix(owner, "D-"):
+		return "decision"
+	case strings.HasPrefix(owner, "RB-"):
+		return "runbook"
+	}
+	return "note"
 }
 
 // errataEntryRe matches the heading store.AppendErrata writes atop each entry.
