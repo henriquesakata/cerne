@@ -77,6 +77,9 @@ func TestLintErrataLaterMarkerAcknowledges(t *testing.T) {
 		{"two earlier entries", []string{"siga D-0002\n", "ainda D-0002\n"}, []string{ackEntry("D-0002")}},
 		{"id list, mixed case", []string{"siga D-0002\n"}, []string{ackEntry("D-0003, d-0002")}},
 		{"unrelated later entry", []string{"siga D-0002\n"}, []string{ackEntry("D-0002"), "outro assunto\n"}},
+		// The last marker entry wins: the second covers the mention appended
+		// after the first.
+		{"last marker wins", []string{"siga D-0002\n", ackEntry("D-0002"), "ainda D-0002\n"}, []string{ackEntry("D-0002")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := errataAckFixture(t)
