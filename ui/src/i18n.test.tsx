@@ -82,7 +82,8 @@ describe('t.notif.age (F-0310)', () => {
 })
 
 // F-0331 crit. 10: o bloco "Nome do projeto" existe nas duas línguas, com
-// textos distintos entre elas, e o rótulo diz projeto — não o "Channel name".
+// textos distintos entre elas, e o rótulo diz projeto — não o nome pessoal no
+// canal (F-0333 crit. 5).
 describe('t.settings.projectName (F-0331 crit. 10)', () => {
   const messages = (lang: Lang) => {
     localStorage.setItem('cerne-lang', lang)
@@ -99,7 +100,7 @@ describe('t.settings.projectName (F-0331 crit. 10)', () => {
       ),
     )
 
-  it('mesmas chaves, textos diferentes, "projeto"/"project" e distinto de Channel name', () => {
+  it('mesmas chaves, textos diferentes, "projeto"/"project" e distinto de Your name in the channel', () => {
     const pt = messages('pt-BR')
     const en = messages('en')
     const lp = leaves(pt.projectName)
@@ -108,7 +109,36 @@ describe('t.settings.projectName (F-0331 crit. 10)', () => {
     for (const k of Object.keys(lp)) expect(lp[k], k).not.toBe(le[k])
     expect(pt.projectName.title.toLowerCase()).toContain('projeto')
     expect(en.projectName.title.toLowerCase()).toContain('project')
-    expect(pt.projectName.title).not.toBe(pt.text['Channel name'])
-    expect(en.projectName.title).not.toBe('Channel name')
+    expect(pt.projectName.title).not.toBe(pt.text['Your name in the channel'])
+    expect(en.projectName.title).not.toBe('Your name in the channel')
+  })
+})
+
+// F-0333 crit. 1 e 2: o rótulo pt-BR do channel.human_name marca a pessoa, e a
+// ajuda diz, nesta ordem, que é você quem envia, em todos os projetos, que não
+// é o nome do projeto (que fica no campo Nome do projeto) e o que vale vazio.
+describe("t.settings.text de channel.human_name (F-0333)", () => {
+  const en =
+    "The name that signs the messages you send from the UI on the project's permanent channel. It applies to every project on this machine. It is not the project's name — that is the Project name field at the top of this screen. Empty uses your OS user name."
+  const pt = () => {
+    localStorage.setItem('cerne-lang', 'pt-BR')
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.settings.text
+  }
+
+  it('título "Seu nome no canal"', () => {
+    expect(pt()['Your name in the channel']).toBe('Seu nome no canal')
+  })
+
+  it('descrição com os trechos do critério 2, em ordem', () => {
+    const d = (pt()[en] ?? '').toLowerCase()
+    // Cada trecho é procurado depois do fim do anterior: "nome do projeto" é o
+    // campo citado, não o pedaço de "não é o nome do projeto".
+    let from = 0
+    for (const part of ['você envia', 'todos os projetos', 'não é o nome do projeto', 'nome do projeto', 'usuário do sistema']) {
+      const i = d.indexOf(part, from)
+      expect(i, part).toBeGreaterThanOrEqual(from)
+      from = i + part.length
+    }
   })
 })

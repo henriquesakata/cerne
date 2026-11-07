@@ -1141,6 +1141,8 @@ export type ResolvedSetting = {
   origin: SettingScope | 'default'
   stored?: Partial<Record<SettingScope, unknown>>
   invalid?: SettingProblem[]
+  // O nome usado quando o valor é vazio (F-0333): só o GET /settings preenche.
+  fallback?: string
 }
 
 export type SettingsView = {

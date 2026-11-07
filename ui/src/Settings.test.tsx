@@ -52,12 +52,12 @@ function fixture(over: Partial<SettingsView> = {}): SettingsView {
     settings: [
       key({
         id: 'channel.human_name',
-        title: 'Channel name',
+        title: 'Your name in the channel',
         type: 'string',
         default: '',
         scopes: ['host'],
         description:
-          "Your name on the project's permanent channel, on messages sent from the UI. Empty uses your OS user name.",
+          "The name that signs the messages you send from the UI on the project's permanent channel. It applies to every project on this machine. It is not the project's name — that is the Project name field at the top of this screen. Empty uses your OS user name.",
         value: '',
       }),
       key({
@@ -163,7 +163,7 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
     // Só a descrição do canal tem "usuário": sem acento nem caixa, acha mesmo assim.
     fireEvent.change(search, { target: { value: 'USUARIO' } })
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
-    expect(row('Nome no canal')).toBeInTheDocument()
+    expect(row('Seu nome no canal')).toBeInTheDocument()
 
     fireEvent.change(search, { target: { value: 'zzz' } })
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
@@ -172,7 +172,7 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
 
   it('c8: chave de escopo host leva o selo "global do host"; o cabeçalho nomeia o projeto ativo', async () => {
     render(<Settings />)
-    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
+    const channel = await screen.findByRole('listitem', { name: 'Seu nome no canal' })
     const badge = within(channel).getByText('global do host')
     expect(badge).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
     expect(within(row('Grafo')).queryByText('global do host')).toBeNull()
@@ -282,9 +282,9 @@ describe('Settings — edição por escopo (F-0315)', () => {
 
   it('c5: chave só-host grava no host mesmo com o seletor em Projeto, pelo submit', async () => {
     render(<Settings />)
-    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
+    const channel = await screen.findByRole('listitem', { name: 'Seu nome no canal' })
     expect(within(channel).getByText('Grava em Host (global)')).toBeInTheDocument()
-    const input = within(channel).getByRole('textbox', { name: 'Nome no canal' })
+    const input = within(channel).getByRole('textbox', { name: 'Seu nome no canal' })
     fireEvent.change(input, { target: { value: 'Ana' } })
     fireEvent.click(within(channel).getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('channel.human_name', 'host', 'Ana'))
@@ -485,27 +485,43 @@ describe('Settings — texto vazio é redefinir (F-0315, crítica C7)', () => {
     fetchSettings.mockResolvedValue(ana())
     unsetSetting.mockResolvedValue(fixture())
     render(<Settings />)
-    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
-    const input = within(channel).getByRole('textbox', { name: 'Nome no canal' })
+    const channel = await screen.findByRole('listitem', { name: 'Seu nome no canal' })
+    const input = within(channel).getByRole('textbox', { name: 'Seu nome no canal' })
     expect(input).toHaveValue('Ana')
     fireEvent.change(input, { target: { value: '   ' } })
     fireEvent.click(within(channel).getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('channel.human_name', 'host'))
     expect(putSetting).not.toHaveBeenCalled()
-    await waitFor(() => expect(within(row('Nome no canal')).getByText('Efetivo: (vazio) (padrão)')).toBeInTheDocument())
-    expect(within(row('Nome no canal')).getByRole('textbox')).toHaveValue('')
+    await waitFor(() => expect(within(row('Seu nome no canal')).getByText('Efetivo: (vazio) (padrão)')).toBeInTheDocument())
+    expect(within(row('Seu nome no canal')).getByRole('textbox')).toHaveValue('')
   })
 
   it('o valor sai aparado, o campo limita 64 caracteres e mostra o valor gravado depois de salvar', async () => {
     fetchSettings.mockResolvedValue(ana())
     putSetting.mockResolvedValue(ana())
     render(<Settings />)
-    const input = within(await screen.findByRole('listitem', { name: 'Nome no canal' })).getByRole('textbox')
+    const input = within(await screen.findByRole('listitem', { name: 'Seu nome no canal' })).getByRole('textbox')
     expect(input).toHaveAttribute('maxLength', '64')
     fireEvent.change(input, { target: { value: '  Ana  ' } })
-    fireEvent.click(within(row('Nome no canal')).getByRole('button', { name: 'Salvar' }))
+    fireEvent.click(within(row('Seu nome no canal')).getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('channel.human_name', 'host', 'Ana'))
-    await waitFor(() => expect(within(row('Nome no canal')).getByRole('textbox')).toHaveValue('Ana'))
+    await waitFor(() => expect(within(row('Seu nome no canal')).getByRole('textbox')).toHaveValue('Ana'))
+  })
+})
+
+describe('Settings — o nome que o canal usa quando vazio (F-0333 crit. 3)', () => {
+  it('com fallback do servidor e valor vazio, o campo mostra o fallback como placeholder, sem valor', async () => {
+    fetchSettings.mockResolvedValue(withKey('channel.human_name', { fallback: 'ana' }))
+    render(<Settings />)
+    const input = within(await screen.findByRole('listitem', { name: 'Seu nome no canal' })).getByRole('textbox')
+    expect(input).toHaveAttribute('placeholder', 'ana')
+    expect(input).toHaveValue('')
+  })
+
+  it('sem fallback, o campo não tem placeholder', async () => {
+    render(<Settings />)
+    const input = within(await screen.findByRole('listitem', { name: 'Seu nome no canal' })).getByRole('textbox')
+    expect(input).not.toHaveAttribute('placeholder')
   })
 })
 
@@ -607,7 +623,7 @@ describe('Settings — a linha diz o escopo em que age (F-0315, críticas C10 e 
   it('chave só-host com Projeto selecionado: o redefinir nomeia Host (global) e o arquivo é o do host', async () => {
     fetchSettings.mockResolvedValue(withKey('channel.human_name', { value: 'Ana', origin: 'host', stored: { host: 'Ana' } }))
     render(<Settings />)
-    const channel = await screen.findByRole('listitem', { name: 'Nome no canal' })
+    const channel = await screen.findByRole('listitem', { name: 'Seu nome no canal' })
     expect(within(scopeGroup()).getByRole('button', { name: 'Projeto' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(channel).queryByRole('button', { name: 'Redefinir neste escopo' })).toBeNull()
     expect(within(channel).getByRole('button', { name: 'Redefinir em Host (global)' })).toBeInTheDocument()

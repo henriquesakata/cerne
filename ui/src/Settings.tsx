@@ -442,6 +442,7 @@ function SettingRow({
               // Setting when a string key needs another one.
               maxLength={64}
               defaultValue={String(current)}
+              placeholder={s.fallback}
               aria-labelledby={titleId}
               aria-describedby={descId}
               aria-disabled={lock}
