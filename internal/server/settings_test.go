@@ -416,38 +416,39 @@ func TestSettingsPutStringValue(t *testing.T) {
 	}
 }
 
-// TestSettingsChannelFallback pins F-0333 criterion 3: with channel.human_name
-// empty, GET carries the name the channel would sign with as its fallback,
-// from app.ChannelHumanName; with a stored value the key is absent.
+// TestSettingsChannelFallback pins F-0333 criterion 3 (and critic C4/C11):
+// every /settings answer — GET, PUT and DELETE — carries for channel.human_name
+// the name an empty value signs with, whatever is stored: empty, a name, or
+// only spaces (hand-edited), and it is the name the channel then uses.
 func TestSettingsChannelFallback(t *testing.T) {
-	h, projDir, _ := settingsBackend(t, "")
+	h, projDir, hostDir := settingsBackend(t, "")
 	t.Setenv("USER", "ana")
-	channel := func() map[string]any {
+	channel := func(method, target, body string) project.ResolvedSetting {
 		t.Helper()
-		var got struct {
-			Settings []map[string]any `json:"settings"`
+		var view project.SettingsView
+		if rec := doJSON(t, h, method, target, body, &view); rec.Code != http.StatusOK {
+			t.Fatalf("%s %s: status %d: %s", method, target, rec.Code, rec.Body.String())
 		}
-		if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &got); rec.Code != http.StatusOK {
-			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-		}
-		for _, s := range got.Settings {
-			if s["id"] == "channel.human_name" {
-				return s
-			}
-		}
-		t.Fatal("no channel.human_name served")
-		return nil
+		return resolvedByID(view)["channel.human_name"]
 	}
-	if got := channel()["fallback"]; got != "ana" || got != app.ChannelHumanName(projDir) {
-		t.Errorf("empty value: fallback = %v, want %q (app.ChannelHumanName)", got, app.ChannelHumanName(projDir))
+	const key = "/api/settings/channel.human_name"
+	if s := channel(http.MethodGet, "/api/settings", ""); s.Fallback != "ana" || s.Fallback != app.ChannelHumanName(projDir) {
+		t.Errorf("empty value: fallback = %q, want ana, the name the channel signs with (%q)", s.Fallback, app.ChannelHumanName(projDir))
 	}
-	var view project.SettingsView
-	if rec := doJSON(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":"Bia"}`, &view); rec.Code != http.StatusOK {
-		t.Fatalf("PUT status %d: %s", rec.Code, rec.Body.String())
+	if s := channel(http.MethodPut, key, `{"scope":"host","value":"Bia"}`); s.Value != "Bia" || s.Fallback != "ana" {
+		t.Errorf("PUT Bia answers value %v, fallback %q; want Bia and ana", s.Value, s.Fallback)
 	}
-	s := channel()
-	if _, ok := s["fallback"]; ok || s["value"] != "Bia" {
-		t.Errorf("stored value: %v, want value Bia and no fallback key", s)
+	if s := channel(http.MethodGet, "/api/settings", ""); s.Value != "Bia" || s.Fallback != "ana" {
+		t.Errorf("stored Bia: value %v, fallback %q; want Bia and ana", s.Value, s.Fallback)
+	}
+	if s := channel(http.MethodDelete, key+"?scope=host", ""); s.Value != "" || s.Fallback != "ana" {
+		t.Errorf("DELETE answers value %v, fallback %q; want empty and ana", s.Value, s.Fallback)
+	}
+	if err := os.WriteFile(filepath.Join(hostDir, "settings.toml"), []byte("[channel]\nhuman_name = \"   \"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := channel(http.MethodGet, "/api/settings", ""); s.Value != "   " || s.Fallback != "ana" || app.ChannelHumanName(projDir) != "ana" {
+		t.Errorf("only spaces: value %q, fallback %q, channel %q; want the spaces, ana and ana", s.Value, s.Fallback, app.ChannelHumanName(projDir))
 	}
 }
 

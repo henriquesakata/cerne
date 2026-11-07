@@ -1141,7 +1141,8 @@ export type ResolvedSetting = {
   origin: SettingScope | 'default'
   stored?: Partial<Record<SettingScope, unknown>>
   invalid?: SettingProblem[]
-  // O nome usado quando o valor é vazio (F-0333): só o GET /settings preenche.
+  // Name used when the value is empty (F-0333); every /settings response
+  // carries it for channel.human_name, ResolveSettings never does.
   fallback?: string
 }
 

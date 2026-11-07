@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -59,14 +58,15 @@ func projectNameStatus(err error) int {
 // handleSettingsGet serves the settings registry resolved for projDir
 // (F-0314): every key's declaration, effective value and winning scope, plus
 // the problems the resolution skipped. Always 200: a bad file is data the
-// settings screen shows so the user can fix it. An empty channel.human_name
-// carries the name the channel signs with instead (F-0333), from the one
-// function the channel itself reads.
+// settings screen shows so the user can fix it. channel.human_name always
+// carries the name an empty value signs with (F-0333), from the function the
+// channel itself falls back to, so the field can say it even while a name is
+// stored.
 func handleSettingsGet(w http.ResponseWriter, projDir string) {
 	view := project.ResolveSettings(projDir)
 	for i, s := range view.Settings {
-		if name, _ := s.Value.(string); s.ID == "channel.human_name" && strings.TrimSpace(name) == "" {
-			view.Settings[i].Fallback = app.ChannelHumanName(projDir)
+		if s.ID == "channel.human_name" {
+			view.Settings[i].Fallback = app.ChannelFallbackName()
 		}
 	}
 	writeJSON(w, http.StatusOK, view)

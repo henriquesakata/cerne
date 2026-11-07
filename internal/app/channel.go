@@ -750,13 +750,20 @@ func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string,
 
 // ChannelHumanName is the human's nick on the channel (criterion 22): the
 // channel.human_name setting (host scope — it is the person's name, not the
-// project's), else the OS user, as for a work's actor, else "human".
+// project's), else ChannelFallbackName.
 func ChannelHumanName(projDir string) string {
 	for _, s := range project.ResolveSettings(projDir).Settings {
 		if name, _ := s.Value.(string); s.ID == "channel.human_name" && strings.TrimSpace(name) != "" {
 			return name
 		}
 	}
+	return ChannelFallbackName()
+}
+
+// ChannelFallbackName is the nick an empty channel.human_name signs with: the
+// OS user, as for a work's actor, else "human". The settings screen shows it
+// (F-0333), so the field says which name empty means.
+func ChannelFallbackName() string {
 	for _, env := range []string{"USER", "USERNAME"} {
 		if u := os.Getenv(env); u != "" {
 			return u

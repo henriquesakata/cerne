@@ -65,7 +65,7 @@ type ResolvedSetting struct {
 	Stored  map[string]any   `json:"stored,omitempty"`
 	Invalid []SettingProblem `json:"invalid,omitempty"`
 	// Fallback is the value used when this one is empty (F-0333). Only the
-	// edge serving the settings screen fills it; ResolveSettings never does.
+	// /settings endpoint fills it, on every answer; ResolveSettings never does.
 	Fallback string `json:"fallback,omitempty"`
 }
 
