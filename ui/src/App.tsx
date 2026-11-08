@@ -26,7 +26,7 @@ import Settings from './Settings'
 import Pendings from './Pendings'
 import IdeasPanel from './IdeasPanel'
 import { fetchState } from './api'
-import { useLiveLoad } from './liveLoad'
+import { LoadPending, useLiveLoad } from './liveLoad'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
@@ -135,6 +135,8 @@ function Routed({ hash }: { hash: string }) {
 
 // IdeasPage (F-0334 crit. 5): a segunda porta do painel de ideias da F-0312,
 // com os módulos do projeto para o Promover; não há candidata aqui a recarregar.
+// O painel só monta com os módulos na mão: sem eles, o Promover num projeto de
+// 2+ módulos sairia sem --module e seria recusado (crítica C16).
 function IdeasPage() {
   const { t } = useT()
   const load = useLiveLoad(fetchState)
@@ -142,7 +144,11 @@ function IdeasPage() {
     <main className="page">
       {/* Every screen has an h1; the panel already titles itself (its h2). */}
       <h1 className="sr-only">{t.nav.ideas}</h1>
-      <IdeasPanel modules={load.data?.project.modules ?? []} onPromoted={() => {}} />
+      {load.data === null ? (
+        <LoadPending load={load} message={t.kanban.loadError} />
+      ) : (
+        <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => {}} />
+      )}
     </main>
   )
 }

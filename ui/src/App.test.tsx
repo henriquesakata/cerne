@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
-import { fetchPendings, search } from './api'
+import { fetchPendings, fetchState, search } from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
@@ -156,5 +156,28 @@ describe('App — pendências e ideias (F-0334)', () => {
     // Crítica C14: como toda tela, um h1 — oculto, porque o painel já titula.
     const h1 = screen.getByRole('heading', { level: 1, name: 'Ideias' })
     expect(h1).toHaveClass('sr-only')
+  })
+})
+
+// Crítica C16: sem os módulos o Promover sairia sem --module num projeto que o
+// exige; a tela de ideias espera por eles e, se a busca falha, mostra o erro.
+describe('App — #/ideas espera os módulos (F-0334, crítica C16)', () => {
+  afterEach(() => vi.mocked(fetchState).mockImplementation(async () => state))
+
+  it('com a busca do estado falhando, mostra o erro e não monta o painel', async () => {
+    vi.mocked(fetchState).mockRejectedValue(new Error('boom'))
+    window.location.hash = '#/ideas'
+    render(<App />)
+    expect(await screen.findByText('Erro ao carregar o estado: boom')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
+  })
+
+  it('enquanto os módulos não chegam, o painel não aparece', async () => {
+    vi.mocked(fetchState).mockImplementation(() => new Promise(() => {}))
+    window.location.hash = '#/ideas'
+    render(<App />)
+    expect(await screen.findByText('Carregando…')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
   })
 })
