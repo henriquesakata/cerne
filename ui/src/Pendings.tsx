@@ -63,7 +63,8 @@ export default function Pendings({ hash }: { hash: string }) {
   const ofState = (s: string) => (load.data ?? []).filter((p) => s === 'all' || p.state === s)
   const shown = ofState(f.state)
   const go = (part: Partial<Filter>) => {
-    window.location.hash = filterHash({ ...f, ...part })
+    const next = filterHash({ ...f, ...part })
+    if (next !== canonical) window.location.hash = next // the filter in force adds no history entry (C19)
   }
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()

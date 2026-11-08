@@ -183,6 +183,19 @@ describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
     expect(screen.queryByText(/bogus/)).toBeNull()
   })
 
+  // Crítica C19: repetir o filtro que já vale não navega — o Voltar não precisa
+  // de cliques a mais.
+  it('clicar no estado já ativo, ou filtrar com os mesmos valores, não navega', async () => {
+    window.location.hash = '#/pendings'
+    render(<Pendings hash={window.location.hash} />)
+    await screen.findByText('Documentar a rota nova')
+    const before = window.history.length
+    fireEvent.click(stateButton('Abertas'))
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar' }))
+    expect(window.location.hash).toBe('#/pendings')
+    expect(window.history.length).toBe(before)
+  })
+
   it('a seleção vazia diz qual filtro está ativo', async () => {
     api.fetchPendings.mockResolvedValue([])
     render(<Pendings hash="#/pendings?state=dropped&from=F-0331" />)
