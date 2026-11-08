@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 
 	"gitlab.com/rockt/cerne/internal/app"
@@ -104,5 +105,38 @@ func TestPendingListStateValidation(t *testing.T) {
 		if !errors.Is(err, app.ErrPendingStateInvalid) || err.Error() != want {
 			t.Fatalf("--state %q in %s: err = %v, want %q (ErrPendingStateInvalid)\n%s", tc.state, tc.dir, err, want, out)
 		}
+	}
+}
+
+// F-0334 (critic C4): with --state all the text lines carry each pending's
+// state, before the title; a single-state list keeps its lines unchanged, and
+// an empty all list says "No pendings.".
+func TestPendingListAllShowsState(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newOriginFeature(t, projDir, "Origem demo")
+	pendingNew(t, projDir, "Cobrir links quebrados", "--from", "F-0001")
+	pendingNew(t, projDir, "Documentar rota nova", "--from", "F-0001")
+	if out, err := execCerne(t, "pending", "resolve", "P-0002", "--dir", projDir); err != nil {
+		t.Fatalf("resolve: %v\n%s", err, out)
+	}
+	list := func(args ...string) string {
+		t.Helper()
+		out, err := execCerne(t, append([]string{"pending", "list", "--dir", projDir}, args...)...)
+		if err != nil {
+			t.Fatalf("pending list %v: %v\n%s", args, err, out)
+		}
+		return out
+	}
+	all := list("--state", "all")
+	for _, want := range []string{"P-0001  0d  F-0001  open  Cobrir links quebrados\n", "P-0002  0d  F-0001  resolved  Documentar rota nova\n"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("--state all lacks %q:\n%s", want, all)
+		}
+	}
+	if open := list(); !strings.Contains(open, "P-0001  0d  F-0001  Cobrir links quebrados\n") {
+		t.Fatalf("the open list changed its lines:\n%s", open)
+	}
+	if empty := list("--state", "all", "--from", "F-0099"); empty != "No pendings.\n" {
+		t.Fatalf("empty all list = %q, want \"No pendings.\\n\"", empty)
 	}
 }

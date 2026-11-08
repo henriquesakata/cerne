@@ -81,7 +81,7 @@ func newPendingListCmd(dir *string) *cobra.Command {
 			return runPendingList(cmd, *dir, state, from, component, module, asJSON)
 		},
 	}
-	cmd.Flags().StringVar(&state, "state", string(domain.PendingOpen), "open, resolved, dropped, promoted or all")
+	cmd.Flags().StringVar(&state, "state", string(domain.PendingOpen), "open, resolved, dropped, promoted or all (all adds each line's state before the title)")
 	cmd.Flags().StringVar(&from, "from", "", "only pendings of this origin id")
 	cmd.Flags().StringVar(&component, "component", "", "only pendings tagged with this component")
 	cmd.Flags().StringVar(&module, "module", "", "only pendings whose origin belongs to this module")
@@ -111,7 +111,11 @@ func runPendingList(cmd *cobra.Command, dir, state, from, component, module stri
 	}
 	now := time.Now().UTC()
 	for _, p := range shown {
-		line := fmt.Sprintf("%s  %s  %s  %s", p.ID, pendingAge(now, p), p.From, p.Title)
+		title := p.Title
+		if state == "all" { // mixed states: each line says its own
+			title = string(p.State) + "  " + title
+		}
+		line := fmt.Sprintf("%s  %s  %s  %s", p.ID, pendingAge(now, p), p.From, title)
 		if p.PromotedTo != "" {
 			line += "  → " + p.PromotedTo
 		}
