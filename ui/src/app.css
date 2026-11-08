@@ -2065,6 +2065,8 @@ h2 {
 .pending-detail .harness-fix pre { padding-right: 5rem; overflow-x: auto; }
 .pending-detail h2 { font-size: 0.9rem; margin: 0.75rem 0 0.25rem; } /* the h3 it replaced, sized as one */
 .pendings-form { flex-wrap: wrap; }
+/* #/ideas promotion notice: a live region kept in the DOM, flat while empty */
+.ideas-promoted:empty { margin: 0; }
 .pendings-form label { display: flex; flex: 1 1 12rem; gap: 0.4rem; align-items: center; min-width: 0; }
 
 .chip-active,

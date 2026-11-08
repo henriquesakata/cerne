@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
-import { fetchPendings, fetchState, search } from './api'
+import { fetchIdeas, fetchPendings, fetchState, promoteIdea, search } from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
@@ -23,6 +23,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
   fetchPendings: vi.fn(async () => []),
   fetchIdeas: vi.fn(async () => []),
+  promoteIdea: vi.fn(),
 }))
 
 // Os providers viram passthrough: o alvo aqui é o roteador e a montagem
@@ -179,5 +180,24 @@ describe('App — #/ideas espera os módulos (F-0334, crítica C16)', () => {
     render(<App />)
     expect(await screen.findByText('Carregando…')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
+  })
+})
+
+// Crítica C5: no Backlog a candidata nova aparece ao lado do painel; nesta
+// porta nada mudava. O wrapper anuncia a promoção e leva ao Backlog.
+describe('App — #/ideas anuncia a promoção (F-0334, crítica C5)', () => {
+  afterEach(() => vi.mocked(fetchIdeas).mockImplementation(async () => []))
+
+  it('promover mostra o aviso com o link para o Backlog', async () => {
+    const idea = { id: 'I-0001', text: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
+    vi.mocked(fetchIdeas).mockImplementation(async () => [idea])
+    vi.mocked(promoteIdea).mockResolvedValue({ idea: { ...idea, state: 'promoted', promoted_to: 'F-0009' }, feature: {} as never })
+    window.location.hash = '#/ideas'
+    render(<App />)
+    const status = await screen.findByRole('status')
+    expect(status).toBeEmptyDOMElement()
+    fireEvent.click(await screen.findByRole('button', { name: 'Promover I-0001' }))
+    await waitFor(() => expect(status).toHaveTextContent('Ideia promovida — a candidata está no Backlog.'))
+    expect(within(status).getByRole('link', { name: 'Abrir o Backlog' })).toHaveAttribute('href', '#/backlog')
   })
 })

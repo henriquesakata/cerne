@@ -313,6 +313,8 @@ const ptBR = {
   },
   ideas: {
     title: 'Ideias',
+    promotedNotice: 'Ideia promovida — a candidata está no Backlog.',
+    openBacklog: 'Abrir o Backlog',
     intro: 'Matéria-prima ainda não avaliada — fica fora das candidatas e do funil.',
     newIdea: 'Nova ideia',
     placeholder: 'Anote uma ideia e tecle Enter…',
@@ -1336,6 +1338,8 @@ const en: Messages = {
   },
   ideas: {
     title: 'Ideas',
+    promotedNotice: 'Idea promoted — the candidate is in the Backlog.',
+    openBacklog: 'Open the Backlog',
     intro: 'Raw material nobody has evaluated yet — kept out of the candidates and the funnel.',
     newIdea: 'New idea',
     placeholder: 'Jot down an idea and press Enter…',

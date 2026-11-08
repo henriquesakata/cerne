@@ -134,12 +134,15 @@ function Routed({ hash }: { hash: string }) {
 }
 
 // IdeasPage (F-0334 crit. 5): a segunda porta do painel de ideias da F-0312,
-// com os módulos do projeto para o Promover; não há candidata aqui a recarregar.
+// com os módulos do projeto para o Promover.
 // O painel só monta com os módulos na mão: sem eles, o Promover num projeto de
 // 2+ módulos sairia sem --module e seria recusado (crítica C16).
 function IdeasPage() {
   const { t } = useT()
   const load = useLiveLoad(fetchState)
+  // Here no candidate list sits beside the panel, so the promotion is said in a
+  // live region, with the way to the new candidate (crítica C5).
+  const [promoted, setPromoted] = useState(false)
   return (
     <main className="page">
       {/* Every screen has an h1; the panel already titles itself (its h2). */}
@@ -147,7 +150,16 @@ function IdeasPage() {
       {load.data === null ? (
         <LoadPending load={load} message={t.kanban.loadError} />
       ) : (
-        <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => {}} />
+        <>
+          <p className="ideas-promoted" role="status">
+            {promoted && (
+              <>
+                {t.ideas.promotedNotice} <a href="#/backlog">{t.ideas.openBacklog}</a>
+              </>
+            )}
+          </p>
+          <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => setPromoted(true)} />
+        </>
       )}
     </main>
   )
