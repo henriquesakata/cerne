@@ -60,6 +60,7 @@ const p6: Pending = {
 const lastCall = () => api.fetchPendings.mock.calls.at(-1)?.[0]
 const toggle = (id: string) => screen.getByRole('button', { name: new RegExp(`^${id}`) })
 const stateGroup = () => screen.getByRole('group', { name: 'Estado' })
+const stateButton = (label: string) => within(stateGroup()).getByRole('button', { name: new RegExp(`^${label}`) })
 
 beforeEach(() => {
   cleanup()
@@ -75,7 +76,7 @@ describe('Pendings — lista (F-0334 crit. 1)', () => {
   it('busca as abertas e mostra id, título, idade, origem como link e componentes, na ordem recebida', async () => {
     render(<Pendings hash="#/pendings" />)
     await screen.findByText('Cobrir o caso de links quebrados')
-    expect(api.fetchPendings).toHaveBeenCalledWith({ state: 'open', from: '', component: '' })
+    expect(api.fetchPendings).toHaveBeenCalledWith({ state: 'all', from: '', component: '' })
     const ids = screen.getAllByRole('listitem').map((li) => within(li).getByText(/^P-\d{4}$/).textContent)
     expect(ids).toEqual(['P-0002', 'P-0001'])
     const row = screen.getAllByRole('listitem')[0]
@@ -87,15 +88,35 @@ describe('Pendings — lista (F-0334 crit. 1)', () => {
 })
 
 describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
-  it('trocar o estado leva o filtro ao hash e refaz a busca', async () => {
+  it('trocar o estado leva o filtro ao hash e mostra só as daquele estado', async () => {
+    api.fetchPendings.mockResolvedValue([p2, p1, p5, p6])
     const { rerender } = render(<Pendings hash="#/pendings" />)
     await screen.findByText('Documentar a rota nova')
-    fireEvent.click(within(stateGroup()).getByRole('button', { name: 'Resolvidas' }))
-    expect(window.location.hash).toBe('#/pendings?state=resolved')
+    expect(screen.queryByText('Trocar o cache')).toBeNull()
+    fireEvent.click(stateButton('Descartadas'))
+    expect(window.location.hash).toBe('#/pendings?state=dropped')
     rerender(<Pendings hash={window.location.hash} />)
-    await waitFor(() => expect(lastCall()).toEqual({ state: 'resolved', from: '', component: '' }))
-    expect(within(stateGroup()).getByRole('button', { name: 'Resolvidas' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(stateGroup()).getByRole('button', { name: 'Abertas' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Trocar o cache')).toBeInTheDocument()
+    expect(screen.queryByText('Documentar a rota nova')).toBeNull()
+    expect(screen.queryByText('Paginar a lista')).toBeNull()
+    expect(stateButton('Descartadas')).toHaveAttribute('aria-pressed', 'true')
+    expect(stateButton('Abertas')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  // Crítica C12: como a lista do GitHub, cada estado diz quantas tem, sobre os
+  // mesmos filtros de origem e componente.
+  it('cada botão de estado leva a contagem daquele estado', async () => {
+    api.fetchPendings.mockResolvedValue([p2, p1, p5, p6])
+    render(<Pendings hash="#/pendings?from=F-0330" />)
+    await screen.findByText('Documentar a rota nova')
+    expect(lastCall()).toEqual({ state: 'all', from: 'F-0330', component: '' })
+    expect(within(stateGroup()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Abertas 2',
+      'Resolvidas 0',
+      'Descartadas 1',
+      'Promovidas 1',
+      'Todas 4',
+    ])
   })
 
   it('um link direto chega já filtrado', async () => {
@@ -104,7 +125,7 @@ describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
     expect(api.fetchPendings).toHaveBeenCalledWith({ state: 'all', from: 'F-0331', component: 'lint' })
     expect(screen.getByLabelText('Origem')).toHaveValue('F-0331')
     expect(screen.getByLabelText('Componente')).toHaveValue('lint')
-    expect(within(stateGroup()).getByRole('button', { name: 'Todas' })).toHaveAttribute('aria-pressed', 'true')
+    expect(stateButton('Todas')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('o form de origem, o chip de componente e o limpar filtros mudam o hash', async () => {
@@ -115,11 +136,11 @@ describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filtrar' }))
     expect(window.location.hash).toBe('#/pendings?state=open&from=F-0331')
     rerender(<Pendings hash={window.location.hash} />)
-    await waitFor(() => expect(lastCall()).toEqual({ state: 'open', from: 'F-0331', component: '' }))
+    await waitFor(() => expect(lastCall()).toEqual({ state: 'all', from: 'F-0331', component: '' }))
     fireEvent.click(within(screen.getAllByRole('listitem')[0]).getByRole('button', { name: 'lint' }))
     expect(window.location.hash).toBe('#/pendings?state=open&from=F-0331&component=lint')
     rerender(<Pendings hash={window.location.hash} />)
-    await waitFor(() => expect(lastCall()).toEqual({ state: 'open', from: 'F-0331', component: 'lint' }))
+    await waitFor(() => expect(lastCall()).toEqual({ state: 'all', from: 'F-0331', component: 'lint' }))
     expect(screen.getByRole('link', { name: 'Limpar filtros' })).toHaveAttribute('href', '#/pendings')
   })
 
@@ -207,11 +228,11 @@ describe('Pendings — inglês (F-0334 crit. 8)', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Pendings')
     const group = screen.getByRole('group', { name: 'State' })
     expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Open',
-      'Resolved',
-      'Dropped',
-      'Promoted',
-      'All',
+      'Open 2',
+      'Resolved 0',
+      'Dropped 0',
+      'Promoted 0',
+      'All 2',
     ])
   })
 })

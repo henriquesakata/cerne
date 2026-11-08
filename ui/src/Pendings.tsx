@@ -9,6 +9,9 @@ import { useT } from './i18n'
 // Tela de pendências (F-0334): a mesma seleção do `cerne pending list`, só
 // leitura. O filtro vive no hash (#/pendings?state=…&from=…&component=…), sem
 // estado local: um link abre já filtrado e o Voltar do browser desfaz o filtro.
+// A busca é uma só, com state=all e os filtros de origem e componente: o estado
+// escolhido recorta essa lista aqui, com a igualdade de estado do
+// app.ListPendings, e cada botão de estado conta a sua parte (crítica C12).
 
 type Filter = { state: string; from: string; component: string }
 
@@ -37,7 +40,9 @@ const fHref = (id: string) => `#/f/${encodeURIComponent(id)}`
 export default function Pendings({ hash }: { hash: string }) {
   const { t } = useT()
   const f = parseFilter(hash)
-  const load = useLiveLoad(() => fetchPendings(f), [f.state, f.from, f.component])
+  const load = useLiveLoad(() => fetchPendings({ state: 'all', from: f.from, component: f.component }), [f.from, f.component])
+  const ofState = (s: string) => (load.data ?? []).filter((p) => s === 'all' || p.state === s)
+  const shown = ofState(f.state)
   const go = (part: Partial<Filter>) => {
     window.location.hash = filterHash({ ...f, ...part })
   }
@@ -64,6 +69,7 @@ export default function Pendings({ hash }: { hash: string }) {
             onClick={() => go({ state: s })}
           >
             {t.pendings.states[s]}
+            {load.data !== null && <> <span className="column-count">{ofState(s).length}</span></>}
           </button>
         ))}
       </div>
@@ -79,13 +85,13 @@ export default function Pendings({ hash }: { hash: string }) {
       </form>
       {load.data === null ? (
         <LoadPending load={load} message={t.pendings.loadError} />
-      ) : load.data.length === 0 ? (
+      ) : shown.length === 0 ? (
         <p className="muted">{t.pendings.empty(stateLabel, f.from || undefined, f.component || undefined)}</p>
       ) : (
         <>
-          <p className="counts">{t.pendings.count(load.data.length)}</p>
+          <p className="counts">{t.pendings.count(shown.length)}</p>
           <ul className="entity-list">
-            {load.data.map((p) => (
+            {shown.map((p) => (
               <PendingRow key={p.id} p={p} component={f.component} onComponent={(c) => go({ component: c })} />
             ))}
           </ul>

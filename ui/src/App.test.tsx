@@ -137,7 +137,7 @@ describe('App — pendências e ideias (F-0334)', () => {
     window.location.hash = '#/pendings?from=F-0331'
     render(<App />)
     expect(await screen.findByRole('heading', { level: 1, name: 'Pendências' })).toBeInTheDocument()
-    await waitFor(() => expect(fetchPendings).toHaveBeenCalledWith({ state: 'open', from: 'F-0331', component: '' }))
+    await waitFor(() => expect(fetchPendings).toHaveBeenCalledWith({ state: 'all', from: 'F-0331', component: '' }))
   })
 
   it.each(['#/pendingsfoo', '#/ideas?x=1'])('%s não monta pendências nem ideias (a mesma regra da nav)', async (hash) => {
