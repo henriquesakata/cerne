@@ -81,7 +81,7 @@ describe('Nav agrupada (F-0332)', () => {
   })
 
   it.each([
-    ['Trabalho', ['Kanban', 'Backlog', 'Gestão', 'War Room', 'Atividade']],
+    ['Trabalho', ['Kanban', 'Backlog', 'Pendências', 'Ideias', 'Gestão', 'War Room', 'Atividade']],
     ['Conhecimento', ['Decisões', 'Referências', 'Runbooks', 'Notas', 'Convenções']],
     ['Explorar', ['Wiki', 'Perguntar', 'Busca', 'Grafo', 'Mapa mental']],
     ['Saúde', ['Lint', 'Harness', 'Histórico', 'Economia']],
@@ -179,12 +179,15 @@ describe('Nav agrupada (F-0332)', () => {
     expect(screen.getByRole('button', { name: /Trabalho/ })).toHaveFocus()
   })
 
-  // Crítica F-0332 #6: todas as 19 telas, não uma amostra — uma rota sem prefixo
+  // Crítica F-0332 #6: todas as 21 telas, não uma amostra — uma rota sem prefixo
   // em activeHref cairia no Dashboard em silêncio.
   it.each([
     ['#/kanban', 'Trabalho', 'Kanban'],
     ['#/f/F-0001', 'Trabalho', 'Kanban'],
     ['#/backlog', 'Trabalho', 'Backlog'],
+    ['#/pendings', 'Trabalho', 'Pendências'],
+    ['#/pendings?from=F-0331', 'Trabalho', 'Pendências'],
+    ['#/ideas', 'Trabalho', 'Ideias'],
     ['#/manage', 'Trabalho', 'Gestão'],
     ['#/new', 'Trabalho', 'Gestão'],
     ['#/rooms', 'Trabalho', 'War Room'],
@@ -219,6 +222,22 @@ describe('Nav agrupada (F-0332)', () => {
     expect(within(menu).getByText(item)).toHaveClass('active')
     expect(within(menu).getByText(item)).toHaveAttribute('aria-current', 'page')
     expect(within(menu).getAllByRole('menuitem').filter((a) => a.classList.contains('active'))).toHaveLength(1)
+  })
+
+  // F-0334 crit. 1 e 5: as duas filas de trabalho têm entrada própria.
+  it('F-0334: Pendências e Ideias no grupo Trabalho levam às suas telas', () => {
+    render(<Nav hash="#/" />)
+    const menu = openGroup('Trabalho')
+    expect(within(menu).getByRole('menuitem', { name: 'Pendências' })).toHaveAttribute('href', '#/pendings')
+    expect(within(menu).getByRole('menuitem', { name: 'Ideias' })).toHaveAttribute('href', '#/ideas')
+  })
+
+  // F-0334 (crítica C6): a nav marca Pendências e Ideias pela mesma regra
+  // que o App usa para montá-las; o que o App não monta cai no Dashboard.
+  it.each(['#/ideas?x=1', '#/pendingsfoo', '#/ideasfoo'])('F-0334: %s não marca grupo nenhum', (hash) => {
+    const { container } = render(<Nav hash={hash} />)
+    expect(container.querySelector('.nav-group-btn.active')).toBeNull()
+    expect(screen.getByText('Dashboard')).toHaveClass('active')
   })
 
   it('critério 6: o Dashboard ativo não ativa nenhum grupo', () => {

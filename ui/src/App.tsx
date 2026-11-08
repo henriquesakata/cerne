@@ -23,6 +23,10 @@ import Dashboard from './Dashboard'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import Channel from './Channel'
 import Settings from './Settings'
+import Pendings from './Pendings'
+import IdeasPanel from './IdeasPanel'
+import { fetchState } from './api'
+import { LoadPending, useLiveLoad } from './liveLoad'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
@@ -120,9 +124,43 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/manage') return <Manage />
   if (hash === '#/settings') return <Settings />
   if (hash === '#/new') return <NewFeature />
+  if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return <Pendings hash={hash} />
+  if (hash === '#/ideas') return <IdeasPage />
   if (hash === '#/kanban') return <Kanban />
   if (hash === '#/backlog') return <Backlog />
   if (hash === '#/rooms') return <WarRoom />
   // Tela inicial (F-0132): o dashboard responde "como está o projeto?".
   return <Dashboard />
+}
+
+// IdeasPage (F-0334 crit. 5): a segunda porta do painel de ideias da F-0312,
+// com os módulos do projeto para o Promover.
+// O painel só monta com os módulos na mão: sem eles, o Promover num projeto de
+// 2+ módulos sairia sem --module e seria recusado (crítica C16).
+function IdeasPage() {
+  const { t } = useT()
+  const load = useLiveLoad(fetchState)
+  // Here no candidate list sits beside the panel, so the promotion is said in a
+  // live region, with the way to the new candidate (crítica C5).
+  const [promoted, setPromoted] = useState(false)
+  return (
+    <main className="page">
+      {/* Every screen has an h1; the panel already titles itself (its h2). */}
+      <h1 className="sr-only">{t.nav.ideas}</h1>
+      {load.data === null ? (
+        <LoadPending load={load} message={t.kanban.loadError} />
+      ) : (
+        <>
+          <p className="ideas-promoted" role="status">
+            {promoted && (
+              <>
+                {t.ideas.promotedNotice} <a href="#/backlog">{t.ideas.openBacklog}</a>
+              </>
+            )}
+          </p>
+          <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => setPromoted(true)} />
+        </>
+      )}
+    </main>
+  )
 }

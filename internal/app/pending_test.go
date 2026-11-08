@@ -481,3 +481,71 @@ func TestPromotePendingModule(t *testing.T) {
 		t.Fatalf("promote --module web = %+v, %v; want module web", created, err)
 	}
 }
+
+// F-0334 crit. 7: one selection for the CLI and the ui — open by default, all
+// skips only the state, the origin is canonized, the component slugged, the
+// module read from the origin; ascending id order and never a nil slice.
+func TestListPendings(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t, "core", "web")
+	f1, err := CreateFeature(repoDir, projDir, "Origem core", "core", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := CreateFeature(repoDir, projDir, "Origem web", "web", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		title, from string
+		components  []string
+	}{
+		{"Cobrir links quebrados", f1.ID, []string{"Lint"}},
+		{"Documentar rota nova", f2.ID, nil},
+		{"Ajustar cache do browser", f2.ID, nil},
+		{"Remover flag antiga", f1.ID, nil},
+	} {
+		if _, err := CreatePending(repoDir, projDir, c.title, "", c.from, nil, c.components, false); err != nil {
+			t.Fatalf("CreatePending %q: %v", c.title, err)
+		}
+	}
+	if _, err := ResolvePending(repoDir, projDir, "P-0003"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DropPending(repoDir, projDir, "P-0004", "fora de escopo"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		f    PendingFilter
+		want []string
+	}{
+		{PendingFilter{}, []string{"P-0001", "P-0002"}},
+		{PendingFilter{State: "open"}, []string{"P-0001", "P-0002"}},
+		{PendingFilter{State: "resolved"}, []string{"P-0003"}},
+		{PendingFilter{State: "dropped"}, []string{"P-0004"}},
+		{PendingFilter{State: "all"}, []string{"P-0001", "P-0002", "P-0003", "P-0004"}},
+		{PendingFilter{From: " " + strings.ToLower(f2.ID) + " "}, []string{"P-0002"}},
+		{PendingFilter{Component: "Lint"}, []string{"P-0001"}},
+		{PendingFilter{Module: "web"}, []string{"P-0002"}},
+		{PendingFilter{State: "all", From: f1.ID}, []string{"P-0001", "P-0004"}},
+		{PendingFilter{From: "F-0099"}, []string{}},
+	} {
+		got, err := ListPendings(repoDir, tc.f)
+		if err != nil {
+			t.Fatalf("ListPendings(%+v): %v", tc.f, err)
+		}
+		if got == nil {
+			t.Fatalf("ListPendings(%+v) = nil, want a non-nil slice", tc.f)
+		}
+		ids := []string{}
+		for _, p := range got {
+			ids = append(ids, p.ID)
+		}
+		if !slices.Equal(ids, tc.want) {
+			t.Fatalf("ListPendings(%+v) = %v, want %v", tc.f, ids, tc.want)
+		}
+	}
+	_, err = ListPendings(repoDir, PendingFilter{State: "bogus"})
+	if !errors.Is(err, ErrPendingStateInvalid) || !strings.Contains(err.Error(), `"bogus"`) || !strings.Contains(err.Error(), "all") {
+		t.Fatalf("bogus state err = %v, want ErrPendingStateInvalid naming \"bogus\" and all", err)
+	}
+}

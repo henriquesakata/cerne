@@ -180,8 +180,10 @@ function HarnessRow({ item }: { item: HarnessItem }) {
 // FixBlock: o comando de correção em bloco copiável — mesma afordância do
 // bloco cercado da F-0247, sempre visível. Sem clipboard (ou com a escrita
 // recusada) a cópia diz que falhou e seleciona o texto, para o Cmd/Ctrl+C
-// (F-0315, crítica C14); `copyFailed` nomeia o que selecionar.
-export function FixBlock({ command, copyFailed }: { command: string; copyFailed?: string }) {
+// (F-0315, crítica C14); `copyFailed` nomeia o que selecionar. `label` dá a
+// cada botão o nome do seu comando quando há vários na tela (F-0334); depois
+// da cópia o nome vira "Copiado!", para o leitor de tela ouvir o resultado.
+export function FixBlock({ command, copyFailed, label }: { command: string; copyFailed?: string; label?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const pre = useRef<HTMLPreElement>(null)
   const { t } = useT()
@@ -199,7 +201,7 @@ export function FixBlock({ command, copyFailed }: { command: string; copyFailed?
   return (
     <div className="code-block harness-fix">
       <pre ref={pre}>{command}</pre>
-      <button type="button" className="code-copy" aria-label={t.common.copyBlock} onClick={copy}>
+      <button type="button" className="code-copy" aria-label={state === 'copied' ? t.common.copied : (label ?? t.common.copyBlock)} onClick={copy}>
         {state === 'copied' ? t.common.copied : t.common.copy}
       </button>
       {state === 'failed' && (

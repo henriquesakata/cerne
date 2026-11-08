@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
-import { search } from './api'
+import { fetchIdeas, fetchPendings, fetchState, promoteIdea, search } from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
@@ -21,6 +21,9 @@ vi.mock('./api', async (importOriginal) => ({
   fetchProjects: vi.fn(async () => []),
   search: vi.fn(async () => []),
   fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
+  fetchPendings: vi.fn(async () => []),
+  fetchIdeas: vi.fn(async () => []),
+  promoteIdea: vi.fn(),
 }))
 
 // Os providers viram passthrough: o alvo aqui é o roteador e a montagem
@@ -125,5 +128,76 @@ describe('App — deep link para uma aba desligada vira #/ (F-0315, crítica C15
     render(<App />)
     await waitFor(() => expect(window.location.hash).toBe('#/'))
     await waitFor(() => expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('active'))
+  })
+})
+
+// F-0334 crit. 1 e 5: #/pendings aceita filtro no endereço (rota por prefixo)
+// e #/ideas monta o painel de ideias real da F-0312.
+describe('App — pendências e ideias (F-0334)', () => {
+  it('#/pendings?from=… monta a tela de pendências já filtrada', async () => {
+    window.location.hash = '#/pendings?from=F-0331'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pendências' })).toBeInTheDocument()
+    await waitFor(() => expect(fetchPendings).toHaveBeenCalledWith({ state: 'all', from: 'F-0331', component: '' }))
+  })
+
+  it.each(['#/pendingsfoo', '#/ideas?x=1'])('%s não monta pendências nem ideias (a mesma regra da nav)', async (hash) => {
+    window.location.hash = hash
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Pendências' })).toBeNull()
+    expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
+  })
+
+  it('#/ideas monta o painel de ideias', async () => {
+    window.location.hash = '#/ideas'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 2, name: 'Ideias' })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeInTheDocument()
+    // Crítica C14: como toda tela, um h1 — oculto, porque o painel já titula.
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Ideias' })
+    expect(h1).toHaveClass('sr-only')
+  })
+})
+
+// Crítica C16: sem os módulos o Promover sairia sem --module num projeto que o
+// exige; a tela de ideias espera por eles e, se a busca falha, mostra o erro.
+describe('App — #/ideas espera os módulos (F-0334, crítica C16)', () => {
+  afterEach(() => vi.mocked(fetchState).mockImplementation(async () => state))
+
+  it('com a busca do estado falhando, mostra o erro e não monta o painel', async () => {
+    vi.mocked(fetchState).mockRejectedValue(new Error('boom'))
+    window.location.hash = '#/ideas'
+    render(<App />)
+    expect(await screen.findByText('Erro ao carregar o estado: boom')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
+  })
+
+  it('enquanto os módulos não chegam, o painel não aparece', async () => {
+    vi.mocked(fetchState).mockImplementation(() => new Promise(() => {}))
+    window.location.hash = '#/ideas'
+    render(<App />)
+    expect(await screen.findByText('Carregando…')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
+  })
+})
+
+// Crítica C5: no Backlog a candidata nova aparece ao lado do painel; nesta
+// porta nada mudava. O wrapper anuncia a promoção e leva ao Backlog.
+describe('App — #/ideas anuncia a promoção (F-0334, crítica C5)', () => {
+  afterEach(() => vi.mocked(fetchIdeas).mockImplementation(async () => []))
+
+  it('promover mostra o aviso com o link para o Backlog', async () => {
+    const idea = { id: 'I-0001', text: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
+    vi.mocked(fetchIdeas).mockImplementation(async () => [idea])
+    vi.mocked(promoteIdea).mockResolvedValue({ idea: { ...idea, state: 'promoted', promoted_to: 'F-0009' }, feature: {} as never })
+    window.location.hash = '#/ideas'
+    render(<App />)
+    const status = await screen.findByRole('status')
+    expect(status).toBeEmptyDOMElement()
+    fireEvent.click(await screen.findByRole('button', { name: 'Promover I-0001' }))
+    await waitFor(() => expect(status).toHaveTextContent('Ideia promovida — a candidata está no Backlog.'))
+    expect(within(status).getByRole('link', { name: 'Abrir o Backlog' })).toHaveAttribute('href', '#/backlog')
   })
 })

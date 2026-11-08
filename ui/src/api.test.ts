@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ChatRunsError,
+  fetchPendings,
   fetchSettings,
   HTTPError,
   putSetting,
@@ -194,5 +195,22 @@ describe('settings API (F-0315 critérios 5 e 8): escopo do projeto ativo da aba
     const err = await renameProject('Núcleo').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(HTTPError)
     expect((err as HTTPError).status).toBe(409)
+  })
+})
+
+describe('fetchPendings (F-0334)', () => {
+  it('manda só os filtros não vazios ao projeto ativo e devolve .pendings', async () => {
+    setApiProject('p2')
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ pendings: [] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await fetchPendings({ state: 'resolved', from: 'F-0331', component: '' })).toEqual([])
+    expect(fetch).toHaveBeenCalledWith('/api/projects/p2/pendings?state=resolved&from=F-0331')
+  })
+
+  it('um 400 rejeita com a mensagem do servidor', async () => {
+    setApiProject('p2')
+    const msg = 'invalid pending state "x": want one of open, resolved, dropped, promoted, all'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: msg }), { status: 400 })))
+    await expect(fetchPendings({ state: 'x' })).rejects.toThrow(msg)
   })
 })

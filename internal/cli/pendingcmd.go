@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/store"
 	"gitlab.com/rockt/cerne/internal/verbs"
 )
@@ -83,7 +81,7 @@ func newPendingListCmd(dir *string) *cobra.Command {
 			return runPendingList(cmd, *dir, state, from, component, module, asJSON)
 		},
 	}
-	cmd.Flags().StringVar(&state, "state", string(domain.PendingOpen), "open, resolved, dropped or promoted")
+	cmd.Flags().StringVar(&state, "state", string(domain.PendingOpen), "open, resolved, dropped, promoted or all (all adds each line's state before the title)")
 	cmd.Flags().StringVar(&from, "from", "", "only pendings of this origin id")
 	cmd.Flags().StringVar(&component, "component", "", "only pendings tagged with this component")
 	cmd.Flags().StringVar(&module, "module", "", "only pendings whose origin belongs to this module")
@@ -92,36 +90,16 @@ func newPendingListCmd(dir *string) *cobra.Command {
 }
 
 func runPendingList(cmd *cobra.Command, dir, state, from, component, module string, asJSON bool) error {
-	if states, _ := domain.ValidStates("pending"); !slices.Contains(states, state) {
-		return fmt.Errorf("--state %q: want one of %s", state, strings.Join(states, ", "))
+	if !app.ValidPendingState(state) { // before the project, as always; "" is refused, not read as open
+		return fmt.Errorf("--state %q: %w", state, app.ErrPendingStateInvalid)
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	pendings, err := store.LoadAllPendings(ctx.repoDir)
+	shown, err := app.ListPendings(ctx.repoDir, app.PendingFilter{State: state, From: from, Component: component, Module: module})
 	if err != nil {
 		return err
-	}
-	moduleOf := map[string]string{}
-	if module != "" {
-		features, err := store.LoadAllFeatures(ctx.repoDir)
-		if err != nil {
-			return err
-		}
-		for _, f := range features {
-			moduleOf[f.ID] = f.Module
-		}
-	}
-	comp := slug.Make(component)
-	from = strings.ToUpper(strings.TrimSpace(from)) // origins are stored canonical
-	shown := []store.Pending{}
-	for _, p := range pendings {
-		if string(p.State) != state || (from != "" && p.From != from) ||
-			(comp != "" && !slices.Contains(p.Components, comp)) || (module != "" && moduleOf[p.From] != module) {
-			continue
-		}
-		shown = append(shown, p)
 	}
 	w := cmd.OutOrStdout()
 	if asJSON {
@@ -133,13 +111,19 @@ func runPendingList(cmd *cobra.Command, dir, state, from, component, module stri
 	}
 	now := time.Now().UTC()
 	for _, p := range shown {
-		line := fmt.Sprintf("%s  %s  %s  %s", p.ID, pendingAge(now, p), p.From, p.Title)
+		title := p.Title
+		if state == "all" { // mixed states: each line says its own
+			title = string(p.State) + "  " + title
+		}
+		line := fmt.Sprintf("%s  %s  %s  %s", p.ID, pendingAge(now, p), p.From, title)
 		if p.PromotedTo != "" {
 			line += "  → " + p.PromotedTo
 		}
 		fmt.Fprintln(w, line)
 	}
-	if len(shown) == 0 {
+	if len(shown) == 0 && state == "all" {
+		fmt.Fprintln(w, "No pendings.")
+	} else if len(shown) == 0 {
 		fmt.Fprintf(w, "No %s pendings.\n", state)
 	}
 	return nil
