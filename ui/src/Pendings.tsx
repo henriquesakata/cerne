@@ -95,7 +95,7 @@ export default function Pendings({ hash }: { hash: string }) {
       </div>
       {/* Keyed by the whole filter: every navigation remounts the inputs from
           the hash, so they never show a value that is not applied (C8). */}
-      <form className="search-form" key={canonical} onSubmit={submit}>
+      <form className="search-form pendings-form" key={canonical} onSubmit={submit}>
         <label>
           {t.pendings.from} <input name="from" defaultValue={f.from} />
         </label>
@@ -136,7 +136,7 @@ function PendingRow({ p, component, onComponent }: { p: Pending; component: stri
   const date = (iso: string) => new Date(iso).toLocaleDateString(lang)
   return (
     <li>
-      <div className="entity-row">
+      <div className="entity-row pending-row">
         <button type="button" className="pending-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           <span className="card-id">{p.id}</span>
           <span className="entity-title">{p.title}</span>

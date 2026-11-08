@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -302,5 +303,30 @@ describe('Pendings — inglês (F-0334 crit. 8)', () => {
       'Promoted 0',
       'All 2',
     ])
+  })
+})
+
+// Crítica C10: em 375 px o botão de copiar cobria o fim do comando (as aspas
+// do --reason), os ids quebravam no meio e o campo de componente vazava do
+// form. O layout é CSS: fixa as regras e que a tela usa as classes delas.
+describe('Pendings — largura de celular (crítica C10)', () => {
+  const css = readFileSync('src/app.css', 'utf8')
+  const rule = (sel: string) =>
+    new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[2] ?? ''
+
+  it('o comando rola sob o botão, os ids não quebram e o form quebra a linha', () => {
+    expect(rule('.pending-detail .harness-fix pre')).toMatch(/padding-right: 5rem/)
+    expect(rule('.pending-detail .harness-fix pre')).toMatch(/overflow-x: auto/)
+    expect(rule('.pending-row .card-id, .pending-row a')).toMatch(/white-space: nowrap/)
+    expect(rule('.pending-row')).toMatch(/flex-wrap: wrap/)
+    expect(rule('.pendings-form')).toMatch(/flex-wrap: wrap/)
+    expect(rule('.pendings-form label')).toMatch(/min-width: 0/)
+  })
+
+  it('a linha e o form usam essas classes', async () => {
+    render(<Pendings hash="#/pendings" />)
+    await screen.findByText('Documentar a rota nova')
+    expect(screen.getAllByRole('listitem')[0].querySelector('.pending-row')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Filtrar' }).closest('form')).toHaveClass('pendings-form')
   })
 })
