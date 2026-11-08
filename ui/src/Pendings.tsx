@@ -37,6 +37,17 @@ function filterHash(f: Filter): string {
 
 const fHref = (id: string) => `#/f/${encodeURIComponent(id)}`
 
+// slug mirrors Go's slug.Make (internal/slug), by which the server stores and
+// matches components: lowercase, its diacritics table, spaces to "-", and
+// nothing outside [a-z0-9-]. The active chip compares the same way (C7).
+const FOLD_FROM = 'áàâãäéèêëíìîïóòôõöúùûüçñ'
+const FOLD_TO = 'aaaaaeeeeiiiiooooouuuucn'
+function slug(s: string): string {
+  return Array.from(s.toLowerCase().replace(/ /g, '-'), (c) => FOLD_TO[FOLD_FROM.indexOf(c)] ?? c)
+    .join('')
+    .replace(/[^a-z0-9-]/g, '')
+}
+
 export default function Pendings({ hash }: { hash: string }) {
   const { t } = useT()
   const f = parseFilter(hash)
@@ -92,7 +103,12 @@ export default function Pendings({ hash }: { hash: string }) {
           <p className="counts">{t.pendings.count(shown.length)}</p>
           <ul className="entity-list">
             {shown.map((p) => (
-              <PendingRow key={p.id} p={p} component={f.component} onComponent={(c) => go({ component: c })} />
+              <PendingRow
+                key={p.id}
+                p={p}
+                component={slug(f.component)}
+                onComponent={(c) => go({ component: c === slug(f.component) ? '' : c })}
+              />
             ))}
           </ul>
         </>

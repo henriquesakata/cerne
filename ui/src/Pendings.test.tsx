@@ -144,6 +144,21 @@ describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
     expect(screen.getByRole('link', { name: 'Limpar filtros' })).toHaveAttribute('href', '#/pendings')
   })
 
+  // Crítica C7: o chip ativo desliga o filtro, e "ativo" compara pelo slug,
+  // como o servidor casa o componente (LINT e "Ação UI" filtram).
+  it('o chip do componente ativo fica pressionado pelo slug e desliga o filtro', async () => {
+    api.fetchPendings.mockResolvedValue([{ ...p2, components: ['lint', 'acao-ui'] }])
+    const { rerender } = render(<Pendings hash="#/pendings?state=open&component=LINT" />)
+    const lint = await screen.findByRole('button', { name: 'lint' })
+    expect(lint).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'acao-ui' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(lint)
+    expect(window.location.hash).toBe('#/pendings?state=open')
+    rerender(<Pendings hash="#/pendings?state=open&component=A%C3%A7%C3%A3o+UI" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'acao-ui' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('button', { name: 'lint' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('a seleção vazia diz qual filtro está ativo', async () => {
     api.fetchPendings.mockResolvedValue([])
     render(<Pendings hash="#/pendings?state=dropped&from=F-0331" />)
