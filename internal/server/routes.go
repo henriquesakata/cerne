@@ -127,6 +127,10 @@ func dataRoutes() []dataRoute {
 		{"POST", "/ideas/{id}/promote", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handlePromoteIdea(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
+		// Pendings (F-0334): local-only, like /ideas.
+		{"GET", "/pendings", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
+			handlePendings(w, r, repoDir)
+		}},
 		{"GET", "/search", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, projectID string) {
 			handleSearch(w, r, repoDir, projectID)
 		}},
