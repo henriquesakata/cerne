@@ -306,6 +306,8 @@ const ptBR = {
     copyResolve: (id: string) => `Copiar comando de resolver ${id}`,
     copyDrop: (id: string) => `Copiar comando de descartar ${id}`,
     copyPromote: (id: string) => `Copiar comando de promover ${id}`,
+    deliveryTitle: 'Pendências desta entrega',
+    seeAll: 'Ver na tela de pendências',
   },
   ideas: {
     title: 'Ideias',
@@ -1325,6 +1327,8 @@ const en: Messages = {
     copyResolve: (id: string) => `Copy the resolve command for ${id}`,
     copyDrop: (id: string) => `Copy the drop command for ${id}`,
     copyPromote: (id: string) => `Copy the promote command for ${id}`,
+    deliveryTitle: "This delivery's pendings",
+    seeAll: 'Open in the pendings screen',
   },
   ideas: {
     title: 'Ideas',

@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
-import type { Feature, FeatureDetail, FeatureState, LLMMode } from './api'
+import type { Feature, FeatureDetail, FeatureState, LLMMode, Pending } from './api'
 import {
   fetchArtifactText,
   fetchFeature,
+  fetchPendings,
   generateDiagram,
   postTransition,
   roastPlan,
@@ -35,11 +36,13 @@ const detail = (state: FeatureState): FeatureDetail => ({
 
 let payload: FeatureDetail = detail('candidate')
 let llmMode: LLMMode = 'byo-key'
+let pendings: Pending[] = []
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchFeature: vi.fn(async () => payload),
   fetchLLMMode: vi.fn(async () => llmMode),
+  fetchPendings: vi.fn(async () => pendings),
   generateDiagram: vi.fn(async () => ({ ok: false as const, error: 'boom' })),
   postTransition: vi.fn(async () => ({
     ok: true as const,
@@ -70,6 +73,8 @@ beforeEach(() => {
   cleanup()
   live.version = 0
   llmMode = 'byo-key'
+  pendings = []
+  vi.mocked(fetchPendings).mockClear()
   vi.mocked(postTransition).mockClear()
   vi.mocked(generateDiagram).mockClear()
 })
@@ -523,5 +528,50 @@ describe('FeaturePage from_idea (F-0312)', () => {
     payload.feature.from_idea = 'I-0007'
     render(<FeaturePage id="F-0221" />)
     expect(await screen.findByText('Nasceu da ideia I-0007')).toBeInTheDocument()
+  })
+})
+
+// F-0334 crit. 4 e 6: a página da feature mostra as pendências abertas que a
+// entrega deixou, com o link para a tela filtrada; sem elas, nada aparece.
+describe('FeaturePage — pendências desta entrega (F-0334)', () => {
+  const pending = (id: string, title: string): Pending => ({
+    id,
+    title,
+    from: 'F-0221',
+    state: 'open',
+    created_at: '2026-11-01T00:00:00Z',
+    updated_at: '2026-11-01T00:00:00Z',
+  })
+
+  it('lista as abertas da origem e liga a tela filtrada', async () => {
+    payload = detail('implemented')
+    pendings = [pending('P-0007', 'Cobrir caso X')]
+    render(<FeaturePage id="F-0221" />)
+    const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
+    const section = heading.closest('section')!
+    expect(section).toHaveTextContent('P-0007')
+    expect(section).toHaveTextContent('Cobrir caso X')
+    expect(screen.getByRole('link', { name: 'Ver na tela de pendências' })).toHaveAttribute('href', '#/pendings?from=F-0221')
+    expect(fetchPendings).toHaveBeenCalledWith({ from: 'F-0221' })
+  })
+
+  it('sem pendências abertas, a seção não aparece', async () => {
+    payload = detail('implemented')
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    await waitFor(() => expect(fetchPendings).toHaveBeenCalled())
+    expect(screen.queryByRole('heading', { name: 'Pendências desta entrega' })).toBeNull()
+  })
+
+  it('um avanço do backend traz a pendência nova sem recarregar', async () => {
+    payload = detail('implemented')
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    await waitFor(() => expect(fetchPendings).toHaveBeenCalled())
+    pendings = [pending('P-0008', 'Cobrir caso Y')]
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
+    expect(heading.closest('section')).toHaveTextContent('P-0008')
   })
 })

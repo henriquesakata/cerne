@@ -5,6 +5,7 @@ import { correctMarker, countOpen, resolveMarker } from './clarify'
 import { appendAssistantToFeatureChat } from './useBacklogChats'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
+import { DeliveryPendings } from './Pendings'
 import Tag from './Tag'
 import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types'
 import {
@@ -330,6 +331,7 @@ export default function FeaturePage({ id }: { id: string }) {
       </header>
       <ErrataSection content={detail.errata} />
       <Backlinks id={id} />
+      <DeliveryPendings id={id} />
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           {diagram.mode === 'mermaid' ? (

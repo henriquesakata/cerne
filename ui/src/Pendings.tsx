@@ -155,3 +155,25 @@ function PendingRow({ p, component, onComponent }: { p: Pending; component: stri
     </li>
   )
 }
+
+// DeliveryPendings (F-0334 crit. 4): as pendências abertas que a entrega
+// deixou, na página da feature. Painel acessório como o Backlinks: lista vazia
+// ou falha de carga não ocupam a página.
+export function DeliveryPendings({ id }: { id: string }) {
+  const { t } = useT()
+  const load = useLiveLoad(() => fetchPendings({ from: id }), [id])
+  if (!load.data?.length) return null
+  return (
+    <section className="backlinks-section">
+      <h2 className="backlinks-title">{t.pendings.deliveryTitle}</h2>
+      <ul className="backlinks-list">
+        {load.data.map((p) => (
+          <li key={p.id}>
+            <span className="card-id">{p.id}</span> <span className="backlinks-entity">{p.title}</span>
+          </li>
+        ))}
+      </ul>
+      <a href={`#/pendings?from=${encodeURIComponent(id)}`}>{t.pendings.seeAll}</a>
+    </section>
+  )
+}
