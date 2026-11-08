@@ -172,4 +172,11 @@ describe('t.pendings (F-0334 crit. 8)', () => {
     expect(Object.keys(lp).sort()).toEqual(Object.keys(le).sort())
     for (const k of Object.keys(lp)) expect(lp[k], k).not.toBe(le[k])
   })
+
+  it('os itens do menu existem nas duas línguas e diferem', () => {
+    const pt = messages('pt-BR').nav
+    const en = messages('en').nav
+    expect([pt.pendings, pt.ideas]).toEqual(['Pendências', 'Ideias'])
+    expect([en.pendings, en.ideas]).toEqual(['Pendings', 'Ideas'])
+  })
 })

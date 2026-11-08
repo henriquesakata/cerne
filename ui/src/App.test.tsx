@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
-import { search } from './api'
+import { fetchPendings, search } from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
@@ -21,6 +21,8 @@ vi.mock('./api', async (importOriginal) => ({
   fetchProjects: vi.fn(async () => []),
   search: vi.fn(async () => []),
   fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
+  fetchPendings: vi.fn(async () => []),
+  fetchIdeas: vi.fn(async () => []),
 }))
 
 // Os providers viram passthrough: o alvo aqui é o roteador e a montagem
@@ -125,5 +127,23 @@ describe('App — deep link para uma aba desligada vira #/ (F-0315, crítica C15
     render(<App />)
     await waitFor(() => expect(window.location.hash).toBe('#/'))
     await waitFor(() => expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('active'))
+  })
+})
+
+// F-0334 crit. 1 e 5: #/pendings aceita filtro no endereço (rota por prefixo)
+// e #/ideas monta o painel de ideias real da F-0312.
+describe('App — pendências e ideias (F-0334)', () => {
+  it('#/pendings?from=… monta a tela de pendências já filtrada', async () => {
+    window.location.hash = '#/pendings?from=F-0331'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pendências' })).toBeInTheDocument()
+    await waitFor(() => expect(fetchPendings).toHaveBeenCalledWith({ state: 'open', from: 'F-0331', component: '' }))
+  })
+
+  it('#/ideas monta o painel de ideias', async () => {
+    window.location.hash = '#/ideas'
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Ideias' })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeInTheDocument()
   })
 })

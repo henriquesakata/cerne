@@ -23,6 +23,10 @@ import Dashboard from './Dashboard'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import Channel from './Channel'
 import Settings from './Settings'
+import Pendings from './Pendings'
+import IdeasPanel from './IdeasPanel'
+import { fetchState } from './api'
+import { useLiveLoad } from './liveLoad'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
@@ -120,9 +124,22 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/manage') return <Manage />
   if (hash === '#/settings') return <Settings />
   if (hash === '#/new') return <NewFeature />
+  if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return <Pendings hash={hash} />
+  if (hash === '#/ideas') return <IdeasPage />
   if (hash === '#/kanban') return <Kanban />
   if (hash === '#/backlog') return <Backlog />
   if (hash === '#/rooms') return <WarRoom />
   // Tela inicial (F-0132): o dashboard responde "como está o projeto?".
   return <Dashboard />
+}
+
+// IdeasPage (F-0334 crit. 5): a segunda porta do painel de ideias da F-0312,
+// com os módulos do projeto para o Promover; não há candidata aqui a recarregar.
+function IdeasPage() {
+  const load = useLiveLoad(fetchState)
+  return (
+    <main className="page">
+      <IdeasPanel modules={load.data?.project.modules ?? []} onPromoted={() => {}} />
+    </main>
+  )
 }
