@@ -1605,6 +1605,38 @@ export async function fetchIdeas(): Promise<Idea[]> {
   return ((await r.json()) as { ideas: Idea[] }).ideas
 }
 
+// --- Pendências (F-0334) ---
+
+export type PendingState = 'open' | 'resolved' | 'dropped' | 'promoted'
+
+// Pending espelha store.Pending: um débito conhecido que uma entrega deixou,
+// com origem obrigatória (F-0322).
+export type Pending = {
+  id: string
+  title: string
+  body?: string
+  from: string
+  state: PendingState
+  facets?: string[]
+  components?: string[]
+  created_at: string
+  updated_at: string
+  closed_at?: string
+  reason?: string
+  promoted_to?: string
+}
+
+// fetchPendings é a mesma seleção do `cerne pending list` (abertas por
+// padrão; state=all traz todas); um filtro vazio não vira parâmetro.
+export async function fetchPendings(f: { state?: string; from?: string; component?: string } = {}): Promise<Pending[]> {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(f)) if (v) q.set(k, v)
+  const qs = q.toString()
+  const r = await fetch(`${base()}/pendings${qs ? '?' + qs : ''}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { pendings: Pending[] }).pendings
+}
+
 // SimilarExists é uma promoção barrada pela guarda de duplicidade (F-0147,
 // 409): as parecidas vão junto, para o painel mostrá-las e oferecer forçar.
 export class SimilarExists extends Error {

@@ -81,6 +81,16 @@ describe('t.notif.age (F-0310)', () => {
   })
 })
 
+// leaves achata as folhas em caminho → texto; uma função é chamada com 'x'.
+const leaves = (o: object, at = ''): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(o).flatMap(([k, v]) =>
+      typeof v === 'object' && v !== null
+        ? Object.entries(leaves(v, `${at}${k}.`))
+        : [[`${at}${k}`, typeof v === 'function' ? String(v('x')) : String(v)]],
+    ),
+  )
+
 // F-0331 crit. 10: o bloco "Nome do projeto" existe nas duas línguas, com
 // textos distintos entre elas, e o rótulo diz projeto — não o nome pessoal no
 // canal (F-0333 crit. 5).
@@ -90,15 +100,6 @@ describe('t.settings.projectName (F-0331 crit. 10)', () => {
     const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
     return result.current.t.settings
   }
-  // leaves achata as folhas em caminho → texto; uma função é chamada com 'x'.
-  const leaves = (o: object, at = ''): Record<string, string> =>
-    Object.fromEntries(
-      Object.entries(o).flatMap(([k, v]) =>
-        typeof v === 'object' && v !== null
-          ? Object.entries(leaves(v, `${at}${k}.`))
-          : [[`${at}${k}`, typeof v === 'function' ? String(v('x')) : String(v)]],
-      ),
-    )
 
   it('mesmas chaves, textos diferentes, "projeto"/"project" e distinto de Your name in the channel', () => {
     const pt = messages('pt-BR')
@@ -152,5 +153,23 @@ describe("t.settings.text de channel.human_name (F-0333)", () => {
     const pt = settings('pt-BR')
     expect(pt.text[en]).toContain(`“${pt.projectName.title}”`)
     expect(en).toContain(`“${settings('en').projectName.title}”`)
+  })
+})
+
+// F-0334 crit. 8: os textos da tela de pendências existem nas duas línguas,
+// com as mesmas chaves e textos diferentes entre elas.
+describe('t.pendings (F-0334 crit. 8)', () => {
+  const messages = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t
+  }
+
+  it('mesmas chaves e textos diferentes em pt-BR e en', () => {
+    const lp = leaves(messages('pt-BR').pendings)
+    const le = leaves(messages('en').pendings)
+    expect(Object.keys(lp).length).toBeGreaterThan(0)
+    expect(Object.keys(lp).sort()).toEqual(Object.keys(le).sort())
+    for (const k of Object.keys(lp)) expect(lp[k], k).not.toBe(le[k])
   })
 })

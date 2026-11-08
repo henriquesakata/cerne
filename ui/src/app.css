@@ -2052,6 +2052,10 @@ h2 {
 .entity-row:hover { border-color: var(--border-strong); }
 .entity-title { flex: 1; font-size: 0.92rem; }
 
+/* pendências (F-0334): a linha abre o detalhe pelo botão id + título */
+.pending-toggle { display: flex; flex: 1; gap: 0.5rem; align-items: baseline; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pending-detail { padding: 0.5rem 0.7rem 0.75rem; margin: 0 0 0.5rem; }
+
 .chip-active,
 .chip-current { background: var(--green-bg); color: var(--green); }
 .chip-obsolete { background: var(--state-terminal-bg); color: var(--faint); text-decoration: line-through; }
