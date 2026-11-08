@@ -141,7 +141,10 @@ function PendingRow({ p, component, onComponent }: { p: Pending; component: stri
           <span className="entity-title">{p.title}</span>
         </button>
         {p.state !== 'open' && <span className={`chip ${CHIP[p.state]}`}>{t.pendings.stateChip[p.state]}</span>}
-        <span className="muted">{t.pendings.age(age)}</span>
+        {/* A closed pending stops aging: it shows when it closed (C11). */}
+        <span className="muted">
+          {p.state !== 'open' && p.closed_at ? `${t.pendings.closed} ${date(p.closed_at)}` : t.pendings.age(age)}
+        </span>
         <a href={fHref(p.from)}>{p.from}</a>
         {(p.components ?? []).map((c) => (
           <Tag key={c} axis="component" value={c} active={c === component} onToggle={onComponent} />

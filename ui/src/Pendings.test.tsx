@@ -230,15 +230,31 @@ describe('Pendings — linha expandida (F-0334 crit. 3)', () => {
     render(<Pendings hash="#/pendings?state=all" />)
     await screen.findByText('Trocar o cache')
     fireEvent.click(toggle('P-0005'))
-    expect(screen.getByText('Motivo: fora de escopo')).toBeInTheDocument()
+    const detail = document.querySelector('.pending-detail') as HTMLElement
+    expect(within(detail).getByText('Motivo: fora de escopo')).toBeInTheDocument()
     expect(
-      screen.getByText(`Fechada em ${new Date(p5.closed_at!).toLocaleDateString('pt-BR')}`),
+      within(detail).getByText(`Fechada em ${new Date(p5.closed_at!).toLocaleDateString('pt-BR')}`),
     ).toBeInTheDocument()
     expect(document.querySelectorAll('pre')).toHaveLength(0)
     fireEvent.click(toggle('P-0006'))
     expect(screen.getByText('Promovida para')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'F-0340' })).toHaveAttribute('href', '#/f/F-0340')
     expect(document.querySelectorAll('pre')).toHaveLength(0)
+  })
+})
+
+// Crítica C11: a idade de uma pendência fechada pararia de fazer sentido (uma
+// resolvida no dia seguinte leria "40 dias" um mês depois): a linha fechada
+// mostra quando fechou; a aberta, a idade.
+describe('Pendings — idade só na aberta (crítica C11)', () => {
+  it('a linha fechada mostra a data de fechamento, não a idade', async () => {
+    api.fetchPendings.mockResolvedValue([p2, p5])
+    render(<Pendings hash="#/pendings?state=all" />)
+    await screen.findByText('Trocar o cache')
+    const [open, closed] = screen.getAllByRole('listitem')
+    expect(within(open).getByText('3 dias')).toBeInTheDocument()
+    expect(within(closed).getByText(`Fechada em ${new Date(p5.closed_at!).toLocaleDateString('pt-BR')}`)).toBeInTheDocument()
+    expect(within(closed).queryByText(/\d+ dias?$/)).toBeNull()
   })
 })
 
