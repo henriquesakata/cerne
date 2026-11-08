@@ -159,6 +159,18 @@ describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
     expect(screen.getByRole('button', { name: 'lint' })).toHaveAttribute('aria-pressed', 'false')
   })
 
+  // Crítica C8: os campos mostram o filtro aplicado — um texto digitado e não
+  // enviado some quando outra navegação muda o filtro.
+  it('trocar o estado remonta os campos a partir do hash', async () => {
+    const { rerender } = render(<Pendings hash="#/pendings" />)
+    await screen.findByText('Documentar a rota nova')
+    fireEvent.change(screen.getByLabelText('Origem'), { target: { value: 'F-0002' } })
+    fireEvent.click(stateButton('Todas'))
+    expect(window.location.hash).toBe('#/pendings?state=all')
+    rerender(<Pendings hash={window.location.hash} />)
+    expect(screen.getByLabelText('Origem')).toHaveValue('')
+  })
+
   it('a seleção vazia diz qual filtro está ativo', async () => {
     api.fetchPendings.mockResolvedValue([])
     render(<Pendings hash="#/pendings?state=dropped&from=F-0331" />)

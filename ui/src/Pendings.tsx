@@ -84,7 +84,9 @@ export default function Pendings({ hash }: { hash: string }) {
           </button>
         ))}
       </div>
-      <form className="search-form" key={f.from + '|' + f.component} onSubmit={submit}>
+      {/* Keyed by the whole filter: every navigation remounts the inputs from
+          the hash, so they never show a value that is not applied (C8). */}
+      <form className="search-form" key={filterHash(f)} onSubmit={submit}>
         <label>
           {t.pendings.from} <input name="from" defaultValue={f.from} />
         </label>
