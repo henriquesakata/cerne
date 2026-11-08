@@ -44,6 +44,7 @@ func TestListPendingsMatchesCLI(t *testing.T) {
 		{[]string{"--from", "f-0001"}, url.Values{"from": {"f-0001"}}},
 		{[]string{"--component", "Lint"}, url.Values{"component": {"Lint"}}},
 		{[]string{"--from", "F-0002", "--component", "lint"}, url.Values{"from": {"F-0002"}, "component": {"lint"}}},
+		{[]string{"--module", "web"}, url.Values{"module": {"web"}}},
 	}
 	ids := func(doc []byte) []string {
 		t.Helper()
