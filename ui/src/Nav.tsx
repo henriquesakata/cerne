@@ -61,8 +61,9 @@ function activeHref(hash: string): string {
   // Kanban e detalhe de feature destacam Kanban; '#/' (dashboard) é o fallback.
   if (hash.startsWith('#/kanban') || hash.startsWith('#/f/')) return '#/kanban'
   if (hash.startsWith('#/backlog')) return '#/backlog'
-  if (hash.startsWith('#/pendings')) return '#/pendings'
-  if (hash.startsWith('#/ideas')) return '#/ideas'
+  // The same rule App routes them by (F-0334): anything else is the dashboard.
+  if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return '#/pendings'
+  if (hash === '#/ideas') return '#/ideas'
   if (hash.startsWith('#/rooms')) return '#/rooms'
   if (hash.startsWith('#/manage') || hash.startsWith('#/new')) return '#/manage'
   if (hash.startsWith('#/decisions') || hash.startsWith('#/d/')) return '#/decisions'

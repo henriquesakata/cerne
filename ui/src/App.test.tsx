@@ -140,6 +140,14 @@ describe('App — pendências e ideias (F-0334)', () => {
     await waitFor(() => expect(fetchPendings).toHaveBeenCalledWith({ state: 'open', from: 'F-0331', component: '' }))
   })
 
+  it.each(['#/pendingsfoo', '#/ideas?x=1'])('%s não monta pendências nem ideias (a mesma regra da nav)', async (hash) => {
+    window.location.hash = hash
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Pendências' })).toBeNull()
+    expect(screen.queryByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeNull()
+  })
+
   it('#/ideas monta o painel de ideias', async () => {
     window.location.hash = '#/ideas'
     render(<App />)

@@ -232,6 +232,14 @@ describe('Nav agrupada (F-0332)', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Ideias' })).toHaveAttribute('href', '#/ideas')
   })
 
+  // F-0334 (crítica C6): a nav marca Pendências e Ideias pela mesma regra
+  // que o App usa para montá-las; o que o App não monta cai no Dashboard.
+  it.each(['#/ideas?x=1', '#/pendingsfoo', '#/ideasfoo'])('F-0334: %s não marca grupo nenhum', (hash) => {
+    const { container } = render(<Nav hash={hash} />)
+    expect(container.querySelector('.nav-group-btn.active')).toBeNull()
+    expect(screen.getByText('Dashboard')).toHaveClass('active')
+  })
+
   it('critério 6: o Dashboard ativo não ativa nenhum grupo', () => {
     const { container } = render(<Nav hash="#/" />)
     expect(container.querySelector('.nav-group-btn.active')).toBeNull()
