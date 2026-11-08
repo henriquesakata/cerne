@@ -171,6 +171,18 @@ describe('Pendings — filtros no endereço (F-0334 crit. 2)', () => {
     expect(screen.getByLabelText('Origem')).toHaveValue('')
   })
 
+  // Crítica C9: um estado desconhecido no link cai em abertas, com o hash
+  // reescrito no lugar (sem entrada no histórico) e sem erro nem "Tentar de novo".
+  it('um estado inválido no link vira abertas', async () => {
+    window.location.hash = '#/pendings?state=bogus&from=F-0331'
+    render(<Pendings hash={window.location.hash} />)
+    await waitFor(() => expect(window.location.hash).toBe('#/pendings?state=open&from=F-0331'))
+    expect(await screen.findByText('Documentar a rota nova')).toBeInTheDocument()
+    expect(stateButton('Abertas')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull()
+    expect(screen.queryByText(/bogus/)).toBeNull()
+  })
+
   it('a seleção vazia diz qual filtro está ativo', async () => {
     api.fetchPendings.mockResolvedValue([])
     render(<Pendings hash="#/pendings?state=dropped&from=F-0331" />)

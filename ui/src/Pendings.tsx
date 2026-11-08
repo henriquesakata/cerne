@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { fetchPendings, type Pending, type PendingState } from './api'
 import { FixBlock } from './Harness'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
@@ -22,10 +22,14 @@ const CHIP: Record<Exclude<PendingState, 'open'>, string> = {
   promoted: 'chip-implemented',
 }
 
-function parseFilter(hash: string): Filter {
+// parseFilter reads the hash; an unknown state (a hand-edited or old link) is
+// read as open, and `bad` tells the screen to rewrite the hash (C9).
+function parseFilter(hash: string): Filter & { bad: boolean } {
   const i = hash.indexOf('?')
   const q = new URLSearchParams(i < 0 ? '' : hash.slice(i + 1))
-  return { state: q.get('state') || 'open', from: q.get('from') ?? '', component: q.get('component') ?? '' }
+  const raw = q.get('state')
+  const bad = raw !== null && !STATES.includes(raw as PendingState | 'all')
+  return { state: raw === null || bad ? 'open' : raw, from: q.get('from') ?? '', component: q.get('component') ?? '', bad }
 }
 
 function filterHash(f: Filter): string {
@@ -50,7 +54,11 @@ function slug(s: string): string {
 
 export default function Pendings({ hash }: { hash: string }) {
   const { t } = useT()
-  const f = parseFilter(hash)
+  const { bad, ...f } = parseFilter(hash)
+  const canonical = filterHash(f)
+  useEffect(() => {
+    if (bad) window.location.replace(canonical) // in place: Back skips the dead link
+  }, [bad, canonical])
   const load = useLiveLoad(() => fetchPendings({ state: 'all', from: f.from, component: f.component }), [f.from, f.component])
   const ofState = (s: string) => (load.data ?? []).filter((p) => s === 'all' || p.state === s)
   const shown = ofState(f.state)
@@ -86,7 +94,7 @@ export default function Pendings({ hash }: { hash: string }) {
       </div>
       {/* Keyed by the whole filter: every navigation remounts the inputs from
           the hash, so they never show a value that is not applied (C8). */}
-      <form className="search-form" key={filterHash(f)} onSubmit={submit}>
+      <form className="search-form" key={canonical} onSubmit={submit}>
         <label>
           {t.pendings.from} <input name="from" defaultValue={f.from} />
         </label>
