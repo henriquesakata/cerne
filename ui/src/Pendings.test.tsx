@@ -239,6 +239,23 @@ describe('Pendings — linha expandida (F-0334 crit. 3)', () => {
     expect(writeText).toHaveBeenCalledWith('cerne pending resolve P-0001')
   })
 
+  // Crítica C14: o detalhe é controlado pelo botão da linha, o título dos
+  // comandos segue o h1 da tela, e a cópia é anunciada pelo nome do botão.
+  it('acessibilidade da linha expandida', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<Pendings hash="#/pendings" />)
+    await screen.findByText('Documentar a rota nova')
+    const t = toggle('P-0001')
+    fireEvent.click(t)
+    const detail = document.querySelector('.pending-detail') as HTMLElement
+    expect(detail.id).not.toBe('')
+    expect(t).toHaveAttribute('aria-controls', detail.id)
+    expect(within(detail).getByRole('heading', { name: 'Triagem pelo terminal' }).tagName).toBe('H2')
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar comando de descartar P-0001' }))
+    expect(await screen.findByRole('button', { name: 'Copiado!' })).toBeInTheDocument()
+  })
+
   it('a descartada mostra o motivo e o fechamento, sem comandos; a promovida liga o id criado', async () => {
     api.fetchPendings.mockResolvedValue([p5, p6])
     render(<Pendings hash="#/pendings?state=all" />)

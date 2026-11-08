@@ -136,9 +136,12 @@ function Routed({ hash }: { hash: string }) {
 // IdeasPage (F-0334 crit. 5): a segunda porta do painel de ideias da F-0312,
 // com os módulos do projeto para o Promover; não há candidata aqui a recarregar.
 function IdeasPage() {
+  const { t } = useT()
   const load = useLiveLoad(fetchState)
   return (
     <main className="page">
+      {/* Every screen has an h1; the panel already titles itself (its h2). */}
+      <h1 className="sr-only">{t.nav.ideas}</h1>
       <IdeasPanel modules={load.data?.project.modules ?? []} onPromoted={() => {}} />
     </main>
   )

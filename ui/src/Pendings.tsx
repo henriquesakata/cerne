@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { fetchPendings, type Pending, type PendingState } from './api'
 import { FixBlock } from './Harness'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
@@ -131,13 +131,20 @@ export default function Pendings({ hash }: { hash: string }) {
 function PendingRow({ p, component, onComponent }: { p: Pending; component: string; onComponent: (c: string) => void }) {
   const { t, lang } = useT()
   const [open, setOpen] = useState(false)
+  const detailId = useId()
   // O mesmo truncamento do pendingAge do CLI (dias inteiros).
   const age = Math.floor((Date.now() - Date.parse(p.created_at)) / 86_400_000)
   const date = (iso: string) => new Date(iso).toLocaleDateString(lang)
   return (
     <li>
       <div className="entity-row pending-row">
-        <button type="button" className="pending-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <button
+          type="button"
+          className="pending-toggle"
+          aria-expanded={open}
+          aria-controls={detailId}
+          onClick={() => setOpen(!open)}
+        >
           <span className="card-id">{p.id}</span>
           <span className="entity-title">{p.title}</span>
         </button>
@@ -152,7 +159,7 @@ function PendingRow({ p, component, onComponent }: { p: Pending; component: stri
         ))}
       </div>
       {open && (
-        <div className="pending-detail">
+        <div className="pending-detail" id={detailId}>
           {p.body && <Markdown>{p.body}</Markdown>}
           <p className="muted">
             <span>
@@ -179,7 +186,7 @@ function PendingRow({ p, component, onComponent }: { p: Pending; component: stri
           )}
           {p.state === 'open' && (
             <>
-              <h3>{t.pendings.commands}</h3>
+              <h2>{t.pendings.commands}</h2>
               <p className="muted">{t.pendings.commandsHint}</p>
               <FixBlock command={`cerne pending resolve ${p.id}`} label={t.pendings.copyResolve(p.id)} />
               <FixBlock command={`cerne pending drop ${p.id} --reason ""`} label={t.pendings.copyDrop(p.id)} />

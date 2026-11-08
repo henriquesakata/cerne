@@ -151,7 +151,10 @@ describe('App — pendências e ideias (F-0334)', () => {
   it('#/ideas monta o painel de ideias', async () => {
     window.location.hash = '#/ideas'
     render(<App />)
-    expect(await screen.findByRole('heading', { name: 'Ideias' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Ideias' })).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeInTheDocument()
+    // Crítica C14: como toda tela, um h1 — oculto, porque o painel já titula.
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Ideias' })
+    expect(h1).toHaveClass('sr-only')
   })
 })
