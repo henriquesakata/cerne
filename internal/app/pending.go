@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/slug"
 	"gitlab.com/rockt/cerne/internal/spectmpl"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -41,6 +43,53 @@ var ErrPendingOriginClosed = errors.New("the origin is closed (implemented/done)
 // closed (resolved/dropped/promoted) by someone else between creating the
 // feature/task and recording the promotion.
 var ErrPendingClosedConcurrently = errors.New("the pending was closed concurrently")
+
+// ErrPendingStateInvalid is returned by ListPendings for a state that is not a
+// pending state nor all.
+var ErrPendingStateInvalid = errors.New("invalid pending state")
+
+// PendingFilter selects pendings for ListPendings: State "" means open and
+// all keeps every state; From is canonized (trimmed, upper-cased) and
+// Component slugged; Module matches the origin's module. Empty fields do not
+// filter.
+type PendingFilter struct{ State, From, Component, Module string }
+
+// ListPendings is the one pending selection the CLI list and the ui route
+// share (F-0334), in ascending id order and never nil (the JSON's []).
+func ListPendings(repoDir string, f PendingFilter) ([]store.Pending, error) {
+	state := f.State
+	if state == "" {
+		state = string(domain.PendingOpen)
+	}
+	if states, _ := domain.ValidStates("pending"); state != "all" && !slices.Contains(states, state) {
+		return nil, fmt.Errorf("%w %q: want one of %s, all", ErrPendingStateInvalid, state, strings.Join(states, ", "))
+	}
+	pendings, err := store.LoadAllPendings(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	moduleOf := map[string]string{}
+	if f.Module != "" {
+		features, err := store.LoadAllFeatures(repoDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, feat := range features {
+			moduleOf[feat.ID] = feat.Module
+		}
+	}
+	comp := slug.Make(f.Component)
+	from := strings.ToUpper(strings.TrimSpace(f.From)) // origins are stored canonical
+	shown := []store.Pending{}
+	for _, p := range pendings {
+		if (state != "all" && string(p.State) != state) || (from != "" && p.From != from) ||
+			(comp != "" && !slices.Contains(p.Components, comp)) || (f.Module != "" && moduleOf[p.From] != f.Module) {
+			continue
+		}
+		shown = append(shown, p)
+	}
+	return shown, nil
+}
 
 // CreatePending mints an open pending (P-) in the backend clone at repoDir.
 // from is mandatory and must be an existing feature/task/epic. Tags are
