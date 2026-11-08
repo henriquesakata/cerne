@@ -44,9 +44,23 @@ var ErrPendingOriginClosed = errors.New("the origin is closed (implemented/done)
 // feature/task and recording the promotion.
 var ErrPendingClosedConcurrently = errors.New("the pending was closed concurrently")
 
-// ErrPendingStateInvalid is returned by ListPendings for a state that is not a
-// pending state nor all.
-var ErrPendingStateInvalid = errors.New("invalid pending state")
+// pendingStateFilters are the values a state filter takes: every pending
+// state, then all.
+func pendingStateFilters() []string {
+	states, _ := domain.ValidStates("pending")
+	return append(states, "all")
+}
+
+// ErrPendingStateInvalid is a state filter that is not a pending state nor
+// all; its text lists the accepted values, for the caller to prefix with the
+// value (the CLI as `--state "x": …`, ListPendings as `invalid pending state`).
+var ErrPendingStateInvalid = errors.New("want one of " + strings.Join(pendingStateFilters(), ", "))
+
+// ValidPendingState reports whether state is a pending state or all. Empty is
+// not: ListPendings reads it as open, the CLI refuses it.
+func ValidPendingState(state string) bool {
+	return slices.Contains(pendingStateFilters(), state)
+}
 
 // PendingFilter selects pendings for ListPendings: State "" means open and
 // all keeps every state; From is canonized (trimmed, upper-cased) and
@@ -61,8 +75,8 @@ func ListPendings(repoDir string, f PendingFilter) ([]store.Pending, error) {
 	if state == "" {
 		state = string(domain.PendingOpen)
 	}
-	if states, _ := domain.ValidStates("pending"); state != "all" && !slices.Contains(states, state) {
-		return nil, fmt.Errorf("%w %q: want one of %s, all", ErrPendingStateInvalid, state, strings.Join(states, ", "))
+	if !ValidPendingState(state) {
+		return nil, fmt.Errorf("invalid pending state %q: %w", state, ErrPendingStateInvalid)
 	}
 	pendings, err := store.LoadAllPendings(repoDir)
 	if err != nil {

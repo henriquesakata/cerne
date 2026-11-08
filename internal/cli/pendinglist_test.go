@@ -2,12 +2,15 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"testing"
 
+	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/server"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -82,6 +85,24 @@ func TestListPendingsMatchesCLI(t *testing.T) {
 			if s == "all" && ex.args == nil && len(ids([]byte(out))) != 6 {
 				t.Fatalf("--state all lists %v, want all 6", ids([]byte(out)))
 			}
+		}
+	}
+}
+
+// F-0334 (critic C2, C3): --state is checked before the project is resolved,
+// with the message it always had (the list now ends in all), and an explicit
+// empty --state is refused instead of read as open.
+func TestPendingListStateValidation(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	for _, tc := range []struct{ state, dir string }{
+		{"bogus", projDir},
+		{"", projDir},
+		{"bogus", t.TempDir()}, // not a project: the state error still comes first
+	} {
+		want := fmt.Sprintf("--state %q: want one of open, resolved, dropped, promoted, all", tc.state)
+		out, err := execCerne(t, "pending", "list", "--state", tc.state, "--dir", tc.dir)
+		if !errors.Is(err, app.ErrPendingStateInvalid) || err.Error() != want {
+			t.Fatalf("--state %q in %s: err = %v, want %q (ErrPendingStateInvalid)\n%s", tc.state, tc.dir, err, want, out)
 		}
 	}
 }

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -91,14 +90,14 @@ func newPendingListCmd(dir *string) *cobra.Command {
 }
 
 func runPendingList(cmd *cobra.Command, dir, state, from, component, module string, asJSON bool) error {
+	if !app.ValidPendingState(state) { // before the project, as always; "" is refused, not read as open
+		return fmt.Errorf("--state %q: %w", state, app.ErrPendingStateInvalid)
+	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
 	shown, err := app.ListPendings(ctx.repoDir, app.PendingFilter{State: state, From: from, Component: component, Module: module})
-	if errors.Is(err, app.ErrPendingStateInvalid) {
-		return fmt.Errorf("--state: %w", err)
-	}
 	if err != nil {
 		return err
 	}
