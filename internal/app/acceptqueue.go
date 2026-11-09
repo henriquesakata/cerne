@@ -35,9 +35,11 @@ type AcceptRow struct {
 }
 
 var (
-	prodLineRe   = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|prod)\b[^\n]*:`)
-	prodHeadRe   = regexp.MustCompile(`(?i)^##+\s[^\n]*produ[cç][aã]o`)
-	pendingWord  = regexp.MustCompile(`\bPENDENTE\b`)
+	prodLineRe = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|prod)\b[^\n]*:`)
+	prodHeadRe = regexp.MustCompile(`(?i)^##+\s[^\n]*produ[cç][aã]o`)
+	// PENDENTE counts only on an acceptance line (list item or table row that
+	// names a "critério"), never in loose prose.
+	pendingWord  = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
 	pendingHead  = regexp.MustCompile(`(?i)^##\s+(?:d[ée]bitos|n[aã]o verificado)\b`)
 	bulletRe     = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+(.*)$`)
 	markdownJunk = regexp.MustCompile("[*_`>#]|^[\\s-]+")
@@ -74,8 +76,15 @@ func summarizeResult(result []byte) AcceptRow {
 	if v, ok := lint.GauntletVerdict(result); ok {
 		row.Gauntlet = v
 	}
-	inSection := false
+	inSection, fence := false, false
 	for _, line := range strings.Split(string(result), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fence = !fence
+			continue
+		}
+		if fence { // code is output, not a declaration
+			continue
+		}
 		switch {
 		case strings.HasPrefix(line, "#"):
 			inSection = pendingHead.MatchString(line)

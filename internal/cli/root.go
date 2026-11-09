@@ -41,7 +41,7 @@ func Root() *cobra.Command {
 	root.AddCommand(newTaskCmd())
 	root.AddCommand(newDecisionCmd())
 	root.AddCommand(newRunbookCmd())
-	root.AddCommand(newAcceptCmd())
+	root.AddCommand(verbs.MarkLocal(newAcceptCmd()))
 	root.AddCommand(newNoteCmd())
 	root.AddCommand(verbs.MarkLocal(newWorkCmd()))
 	root.AddCommand(newPendingCmd())

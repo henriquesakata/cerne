@@ -199,3 +199,58 @@ func TestAcceptQueueBatchCommands(t *testing.T) {
 		t.Errorf("json gauntlet of F-0902 = %v", got.Queue[0]["gauntlet"])
 	}
 }
+
+// Refusals: every bad call is an explicit error, never ignored.
+func TestAcceptQueueRefusals(t *testing.T) {
+	projDir, _ := acceptFixture(t)
+	for _, args := range [][]string{
+		{"accept", "queue", "F-0901"},          // an id: the queue takes none
+		{"accept", "queue", "--bogus"},         // unknown flag
+		{"accept", "queue", "--json=maybe"},    // invalid flag value
+		{"accept", "queue", "--json", "--all"}, // "accept all" does not exist (spec: no batch accept)
+		{"accept", "all"},                      // unknown subcommand
+	} {
+		out, err := execCerne(t, append(args, "--dir", projDir)...)
+		if err == nil {
+			t.Errorf("%v: want an error, got output:\n%s", args, out)
+		}
+	}
+}
+
+// A missing, empty or garbage result is "não informado", never a crash or a guess.
+func TestAcceptQueueMalformedResult(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, body := range map[string]string{
+		"F-0901": "",                                       // empty
+		"F-0902": "\x00\x01\xff## Gauntlet\n```\nunclosed", // binary + unclosed fence
+	} {
+		mustWrite(t, filepath.Join(repoDir, "content", "features", name, "result.md"), body)
+	}
+	if err := os.Remove(filepath.Join(repoDir, "content", "features", "F-0903", "result.md")); err != nil { // missing
+		t.Fatal(err)
+	}
+	rows, err := app.AcceptQueue(repoDir)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("rows=%d err=%v", len(rows), err)
+	}
+	for _, r := range rows {
+		if r.Gauntlet != app.NotInformed || r.Production != app.NotInformed || r.PendingReported {
+			t.Errorf("%s = %+v, want everything not informed", r.ID, r)
+		}
+	}
+}
+
+// Markers are anchored (heading or line start, outside fences): loose prose that
+// contains them is not captured.
+func TestAcceptQueueProseIsNotCaptured(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	prose := "## Resultado\n\nO dono disse que Em produção: tudo certo e que ficou PENDENTE o resto.\n" +
+		"Ele repetiu: veredito: Rodada 1 — vitória: \"sim\".\n\n```\nProdução: dentro de código\n- critério 1 — PENDENTE\n```\n"
+	mustWrite(t, filepath.Join(repoDir, "content", "features", "F-0901", "result.md"), prose)
+	rows, _ := app.AcceptQueue(repoDir)
+	for _, r := range rows {
+		if r.ID == "F-0901" && (r.Production != app.NotInformed || r.PendingReported || r.Gauntlet != app.NotInformed) {
+			t.Fatalf("prose captured: %+v", r)
+		}
+	}
+}

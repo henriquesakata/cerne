@@ -15,7 +15,16 @@ import (
 
 func newAcceptCmd() *cobra.Command {
 	var dir string
-	cmd := &cobra.Command{Use: "accept", Short: "Read the queue of features waiting for the human's accept"}
+	cmd := &cobra.Command{
+		Use:   "accept",
+		Short: "Read the queue of features waiting for the human's accept",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 { // never fall back to help on a typo: 'accept all' must fail loudly
+				return fmt.Errorf("unknown accept subcommand %q (only 'queue'; accepting is 'cerne feature accept <id>')", args[0])
+			}
+			return cmd.Help()
+		},
+	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(verbs.MarkLocal(newAcceptQueueCmd(&dir)))
@@ -28,8 +37,8 @@ func newAcceptQueueCmd(dir *string) *cobra.Command {
 		Use:   "queue [--json]",
 		Short: "List implemented features, oldest first, with Gauntlet verdict, production evidence and declared pendings (read-only)",
 		Long: "Lists the features in implemented, from the oldest to the newest, each with the Gauntlet verdict, the " +
-			"production evidence and the pendings its result.md declares. A field the result does not carry reads " +
-			"'não informado': nothing is inferred. Read-only: it never accepts anything. The batch is the list of " +
+			"production evidence and the pendings its result.md declares. A field the result does not carry is " +
+			"marked as not informed: nothing is inferred. Read-only: it never accepts anything. The batch is the list of " +
 			"individual 'cerne feature accept <id>' commands at the end, for the human to run one by one.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
