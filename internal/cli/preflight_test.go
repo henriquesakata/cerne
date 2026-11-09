@@ -64,6 +64,9 @@ func TestParsePreconditionsDeclaredPerStep(t *testing.T) {
 			t.Fatalf("#%d = %+v, want %+v", i, got[i], w)
 		}
 	}
+	if u := app.ParsePreconditions("Precondicao S4b: registro F-0001\n"); len(u) != 1 || u[0].Step != "S4b" || u[0].Kind != "registro" {
+		t.Fatalf("unaccented label with a lettered step = %+v", u)
+	}
 	if mr := got[2]; mr.Args[0] != "rockt/hub!2150" || mr.Args[1] != "merged" {
 		t.Fatalf("mr args = %v", mr.Args)
 	}

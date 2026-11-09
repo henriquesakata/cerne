@@ -19,7 +19,7 @@ func newRunbookPreflightCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "preflight <RB-id> [--ate <step>]",
 		Short: "List the declared preconditions of a runbook up to a step, met, pending or manual (read-only)",
-		Long: "Reads the preconditions a runbook declares ('Pré-condição S11: registro F-0869', 'result F-0869', " +
+		Long: "Reads the preconditions a runbook declares ('Precondicao S11: registro F-0869', 'result F-0869', " +
 			"'mr <project>!<n> merged') and checks, up to --ate (default: the last step), the ones the cerne can verify: " +
 			"a record exists, a feature has its result, a merge request is in a state on the forge. Anything it cannot " +
 			"verify is listed as manual, never as met. Read-only: it changes nothing and never asks production.",
