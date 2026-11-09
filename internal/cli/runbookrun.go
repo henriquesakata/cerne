@@ -23,7 +23,7 @@ func newRunbookRunCmd(dir *string) *cobra.Command {
 		Short: "Open the execution record of a runbook window (a work, with the runbook's steps)",
 		Long: "Opens an active work that records one execution of a runbook for a window (e.g. J3), with the runbook's " +
 			"steps. Steps are the S<n> tokens named in the body, outside code fences, with \"S3 a S7\" expanded; when " +
-			"that list has noise, pass --passos. Record steps with 'cerne runbook step'; close with 'cerne work done'. " +
+			"that list has noise, pass --passos (order is only judged on an explicit --passos). Record steps with 'cerne runbook step'; close with 'cerne work done'. " +
 			"The record keeps metadata and hashes only, never evidence content.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
