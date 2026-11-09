@@ -100,6 +100,8 @@ type nextJSON struct {
 	OpenPendings      []store.Pending `json:"open_pendings"`
 	Debts             []nextFinding   `json:"debts"`
 	DriftPending      int             `json:"drift_pending"`
+	// RunbookPreflight (F-0874): runs in progress whose next step has open preconditions.
+	RunbookPreflight []nextPreflight `json:"runbook_preflight,omitempty"`
 }
 
 // runNext consolidates `status --active` and `lint` into one agent-facing work
@@ -191,6 +193,8 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		q.DriftPending = len(pending)
 	}
 
+	q.RunbookPreflight = nextPreflights(ctx.repoDir)
+
 	out := cmd.OutOrStdout()
 	if asJSON {
 		enc := json.NewEncoder(out)
@@ -240,6 +244,16 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		if rest := len(open) - nextPendingCap; rest > 0 {
 			fmt.Fprintf(out, "  … and %d more ('cerne pending list')\n", rest)
 		}
+		fmt.Fprintln(out)
+	}
+
+	// Runbook in execution with an open precondition at its next step (F-0874):
+	// informational, it does not block the step.
+	for _, np := range q.RunbookPreflight {
+		printed = true
+		fmt.Fprintf(out, "RUNBOOK PREFLIGHT (%s %s window %s, next step %s) — %d pending, %d manual; 'cerne runbook preflight %s --ate %s'\n",
+			np.Run, np.Runbook, np.Window, np.NextStep, np.Pending, np.Manual, np.Runbook, np.NextStep)
+		writePreResults(out, np.openItems, false)
 		fmt.Fprintln(out)
 	}
 

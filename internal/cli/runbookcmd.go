@@ -38,6 +38,7 @@ func newRunbookCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newRunbookRunCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newRunbookStepCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newRunbookReportCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookPreflightCmd(&dir)))
 	return cmd
 }
 
