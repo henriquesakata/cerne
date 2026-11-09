@@ -76,7 +76,7 @@ func LoadRun(repoDir, id string) (Run, error) {
 }
 
 var (
-	stepTokenRe = regexp.MustCompile(`S\d+(?:\.\d+)*`)
+	stepTokenRe = regexp.MustCompile(`S\d+[a-z]?(?:\.\d+)*`)
 	stepRangeRe = regexp.MustCompile(`(?i)\bS(\d+)\s+(?:a|ao|até)\s+S(\d+)\b`)
 )
 
@@ -122,15 +122,29 @@ func RunbookSteps(body string) []string {
 	return out
 }
 
-// CompareSteps orders step ids naturally, part by part: S3 < S3.1 < S3.10 < S4.
+// CompareSteps orders step ids naturally, part by part, each part as (number,
+// optional letter): S3 < S3.1 < S3.10 < S3a < S3a.1 < S3b < S4.
 func CompareSteps(a, b string) int {
 	pa, pb := strings.Split(a[1:], "."), strings.Split(b[1:], ".")
 	for i := 0; i < len(pa) && i < len(pb); i++ {
-		x, _ := strconv.Atoi(pa[i])
-		y, _ := strconv.Atoi(pb[i])
+		x, lx := splitStepPart(pa[i])
+		y, ly := splitStepPart(pb[i])
 		if x != y {
 			return x - y
 		}
+		if c := strings.Compare(lx, ly); c != 0 {
+			return c
+		}
 	}
 	return len(pa) - len(pb)
+}
+
+// splitStepPart splits "4b" into (4, "b").
+func splitStepPart(p string) (int, string) {
+	n := len(p)
+	for n > 0 && (p[n-1] < '0' || p[n-1] > '9') {
+		n--
+	}
+	v, _ := strconv.Atoi(p[:n])
+	return v, p[n:]
 }
