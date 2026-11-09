@@ -103,6 +103,7 @@ func nextPreflights(repoDir string) []nextPreflight {
 		return nil
 	}
 	var out []nextPreflight
+	forge := app.NewForge() // one cache and one time budget for every run
 	for _, wk := range works {
 		if wk.State != domain.WorkActive {
 			continue
@@ -111,7 +112,7 @@ func nextPreflights(repoDir string) []nextPreflight {
 		if err != nil {
 			continue
 		}
-		next, res, ok, err := app.RunPreflight(repoDir, run)
+		next, res, ok, err := app.RunPreflight(repoDir, run, forge)
 		if err != nil || !ok {
 			continue
 		}

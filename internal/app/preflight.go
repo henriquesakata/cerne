@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -36,13 +35,11 @@ const (
 	PreManual  = "manual"
 )
 
-// Precondition is one declared line.
-type Precondition struct {
-	Step string // "" = every step
-	Kind string // "result" | "registro" | "mr" | "manual"
-	Args []string
-	Text string // what the author wrote after the colon
-}
+// Precondition and the parser live in the store, shared with the lint.
+type Precondition = store.Precondition
+
+// ParsePreconditions: see store.ParsePreconditions.
+var ParsePreconditions = store.ParsePreconditions
 
 // PreResult is a precondition with the outcome of its check.
 type PreResult struct {
@@ -51,52 +48,19 @@ type PreResult struct {
 	Detail string
 }
 
-var preLineRe = regexp.MustCompile(`(?i)^\s*(?:[-*+>]\s*)*(?:\*\*)?pr[eé]-?condi[cç][aã]o(?:\*\*)?\s*(?:\(?\s*((?-i:S\d+[a-z]?(?:\.\d+)*))\s*\)?)?\s*:\s*(?:\*\*)?\s*(.+?)\s*$`)
-
-// ParsePreconditions reads the declared preconditions of a runbook body, in
-// order, skipping code fences.
-func ParsePreconditions(body string) []Precondition {
-	var out []Precondition
-	fence := false
-	for _, l := range strings.Split(body, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(l), "```") {
-			fence = !fence
-			continue
-		}
-		if fence {
-			continue
-		}
-		m := preLineRe.FindStringSubmatch(l)
-		if m == nil {
-			continue
-		}
-		p := Precondition{Step: m[1], Text: m[2], Kind: "manual"}
-		f := strings.Fields(strings.Trim(m[2], "*"))
-		for i := range f {
-			f[i] = strings.Trim(f[i], "`.,;")
-		}
-		switch {
-		case len(f) == 2 && strings.EqualFold(f[0], "result"):
-			p.Kind, p.Args = "result", f[1:]
-		case len(f) == 2 && strings.EqualFold(f[0], "registro"):
-			p.Kind, p.Args = "registro", f[1:]
-		case len(f) == 3 && strings.EqualFold(f[0], "mr") && strings.Contains(f[1], "!"):
-			p.Kind, p.Args = "mr", f[1:]
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
 // MRState asks the forge for the state of a merge request ("opened", "merged",
 // "closed"). It is a variable so tests and other forges can replace it; the
 // default asks glab, read-only, with a deadline.
 var MRState = glabMRState
 
 func glabMRState(project, iid string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if !store.ValidMRRef(project, iid) {
+		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "glab", "mr", "view", iid, "-R", project, "-F", "json").Output()
+	// "--" ends the flags: the positional can never be read as one (F-0874).
+	out, err := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid).Output()
 	if err != nil {
 		return "", fmt.Errorf("glab: %w", err)
 	}
@@ -107,6 +71,11 @@ func glabMRState(project, iid string) (string, error) {
 		return "", errors.New("glab returned no state")
 	}
 	return strings.ToLower(v.State), nil
+}
+
+func validMRArg(a string) bool {
+	proj, iid, _ := strings.Cut(a, "!")
+	return store.ValidMRRef(proj, iid)
 }
 
 func normMRState(s string) string {
@@ -125,27 +94,69 @@ func normMRState(s string) string {
 // forge for MRs). Read-only. A kind the cerne cannot verify, and a forge that
 // cannot be reached, are "manual": never "met".
 func CheckPreconditions(repoDir string, pcs []Precondition) []PreResult {
+	return CheckPreconditionsWith(repoDir, pcs, NewForge())
+}
+
+// Forge answers MR states for one invocation: each MR is asked once (errors
+// too) and the forge gets a total time budget; past it the MRs are not asked
+// and Cut is set, so the warning says the ceiling cut the check.
+type Forge struct {
+	Budget time.Duration
+	Cut    bool
+	spent  time.Duration
+	cache  map[string]forgeAnswer
+}
+
+type forgeAnswer struct {
+	state string
+	err   error
+}
+
+// NewForge: 10 s in total, one call at most 5 s.
+func NewForge() *Forge { return &Forge{Budget: 10 * time.Second, cache: map[string]forgeAnswer{}} }
+
+func (f *Forge) state(project, iid string) (string, error) {
+	k := project + "!" + iid
+	if a, ok := f.cache[k]; ok {
+		return a.state, a.err
+	}
+	if f.spent >= f.Budget {
+		f.Cut = true
+		return "", fmt.Errorf("forge time budget of %s spent by earlier MRs", f.Budget)
+	}
+	t0 := time.Now()
+	st, err := MRState(project, iid)
+	f.spent += time.Since(t0)
+	f.cache[k] = forgeAnswer{st, err}
+	return st, err
+}
+
+// CheckPreconditionsWith is CheckPreconditions sharing a Forge (cache and
+// budget) across calls, e.g. every run of one `cerne next`.
+func CheckPreconditionsWith(repoDir string, pcs []Precondition, forge *Forge) []PreResult {
 	out := make([]PreResult, 0, len(pcs))
 	for _, p := range pcs {
 		r := PreResult{Precondition: p, Status: PreManual, Detail: "the cerne cannot verify this: check it by hand"}
-		switch p.Kind {
-		case "registro":
+		switch {
+		case p.Problem != "":
+			r.Detail = "invalid declaration (" + p.Problem + "): never run, check it by hand"
+		case p.Kind == "registro" && len(p.Args) == 1 && store.ValidEntityID(p.Args[0]):
 			if store.EntityExists(repoDir, p.Args[0]) {
 				r.Status, r.Detail = PreMet, p.Args[0]+" exists"
 			} else {
 				r.Status, r.Detail = PrePending, p.Args[0]+" not found in the backend"
 			}
-		case "result":
+		case p.Kind == "result" && len(p.Args) == 1 && store.ValidFeatureID(p.Args[0]):
 			data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", p.Args[0], "result.md"))
 			if err == nil && doccheck.HasRealContent(data) {
 				r.Status, r.Detail = PreMet, p.Args[0]+" has a result"
 			} else {
 				r.Status, r.Detail = PrePending, p.Args[0]+" has no result written"
 			}
-		case "mr":
+		case p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]):
 			proj, iid, _ := strings.Cut(p.Args[0], "!")
 			want := normMRState(p.Args[1])
-			got, err := MRState(proj, iid)
+			got, err := forge.state(proj, iid)
 			switch {
 			case err != nil:
 				r.Detail = "forge not reachable (" + err.Error() + "): check it by hand"
@@ -201,7 +212,7 @@ func Preflight(repoDir, rbID, upTo string) ([]PreResult, string, error) {
 // RunPreflight is the preflight of a run in progress: the preconditions of its
 // next step (the first with no ok) and the global ones, minus the steps already
 // done. ok is false when the run has no step left.
-func RunPreflight(repoDir string, run store.Run) (next string, res []PreResult, ok bool, err error) {
+func RunPreflight(repoDir string, run store.Run, forge *Forge) (next string, res []PreResult, ok bool, err error) {
 	for _, s := range run.Steps {
 		if !runStepOK(run, s) {
 			next = s
@@ -221,7 +232,10 @@ func RunPreflight(repoDir string, run store.Run) (next string, res []PreResult, 
 			pcs = append(pcs, p)
 		}
 	}
-	return next, CheckPreconditions(repoDir, pcs), true, nil
+	if forge == nil {
+		forge = NewForge()
+	}
+	return next, CheckPreconditionsWith(repoDir, pcs, forge), true, nil
 }
 
 // OpenPreconditions is the subset of results that are not met.
