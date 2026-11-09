@@ -446,3 +446,27 @@ func TestGauntletRoundsCountsDefeats(t *testing.T) {
 		})
 	}
 }
+
+// F-0875 r1: GauntletVerdict reads the same record as the lint — a verdict on
+// a line of its own, with no "Rodada N —" anchor, is read like GauntletRounds
+// reads it, so the accept queue never contradicts result-missing-gauntlet.
+func TestGauntletVerdictReadsLikeTheLint(t *testing.T) {
+	for name, tc := range map[string]struct {
+		result string
+		want   string
+		ok     bool
+	}{
+		"line of its own":    {"## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n", "derrota", true},
+		"resultado in bold":  {"## Gauntlet\n\nBarra: x.\n\n**Resultado:** Vitória.\n", "vitória", true},
+		"opens with outcome": {"## Gauntlet\n\nBarra: x.\n\nEmpate: \"os dois\"\n", "empate", true},
+		"anchored wins":      {"## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n\nRodada 2 — vitória: \"sim\"\n", "vitória", true},
+		"last round decides": {"## Gauntlet\n\nRodada 1 — derrota: \"a\"\nRodada 2 — empate: \"b\"\n", "empate", true},
+		"exemption":          {"## Gauntlet\n\nBarra: não aplicável (sem código).\n", "dispensada", true},
+		"nothing":            {"## Gauntlet\n\nBarra: x.\n", "", false},
+	} {
+		got, ok := GauntletVerdict([]byte(tc.result))
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("%s: got (%q, %v), want (%q, %v)", name, got, ok, tc.want, tc.ok)
+		}
+	}
+}
