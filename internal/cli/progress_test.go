@@ -17,7 +17,7 @@ func TestPhaseBeatsWhileSlow(t *testing.T) {
 	var buf bytes.Buffer
 	stop := startPhase(&buf, "passo lento")
 	time.Sleep(60 * time.Millisecond)
-	stop()
+	stop(true)
 
 	out := buf.String()
 	if !strings.HasPrefix(out, "cerne: passo lento...\n") {
@@ -40,7 +40,7 @@ func TestPhaseBeatsWhileSlow(t *testing.T) {
 // A fast phase prints the announcement and the close, no heartbeat.
 func TestPhaseFastHasNoHeartbeat(t *testing.T) {
 	var buf bytes.Buffer
-	startPhase(&buf, "rapido")()
+	startPhase(&buf, "rapido")(true)
 	if strings.Contains(buf.String(), "still running") {
 		t.Fatalf("fast phase must not beat:\n%s", buf.String())
 	}
@@ -61,5 +61,15 @@ func TestPushReportsPhasesOnStderr(t *testing.T) {
 	}
 	if strings.Contains(stdout, "cerne: ") {
 		t.Fatalf("progress leaked to stdout:\n%s", stdout)
+	}
+}
+
+// A phase that failed never says "done".
+func TestPhaseFailedNeverSaysDone(t *testing.T) {
+	var buf bytes.Buffer
+	startPhase(&buf, "quebrou")(false)
+	out := buf.String()
+	if strings.Contains(out, "done") || !strings.Contains(out, "cerne: quebrou: failed (") {
+		t.Fatalf("failed phase must close with failed, not done:\n%s", out)
 	}
 }

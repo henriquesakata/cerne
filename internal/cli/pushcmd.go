@@ -84,7 +84,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	}
 	endRead := startPhase(cmd.ErrOrStderr(), "reading changed documents")
 	docs, err := collectChangedDocs(ctx.repoDir, docsDir, manifest)
-	endRead()
+	endRead(err == nil)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,
 		func() error { return app.OpenAutoWorkForPush(ctx.repoDir, ctx.projDir, changes) })
-	endReconcile()
+	endReconcile(err == nil && len(conflicts) == 0)
 	if err != nil {
 		return err
 	}

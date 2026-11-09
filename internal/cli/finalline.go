@@ -22,16 +22,34 @@ func withFinalLine(cmd *cobra.Command) *cobra.Command {
 			fmt.Fprintln(c.ErrOrStderr(), "cerne: resultado=OK")
 			return nil
 		}
-		fmt.Fprintf(c.ErrOrStderr(), "Error: %v\n", err)
-		// The literal is spec-mandated (F-0876) and pt-BR, so it is built apart
-		// from the Fprintf (the English-output guard, F-0124, reads those).
-		var line strings.Builder
-		line.WriteString("cerne: resultado=FALHA ")
-		line.WriteString(oneLine(err.Error()))
-		fmt.Fprintln(c.ErrOrStderr(), line.String())
-		return err
+		return failWithLine(c, err)
+	}
+	// Flag and argument errors are raised by cobra before RunE ever runs; they
+	// end in the same line, or `cerne push --bogus | tail` would be the one
+	// silent case (F-0876).
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return failWithLine(c, err) })
+	if args := cmd.Args; args != nil {
+		cmd.Args = func(c *cobra.Command, a []string) error {
+			if err := args(c, a); err != nil {
+				return failWithLine(c, err)
+			}
+			return nil
+		}
 	}
 	return cmd
+}
+
+// failWithLine prints the error and then the FALHA line (so the line is the
+// last thing printed) and hands the error back for the exit status.
+func failWithLine(c *cobra.Command, err error) error {
+	fmt.Fprintf(c.ErrOrStderr(), "Error: %v\n", err)
+	// The literal is spec-mandated (F-0876) and pt-BR, so it is built apart
+	// from the Fprintf (the English-output guard, F-0124, reads those).
+	var line strings.Builder
+	line.WriteString("cerne: resultado=FALHA ")
+	line.WriteString(oneLine(err.Error()))
+	fmt.Fprintln(c.ErrOrStderr(), line.String())
+	return err
 }
 
 // oneLine folds a multi-line error (a conflict diff, the frozen-document
