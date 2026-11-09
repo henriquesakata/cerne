@@ -355,3 +355,36 @@ func (r gauntletRecord) problem() string {
 	}
 	return ""
 }
+
+// GauntletVerdict reads a result's Gauntlet outcome for the accept queue
+// (F-0875), with the parser of result-missing-gauntlet: the verdict word
+// (vitória, empate or derrota, as written) of the highest-numbered "Rodada N"
+// line, or "dispensada" for a recorded exemption with no round. ok is false
+// when there is no section or no round line whose outcome can be read: the
+// queue then says so, never infers.
+func GauntletVerdict(result []byte) (verdict string, ok bool) {
+	last, exempt := -1, false
+	for _, section := range gauntletSections(stripHTMLComments(result)) {
+		exempt = exempt || parseGauntlet(section).exempt
+		for _, line := range strings.Split(section, "\n") {
+			s := lineMarkersRe.ReplaceAllString(line, "")
+			m := roundAnchorRe.FindStringSubmatch(s)
+			if m == nil {
+				continue
+			}
+			head := s
+			if q := strings.IndexAny(s, "\"“«"); q >= 0 {
+				head = s[:q]
+			}
+			if w := verdictRe.FindString(head); w != "" {
+				if n, _ := strconv.Atoi(m[1]); n >= last {
+					last, verdict = n, strings.ToLower(w)
+				}
+			}
+		}
+	}
+	if verdict == "" && exempt {
+		return "dispensada", true
+	}
+	return verdict, verdict != ""
+}
