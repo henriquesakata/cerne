@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/gitback"
@@ -34,6 +35,7 @@ func resolvePaths(startDir string) (projCtx, error) {
 	if err != nil {
 		return projCtx{}, err
 	}
+	noteCerneRoot(startDir, projDir)
 	cacheDir, err := project.CacheDir(cfg.ProjectID)
 	if err != nil {
 		return projCtx{}, err
@@ -50,6 +52,24 @@ func resolvePaths(startDir string) (projCtx, error) {
 		return projCtx{}, err
 	}
 	return projCtx{cfg: cfg, projDir: projDir, repoDir: repoDir}, nil
+}
+
+// noteCerneRoot says on stderr when the project was found through CERNE_ROOT
+// and not by walking up from startDir (F-0876), so adopting the variable is
+// never silent. A startDir inside projDir was found by the walk: no note.
+func noteCerneRoot(startDir, projDir string) {
+	env := os.Getenv("CERNE_ROOT")
+	if env == "" {
+		return
+	}
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return
+	}
+	if rel, err := filepath.Rel(projDir, abs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "cerne: no project from %s; using CERNE_ROOT=%s\n", abs, projDir)
 }
 
 // recreateCache re-clones the backend into repoDir when the cached clone is

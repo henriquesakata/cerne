@@ -74,11 +74,34 @@ var (
 	// `\n`, so an id on a later line follows a word character.
 	workIDRe      = regexp.MustCompile(`\bW-\d{4,}\b`)
 	workCreatedRe = regexp.MustCompile(`(W-\d{4,}) [^\s()]+ \(active\)`)
-	featureIDRe    = regexp.MustCompile(`\bF-\d{4,}\b`)
+	featureIDRe   = regexp.MustCompile(`\bF-\d{4,}\b`)
 	// startedIDRe is the id a confirmed `feature start` binds: F-, E- or T-,
 	// the same kinds bindingLive accepts (F-0309).
 	startedIDRe = regexp.MustCompile(`\b[FET]-\d{4,}\b`)
 )
+
+var (
+	shellSepRe   = regexp.MustCompile(`&&|\|\||[;|&\n]`)
+	quotedRe     = regexp.MustCompile(`"[^"]*"|'[^']*'`)
+	cerneStartRe = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*work\s+start\b`)
+	helpFlagRe   = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
+)
+
+// runsWorkStart reports whether a Bash command line actually RUNS
+// `cerne work start`: it sits at the start of a command (after ; && || | & or
+// a newline, optional VAR=x prefixes), outside quotes, and is not a --help call.
+// Quoted text is blanked first, so `echo "cerne work start"` and
+// `git commit -m "... work start"` are mentions, not runs (F-0876).
+func runsWorkStart(command string) bool {
+	blanked := quotedRe.ReplaceAllString(command, `""`)
+	for _, seg := range shellSepRe.Split(blanked, -1) {
+		seg = strings.TrimSpace(seg)
+		if cerneStartRe.MatchString(seg) && !helpFlagRe.MatchString(seg) {
+			return true
+		}
+	}
+	return false
+}
 
 // warnUnbound tells the agent, through the PostToolUse context channel, that
 // the work it just started could not be bound to this session (F-0876).
@@ -128,7 +151,11 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		} else {
 			// Redirected or filtered output (or a refused start): there is no
 			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
-			warnUnbound(cmd)
+			// Only a real, un-helped, un-refused start: a Bash call that merely
+			// MENTIONS "work start" (grep, echo, a commit message) is not one.
+			if runsWorkStart(ti.Command) && !strings.Contains(string(in.ToolResponse), "Error") {
+				warnUnbound(cmd)
+			}
 		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the
