@@ -23,15 +23,30 @@ var ErrUnsupportedErrataKind = errors.New("entity type does not support errata")
 // correction is by annotation, so history stays immutable (supersede, don't
 // rewrite). Returns the id on success.
 func AddErrata(repoDir, projDir, id, text, author string) (string, error) {
+	return AddErrataAt(repoDir, projDir, id, text, author, "")
+}
+
+// AddErrataAt is AddErrata with the step the erratum changes declared (F-0872):
+// a non-empty target is written as the item's `Altera:` line, so the
+// consolidated view can place the item next to that step.
+func AddErrataAt(repoDir, projDir, id, text, author, target string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", ErrEmptyErrata
+	}
+	target = strings.TrimSpace(target)
+	if strings.ContainsAny(target, "\r\n") {
+		return "", fmt.Errorf("--altera takes one step reference (e.g. S6.6), got a multi-line value")
+	}
+	stored := text
+	if target != "" {
+		stored = "Altera: " + target + "\n\n" + text
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		if err := ensureErrataEntityExists(repoDir, id); err != nil {
 			return "", err
 		}
-		if err := store.AppendErrata(repoDir, id, text, author, time.Now().UTC()); err != nil {
+		if err := store.AppendErrata(repoDir, id, stored, author, time.Now().UTC()); err != nil {
 			return "", err
 		}
 		// The author IS the event actor: a human errata records the human actor,
