@@ -18,7 +18,7 @@ func newSyncCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	return cmd
+	return withFinalLine(cmd)
 }
 
 // runSync is the no-deadlock forward path: a non-destructive pull that merges

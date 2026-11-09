@@ -39,7 +39,7 @@ func newPushCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and show what would go to the backend, without committing or sending")
-	return cmd
+	return withFinalLine(cmd)
 }
 
 // pushedDoc is one changed materialized document mapped back to its
