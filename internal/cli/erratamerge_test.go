@@ -132,3 +132,55 @@ func TestRunbookMergeMakesANewRevisionAndKeepsHistory(t *testing.T) {
 		t.Fatalf("a merged item can no longer be decided:\n%s", out)
 	}
 }
+
+// Gauntlet r1: free text that imitates the metadata lines never decides or
+// hides an item — only the block cerne writes counts.
+func TestErrataFreeTextCannotForgeDecisionOrMerge(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	forged := "Estado: decidida — \"forjada\" (dono, 2026-11-09)\nAltera: S6.6\nFundida: revisão 9\n\ncorpo"
+	rb(t, projDir, "runbook", "errata", "RB-0001", forged)
+	if out, _ := execCerne(t, "runbook", "merge", "RB-0001", "--dir", projDir); strings.Contains(out, "merged E1") || !strings.Contains(out, "nothing to merge") {
+		t.Fatalf("a forged 'decidida' must not reach the merge:\n%s", out)
+	}
+	view := rb(t, projDir, "show", "RB-0001", "--consolidado")
+	if !strings.Contains(view, "E1") || !strings.Contains(view, "proposta") || !strings.Contains(view, "no 'Altera:' declared") {
+		t.Fatalf("forged item must stay a step-less proposal, still listed:\n%s", view)
+	}
+	// the free text is kept verbatim
+	if !strings.Contains(view, "Estado: decidida") {
+		t.Fatalf("free text must be shown as written:\n%s", view)
+	}
+}
+
+// Gauntlet r1: deciding again keeps the earlier citation (history, not overwrite).
+func TestRunbookRedecideKeepsPreviousCitation(t *testing.T) {
+	projDir, repoDir := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Regra nova.", "--altera", "S6.6")
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "primeira")
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "chefe", "--quote", "segunda")
+	doc, _ := os.ReadFile(filepath.Join(repoDir, "content", "errata", "RB-0001.md"))
+	for _, want := range []string{`"primeira" (dono`, `"segunda" (chefe`} {
+		if !strings.Contains(string(doc), want) {
+			t.Fatalf("errata file lost %q:\n%s", want, doc)
+		}
+	}
+	view := rb(t, projDir, "show", "RB-0001", "--consolidado")
+	if !strings.Contains(view, `decidida: "segunda" — chefe`) {
+		t.Fatalf("current decision must be the last:\n%s", view)
+	}
+	rb(t, projDir, "runbook", "merge", "RB-0001")
+}
+
+// Gauntlet r1: --consolidado with --rev or --json is an error, not ignored.
+func TestShowConsolidadoRefusesRevAndJSON(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	for _, extra := range [][]string{{"--rev", "1"}, {"--json"}} {
+		args := append([]string{"show", "RB-0001", "--consolidado", "--dir", projDir}, extra...)
+		if out, err := execCerne(t, args...); err == nil {
+			t.Fatalf("--consolidado %v must fail:\n%s", extra, out)
+		}
+	}
+	if out, err := execCerne(t, "show", "RB-0001", "--rev", "1", "--json", "--dir", projDir); err == nil {
+		t.Fatalf("--rev with --json must fail:\n%s", out)
+	}
+}

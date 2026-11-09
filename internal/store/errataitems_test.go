@@ -108,3 +108,29 @@ func TestStepTokenMatchesWhole(t *testing.T) {
 		t.Fatalf("S6.1 must land under 'S6.1. Um', not S6.10:\n%s", out)
 	}
 }
+
+// Gauntlet r1: the whole-token clause. S6.1 is neither S6.1.2 nor S6.10 nor
+// xS6.1, but does match "S6.1." and "S6.1:" (kills the mutant that drops it).
+func TestHasStepToken(t *testing.T) {
+	for _, tc := range []struct {
+		title string
+		want  bool
+	}{
+		{"S6.1. Um", true}, {"S6.1: um", true}, {"S6.1", true},
+		{"S6.1.2. Sub", false}, {"S6.10. Dez", false}, {"xS6.1 um", false}, {"S6.1x", false},
+	} {
+		if got := hasStepToken(tc.title, "S6.1"); got != tc.want {
+			t.Errorf("hasStepToken(%q, S6.1) = %v, want %v", tc.title, got, tc.want)
+		}
+	}
+}
+
+// Gauntlet r1: a heading that only mentions the token in prose is not the step.
+func TestInsertAtStepsIgnoresProseMention(t *testing.T) {
+	body := "# R\n\n## Notas sobre S6.6\n\nprosa\n\n## S6.6. Parada\n\nreal\n"
+	it := ErrataItem{ID: "E1", Date: "2026-11-07", Target: "S6.6", Text: "t"}
+	out, orphans := InsertAtSteps(body, []ErrataItem{it}, func(ErrataItem) string { return "proposta" })
+	if len(orphans) != 0 || strings.Index(out, "Errata E1") < strings.Index(out, "real") {
+		t.Fatalf("E1 must land under the real step S6.6:\n%s", out)
+	}
+}
