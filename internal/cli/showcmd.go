@@ -206,6 +206,8 @@ func kindForID(id string) (string, bool) {
 		return "pending", true
 	case "I":
 		return "idea", true
+	case "W":
+		return "work", true
 	}
 	return "", false
 }
@@ -270,6 +272,17 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 			content = []showDoc{{"", p.Body}}
 		}
 		return showResult{kind, p, content, nil}, nil
+	case "work":
+		wk, err := store.LoadWork(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("work %s: %w", id, err)
+		}
+		// F-0873: a work that records a runbook execution carries its run.
+		var content []showDoc
+		if run, err := store.LoadRun(repoDir, id); err == nil {
+			content = []showDoc{{"run", renderRun(run)}}
+		}
+		return showResult{kind, wk, content, nil}, nil
 	case "idea":
 		if _, err := app.CanonicalIdeaID(id); err != nil {
 			return showResult{}, err
@@ -397,6 +410,15 @@ func (r showResult) renderText(w io.Writer) {
 		}
 		if e.Reason != "" {
 			fmt.Fprintf(w, "reason: %s\n", e.Reason)
+		}
+	case store.Work:
+		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		fmt.Fprintf(w, "actor: %s\n", e.Actor)
+		if len(e.Refs) > 0 {
+			fmt.Fprintf(w, "refs: %s\n", joinRefs(e.Refs))
+		}
+		if e.Note != "" {
+			fmt.Fprintf(w, "note: %s\n", e.Note)
 		}
 	case store.Idea:
 		fmt.Fprintf(w, "%s  %s  [%s]\n", e.ID, r.kind, e.State)

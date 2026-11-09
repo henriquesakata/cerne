@@ -35,6 +35,9 @@ func newRunbookCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newRunbookDecideCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newRunbookMergeCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookRunCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookStepCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newRunbookReportCmd(&dir)))
 	return cmd
 }
 
