@@ -64,6 +64,12 @@ func newShowCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if consolidated || rev != 0 {
+				if consolidated && rev != 0 {
+					return errors.New("--consolidado and --rev are alternatives: pick one")
+				}
+				if asJSON || doc != "" {
+					return errors.New("--consolidado and --rev print the runbook body as text: --json and --doc do not apply")
+				}
 				return runShowRunbookView(cmd, dir, args[0], consolidated, rev)
 			}
 			return runShow(cmd, dir, args[0], doc, asJSON)

@@ -76,6 +76,10 @@ const (
 	// RuleStalePending flags an open pending older than StalePendingAfter
 	// (F-0322). Advisory: it never fails 'cerne lint'.
 	RuleStalePending = "stale-pending"
+
+	// RuleErrataPending flags a runbook erratum still a proposal, or decided
+	// but not merged into the body (F-0872). Advisory: it never fails the lint.
+	RuleErrataPending = "errata-pending"
 )
 
 // StalePendingAfter is how long a pending may stay open before stale-pending
@@ -85,7 +89,7 @@ const StalePendingAfter = 30 * 24 * time.Hour
 
 // advisoryRules are the warning-severity rules: printed like any other, but
 // they never fail 'cerne lint' on their own.
-var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true}
+var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true}
 
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
@@ -113,7 +117,7 @@ func DowngradeWikiDebt(findings []Finding, wikiOn bool) {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -146,6 +150,7 @@ var ruleRank = map[string]int{
 	RuleStalePending:             25,
 	RuleSpecMissingBar:           26,
 	RulePreconditionMalformed:    27,
+	RuleErrataPending:            28,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -363,6 +368,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, specChangedFindings(repoDir, features)...)
 	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
 	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
+	findings = append(findings, errataPendingFindings(repoDir, runbooks)...)
 	findings = append(findings, duplicateLiveFindings(notes, decisions, references, events)...)
 
 	specBar, err := specBarFindings(repoDir, features)
