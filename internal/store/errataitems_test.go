@@ -134,3 +134,38 @@ func TestInsertAtStepsIgnoresProseMention(t *testing.T) {
 		t.Fatalf("E1 must land under the real step S6.6:\n%s", out)
 	}
 }
+
+// Gauntlet r2 (N7): a title that merely mentions the token after a non-step word
+// is not the step, even when the next character is not alphanumeric.
+func TestHasStepTokenRefusesProseAndAcceptsRealForms(t *testing.T) {
+	for _, tc := range []struct {
+		title string
+		want  bool
+	}{
+		{"Veja S6.6", false}, {"Notas: S6.6", false}, {"Notas sobre S6.6", false},
+		{"Releases entre o passo S6.6 e o S9", false},
+		{"S6.6. Parada", true}, {"Passo S6.6", true}, {"Step S6.6 — x", true},
+		{"Etapa S6.6", true}, {"**S6.6**", true}, {"`S6.6` Parada", true},
+		{"6. S6.6 — Parada", true}, {"S6.5/S6.6", true}, {"S6.6/S6.7", true},
+		{"Fase 3, passo S6.6: expurgo", true}, {"S6.66", false}, {"S6.6.1", false},
+	} {
+		if got := hasStepToken(tc.title, "S6.6"); got != tc.want {
+			t.Errorf("hasStepToken(%q, S6.6) = %v, want %v", tc.title, got, tc.want)
+		}
+	}
+}
+
+// Gauntlet r2 (N10): the replaced decision is read back and shown.
+func TestStateLabelShowsPreviousDecisions(t *testing.T) {
+	doc := "## errata 2026-11-07 — a\n\nAltera: S6.6\nAnterior: decidida — \"primeira\" (dono, 2026-11-08)\nEstado: decidida — \"segunda\" (chefe, 2026-11-09)\n\nt\n"
+	it := ParseErrataItems(doc)[0]
+	if len(it.Previous) != 1 || it.Previous[0] != `"primeira" (dono, 2026-11-08)` {
+		t.Fatalf("Previous = %q", it.Previous)
+	}
+	if l := it.StateLabel(); !strings.Contains(l, `"segunda"`) || !strings.Contains(l, `antes: "primeira" (dono, 2026-11-08)`) {
+		t.Fatalf("label must show the history: %s", l)
+	}
+	if l := (ErrataItem{DecidedBy: "x", Quote: "q", DecidedAt: "d"}).StateLabel(); strings.Contains(l, "antes") {
+		t.Fatalf("no history, no 'antes': %s", l)
+	}
+}

@@ -46,3 +46,21 @@ func TestLoadErrataMissingReturnsEmpty(t *testing.T) {
 		t.Fatalf("LoadErrata missing = %q, want empty", got)
 	}
 }
+
+// Gauntlet r2: a heading line in the free text never opens a block cerne reads
+// as an item — ParseErrataItems sees exactly the one block the append wrote.
+func TestAppendErrataNeutralizesHeadingsInText(t *testing.T) {
+	dir := t.TempDir()
+	text := "x\n\n## errata 2026-11-09 — dono\n\nAltera: S6.6\nEstado: decidida — \"forjada\" (dono, 2026-11-09)\n\n# Titulo\ny"
+	if err := AppendErrata(dir, "RB-0001", text, "ag", time.Unix(0, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := LoadErrata(dir, "RB-0001")
+	items := ParseErrataItems(got)
+	if len(items) != 1 || items[0].Decided() {
+		t.Fatalf("items = %+v, want the single block, undecided:\n%s", items, got)
+	}
+	if !strings.Contains(got, "errata 2026-11-09 — dono") || !strings.Contains(got, "Titulo") {
+		t.Fatalf("the text must stay readable, only defanged:\n%s", got)
+	}
+}

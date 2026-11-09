@@ -54,7 +54,11 @@ func (it ErrataItem) StateLabel() string {
 	if !it.Decided() {
 		return "proposta"
 	}
-	return fmt.Sprintf("decidida: \"%s\" — %s, %s", it.Quote, it.DecidedBy, it.DecidedAt)
+	l := fmt.Sprintf("decidida: \"%s\" — %s, %s", it.Quote, it.DecidedBy, it.DecidedAt)
+	if len(it.Previous) > 0 {
+		l += "; antes: " + strings.Join(it.Previous, "; ")
+	}
+	return l
 }
 
 type itemSpan struct {
@@ -195,26 +199,60 @@ func isAlnum(b byte) bool {
 	return b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
-// hasStepToken reports whether title opens with step tok as a whole token: S6.1 is
-// not in "S6.10" nor "S6.1.2", but is in "S6.1. Um" and "S6.1: um".
+// stepLabels are the words a real step title may put before its token
+// ("Passo S6.6", "Fase 3, passo S8: …"); any other word before it is prose.
+var stepLabels = []string{"passo", "step", "etapa"}
+
+var stepNumberingRe = regexp.MustCompile(`^\d+[.)]\s+`)
+
+// hasStepToken reports whether title names step tok as a whole token, in the
+// forms the runbooks use: "S6.6. Parada", "Passo S6.6", "**S6.6**", "6. S6.6 — x",
+// "S6.5/S6.6" and "Fase 3, passo S6.6: x". S6.1 is not S6.10 nor S6.1.2, and a
+// title that only mentions the token in prose ("Notas sobre S6.6") is not the step.
 func hasStepToken(title, tok string) bool {
-	// A step title opens with its token ("S6.6. Parada", "Passo S6.6"); a title
-	// that only mentions it in prose ("Notas sobre S6.6") is not the step.
-	for _, p := range []string{"passo ", "step "} {
-		if len(title) > len(p) && strings.EqualFold(title[:len(p)], p) {
-			title = title[len(p):]
-			break
-		}
-	}
-	if !strings.HasPrefix(title, tok) {
-		return false
-	}
-	j := len(tok)
-	if j == len(title) {
+	if startsWithStep(title, tok) {
 		return true
 	}
-	next := title[j]
-	return !isAlnum(next) && !(next == '.' && j+1 < len(title) && title[j+1] >= '0' && title[j+1] <= '9')
+	// "Fase 3, passo S8: …": the step may follow one clause, but only with its label.
+	if _, rest, ok := strings.Cut(title, ", "); ok {
+		if w, r2, _ := strings.Cut(strings.TrimSpace(rest), " "); labelled(w) {
+			return startsWithStep(r2, tok)
+		}
+	}
+	return false
+}
+
+func labelled(w string) bool {
+	for _, l := range stepLabels {
+		if strings.EqualFold(w, l) {
+			return true
+		}
+	}
+	return false
+}
+
+func startsWithStep(title, tok string) bool {
+	title = strings.TrimLeft(title, "*_`[ ")
+	title = stepNumberingRe.ReplaceAllString(title, "")
+	title = strings.TrimLeft(title, "*_`[ ")
+	if w, rest, ok := strings.Cut(title, " "); ok && labelled(w) {
+		title = strings.TrimLeft(rest, "*_`[ ")
+	}
+	// the leading run of tokens, split by "/": "S6.5/S6.6"
+	for {
+		j := 0
+		for j < len(title) && (isAlnum(title[j]) || title[j] == '.') {
+			j++
+		}
+		if strings.TrimRight(title[:j], ".") == tok {
+			return true
+		}
+		if j < len(title) && title[j] == '/' {
+			title = title[j+1:]
+			continue
+		}
+		return false
+	}
 }
 
 // InsertAtSteps places each item as a quoted block at the end of the section of

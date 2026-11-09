@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 )
 
@@ -50,7 +51,7 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 	} else if err != nil {
 		return err
 	}
-	entry += fmt.Sprintf("\n## errata %s — %s\n\n%s\n", at.Format("2006-01-02"), author, text)
+	entry += fmt.Sprintf("\n## errata %s — %s\n\n%s\n", at.Format("2006-01-02"), author, defangHeadings(text))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -58,4 +59,13 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 	defer f.Close()
 	_, err = f.WriteString(entry)
 	return err
+}
+
+var headingLineRe = regexp.MustCompile(`(?m)^( {0,3})(#{1,6})([ \t]|$)`)
+
+// defangHeadings escapes the Markdown headings of free text (`## x` -> `\## x`):
+// a heading line of the text would otherwise open a block the parser reads as
+// a new erratum item (F-0872). It renders the same, minus the heading.
+func defangHeadings(text string) string {
+	return headingLineRe.ReplaceAllString(text, `$1\$2$3`)
 }
