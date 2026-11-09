@@ -82,7 +82,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if err := checkContextUntouched(docsDir, manifest); err != nil {
 		return err
 	}
-	endRead := startPhase(cmd.ErrOrStderr(), "lendo os documentos alterados")
+	endRead := startPhase(cmd.ErrOrStderr(), "reading changed documents")
 	docs, err := collectChangedDocs(ctx.repoDir, docsDir, manifest)
 	endRead()
 	if err != nil {
@@ -108,7 +108,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)
 	// The lock wait, the fetch and the push live in this one call and can each
 	// take long: the phase beats on stderr so the wait never looks like a hang.
-	endReconcile := startPhase(cmd.ErrOrStderr(), "reconciliando com o backend")
+	endReconcile := startPhase(cmd.ErrOrStderr(), "reconciling with the backend")
 	head, conflicts, err := app.ReconcileCommitPushMutate(
 		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,

@@ -23,10 +23,10 @@ func TestPhaseBeatsWhileSlow(t *testing.T) {
 	if !strings.HasPrefix(out, "cerne: passo lento...\n") {
 		t.Fatalf("phase must announce itself first:\n%s", out)
 	}
-	if n := strings.Count(out, "cerne: passo lento ainda em andamento ("); n < 2 {
+	if n := strings.Count(out, "cerne: passo lento still running ("); n < 2 {
 		t.Fatalf("want >=2 heartbeats during a 60ms phase at 10ms, got %d:\n%s", n, out)
 	}
-	if !strings.Contains(out, "cerne: passo lento: fim (") {
+	if !strings.Contains(out, "cerne: passo lento: done (") {
 		t.Fatalf("phase must close with its elapsed time:\n%s", out)
 	}
 	// Stopped means stopped: nothing is written after stop returns.
@@ -41,7 +41,7 @@ func TestPhaseBeatsWhileSlow(t *testing.T) {
 func TestPhaseFastHasNoHeartbeat(t *testing.T) {
 	var buf bytes.Buffer
 	startPhase(&buf, "rapido")()
-	if strings.Contains(buf.String(), "ainda em andamento") {
+	if strings.Contains(buf.String(), "still running") {
 		t.Fatalf("fast phase must not beat:\n%s", buf.String())
 	}
 }
@@ -54,7 +54,7 @@ func TestPushReportsPhasesOnStderr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	for _, want := range []string{"cerne: lendo os documentos alterados...", "cerne: reconciliando com o backend...", "cerne: reconciliando com o backend: fim ("} {
+	for _, want := range []string{"cerne: reading changed documents...", "cerne: reconciling with the backend...", "cerne: reconciling with the backend: done ("} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("stderr missing %q:\n%s", want, stderr)
 		}

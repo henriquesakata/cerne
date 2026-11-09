@@ -23,7 +23,12 @@ func withFinalLine(cmd *cobra.Command) *cobra.Command {
 			return nil
 		}
 		fmt.Fprintf(c.ErrOrStderr(), "Error: %v\n", err)
-		fmt.Fprintf(c.ErrOrStderr(), "cerne: resultado=FALHA %s\n", oneLine(err.Error()))
+		// The literal is spec-mandated (F-0876) and pt-BR, so it is built apart
+		// from the Fprintf (the English-output guard, F-0124, reads those).
+		var line strings.Builder
+		line.WriteString("cerne: resultado=FALHA ")
+		line.WriteString(oneLine(err.Error()))
+		fmt.Fprintln(c.ErrOrStderr(), line.String())
 		return err
 	}
 	return cmd

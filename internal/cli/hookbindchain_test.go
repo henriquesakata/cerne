@@ -66,7 +66,7 @@ func TestHookBindWorkWarnsWhenItCannotBind(t *testing.T) {
 			if got != "" {
 				t.Fatalf("nothing to bind from, got %q", got)
 			}
-			for _, want := range []string{`"hookEventName":"PostToolUse"`, "nao amarrada", "Edit", "sem pipe"} {
+			for _, want := range []string{`"hookEventName":"PostToolUse"`, "NOT bound", "Edit gate", "without a pipe"} {
 				if !strings.Contains(hookOut, want) {
 					t.Fatalf("hook output missing %q:\n%s", want, hookOut)
 				}

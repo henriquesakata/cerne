@@ -29,13 +29,13 @@ func startPhase(w io.Writer, name string) (stop func()) {
 			case <-quit:
 				return
 			case <-t.C:
-				fmt.Fprintf(w, "cerne: %s ainda em andamento (%s)\n", name, time.Since(start).Round(time.Second))
+				fmt.Fprintf(w, "cerne: %s still running (%s)\n", name, time.Since(start).Round(time.Second))
 			}
 		}
 	}()
 	return func() {
 		close(quit)
 		<-done
-		fmt.Fprintf(w, "cerne: %s: fim (%s)\n", name, time.Since(start).Round(100*time.Millisecond))
+		fmt.Fprintf(w, "cerne: %s: done (%s)\n", name, time.Since(start).Round(100*time.Millisecond))
 	}
 }

@@ -85,7 +85,7 @@ var (
 func warnUnbound(cmd *cobra.Command) {
 	var out postToolContext
 	out.HookSpecificOutput.HookEventName = "PostToolUse"
-	out.HookSpecificOutput.AdditionalContext = "cerne: o work pode ter sido criado, mas a sessao nao amarrada: a saida do `cerne work start` nao chegou inteira ao hook (redirecionada, filtrada ou o comando falhou). O gate de Edit segue negando ate a amarra. Rode `cerne work start` sozinho, sem pipe, redirecionamento nem cadeia, para ele amarrar (ou `cerne work current <session-id>` para conferir)."
+	out.HookSpecificOutput.AdditionalContext = "cerne: the work may have been created, but this session is NOT bound to it: the output of `cerne work start` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. Run `cerne work start` alone, without a pipe, redirect or chain, so it binds (check with `cerne work current <session-id>`)."
 	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(out)
 }
 
