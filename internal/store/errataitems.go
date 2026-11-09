@@ -13,16 +13,24 @@ import (
 //	Altera: S6.6                                  (the step it changes, declared, never inferred)
 //	Estado: decidida — "<quote>" (<nick>, <date>)  (absent = proposta)
 //	Fundida: revisão 3                             (set by the merge)
+//	Anterior: decidida — "<quote>" (<nick>, <date>) (a decision a redecide replaced; one line each)
+//
+// Only the block cerne writes is metadata: AddErrataAt always opens it (`Altera: -`
+// when no step is declared) and a blank line closes it, so free text that looks
+// like a metadata line sits after the block and is never read as one.
 //
 // Blocks written before F-0872 have none of them and parse as proposals with no
 // step. The item id is E<n>, by order in the file.
 
 var (
 	errataHeaderRe = regexp.MustCompile(`^## errata (\d{4}-\d{2}-\d{2}) — (.+)$`)
-	errataMetaRe   = regexp.MustCompile(`^(Altera|Estado|Fundida): (.*)$`)
+	errataMetaRe   = regexp.MustCompile(`^(Altera|Estado|Fundida|Anterior): (.*)$`)
 	errataStateRe  = regexp.MustCompile(`^decidida — "(.*)" \((.+), (\d{4}-\d{2}-\d{2})\)$`)
 	headingRe      = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 )
+
+// NoStep is the `Altera:` value cerne writes when an erratum declares no step.
+const NoStep = "-"
 
 // ErrataItem is one parsed erratum block.
 type ErrataItem struct {
@@ -33,8 +41,9 @@ type ErrataItem struct {
 	Quote     string // the decision, quoted; "" while a proposal
 	DecidedBy string
 	DecidedAt string
-	Merged    string // "" until the merge folds it into the body
-	Text      string // the erratum text, metadata lines excluded
+	Merged    string   // "" until the merge folds it into the body
+	Previous  []string // decisions a redecide replaced, oldest first, as stored
+	Text      string   // the erratum text, metadata lines excluded
 }
 
 // Decided reports whether the item carries a decision.
@@ -82,7 +91,11 @@ func scanErrata(lines []string) []itemSpan {
 			}
 			switch v := strings.TrimSpace(m[2]); m[1] {
 			case "Altera":
-				s.item.Target = v
+				if v != NoStep {
+					s.item.Target = v
+				}
+			case "Anterior":
+				s.item.Previous = append(s.item.Previous, strings.TrimPrefix(v, "decidida — "))
 			case "Estado":
 				if sm := errataStateRe.FindStringSubmatch(v); sm != nil {
 					s.item.Quote, s.item.DecidedBy, s.item.DecidedAt = sm[1], sm[2], sm[3]
@@ -106,6 +119,25 @@ func ParseErrataItems(content string) []ErrataItem {
 		out[i] = s.item
 	}
 	return out
+}
+
+// AddErrataMeta adds one more metadata line to item itemID, keeping any line of
+// the same key (SetErrataMeta replaces it): history is appended, never overwritten.
+func AddErrataMeta(content, itemID, key, value string) (string, error) {
+	lines := strings.Split(content, "\n")
+	for _, s := range scanErrata(lines) {
+		if s.item.ID != itemID {
+			continue
+		}
+		ins := []string{key + ": " + strings.ReplaceAll(value, "\n", " ")}
+		if s.nMeta == 0 {
+			ins = append(ins, "")
+		}
+		at := s.metaP + s.nMeta
+		lines = append(lines[:at], append(ins, lines[at:]...)...)
+		return strings.Join(lines, "\n"), nil
+	}
+	return "", fmt.Errorf("errata item %s not found", itemID)
 }
 
 // SetErrataMeta sets (or replaces) one metadata line of item itemID in place:
@@ -163,23 +195,26 @@ func isAlnum(b byte) bool {
 	return b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
-// hasStepToken reports whether title names step tok as a whole token: S6.1 is
+// hasStepToken reports whether title opens with step tok as a whole token: S6.1 is
 // not in "S6.10" nor "S6.1.2", but is in "S6.1. Um" and "S6.1: um".
 func hasStepToken(title, tok string) bool {
-	for from := 0; ; {
-		i := strings.Index(title[from:], tok)
-		if i < 0 {
-			return false
+	// A step title opens with its token ("S6.6. Parada", "Passo S6.6"); a title
+	// that only mentions it in prose ("Notas sobre S6.6") is not the step.
+	for _, p := range []string{"passo ", "step "} {
+		if len(title) > len(p) && strings.EqualFold(title[:len(p)], p) {
+			title = title[len(p):]
+			break
 		}
-		i += from
-		j := i + len(tok)
-		before := i == 0 || !isAlnum(title[i-1])
-		after := j == len(title) || (!isAlnum(title[j]) && !(title[j] == '.' && j+1 < len(title) && title[j+1] >= '0' && title[j+1] <= '9'))
-		if before && after {
-			return true
-		}
-		from = i + 1
 	}
+	if !strings.HasPrefix(title, tok) {
+		return false
+	}
+	j := len(tok)
+	if j == len(title) {
+		return true
+	}
+	next := title[j]
+	return !isAlnum(next) && !(next == '.' && j+1 < len(title) && title[j+1] >= '0' && title[j+1] <= '9')
 }
 
 // InsertAtSteps places each item as a quoted block at the end of the section of

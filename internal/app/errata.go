@@ -39,7 +39,13 @@ func AddErrataAt(repoDir, projDir, id, text, author, target string) (string, err
 		return "", fmt.Errorf("--altera takes one step reference (e.g. S6.6), got a multi-line value")
 	}
 	stored := text
-	if target != "" {
+	if strings.HasPrefix(id, "RB-") {
+		// The block cerne owns: free text after the blank line is never read as metadata.
+		if target == "" {
+			target = store.NoStep
+		}
+		stored = "Altera: " + target + "\n\n" + text
+	} else if target != "" {
 		stored = "Altera: " + target + "\n\n" + text
 	}
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {

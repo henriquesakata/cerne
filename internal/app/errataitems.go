@@ -45,8 +45,17 @@ func DecideErrata(repoDir, projDir, id, itemID, by, quote string) error {
 			return "", err
 		}
 		for _, it := range store.ParseErrataItems(doc) {
-			if it.ID == itemID && it.Merged != "" {
+			if it.ID != itemID {
+				continue
+			}
+			if it.Merged != "" {
 				return "", fmt.Errorf("%s of %s was already merged (%s): the decision is part of the body now", itemID, id, it.Merged)
+			}
+			if it.Decided() { // redecide: the earlier citation stays, as a history line
+				prev := fmt.Sprintf("decidida — \"%s\" (%s, %s)", it.Quote, it.DecidedBy, it.DecidedAt)
+				if doc, err = store.AddErrataMeta(doc, itemID, "Anterior", prev); err != nil {
+					return "", err
+				}
 			}
 		}
 		state := fmt.Sprintf("decidida — \"%s\" (%s, %s)", strings.ReplaceAll(quote, "\n", " "), by, time.Now().UTC().Format("2006-01-02"))
