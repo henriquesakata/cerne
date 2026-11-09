@@ -13,7 +13,7 @@ import (
 func errataPendingFindings(repoDir string, runbooks []store.Runbook) []Finding {
 	var out []Finding
 	for _, rb := range runbooks {
-		if rb.State == domain.RunbookSuperseded {
+		if rb.State != domain.RunbookActive {
 			continue
 		}
 		doc, err := store.LoadErrata(repoDir, rb.ID)
@@ -23,6 +23,7 @@ func errataPendingFindings(repoDir string, runbooks []store.Runbook) []Finding {
 		for _, it := range store.ParseErrataItems(doc) {
 			switch {
 			case it.Merged != "":
+			case it.Decided() && it.Target == "": // step-less: nothing to fold, the decision retires it
 			case it.Decided():
 				out = append(out, Finding{Rule: RuleErrataPending, Entity: rb.ID, File: "content/errata/" + rb.ID + ".md",
 					Detail: fmt.Sprintf("erratum %s de %s decidido e ainda não fundido no corpo", it.ID, rb.ID),
