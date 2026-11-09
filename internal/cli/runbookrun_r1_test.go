@@ -122,3 +122,26 @@ func TestRunbookRepeatedStepAndPare(t *testing.T) {
 		t.Fatalf("report:\n%s", rep)
 	}
 }
+
+// The step letter stays lowercase (RB-0070 has S3a, S4a-S4g): only the leading
+// S is normalised, so --passos and `step` match the id the body uses.
+func TestRunbookStepLetterStaysLowercase(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# R\n\n- S3 a\n- S3a b\n- S4b c\n")
+	rb(t, projDir, "runbook", "new", "R", "--file", bodyFile)
+	id := strings.Fields(rb(t, projDir, "runbook", "run", "RB-0001", "--janela", "J3", "--passos", "s3,S3a,s4b"))[0]
+	run, err := store.LoadRun(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(run.Steps, " ") != "S3 S3a S4b" {
+		t.Fatalf("steps = %v", run.Steps)
+	}
+	rb(t, projDir, "runbook", "step", id, "S3", "--ok", "vai")
+	rb(t, projDir, "runbook", "step", id, "s3A", "--ok", "vai")
+	rb(t, projDir, "runbook", "step", id, "S4b", "--ok", "vai")
+	if rep := rb(t, projDir, "runbook", "report", id); !strings.Contains(rep, "no deviation") {
+		t.Fatalf("report:\n%s", rep)
+	}
+}
