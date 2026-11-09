@@ -141,9 +141,29 @@ func TestAcceptQueueMissingIsNotInformed(t *testing.T) {
 			}
 		}
 	}
-	out := rb(t, projDir, "accept", "queue")
-	if n := strings.Count(out, "não informado"); n != 3 { // F-0902: gauntlet+pending; F-0903: production
-		t.Fatalf("want 3 'não informado' in the text, got %d:\n%s", n, out)
+	// The text proves it field by field: "não informado" exactly where the
+	// result lacks the field, and a value where it has one.
+	fields := map[string]map[string]string{}
+	cur := ""
+	for _, line := range strings.Split(rb(t, projDir, "accept", "queue"), "\n") {
+		if len(line) > 6 && strings.HasPrefix(line, "F-09") {
+			cur = line[:6]
+			fields[cur] = map[string]string{}
+		} else if k, v, ok := strings.Cut(strings.TrimSpace(line), ": "); ok && cur != "" {
+			fields[cur][k] = v
+		}
+	}
+	want := map[string]map[string]bool{ // true = "não informado"
+		"F-0901": {"gauntlet": false, "production": false, "pending": false},
+		"F-0902": {"gauntlet": true, "production": false, "pending": true},
+		"F-0903": {"gauntlet": false, "production": true, "pending": false},
+	}
+	for id, fs := range want {
+		for field, absent := range fs {
+			if got := fields[id][field] == "não informado"; got != absent {
+				t.Errorf("%s %s = %q, 'não informado' want %v", id, field, fields[id][field], absent)
+			}
+		}
 	}
 }
 
@@ -252,5 +272,93 @@ func TestAcceptQueueProseIsNotCaptured(t *testing.T) {
 		if r.ID == "F-0901" && (r.Production != app.NotInformed || r.PendingReported || r.Gauntlet != app.NotInformed) {
 			t.Fatalf("prose captured: %+v", r)
 		}
+	}
+}
+
+// queueRow writes body as F-0901's result.md and returns that feature's row.
+func queueRow(t *testing.T, repoDir, body string) app.AcceptRow {
+	t.Helper()
+	mustWrite(t, filepath.Join(repoDir, "content", "features", "F-0901", "result.md"), body)
+	rows, err := app.AcceptQueue(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.ID == "F-0901" {
+			return r
+		}
+	}
+	t.Fatal("F-0901 not in the queue")
+	return app.AcceptRow{}
+}
+
+// r1: the pendings count is first-level bullets of the section; "Nenhum" in any
+// spelling, prose, sub-bullets and tables are not pendings; subsections stay in.
+func TestAcceptQueuePendingCount(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, tc := range map[string]struct {
+		body string
+		want int
+	}{
+		"nenhum bullet":       {"## Débitos\n\n- Nenhum.\n", 0},
+		"nenhum débito":       {"## Débitos e follow-ups\n\n- Nenhum débito.\n", 0},
+		"nenhum lower":        {"## Débitos\n\n* nenhum\n", 0},
+		"n/a":                 {"## Débitos\n\n- n/a\n", 0},
+		"dash":                {"## Débitos\n\n- —\n", 0},
+		"nenhuma but real":    {"## Débitos\n\n- Nenhuma cobertura do caminho X; falta o teste Y.\n", 1},
+		"prose lead-in":       {"## Débitos\n\nOs débitos são:\n\n- a\n- b\n- c\n", 3},
+		"prose alone":         {"## Débitos\n\nLimpar o seed antigo.\n", 0},
+		"sub-bullets":         {"## Débitos\n\n- a\n  - a1\n  - a2\n- b\n    - b1\n", 2},
+		"continuation":        {"## Débitos\n\n- a\n  continua aqui\n- b\n", 2},
+		"table":               {"## Débitos\n\n| Débito | Dono |\n|---|---|\n| a | x |\n| b | y |\n", 0},
+		"h3 inside":           {"## Débitos\n\n### Segurança\n\n- a\n\n### Testes\n\n- b\n- c\n", 3},
+		"h2 closes":           {"## Débitos\n\n- a\n\n## Gauntlet\n\n- x\n", 1},
+		"h1 closes":           {"## Débitos\n\n- a\n\n# Outro\n\n- x\n", 1},
+		"hash line in body":   {"## Débitos\n\n- a\n#123 ainda é corpo\n- b\n", 2},
+		"hash line in fence":  {"## Débitos\n\n- a\n```\n# comentário\n```\n- b\n", 2},
+		"h3 start not opened": {"### Débitos\n\n- a\n\n#### Sub\n\n- b\n\n### Outro\n\n- x\n", 2},
+	} {
+		if r := queueRow(t, repoDir, tc.body); len(r.Pending) != tc.want || !r.PendingReported {
+			t.Errorf("%s: pending %v (reported %v), want %d", name, r.Pending, r.PendingReported, tc.want)
+		}
+	}
+}
+
+// r1: a negative production line is not evidence; only a positive one is.
+func TestAcceptQueueProductionNegativeIsNotEvidence(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, body := range map[string]string{
+		"nao verificado":       "- Em produção: não verificado\n",
+		"pendente":             "Produção: PENDENTE\n",
+		"bold nao verificado":  "**Em produção:** não verificado.\n",
+		"prose with colon":     "Produção ainda não foi tocada; ver: X\n",
+		"empty value":          "Produção:\n",
+		"title nao verificado": "## Não verificado em produção\n\n- o prazo\n",
+		"title only":           "## Produção\n\n",
+		"title then negative":  "## Produção\n\nNão verificado.\n",
+	} {
+		if r := queueRow(t, repoDir, body); r.Production != app.NotInformed {
+			t.Errorf("%s: production = %q, want %q", name, r.Production, app.NotInformed)
+		}
+	}
+	if r := queueRow(t, repoDir, "## Não verificado em produção\n\n- o prazo\n"); !r.PendingReported || len(r.Pending) != 1 {
+		t.Errorf("the 'não verificado' section must be a pending: %+v", r)
+	}
+	for name, body := range map[string]string{
+		"line":    "- Em produção: conferido em 2026-11-05\n",
+		"bold":    "**Produção:** aplicado pelo dono\n",
+		"section": "## Produção\n\nAplicado em 2026-11-06, health verde.\n",
+	} {
+		if r := queueRow(t, repoDir, body); r.Production == app.NotInformed {
+			t.Errorf("%s: positive evidence read as not informed", name)
+		}
+	}
+}
+
+// r1: the verdict on a line of its own reads as the lint reads it.
+func TestAcceptQueueVerdictLineOfItsOwn(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	if r := queueRow(t, repoDir, "## Gauntlet\n\nBarra: o fluxo do cerne.\n\nVeredito: derrota\n"); r.Gauntlet != "derrota" {
+		t.Fatalf("gauntlet = %q, want derrota", r.Gauntlet)
 	}
 }

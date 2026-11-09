@@ -35,13 +35,21 @@ type AcceptRow struct {
 }
 
 var (
-	prodLineRe = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|prod)\b[^\n]*:`)
-	prodHeadRe = regexp.MustCompile(`(?i)^##+\s[^\n]*produ[cç][aã]o`)
+	// A production line is "<label>:" at the line start (list marker, quote and
+	// emphasis allowed); the value after the colon is what counts as evidence.
+	prodLineRe = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|prod)[*_]*\s*:[*_]*(.*)$`)
+	// A section whose title is just "Produção": its first body line is the evidence.
+	prodHeadRe = regexp.MustCompile(`(?i)^(?:em\s+)?produ[cç][aã]o\s*:?$`)
+	// Negative or empty evidence ("não verificado", PENDENTE, n/a, nothing) is no evidence.
+	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\s+(?:verificad|testad|aplicad|feit|conferid|medid|informad|houve)|ainda\s+n[aã]o|pendente|n/?a\b|a\s+(?:verificar|conferir)|tbd|sem\b|nada\b)|^[\s*_\x60.—–-]*$`)
 	// PENDENTE counts only on an acceptance line (list item or table row that
 	// names a "critério"), never in loose prose.
-	pendingWord  = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
-	pendingHead  = regexp.MustCompile(`(?i)^##\s+(?:d[ée]bitos|n[aã]o verificado)\b`)
-	bulletRe     = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+(.*)$`)
+	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
+	pendingHead = regexp.MustCompile(`(?i)^(?:d[ée]bitos|n[aã]o verificado)\b`)
+	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
+	bulletRe    = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$`)
+	// "Nenhum." and its variants declare no debt: not a pending.
+	noneRe       = regexp.MustCompile(`(?i)^(?:nenhum[ao]?s?|n/?a|n[aã]o h[aá]|none)\b[^;:,]{0,40}$|^[—–.\s]*$`)
 	markdownJunk = regexp.MustCompile("[*_`>#]|^[\\s-]+")
 )
 
@@ -76,7 +84,7 @@ func summarizeResult(result []byte) AcceptRow {
 	if v, ok := lint.GauntletVerdict(result); ok {
 		row.Gauntlet = v
 	}
-	inSection, fence := false, false
+	inSection, secLevel, base, prodSect, fence := false, 0, -1, false, false
 	for _, line := range strings.Split(string(result), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			fence = !fence
@@ -85,27 +93,42 @@ func summarizeResult(result []byte) AcceptRow {
 		if fence { // code is output, not a declaration
 			continue
 		}
-		switch {
-		case strings.HasPrefix(line, "#"):
-			inSection = pendingHead.MatchString(line)
-			row.PendingReported = row.PendingReported || inSection
-			if row.Production == NotInformed && prodHeadRe.MatchString(line) {
+		if m := headingRe.FindStringSubmatch(line); m != nil {
+			level := len(m[1])
+			if inSection && level <= secLevel { // only a heading of the same or higher level ends the section
+				inSection = false
+			}
+			if !inSection && level >= 2 && pendingHead.MatchString(m[2]) {
+				inSection, secLevel, base = true, level, -1
+				row.PendingReported = true
+			}
+			prodSect = prodHeadRe.MatchString(strings.TrimSpace(m[2]))
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if row.Production == NotInformed {
+			if prodSect {
+				prodSect = false
+				if !prodNegRe.MatchString(line) {
+					row.Production = clip(line)
+				}
+			} else if m := prodLineRe.FindStringSubmatch(line); m != nil && !prodNegRe.MatchString(m[1]) {
 				row.Production = clip(line)
 			}
-		case row.Production == NotInformed && prodLineRe.MatchString(line):
-			row.Production = clip(line)
-		}
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
 		}
 		if pendingWord.MatchString(line) {
 			row.PendingReported = true
 			row.Pending = append(row.Pending, clip(line))
-		} else if inSection {
-			if m := bulletRe.FindStringSubmatch(line); m != nil {
-				row.Pending = append(row.Pending, clip(m[1]))
-			} else if t := strings.TrimSpace(line); !regexp.MustCompile(`(?i)^nenhum`).MatchString(t) && len(row.Pending) == 0 {
-				row.Pending = append(row.Pending, clip(t)) // prose without bullets: the paragraph is the one pending
+		} else if m := bulletRe.FindStringSubmatch(line); inSection && m != nil {
+			// Only first-level bullets count: prose, sub-bullets and tables do not.
+			indent := len(strings.ReplaceAll(m[1], "\t", "    "))
+			if base < 0 {
+				base = indent
+			}
+			if t := clip(m[2]); indent <= base && !noneRe.MatchString(t) {
+				row.Pending = append(row.Pending, t)
 			}
 		}
 	}
