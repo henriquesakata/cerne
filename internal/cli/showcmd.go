@@ -52,7 +52,8 @@ type showDoc struct {
 
 func newShowCmd() *cobra.Command {
 	var dir, doc string
-	var asJSON bool
+	var asJSON, consolidated bool
+	var rev int
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
 		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea) by id",
@@ -62,9 +63,14 @@ func newShowCmd() *cobra.Command {
 			"feature document raw (spec|plan|result), and --json for machine output.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if consolidated || rev != 0 {
+				return runShowRunbookView(cmd, dir, args[0], consolidated, rev)
+			}
 			return runShow(cmd, dir, args[0], doc, asJSON)
 		},
 	}
+	cmd.Flags().BoolVar(&consolidated, "consolidado", false, "runbook only: the body with each erratum placed at the step it changes (read-only)")
+	cmd.Flags().IntVar(&rev, "rev", 0, "runbook only: print revision N of the body (the one before each errata merge stays readable)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&doc, "doc", "", "print only this feature document, raw: "+strings.Join(featureDocNames, "|"))
