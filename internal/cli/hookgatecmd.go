@@ -67,12 +67,27 @@ func newHookBindWorkCmd() *cobra.Command {
 var (
 	workStartRe    = regexp.MustCompile(`\bwork\s+start\b`)
 	featureStartRe = regexp.MustCompile(`\bfeature\s+start\b`)
-	workIDRe       = regexp.MustCompile(`\bW-\d{4,}\b`)
+	// workCreatedRe is the line `work start` prints for the work it minted
+	// ("W-1755 created (active) — ..."). A chain that also lists works prints
+	// other W- ids first, so the created one is told apart by its "(active)".
+	// No leading \b: in the raw JSON response a newline is the two characters
+	// `\n`, so an id on a later line follows a word character.
+	workIDRe      = regexp.MustCompile(`\bW-\d{4,}\b`)
+	workCreatedRe = regexp.MustCompile(`(W-\d{4,}) [^\s()]+ \(active\)`)
 	featureIDRe    = regexp.MustCompile(`\bF-\d{4,}\b`)
 	// startedIDRe is the id a confirmed `feature start` binds: F-, E- or T-,
 	// the same kinds bindingLive accepts (F-0309).
 	startedIDRe = regexp.MustCompile(`\b[FET]-\d{4,}\b`)
 )
+
+// warnUnbound tells the agent, through the PostToolUse context channel, that
+// the work it just started could not be bound to this session (F-0876).
+func warnUnbound(cmd *cobra.Command) {
+	var out postToolContext
+	out.HookSpecificOutput.HookEventName = "PostToolUse"
+	out.HookSpecificOutput.AdditionalContext = "cerne: the work may have been created, but this session is NOT bound to it: the output of `cerne work start` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. Run `cerne work start` alone, without a pipe, redirect or chain, so it binds (check with `cerne work current <session-id>`)."
+	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(out)
+}
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
 // `cerne work start` / `cerne feature start`, the minted (or started) id is
@@ -108,7 +123,13 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	switch {
 	case workStartRe.MatchString(ti.Command):
 		// The W- id is minted by the command; it appears in the response.
-		id = workIDRe.FindString(string(in.ToolResponse))
+		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
+			id = m[1]
+		} else {
+			// Redirected or filtered output (or a refused start): there is no
+			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
+			warnUnbound(cmd)
+		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the
 		// transition (a refused gate prints an error, not the id -> state).

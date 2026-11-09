@@ -39,7 +39,7 @@ func newPushCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and show what would go to the backend, without committing or sending")
-	return cmd
+	return withFinalLine(cmd)
 }
 
 // pushedDoc is one changed materialized document mapped back to its
@@ -82,7 +82,9 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if err := checkContextUntouched(docsDir, manifest); err != nil {
 		return err
 	}
+	endRead := startPhase(cmd.ErrOrStderr(), "reading changed documents")
 	docs, err := collectChangedDocs(ctx.repoDir, docsDir, manifest)
+	endRead()
 	if err != nil {
 		return err
 	}
@@ -104,10 +106,14 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
 	}
 	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)
+	// The lock wait, the fetch and the push live in this one call and can each
+	// take long: the phase beats on stderr so the wait never looks like a hang.
+	endReconcile := startPhase(cmd.ErrOrStderr(), "reconciling with the backend")
 	head, conflicts, err := app.ReconcileCommitPushMutate(
 		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,
 		func() error { return app.OpenAutoWorkForPush(ctx.repoDir, ctx.projDir, changes) })
+	endReconcile()
 	if err != nil {
 		return err
 	}
