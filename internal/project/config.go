@@ -483,10 +483,32 @@ func findConfigDir(startDir string) (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("%w: no %s from %s up to filesystem root", ErrNoProject, configFilename, startDir)
+			return rootFromEnv(startDir)
 		}
 		dir = parent
 	}
+}
+
+// rootFromEnv is the last resort of findConfigDir (F-0876): the upward walk
+// from startDir found nothing, so CERNE_ROOT may name the project directory.
+// The walk keeps priority, so a stray variable never hijacks a project the
+// working directory already belongs to.
+func rootFromEnv(startDir string) (string, error) {
+	root := os.Getenv("CERNE_ROOT")
+	if root == "" {
+		return "", fmt.Errorf("%w: no %s from %s up to filesystem root (set CERNE_ROOT to the project directory)", ErrNoProject, configFilename, startDir)
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(filepath.Join(root, configFilename)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("%w: CERNE_ROOT=%s has no %s (and none from %s up to filesystem root)", ErrNoProject, root, configFilename, startDir)
+		}
+		return "", err
+	}
+	return root, nil
 }
 
 // writeFileAtomic writes data to <dir>/<filename> atomically: temp file in
