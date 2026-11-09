@@ -31,7 +31,21 @@ const (
 // not depend on the tz database of the machine that wrote it.
 var brt = time.FixedZone("BRT", -3*60*60)
 
-var emailRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+`)
+var (
+	emailRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+`)
+	// personIDRe: a UUID or a CPF, the ids of a person that must not reach the backend.
+	personIDRe = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b\d{3}\.\d{3}\.\d{3}-\d{2}\b`)
+	stepIDRe   = regexp.MustCompile(`(?i)^S\d+[a-z]?(\.\d+)*$`)
+)
+
+// refusePersonal refuses an e-mail or a person id in a free-text flag. It is
+// the single check for every flag that reaches the record.
+func refusePersonal(flag, v string) error {
+	if emailRe.MatchString(v) || personIDRe.MatchString(v) {
+		return fmt.Errorf("%s: no e-mail or person id in the record: cite a nickname only", flag)
+	}
+	return nil
+}
 
 // RunStepInput is one `runbook step` call.
 type RunStepInput struct {
@@ -50,6 +64,9 @@ type RunStepInput struct {
 func HashEvidence(path string) (store.RunEvidence, error) {
 	if strings.ContainsAny(path, "\r\n\x00") {
 		return store.RunEvidence{}, fmt.Errorf("--evidencia takes the path of a file, not its content; the content is never stored")
+	}
+	if err := refusePersonal("--evidencia", path); err != nil {
+		return store.RunEvidence{}, err
 	}
 	st, err := os.Stat(path)
 	if err != nil {
@@ -79,6 +96,16 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 	if window == "" {
 		return store.Work{}, store.Run{}, fmt.Errorf("--janela is required: the label of the window (e.g. J3)")
 	}
+	for flag, v := range map[string]string{"--janela": window, "--palavra": expected, "--passos": strings.Join(steps, ",")} {
+		if err := refusePersonal(flag, v); err != nil {
+			return store.Work{}, store.Run{}, err
+		}
+	}
+	for _, s := range steps {
+		if !stepIDRe.MatchString(s) {
+			return store.Work{}, store.Run{}, fmt.Errorf("--passos: %q is not a step id (S<n>, e.g. S3, S6.6)", s)
+		}
+	}
 	actor := strings.TrimSpace(agent)
 	if actor == "" {
 		actor = defaultWorkActor()
@@ -97,7 +124,8 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 			return "", fmt.Errorf("runbook %s is %s: only an active runbook can be run", rbID, rb.State)
 		}
 		list := steps
-		if len(list) == 0 {
+		inferred := len(list) == 0
+		if inferred {
 			body, err := store.LoadRunbookContent(repoDir, rbID)
 			if err != nil {
 				return "", err
@@ -126,7 +154,7 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 		now := time.Now().UTC()
 		title := fmt.Sprintf("Execução de %s — janela %s", rbID, window)
 		w = store.Work{ID: id, Title: title, State: domain.WorkActive, Actor: actor, Refs: []string{rbID}, CreatedAt: now, UpdatedAt: now}
-		run = store.Run{ID: id, Runbook: rbID, Window: window, Expected: strings.TrimSpace(expected), Steps: list}
+		run = store.Run{ID: id, Runbook: rbID, Window: window, Expected: strings.TrimSpace(expected), Steps: list, Inferred: inferred}
 		if err := store.SaveWork(repoDir, w); err != nil {
 			return "", err
 		}
@@ -160,9 +188,9 @@ func RecordRunStep(repoDir, projDir, runID string, in RunStepInput, now time.Tim
 	} else if strings.TrimSpace(in.Word) == "" {
 		return store.RunEntry{}, fmt.Errorf("--ok needs the owner's literal word, quoted")
 	}
-	for _, v := range []string{in.By, in.Word, in.Output} {
-		if emailRe.MatchString(v) {
-			return store.RunEntry{}, fmt.Errorf("no e-mail in the record: cite a nickname only")
+	for flag, v := range map[string]string{"--por": in.By, "--ok": in.Word, "--pare": in.Output, "--esperada": in.Expected} {
+		if err := refusePersonal(flag, v); err != nil {
+			return store.RunEntry{}, err
 		}
 	}
 	if strings.Contains(in.By, "@") {
@@ -201,6 +229,9 @@ func RecordRunStep(repoDir, projDir, runID string, in RunStepInput, now time.Tim
 		}
 		out := false
 		for _, prev := range run.Steps[:idx] {
+			if run.Inferred {
+				break
+			}
 			if !runStepOK(run, prev) {
 				out = true
 				break

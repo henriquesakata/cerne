@@ -23,7 +23,7 @@ func newRunbookRunCmd(dir *string) *cobra.Command {
 		Short: "Open the execution record of a runbook window (a work, with the runbook's steps)",
 		Long: "Opens an active work that records one execution of a runbook for a window (e.g. J3), with the runbook's " +
 			"steps. Steps are the S<n> tokens named in the body, outside code fences, with \"S3 a S7\" expanded; when " +
-			"that list has noise, pass --passos. Record steps with 'cerne runbook step'; close with 'cerne work done'. " +
+			"that list has noise, pass --passos (order is only judged on an explicit --passos). Record steps with 'cerne runbook step'; close with 'cerne work done'. " +
 			"The record keeps metadata and hashes only, never evidence content.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -33,7 +33,7 @@ func newRunbookRunCmd(dir *string) *cobra.Command {
 			}
 			var list []string
 			for _, s := range strings.Split(steps, ",") {
-				if s = strings.ToUpper(strings.TrimSpace(s)); s != "" {
+				if s = normStepID(s); s != "" {
 					list = append(list, s)
 				}
 			}
@@ -71,7 +71,7 @@ func newRunbookStepCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			in := app.RunStepInput{Step: strings.ToUpper(strings.TrimSpace(args[1])), Pare: pare != "", Word: ok, Output: pare,
+			in := app.RunStepInput{Step: normStepID(args[1]), Pare: pare != "", Word: ok, Output: pare,
 				By: by, Expected: expected, Evidence: evidence}
 			runID := strings.ToUpper(strings.TrimSpace(args[0]))
 			e, err := app.RecordRunStep(ctx.repoDir, ctx.projDir, runID, in, time.Now())
@@ -192,4 +192,14 @@ func renderRun(run store.Run) string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// normStepID upper-cases only the leading S: the step letter stays lowercase
+// (S3a, S4b.1), as the runbook body writes it.
+func normStepID(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if strings.HasPrefix(s, "s") {
+		s = "S" + s[1:]
+	}
+	return s
 }

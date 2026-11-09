@@ -231,6 +231,11 @@ func TestRunsDirDoesNotBreakLintPullAndIndex(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoDir, "content", "runs", id+".json")); err != nil {
 		t.Fatal(err)
 	}
+	// An open run that stopped is flagged on purpose (run-stalled); closed, it is not.
+	if lint, _ := execCerne(t, "lint", "--dir", projDir); !strings.Contains(lint, "RUN-STALLED") {
+		t.Fatalf("an open stopped run must be flagged:\n%s", lint)
+	}
+	rb(t, projDir, "work", "done", id)
 	after, _ := execCerne(t, "lint", "--dir", projDir)
 	if before != after || strings.Contains(after, id) || strings.Contains(after, "content/runs") {
 		t.Fatalf("a run must not change lint:\nbefore:\n%s\nafter:\n%s", before, after)

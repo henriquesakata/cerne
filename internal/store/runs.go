@@ -44,11 +44,14 @@ type RunEntry struct {
 
 // Run is the persisted execution record of one runbook window.
 type Run struct {
-	ID       string     `json:"id"` // the W- id
-	Runbook  string     `json:"runbook"`
-	Window   string     `json:"window"`
-	Expected string     `json:"expected_word,omitempty"`
-	Steps    []string   `json:"steps"`
+	ID       string   `json:"id"` // the W- id
+	Runbook  string   `json:"runbook"`
+	Window   string   `json:"window"`
+	Expected string   `json:"expected_word,omitempty"`
+	Steps    []string `json:"steps"`
+	// Inferred: Steps came from the runbook body, not from --passos. The body
+	// also names steps in unrelated titles, so order is not judged on it.
+	Inferred bool       `json:"steps_inferred,omitempty"`
 	Entries  []RunEntry `json:"entries,omitempty"`
 }
 
