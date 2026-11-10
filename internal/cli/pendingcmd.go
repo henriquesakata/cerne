@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -21,7 +22,9 @@ func newPendingCmd() *cobra.Command {
 		Short: "Register and triage pendings (P-): known delivery debts of a feature, task or epic",
 		Long: "A pending is a known debt left by a concrete delivery (always with an origin, --from): what a " +
 			"result.md would otherwise bury in prose. Open pendings reappear in 'cerne next' and age into the " +
-			"advisory lint finding stale-pending. A pending never blocks a lifecycle transition.",
+			"advisory lint finding stale-pending. An open pending never blocks a lifecycle transition. A pending " +
+			"promoted to (or linked with) a feature follows it (F-0885): the accept resolves it, a reject reopens " +
+			"it, a 'substituir' moves it to the successor, and the complete refuses a result that does not cite it.",
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
@@ -31,6 +34,8 @@ func newPendingCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newPendingResolveCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newPendingDropCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newPendingPromoteCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newPendingLinkCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newPendingUnlinkCmd(&dir)))
 	return cmd
 }
 
@@ -154,7 +159,7 @@ func newPendingShowCmd(dir *string) *cobra.Command {
 func newPendingResolveCmd(dir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "resolve <id>",
-		Short: "Close an open pending as paid (open -> resolved)",
+		Short: "Close an open pending as paid (open -> resolved); a linked one is resolved by its feature's accept",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
@@ -195,30 +200,98 @@ func newPendingDropCmd(dir *string) *cobra.Command {
 }
 
 func newPendingPromoteCmd(dir *string) *cobra.Command {
-	var as, module string
+	var as, title, module string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "promote <id>",
-		Short: "Turn an open pending into a feature or task (open -> promoted), linked both ways",
-		Long: "Creates a feature (candidate) or a task (under the origin, which must be past candidacy) with the " +
-			"pending's title, tags and context; the generated spec links back with '**Origem:** [[P-NNNN]]' and " +
-			"the pending records promoted_to. The new entity enters the regular funnel with its own human gates.",
+		Use:   "promote <id>...",
+		Short: "Turn one or more open pendings into the feature or task that pays them (open -> promoted)",
+		Long: "Creates a feature (candidate) or a task (under the origin, which must be past candidacy) that pays " +
+			"the given pendings, linked both ways: the generated spec opens with '**Origem:**' citing each " +
+			"[[P-NNNN]] and its origin, and each pending records promoted_to. One pending: the entity inherits its " +
+			"title, tags and context. Several (--title required, feature only when the origins differ): one " +
+			"entity with a section per pending, the union of their tags and the origins' common module (or " +
+			"--module). Every pending is checked before anything is created. From then on each follows the " +
+			"entity: its accept resolves them, a reject reopens them, a 'substituir' moves them to the successor, " +
+			"and its complete refuses a result that does not cite them. The new entity enters the regular funnel " +
+			"with its own human gates.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			ps, f, err := app.PromotePendings(ctx.repoDir, ctx.projDir, args, as, title, module, force)
+			if err != nil {
+				return err
+			}
+			for _, p := range ps {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", p.ID, domain.PendingOpen, p.State, f.ID)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&as, "as", "", "feature or task (required)")
+	cmd.Flags().StringVar(&title, "title", "", "title of the created entity (required for two or more pendings; default: the pending's)")
+	cmd.Flags().StringVar(&module, "module", "", "module of the created entity (default: the origins' common one)")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the created entity's duplicate-registration guard (F-0147)")
+	return cmd
+}
+
+func newPendingLinkCmd(dir *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "link <P-id> <F-id>",
+		Short: "Point an open pending at a live feature that pays it (open -> promoted)",
+		Long: "Links an open pending to a feature still live (candidate, approved or in_development), as promote " +
+			"links the one it creates; an implemented, done, rejected or superseded feature is refused. From then " +
+			"on the pending follows the feature: its accept resolves it, a reject reopens it, a 'substituir' moves " +
+			"it to the successor, and its complete refuses a result that does not cite it. " +
+			"'cerne pending unlink' undoes the link.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			p, err := app.LinkPending(ctx.repoDir, ctx.projDir, args[0], args[1])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", p.ID, domain.PendingOpen, p.State, p.PromotedTo)
+			return nil
+		},
+	}
+}
+
+func newPendingUnlinkCmd(dir *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unlink <P-id>",
+		Short: "Take a pending back from the feature it points at (promoted -> open)",
+		Long: "Returns a promoted pending to open and clears promoted_to: the way out when a live feature " +
+			"(candidate, approved or in_development) will not pay it, including a complete refused for not " +
+			"citing it, and for a pending promoted before F-0885 to a feature already done, rejected or " +
+			"superseded, which nothing moves any more. A pending of an implemented feature waits for the " +
+			"accept (or reject) instead.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
 			if err != nil {
 				return err
 			}
-			p, f, err := app.PromotePending(ctx.repoDir, ctx.projDir, args[0], as, module, force)
+			p, err := app.UnlinkPending(ctx.repoDir, ctx.projDir, args[0])
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", p.ID, domain.PendingOpen, p.State, f.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s\n", p.ID, domain.PendingPromoted, p.State)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&as, "as", "", "feature or task (required)")
-	cmd.Flags().StringVar(&module, "module", "", "module of the created entity (default: the origin's)")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the created entity's duplicate-registration guard (F-0147)")
-	return cmd
+}
+
+// printMovedPendings reports the pendings a feature transition carried along
+// with it (F-0885): resolved on accept, reopened on reject, moved on
+// 'substituir'.
+func printMovedPendings(w io.Writer, lines []string) {
+	for _, l := range lines {
+		fmt.Fprintln(w, "  ↳ "+l)
+	}
 }

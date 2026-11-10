@@ -20,7 +20,16 @@ func TestTransitionPending(t *testing.T) {
 		{"open complete is not a pending action", PendingOpen, ActionComplete, "", ErrInvalidTransition},
 		{"resolved terminal", PendingResolved, ActionResolve, "", ErrInvalidTransition},
 		{"dropped terminal", PendingDropped, ActionPromote, "", ErrInvalidTransition},
-		{"promoted terminal", PendingPromoted, ActionDrop, "", ErrInvalidTransition},
+		// F-0885: promoted lives while the paying feature lives.
+		{"promoted resolve (accept)", PendingPromoted, ActionResolve, PendingResolved, nil},
+		{"promoted reopen (reject/unlink)", PendingPromoted, ActionReopen, PendingOpen, nil},
+		{"promoted transfer (supersede)", PendingPromoted, ActionTransfer, PendingPromoted, nil},
+		{"promoted drop refused", PendingPromoted, ActionDrop, "", ErrInvalidTransition},
+		{"promoted promote refused", PendingPromoted, ActionPromote, "", ErrInvalidTransition},
+		{"open reopen refused", PendingOpen, ActionReopen, "", ErrInvalidTransition},
+		{"open transfer refused", PendingOpen, ActionTransfer, "", ErrInvalidTransition},
+		{"resolved reopen terminal", PendingResolved, ActionReopen, "", ErrInvalidTransition},
+		{"dropped transfer terminal", PendingDropped, ActionTransfer, "", ErrInvalidTransition},
 		{"unknown state", PendingState("bogus"), ActionResolve, "", ErrUnknownState},
 	}
 	for _, tc := range cases {

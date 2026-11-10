@@ -71,6 +71,7 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 	if cost.Unstamped(filepath.Dir(ctx.repoDir), ctx.repoDir, id) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s's token cost was never stamped: its harvested cost did not reach the result. Run 'cerne cost <id> --stamp' after 'feature complete', before the accept (F-0309).\n", id)
 	}
@@ -95,6 +96,7 @@ func runFeatureAcceptAllImplemented(cmd *cobra.Command, ctx projCtx, reason stri
 			return fmt.Errorf("accepting %s: %w", f.ID, err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+		printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 		accepted++
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%d feature(s) accepted.\n", accepted)

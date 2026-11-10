@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -432,7 +434,7 @@ func TestMarkPromotedReportsHowToRecover(t *testing.T) {
 	if _, err := ResolvePending(repoDir, projDir, closed.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = markPromoted(repoDir, projDir, closed.ID, "F-0009")
+	_, err = markPromoted(repoDir, projDir, []string{closed.ID}, "F-0009")
 	if !errors.Is(err, ErrPendingClosedConcurrently) {
 		t.Fatalf("err = %v, want ErrPendingClosedConcurrently", err)
 	}
@@ -452,11 +454,11 @@ func TestMarkPromotedReportsHowToRecover(t *testing.T) {
 	if err := os.RemoveAll(origin); err != nil {
 		t.Fatal(err)
 	}
-	_, err = markPromoted(repoDir, projDir, open.ID, "F-0009")
+	_, err = markPromoted(repoDir, projDir, []string{open.ID}, "F-0009")
 	if err == nil || errors.Is(err, ErrPendingClosedConcurrently) {
 		t.Fatalf("backend failure err = %v, want a plain failure", err)
 	}
-	for _, want := range []string{"F-0009", "may still be open", "cerne pending show " + open.ID, `cerne pending drop ` + open.ID + ` --reason "promoted to F-0009"`} {
+	for _, want := range []string{"F-0009", "may still be open", "cerne pending show " + open.ID, "cerne pending link " + open.ID + " F-0009"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err.Error(), want)
 		}
@@ -547,5 +549,329 @@ func TestListPendings(t *testing.T) {
 	_, err = ListPendings(repoDir, PendingFilter{State: "bogus"})
 	if !errors.Is(err, ErrPendingStateInvalid) || !strings.Contains(err.Error(), `"bogus"`) || !strings.Contains(err.Error(), "all") {
 		t.Fatalf("bogus state err = %v, want ErrPendingStateInvalid naming \"bogus\" and all", err)
+	}
+}
+
+// mustPending registers an open pending or fails the test.
+func mustPending(t *testing.T, repoDir, projDir, title, body, from string) store.Pending {
+	t.Helper()
+	p, err := CreatePending(repoDir, projDir, title, body, from, nil, nil, false)
+	if err != nil {
+		t.Fatalf("CreatePending(%q): %v", title, err)
+	}
+	return p
+}
+
+func featureCount(t *testing.T, repoDir string) int {
+	t.Helper()
+	fs, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		t.Fatalf("LoadAllFeatures: %v", err)
+	}
+	return len(fs)
+}
+
+// F-0885 crit. 1: open pendings of two origins become ONE candidate whose spec
+// names each pending with its origin and carries every body; each pending is
+// promoted to it and the tags are the union of theirs. Two or more ids without
+// a title refuse with nothing created; a single id inherits its title, or takes
+// the one given.
+func TestPromotePendingsGroupsIntoOneFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	a := pendingOrigin(t, repoDir, projDir, "Origem A", []string{"code"}, []string{"lint"})
+	b := pendingOrigin(t, repoDir, projDir, "Origem B", []string{"data"}, []string{"store"})
+	p1 := mustPending(t, repoDir, projDir, "Teto do glab sem WaitDelay", "corpo um", a.ID)
+	p2 := mustPending(t, repoDir, projDir, "Manual sem passo em todo passo", "corpo dois", a.ID)
+	p3 := mustPending(t, repoDir, projDir, "Cerca til na fila de accepts", "corpo três", b.ID)
+
+	before := backendHead(t, repoDir)
+	if _, _, err := PromotePendings(repoDir, projDir, []string{p1.ID, p2.ID}, "feature", "  ", "", false); !errors.Is(err, ErrPendingGroupTitle) {
+		t.Fatalf("2 ids without --title: err = %v, want ErrPendingGroupTitle", err)
+	}
+	if after := backendHead(t, repoDir); after != before || featureCount(t, repoDir) != 2 {
+		t.Fatalf("refused group wrote: HEAD %s -> %s, %d features", before, after, featureCount(t, repoDir))
+	}
+
+	got, created, err := PromotePendings(repoDir, projDir, []string{p1.ID, p2.ID, p3.ID}, "feature", "Pagar os débitos do grupo", "", false)
+	if err != nil {
+		t.Fatalf("PromotePendings: %v", err)
+	}
+	if !strings.HasPrefix(created.ID, "F-") || created.State != domain.StateCandidate || created.Title != "Pagar os débitos do grupo" ||
+		!slices.Equal(created.Facets, []string{"code", "data"}) || !slices.Equal(created.Components, []string{"lint", "store"}) {
+		t.Fatalf("created = %+v, want one titled candidate with the union of tags", created)
+	}
+	if featureCount(t, repoDir) != 3 {
+		t.Fatalf("features = %d, want the two origins plus ONE created", featureCount(t, repoDir))
+	}
+	spec := promotedSpec(t, repoDir, created.ID)
+	origem := "**Origem:** pendências [[" + p1.ID + "]] (de " + a.ID + "), [[" + p2.ID + "]] (de " + a.ID + "), [[" + p3.ID + "]] (de " + b.ID + ")"
+	for _, want := range []string{origem, "### " + p1.ID + " — " + p1.Title, "corpo um", "### " + p2.ID + " — " + p2.Title, "corpo dois", "### " + p3.ID + " — " + p3.Title, "corpo três"} {
+		if !strings.Contains(spec, want) {
+			t.Fatalf("spec lacks %q:\n%s", want, spec)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("returned %d pendings, want 3", len(got))
+	}
+	for _, id := range []string{p1.ID, p2.ID, p3.ID} {
+		if p, _ := store.LoadPending(repoDir, id); p.State != domain.PendingPromoted || p.PromotedTo != created.ID {
+			t.Fatalf("%s = %+v, want promoted to %s", id, p, created.ID)
+		}
+	}
+
+	single := mustPending(t, repoDir, projDir, "Débito solto de uma origem", "", a.ID)
+	_, titled, err := PromotePendings(repoDir, projDir, []string{single.ID}, "feature", "Título dado à mão", "", false)
+	if err != nil || titled.Title != "Título dado à mão" {
+		t.Fatalf("one id with --title = %+v, %v; want the given title", titled, err)
+	}
+}
+
+// F-0885 crit. 2: a closed, repeated or unknown id refuses the whole group,
+// naming it, before anything is created; so do a task across origins and
+// origins of different modules without --module.
+func TestPromotePendingsRefusesClosedOrRepeated(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	a := pendingOrigin(t, repoDir, projDir, "Origem A", nil, nil)
+	b := pendingOrigin(t, repoDir, projDir, "Origem B", nil, nil)
+	p1 := mustPending(t, repoDir, projDir, "Primeiro débito aberto", "", a.ID)
+	p2 := mustPending(t, repoDir, projDir, "Segundo assunto pendente", "", b.ID)
+	p3 := mustPending(t, repoDir, projDir, "Terceiro já pago", "", a.ID)
+	if _, err := ResolvePending(repoDir, projDir, p3.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := backendHead(t, repoDir)
+	cases := []struct {
+		name, as string
+		ids      []string
+		wantErr  error
+		wantMsg  string
+	}{
+		{"closed", "feature", []string{p1.ID, p3.ID}, domain.ErrInvalidTransition, p3.ID},
+		{"repeated", "feature", []string{p1.ID, p2.ID, " p-0001 "}, ErrPendingRepeated, p1.ID},
+		{"unknown", "feature", []string{p1.ID, "P-0099"}, store.ErrNotFound, "P-0099"},
+		{"not a pending id", "feature", []string{p1.ID, "../x"}, ErrPendingIDInvalid, "../x"},
+		{"task across origins", "task", []string{p1.ID, p2.ID}, ErrPendingTaskOrigins, b.ID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := PromotePendings(repoDir, projDir, tc.ids, tc.as, "Grupo recusado", "", false)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Fatalf("message %q does not name %q", err.Error(), tc.wantMsg)
+			}
+		})
+	}
+	if after := backendHead(t, repoDir); after != before || featureCount(t, repoDir) != 2 {
+		t.Fatalf("refused groups wrote: HEAD %s -> %s, %d features", before, after, featureCount(t, repoDir))
+	}
+	for _, id := range []string{p1.ID, p2.ID} {
+		if p, _ := store.LoadPending(repoDir, id); p.State != domain.PendingOpen {
+			t.Fatalf("%s = %s after refusals, want open", id, p.State)
+		}
+	}
+
+	modRepo, modProj, _ := newFeatureBackend(t, "core", "web")
+	core, err := CreateFeature(modRepo, modProj, "Origem do core", "core", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, err := CreateFeature(modRepo, modProj, "Origem da web", "web", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q1 := mustPending(t, modRepo, modProj, "Débito do core", "", core.ID)
+	q2 := mustPending(t, modRepo, modProj, "Débito da web", "", web.ID)
+	if _, _, err := PromotePendings(modRepo, modProj, []string{q1.ID, q2.ID}, "feature", "Grupo de dois módulos", "", false); !errors.Is(err, ErrPendingModuleDiverges) ||
+		!strings.Contains(err.Error(), "core") || !strings.Contains(err.Error(), "web") {
+		t.Fatalf("divergent modules: err = %v, want ErrPendingModuleDiverges naming both", err)
+	}
+	if _, created, err := PromotePendings(modRepo, modProj, []string{q1.ID, q2.ID}, "feature", "Grupo de dois módulos", "web", false); err != nil || created.Module != "web" {
+		t.Fatalf("--module web = %+v, %v; want module web", created, err)
+	}
+}
+
+// lastPayload is the payload of the latest typ event of id.
+func lastPayload(t *testing.T, repoDir, id, typ string) map[string]string {
+	t.Helper()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	for i := len(evs) - 1; i >= 0; i-- {
+		if evs[i].EntityID == id && evs[i].Type == typ {
+			return evs[i].Payload
+		}
+	}
+	t.Fatalf("no %s event for %s", typ, id)
+	return nil
+}
+
+// F-0885 crit. 3: link marks an open pending promoted to a live feature
+// (candidate, approved, in_development); an implemented, done, rejected or
+// superseded one refuses, naming it and its state, with nothing written.
+func TestLinkPendingOnlyToLiveFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	closedStates := []domain.FeatureState{domain.StateImplemented, domain.StateDone, domain.StateRejected, domain.StateSuperseded}
+	for i, st := range closedStates {
+		seedFeatureInState(t, repoDir, fmt.Sprintf("F-%04d", 10+i), st)
+	}
+	p := mustPending(t, repoDir, projDir, "Débito a ligar", "", origin.ID)
+	before := backendHead(t, repoDir)
+	for i, st := range closedStates {
+		id := fmt.Sprintf("F-%04d", 10+i)
+		_, err := LinkPending(repoDir, projDir, p.ID, id)
+		if !errors.Is(err, ErrPendingTargetClosed) || !strings.Contains(err.Error(), id) || !strings.Contains(err.Error(), string(st)) {
+			t.Fatalf("link to %s (%s): err = %v, want ErrPendingTargetClosed naming both", id, st, err)
+		}
+	}
+	if _, err := LinkPending(repoDir, projDir, p.ID, "F-0999"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("link to an unknown feature: err = %v, want ErrNotFound", err)
+	}
+	if after := backendHead(t, repoDir); after != before {
+		t.Fatalf("refused links moved HEAD %s -> %s", before, after)
+	}
+	if got, _ := store.LoadPending(repoDir, p.ID); got.State != domain.PendingOpen || got.PromotedTo != "" {
+		t.Fatalf("after refusals %+v, want open and unlinked", got)
+	}
+
+	for i, st := range []domain.FeatureState{domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment} {
+		id := fmt.Sprintf("F-%04d", 20+i)
+		seedFeatureInState(t, repoDir, id, st)
+		q := mustPending(t, repoDir, projDir, fmt.Sprintf("Débito número %d ligado", i), "", origin.ID)
+		got, err := LinkPending(repoDir, projDir, strings.ToLower(q.ID), strings.ToLower(id))
+		if err != nil {
+			t.Fatalf("link to %s (%s): %v", id, st, err)
+		}
+		if got.State != domain.PendingPromoted || got.PromotedTo != id || got.ClosedAt == nil {
+			t.Fatalf("linked = %+v, want promoted to %s", got, id)
+		}
+		if pl := lastPayload(t, repoDir, q.ID, "pending.promoted"); pl["promoted_to"] != id || pl["via"] != "link" {
+			t.Fatalf("pending.promoted payload = %v, want promoted_to %s via link", pl, id)
+		}
+		paid, err := PendingsPaidBy(repoDir, id)
+		if err != nil || len(paid) != 1 || paid[0].ID != q.ID {
+			t.Fatalf("PendingsPaidBy(%s) = %+v, %v; want [%s]", id, paid, err, q.ID)
+		}
+	}
+	if _, err := LinkPending(repoDir, projDir, "P-0002", "F-0020"); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("link of an already promoted pending: err = %v, want ErrInvalidTransition", err)
+	}
+}
+
+// F-0885 crit. 4: unlink hands a pending promoted to a live feature back to
+// open, clears promoted_to and records pending.reopened with the feature; a
+// pending not promoted, or promoted to a closed feature, refuses. A promoted
+// pending is not resolved by hand: it resolves on the accept.
+func TestUnlinkPendingReopens(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
+	p := mustPending(t, repoDir, projDir, "Débito ligado e desligado", "", origin.ID)
+	if _, err := LinkPending(repoDir, projDir, p.ID, "F-0010"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolvePending(repoDir, projDir, p.ID); !errors.Is(err, ErrPendingLinked) || !strings.Contains(err.Error(), "F-0010") {
+		t.Fatalf("resolve of a linked pending: err = %v, want ErrPendingLinked naming F-0010", err)
+	}
+	got, err := UnlinkPending(repoDir, projDir, p.ID)
+	if err != nil {
+		t.Fatalf("UnlinkPending: %v", err)
+	}
+	if got.State != domain.PendingOpen || got.PromotedTo != "" || got.ClosedAt != nil {
+		t.Fatalf("unlinked = %+v, want open, no promoted_to, no closed_at", got)
+	}
+	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingOpen || stored.PromotedTo != "" {
+		t.Fatalf("persisted = %+v, want open and unlinked", stored)
+	}
+	if pl := lastPayload(t, repoDir, p.ID, "pending.reopened"); pl["feature"] != "F-0010" {
+		t.Fatalf("pending.reopened payload = %v, want feature F-0010", pl)
+	}
+	if _, err := UnlinkPending(repoDir, projDir, p.ID); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("unlink of an open pending: err = %v, want ErrInvalidTransition", err)
+	}
+
+	seedFeatureInState(t, repoDir, "F-0011", domain.StateDone)
+	old := mustPending(t, repoDir, projDir, "Promovida antes da F-0885", "", origin.ID)
+	old.State, old.PromotedTo = domain.PendingPromoted, "F-0011"
+	if err := store.SavePending(repoDir, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := UnlinkPending(repoDir, projDir, old.ID); err != nil || got.State != domain.PendingOpen || got.PromotedTo != "" {
+		t.Fatalf("unlink from a done feature (promoted before F-0885): %+v, %v, want open", got, err)
+	}
+
+	seedFeatureInState(t, repoDir, "F-0012", domain.StateImplemented)
+	ready := mustPending(t, repoDir, projDir, "Paga por uma feature pronta", "", origin.ID)
+	if _, err := LinkPending(repoDir, projDir, ready.ID, "F-0012"); !errors.Is(err, ErrPendingTargetClosed) {
+		t.Fatalf("link to an implemented feature: err = %v, want ErrPendingTargetClosed", err)
+	}
+	ready.State, ready.PromotedTo = domain.PendingPromoted, "F-0012"
+	if err := store.SavePending(repoDir, ready); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+ready.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UnlinkPending(repoDir, projDir, ready.ID); !errors.Is(err, ErrPendingLinked) || !strings.Contains(err.Error(), "F-0012") {
+		t.Fatalf("unlink from an implemented feature: err = %v, want ErrPendingLinked naming F-0012", err)
+	}
+}
+
+// F-0885 r1 (critic): a pending promoted before F-0885 to a feature already
+// terminal is moved by nothing any more, so it resolves by hand; drop asks for
+// the unlink first. While the feature is implemented, its accept decides.
+func TestManualCloseOfPendingPromotedToTerminalFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	seed := func(title, featureID string, state domain.FeatureState) store.Pending {
+		seedFeatureInState(t, repoDir, featureID, state)
+		p := mustPending(t, repoDir, projDir, title, "", origin.ID)
+		p.State, p.PromotedTo = domain.PendingPromoted, featureID
+		if err := store.SavePending(repoDir, p); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+p.ID); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	rejected := seed("Promovida a uma feature rejeitada", "F-0010", domain.StateRejected)
+	if got, err := ResolvePending(repoDir, projDir, rejected.ID); err != nil || got.State != domain.PendingResolved {
+		t.Fatalf("resolve of a pending promoted to a rejected feature: %+v, %v", got, err)
+	}
+	done := seed("Promovida a uma feature aceita", "F-0011", domain.StateDone)
+	if _, err := DropPending(repoDir, projDir, done.ID, "não vale mais"); err == nil || !strings.Contains(err.Error(), "cerne pending unlink "+done.ID) {
+		t.Fatalf("drop of a pending promoted to a done feature: err = %v, want the unlink hint", err)
+	}
+	ready := seed("Promovida a uma feature pronta", "F-0012", domain.StateImplemented)
+	if _, err := ResolvePending(repoDir, projDir, ready.ID); !errors.Is(err, ErrPendingLinked) || strings.Contains(err.Error(), "unlink") {
+		t.Fatalf("resolve while the feature is implemented: err = %v, want ErrPendingLinked without an unlink hint", err)
+	}
+}
+
+// F-0885 r1 (critic): --as task groups pendings of the same origin into one
+// task under it.
+func TestPromotePendingsTaskFromOneOrigin(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	p1 := mustPending(t, repoDir, projDir, "Tratar o caso Y do parser", "", "F-0001")
+	p2 := mustPending(t, repoDir, projDir, "Medir a latência do export", "", "F-0001")
+	got, task, err := PromotePendings(repoDir, projDir, []string{p1.ID, p2.ID}, "task", "Pagar Y e a latência", "", false)
+	if err != nil {
+		t.Fatalf("PromotePendings --as task, one origin: %v", err)
+	}
+	if !strings.HasPrefix(task.ID, "T-") || task.Parent != "F-0001" || len(got) != 2 {
+		t.Fatalf("task = %+v, pendings = %d, want one T- under F-0001 paying both", task, len(got))
+	}
+	for _, p := range got {
+		if p.State != domain.PendingPromoted || p.PromotedTo != task.ID {
+			t.Fatalf("%s = %+v, want promoted to %s", p.ID, p, task.ID)
+		}
 	}
 }
