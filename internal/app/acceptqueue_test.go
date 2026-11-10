@@ -30,6 +30,8 @@ func TestNoneCountsOnlyAPureZero(t *testing.T) {
 		{"- Não há débitos conhecidos.", 0},
 		{"- **Nenhuma pendência registrada.**", 0},
 		{"- Nenhum item restante", 0},
+		{"- Nenhum ponto aberto.", 0},
+		{"- Nenhuma limitação conhecida.", 0},
 		{"- n/a", 0},
 		{"- N/A.", 0},
 		{"- none", 0}, // mutant C of F-0875 round 3
@@ -54,6 +56,7 @@ func TestTildeFenceIsCode(t *testing.T) {
 		"backticks inside": "~~~\n```\nProdução: x\n```\n~~~\n",
 		"longer opener":    "~~~~\n~~~\nProdução: x\n~~~~\n",
 		"tildes inside":    "````\n~~~\nProdução: x\n````\n",
+		"never closed":     "~~~\nProdução: x\n", // CommonMark: the rest of the document is code
 	} {
 		if row := summarizeResult([]byte("# R\n\n" + doc)); row.Production != NotInformed {
 			t.Errorf("%s: production = %q, want %s", name, row.Production, NotInformed)
@@ -68,7 +71,8 @@ func TestTildeFenceIsCode(t *testing.T) {
 // F-0887 crit. 3 (P-0019): Follow-ups and Pendências sections (level 2 or
 // more) are read as pendings, with the Débitos rules.
 func TestFollowUpsAndPendenciasSectionsCount(t *testing.T) {
-	for _, head := range []string{"Follow-ups", "Follow-up", "Followups", "Pendências", "Pendencias", "Pendências e riscos"} {
+	for _, head := range []string{"Follow-ups", "Follow-up", "Followups", "Pendências", "Pendencias", "Pendências e riscos",
+		"Pendência", "Débito técnico", "**Débitos**", "5. Débitos", "1) Pendências"} {
 		if row := debts(t, head, "- falta X"); !row.PendingReported || len(row.Pending) != 1 || row.Pending[0] != "falta X" {
 			t.Errorf("## %s: %+v, want pending 1 (falta X)", head, row)
 		}

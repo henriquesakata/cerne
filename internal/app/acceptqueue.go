@@ -50,7 +50,9 @@ var (
 	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
 	// The pendings sections the hub's results use (F-0887): "Débitos e follow-ups"
 	// already matches by Débitos; a title merely containing "débito" would match prose.
-	pendingHead = regexp.MustCompile(`(?i)^(?:d[ée]bitos|n[aã]o verificado|follow-?ups?|pend[êe]ncias)\b`)
+	// Singular, bold and numbered titles ("## Pendência", "## **Débitos**",
+	// "## 5. Débitos") open it too.
+	pendingHead = regexp.MustCompile(`(?i)^(?:\d+[.)]\s+)?[*_]*(?:d[ée]bitos?|n[aã]o verificado|follow-?ups?|pend[êe]ncias?)\b`)
 	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	bulletRe    = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$`)
 	// A pure zero declares no debt (F-0887): "Nenhum.", "Nenhum débito aberto.",
