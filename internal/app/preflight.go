@@ -58,7 +58,15 @@ func glabMRState(ctx context.Context, project, iid string) (string, error) {
 		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
 	}
 	// "--" ends the flags: the positional can never be read as one (F-0874).
-	out, err := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid).Output()
+	cmd := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid)
+	// The deadline kills glab, not a child (credential helper, pager) still
+	// holding stdout: without WaitDelay, Output waits for that child (F-0886).
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	// glab exited 0 and its answer is in out; only a child kept the pipe open.
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("glab: %w", err)
 	}
@@ -74,6 +82,13 @@ func glabMRState(ctx context.Context, project, iid string) (string, error) {
 func validMRArg(a string) bool {
 	proj, iid, _ := strings.Cut(a, "!")
 	return store.ValidMRRef(proj, iid)
+}
+
+// checkableMR is an MR precondition the forge can answer: a "manual" result of
+// one means the forge did not answer (state unknown), not that the cerne
+// cannot verify it.
+func checkableMR(p Precondition) bool {
+	return p.Problem == "" && p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]) && store.NormMRState(p.Args[1]) != ""
 }
 
 // CheckPreconditions checks each precondition against the backend (and the
@@ -106,6 +121,9 @@ func NewForge() *Forge {
 }
 
 func (f *Forge) state(project, iid string) (string, error) {
+	if f.cache == nil {
+		f.cache = map[string]forgeAnswer{}
+	}
 	k := project + "!" + iid
 	if a, ok := f.cache[k]; ok {
 		return a.state, a.err
@@ -121,8 +139,11 @@ func (f *Forge) state(project, iid string) (string, error) {
 	t0 := time.Now()
 	st, err := MRState(ctx, project, iid)
 	f.spent += time.Since(t0)
-	if err != nil && d == left {
-		f.Cut = true // the ceiling, not the forge, ended this call
+	// The ceiling, not the forge, ended this call: its deadline was what was
+	// left, and that deadline is what stopped it — a forge failing on its own
+	// in the last call is not a cut (F-0886).
+	if err != nil && d == left && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		f.Cut = true
 	}
 	f.cache[k] = forgeAnswer{st, err}
 	return st, err
@@ -150,7 +171,7 @@ func CheckPreconditionsWith(repoDir string, pcs []Precondition, forge *Forge) []
 			} else {
 				r.Status, r.Detail = PrePending, p.Args[0]+" has no result written"
 			}
-		case p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]) && store.NormMRState(p.Args[1]) != "":
+		case checkableMR(p):
 			proj, iid, _ := strings.Cut(p.Args[0], "!")
 			want := store.NormMRState(p.Args[1])
 			got, err := forge.state(proj, iid)
@@ -183,6 +204,12 @@ func preconditionsUpTo(pcs []Precondition, upTo string) []Precondition {
 // Preflight lists the preconditions of runbook rbID up to step upTo ("" = the
 // last step) with their status. Changes nothing.
 func Preflight(repoDir, rbID, upTo string) ([]PreResult, string, error) {
+	return PreflightWith(repoDir, rbID, upTo, NewForge())
+}
+
+// PreflightWith is Preflight asking the forge through forge, so the caller
+// reads its Cut afterwards (F-0886: 'runbook preflight --json').
+func PreflightWith(repoDir, rbID, upTo string, forge *Forge) ([]PreResult, string, error) {
 	if _, err := store.LoadRunbook(repoDir, rbID); errors.Is(err, store.ErrNotFound) {
 		return nil, "", fmt.Errorf("runbook %s not found in the backend", rbID)
 	} else if err != nil {
@@ -203,7 +230,7 @@ func Preflight(repoDir, rbID, upTo string) ([]PreResult, string, error) {
 	if upTo != "" {
 		pcs = preconditionsUpTo(pcs, upTo)
 	}
-	return CheckPreconditions(repoDir, pcs), upTo, nil
+	return CheckPreconditionsWith(repoDir, pcs, forge), upTo, nil
 }
 
 // RunPreflight is the preflight of a run in progress: the preconditions of its
@@ -232,7 +259,15 @@ func RunPreflight(repoDir string, run store.Run, forge *Forge) (next string, res
 	if forge == nil {
 		forge = NewForge()
 	}
-	return next, CheckPreconditionsWith(repoDir, pcs, forge), true, nil
+	res = CheckPreconditionsWith(repoDir, pcs, forge)
+	// A manual precondition with no step matters before the run starts: once a
+	// step is ok, repeating it on every step only buries the rest (F-0886).
+	if slices.ContainsFunc(run.Steps, func(s string) bool { return runStepOK(run, s) }) {
+		res = slices.DeleteFunc(res, func(r PreResult) bool {
+			return r.Step == "" && r.Status == PreManual && !checkableMR(r.Precondition)
+		})
+	}
+	return next, res, true, nil
 }
 
 // OpenPreconditions is the subset of results that are not met.

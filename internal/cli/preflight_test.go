@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -194,5 +196,94 @@ func TestPreconditionLinesDoNotBreakLint(t *testing.T) {
 	// Same rules, one more runbook with the same findings as the plain one.
 	if strings.Count(after, "RB-0002") != strings.Count(before, "RB-0001") {
 		t.Fatalf("lint treats RB-0002 differently from the plain RB-0001:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// F-0886 crit. 3 (P-0017): --json carries what the text says — the runbook,
+// the step it checked up to, each result (kind, args, step, status, detail),
+// the cut and the totals — with the same exit code; no precondition is an
+// empty list and zero totals.
+func TestRunbookPreflightJSON(t *testing.T) {
+	projDir, _ := preFixture(t)
+	text, textErr := execCerne(t, "runbook", "preflight", "RB-0001", "--dir", projDir)
+	out, jsonErr := execCerne(t, "runbook", "preflight", "RB-0001", "--json", "--dir", projDir)
+	if (textErr == nil) != (jsonErr == nil) {
+		t.Fatalf("exit differs: text %v, json %v", textErr, jsonErr)
+	}
+	var doc struct {
+		Runbook string `json:"runbook"`
+		Ate     string `json:"ate"`
+		Results []struct {
+			Kind   string   `json:"kind"`
+			Args   []string `json:"args"`
+			Step   string   `json:"step"`
+			Status string   `json:"status"`
+			Detail string   `json:"detail"`
+		} `json:"results"`
+		Cut     *bool `json:"cut"`
+		Met     int   `json:"met"`
+		Pending int   `json:"pending"`
+		Manual  int   `json:"manual"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	if doc.Runbook != "RB-0001" || doc.Ate != "S3" || doc.Cut == nil || *doc.Cut || len(doc.Results) != doc.Met+doc.Pending+doc.Manual {
+		t.Fatalf("json = %+v", doc)
+	}
+	if sum := fmt.Sprintf("%d met, %d pending, %d manual", doc.Met, doc.Pending, doc.Manual); !strings.Contains(text, sum) || doc.Met == 0 || doc.Pending == 0 || doc.Manual == 0 {
+		t.Fatalf("totals %q must match the text and cover the three statuses:\n%s", sum, text)
+	}
+	var mr bool
+	for _, r := range doc.Results {
+		if !strings.Contains(text, r.Detail) {
+			t.Fatalf("result %+v is not in the text:\n%s", r, text)
+		}
+		mr = mr || (r.Kind == "mr" && r.Step == "S2" && r.Status == app.PrePending && len(r.Args) == 2 && r.Args[0] == "rockt/hub!2150")
+	}
+	if !mr {
+		t.Fatalf("the MR result lacks kind/args/step/status: %+v", doc.Results)
+	}
+	// A manual line has no args: an empty list, never null.
+	if !strings.Contains(out, `"args": []`) || strings.Contains(out, "null") {
+		t.Fatalf("args of a manual result must be []:\n%s", out)
+	}
+	if _, err := execCerne(t, "runbook", "preflight", "RB-0001", "--ate", "S9", "--json", "--dir", projDir); err == nil {
+		t.Fatal("a step the runbook does not name fails in --json too")
+	}
+
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# Sem pré-condição\n\n## Passos\n\n- S1 faz\n")
+	rb(t, projDir, "runbook", "new", "Sem pré-condição", "--file", bodyFile)
+	out, err := execCerne(t, "runbook", "preflight", "RB-0002", "--json", "--dir", projDir)
+	if err != nil || !strings.Contains(out, `"results": []`) || !strings.Contains(out, `"met": 0`) {
+		t.Fatalf("no precondition: %v\n%s", err, out)
+	}
+	if _, err := execCerne(t, "runbook", "preflight", "RB-0042", "--json", "--dir", projDir); err == nil {
+		t.Fatal("an unknown runbook fails in --json too")
+	}
+}
+
+// F-0886 crit. 3 and 4 (critic 2): when the ceiling ends a call, the text says
+// so and --json carries "cut": true.
+func TestRunbookPreflightCutReachesTextAndJSON(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# Um MR\n\n## Passos\n\n- S1 confere\n  Pré-condição S1: mr rockt/hub!1 merged\n")
+	rb(t, projDir, "runbook", "new", "Um MR preso", "--file", bodyFile)
+	oldState, oldForge := app.MRState, newForge
+	app.MRState = func(ctx context.Context, _, _ string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	newForge = func() *app.Forge {
+		return &app.Forge{Budget: 50 * time.Millisecond, CallTimeout: 50 * time.Millisecond}
+	}
+	t.Cleanup(func() { app.MRState, newForge = oldState, oldForge })
+	if out := rb(t, projDir, "runbook", "preflight", "RB-0001"); !strings.Contains(out, "ceiling cut the check") {
+		t.Fatalf("the text must say the ceiling cut the check:\n%s", out)
+	}
+	if out := rb(t, projDir, "runbook", "preflight", "RB-0001", "--json"); !strings.Contains(out, `"cut": true`) {
+		t.Fatalf("--json must carry the cut:\n%s", out)
 	}
 }

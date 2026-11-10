@@ -100,7 +100,7 @@ func ParsePreconditions(body string) []Precondition {
 			}
 		}
 		if p.Step == "" && p.Kind == "manual" && p.Problem == "" {
-			p.Problem = "no step (S<n>): a manual line without a step warns on every step"
+			p.Problem = "no step (S<n>): a manual line without a step warns only until the run's first step is ok"
 		}
 		out = append(out, p)
 	}

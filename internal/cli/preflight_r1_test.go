@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // F-0874 r1 (M5): a pending/manual precondition of a step already ok leaves the
@@ -76,5 +77,29 @@ func TestLintCommandReportsMalformedPrecondition(t *testing.T) {
 	out, _ := execCerne(t, "lint", "--dir", projDir)
 	if !strings.Contains(out, "PRECONDITION-MALFORMED") || !strings.Contains(out, "RB-0001") {
 		t.Fatalf("lint must report the malformed precondition:\n%s", out)
+	}
+}
+
+// F-0886 crit. 1 (P-0016): 'runbook preflight' with two MRs whose glab leaves
+// a child holding the pipe ends within the forge's 10 s ceiling plus the
+// WaitDelay, and says the forge did not answer.
+func TestRunbookPreflightWithTwoStuckMRsEndsWithinTheCeiling(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# Dois MRs\n\n## Passos\n\n- S1 confere\n  Pré-condição S1: mr rockt/hub!1 merged\n  Pré-condição S1: mr rockt/hub!2 merged\n")
+	rb(t, projDir, "runbook", "new", "Dois MRs presos", "--file", bodyFile)
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "glab"), "#!/bin/sh\nsleep 25 &\nwait\n")
+	if err := os.Chmod(filepath.Join(dir, "glab"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t0 := time.Now()
+	out := rb(t, projDir, "runbook", "preflight", "RB-0001")
+	if d := time.Since(t0); d >= 13*time.Second {
+		t.Fatalf("runbook preflight took %s with two stuck MRs, want < 13 s", d)
+	}
+	if !strings.Contains(out, "0 met, 0 pending, 2 manual") {
+		t.Fatalf("two unanswered MRs are manual:\n%s", out)
 	}
 }
