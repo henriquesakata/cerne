@@ -133,6 +133,15 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
+		// F-0873: closing the work concludes its run, if it has one.
+		if r, err := store.LoadRun(repoDir, id); err == nil {
+			r.State = store.RunClosed
+			if err := store.SaveRun(repoDir, r); err != nil {
+				return "", err
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return "", err
+		}
 		title = w.Title
 		actionName = string(action)
 		out = WorkOutcome{ID: id, From: oldState, To: newState}

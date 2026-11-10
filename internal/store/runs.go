@@ -49,10 +49,36 @@ type Run struct {
 	Window   string   `json:"window"`
 	Expected string   `json:"expected_word,omitempty"`
 	Steps    []string `json:"steps"`
-	// Inferred: Steps came from the runbook body, not from --passos. The body
-	// also names steps in unrelated titles, so order is not judged on it.
-	Inferred bool       `json:"steps_inferred,omitempty"`
-	Entries  []RunEntry `json:"entries,omitempty"`
+	// Explicit: Steps came from --passos. Only then is order judged: the body
+	// also names steps in unrelated titles. A run written before this field
+	// existed has it false, so it is treated as inferred.
+	Explicit bool `json:"steps_explicit,omitempty"`
+	// State is the run's own life cycle (RunOpen, RunStopped, RunClosed). Empty
+	// in a run written before it existed: see Status.
+	State   string     `json:"state,omitempty"`
+	Entries []RunEntry `json:"entries,omitempty"`
+}
+
+// Run life cycle: aberta -> parada (a PARE was recorded) -> concluida (the work
+// was closed, done or abandoned). A stopped or closed run takes no more steps
+// and there is no reopening.
+const (
+	RunOpen    = "aberta"
+	RunStopped = "parada"
+	RunClosed  = "concluida"
+)
+
+// Status is the run's state; for a legacy run with none, it is derived from
+// the entries (a last PARE = parada). A legacy run whose work was closed reads
+// as aberta/parada here: only the work state tells otherwise.
+func (r Run) Status() string {
+	if r.State != "" {
+		return r.State
+	}
+	if n := len(r.Entries); n > 0 && r.Entries[n-1].State == "pare" {
+		return RunStopped
+	}
+	return RunOpen
 }
 
 func runsDir(repoDir string) string { return filepath.Join(repoDir, "content", "runs") }
