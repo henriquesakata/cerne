@@ -15,11 +15,15 @@ const (
 
 // Pending actions (F-0322): resolve closes a debt that was paid, drop discards
 // it (a reason is required at the app layer), promote turns it into a feature
-// or task of the regular funnel.
+// or task of the regular funnel. F-0885: a promoted pending follows the feature
+// that pays it — reopen hands it back to open (the feature was rejected or the
+// link undone), transfer moves it to the feature that superseded its own.
 const (
-	ActionResolve Action = "resolve"
-	ActionDrop    Action = "drop"
-	ActionPromote Action = "promote"
+	ActionResolve  Action = "resolve"
+	ActionDrop     Action = "drop"
+	ActionPromote  Action = "promote"
+	ActionReopen   Action = "reopen"
+	ActionTransfer Action = "transfer"
 )
 
 var pendingTransitions = map[PendingState]map[Action]PendingState{
@@ -28,11 +32,18 @@ var pendingTransitions = map[PendingState]map[Action]PendingState{
 		ActionDrop:    PendingDropped,
 		ActionPromote: PendingPromoted,
 	},
+	// Promoted lives while the paying feature lives (F-0885): it leaves only by
+	// the accept (resolve), a reject or unlink (reopen) or a supersede
+	// (transfer to the successor).
+	PendingPromoted: {
+		ActionResolve:  PendingResolved,
+		ActionReopen:   PendingOpen,
+		ActionTransfer: PendingPromoted,
+	},
 	// Terminal states: explicitly present with no actions, so they report
 	// ErrInvalidTransition rather than ErrUnknownState.
 	PendingResolved: {},
 	PendingDropped:  {},
-	PendingPromoted: {},
 }
 
 // TransitionPending returns the state reached by applying action to from.
