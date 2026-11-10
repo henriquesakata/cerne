@@ -324,7 +324,7 @@ func TestAcceptQueuePendingCount(t *testing.T) {
 		"sub-bullets":         {"## Débitos\n\n- a\n  - a1\n  - a2\n- b\n    - b1\n", 2},
 		"continuation":        {"## Débitos\n\n- a\n  continua aqui\n- b\n", 2},
 		"nenhum teste real":   {"## Débitos\n\n- Nenhum teste de carga foi escrito\n", 1},
-		"nenhum long":         {"## Débitos\n\n- Nenhum débito aberto além dos já listados no corpo do Resultado.\n", 0},
+		"nenhum long":         {"## Débitos\n\n- Nenhum débito aberto além dos já listados no corpo do Resultado.\n", 1}, // F-0887: a continuation past the qualifier declares a debt
 		"não há débitos":      {"## Débitos\n\n- Não há débitos.\n", 0},
 		"h3 inside":           {"## Débitos\n\n### Segurança\n\n- a\n\n### Testes\n\n- b\n- c\n", 3},
 		"h2 closes":           {"## Débitos\n\n- a\n\n## Gauntlet\n\n- x\n", 1},
@@ -372,6 +372,70 @@ func TestAcceptQueueProductionNegativeIsNotEvidence(t *testing.T) {
 	} {
 		if r := queueRow(t, repoDir, body); r.Production == app.NotInformed {
 			t.Errorf("%s: positive evidence read as not informed", name)
+		}
+	}
+}
+
+// F-0887 crit. 4 (P-0019): "nada" and "tbd" on the production line are no
+// evidence (mutants B and E of F-0875 round 3).
+func TestProductionNadaTbdIsNotInformed(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, body := range map[string]string{
+		"nada":       "Produção: nada\n",
+		"nada ainda": "- Em produção: nada ainda\n",
+		"tbd":        "Produção: TBD\n",
+		"tbd bold":   "**Produção:** tbd.\n",
+		"section":    "## Produção\n\nTBD\n",
+	} {
+		if r := queueRow(t, repoDir, body); r.Production != app.NotInformed {
+			t.Errorf("%s: production = %q, want %q", name, r.Production, app.NotInformed)
+		}
+	}
+}
+
+// F-0887: one synthetic result per criterion (testdata/accept/F-0905..7), read
+// end to end by 'accept queue --json'.
+func TestAcceptQueueF0887Fixtures(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	at := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	for _, id := range []string{"F-0905", "F-0906", "F-0907"} {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "Feat " + id, State: domain.StateImplemented, CreatedAt: at, UpdatedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+		src, err := os.ReadFile(filepath.Join("..", "app", "testdata", "accept", id+".md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dst := filepath.Join(repoDir, "content", "features", id, "result.md")
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, dst, string(src))
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed F-0887 fixtures"); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := execCerneSplit(t, "accept", "queue", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Queue []app.AcceptRow `json:"queue"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("%v: %s", err, stdout)
+	}
+	got := map[string]string{}
+	for _, r := range doc.Queue {
+		got[r.ID] = fmt.Sprintf("production=%s pending=%d reported=%v", r.Production, len(r.Pending), r.PendingReported)
+	}
+	for id, want := range map[string]string{
+		"F-0905": "production=não informado pending=3 reported=true", // crit. 1
+		"F-0906": "production=não informado pending=0 reported=true", // crit. 2
+		"F-0907": "production=não informado pending=2 reported=true", // crit. 3
+	} {
+		if got[id] != want {
+			t.Errorf("%s: %s, want %s", id, got[id], want)
 		}
 	}
 }
