@@ -197,6 +197,12 @@ func preconditionsUpTo(pcs []Precondition, upTo string) []Precondition {
 // Preflight lists the preconditions of runbook rbID up to step upTo ("" = the
 // last step) with their status. Changes nothing.
 func Preflight(repoDir, rbID, upTo string) ([]PreResult, string, error) {
+	return PreflightWith(repoDir, rbID, upTo, NewForge())
+}
+
+// PreflightWith is Preflight asking the forge through forge, so the caller
+// reads its Cut afterwards (F-0886: 'runbook preflight --json').
+func PreflightWith(repoDir, rbID, upTo string, forge *Forge) ([]PreResult, string, error) {
 	if _, err := store.LoadRunbook(repoDir, rbID); errors.Is(err, store.ErrNotFound) {
 		return nil, "", fmt.Errorf("runbook %s not found in the backend", rbID)
 	} else if err != nil {
@@ -217,7 +223,7 @@ func Preflight(repoDir, rbID, upTo string) ([]PreResult, string, error) {
 	if upTo != "" {
 		pcs = preconditionsUpTo(pcs, upTo)
 	}
-	return CheckPreconditions(repoDir, pcs), upTo, nil
+	return CheckPreconditionsWith(repoDir, pcs, forge), upTo, nil
 }
 
 // RunPreflight is the preflight of a run in progress: the preconditions of its

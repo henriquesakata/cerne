@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -16,13 +17,16 @@ import (
 
 func newRunbookPreflightCmd(dir *string) *cobra.Command {
 	var upTo string
+	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "preflight <RB-id> [--ate <step>]",
+		Use:   "preflight <RB-id> [--ate <step>] [--json]",
 		Short: "List the declared preconditions of a runbook up to a step, met, pending or manual (read-only)",
 		Long: "Reads the preconditions a runbook declares ('Precondicao S11: registro F-0869', 'result F-0869', " +
 			"'mr <project>!<n> merged') and checks, up to --ate (default: the last step), the ones the cerne can verify: " +
 			"a record exists, a feature has its result, a merge request is in a state on the forge. Anything it cannot " +
-			"verify is listed as manual, never as met. Read-only: it changes nothing and never asks production.",
+			"verify is listed as manual, never as met. The forge gets 10 s in total; MRs past it are manual and the " +
+			"output says the ceiling cut the check. --json prints the same as an object (runbook, ate, results, cut, " +
+			"met, pending, manual). Read-only: it changes nothing and never asks production.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
@@ -30,22 +34,66 @@ func newRunbookPreflightCmd(dir *string) *cobra.Command {
 				return err
 			}
 			id := strings.ToUpper(strings.TrimSpace(args[0]))
-			res, to, err := app.Preflight(ctx.repoDir, id, strings.ToUpper(strings.TrimSpace(upTo)))
+			forge := app.NewForge()
+			res, to, err := app.PreflightWith(ctx.repoDir, id, strings.ToUpper(strings.TrimSpace(upTo)), forge)
 			if err != nil {
 				return err
 			}
 			w := cmd.OutOrStdout()
+			if asJSON {
+				return writePreflightJSON(w, id, to, res, forge.Cut)
+			}
 			if len(res) == 0 {
 				fmt.Fprintf(w, "%s: no precondition declared up to %s\n", id, orLast(to))
 				return nil
 			}
 			fmt.Fprintf(w, "%s preflight up to %s: %s\n", id, orLast(to), preSummary(res))
 			writePreResults(w, res, true)
+			if forge.Cut {
+				fmt.Fprintf(w, "The forge's %s ceiling cut the check: the MRs it did not answer are manual — run it again or check them by hand.\n", forge.Budget)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&upTo, "ate", "", "check the preconditions up to this step (default: the last one)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
+}
+
+// preflightJSON is 'runbook preflight --json' (F-0886): the text output as an
+// object, totals and cut included.
+type preflightJSON struct {
+	Runbook string              `json:"runbook"`
+	Ate     string              `json:"ate"`
+	Results []preflightResultJS `json:"results"`
+	Cut     bool                `json:"cut"`
+	Met     int                 `json:"met"`
+	Pending int                 `json:"pending"`
+	Manual  int                 `json:"manual"`
+}
+
+type preflightResultJS struct {
+	Kind   string   `json:"kind"`
+	Args   []string `json:"args"`
+	Step   string   `json:"step"`
+	Text   string   `json:"text"`
+	Status string   `json:"status"`
+	Detail string   `json:"detail"`
+}
+
+func writePreflightJSON(w io.Writer, id, to string, res []app.PreResult, cut bool) error {
+	doc := preflightJSON{Runbook: id, Ate: to, Results: []preflightResultJS{}, Cut: cut}
+	for _, r := range res {
+		args := r.Args
+		if args == nil {
+			args = []string{}
+		}
+		doc.Results = append(doc.Results, preflightResultJS{r.Kind, args, r.Step, r.Text, r.Status, r.Detail})
+	}
+	doc.Met, doc.Pending, doc.Manual = preCounts(res)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }
 
 func orLast(s string) string {
@@ -56,7 +104,12 @@ func orLast(s string) string {
 }
 
 func preSummary(res []app.PreResult) string {
-	var met, pending, manual int
+	met, pending, manual := preCounts(res)
+	return fmt.Sprintf("%d met, %d pending, %d manual", met, pending, manual)
+}
+
+// preCounts is the totals the text summary and --json share.
+func preCounts(res []app.PreResult) (met, pending, manual int) {
 	for _, r := range res {
 		switch r.Status {
 		case app.PreMet:
@@ -67,7 +120,7 @@ func preSummary(res []app.PreResult) string {
 			manual++
 		}
 	}
-	return fmt.Sprintf("%d met, %d pending, %d manual", met, pending, manual)
+	return met, pending, manual
 }
 
 func writePreResults(w io.Writer, res []app.PreResult, all bool) {

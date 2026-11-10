@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -194,5 +196,63 @@ func TestPreconditionLinesDoNotBreakLint(t *testing.T) {
 	// Same rules, one more runbook with the same findings as the plain one.
 	if strings.Count(after, "RB-0002") != strings.Count(before, "RB-0001") {
 		t.Fatalf("lint treats RB-0002 differently from the plain RB-0001:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// F-0886 crit. 3 (P-0017): --json carries what the text says — the runbook,
+// the step it checked up to, each result (kind, args, step, status, detail),
+// the cut and the totals — with the same exit code; no precondition is an
+// empty list and zero totals.
+func TestRunbookPreflightJSON(t *testing.T) {
+	projDir, _ := preFixture(t)
+	text, textErr := execCerne(t, "runbook", "preflight", "RB-0001", "--dir", projDir)
+	out, jsonErr := execCerne(t, "runbook", "preflight", "RB-0001", "--json", "--dir", projDir)
+	if (textErr == nil) != (jsonErr == nil) {
+		t.Fatalf("exit differs: text %v, json %v", textErr, jsonErr)
+	}
+	var doc struct {
+		Runbook string `json:"runbook"`
+		Ate     string `json:"ate"`
+		Results []struct {
+			Kind   string   `json:"kind"`
+			Args   []string `json:"args"`
+			Step   string   `json:"step"`
+			Status string   `json:"status"`
+			Detail string   `json:"detail"`
+		} `json:"results"`
+		Cut     *bool `json:"cut"`
+		Met     int   `json:"met"`
+		Pending int   `json:"pending"`
+		Manual  int   `json:"manual"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	if doc.Runbook != "RB-0001" || doc.Ate != "S3" || doc.Cut == nil || *doc.Cut || len(doc.Results) != doc.Met+doc.Pending+doc.Manual {
+		t.Fatalf("json = %+v", doc)
+	}
+	if sum := fmt.Sprintf("%d met, %d pending, %d manual", doc.Met, doc.Pending, doc.Manual); !strings.Contains(text, sum) || doc.Met == 0 || doc.Pending == 0 || doc.Manual == 0 {
+		t.Fatalf("totals %q must match the text and cover the three statuses:\n%s", sum, text)
+	}
+	var mr bool
+	for _, r := range doc.Results {
+		if !strings.Contains(text, r.Detail) {
+			t.Fatalf("result %+v is not in the text:\n%s", r, text)
+		}
+		mr = mr || (r.Kind == "mr" && r.Step == "S2" && r.Status == app.PrePending && len(r.Args) == 2 && r.Args[0] == "rockt/hub!2150")
+	}
+	if !mr {
+		t.Fatalf("the MR result lacks kind/args/step/status: %+v", doc.Results)
+	}
+
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# Sem pré-condição\n\n## Passos\n\n- S1 faz\n")
+	rb(t, projDir, "runbook", "new", "Sem pré-condição", "--file", bodyFile)
+	out, err := execCerne(t, "runbook", "preflight", "RB-0002", "--json", "--dir", projDir)
+	if err != nil || !strings.Contains(out, `"results": []`) || !strings.Contains(out, `"met": 0`) {
+		t.Fatalf("no precondition: %v\n%s", err, out)
+	}
+	if _, err := execCerne(t, "runbook", "preflight", "RB-0042", "--json", "--dir", projDir); err == nil {
+		t.Fatal("an unknown runbook fails in --json too")
 	}
 }
