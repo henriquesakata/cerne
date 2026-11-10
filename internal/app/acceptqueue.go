@@ -48,13 +48,26 @@ var (
 	// PENDENTE counts only on an acceptance line (list item or table row that
 	// names a "critério"), never in loose prose.
 	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
-	pendingHead = regexp.MustCompile(`(?i)^(?:d[ée]bitos|n[aã]o verificado)\b`)
+	// The pendings sections the hub's results use (F-0887): "Débitos e follow-ups"
+	// already matches by Débitos; a title merely containing "débito" would match prose.
+	pendingHead = regexp.MustCompile(`(?i)^(?:d[ée]bitos|n[aã]o verificado|follow-?ups?|pend[êe]ncias)\b`)
 	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	bulletRe    = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$`)
-	// "Nenhum.", "Nenhum débito aberto além de..." and "n/a" declare no debt; "Nenhum
-	// teste de carga foi escrito" is a debt (the word after "nenhum" is not a debt noun).
-	noneRe       = regexp.MustCompile(`(?i)^(?:(?:nenhum[ao]?s?|n[aã]o h[aá](?:\s+nenhum[ao]?s?)?)(?:\s+(?:d[ée]bitos?|pend[êe]ncias?|follow-?ups?|itens?|pontos?|problemas?|limita[cç][õo]es|limita[cç][ãa]o)\b|\s*[;:,.]|\s*$)|(?:n/?a|none)\b)|^[—–.\s]*$`)
+	// A pure zero declares no debt (F-0887): "Nenhum.", "Nenhum débito aberto.",
+	// "Não há débitos conhecidos.", "n/a". After the debt noun only a qualifier of
+	// the closed list and the final punctuation may follow; any other continuation
+	// ("... além do rebase manual", "... foi medido", "... exceto o P-0023") declares
+	// a debt and counts, the safe side for a decision queue. "Nenhum teste de carga
+	// foi escrito" is a debt too: "teste" is not a debt noun.
+	noneRe       = regexp.MustCompile(`(?i)^(?:nenhum[ao]?s?|n[aã]o h[aá](?:\s+nenhum[ao]?s?)?)(?:\s+(?:` + debtNoun + `)(?:\s+(?:` + debtQualifier + `))*)?\s*[.;:]?\s*$|^(?:n/?a|none)\.?$|^[—–.\s]*$`)
 	markdownJunk = regexp.MustCompile("[*_`>#]|^[\\s-]+")
+	// A code fence opens with three or more backticks or tildes (CommonMark).
+	fenceRe = regexp.MustCompile("^\\s*(`{3,}|~{3,})")
+)
+
+const (
+	debtNoun      = `d[ée]bitos?|pend[êe]ncias?|follow-?ups?|ite(?:m|ns)|pontos?|problemas?|limita[cç][õo]es|limita[cç][ãa]o`
+	debtQualifier = `abert[ao]s?|conhecid[ao]s?|pendentes?|registrad[ao]s?|restantes?`
 )
 
 // AcceptQueue lists the features in implemented, oldest first (ties by id).
@@ -74,13 +87,19 @@ func AcceptQueue(repoDir string) ([]AcceptRow, error) {
 		row.AcceptCommand = "cerne feature accept " + f.ID
 		rows = append(rows, row)
 	}
+	sortAcceptRows(rows)
+	return rows, nil
+}
+
+// sortAcceptRows orders oldest first, ties by id: slices.SortFunc is not
+// stable, so the tie decides the order.
+func sortAcceptRows(rows []AcceptRow) {
 	slices.SortFunc(rows, func(a, b AcceptRow) int {
 		if c := a.ImplementedAt.Compare(b.ImplementedAt); c != 0 {
 			return c
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
-	return rows, nil
 }
 
 func summarizeResult(result []byte) AcceptRow {
@@ -88,16 +107,22 @@ func summarizeResult(result []byte) AcceptRow {
 	if v, ok := lint.GauntletVerdict(result); ok {
 		row.Gauntlet = v
 	}
-	inSection, secLevel, base, prodSect, fence := false, 0, -1, false, false
+	inSection, secLevel, base, prodSect, fence := false, 0, -1, false, ""
 	// Débitos counts as reported only with a bullet list or an explicit "Nenhum":
 	// a table or prose is no list, and "0" would affirm there are no debts.
 	bullets := false
 	for _, line := range strings.Split(string(lint.StripHTMLComments(result)), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			fence = !fence
+		// Code is output, not a declaration. The fence closes only with its own
+		// character, at least as long as the opening (CommonMark), so a ``` inside
+		// a ~~~ is code too.
+		if fence != "" {
+			if t := strings.TrimSpace(line); len(t) >= len(fence) && strings.Trim(t, fence[:1]) == "" {
+				fence = ""
+			}
 			continue
 		}
-		if fence { // code is output, not a declaration
+		if m := fenceRe.FindStringSubmatch(line); m != nil {
+			fence = m[1]
 			continue
 		}
 		if m := headingRe.FindStringSubmatch(line); m != nil {
