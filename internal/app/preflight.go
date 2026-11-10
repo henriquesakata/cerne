@@ -63,6 +63,10 @@ func glabMRState(ctx context.Context, project, iid string) (string, error) {
 	// holding stdout: without WaitDelay, Output waits for that child (F-0886).
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
+	// glab exited 0 and its answer is in out; only a child kept the pipe open.
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("glab: %w", err)
 	}
@@ -117,6 +121,9 @@ func NewForge() *Forge {
 }
 
 func (f *Forge) state(project, iid string) (string, error) {
+	if f.cache == nil {
+		f.cache = map[string]forgeAnswer{}
+	}
 	k := project + "!" + iid
 	if a, ok := f.cache[k]; ok {
 		return a.state, a.err

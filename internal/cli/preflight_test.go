@@ -244,6 +244,13 @@ func TestRunbookPreflightJSON(t *testing.T) {
 	if !mr {
 		t.Fatalf("the MR result lacks kind/args/step/status: %+v", doc.Results)
 	}
+	// A manual line has no args: an empty list, never null.
+	if !strings.Contains(out, `"args": []`) || strings.Contains(out, "null") {
+		t.Fatalf("args of a manual result must be []:\n%s", out)
+	}
+	if _, err := execCerne(t, "runbook", "preflight", "RB-0001", "--ate", "S9", "--json", "--dir", projDir); err == nil {
+		t.Fatal("a step the runbook does not name fails in --json too")
+	}
 
 	bodyFile := filepath.Join(t.TempDir(), "rb.md")
 	mustWrite(t, bodyFile, "# Sem pré-condição\n\n## Passos\n\n- S1 faz\n")
@@ -254,5 +261,29 @@ func TestRunbookPreflightJSON(t *testing.T) {
 	}
 	if _, err := execCerne(t, "runbook", "preflight", "RB-0042", "--json", "--dir", projDir); err == nil {
 		t.Fatal("an unknown runbook fails in --json too")
+	}
+}
+
+// F-0886 crit. 3 and 4 (critic 2): when the ceiling ends a call, the text says
+// so and --json carries "cut": true.
+func TestRunbookPreflightCutReachesTextAndJSON(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# Um MR\n\n## Passos\n\n- S1 confere\n  Pré-condição S1: mr rockt/hub!1 merged\n")
+	rb(t, projDir, "runbook", "new", "Um MR preso", "--file", bodyFile)
+	oldState, oldForge := app.MRState, newForge
+	app.MRState = func(ctx context.Context, _, _ string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	newForge = func() *app.Forge {
+		return &app.Forge{Budget: 50 * time.Millisecond, CallTimeout: 50 * time.Millisecond}
+	}
+	t.Cleanup(func() { app.MRState, newForge = oldState, oldForge })
+	if out := rb(t, projDir, "runbook", "preflight", "RB-0001"); !strings.Contains(out, "ceiling cut the check") {
+		t.Fatalf("the text must say the ceiling cut the check:\n%s", out)
+	}
+	if out := rb(t, projDir, "runbook", "preflight", "RB-0001", "--json"); !strings.Contains(out, `"cut": true`) {
+		t.Fatalf("--json must carry the cut:\n%s", out)
 	}
 }

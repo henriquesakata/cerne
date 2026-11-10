@@ -15,6 +15,9 @@ import (
 
 // F-0874: `runbook preflight` and the same warning in `cerne next`.
 
+// newForge is the forge of 'runbook preflight'; tests shorten its ceiling.
+var newForge = app.NewForge
+
 func newRunbookPreflightCmd(dir *string) *cobra.Command {
 	var upTo string
 	var asJSON bool
@@ -34,7 +37,7 @@ func newRunbookPreflightCmd(dir *string) *cobra.Command {
 				return err
 			}
 			id := strings.ToUpper(strings.TrimSpace(args[0]))
-			forge := app.NewForge()
+			forge := newForge()
 			res, to, err := app.PreflightWith(ctx.repoDir, id, strings.ToUpper(strings.TrimSpace(upTo)), forge)
 			if err != nil {
 				return err

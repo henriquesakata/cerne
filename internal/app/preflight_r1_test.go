@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +175,26 @@ func TestGlabMRStateReturnsWithinDeadlineWhenAChildHoldsThePipe(t *testing.T) {
 	}
 }
 
+// F-0886 r1 (critic 1): a glab that answers and exits 0 while a child (pager,
+// credential helper) keeps stdout open is an answer, not an error.
+func TestGlabMRStateKeepsTheAnswerWhenAChildOutlivesGlab(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "glab"), []byte("#!/bin/sh\nsleep 8 &\necho '{\"state\":\"merged\"}'\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	t0 := time.Now()
+	st, err := glabMRState(ctx, "rockt/hub", "2150")
+	if err != nil || st != "merged" {
+		t.Fatalf("glab answered merged and exited 0: state=%q err=%v", st, err)
+	}
+	if d := time.Since(t0); d >= 4*time.Second {
+		t.Fatalf("took %s: the child must not hold the call", d)
+	}
+}
+
 // F-0886 crit. 4 (P-0017): Cut says the ceiling ended a call — one MR alone,
 // so the budget-spent path never runs — and stays false when the forge fails
 // on its own, even with the call's deadline equal to what was left.
@@ -190,6 +211,12 @@ func TestForgeCutOnlyWhenTheCeilingEndsTheCall(t *testing.T) {
 	CheckPreconditionsWith("/x", mr, f)
 	if !f.Cut {
 		t.Fatal("a call the ceiling ended must set Cut")
+	}
+	// The call's own deadline, with more of the ceiling left, is not a cut.
+	f = &Forge{Budget: 10 * time.Second, CallTimeout: 50 * time.Millisecond}
+	CheckPreconditionsWith("/x", mr, f)
+	if f.Cut {
+		t.Fatal("a call past its own deadline, with the ceiling not reached, is not a cut")
 	}
 
 	MRState = func(context.Context, string, string) (string, error) { return "", errors.New("forge down") }
@@ -213,7 +240,7 @@ func TestRunPreflightShowsGlobalManualOnlyBeforeTheFirstStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := "# Fixture\n\n## Passos\n\n- S1 prepara\n- S2 aplica\n\n" +
-		"Pré-condição: janela combinada com o time\nPré-condição: mr g/p!7 merged\n"
+		"Pré-condição: janela combinada com o time\nPré-condição: mr g/p!7 merged\nPré-condição: result F-0999\n"
 	if err := os.MkdirAll(filepath.Join(repoDir, "content", "runbooks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -244,6 +271,9 @@ func TestRunPreflightShowsGlobalManualOnlyBeforeTheFirstStep(t *testing.T) {
 	}
 	if !has(res, "g/p!7") {
 		t.Fatalf("an unanswered global MR keeps warning: %+v", res)
+	}
+	if !slices.ContainsFunc(res, func(r PreResult) bool { return strings.Contains(r.Text, "result F-0999") && r.Status == PrePending }) {
+		t.Fatalf("a pending global precondition keeps warning: %+v", res)
 	}
 	all, _, err := Preflight(repoDir, "RB-0001", "")
 	if err != nil || !has(all, "janela combinada") {
