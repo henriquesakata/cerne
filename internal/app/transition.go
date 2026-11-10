@@ -46,6 +46,10 @@ type TransitionOutcome struct {
 	// first approved copy (F-0318 crit. 14: approved before the copy existed)
 	// rather than renewing a stale one.
 	Baseline bool
+	// Pendings holds one line per pending the feature paid that this
+	// transition moved (F-0885: resolved on accept, reopened on reject,
+	// transferred on supersede), for the caller to print. Empty otherwise.
+	Pendings []string
 }
 
 // ErrApprovalStale is the start refusal for an approved feature whose spec
@@ -217,6 +221,10 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err := CheckResultRecord(repoDir, f); err != nil {
 				return "", fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, id)
 			}
+			// The result names each debt the feature pays (F-0885), while it can.
+			if err := CheckPaidCited(repoDir, f); err != nil {
+				return "", err
+			}
 		}
 
 		oldState := f.State
@@ -304,6 +312,11 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			}
 			newState = promoted
 		}
+		// The pendings this feature pays follow it (F-0885), in this commit.
+		movedPendings, err := movePaidPendings(repoDir, f, reason)
+		if err != nil {
+			return "", err
+		}
 		// Approving a candidate opens the plan phase: scaffold the plan stub from the
 		// canonical template so it is committed alongside the approval (mirrors the
 		// spec stub written at create time). No-op if a real plan already exists.
@@ -369,7 +382,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, Baseline: baseline}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, Baseline: baseline, Pendings: movedPendings}
 		return msg, nil
 	})
 	if err != nil {
