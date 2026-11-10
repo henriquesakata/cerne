@@ -24,9 +24,12 @@ func runStalledFindings(repoDir string, works []store.Work) ([]Finding, error) {
 		if err != nil {
 			return nil, err
 		}
+		if r.Status() == store.RunClosed {
+			continue
+		}
 		why := ""
-		if n := len(r.Entries); n > 0 && r.Entries[n-1].State == "pare" {
-			why = fmt.Sprintf("parada no passo %s (PARE)", r.Entries[n-1].Step)
+		if r.Status() == store.RunStopped {
+			why = fmt.Sprintf("parada no passo %s (PARE)", r.Entries[len(r.Entries)-1].Step)
 		} else if len(r.Steps) > 0 && allStepsOK(r) {
 			why = "todos os passos com ok"
 		}

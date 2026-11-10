@@ -32,8 +32,12 @@ const (
 var brt = time.FixedZone("BRT", -3*60*60)
 
 var (
-	emailRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+`)
-	// personIDRe: a UUID or a CPF, the ids of a person that must not reach the backend.
+	// emailRe: the first label after @ holds a letter and the TLD is alphabetic,
+	// so next@15.0.1, pkg@1.2.3 and ./build@2.0.log (versions) are not e-mails.
+	emailRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]*[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)
+	// personIDRe: a UUID or a CPF, the ids of a person that must not reach the
+	// backend. Limit: an employee/registration number ("matricula 12345") has no
+	// format to tell it from a ticket or a pid, so it is not refused.
 	personIDRe = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b\d{3}\.\d{3}\.\d{3}-\d{2}\b`)
 	stepIDRe   = regexp.MustCompile(`(?i)^S\d+[a-z]?(\.\d+)*$`)
 )
@@ -65,8 +69,9 @@ func HashEvidence(path string) (store.RunEvidence, error) {
 	if strings.ContainsAny(path, "\r\n\x00") {
 		return store.RunEvidence{}, fmt.Errorf("--evidencia takes the path of a file, not its content; the content is never stored")
 	}
-	if err := refusePersonal("--evidencia", path); err != nil {
-		return store.RunEvidence{}, err
+	// A UUID in a path (pod dirs, dumps) is legitimate; an e-mail in it is not.
+	if emailRe.MatchString(path) {
+		return store.RunEvidence{}, fmt.Errorf("--evidencia: no e-mail in the record: cite a nickname only")
 	}
 	st, err := os.Stat(path)
 	if err != nil {
@@ -101,10 +106,15 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 			return store.Work{}, store.Run{}, err
 		}
 	}
+	seen := map[string]bool{}
 	for _, s := range steps {
 		if !stepIDRe.MatchString(s) {
 			return store.Work{}, store.Run{}, fmt.Errorf("--passos: %q is not a step id (S<n>, e.g. S3, S6.6)", s)
 		}
+		if seen[s] {
+			return store.Work{}, store.Run{}, fmt.Errorf("--passos: step %s is listed twice", s)
+		}
+		seen[s] = true
 	}
 	actor := strings.TrimSpace(agent)
 	if actor == "" {
@@ -154,7 +164,7 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 		now := time.Now().UTC()
 		title := fmt.Sprintf("Execução de %s — janela %s", rbID, window)
 		w = store.Work{ID: id, Title: title, State: domain.WorkActive, Actor: actor, Refs: []string{rbID}, CreatedAt: now, UpdatedAt: now}
-		run = store.Run{ID: id, Runbook: rbID, Window: window, Expected: strings.TrimSpace(expected), Steps: list, Inferred: inferred}
+		run = store.Run{ID: id, Runbook: rbID, Window: window, Expected: strings.TrimSpace(expected), Steps: list, Explicit: !inferred, State: store.RunOpen}
 		if err := store.SaveWork(repoDir, w); err != nil {
 			return "", err
 		}
@@ -221,7 +231,10 @@ func RecordRunStep(repoDir, projDir, runID string, in RunStepInput, now time.Tim
 			return "", err
 		}
 		if w.State != domain.WorkActive {
-			return "", fmt.Errorf("run %s is %s: it no longer takes steps", runID, w.State)
+			return "", fmt.Errorf("run %s is %s (%s): it no longer takes steps", runID, store.RunClosed, w.State)
+		}
+		if run.Status() == store.RunStopped {
+			return "", fmt.Errorf("run %s is %s (PARE at step %s): it no longer takes steps; open a new run", runID, store.RunStopped, run.Entries[len(run.Entries)-1].Step)
 		}
 		idx := slices.Index(run.Steps, in.Step)
 		if idx < 0 {
@@ -229,7 +242,7 @@ func RecordRunStep(repoDir, projDir, runID string, in RunStepInput, now time.Tim
 		}
 		out := false
 		for _, prev := range run.Steps[:idx] {
-			if run.Inferred {
+			if !run.Explicit {
 				break
 			}
 			if !runStepOK(run, prev) {
@@ -256,6 +269,9 @@ func RecordRunStep(repoDir, projDir, runID string, in RunStepInput, now time.Tim
 			entry.Expected = exp
 		}
 		run.Entries = append(run.Entries, entry)
+		if in.Pare {
+			run.State = store.RunStopped
+		}
 		if err := store.SaveRun(repoDir, run); err != nil {
 			return "", err
 		}

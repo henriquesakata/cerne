@@ -154,7 +154,7 @@ func newRunbookReportCmd(dir *string) *cobra.Command {
 // what was recorded against it, or "pending".
 func renderRun(run store.Run) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "runbook: %s  window: %s\n", run.Runbook, run.Window)
+	fmt.Fprintf(&b, "runbook: %s  window: %s  state: %s\n", run.Runbook, run.Window, run.Status())
 	if run.Expected != "" {
 		fmt.Fprintf(&b, "expected word: %q\n", run.Expected)
 	}
