@@ -144,3 +144,30 @@ func TestUnknownMRStateIsManual(t *testing.T) {
 		t.Fatalf("typo state must be manual: %+v", r)
 	}
 }
+
+// stuckGlab puts a glab on PATH that leaves a child holding its stdout and
+// waits for it: killing glab alone does not close the pipe (P-0016).
+func stuckGlab(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "glab"), []byte("#!/bin/sh\nsleep 25 &\nwait\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// F-0886 crit. 1 (P-0016): a glab whose child holds the pipe returns within
+// the call's deadline plus the WaitDelay, not when the child exits.
+func TestGlabMRStateReturnsWithinDeadlineWhenAChildHoldsThePipe(t *testing.T) {
+	stuckGlab(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	t0 := time.Now()
+	_, err := glabMRState(ctx, "rockt/hub", "2150")
+	if d := time.Since(t0); d >= 7*time.Second {
+		t.Fatalf("glabMRState took %s with a 5 s deadline, want < 7 s", d)
+	}
+	if err == nil {
+		t.Fatal("a glab killed at the deadline must be an error")
+	}
+}

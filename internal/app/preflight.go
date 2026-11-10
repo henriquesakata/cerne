@@ -58,7 +58,11 @@ func glabMRState(ctx context.Context, project, iid string) (string, error) {
 		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
 	}
 	// "--" ends the flags: the positional can never be read as one (F-0874).
-	out, err := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid).Output()
+	cmd := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid)
+	// The deadline kills glab, not a child (credential helper, pager) still
+	// holding stdout: without WaitDelay, Output waits for that child (F-0886).
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("glab: %w", err)
 	}
