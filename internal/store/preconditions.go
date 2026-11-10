@@ -33,9 +33,25 @@ func ValidFeatureID(id string) bool { return featureIDRe.MatchString(id) }
 // ValidEntityID: PREFIX-NNNN.
 func ValidEntityID(id string) bool { return entityIDRe.MatchString(id) }
 
-// ValidMRRef: project is group/project (never starts with '-'), iid digits.
+// ValidMRRef: project is group/project (never starts with '-', and its first
+// segment has no dot: glab would read it as a host), iid digits.
 func ValidMRRef(project, iid string) bool {
-	return mrProjectRe.MatchString(project) && mrIIDRe.MatchString(iid)
+	first, _, _ := strings.Cut(project, "/")
+	return mrProjectRe.MatchString(project) && !strings.Contains(first, ".") && mrIIDRe.MatchString(iid)
+}
+
+// NormMRState maps the states a runbook may name (pt or en) to the forge's
+// "opened", "merged" or "closed"; "" for anything else.
+func NormMRState(s string) string {
+	switch strings.ToLower(s) {
+	case "aberta", "aberto", "open", "opened":
+		return "opened"
+	case "mergeada", "mergeado", "merged":
+		return "merged"
+	case "fechada", "fechado", "closed":
+		return "closed"
+	}
+	return ""
 }
 
 // ParsePreconditions reads the declared preconditions of a runbook body, in
@@ -77,10 +93,10 @@ func ParsePreconditions(body string) []Precondition {
 			}
 		case strings.EqualFold(f[0], "mr"):
 			proj, iid, _ := strings.Cut(strings.Join(f[1:min(2, len(f))], ""), "!")
-			if len(f) == 3 && ValidMRRef(proj, iid) {
+			if len(f) == 3 && ValidMRRef(proj, iid) && NormMRState(f[2]) != "" {
 				p.Kind, p.Args = "mr", f[1:]
 			} else {
-				bad("mr <group/project>!<n> <state>")
+				bad("mr <group/project>!<n> opened|merged|closed")
 			}
 		}
 		if p.Step == "" && p.Kind == "manual" && p.Problem == "" {

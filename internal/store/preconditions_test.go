@@ -58,3 +58,24 @@ func TestRunbookStepsTokenIsWholeNotPrefix(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// F-0874 r2: an MR project is group/project, never a host (glab reads a first
+// segment with a dot as one); an unknown state is malformed, not eternal pending.
+func TestParsePreconditionsMRHostAndStateRefused(t *testing.T) {
+	for _, c := range []struct{ line, want string }{
+		{"Pré-condição S1: mr gitlab.interno/a/b!1 merged", "malformed"},
+		{"Pré-condição S1: mr host.tld/proj!1 merged", "malformed"},
+		{"Pré-condição S1: mr rockt/hub!5 mergeed", "malformed"},
+		{"Pré-condição S1: mr rockt/hub!5 merged", ""},
+		{"Pré-condição S1: mr rockt/hub!5 mergeada", ""},
+		{"Pré-condição S1: mr grupo/sub.grupo/proj!5 opened", ""},
+	} {
+		got := ParsePreconditions("- S1 x\n" + c.line + "\n")
+		if len(got) != 1 {
+			t.Fatalf("%q: %+v", c.line, got)
+		}
+		if (c.want == "") != (got[0].Problem == "") || (c.want != "" && got[0].Kind != "manual") {
+			t.Errorf("%q: Problem=%q Kind=%s", c.line, got[0].Problem, got[0].Kind)
+		}
+	}
+}
