@@ -182,7 +182,7 @@ func CreatePending(repoDir, projDir, title, body, from string, facets, component
 // ResolvePending closes an open pending as paid: open -> resolved, closed_at
 // stamped. Not a human gate (F-0322): whoever resolved it closes it.
 func ResolvePending(repoDir, projDir, id string) (store.Pending, error) {
-	return closePending(repoDir, projDir, id, domain.ActionResolve, "", "")
+	return closePending(repoDir, projDir, id, domain.ActionResolve, "")
 }
 
 // DropPending discards an open pending: open -> dropped, the reason persisted.
@@ -191,84 +191,251 @@ func DropPending(repoDir, projDir, id, reason string) (store.Pending, error) {
 	if reason == "" {
 		return store.Pending{}, ErrPendingReasonRequired
 	}
-	return closePending(repoDir, projDir, id, domain.ActionDrop, reason, "")
+	return closePending(repoDir, projDir, id, domain.ActionDrop, reason)
 }
 
-// PromotePending turns an open pending into a feature (candidate) or a task
-// (under the origin, which the task core requires past candidacy), inheriting
-// its title, tags, the origin's module and the body as the spec's context. The
-// spec carries "**Origem:** pendência [[P-NNNN]] (de <origin>)" — the link
-// back, an id wiki-link — and the pending moves to promoted with promoted_to.
-// module overrides the inherited one (needed when the project requires a
-// module and the origin has none). force is the created entity's
-// duplicate-guard override (F-0147): a debt often reads like its origin.
+// ErrPendingGroupTitle is returned by PromotePendings for two or more pendings
+// without a title: the group has no single title to inherit.
+var ErrPendingGroupTitle = errors.New("--title is required to promote two or more pendings into one feature")
+
+// ErrPendingRepeated is returned by PromotePendings when a pending is listed
+// twice.
+var ErrPendingRepeated = errors.New("pending listed twice")
+
+// ErrPendingIDInvalid is a pending id that is not P-NNNN — refused before the
+// store is read, so a path-like value never reaches the filesystem.
+var ErrPendingIDInvalid = errors.New("not a pending id (P-NNNN)")
+
+// ErrPendingModuleDiverges is returned by PromotePendings when the origins
+// belong to different modules and no module was given: it is not guessed.
+var ErrPendingModuleDiverges = errors.New("the origins belong to different modules — pass --module")
+
+// ErrPendingTaskOrigins is returned by PromotePendings --as task for pendings
+// of more than one origin: a task has a single parent.
+var ErrPendingTaskOrigins = errors.New("--as task needs pendings of a single origin (the task's parent)")
+
+var pendingIDRx = regexp.MustCompile(`^P-\d{4,}$`)
+
+// canonPendingID trims and upper-cases a typed pending id and refuses one that
+// is not P-NNNN.
+func canonPendingID(typed string) (string, error) {
+	id := strings.ToUpper(strings.TrimSpace(typed))
+	if !pendingIDRx.MatchString(id) {
+		return "", fmt.Errorf("%w: %q", ErrPendingIDInvalid, typed)
+	}
+	return id, nil
+}
+
+// PromotePending is PromotePendings for a single pending, whose title the
+// created entity inherits.
+func PromotePending(repoDir, projDir, id, as, module string, force bool) (store.Pending, store.Feature, error) {
+	ps, f, err := PromotePendings(repoDir, projDir, []string{id}, as, "", module, force)
+	if len(ps) == 0 {
+		return store.Pending{}, f, err
+	}
+	return ps[0], f, err
+}
+
+// PromotePendings turns one or more open pendings into ONE feature (candidate)
+// or task (under their single origin, which the task core requires past
+// candidacy) — the group that pays them (F-0885). The created entity takes the
+// union of the pendings' tags and the module common to their origins (module
+// overrides it, and is required when they diverge). Its spec opens with the
+// link back, "**Origem:** pendência(s) [[P-NNNN]] (de <origin>)", followed by
+// each pending's body. Each pending moves to promoted with promoted_to, and
+// follows that feature's lifecycle from then on (see movePaidPendings). One
+// pending inherits its title; two or more need title. Every pending is
+// validated (exists, open, listed once) before anything is created. force is
+// the created entity's duplicate-guard override (F-0147): a debt often reads
+// like its origin.
 //
 // ponytail: two mutations, not one transaction (the second re-checks the
-// pending inside the lock). If it fails, the entity exists without
-// promoted_to; markPromoted's error names it and says how to recover. One
-// transaction would need the feature core to run inside this lock.
-func PromotePending(repoDir, projDir, id, as, module string, force bool) (store.Pending, store.Feature, error) {
+// pendings inside the lock). If it fails, the entity exists without
+// promoted_to; markPromoted's error names it, each pending left unmarked and
+// how to link it. One transaction would need the feature core to run inside
+// this lock.
+func PromotePendings(repoDir, projDir string, ids []string, as, title, module string, force bool) ([]store.Pending, store.Feature, error) {
 	if as != "feature" && as != "task" {
-		return store.Pending{}, store.Feature{}, fmt.Errorf("%w: %q", ErrPendingPromoteKind, as)
+		return nil, store.Feature{}, fmt.Errorf("%w: %q", ErrPendingPromoteKind, as)
 	}
-	p, err := store.LoadPending(repoDir, id)
-	if err != nil {
-		return store.Pending{}, store.Feature{}, err
+	if len(ids) == 0 {
+		return nil, store.Feature{}, errors.New("no pending to promote")
 	}
-	if _, err := domain.TransitionPending(p.State, domain.ActionPromote); err != nil {
-		return store.Pending{}, store.Feature{}, fmt.Errorf("%s: %w", id, err)
+	if title = strings.TrimSpace(title); title == "" && len(ids) > 1 {
+		return nil, store.Feature{}, ErrPendingGroupTitle
 	}
-	origin, err := store.LoadFeature(repoDir, p.From)
-	if err != nil {
-		return store.Pending{}, store.Feature{}, err
+	var ps []store.Pending
+	for _, raw := range ids {
+		id, err := canonPendingID(raw)
+		if err != nil {
+			return nil, store.Feature{}, err
+		}
+		if slices.ContainsFunc(ps, func(p store.Pending) bool { return p.ID == id }) {
+			return nil, store.Feature{}, fmt.Errorf("%w: %s", ErrPendingRepeated, id)
+		}
+		p, err := store.LoadPending(repoDir, id)
+		if err != nil {
+			return nil, store.Feature{}, err
+		}
+		if _, err := domain.TransitionPending(p.State, domain.ActionPromote); err != nil {
+			return nil, store.Feature{}, fmt.Errorf("%s: %w", id, err)
+		}
+		ps = append(ps, p)
+	}
+	var origins []store.Feature
+	var modules, facets, components []string
+	for _, p := range ps {
+		if !slices.ContainsFunc(origins, func(o store.Feature) bool { return o.ID == p.From }) {
+			origin, err := store.LoadFeature(repoDir, p.From)
+			if err != nil {
+				return nil, store.Feature{}, err
+			}
+			origins = append(origins, origin)
+			if !slices.Contains(modules, origin.Module) {
+				modules = append(modules, origin.Module)
+			}
+		}
+		facets = appendMissing(facets, p.Facets)
+		components = appendMissing(components, p.Components)
 	}
 	if module = strings.TrimSpace(module); module == "" {
-		module = origin.Module
+		if len(modules) > 1 {
+			return nil, store.Feature{}, fmt.Errorf("%w: %s", ErrPendingModuleDiverges, strings.Join(modules, ", "))
+		}
+		module = modules[0]
 	}
 	create, parent := CreateFeatureWithSpec, ""
 	if as == "task" {
-		if origin.State == domain.StateImplemented || origin.State == domain.StateDone {
-			return store.Pending{}, store.Feature{}, fmt.Errorf("%w: %s is %s", ErrPendingOriginClosed, origin.ID, origin.State)
+		if len(origins) > 1 {
+			return nil, store.Feature{}, fmt.Errorf("%w: %s and %s", ErrPendingTaskOrigins, origins[0].ID, origins[1].ID)
 		}
-		create, parent = CreateTaskWithSpec, p.From
+		if origin := origins[0]; origin.State == domain.StateImplemented || origin.State == domain.StateDone {
+			return nil, store.Feature{}, fmt.Errorf("%w: %s is %s", ErrPendingOriginClosed, origin.ID, origin.State)
+		}
+		create, parent = CreateTaskWithSpec, origins[0].ID
 	}
-	context := fmt.Sprintf("**Origem:** pendência [[%s]] (de %s)", p.ID, p.From)
-	if p.Body != "" {
-		context += "\n\n" + p.Body
+	if title == "" {
+		title = ps[0].Title
 	}
-	f, err := create(repoDir, projDir, p.Title, module, parent, p.Facets, p.Components, spectmpl.StubWithContext(p.Title, context), force, "", "")
+	f, err := create(repoDir, projDir, title, module, parent, facets, components, spectmpl.StubWithContext(title, promotedContext(ps)), force, "", "")
 	if err != nil {
-		return store.Pending{}, store.Feature{}, err
+		return nil, store.Feature{}, err
 	}
-	p, err = markPromoted(repoDir, projDir, id, f.ID)
-	if err != nil {
-		return store.Pending{}, f, err
+	pendingIDs := make([]string, len(ps))
+	for i, p := range ps {
+		pendingIDs[i] = p.ID
 	}
-	return p, f, nil
+	marked, err := markPromoted(repoDir, projDir, pendingIDs, f.ID)
+	return marked, f, err
 }
 
-// markPromoted is the promotion's second step: open -> promoted with
-// promoted_to = created, the state re-read inside the backend lock. Its errors
-// name the created entity and the way out: closed meanwhile (nothing to fix on
-// the pending), or a backend failure (the pending may still be open).
-func markPromoted(repoDir, projDir, id, created string) (store.Pending, error) {
-	p, err := closePending(repoDir, projDir, id, domain.ActionPromote, "", created)
-	switch {
-	case err == nil:
-		return p, nil
-	case errors.Is(err, domain.ErrInvalidTransition):
-		return store.Pending{}, fmt.Errorf("%w: %s was created, but %s was closed by someone else meanwhile (%v), so it does not point to %s — decide whether %s is still wanted",
-			ErrPendingClosedConcurrently, created, id, err, created, created)
-	default:
-		return store.Pending{}, fmt.Errorf("%s was created, but recording the promotion on %s failed: %w — %s may still be open: once the backend is reachable, check 'cerne pending show %s' and, if it is open, record the link with 'cerne pending drop %s --reason \"promoted to %s\"'",
-			created, id, err, id, id, id, created)
+// appendMissing appends each value of add not yet in dst, keeping order.
+func appendMissing(dst, add []string) []string {
+	for _, v := range add {
+		if !slices.Contains(dst, v) {
+			dst = append(dst, v)
+		}
 	}
+	return dst
 }
 
-// closePending applies action to pending id, re-reading its state inside the
-// backend lock, stamps closed_at (plus reason / promoted_to when given) and
-// appends pending.<state>.
-func closePending(repoDir, projDir, id string, action domain.Action, reason, promotedTo string) (store.Pending, error) {
+// promotedContext is the spec context of a promotion: the Origem line linking
+// back to each pending and its origin, then the body of each — under a heading
+// per pending when there are several.
+func promotedContext(ps []store.Pending) string {
+	if len(ps) == 1 {
+		context := fmt.Sprintf("**Origem:** pendência [[%s]] (de %s)", ps[0].ID, ps[0].From)
+		if ps[0].Body != "" {
+			context += "\n\n" + ps[0].Body
+		}
+		return context
+	}
+	links := make([]string, len(ps))
+	for i, p := range ps {
+		links[i] = fmt.Sprintf("[[%s]] (de %s)", p.ID, p.From)
+	}
+	context := "**Origem:** pendências " + strings.Join(links, ", ")
+	for _, p := range ps {
+		context += fmt.Sprintf("\n\n### %s — %s", p.ID, p.Title)
+		if p.Body != "" {
+			context += "\n\n" + p.Body
+		}
+	}
+	return context
+}
+
+// markPromoted is the promotion's second step: each pending still open moves to
+// promoted with promoted_to = created, all in one backend commit, the states
+// re-read inside the lock. A pending closed meanwhile is left as it is and
+// named (ErrPendingClosedConcurrently, with the ones that were marked
+// returned); a backend failure names the created entity, each pending that may
+// still be open and the command that links it.
+func markPromoted(repoDir, projDir string, ids []string, created string) ([]store.Pending, error) {
+	var marked []store.Pending
+	var closed []string
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		marked, closed = nil, nil
+		now := time.Now().UTC()
+		for _, id := range ids {
+			p, err := store.LoadPending(repoDir, id)
+			if err != nil {
+				return "", err
+			}
+			to, err := domain.TransitionPending(p.State, domain.ActionPromote)
+			if err != nil {
+				closed = append(closed, fmt.Sprintf("%s (%v)", id, err))
+				continue
+			}
+			p.State, p.Reason, p.PromotedTo, p.UpdatedAt, p.ClosedAt = to, "", created, now, &now
+			if err := store.SavePending(repoDir, p); err != nil {
+				return "", err
+			}
+			if err := store.AppendEvent(repoDir, domain.NewEvent(id, "pending.promoted", map[string]string{"promoted_to": created}, EventActor())); err != nil {
+				return "", err
+			}
+			marked = append(marked, p)
+		}
+		if len(marked) == 0 {
+			return "", errNothingMarked
+		}
+		markedIDs := make([]string, len(marked))
+		for i, p := range marked {
+			markedIDs[i] = p.ID
+		}
+		return fmt.Sprintf("cerne: promote %s -> %s", strings.Join(markedIDs, ", "), created), nil
+	})
+	if err != nil && !errors.Is(err, errNothingMarked) {
+		checks := make([]string, len(ids))
+		for i, id := range ids {
+			checks[i] = fmt.Sprintf("'cerne pending show %s' and, if it is open, 'cerne pending link %s %s'", id, id, created)
+		}
+		return nil, fmt.Errorf("%s was created, but recording the promotion of %s failed: %w — %s may still be open: once the backend is reachable, check %s",
+			created, strings.Join(ids, ", "), err, strings.Join(ids, ", "), strings.Join(checks, "; "))
+	}
+	if len(closed) > 0 {
+		tail := ""
+		if len(marked) == 0 {
+			tail = fmt.Sprintf(" — decide whether %s is still wanted", created)
+		}
+		return marked, fmt.Errorf("%w: %s was created, but %s was closed by someone else meanwhile, so it does not point to %s%s",
+			ErrPendingClosedConcurrently, created, strings.Join(closed, ", "), created, tail)
+	}
+	return marked, nil
+}
+
+// errNothingMarked aborts markPromoted's mutation when every pending was closed
+// meanwhile: there is nothing to commit.
+var errNothingMarked = errors.New("no pending left to mark")
+
+// ErrPendingLinked refuses closing by hand a pending that a live feature pays
+// (F-0885): it resolves on that feature's accept.
+var ErrPendingLinked = errors.New("the pending is paid by a feature: it resolves on that feature's accept")
+
+// closePending applies a manual close (resolve/drop) to pending id, re-reading
+// its state inside the backend lock, stamps closed_at (plus the reason when
+// given) and appends pending.<state>. A promoted pending is refused: it follows
+// the feature that pays it.
+func closePending(repoDir, projDir, id string, action domain.Action, reason string) (store.Pending, error) {
 	var p store.Pending
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -276,21 +443,21 @@ func closePending(repoDir, projDir, id string, action domain.Action, reason, pro
 		if err != nil {
 			return "", err
 		}
+		if p.State == domain.PendingPromoted {
+			return "", fmt.Errorf("%w: %s is promoted to %s — accept %s, or run 'cerne pending unlink %s' first", ErrPendingLinked, id, p.PromotedTo, p.PromotedTo, id)
+		}
 		to, err := domain.TransitionPending(p.State, action)
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", id, err)
 		}
 		now := time.Now().UTC()
-		p.State, p.Reason, p.PromotedTo, p.UpdatedAt, p.ClosedAt = to, reason, promotedTo, now, &now
+		p.State, p.Reason, p.UpdatedAt, p.ClosedAt = to, reason, now, &now
 		if err := store.SavePending(repoDir, p); err != nil {
 			return "", err
 		}
 		payload := map[string]string{}
 		if reason != "" {
 			payload["reason"] = reason
-		}
-		if promotedTo != "" {
-			payload["promoted_to"] = promotedTo
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, "pending."+string(to), payload, EventActor())); err != nil {
 			return "", err
