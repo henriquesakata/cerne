@@ -151,10 +151,11 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 }
 
 type gauntletRound struct {
-	n       int  // 0 = implicit round (section without a "Rodada N" anchor)
-	verdict bool // VEREDITO: A|B|EMPATE, or an outcome word
-	quote   bool // a quoted span with content inside the round's block
-	outcome int8 // 0 unread, 1 vitória/empate, 2 derrota: the anchor line's first outcome word before its citation, else the round's first outcome line
+	n       int    // 0 = implicit round (section without a "Rodada N" anchor)
+	verdict bool   // VEREDITO: A|B|EMPATE, or an outcome word
+	quote   bool   // a quoted span with content inside the round's block
+	outcome int8   // 0 unread, 1 vitória/empate, 2 derrota: the anchor line's first outcome word before its citation, else the round's first outcome line
+	word    string // the lower-cased outcome word that set outcome ("" when unread)
 }
 
 type gauntletRecord struct {
@@ -171,7 +172,15 @@ func parseGauntlet(section string) gauntletRecord {
 	var blocks []*strings.Builder
 	var nums []int
 	var outcomes []int8 // aligned with blocks
+	var words []string  // aligned with blocks: the word behind each outcome
 	var implicitOutcome int8
+	var implicitWord string
+	// raise records the outcome of an outcome-word match; derrota outranks the rest.
+	raise := func(o *int8, w *string, m []string) {
+		if v := outcomeOf(m); v > *o {
+			*o, *w = v, strings.ToLower(m[1])
+		}
+	}
 	cur, curIdx := (*strings.Builder)(nil), -1 // the open round; nil/-1 = outside any
 	implicit := &strings.Builder{}
 	critic, criticList, criticIndent := false, false, 0
@@ -221,7 +230,7 @@ func parseGauntlet(section string) gauntletRecord {
 			n, _ := strconv.Atoi(m[1])
 			i := slices.Index(nums, n) // same number = same round
 			if i < 0 {
-				blocks, nums, outcomes = append(blocks, &strings.Builder{}), append(nums, n), append(outcomes, 0)
+				blocks, nums, outcomes, words = append(blocks, &strings.Builder{}), append(nums, n), append(outcomes, 0), append(words, "")
 				i = len(nums) - 1
 			}
 			cur, curIdx = blocks[i], i
@@ -231,14 +240,14 @@ func parseGauntlet(section string) gauntletRecord {
 			if q := strings.IndexAny(s, "\"“«"); q >= 0 {
 				head = s[:q]
 			}
-			outcomes[i] = max(outcomes[i], outcomeOf(verdictRe.FindStringSubmatch(head)))
-		} else if o := outcomeOf(outcomeLineRe.FindStringSubmatch(s)); o > 0 {
-			target := &implicitOutcome
+			raise(&outcomes[i], &words[i], verdictRe.FindStringSubmatch(head))
+		} else if m := outcomeLineRe.FindStringSubmatch(s); outcomeOf(m) > 0 {
+			target, word := &implicitOutcome, &implicitWord
 			if curIdx >= 0 {
-				target = &outcomes[curIdx]
+				target, word = &outcomes[curIdx], &words[curIdx]
 			}
 			if *target == 0 { // the round's first outcome line decides
-				*target = o
+				raise(target, word, m)
 			}
 		}
 		if cur != nil {
@@ -248,11 +257,11 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 	}
 	if len(blocks) == 0 { // no anchor: the section itself is the one round
-		blocks, nums, outcomes = []*strings.Builder{implicit}, []int{0}, []int8{implicitOutcome}
+		blocks, nums, outcomes, words = []*strings.Builder{implicit}, []int{0}, []int8{implicitOutcome}, []string{implicitWord}
 	}
 	for i, b := range blocks {
 		text := b.String()
-		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text), outcome: outcomes[i]})
+		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text), outcome: outcomes[i], word: words[i]})
 	}
 	return rec
 }
@@ -354,4 +363,36 @@ func (r gauntletRecord) problem() string {
 		}
 	}
 	return ""
+}
+
+// GauntletVerdict reads a result's Gauntlet outcome for the accept queue
+// (F-0875) from the rounds parseGauntlet reads for result-missing-gauntlet and
+// GauntletRounds, so the queue never contradicts the lint: the outcome word
+// (vitória, empate or derrota, as written) of the highest-numbered "Rodada N",
+// else of the implicit round (a "Veredito: derrota" line with no anchor), else
+// "dispensada" for a recorded exemption. ok is false when no outcome can be
+// read: the queue then says so, never infers.
+func GauntletVerdict(result []byte) (verdict string, ok bool) {
+	last, implicit, exempt := 0, "", false
+	for _, section := range gauntletSections(stripHTMLComments(result)) {
+		rec := parseGauntlet(section)
+		exempt = exempt || rec.exempt
+		for _, r := range rec.rounds {
+			switch {
+			case r.word == "":
+			case r.n != 0 && r.n >= last:
+				last, verdict = r.n, r.word
+			case r.n == 0 && !rec.exempt && implicit == "":
+				implicit = r.word
+			}
+		}
+	}
+	switch {
+	case verdict != "":
+	case implicit != "":
+		verdict = implicit
+	case exempt:
+		verdict = "dispensada"
+	}
+	return verdict, verdict != ""
 }
