@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,14 +27,14 @@ func fakeGlab(t *testing.T) (argvFile string) {
 func TestGlabMRStateRefusesInjectionAndEndsFlags(t *testing.T) {
 	argv := fakeGlab(t)
 	for _, c := range [][2]string{{"x", "--web"}, {"rockt/hub", "--web"}, {"-R/x", "1"}, {"rockt/hub", "1 --web"}, {"rockt/hub", ""}} {
-		if _, err := glabMRState(c[0], c[1]); err == nil {
+		if _, err := glabMRState(context.Background(), c[0], c[1]); err == nil {
 			t.Errorf("glabMRState(%q,%q) must be refused", c[0], c[1])
 		}
 		if _, err := os.Stat(argv); err == nil {
 			t.Fatalf("glab was executed for %q,%q", c[0], c[1])
 		}
 	}
-	st, err := glabMRState("rockt/hub", "2150")
+	st, err := glabMRState(context.Background(), "rockt/hub", "2150")
 	if err != nil || st != "merged" {
 		t.Fatalf("valid ref: %q %v", st, err)
 	}
@@ -49,7 +50,10 @@ func TestGlabMRStateRefusesInjectionAndEndsFlags(t *testing.T) {
 func TestCheckPreconditionsRefusesHandBuiltUnsafeArgs(t *testing.T) {
 	root := t.TempDir()
 	old := MRState
-	MRState = func(string, string) (string, error) { t.Error("forge asked for an invalid ref"); return "merged", nil }
+	MRState = func(context.Context, string, string) (string, error) {
+		t.Error("forge asked for an invalid ref")
+		return "merged", nil
+	}
 	t.Cleanup(func() { MRState = old })
 	// A result.md that a ../ path would reach.
 	if err := os.MkdirAll(filepath.Join(root, "content", "x"), 0o755); err != nil {
@@ -72,7 +76,7 @@ func TestCheckPreconditionsRefusesHandBuiltUnsafeArgs(t *testing.T) {
 func TestForgeCachesPerInvocationAndCutsAtBudget(t *testing.T) {
 	calls := 0
 	old := MRState
-	MRState = func(p, i string) (string, error) {
+	MRState = func(_ context.Context, p, i string) (string, error) {
 		calls++
 		time.Sleep(5 * time.Millisecond)
 		if i == "9" {
@@ -89,12 +93,54 @@ func TestForgeCachesPerInvocationAndCutsAtBudget(t *testing.T) {
 		t.Fatalf("each MR (errors too) is asked once per invocation: calls=%d cut=%v", calls, f.Cut)
 	}
 	calls = 0
-	f = &Forge{Budget: time.Millisecond, cache: map[string]forgeAnswer{}}
+	f = &Forge{Budget: time.Millisecond, CallTimeout: time.Second, cache: map[string]forgeAnswer{}}
 	res := CheckPreconditionsWith("/x", []Precondition{mr("1"), mr("2"), mr("3")}, f)
 	if calls != 1 || !f.Cut {
 		t.Fatalf("past the budget the forge is not asked: calls=%d cut=%v", calls, f.Cut)
 	}
 	if res[1].Status != PreManual || !strings.Contains(res[1].Detail, "budget") {
 		t.Fatalf("a cut MR is manual and says why: %+v", res[1])
+	}
+}
+
+// F-0874 r2: the 10 s ceiling is hard. A call gets at most what is left of the
+// budget, so a slow forge cannot add a whole call timeout past it, and a call
+// that ran out of time says so and is manual.
+func TestForgeBudgetIsHardCeiling(t *testing.T) {
+	old := MRState
+	MRState = func(ctx context.Context, p, i string) (string, error) {
+		<-ctx.Done() // a forge that never answers
+		return "", ctx.Err()
+	}
+	t.Cleanup(func() { MRState = old })
+	f := &Forge{Budget: 80 * time.Millisecond, CallTimeout: 10 * time.Second, cache: map[string]forgeAnswer{}}
+	mr := func(iid string) Precondition { return Precondition{Kind: "mr", Args: []string{"g/p!" + iid, "merged"}} }
+	t0 := time.Now()
+	res := CheckPreconditionsWith("/x", []Precondition{mr("1"), mr("2"), mr("3")}, f)
+	if d := time.Since(t0); d > 2*time.Second {
+		t.Fatalf("ceiling not hard: %s", d)
+	}
+	for _, r := range res {
+		if r.Status != PreManual {
+			t.Errorf("an unanswered MR is manual, got %+v", r)
+		}
+	}
+	if !f.Cut {
+		t.Fatal("Cut must say the ceiling cut the check")
+	}
+}
+
+// F-0874 r2: an MR state the forge never reports (typo) is a malformed
+// declaration, never an eternal "pending"; a hand-built one is manual too.
+func TestUnknownMRStateIsManual(t *testing.T) {
+	old := MRState
+	MRState = func(context.Context, string, string) (string, error) {
+		t.Error("forge asked for a bad state")
+		return "merged", nil
+	}
+	t.Cleanup(func() { MRState = old })
+	r := CheckPreconditions("/x", []Precondition{{Kind: "mr", Args: []string{"g/p!5", "mergeed"}}})[0]
+	if r.Status != PreManual {
+		t.Fatalf("typo state must be manual: %+v", r)
 	}
 }
