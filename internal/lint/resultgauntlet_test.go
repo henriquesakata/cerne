@@ -463,6 +463,9 @@ func TestGauntletVerdictReadsLikeTheLint(t *testing.T) {
 		"last round decides": {"## Gauntlet\n\nRodada 1 — derrota: \"a\"\nRodada 2 — empate: \"b\"\n", "empate", true},
 		"exemption":          {"## Gauntlet\n\nBarra: não aplicável (sem código).\n", "dispensada", true},
 		"nothing":            {"## Gauntlet\n\nBarra: x.\n", "", false},
+		"same round twice":   {"## Gauntlet\n\nRodada 1 — vitória: \"a\"\nRodada 1 — empate: \"b\"\n", "vitória", true},
+		"derrota outranks":   {"## Gauntlet\n\nRodada 1 — vitória: \"a\"\nRodada 1 — derrota: \"b\"\n", "derrota", true},
+		"exemption + line":   {"## Gauntlet\n\nBarra: não aplicável (sem código).\n\nVeredito: derrota\n", "dispensada", true},
 	} {
 		got, ok := GauntletVerdict([]byte(tc.result))
 		if got != tc.want || ok != tc.ok {

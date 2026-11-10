@@ -146,7 +146,7 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 	if err != nil {
 		result = nil // gate doc coverage is missing-gate-doc's job; here absence = zero evidence
 	}
-	mentions := resultMentions(stripHTMLComments(result))
+	mentions := resultMentions(StripHTMLComments(result))
 	for n := range resultMentions(errataText(repoDir, f)) { // the errata completes what the result lacks (F-0305)
 		mentions[n] = true
 	}
@@ -177,7 +177,7 @@ func errataText(repoDir string, f store.Feature) []byte {
 		return nil
 	}
 	er, _ := store.LoadErrata(repoDir, f.ID)
-	return stripHTMLComments([]byte(er))
+	return StripHTMLComments([]byte(er))
 }
 
 // CheckResult returns the result-record findings of ONE feature, ignoring the

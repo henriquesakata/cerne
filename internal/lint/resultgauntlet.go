@@ -69,8 +69,8 @@ func gauntletSections(result []byte) []string {
 	return out
 }
 
-// stripHTMLComments drops HTML comments (template scaffold, never record).
-func stripHTMLComments(b []byte) []byte {
+// StripHTMLComments drops HTML comments (template scaffold, never record).
+func StripHTMLComments(b []byte) []byte {
 	return htmlCommentRe.ReplaceAll(b, []byte("${1}"))
 }
 
@@ -130,7 +130,7 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	// feature is closed (F-0305); an entry ends at the next "## errata" heading.
 	// They can only vouch: the finding's File is result.md, so the detail is
 	// always the result's own problem.
-	own := gauntletSections(stripHTMLComments(result))
+	own := gauntletSections(StripHTMLComments(result))
 	for i, section := range append(own, gauntletSections(errataText(repoDir, f))...) {
 		p := parseGauntlet(section).problem()
 		// The legacy predicate vouches only for the result's own sections: an
@@ -278,7 +278,7 @@ func parseGauntlet(section string) gauntletRecord {
 func GauntletRounds(result []byte) (hasGauntlet bool, derrotas int) {
 	anchored := map[int]int8{}
 	implicit, hasImplicit := int8(0), false
-	for _, section := range gauntletSections(stripHTMLComments(result)) {
+	for _, section := range gauntletSections(StripHTMLComments(result)) {
 		rec := parseGauntlet(section)
 		for _, r := range rec.rounds {
 			switch {
@@ -374,7 +374,7 @@ func (r gauntletRecord) problem() string {
 // read: the queue then says so, never infers.
 func GauntletVerdict(result []byte) (verdict string, ok bool) {
 	last, implicit, exempt := 0, "", false
-	for _, section := range gauntletSections(stripHTMLComments(result)) {
+	for _, section := range gauntletSections(StripHTMLComments(result)) {
 		rec := parseGauntlet(section)
 		exempt = exempt || rec.exempt
 		for _, r := range rec.rounds {
