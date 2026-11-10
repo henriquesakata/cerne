@@ -61,6 +61,16 @@ func TestAcceptResolvesPaidPendings(t *testing.T) {
 	p1 := seedPaid(t, repoDir, projDir, "Primeiro débito pago", origin.ID, "F-0010")
 	p2 := seedPaid(t, repoDir, projDir, "Segundo assunto pago", origin.ID, "F-0010")
 	other := seedPaid(t, repoDir, projDir, "Débito de outra feature", origin.ID, "F-0011")
+	// A pending already closed that still names F-0010 is not paid by it: the
+	// accept leaves it alone instead of failing on it.
+	closed := seedPaid(t, repoDir, projDir, "Débito já fechado à mão", origin.ID, "F-0010")
+	closed.State = domain.PendingResolved
+	if err := store.SavePending(repoDir, closed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed closed "+closed.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	out, err := TransitionFeature(repoDir, projDir, "F-0010", domain.ActionAccept, "", "", nil)
 	if err != nil {
@@ -216,5 +226,24 @@ func TestCompleteRefusesUncitedPaidPending(t *testing.T) {
 	}
 	if _, err := TransitionFeature(repoDir, projDir, "F-0011", domain.ActionComplete, "", "", nil); err != nil {
 		t.Fatalf("complete after unlink: %v", err)
+	}
+}
+
+// F-0885 r1 (critic): a citation counts only in the text a reader sees and only
+// as the exact id: P-00011, an HTML comment or fenced code is no citation.
+func TestCompleteCitationIsVisibleAndExact(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+	p := seedPaid(t, repoDir, projDir, "Débito pago", origin.ID, "F-0010")
+	for _, cite := range []string{p.ID + "1", "<!-- [[" + p.ID + "]] -->", "\n~~~\n" + p.ID + "\n~~~", "\n```text\n" + p.ID + "\n```"} {
+		citeInResult(t, repoDir, "F-0010", cite)
+		if _, err := TransitionFeature(repoDir, projDir, "F-0010", domain.ActionComplete, "", "", nil); !errors.Is(err, ErrPaidPendingUncited) {
+			t.Fatalf("%q counted as a citation of %s: err = %v", cite, p.ID, err)
+		}
+	}
+	citeInResult(t, repoDir, "F-0010", "[["+p.ID+"]]")
+	if _, err := TransitionFeature(repoDir, projDir, "F-0010", domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatalf("complete with a visible citation: %v", err)
 	}
 }

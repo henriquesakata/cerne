@@ -802,7 +802,76 @@ func TestUnlinkPendingReopens(t *testing.T) {
 	if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+old.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := UnlinkPending(repoDir, projDir, old.ID); !errors.Is(err, ErrPendingTargetClosed) || !strings.Contains(err.Error(), "F-0011") {
-		t.Fatalf("unlink from a done feature: err = %v, want ErrPendingTargetClosed naming F-0011", err)
+	if got, err := UnlinkPending(repoDir, projDir, old.ID); err != nil || got.State != domain.PendingOpen || got.PromotedTo != "" {
+		t.Fatalf("unlink from a done feature (promoted before F-0885): %+v, %v, want open", got, err)
+	}
+
+	seedFeatureInState(t, repoDir, "F-0012", domain.StateImplemented)
+	ready := mustPending(t, repoDir, projDir, "Paga por uma feature pronta", "", origin.ID)
+	if _, err := LinkPending(repoDir, projDir, ready.ID, "F-0012"); !errors.Is(err, ErrPendingTargetClosed) {
+		t.Fatalf("link to an implemented feature: err = %v, want ErrPendingTargetClosed", err)
+	}
+	ready.State, ready.PromotedTo = domain.PendingPromoted, "F-0012"
+	if err := store.SavePending(repoDir, ready); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+ready.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UnlinkPending(repoDir, projDir, ready.ID); !errors.Is(err, ErrPendingLinked) || !strings.Contains(err.Error(), "F-0012") {
+		t.Fatalf("unlink from an implemented feature: err = %v, want ErrPendingLinked naming F-0012", err)
+	}
+}
+
+// F-0885 r1 (critic): a pending promoted before F-0885 to a feature already
+// terminal is moved by nothing any more, so it resolves by hand; drop asks for
+// the unlink first. While the feature is implemented, its accept decides.
+func TestManualCloseOfPendingPromotedToTerminalFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	seed := func(title, featureID string, state domain.FeatureState) store.Pending {
+		seedFeatureInState(t, repoDir, featureID, state)
+		p := mustPending(t, repoDir, projDir, title, "", origin.ID)
+		p.State, p.PromotedTo = domain.PendingPromoted, featureID
+		if err := store.SavePending(repoDir, p); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+p.ID); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	rejected := seed("Promovida a uma feature rejeitada", "F-0010", domain.StateRejected)
+	if got, err := ResolvePending(repoDir, projDir, rejected.ID); err != nil || got.State != domain.PendingResolved {
+		t.Fatalf("resolve of a pending promoted to a rejected feature: %+v, %v", got, err)
+	}
+	done := seed("Promovida a uma feature aceita", "F-0011", domain.StateDone)
+	if _, err := DropPending(repoDir, projDir, done.ID, "não vale mais"); err == nil || !strings.Contains(err.Error(), "cerne pending unlink "+done.ID) {
+		t.Fatalf("drop of a pending promoted to a done feature: err = %v, want the unlink hint", err)
+	}
+	ready := seed("Promovida a uma feature pronta", "F-0012", domain.StateImplemented)
+	if _, err := ResolvePending(repoDir, projDir, ready.ID); !errors.Is(err, ErrPendingLinked) || strings.Contains(err.Error(), "unlink") {
+		t.Fatalf("resolve while the feature is implemented: err = %v, want ErrPendingLinked without an unlink hint", err)
+	}
+}
+
+// F-0885 r1 (critic): --as task groups pendings of the same origin into one
+// task under it.
+func TestPromotePendingsTaskFromOneOrigin(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	p1 := mustPending(t, repoDir, projDir, "Tratar o caso Y do parser", "", "F-0001")
+	p2 := mustPending(t, repoDir, projDir, "Medir a latência do export", "", "F-0001")
+	got, task, err := PromotePendings(repoDir, projDir, []string{p1.ID, p2.ID}, "task", "Pagar Y e a latência", "", false)
+	if err != nil {
+		t.Fatalf("PromotePendings --as task, one origin: %v", err)
+	}
+	if !strings.HasPrefix(task.ID, "T-") || task.Parent != "F-0001" || len(got) != 2 {
+		t.Fatalf("task = %+v, pendings = %d, want one T- under F-0001 paying both", task, len(got))
+	}
+	for _, p := range got {
+		if p.State != domain.PendingPromoted || p.PromotedTo != task.ID {
+			t.Fatalf("%s = %+v, want promoted to %s", p.ID, p, task.ID)
+		}
 	}
 }

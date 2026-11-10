@@ -465,10 +465,12 @@ func LinkPending(repoDir, projDir, id, featureID string) (store.Pending, error) 
 	return p, nil
 }
 
-// UnlinkPending hands a pending promoted to a live feature back to open
-// (F-0885): promoted_to and closed_at cleared, pending.reopened carrying the
-// feature. A pending that is not promoted, or whose feature is no longer live,
-// refuses.
+// UnlinkPending hands a promoted pending back to open (F-0885): promoted_to
+// and closed_at cleared, pending.reopened carrying the feature. A pending that
+// is not promoted refuses, and so does one whose feature is implemented: its
+// accept resolves it and a reject reopens it. A feature already terminal
+// (done, rejected, superseded — a promotion from before F-0885) moves its
+// pendings no more, so unlink is the way out.
 func UnlinkPending(repoDir, projDir, id string) (store.Pending, error) {
 	id, err := canonPendingID(id)
 	if err != nil {
@@ -487,8 +489,8 @@ func UnlinkPending(repoDir, projDir, id string) (store.Pending, error) {
 		if err != nil {
 			return "", err
 		}
-		if !featureLive(f.State) {
-			return "", fmt.Errorf("%w: %s is promoted to %s, which is %s", ErrPendingTargetClosed, id, f.ID, f.State)
+		if f.State == domain.StateImplemented {
+			return "", fmt.Errorf("%w: %s is promoted to %s, which is implemented — %s's accept resolves it and a reject reopens it", ErrPendingLinked, id, f.ID, f.ID)
 		}
 		if p, err = movePending(repoDir, p, domain.ActionReopen, "", map[string]string{"feature": f.ID, "via": "unlink"}); err != nil {
 			return "", err
@@ -566,8 +568,10 @@ var ErrPendingLinked = errors.New("the pending is paid by a feature: it resolves
 
 // closePending applies a manual close (resolve/drop) to pending id, re-reading
 // its state inside the backend lock, stamps closed_at (plus the reason when
-// given) and appends pending.<state>. A promoted pending is refused: it follows
-// the feature that pays it.
+// given) and appends pending.<state>. A pending promoted to a live or
+// implemented feature is refused: it follows that feature. One promoted to a
+// feature already terminal (a promotion from before F-0885) resolves by hand;
+// to drop it, unlink it first.
 func closePending(repoDir, projDir, id string, action domain.Action, reason string) (store.Pending, error) {
 	var p store.Pending
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
@@ -577,7 +581,18 @@ func closePending(repoDir, projDir, id string, action domain.Action, reason stri
 			return "", err
 		}
 		if p.State == domain.PendingPromoted {
-			return "", fmt.Errorf("%w: %s is promoted to %s — accept %s, or run 'cerne pending unlink %s' first", ErrPendingLinked, id, p.PromotedTo, p.PromotedTo, id)
+			f, err := store.LoadFeature(repoDir, p.PromotedTo)
+			if err != nil {
+				return "", err
+			}
+			switch {
+			case featureLive(f.State):
+				return "", fmt.Errorf("%w: %s is promoted to %s — accept %s, or run 'cerne pending unlink %s' first", ErrPendingLinked, id, f.ID, f.ID, id)
+			case f.State == domain.StateImplemented:
+				return "", fmt.Errorf("%w: %s is promoted to %s, which is implemented — %s's accept resolves it and a reject reopens it", ErrPendingLinked, id, f.ID, f.ID)
+			case action != domain.ActionResolve:
+				return "", fmt.Errorf("%s is promoted to %s, which is %s: run 'cerne pending unlink %s' first", id, f.ID, f.State, id)
+			}
 		}
 		to, err := domain.TransitionPending(p.State, action)
 		if err != nil {

@@ -265,10 +265,12 @@ func newPendingLinkCmd(dir *string) *cobra.Command {
 func newPendingUnlinkCmd(dir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "unlink <P-id>",
-		Short: "Take a pending back from the live feature it points at (promoted -> open)",
-		Long: "Returns a pending promoted to a live feature (candidate, approved or in_development) to open and " +
-			"clears promoted_to: the way out when the feature will not pay it, including a complete refused for " +
-			"not citing it. A pending of an implemented feature waits for the accept (or reject) instead.",
+		Short: "Take a pending back from the feature it points at (promoted -> open)",
+		Long: "Returns a promoted pending to open and clears promoted_to: the way out when a live feature " +
+			"(candidate, approved or in_development) will not pay it, including a complete refused for not " +
+			"citing it, and for a pending promoted before F-0885 to a feature already done, rejected or " +
+			"superseded, which nothing moves any more. A pending of an implemented feature waits for the " +
+			"accept (or reject) instead.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)

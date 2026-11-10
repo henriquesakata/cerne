@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -18,7 +19,8 @@ import (
 var ErrPaidPendingUncited = errors.New("the result does not cite every pending this feature pays")
 
 // CheckPaidCited is the complete gate of F-0885: every pending promoted to f
-// must be cited in f's result.md, as [[P-NNNN]] or P-NNNN. The refusal names the
+// must be cited in f's result.md, as [[P-NNNN]] or P-NNNN, in the text a reader
+// sees — an HTML comment or fenced code is no citation. The refusal names the
 // missing ones and the two ways out — cite it, or unlink the one f does not
 // pay.
 func CheckPaidCited(repoDir string, f store.Feature) error {
@@ -30,6 +32,7 @@ func CheckPaidCited(repoDir string, f store.Feature) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	result = visibleText(result)
 	var cite, unlink []string
 	for _, p := range paid {
 		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(p.ID) + `\b`).Match(result) {
@@ -42,6 +45,30 @@ func CheckPaidCited(repoDir string, f store.Feature) error {
 	}
 	return fmt.Errorf("%w: cite %s in content/features/%s/result.md and run 'cerne push', or unlink the ones %s does not pay: %s",
 		ErrPaidPendingUncited, strings.Join(cite, ", "), f.ID, f.ID, strings.Join(unlink, ", "))
+}
+
+// fenceOpen opens a code fence: three or more backticks or tildes (CommonMark).
+var fenceOpen = regexp.MustCompile("^\\s*(`{3,}|~{3,})")
+
+// visibleText drops HTML comments and fenced code from a markdown document. A
+// fence closes only with its own character, at least as long as the opening.
+func visibleText(md []byte) []byte {
+	var out []string
+	fence := ""
+	for _, line := range strings.Split(string(lint.StripHTMLComments(md)), "\n") {
+		if fence != "" {
+			if t := strings.TrimSpace(line); len(t) >= len(fence) && strings.Trim(t, fence[:1]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if m := fenceOpen.FindStringSubmatch(line); m != nil {
+			fence = m[1]
+			continue
+		}
+		out = append(out, line)
+	}
+	return []byte(strings.Join(out, "\n"))
 }
 
 // movePaidPendings carries the pendings f pays along the transition f just
