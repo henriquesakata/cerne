@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"time"
 )
 
@@ -61,11 +61,16 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 	return err
 }
 
-var headingLineRe = regexp.MustCompile(`(?m)^( {0,3})(#{1,6})([ \t]|$)`)
-
-// defangHeadings escapes the Markdown headings of free text (`## x` -> `\## x`):
-// a heading line of the text would otherwise open a block the parser reads as
-// a new erratum item (F-0872). It renders the same, minus the heading.
+// defangHeadings escapes the lines of free text that the parser would read as an
+// erratum block title (`## errata 2026-11-09 — x` -> `\## errata ...`): such a
+// line would otherwise open a forged item (F-0872). Other headings stay as
+// written: errata texts carry real sections ("## Gauntlet") that lint reads.
 func defangHeadings(text string) string {
-	return headingLineRe.ReplaceAllString(text, `$1\$2$3`)
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if errataHeaderRe.MatchString(strings.TrimRight(l, "\r")) {
+			lines[i] = "\\" + l
+		}
+	}
+	return strings.Join(lines, "\n")
 }
