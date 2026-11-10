@@ -36,6 +36,14 @@ var featureDocNames = []string{"spec", "plan", "result"}
 // showResult is one resolved cerne_id: its kind, the loaded entity value, and
 // any markdown content sections read straight from the backend store. Feature
 // docs split into spec/plan/result; other kinds carry a single body (name "").
+// pendingShow is how show presents a pending (F-0885): the stored entity plus
+// the state of the feature it is promoted to, flat in the JSON as
+// promoted_to_state.
+type pendingShow struct {
+	store.Pending
+	PromotedToState domain.FeatureState `json:"promoted_to_state,omitempty"`
+}
+
 type showResult struct {
 	kind    string
 	entity  any
@@ -111,15 +119,32 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 		if err != nil {
 			return err
 		}
-		var lines []string
+		var lines, pays []string
 		for _, p := range pendings {
 			if p.From == id && p.State == domain.PendingOpen {
 				lines = append(lines, p.ID+"  "+p.Title)
+			}
+			// F-0885: and the debts it pays, in whatever state each stands.
+			if p.PromotedTo == id {
+				pays = append(pays, fmt.Sprintf("%s  [%s]  %s", p.ID, p.State, p.Title))
 			}
 		}
 		if len(lines) > 0 {
 			res.content = append(res.content, showDoc{name: "pending", body: strings.Join(lines, "\n")})
 		}
+		if len(pays) > 0 {
+			res.content = append(res.content, showDoc{name: "pays", body: strings.Join(pays, "\n")})
+		}
+	}
+	if p, ok := res.entity.(store.Pending); ok {
+		// F-0885: the forward link says how the feature that pays it stands.
+		ps := pendingShow{Pending: p}
+		if p.PromotedTo != "" {
+			if f, err := store.LoadFeature(ctx.repoDir, p.PromotedTo); err == nil {
+				ps.PromotedToState = f.State
+			}
+		}
+		res.entity = ps
 	}
 	if res.kind == "idea" {
 		// C20: the idea's own trail, from the raw log — idea.* never reaches
@@ -398,7 +423,7 @@ func (r showResult) renderText(w io.Writer) {
 		if e.Reason != "" {
 			fmt.Fprintf(w, "reason: %s\n", e.Reason)
 		}
-	case store.Pending:
+	case pendingShow:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		fmt.Fprintf(w, "from: %s\n", e.From)
 		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
@@ -411,7 +436,9 @@ func (r showResult) renderText(w io.Writer) {
 		if len(e.Components) > 0 {
 			fmt.Fprintf(w, "components: %s\n", strings.Join(e.Components, ", "))
 		}
-		if e.PromotedTo != "" {
+		if e.PromotedTo != "" && e.PromotedToState != "" {
+			fmt.Fprintf(w, "promoted to: %s (%s)\n", e.PromotedTo, e.PromotedToState)
+		} else if e.PromotedTo != "" {
 			fmt.Fprintf(w, "promoted to: %s\n", e.PromotedTo)
 		}
 		if e.Reason != "" {

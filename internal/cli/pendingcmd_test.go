@@ -469,3 +469,52 @@ func TestPushDryRunAdvisoryPolicy(t *testing.T) {
 		t.Fatalf("dry-run with advisory + blocking: err = %v, want '1 problem(s) found'\n%s", err, out)
 	}
 }
+
+// F-0885 crit. 5, 6 and 7 through the CLI: the complete refuses a result that
+// does not cite the pending the feature pays, naming it and the unlink way
+// out; the accept and the reject print the pendings they moved.
+func TestPendingFollowsFeatureLifecycleCLI(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newOriginFeature(t, projDir, "Origem")
+	pendingNew(t, projDir, "Débito pago no accept", "--from", "F-0001")
+	pendingNew(t, projDir, "Débito de uma feature rejeitada", "--from", "F-0001")
+	if out, err := execCerne(t, "pending", "promote", "P-0001", "--as", "feature", "--dir", projDir); err != nil {
+		t.Fatalf("promote: %v\n%s", err, out)
+	}
+	id := "F-0002"
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v\n%s", err, out)
+	}
+	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "feature", "start", id, "--dir", projDir); err != nil {
+		t.Fatalf("start: %v\n%s", err, out)
+	}
+	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Entregue conforme o plano."))
+	commitBackend(t, repoDir)
+	if _, err := execCerne(t, "feature", "complete", id, "--dir", projDir); !errors.Is(err, app.ErrPaidPendingUncited) || !strings.Contains(err.Error(), "cerne pending unlink P-0001") {
+		t.Fatalf("complete without citing P-0001: err = %v, want ErrPaidPendingUncited naming the unlink", err)
+	}
+	writeDoc(t, repoDir, id, "result.md", realDoc(id, "Entregue conforme o plano; paga [[P-0001]]."))
+	commitBackend(t, repoDir)
+	if out, err := execCerne(t, "feature", "complete", id, "--dir", projDir); err != nil {
+		t.Fatalf("complete citing P-0001: %v\n%s", err, out)
+	}
+	out, err := execCerne(t, "feature", "accept", id, "--dir", projDir)
+	if err != nil || !strings.Contains(out, "P-0001: promoted -> resolved") {
+		t.Fatalf("accept must print the pending it resolved: %v\n%s", err, out)
+	}
+	if p, _ := store.LoadPending(repoDir, "P-0001"); p.State != domain.PendingResolved || p.PromotedTo != id {
+		t.Fatalf("P-0001 = %+v, want resolved, still pointing at %s", p, id)
+	}
+
+	if out, err := execCerne(t, "pending", "promote", "P-0002", "--as", "feature", "--dir", projDir); err != nil {
+		t.Fatalf("promote P-0002: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "feature", "reject", "F-0003", "--reason", "ninguém vai fazer", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "P-0002: promoted -> open") {
+		t.Fatalf("reject must print the pending it reopened: %v\n%s", err, out)
+	}
+}

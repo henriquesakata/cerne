@@ -141,6 +141,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 	// Approving is accepting the proposed bar (F-0308 crit. 9): say which.
 	if out.Bar != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Accepted bar: %s\n", out.Bar)
