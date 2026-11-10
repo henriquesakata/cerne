@@ -53,12 +53,10 @@ type PreResult struct {
 // default asks glab, read-only, with a deadline.
 var MRState = glabMRState
 
-func glabMRState(project, iid string) (string, error) {
+func glabMRState(ctx context.Context, project, iid string) (string, error) {
 	if !store.ValidMRRef(project, iid) {
 		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	// "--" ends the flags: the positional can never be read as one (F-0874).
 	out, err := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid).Output()
 	if err != nil {
@@ -78,18 +76,6 @@ func validMRArg(a string) bool {
 	return store.ValidMRRef(proj, iid)
 }
 
-func normMRState(s string) string {
-	switch strings.ToLower(s) {
-	case "aberta", "aberto", "open", "opened":
-		return "opened"
-	case "mergeada", "mergeado", "merged":
-		return "merged"
-	case "fechada", "fechado", "closed":
-		return "closed"
-	}
-	return strings.ToLower(s)
-}
-
 // CheckPreconditions checks each precondition against the backend (and the
 // forge for MRs). Read-only. A kind the cerne cannot verify, and a forge that
 // cannot be reached, are "manual": never "met".
@@ -101,10 +87,11 @@ func CheckPreconditions(repoDir string, pcs []Precondition) []PreResult {
 // too) and the forge gets a total time budget; past it the MRs are not asked
 // and Cut is set, so the warning says the ceiling cut the check.
 type Forge struct {
-	Budget time.Duration
-	Cut    bool
-	spent  time.Duration
-	cache  map[string]forgeAnswer
+	Budget      time.Duration
+	CallTimeout time.Duration
+	Cut         bool
+	spent       time.Duration
+	cache       map[string]forgeAnswer
 }
 
 type forgeAnswer struct {
@@ -112,21 +99,31 @@ type forgeAnswer struct {
 	err   error
 }
 
-// NewForge: 10 s in total, one call at most 5 s.
-func NewForge() *Forge { return &Forge{Budget: 10 * time.Second, cache: map[string]forgeAnswer{}} }
+// NewForge: 10 s in total, one call at most 5 s. A call gets no more than what
+// is left of the total, so 10 s is a ceiling, not a start-of-call check.
+func NewForge() *Forge {
+	return &Forge{Budget: 10 * time.Second, CallTimeout: 5 * time.Second, cache: map[string]forgeAnswer{}}
+}
 
 func (f *Forge) state(project, iid string) (string, error) {
 	k := project + "!" + iid
 	if a, ok := f.cache[k]; ok {
 		return a.state, a.err
 	}
-	if f.spent >= f.Budget {
+	left := f.Budget - f.spent
+	if left <= 0 {
 		f.Cut = true
 		return "", fmt.Errorf("forge time budget of %s spent by earlier MRs", f.Budget)
 	}
+	d := min(left, f.CallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
 	t0 := time.Now()
-	st, err := MRState(project, iid)
+	st, err := MRState(ctx, project, iid)
 	f.spent += time.Since(t0)
+	if err != nil && d == left {
+		f.Cut = true // the ceiling, not the forge, ended this call
+	}
 	f.cache[k] = forgeAnswer{st, err}
 	return st, err
 }
@@ -153,17 +150,17 @@ func CheckPreconditionsWith(repoDir string, pcs []Precondition, forge *Forge) []
 			} else {
 				r.Status, r.Detail = PrePending, p.Args[0]+" has no result written"
 			}
-		case p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]):
+		case p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]) && store.NormMRState(p.Args[1]) != "":
 			proj, iid, _ := strings.Cut(p.Args[0], "!")
-			want := normMRState(p.Args[1])
+			want := store.NormMRState(p.Args[1])
 			got, err := forge.state(proj, iid)
 			switch {
 			case err != nil:
 				r.Detail = "forge not reachable (" + err.Error() + "): check it by hand"
-			case normMRState(got) == want:
+			case store.NormMRState(got) == want:
 				r.Status, r.Detail = PreMet, p.Args[0]+" is "+want
 			default:
-				r.Status, r.Detail = PrePending, p.Args[0]+" is "+normMRState(got)+", wanted "+want
+				r.Status, r.Detail = PrePending, p.Args[0]+" is "+store.NormMRState(got)+", wanted "+want
 			}
 		}
 		out = append(out, r)

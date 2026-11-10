@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"io/fs"
@@ -42,7 +43,7 @@ func preFixture(t *testing.T) (projDir, repoDir string) {
 	mustWrite(t, bodyFile, rbPreBody)
 	rb(t, projDir, "runbook", "new", "Troca de credencial", "--file", bodyFile)
 	old := app.MRState
-	app.MRState = func(project, iid string) (string, error) {
+	app.MRState = func(_ context.Context, project, iid string) (string, error) {
 		if project == "rockt/hub" && iid == "2150" {
 			return "opened", nil
 		}
@@ -115,7 +116,7 @@ func TestRunbookPreflightListsUnmetUpToStepAndChangesNothing(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(repoDir, "content", "features", "F-0002"), 0o755)
 	mustWrite(t, filepath.Join(repoDir, "content", "features", "F-0002", "result.md"),
 		"---\ncerne_id: F-0002\n---\n\n# Resultado\n\nEntregue e verificado com evidencia, sem pendencias.\n")
-	app.MRState = func(string, string) (string, error) { return "merged", nil }
+	app.MRState = func(context.Context, string, string) (string, error) { return "merged", nil }
 	out = rb(t, projDir, "runbook", "preflight", "RB-0001", "--ate", "S2")
 	if !strings.Contains(out, "F-0002 has a result") || !strings.Contains(out, "rockt/hub!2150 is merged") {
 		t.Fatalf("now met:\n%s", out)
@@ -133,7 +134,7 @@ func TestPreflightUnknownKindIsManualNeverMet(t *testing.T) {
 	if !strings.Contains(out, "[manual]  shell verde em producao") {
 		t.Fatalf("an unknown kind must be manual:\n%s", out)
 	}
-	app.MRState = func(string, string) (string, error) { return "", errors.New("no network") }
+	app.MRState = func(context.Context, string, string) (string, error) { return "", errors.New("no network") }
 	out = rb(t, projDir, "runbook", "preflight", "RB-0001", "--ate", "S2")
 	if !strings.Contains(out, "[manual]") || !strings.Contains(out, "forge not reachable") || strings.Contains(out, "!2150 is") {
 		t.Fatalf("an unreachable forge must be manual:\n%s", out)
