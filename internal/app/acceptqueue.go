@@ -40,16 +40,20 @@ var (
 	prodLineRe = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|prod)[*_]*\s*:[*_]*(.*)$`)
 	// A section whose title is just "Produção": its first body line is the evidence.
 	prodHeadRe = regexp.MustCompile(`(?i)^(?:em\s+)?produ[cç][aã]o\s*:?$`)
-	// Negative or empty evidence ("não verificado", PENDENTE, n/a, nothing) is no evidence.
-	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\s+(?:verificad|testad|aplicad|feit|conferid|medid|informad|houve)|ainda\s+n[aã]o|pendente|n/?a\b|a\s+(?:verificar|conferir)|tbd|sem\b|nada\b)|^[\s*_\x60.—–-]*$`)
+	// Negative or empty evidence is no evidence: any line led by "não" (verificado,
+	// foi, se aplica, houve...), pending or waiting, "n/a", or nothing. Heuristic:
+	// "Não houve erro" reads as absent too, the safe side for a decision queue.
+	// "na sexta..." and "sem erro nos logs" are positive and stay evidence.
+	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\b|ainda\s+n[aã]o|pendente|aguardando|n/a\b|a\s+(?:verificar|conferir)|tbd\b|sem\s+(?:evid[eê]ncia|registro|dados?|informa)|nada\b)|^[\s*_\x60.—–-]*$`)
 	// PENDENTE counts only on an acceptance line (list item or table row that
 	// names a "critério"), never in loose prose.
 	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
 	pendingHead = regexp.MustCompile(`(?i)^(?:d[ée]bitos|n[aã]o verificado)\b`)
 	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	bulletRe    = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$`)
-	// "Nenhum." and its variants declare no debt: not a pending.
-	noneRe       = regexp.MustCompile(`(?i)^(?:nenhum[ao]?s?|n/?a|n[aã]o h[aá]|none)\b[^;:,]{0,40}$|^[—–.\s]*$`)
+	// "Nenhum.", "Nenhum débito aberto além de..." and "n/a" declare no debt; "Nenhum
+	// teste de carga foi escrito" is a debt (the word after "nenhum" is not a debt noun).
+	noneRe       = regexp.MustCompile(`(?i)^(?:(?:nenhum[ao]?s?|n[aã]o h[aá](?:\s+nenhum[ao]?s?)?)(?:\s+(?:d[ée]bitos?|pend[êe]ncias?|follow-?ups?|itens?|pontos?|problemas?|limita[cç][õo]es|limita[cç][ãa]o)\b|\s*[;:,.]|\s*$)|(?:n/?a|none)\b)|^[—–.\s]*$`)
 	markdownJunk = regexp.MustCompile("[*_`>#]|^[\\s-]+")
 )
 
@@ -59,7 +63,7 @@ func AcceptQueue(repoDir string) ([]AcceptRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	var rows []AcceptRow
+	rows := []AcceptRow{} // empty queue is [] in the JSON, never null
 	for _, f := range features {
 		if f.State != domain.StateImplemented {
 			continue
@@ -85,7 +89,10 @@ func summarizeResult(result []byte) AcceptRow {
 		row.Gauntlet = v
 	}
 	inSection, secLevel, base, prodSect, fence := false, 0, -1, false, false
-	for _, line := range strings.Split(string(result), "\n") {
+	// Débitos counts as reported only with a bullet list or an explicit "Nenhum":
+	// a table or prose is no list, and "0" would affirm there are no debts.
+	bullets := false
+	for _, line := range strings.Split(string(lint.StripHTMLComments(result)), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			fence = !fence
 			continue
@@ -100,7 +107,6 @@ func summarizeResult(result []byte) AcceptRow {
 			}
 			if !inSection && level >= 2 && pendingHead.MatchString(m[2]) {
 				inSection, secLevel, base = true, level, -1
-				row.PendingReported = true
 			}
 			prodSect = prodHeadRe.MatchString(strings.TrimSpace(m[2]))
 			continue
@@ -123,6 +129,7 @@ func summarizeResult(result []byte) AcceptRow {
 			row.Pending = append(row.Pending, clip(line))
 		} else if m := bulletRe.FindStringSubmatch(line); inSection && m != nil {
 			// Only first-level bullets count: prose, sub-bullets and tables do not.
+			bullets = true
 			indent := len(strings.ReplaceAll(m[1], "\t", "    "))
 			if base < 0 {
 				base = indent
@@ -130,8 +137,11 @@ func summarizeResult(result []byte) AcceptRow {
 			if t := clip(m[2]); indent <= base && !noneRe.MatchString(t) {
 				row.Pending = append(row.Pending, t)
 			}
+		} else if inSection && noneRe.MatchString(clip(line)) {
+			bullets = true // a prose "Nenhum." is an explicit declaration of zero
 		}
 	}
+	row.PendingReported = row.PendingReported || bullets
 	return row
 }
 

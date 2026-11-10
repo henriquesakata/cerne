@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -51,6 +53,15 @@ func acceptFixture(t *testing.T) (projDir, repoDir string) {
 		t.Fatal(err)
 	}
 	return projDir, repoDir
+}
+
+func gitHead(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("/usr/bin/git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 // treeHash fingerprints every file of the backend outside .git.
@@ -170,7 +181,7 @@ func TestAcceptQueueMissingIsNotInformed(t *testing.T) {
 // crit. 4: read-only; the backend is byte-identical after the command.
 func TestAcceptQueueReadOnly(t *testing.T) {
 	projDir, repoDir := acceptFixture(t)
-	before := treeHash(t, repoDir)
+	before, head := treeHash(t, repoDir), gitHead(t, repoDir)
 	rb(t, projDir, "accept", "queue")
 	stdout, _, err := execCerneSplit(t, "accept", "queue", "--json", "--dir", projDir)
 	if err != nil || stdout == "" {
@@ -178,6 +189,9 @@ func TestAcceptQueueReadOnly(t *testing.T) {
 	}
 	if after := treeHash(t, repoDir); after != before {
 		t.Fatal("the backend changed after 'accept queue'")
+	}
+	if gitHead(t, repoDir) != head {
+		t.Fatal("'accept queue' made a commit")
 	}
 	rows, _ := app.AcceptQueue(repoDir)
 	for _, r := range rows {
@@ -307,10 +321,11 @@ func TestAcceptQueuePendingCount(t *testing.T) {
 		"dash":                {"## Débitos\n\n- —\n", 0},
 		"nenhuma but real":    {"## Débitos\n\n- Nenhuma cobertura do caminho X; falta o teste Y.\n", 1},
 		"prose lead-in":       {"## Débitos\n\nOs débitos são:\n\n- a\n- b\n- c\n", 3},
-		"prose alone":         {"## Débitos\n\nLimpar o seed antigo.\n", 0},
 		"sub-bullets":         {"## Débitos\n\n- a\n  - a1\n  - a2\n- b\n    - b1\n", 2},
 		"continuation":        {"## Débitos\n\n- a\n  continua aqui\n- b\n", 2},
-		"table":               {"## Débitos\n\n| Débito | Dono |\n|---|---|\n| a | x |\n| b | y |\n", 0},
+		"nenhum teste real":   {"## Débitos\n\n- Nenhum teste de carga foi escrito\n", 1},
+		"nenhum long":         {"## Débitos\n\n- Nenhum débito aberto além dos já listados no corpo do Resultado.\n", 0},
+		"não há débitos":      {"## Débitos\n\n- Não há débitos.\n", 0},
 		"h3 inside":           {"## Débitos\n\n### Segurança\n\n- a\n\n### Testes\n\n- b\n- c\n", 3},
 		"h2 closes":           {"## Débitos\n\n- a\n\n## Gauntlet\n\n- x\n", 1},
 		"h1 closes":           {"## Débitos\n\n- a\n\n# Outro\n\n- x\n", 1},
@@ -335,6 +350,10 @@ func TestAcceptQueueProductionNegativeIsNotEvidence(t *testing.T) {
 		"empty value":          "Produção:\n",
 		"title nao verificado": "## Não verificado em produção\n\n- o prazo\n",
 		"title only":           "## Produção\n\n",
+		"não foi verificado":   "- Em produção: não foi verificado\n",
+		"não se aplica":        "Produção: não se aplica\n",
+		"aguardando":           "Produção: aguardando o dono\n",
+		"section two lines":    "## Produção\n\nNão verificado.\n\nO deploy foi adiado.\n",
 		"title then negative":  "## Produção\n\nNão verificado.\n",
 	} {
 		if r := queueRow(t, repoDir, body); r.Production != app.NotInformed {
@@ -345,9 +364,11 @@ func TestAcceptQueueProductionNegativeIsNotEvidence(t *testing.T) {
 		t.Errorf("the 'não verificado' section must be a pending: %+v", r)
 	}
 	for name, body := range map[string]string{
-		"line":    "- Em produção: conferido em 2026-11-05\n",
-		"bold":    "**Produção:** aplicado pelo dono\n",
-		"section": "## Produção\n\nAplicado em 2026-11-06, health verde.\n",
+		"line":     "- Em produção: conferido em 2026-11-05\n",
+		"bold":     "**Produção:** aplicado pelo dono\n",
+		"section":  "## Produção\n\nAplicado em 2026-11-06, health verde.\n",
+		"na sexta": "Produção: na sexta o dono aplicou, health verde\n",
+		"sem erro": "- Em produção: sem erro nos logs por 24h\n",
 	} {
 		if r := queueRow(t, repoDir, body); r.Production == app.NotInformed {
 			t.Errorf("%s: positive evidence read as not informed", name)
@@ -360,5 +381,57 @@ func TestAcceptQueueVerdictLineOfItsOwn(t *testing.T) {
 	_, repoDir := acceptFixture(t)
 	if r := queueRow(t, repoDir, "## Gauntlet\n\nBarra: o fluxo do cerne.\n\nVeredito: derrota\n"); r.Gauntlet != "derrota" {
 		t.Fatalf("gauntlet = %q, want derrota", r.Gauntlet)
+	}
+}
+
+// r2: Débitos as a table or prose declares no bullet list: "não informado",
+// never "0"; an HTML comment (template scaffold) is no evidence and no pending.
+func TestAcceptQueueProseTableAndCommentsAreNotInformed(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, body := range map[string]string{
+		"table": "## Débitos\n\n| Débito | Dono |\n|---|---|\n| a | x |\n| b | y |\n",
+		"prose": "## Débitos\n\nLimpar o seed antigo.\n",
+	} {
+		if r := queueRow(t, repoDir, body); r.PendingReported || len(r.Pending) != 0 {
+			t.Errorf("%s: reported %v pending %v, want not reported", name, r.PendingReported, r.Pending)
+		}
+	}
+	r := queueRow(t, repoDir, "<!--\nProdução: descreva aqui\n- critério 1 — PENDENTE\n-->\n")
+	if r.Production != app.NotInformed || len(r.Pending) != 0 || r.PendingReported {
+		t.Errorf("comment read as record: %+v", r)
+	}
+}
+
+// r2: an empty queue is "queue": [] in the JSON, never null.
+func TestAcceptQueueEmptyJSON(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	stdout, _, err := execCerneSplit(t, "accept", "queue", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, `"queue": []`) || !strings.Contains(stdout, `"accept_commands": []`) {
+		t.Fatalf("empty queue json = %s", stdout)
+	}
+}
+
+// r2: the queue and the lint read the same record: "derrota" in the queue iff
+// the lint counts a derrota. "VEREDITO: A" (the blind judge's letter) is no
+// outcome word for either: the queue says "não informado", the lint counts none.
+func TestAcceptQueueAgreesWithLintOnDerrota(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, body := range map[string]string{
+		"derrota":   "## Gauntlet\n\nBarra: x.\n\nRodada 1 — derrota: \"a\"\n",
+		"vitória":   "## Gauntlet\n\nBarra: x.\n\nRodada 1 — vitória: \"a\"\n",
+		"line":      "## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n",
+		"letter":    "## Gauntlet\n\nBarra: x.\n\nVEREDITO: A\n",
+		"commented": "<!--\n## Gauntlet\n\nRodada 1 — derrota: \"a\"\n-->\n",
+	} {
+		_, derrotas := lint.GauntletRounds([]byte(body))
+		if got := queueRow(t, repoDir, body).Gauntlet == "derrota"; got != (derrotas > 0) {
+			t.Errorf("%s: queue derrota %v, lint derrotas %d", name, got, derrotas)
+		}
+	}
+	if g := queueRow(t, repoDir, "## Gauntlet\n\nBarra: x.\n\nVEREDITO: A\n").Gauntlet; g != app.NotInformed {
+		t.Errorf("letter verdict = %q, want %q", g, app.NotInformed)
 	}
 }
