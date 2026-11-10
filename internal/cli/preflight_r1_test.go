@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,5 +35,46 @@ func TestPreflightShowsInvalidDeclarationAsManual(t *testing.T) {
 	out := rb(t, projDir, "runbook", "preflight", "RB-0001")
 	if !strings.Contains(out, "0 met, 0 pending, 2 manual") || strings.Count(out, "invalid declaration") != 2 {
 		t.Fatalf("both must be manual, flagged invalid:\n%s", out)
+	}
+}
+
+// F-0874 r2 (N12): two runs that cite the same MR ask the forge once in one
+// `next`. A glab on PATH counts the calls; without the forge shared across the
+// runs each would ask, and 3 runs x 2 MRs with the network down cost 30 s.
+func TestNextSharesForgeAcrossRuns(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	bin := t.TempDir()
+	count := filepath.Join(bin, "calls")
+	script := "#!/bin/sh\necho x >> '" + count + "'\necho '{\"state\":\"opened\"}'\n"
+	mustWrite(t, filepath.Join(bin, "glab"), script)
+	if err := os.Chmod(filepath.Join(bin, "glab"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, f, "# Rb\n\n- S1 a\n  Pré-condição S1: mr rockt/hub!7 merged\n")
+	rb(t, projDir, "runbook", "new", "Rb", "--file", f)
+	rb(t, projDir, "runbook", "run", "RB-0001", "--janela", "J1")
+	rb(t, projDir, "runbook", "run", "RB-0001", "--janela", "J2")
+	next := rb(t, projDir, "next")
+	if strings.Count(next, "rockt/hub!7 is opened") != 2 {
+		t.Fatalf("both runs must show the open MR:\n%s", next)
+	}
+	b, _ := os.ReadFile(count)
+	if n := strings.Count(string(b), "x"); n != 1 {
+		t.Fatalf("glab asked %d times, want 1 (forge shared across runs)", n)
+	}
+}
+
+// F-0874 r2 (N17): the precondition-malformed rule reaches `cerne lint`, not
+// just the function that computes it.
+func TestLintCommandReportsMalformedPrecondition(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	f := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, f, "# Rb\n\n- S1 a\n  Pré-condição S1: registro F-1 extra\n")
+	rb(t, projDir, "runbook", "new", "Rb", "--file", f)
+	out, _ := execCerne(t, "lint", "--dir", projDir)
+	if !strings.Contains(out, "PRECONDITION-MALFORMED") || !strings.Contains(out, "RB-0001") {
+		t.Fatalf("lint must report the malformed precondition:\n%s", out)
 	}
 }
