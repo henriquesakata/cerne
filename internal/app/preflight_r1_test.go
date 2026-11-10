@@ -171,3 +171,32 @@ func TestGlabMRStateReturnsWithinDeadlineWhenAChildHoldsThePipe(t *testing.T) {
 		t.Fatal("a glab killed at the deadline must be an error")
 	}
 }
+
+// F-0886 crit. 4 (P-0017): Cut says the ceiling ended a call — one MR alone,
+// so the budget-spent path never runs — and stays false when the forge fails
+// on its own, even with the call's deadline equal to what was left.
+func TestForgeCutOnlyWhenTheCeilingEndsTheCall(t *testing.T) {
+	old := MRState
+	t.Cleanup(func() { MRState = old })
+	mr := []Precondition{{Kind: "mr", Args: []string{"g/p!1", "merged"}}}
+
+	MRState = func(ctx context.Context, _, _ string) (string, error) {
+		<-ctx.Done() // past the deadline
+		return "", ctx.Err()
+	}
+	f := &Forge{Budget: 50 * time.Millisecond, CallTimeout: 50 * time.Millisecond, cache: map[string]forgeAnswer{}}
+	CheckPreconditionsWith("/x", mr, f)
+	if !f.Cut {
+		t.Fatal("a call the ceiling ended must set Cut")
+	}
+
+	MRState = func(context.Context, string, string) (string, error) { return "", errors.New("forge down") }
+	f = &Forge{Budget: 5 * time.Second, CallTimeout: 5 * time.Second, cache: map[string]forgeAnswer{}}
+	res := CheckPreconditionsWith("/x", mr, f)
+	if f.Cut {
+		t.Fatal("a forge failing on its own, with left == CallTimeout, is not a cut")
+	}
+	if res[0].Status != PreManual || !strings.Contains(res[0].Detail, "forge down") {
+		t.Fatalf("a failing forge is manual and says why: %+v", res[0])
+	}
+}

@@ -125,8 +125,11 @@ func (f *Forge) state(project, iid string) (string, error) {
 	t0 := time.Now()
 	st, err := MRState(ctx, project, iid)
 	f.spent += time.Since(t0)
-	if err != nil && d == left {
-		f.Cut = true // the ceiling, not the forge, ended this call
+	// The ceiling, not the forge, ended this call: its deadline was what was
+	// left, and that deadline is what stopped it — a forge failing on its own
+	// in the last call is not a cut (F-0886).
+	if err != nil && d == left && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		f.Cut = true
 	}
 	f.cache[k] = forgeAnswer{st, err}
 	return st, err
