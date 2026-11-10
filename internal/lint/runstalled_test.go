@@ -30,6 +30,18 @@ func TestRunStalledFindings(t *testing.T) {
 	mk("W-0003", domain.WorkActive, ok("S1"))           // going on
 	mk("W-0004", domain.WorkDone, ok("S1"), pare)       // closed
 	mk("W-0005", domain.WorkActive)                     // just opened
+	// F-0873 r2: the run's own state decides, not only the entries.
+	mk("W-0006", domain.WorkActive, ok("S1"))
+	setState := func(id, st string) {
+		r, _ := store.LoadRun(dir, id)
+		r.State = st
+		if err := store.SaveRun(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setState("W-0006", store.RunClosed) // concluida: never flagged, even with every step ok
+	mk("W-0007", domain.WorkActive, ok("S1"), ok("S2"))
+	setState("W-0007", store.RunClosed)
 	works, err := store.LoadAllWorks(dir)
 	if err != nil {
 		t.Fatal(err)
