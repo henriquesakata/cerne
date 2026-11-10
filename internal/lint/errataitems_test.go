@@ -40,3 +40,28 @@ func TestLintFlagsPendingAndUnmergedRunbookErrata(t *testing.T) {
 		t.Fatalf("want E1 (decide) and E2 (merge) flagged, E3 not: %+v", got)
 	}
 }
+
+// Gauntlet r2: an inactive runbook is not charged for parked errata.
+func TestLintErrataPendingSkipsInactiveRunbook(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.InitLayout(dir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRunbook(dir, store.Runbook{ID: "RB-0001", Title: "Velho", State: domain.RunbookSuperseded}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRunbook(dir, store.Runbook{ID: "RB-0002", Title: "Fora", State: domain.RunbookState("archived")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"RB-0001", "RB-0002"} {
+		if err := store.AppendErrata(dir, id, "Altera: S1\n\nA", "ag", time.Unix(0, 0).UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	findings, _ := Run(dir)
+	for _, f := range findings {
+		if f.Rule == RuleErrataPending {
+			t.Fatalf("inactive runbook charged: %+v", f)
+		}
+	}
+}

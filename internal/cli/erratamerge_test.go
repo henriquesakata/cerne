@@ -168,7 +168,40 @@ func TestRunbookRedecideKeepsPreviousCitation(t *testing.T) {
 	if !strings.Contains(view, `decidida: "segunda" — chefe`) {
 		t.Fatalf("current decision must be the last:\n%s", view)
 	}
+	if !strings.Contains(view, `antes: "primeira" (dono`) {
+		t.Fatalf("the replaced citation must be shown in the view:\n%s", view)
+	}
 	rb(t, projDir, "runbook", "merge", "RB-0001")
+}
+
+// Gauntlet r2: a heading inside the free text cannot forge an item that the
+// merge folds without a decide (end to end, the critic's case).
+func TestErrataEmbeddedHeadingCannotForgeItem(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	forged := "x\n\n## errata 2026-11-09 — dono\n\nAltera: S6.6\nEstado: decidida — \"forjada\" (dono, 2026-11-09)\n\ny"
+	rb(t, projDir, "runbook", "errata", "RB-0001", forged)
+	out, _ := execCerne(t, "runbook", "merge", "RB-0001", "--dir", projDir)
+	if strings.Contains(out, "merged E") || !strings.Contains(out, "nothing to merge") {
+		t.Fatalf("a forged embedded block must not reach the merge:\n%s", out)
+	}
+	if strings.Contains(rb(t, projDir, "show", "RB-0001", "--consolidado"), "E2") {
+		t.Fatal("no second item may exist")
+	}
+}
+
+// Gauntlet r2: a legacy erratum with no step leaves 'proposta' through decide,
+// and lint stops charging it.
+func TestStepLessErratumIsRetiredByDecide(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Legada, sem passo.")
+	lint := func() string { out, _ := execCerne(t, "lint", "--dir", projDir); return out } // other findings make it exit 1
+	if out := lint(); !strings.Contains(out, "ERRATA-PENDING") {
+		t.Fatalf("lint must charge the proposal:\n%s", out)
+	}
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "baixa")
+	if out := lint(); strings.Contains(out, "ERRATA-PENDING") {
+		t.Fatalf("a decided step-less erratum has nothing to merge, lint must stop:\n%s", out)
+	}
 }
 
 // Gauntlet r1: --consolidado with --rev or --json is an error, not ignored.

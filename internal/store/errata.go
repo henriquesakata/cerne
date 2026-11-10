@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -50,7 +51,7 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 	} else if err != nil {
 		return err
 	}
-	entry += fmt.Sprintf("\n## errata %s — %s\n\n%s\n", at.Format("2006-01-02"), author, text)
+	entry += fmt.Sprintf("\n## errata %s — %s\n\n%s\n", at.Format("2006-01-02"), author, defangHeadings(text))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -58,4 +59,18 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 	defer f.Close()
 	_, err = f.WriteString(entry)
 	return err
+}
+
+// defangHeadings escapes the lines of free text that the parser would read as an
+// erratum block title (`## errata 2026-11-09 — x` -> `\## errata ...`): such a
+// line would otherwise open a forged item (F-0872). Other headings stay as
+// written: errata texts carry real sections ("## Gauntlet") that lint reads.
+func defangHeadings(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if errataHeaderRe.MatchString(strings.TrimRight(l, "\r")) {
+			lines[i] = "\\" + l
+		}
+	}
+	return strings.Join(lines, "\n")
 }
