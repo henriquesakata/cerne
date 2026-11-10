@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 
 	"gitlab.com/rockt/cerne/internal/domain"
+	"gitlab.com/rockt/cerne/internal/gitback"
 	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
@@ -687,5 +689,120 @@ func TestPromotePendingsRefusesClosedOrRepeated(t *testing.T) {
 	}
 	if _, created, err := PromotePendings(modRepo, modProj, []string{q1.ID, q2.ID}, "feature", "Grupo de dois módulos", "web", false); err != nil || created.Module != "web" {
 		t.Fatalf("--module web = %+v, %v; want module web", created, err)
+	}
+}
+
+// lastPayload is the payload of the latest typ event of id.
+func lastPayload(t *testing.T, repoDir, id, typ string) map[string]string {
+	t.Helper()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	for i := len(evs) - 1; i >= 0; i-- {
+		if evs[i].EntityID == id && evs[i].Type == typ {
+			return evs[i].Payload
+		}
+	}
+	t.Fatalf("no %s event for %s", typ, id)
+	return nil
+}
+
+// F-0885 crit. 3: link marks an open pending promoted to a live feature
+// (candidate, approved, in_development); an implemented, done, rejected or
+// superseded one refuses, naming it and its state, with nothing written.
+func TestLinkPendingOnlyToLiveFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	closedStates := []domain.FeatureState{domain.StateImplemented, domain.StateDone, domain.StateRejected, domain.StateSuperseded}
+	for i, st := range closedStates {
+		seedFeatureInState(t, repoDir, fmt.Sprintf("F-%04d", 10+i), st)
+	}
+	p := mustPending(t, repoDir, projDir, "Débito a ligar", "", origin.ID)
+	before := backendHead(t, repoDir)
+	for i, st := range closedStates {
+		id := fmt.Sprintf("F-%04d", 10+i)
+		_, err := LinkPending(repoDir, projDir, p.ID, id)
+		if !errors.Is(err, ErrPendingTargetClosed) || !strings.Contains(err.Error(), id) || !strings.Contains(err.Error(), string(st)) {
+			t.Fatalf("link to %s (%s): err = %v, want ErrPendingTargetClosed naming both", id, st, err)
+		}
+	}
+	if _, err := LinkPending(repoDir, projDir, p.ID, "F-0999"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("link to an unknown feature: err = %v, want ErrNotFound", err)
+	}
+	if after := backendHead(t, repoDir); after != before {
+		t.Fatalf("refused links moved HEAD %s -> %s", before, after)
+	}
+	if got, _ := store.LoadPending(repoDir, p.ID); got.State != domain.PendingOpen || got.PromotedTo != "" {
+		t.Fatalf("after refusals %+v, want open and unlinked", got)
+	}
+
+	for i, st := range []domain.FeatureState{domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment} {
+		id := fmt.Sprintf("F-%04d", 20+i)
+		seedFeatureInState(t, repoDir, id, st)
+		q := mustPending(t, repoDir, projDir, fmt.Sprintf("Débito número %d ligado", i), "", origin.ID)
+		got, err := LinkPending(repoDir, projDir, strings.ToLower(q.ID), strings.ToLower(id))
+		if err != nil {
+			t.Fatalf("link to %s (%s): %v", id, st, err)
+		}
+		if got.State != domain.PendingPromoted || got.PromotedTo != id || got.ClosedAt == nil {
+			t.Fatalf("linked = %+v, want promoted to %s", got, id)
+		}
+		if pl := lastPayload(t, repoDir, q.ID, "pending.promoted"); pl["promoted_to"] != id || pl["via"] != "link" {
+			t.Fatalf("pending.promoted payload = %v, want promoted_to %s via link", pl, id)
+		}
+		paid, err := PendingsPaidBy(repoDir, id)
+		if err != nil || len(paid) != 1 || paid[0].ID != q.ID {
+			t.Fatalf("PendingsPaidBy(%s) = %+v, %v; want [%s]", id, paid, err, q.ID)
+		}
+	}
+	if _, err := LinkPending(repoDir, projDir, "P-0002", "F-0020"); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("link of an already promoted pending: err = %v, want ErrInvalidTransition", err)
+	}
+}
+
+// F-0885 crit. 4: unlink hands a pending promoted to a live feature back to
+// open, clears promoted_to and records pending.reopened with the feature; a
+// pending not promoted, or promoted to a closed feature, refuses. A promoted
+// pending is not resolved by hand: it resolves on the accept.
+func TestUnlinkPendingReopens(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	origin := pendingOrigin(t, repoDir, projDir, "Origem", nil, nil)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
+	p := mustPending(t, repoDir, projDir, "Débito ligado e desligado", "", origin.ID)
+	if _, err := LinkPending(repoDir, projDir, p.ID, "F-0010"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolvePending(repoDir, projDir, p.ID); !errors.Is(err, ErrPendingLinked) || !strings.Contains(err.Error(), "F-0010") {
+		t.Fatalf("resolve of a linked pending: err = %v, want ErrPendingLinked naming F-0010", err)
+	}
+	got, err := UnlinkPending(repoDir, projDir, p.ID)
+	if err != nil {
+		t.Fatalf("UnlinkPending: %v", err)
+	}
+	if got.State != domain.PendingOpen || got.PromotedTo != "" || got.ClosedAt != nil {
+		t.Fatalf("unlinked = %+v, want open, no promoted_to, no closed_at", got)
+	}
+	if stored, _ := store.LoadPending(repoDir, p.ID); stored.State != domain.PendingOpen || stored.PromotedTo != "" {
+		t.Fatalf("persisted = %+v, want open and unlinked", stored)
+	}
+	if pl := lastPayload(t, repoDir, p.ID, "pending.reopened"); pl["feature"] != "F-0010" {
+		t.Fatalf("pending.reopened payload = %v, want feature F-0010", pl)
+	}
+	if _, err := UnlinkPending(repoDir, projDir, p.ID); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("unlink of an open pending: err = %v, want ErrInvalidTransition", err)
+	}
+
+	seedFeatureInState(t, repoDir, "F-0011", domain.StateDone)
+	old := mustPending(t, repoDir, projDir, "Promovida antes da F-0885", "", origin.ID)
+	old.State, old.PromotedTo = domain.PendingPromoted, "F-0011"
+	if err := store.SavePending(repoDir, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed promoted "+old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UnlinkPending(repoDir, projDir, old.ID); !errors.Is(err, ErrPendingTargetClosed) || !strings.Contains(err.Error(), "F-0011") {
+		t.Fatalf("unlink from a done feature: err = %v, want ErrPendingTargetClosed naming F-0011", err)
 	}
 }

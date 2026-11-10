@@ -375,22 +375,17 @@ func markPromoted(repoDir, projDir string, ids []string, created string) ([]stor
 	var closed []string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		marked, closed = nil, nil
-		now := time.Now().UTC()
 		for _, id := range ids {
 			p, err := store.LoadPending(repoDir, id)
 			if err != nil {
 				return "", err
 			}
-			to, err := domain.TransitionPending(p.State, domain.ActionPromote)
-			if err != nil {
-				closed = append(closed, fmt.Sprintf("%s (%v)", id, err))
+			p, err = movePending(repoDir, p, domain.ActionPromote, created, map[string]string{"promoted_to": created})
+			if errors.Is(err, domain.ErrInvalidTransition) {
+				closed = append(closed, err.Error())
 				continue
 			}
-			p.State, p.Reason, p.PromotedTo, p.UpdatedAt, p.ClosedAt = to, "", created, now, &now
-			if err := store.SavePending(repoDir, p); err != nil {
-				return "", err
-			}
-			if err := store.AppendEvent(repoDir, domain.NewEvent(id, "pending.promoted", map[string]string{"promoted_to": created}, EventActor())); err != nil {
+			if err != nil {
 				return "", err
 			}
 			marked = append(marked, p)
@@ -421,6 +416,144 @@ func markPromoted(repoDir, projDir string, ids []string, created string) ([]stor
 			ErrPendingClosedConcurrently, created, strings.Join(closed, ", "), created, tail)
 	}
 	return marked, nil
+}
+
+// ErrPendingTargetClosed refuses linking a pending to, or unlinking it from, a
+// feature that is no longer live (F-0885): its lifecycle already decided the
+// debt's fate.
+var ErrPendingTargetClosed = errors.New("the feature is not live (candidate, approved or in_development)")
+
+// featureLive reports whether a feature can still pay a pending.
+func featureLive(s domain.FeatureState) bool {
+	return s == domain.StateCandidate || s == domain.StateApproved || s == domain.StateInDevelopment
+}
+
+// LinkPending points an open pending at the live feature that pays it (F-0885):
+// open -> promoted with promoted_to = featureID, the event carrying via=link.
+// From then on the pending follows that feature (movePaidPendings). An
+// implemented, done, rejected or superseded feature refuses with nothing
+// written.
+func LinkPending(repoDir, projDir, id, featureID string) (store.Pending, error) {
+	id, err := canonPendingID(id)
+	if err != nil {
+		return store.Pending{}, err
+	}
+	featureID = strings.ToUpper(strings.TrimSpace(featureID))
+	if !pendingOriginRx.MatchString(featureID) {
+		return store.Pending{}, fmt.Errorf("%q is not an F-/T-/E-NNNN id", featureID)
+	}
+	var p store.Pending
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		f, err := store.LoadFeature(repoDir, featureID)
+		if err != nil {
+			return "", err
+		}
+		if !featureLive(f.State) {
+			return "", fmt.Errorf("%w: %s is %s", ErrPendingTargetClosed, f.ID, f.State)
+		}
+		if p, err = store.LoadPending(repoDir, id); err != nil {
+			return "", err
+		}
+		if p, err = movePending(repoDir, p, domain.ActionPromote, f.ID, map[string]string{"promoted_to": f.ID, "via": "link"}); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: link %s -> %s", id, f.ID), nil
+	})
+	if err != nil {
+		return store.Pending{}, err
+	}
+	return p, nil
+}
+
+// UnlinkPending hands a pending promoted to a live feature back to open
+// (F-0885): promoted_to and closed_at cleared, pending.reopened carrying the
+// feature. A pending that is not promoted, or whose feature is no longer live,
+// refuses.
+func UnlinkPending(repoDir, projDir, id string) (store.Pending, error) {
+	id, err := canonPendingID(id)
+	if err != nil {
+		return store.Pending{}, err
+	}
+	var p store.Pending
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if p, err = store.LoadPending(repoDir, id); err != nil {
+			return "", err
+		}
+		if _, err := domain.TransitionPending(p.State, domain.ActionReopen); err != nil {
+			return "", fmt.Errorf("%s: %w", id, err)
+		}
+		f, err := store.LoadFeature(repoDir, p.PromotedTo)
+		if err != nil {
+			return "", err
+		}
+		if !featureLive(f.State) {
+			return "", fmt.Errorf("%w: %s is promoted to %s, which is %s", ErrPendingTargetClosed, id, f.ID, f.State)
+		}
+		if p, err = movePending(repoDir, p, domain.ActionReopen, "", map[string]string{"feature": f.ID, "via": "unlink"}); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: unlink %s from %s", id, f.ID), nil
+	})
+	if err != nil {
+		return store.Pending{}, err
+	}
+	return p, nil
+}
+
+// PendingsPaidBy lists the pendings promoted to featureID — the debts that
+// feature pays and that follow its lifecycle — in ascending id order.
+func PendingsPaidBy(repoDir, featureID string) ([]store.Pending, error) {
+	all, err := store.LoadAllPendings(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var paid []store.Pending
+	for _, p := range all {
+		if p.State == domain.PendingPromoted && p.PromotedTo == featureID {
+			paid = append(paid, p)
+		}
+	}
+	return paid, nil
+}
+
+// pendingEvents names the event each pending move appends.
+var pendingEvents = map[domain.Action]string{
+	domain.ActionPromote:  "pending.promoted",
+	domain.ActionResolve:  "pending.resolved",
+	domain.ActionReopen:   "pending.reopened",
+	domain.ActionTransfer: "pending.transferred",
+}
+
+// movePending applies action to p inside the caller's open backend critical
+// section (it never takes the lock itself, so a feature transition can move
+// the pendings it pays in its own commit): promote and transfer point it at
+// target, promote and resolve stamp closed_at, reopen clears the link and
+// closed_at. It saves the pending and appends the action's event with payload.
+func movePending(repoDir string, p store.Pending, action domain.Action, target string, payload map[string]string) (store.Pending, error) {
+	to, err := domain.TransitionPending(p.State, action)
+	if err != nil {
+		return p, fmt.Errorf("%s: %w", p.ID, err)
+	}
+	now := time.Now().UTC()
+	p.State, p.UpdatedAt = to, now
+	switch action {
+	case domain.ActionPromote:
+		p.PromotedTo, p.Reason, p.ClosedAt = target, "", &now
+	case domain.ActionTransfer:
+		p.PromotedTo = target
+	case domain.ActionReopen:
+		p.PromotedTo, p.ClosedAt = "", nil
+	case domain.ActionResolve:
+		p.ClosedAt = &now
+	}
+	if err := store.SavePending(repoDir, p); err != nil {
+		return p, err
+	}
+	if err := store.AppendEvent(repoDir, domain.NewEvent(p.ID, pendingEvents[action], payload, EventActor())); err != nil {
+		return p, err
+	}
+	return p, nil
 }
 
 // errNothingMarked aborts markPromoted's mutation when every pending was closed
