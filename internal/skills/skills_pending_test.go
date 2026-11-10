@@ -8,7 +8,8 @@ import (
 // TestCerneAuthoringDocumentsPendings pins F-0322 crit. 16: the canonical
 // authoring skill exposes the six pending verbs, the mandatory origin, the
 // instruction to register pendings when closing a feature, and that a pending
-// never blocks the lifecycle.
+// never blocks the lifecycle — plus F-0885's grouping, link/unlink and the
+// cycle a promoted pending follows with its feature.
 func TestCerneAuthoringDocumentsPendings(t *testing.T) {
 	c := All()[0].Content
 	for _, sub := range []string{
@@ -22,6 +23,13 @@ func TestCerneAuthoringDocumentsPendings(t *testing.T) {
 		"--from",
 		"when you close a feature",
 		"never blocks",
+		// F-0885: grouping, linking and the cycle that follows the feature.
+		"cerne pending link",
+		"cerne pending unlink",
+		"--title",
+		"## pays",
+		"accept",
+		"reopens",
 	} {
 		if !strings.Contains(c, sub) {
 			t.Errorf("skill missing %q", sub)
