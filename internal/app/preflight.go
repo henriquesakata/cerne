@@ -80,6 +80,13 @@ func validMRArg(a string) bool {
 	return store.ValidMRRef(proj, iid)
 }
 
+// checkableMR is an MR precondition the forge can answer: a "manual" result of
+// one means the forge did not answer (state unknown), not that the cerne
+// cannot verify it.
+func checkableMR(p Precondition) bool {
+	return p.Problem == "" && p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]) && store.NormMRState(p.Args[1]) != ""
+}
+
 // CheckPreconditions checks each precondition against the backend (and the
 // forge for MRs). Read-only. A kind the cerne cannot verify, and a forge that
 // cannot be reached, are "manual": never "met".
@@ -157,7 +164,7 @@ func CheckPreconditionsWith(repoDir string, pcs []Precondition, forge *Forge) []
 			} else {
 				r.Status, r.Detail = PrePending, p.Args[0]+" has no result written"
 			}
-		case p.Kind == "mr" && len(p.Args) == 2 && validMRArg(p.Args[0]) && store.NormMRState(p.Args[1]) != "":
+		case checkableMR(p):
 			proj, iid, _ := strings.Cut(p.Args[0], "!")
 			want := store.NormMRState(p.Args[1])
 			got, err := forge.state(proj, iid)
@@ -239,7 +246,15 @@ func RunPreflight(repoDir string, run store.Run, forge *Forge) (next string, res
 	if forge == nil {
 		forge = NewForge()
 	}
-	return next, CheckPreconditionsWith(repoDir, pcs, forge), true, nil
+	res = CheckPreconditionsWith(repoDir, pcs, forge)
+	// A manual precondition with no step matters before the run starts: once a
+	// step is ok, repeating it on every step only buries the rest (F-0886).
+	if slices.ContainsFunc(run.Steps, func(s string) bool { return runStepOK(run, s) }) {
+		res = slices.DeleteFunc(res, func(r PreResult) bool {
+			return r.Step == "" && r.Status == PreManual && !checkableMR(r.Precondition)
+		})
+	}
+	return next, res, true, nil
 }
 
 // OpenPreconditions is the subset of results that are not met.

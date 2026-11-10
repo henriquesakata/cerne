@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/rockt/cerne/internal/store"
 )
 
 // fakeGlab puts a glab on PATH that records its argv and answers merged.
@@ -198,5 +200,53 @@ func TestForgeCutOnlyWhenTheCeilingEndsTheCall(t *testing.T) {
 	}
 	if res[0].Status != PreManual || !strings.Contains(res[0].Detail, "forge down") {
 		t.Fatalf("a failing forge is manual and says why: %+v", res[0])
+	}
+}
+
+// F-0886 crit. 2 (P-0017): a manual precondition with no step warns a run
+// only before its first step is ok; the preflight of the runbook lists it
+// always, as manual. A global MR the forge did not answer is unknown state,
+// not a condition the cerne cannot verify: it keeps warning.
+func TestRunPreflightShowsGlobalManualOnlyBeforeTheFirstStep(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := store.SaveRunbook(repoDir, store.Runbook{ID: "RB-0001", Title: "Fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	body := "# Fixture\n\n## Passos\n\n- S1 prepara\n- S2 aplica\n\n" +
+		"Pré-condição: janela combinada com o time\nPré-condição: mr g/p!7 merged\n"
+	if err := os.MkdirAll(filepath.Join(repoDir, "content", "runbooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "content", "runbooks", "RB-0001.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := MRState
+	MRState = func(context.Context, string, string) (string, error) { return "", errors.New("forge down") }
+	t.Cleanup(func() { MRState = old })
+	has := func(res []PreResult, text string) bool {
+		for _, r := range res {
+			if strings.Contains(r.Text, text) {
+				return r.Status == PreManual
+			}
+		}
+		return false
+	}
+
+	run := store.Run{ID: "W-0001", Runbook: "RB-0001", Steps: []string{"S1", "S2"}}
+	_, res, ok, err := RunPreflight(repoDir, run, nil)
+	if err != nil || !ok || !has(res, "janela combinada") || !has(res, "g/p!7") {
+		t.Fatalf("before the first step both globals warn, as manual: %+v %v", res, err)
+	}
+	run.Entries = []store.RunEntry{{Seq: 1, Step: "S1", State: RunOK}}
+	next, res, ok, err := RunPreflight(repoDir, run, nil)
+	if err != nil || !ok || next != "S2" || has(res, "janela combinada") {
+		t.Fatalf("with S1 ok the global manual leaves the warning: next=%s %+v %v", next, res, err)
+	}
+	if !has(res, "g/p!7") {
+		t.Fatalf("an unanswered global MR keeps warning: %+v", res)
+	}
+	all, _, err := Preflight(repoDir, "RB-0001", "")
+	if err != nil || !has(all, "janela combinada") {
+		t.Fatalf("the runbook's preflight lists the global manual always: %+v %v", all, err)
 	}
 }
