@@ -15,6 +15,7 @@ import (
 	"gitlab.com/rockt/cerne/internal/app"
 	"gitlab.com/rockt/cerne/internal/domain"
 	"gitlab.com/rockt/cerne/internal/gitback"
+	"gitlab.com/rockt/cerne/internal/lint"
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
@@ -410,5 +411,27 @@ func TestAcceptQueueEmptyJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"queue": []`) || !strings.Contains(stdout, `"accept_commands": []`) {
 		t.Fatalf("empty queue json = %s", stdout)
+	}
+}
+
+// r2: the queue and the lint read the same record: "derrota" in the queue iff
+// the lint counts a derrota. "VEREDITO: A" (the blind judge's letter) is no
+// outcome word for either: the queue says "não informado", the lint counts none.
+func TestAcceptQueueAgreesWithLintOnDerrota(t *testing.T) {
+	_, repoDir := acceptFixture(t)
+	for name, body := range map[string]string{
+		"derrota":   "## Gauntlet\n\nBarra: x.\n\nRodada 1 — derrota: \"a\"\n",
+		"vitória":   "## Gauntlet\n\nBarra: x.\n\nRodada 1 — vitória: \"a\"\n",
+		"line":      "## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n",
+		"letter":    "## Gauntlet\n\nBarra: x.\n\nVEREDITO: A\n",
+		"commented": "<!--\n## Gauntlet\n\nRodada 1 — derrota: \"a\"\n-->\n",
+	} {
+		_, derrotas := lint.GauntletRounds([]byte(body))
+		if got := queueRow(t, repoDir, body).Gauntlet == "derrota"; got != (derrotas > 0) {
+			t.Errorf("%s: queue derrota %v, lint derrotas %d", name, got, derrotas)
+		}
+	}
+	if g := queueRow(t, repoDir, "## Gauntlet\n\nBarra: x.\n\nVEREDITO: A\n").Gauntlet; g != app.NotInformed {
+		t.Errorf("letter verdict = %q, want %q", g, app.NotInformed)
 	}
 }
