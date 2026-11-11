@@ -16,6 +16,12 @@ import (
 	"gitlab.com/rockt/cerne/internal/store"
 )
 
+// ErrCacheBackendMismatch: the project id's cache already holds a clone of a
+// different backend — another project with the same name, or a leftover from
+// a failed init. init refuses rather than deleting it (it may be a live
+// project's clone with unpublished state) (F-0335).
+var ErrCacheBackendMismatch = errors.New("cached backend clone points at a different backend")
+
 func newInitCmd() *cobra.Command {
 	var (
 		name    string
@@ -49,7 +55,15 @@ func newInitCmd() *cobra.Command {
 	return cmd
 }
 
-func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []string) error {
+func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []string) (err error) {
+	if gitback.IsLocalPath(backend) {
+		// Absolute before anything records it: the URL is stored verbatim as
+		// the clone's origin, and later git runs inside the cache, where a
+		// relative path points elsewhere (F-0335).
+		if backend, err = filepath.Abs(backend); err != nil {
+			return err
+		}
+	}
 	if _, foundDir, err := project.LoadConfig(targetDir); err == nil {
 		return fmt.Errorf("project already initialized: .cernerc found in %s", foundDir)
 	} else if !errors.Is(err, project.ErrNoProject) {
@@ -66,7 +80,26 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		return err
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
+	// created marks a clone this init made: until the project is configured
+	// it owns it, and a failure removes it so the retry clones fresh instead
+	// of refreshing a dead origin or "joining" an unpublished layout (F-0335).
+	created := false
+	defer func() {
+		if created && err != nil {
+			_ = os.RemoveAll(repoDir)
+		}
+	}()
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil {
+		// The cache is keyed by project id alone: a clone of another backend
+		// is another project with the same name (or a pre-F-0335 leftover).
+		cached, err := gitback.OriginURL(repoDir)
+		if err != nil {
+			return err
+		}
+		if cached != backend {
+			return fmt.Errorf("%w: %s tracks %s, not %s (another project named %q, or a leftover from a failed init): delete that directory or pick a different --name",
+				ErrCacheBackendMismatch, repoDir, cached, backend, projectID)
+		}
 		// Cache already holds a clone of this project's backend: refresh it.
 		// SafePull, not Pull — the clone is shared with concurrent cerne
 		// processes (a ui pull loop, a synthesis in flight), and a raw Pull on
@@ -81,6 +114,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 			return err
 		}
+		created = true
 		if err := gitback.Clone(backend, repoDir); err != nil {
 			return err
 		}
@@ -108,6 +142,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if err := project.SaveConfig(targetDir, project.Config{ProjectID: projectID, Backend: backend}); err != nil {
 		return err
 	}
+	created = false // the configured project owns the clone now
 	lock := project.Lock{Version: 1, Backend: backend, Snapshot: head}
 	if err := project.SaveLock(targetDir, lock); err != nil {
 		return err

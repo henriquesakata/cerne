@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -258,5 +260,106 @@ func TestInitRejoinDirtyCacheCloneDoesNotPoison(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(notes); string(got) != "notes: synthesis in flight\n" {
 		t.Fatalf("init clobbered the uncommitted write: notes.md = %q", got)
+	}
+}
+
+// TestInitRelativeLocalBackend pins F-0335 criterion 1: a relative local
+// backend is resolved against the cwd before cloning. Stored verbatim, it
+// broke the layout push — git runs inside the cached clone, where the
+// relative path points elsewhere.
+func TestInitRelativeLocalBackend(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
+	parent := t.TempDir()
+	if err := gitback.InitBare(filepath.Join(parent, "origin.git")); err != nil {
+		t.Fatalf("InitBare: %v", err)
+	}
+	projDir := filepath.Join(parent, "proj")
+	if err := os.Mkdir(projDir, 0o755); err != nil {
+		t.Fatalf("mkdir proj: %v", err)
+	}
+	t.Chdir(projDir)
+
+	out, err := execInit(t, "--name", "demo", "--backend", "../origin.git", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("init with a relative backend: %v\noutput: %s", err, out)
+	}
+	want, err := filepath.Abs("../origin.git")
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Backend != want {
+		t.Fatalf(".cernerc backend = %q, want %q", cfg.Backend, want)
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if lock.Backend != want {
+		t.Fatalf("docs.lock backend = %q, want %q", lock.Backend, want)
+	}
+	if got, err := gitback.OriginURL(filepath.Join(cacheRoot, "demo", "repo")); err != nil || got != want {
+		t.Fatalf("cached clone origin = %q (err %v), want %q", got, err, want)
+	}
+}
+
+// TestInitFailureRemovesFreshClone pins F-0335 criterion 2: an init that
+// fails after cloning removes the clone it created, so the retry starts from
+// a fresh clone instead of refreshing the dead one (or "joining" a layout that
+// was committed locally but never published).
+func TestInitFailureRemovesFreshClone(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
+	// A non-bare empty repo clones fine but refuses the layout push
+	// (receive.denyCurrentBranch): a failure after the clone exists.
+	nonBare := filepath.Join(t.TempDir(), "nonbare")
+	if out, err := exec.Command("git", "init", "-q", "-b", "main", nonBare).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	projDir := t.TempDir()
+	if out, err := execInit(t, "--name", "demo", "--backend", nonBare, "--dir", projDir); err == nil {
+		t.Fatalf("init against a push-refusing backend must fail\noutput: %s", out)
+	}
+	repoDir := filepath.Join(cacheRoot, "demo", "repo")
+	if _, err := os.Stat(repoDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed init left its clone at %s (stat err: %v)", repoDir, err)
+	}
+
+	origin := newOrigin(t)
+	if out, err := execInit(t, "--name", "demo", "--backend", origin, "--dir", projDir); err != nil {
+		t.Fatalf("retry after a failed init: %v\noutput: %s", err, out)
+	}
+	if got, err := gitback.OriginURL(repoDir); err != nil || got != origin {
+		t.Fatalf("retry clone origin = %q (err %v), want %q", got, err, origin)
+	}
+}
+
+// TestInitCachedCloneOtherBackendRefuses pins F-0335 criterion 3: the cache
+// is keyed by project id alone, so a second project with the same name and
+// another backend used to "join" the first one's backend silently. Now it is
+// refused, and the existing clone — possibly a live project's — is left alone.
+func TestInitCachedCloneOtherBackendRefuses(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
+	originA := newOrigin(t)
+	if out, err := execInit(t, "--name", "demo", "--backend", originA, "--dir", t.TempDir()); err != nil {
+		t.Fatalf("first init: %v\noutput: %s", err, out)
+	}
+
+	originB := newOrigin(t)
+	dir2 := t.TempDir()
+	out, err := execInit(t, "--name", "demo", "--backend", originB, "--dir", dir2)
+	if !errors.Is(err, ErrCacheBackendMismatch) {
+		t.Fatalf("init over a cached clone of another backend: err = %v, want ErrCacheBackendMismatch\noutput: %s", err, out)
+	}
+	if _, _, err := project.LoadConfig(dir2); !errors.Is(err, project.ErrNoProject) {
+		t.Fatalf("refused init wrote .cernerc in %s (LoadConfig err: %v)", dir2, err)
+	}
+	if got, err := gitback.OriginURL(filepath.Join(cacheRoot, "demo", "repo")); err != nil || got != originA {
+		t.Fatalf("cached clone origin = %q (err %v), want it untouched at %q", got, err, originA)
 	}
 }
