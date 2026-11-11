@@ -351,3 +351,41 @@ func TestLastCommitTimesUnborn(t *testing.T) {
 		t.Fatalf("LastCommitTimes on unborn HEAD err = %v, want ErrNoCommits", err)
 	}
 }
+
+// IsLocalPath separates filesystem backends (which init makes absolute) from
+// remote URLs (which pass through untouched) — F-0335 criterion 4.
+func TestIsLocalPath(t *testing.T) {
+	cases := []struct {
+		url  string
+		want bool
+	}{
+		{"git@gitlab.com:rockt/x.git", false},
+		{"ssh://git@h/x", false},
+		{"https://h/x.git", false},
+		{"http://h/x.git", false},
+		{"file:///tmp/x.git", false},
+		{"../x.git", true},
+		{"./x.git", true},
+		{"x.git", true},
+		{"/abs/x.git", true},
+		{`C:\local\x.git`, true},
+	}
+	for _, c := range cases {
+		if got := IsLocalPath(c.url); got != c.want {
+			t.Errorf("IsLocalPath(%q) = %v, want %v", c.url, got, c.want)
+		}
+	}
+}
+
+// OriginURL reports the origin a working copy tracks, so init can tell a
+// cached clone of another backend from its own (F-0335 criterion 3).
+func TestOriginURL(t *testing.T) {
+	origin, clone1, _ := fixture(t)
+	got, err := OriginURL(clone1)
+	if err != nil {
+		t.Fatalf("OriginURL: %v", err)
+	}
+	if got != origin {
+		t.Fatalf("OriginURL = %q, want %q", got, origin)
+	}
+}
