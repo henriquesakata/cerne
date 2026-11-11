@@ -1,36 +1,48 @@
-# Instalar o cerne
+# Installing cerne
 
-O cerne é um único executável, sem dependências. Baixe o arquivo do seu sistema, coloque no `PATH` e pronto.
+cerne is a single executable with no dependencies. Download the file for your system, put it on your `PATH`, and you are done.
 
-## 1. Qual arquivo baixar
+## 1. Which file to download
 
-| Sistema | Arquivo |
+Binaries are published on the [Releases page](https://github.com/henriquesakata/cerne/releases), with the version in the name (e.g. `cerne_v0.5.0_darwin_arm64`), next to a `SHA256SUMS` file.
+
+| System | File |
 |---|---|
-| Mac com chip Apple (M1, M2, M3…) | `darwin_arm64` |
-| Mac com Intel | `darwin_amd64` |
-| Windows | `windows_amd64` |
-| Linux (PC/servidor comum) | `linux_amd64` |
+| Mac with Apple silicon (M1, M2, M3…) | `darwin_arm64` |
+| Mac with Intel | `darwin_amd64` |
+| Windows | `windows_amd64.exe` |
+| Linux (regular PC/server) | `linux_amd64` |
 | Linux ARM (Raspberry Pi, Graviton…) | `linux_arm64` |
 
-Na dúvida no Mac/Linux, rode `uname -m` no terminal: `arm64`/`aarch64` → arm64; `x86_64` → amd64.
+Not sure on Mac/Linux? Run `uname -m`: `arm64`/`aarch64` → arm64; `x86_64` → amd64.
 
-Se recebeu um `.zip`, ele traz o executável já com o nome `cerne` (ou `cerne.exe`). Se baixou direto da página de Release, o arquivo tem a versão no nome (ex.: `cerne_v0.4.0_darwin_arm64`) — renomeie para `cerne` (ou `cerne.exe`).
+Rename the downloaded file to `cerne` (or `cerne.exe` on Windows).
 
-## 2. Instalar
+### With Go instead
+
+If you have Go installed, you can build it yourself:
+
+```bash
+go install github.com/henriquesakata/cerne/cmd/cerne@latest
+```
+
+A binary built this way reports its version as `dev`; release binaries carry the tag.
+
+## 2. Install
 
 ### macOS
 
-No terminal, na pasta onde está o arquivo:
+In the terminal, in the folder that holds the file:
 
 ```bash
-xattr -c cerne          # remove a quarentena do download (senão o macOS bloqueia)
+xattr -c cerne          # remove the download quarantine (otherwise macOS blocks it)
 chmod +x cerne
 sudo mkdir -p /usr/local/bin
 sudo mv cerne /usr/local/bin/
 cerne --version
 ```
 
-Se aparecer *"cerne não pode ser aberto porque a Apple não pode verificá-lo"*, faltou o `xattr -c`: rode `sudo xattr -c /usr/local/bin/cerne`.
+If you see *"cerne cannot be opened because Apple cannot check it"*, the `xattr -c` was skipped: run `sudo xattr -c /usr/local/bin/cerne`.
 
 ### Linux
 
@@ -42,7 +54,7 @@ cerne --version
 
 ### Windows (PowerShell)
 
-Na pasta onde está o `cerne.exe`:
+In the folder that holds `cerne.exe`:
 
 ```powershell
 Unblock-File .\cerne.exe
@@ -52,41 +64,46 @@ Move-Item .\cerne.exe $dir -Force
 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$dir", "User")
 ```
 
-Feche e abra o terminal, depois `cerne --version`. Se o Windows mostrar *"O Windows protegeu o computador"*, clique em **Mais informações → Executar assim mesmo**.
+Close and reopen the terminal, then run `cerne --version`. If Windows shows *"Windows protected your PC"*, click **More info → Run anyway**.
 
-### Atualizar
+### Updating
 
-Mesmo processo: substitua o executável antigo pelo novo.
+Same process: replace the old executable with the new one.
 
-## 3. O que você precisa ter
+## 3. What you need
 
-- **git** — recomendado. Sem ele o cerne funciona, mas bem mais devagar.
-- **Um repositório git vazio para ser o *backend*** — é onde a documentação mora (JSON + markdown + histórico de eventos). Crie um repo privado vazio no GitHub/GitLab. Autenticação:
-  - **SSH** (`git@github.com:voce/meu-projeto-docs.git`): usa suas chaves SSH (`~/.ssh/id_ed25519`, `id_rsa` ou `id_ecdsa`). Confirme que `ssh -T git@github.com` funciona. Chave com senha: carregue antes no agente com `ssh-add`.
-  - **HTTPS** (`https://…`): exporte um token em `CERNE_GIT_TOKEN` (e o usuário em `CERNE_GIT_USER`, se o host exigir).
-  - **Só testando?** Uma pasta local serve: `git init --bare ~/meu-projeto-docs.git`.
-- **Claude Code** (opcional, recomendado) — o cerne foi feito para trabalhar junto com um agente de IA. O `init` já instala as skills e hooks que ensinam o agente a usar o cerne.
+- **git**: recommended. Without it cerne still works, falling back to a built-in Git implementation that is much slower.
+- **An empty git repository to be the *backend***: this is where the documentation lives (JSON + markdown + event history). Create an empty private repo on GitHub/GitLab. Authentication:
+  - **SSH** (`git@github.com:you/my-project-docs.git`): uses your SSH agent, or your key files (`~/.ssh/id_ed25519`, `id_rsa` or `id_ecdsa`). Check that `ssh -T git@github.com` works. For a passphrase-protected key, load it into the agent first with `ssh-add`.
+  - **HTTPS** (`https://…`): export a token in `CERNE_GIT_TOKEN` (and the user in `CERNE_GIT_USER`, if the host requires it).
+  - **Just trying it out?** A local folder works: `git init --bare ~/my-project-docs.git`.
+- **Claude Code** (optional, recommended): cerne is built to work alongside an AI agent. `init` installs the skills and hooks that teach the agent to use cerne.
 
-## 4. Começar
+## 4. Getting started
 
-Dentro do repositório do seu projeto:
+Inside your project's repository:
 
 ```bash
-cerne init --backend git@github.com:voce/meu-projeto-docs.git --name meu-projeto
+cerne init --backend git@github.com:you/my-project-docs.git --name my-project
 echo ".docs/" >> .gitignore
 git add .cernerc docs.lock .gitattributes .gitignore
-git commit -m "chore: adota cerne"
+git commit -m "chore: adopt cerne"
 ```
 
-O dia a dia:
+Besides those files, `init` also writes:
+
+- `.claude/` for Claude Code: the `cerne-authoring` and `cerne-self-learning` skills, hooks, and `settings.json`. This repository commits `.claude/settings.json` and `.claude/hooks/` and ignores `.claude/skills/`, which `cerne skill install` recreates.
+- Two git hooks in `.git/hooks/`: `prepare-commit-msg` and `commit-msg`. The latter refuses a commit that cites a feature id (`F-NNNN`) still in candidate or approved state, or already closed.
+
+Day to day:
 
 ```bash
-cerne feature new "Login com Google" --context "Usuários pediram login social."
-cerne pull          # materializa o estado atual em .docs/ (é o que o agente lê)
-# edite .docs/current/features/F-0001-.../spec.md
-cerne push          # envia suas edições de volta ao backend
-cerne status        # features por estado (candidata → aprovada → em desenvolvimento → implementada)
-cerne ui            # painel web em http://localhost:7717
+cerne feature new "Sign in with Google" --context "Users asked for social login."
+cerne pull          # materializes the current state into .docs/ (what the agent reads)
+# edit .docs/current/features/F-0001-.../spec.md
+cerne push          # sends your edits back to the backend
+cerne status        # features by state (candidate → approved → in development → implemented → done)
+cerne ui            # web dashboard at http://localhost:7717
 ```
 
-Os avanços de estado (`cerne feature approve`, `start`, `complete`) têm portões: cada um exige o documento da etapa preenchido. Com o Claude Code, peça ao agente — a skill `cerne-authoring` instalada pelo `init` guia o fluxo inteiro. Todos os comandos: `cerne --help`.
+State transitions are gated. `cerne feature approve` needs a real spec, including its `Barra:` line (the bar the delivery is measured against); `start` needs a real plan; `complete` needs a real result. `approve` and `accept` (implemented → done) are human acts by default. With Claude Code, ask the agent: the `cerne-authoring` skill installed by `init` drives the whole flow. All commands: `cerne --help`.
