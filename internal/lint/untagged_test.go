@@ -92,3 +92,33 @@ func TestRunFlagsUntaggedLive(t *testing.T) {
 		t.Fatalf("untagged-live findings = %+v, want exactly one for N-0001", untagged)
 	}
 }
+
+// TestUntaggedAndTaxonomyPredicates (F-0336 crit. 4): the two predicates the
+// untagged-live and capability-orphan rules run are exported, so the approve
+// readiness asks the same questions instead of copying the rule.
+func TestUntaggedAndTaxonomyPredicates(t *testing.T) {
+	for name, tc := range map[string]struct {
+		facets, components []string
+		want               bool
+	}{
+		"no axis":        {nil, nil, true},
+		"facet only":     {[]string{"code"}, nil, false},
+		"component only": {nil, []string{"cli"}, false},
+	} {
+		if got := Untagged(tc.facets, tc.components); got != tc.want {
+			t.Errorf("Untagged %s = %v, want %v", name, got, tc.want)
+		}
+	}
+	for name, tc := range map[string]struct {
+		caps []store.Capability
+		want bool
+	}{
+		"no capability":     {nil, false},
+		"only retired node": {[]store.Capability{{ID: "C-0001", State: domain.CapabilitySuperseded}}, false},
+		"one active node":   {[]store.Capability{{ID: "C-0001", State: domain.CapabilitySuperseded}, {ID: "C-0002", State: domain.CapabilityActive}}, true},
+	} {
+		if got := HasCapabilityTaxonomy(tc.caps); got != tc.want {
+			t.Errorf("HasCapabilityTaxonomy %s = %v, want %v", name, got, tc.want)
+		}
+	}
+}

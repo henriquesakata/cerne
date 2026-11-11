@@ -397,14 +397,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 // invisible on the "by capability" mindmap — advisory to keep curation going.
 // A project with no capabilities never opted in, so the rule stays silent.
 func capabilityOrphanFindings(features []store.Feature, capabilities []store.Capability) []Finding {
-	hasActive := false
-	for _, c := range capabilities {
-		if c.State == domain.CapabilityActive {
-			hasActive = true
-			break
-		}
-	}
-	if !hasActive {
+	if !HasCapabilityTaxonomy(capabilities) {
 		return nil
 	}
 	var out []Finding
@@ -420,6 +413,18 @@ func capabilityOrphanFindings(features []store.Feature, capabilities []store.Cap
 		})
 	}
 	return out
+}
+
+// HasCapabilityTaxonomy reports whether the project curates a capability
+// taxonomy — at least one active node, the F-0188 opt-in. The approve
+// readiness asks it too (F-0336), so a project without one is never held to it.
+func HasCapabilityTaxonomy(capabilities []store.Capability) bool {
+	for _, c := range capabilities {
+		if c.State == domain.CapabilityActive {
+			return true
+		}
+	}
+	return false
 }
 
 // Sort orders findings canonically in place: by Rule (RuleOrder), then File,
@@ -1608,13 +1613,10 @@ func staleNoteFindings(features []store.Feature, decisions []store.Decision, not
 // backlog is deliberately spared so the rule never dumps the whole done-history
 // as untagged debt.
 func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, references []store.Reference, notes []store.Note, runbooks []store.Runbook) []Finding {
-	untagged := func(facets, components []string) bool {
-		return len(facets) == 0 && len(components) == 0
-	}
 	var findings []Finding
 	for _, f := range features {
 		live := f.State == domain.StateCandidate || f.State == domain.StateApproved || f.State == domain.StateInDevelopment
-		if live && untagged(f.Facets, f.Components) {
+		if live && Untagged(f.Facets, f.Components) {
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: f.ID,
@@ -1623,7 +1625,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 		}
 	}
 	for _, nt := range notes {
-		if nt.State == domain.NoteActive && untagged(nt.Facets, nt.Components) {
+		if nt.State == domain.NoteActive && Untagged(nt.Facets, nt.Components) {
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: nt.ID,
@@ -1632,7 +1634,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 		}
 	}
 	for _, d := range decisions {
-		if d.State == domain.DecisionActive && untagged(d.Facets, d.Components) {
+		if d.State == domain.DecisionActive && Untagged(d.Facets, d.Components) {
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: d.ID,
@@ -1641,7 +1643,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 		}
 	}
 	for _, r := range references {
-		if r.State == domain.ReferenceCurrent && untagged(r.Facets, r.Components) {
+		if r.State == domain.ReferenceCurrent && Untagged(r.Facets, r.Components) {
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: r.ID,
@@ -1650,7 +1652,7 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 		}
 	}
 	for _, rb := range runbooks {
-		if rb.State == domain.RunbookActive && untagged(rb.Facets, rb.Components) {
+		if rb.State == domain.RunbookActive && Untagged(rb.Facets, rb.Components) {
 			findings = append(findings, Finding{
 				Rule:   RuleUntaggedLive,
 				Entity: rb.ID,
@@ -1659,6 +1661,12 @@ func untaggedLiveFindings(features []store.Feature, decisions []store.Decision, 
 		}
 	}
 	return findings
+}
+
+// Untagged reports whether an entity carries no tag on either axis (D-0002):
+// the untagged-live predicate, shared with the approve readiness (F-0336).
+func Untagged(facets, components []string) bool {
+	return len(facets) == 0 && len(components) == 0
 }
 
 // gateFindings enforces the entity-state document invariants: approved and
