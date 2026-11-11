@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // F-0873 r1: an active run that stopped (last entry PARE) or finished (every

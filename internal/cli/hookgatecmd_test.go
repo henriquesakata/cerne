@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/cost"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/room"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/room"
 )
 
 // execCerneStdin runs the CLI with args feeding stdin — the hook plumbing

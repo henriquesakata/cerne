@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/spectmpl"
-	"gitlab.com/rockt/cerne/internal/store"
-	"gitlab.com/rockt/cerne/internal/verbs"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
+	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
 // F-0203: epics (E-) and tasks (T-) reuse the feature entity — same lifecycle,

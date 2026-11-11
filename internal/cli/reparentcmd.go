@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 func newFeatureReparentCmd(dir *string) *cobra.Command {

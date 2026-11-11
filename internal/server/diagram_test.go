@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // fakeDiagramProvider stands in for the LLM HTTP API: it records the prompt and

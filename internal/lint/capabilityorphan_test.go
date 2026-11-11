@@ -3,8 +3,8 @@ package lint
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestCapabilityOrphanFindings pins F-0188 criterion 7: once the project has

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // TestCorrectionTable pins the one table that says how a feature document is

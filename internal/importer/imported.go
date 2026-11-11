@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 )
 
 // ImportedSources returns the set of imported_from sources already present in

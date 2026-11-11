@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // mkTaggedDecision: an active decision with the given tags (helper for retag tests).

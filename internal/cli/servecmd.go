@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/server"
+	"github.com/henriquesakata/cerne/internal/server"
 )
 
 func newServeCmd() *cobra.Command {

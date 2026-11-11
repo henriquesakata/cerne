@@ -8,7 +8,7 @@ import "regexp"
 // Version defaults to "dev" for local builds and is stamped at release time
 // via:
 //
-//	-ldflags "-X gitlab.com/rockt/cerne/internal/version.Version=<tag>"
+//	-ldflags "-X github.com/henriquesakata/cerne/internal/version.Version=<tag>"
 var Version = "dev"
 
 var shortRe = regexp.MustCompile(`^v?(\d+\.\d+)`)

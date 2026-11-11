@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/llm"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // chatTitleTimeout bounds the one-shot title call (F-0310). A var, not a

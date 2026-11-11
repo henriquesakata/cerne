@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/classify"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/classify"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 const bom = "\xef\xbb\xbf"

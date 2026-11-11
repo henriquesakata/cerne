@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // execCerneSplit runs the CLI with stdout and stderr apart, like a shell

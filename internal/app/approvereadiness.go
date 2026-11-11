@@ -6,10 +6,10 @@ import (
 	"io/fs"
 	"os"
 
-	"gitlab.com/rockt/cerne/internal/clarify"
-	"gitlab.com/rockt/cerne/internal/doccheck"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/clarify"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // Approve impediment codes (F-0308).

@@ -3,7 +3,7 @@ package lint
 import (
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/clarify"
+	"github.com/henriquesakata/cerne/internal/clarify"
 )
 
 // clarificationFindings flags every open [ESCLARECER] marker in an authored

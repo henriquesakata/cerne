@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // F-0200 makes SafePull skip its fetch under a fresh sync mark, so every read

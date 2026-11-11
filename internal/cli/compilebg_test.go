@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/compile"
+	"github.com/henriquesakata/cerne/internal/compile"
 )
 
 // backdateLock ages the lock file by d, standing in for a holder that has not

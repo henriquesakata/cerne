@@ -10,7 +10,7 @@ import (
 
 	git "github.com/go-git/go-git/v5"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // TestDriftAutoGoldenPath exercises F-0115 end to end (apply-then-notify,

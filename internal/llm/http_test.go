@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/models"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // TestHTTPProviderComplete drives the provider against an httptest server and

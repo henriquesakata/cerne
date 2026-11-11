@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
-	"gitlab.com/rockt/cerne/internal/wiki"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/wiki"
 )
 
 func seedBackend(t *testing.T, modules ...string) string {

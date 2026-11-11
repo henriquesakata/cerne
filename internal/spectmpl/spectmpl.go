@@ -13,7 +13,7 @@ package spectmpl
 import (
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/lang"
+	"github.com/henriquesakata/cerne/internal/lang"
 )
 
 // Sections are the canonical spec sections, in template order.

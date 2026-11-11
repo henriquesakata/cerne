@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func addWork(t *testing.T, backendDir, id, title, actor string, state domain.WorkState, createdAt time.Time) {

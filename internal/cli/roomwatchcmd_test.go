@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/room"
+	"github.com/henriquesakata/cerne/internal/room"
 )
 
 func TestRoomWatchRequiresSession(t *testing.T) {

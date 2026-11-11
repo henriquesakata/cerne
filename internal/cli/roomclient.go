@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/room"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/room"
 )
 
 // errRoomTransient marks a roomClient error as a connection-level failure

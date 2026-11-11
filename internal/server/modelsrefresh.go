@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/models"
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 var (

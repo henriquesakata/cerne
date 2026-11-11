@@ -13,9 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/llm"
-	"gitlab.com/rockt/cerne/internal/verbs"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
 // runVerb is a test seam over verbs.Run: the package's test binary is not

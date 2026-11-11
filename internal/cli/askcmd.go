@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/ask"
-	"gitlab.com/rockt/cerne/internal/index"
-	"gitlab.com/rockt/cerne/internal/llm"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/ask"
+	"github.com/henriquesakata/cerne/internal/index"
+	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // askOpts groups the ask flags that shape retrieval and output, so runAsk keeps

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/compile"
+	"github.com/henriquesakata/cerne/internal/compile"
 )
 
 // TestIdeasLeaveFunnelOutputsUnchanged (F-0312 crit. 2 and 3): ideas are raw

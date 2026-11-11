@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func duplicateLiveFindings(t *testing.T, repoDir string) []lint.Finding {

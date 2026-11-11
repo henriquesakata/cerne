@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/harness"
-	"gitlab.com/rockt/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/harness"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // cerne harness --json returns the same inventory shape the endpoint serves

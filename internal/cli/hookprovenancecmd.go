@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // Provenance reminder plumbing (F-0103, reworked by F-0172). The shell asset

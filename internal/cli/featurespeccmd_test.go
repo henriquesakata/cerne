@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // specBody is the revised spec used across the feature-spec tests.

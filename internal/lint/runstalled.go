@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // runStalledFindings flags an active run (F-0873) that stopped on a PARE or has

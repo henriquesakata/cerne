@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrInvalidPlan is the sentinel for an agent plan that does not satisfy the

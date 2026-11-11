@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // ErrNotFound is the sentinel for an entity file missing from the backend.

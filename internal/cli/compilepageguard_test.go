@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // agentReport is what F-0287 found stamped into content/wiki/project.md: the

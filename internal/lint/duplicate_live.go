@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/dupmatch"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/dupmatch"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // dupItem is one live entity to compare: its id and the text the type's

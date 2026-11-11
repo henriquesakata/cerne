@@ -15,13 +15,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/compile"
-	"gitlab.com/rockt/cerne/internal/doccheck"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/llm"
-	"gitlab.com/rockt/cerne/internal/telemetry"
-	"gitlab.com/rockt/cerne/internal/wiki"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/compile"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/wiki"
 )
 
 func newCompileCmd() *cobra.Command {

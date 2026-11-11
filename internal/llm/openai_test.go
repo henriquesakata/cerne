@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 var _ ToolCaller = (*openaiProvider)(nil)

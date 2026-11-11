@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // F-0324: RetireReference moves a current reference to obsolete, records the

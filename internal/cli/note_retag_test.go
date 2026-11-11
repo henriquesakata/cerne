@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestNoteRetagSetsTags: retag sets both axes on an existing note.

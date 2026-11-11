@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/models"
 )
 
 // TestConfigDirIsGlobal: criterion 4 — every project resolves the same

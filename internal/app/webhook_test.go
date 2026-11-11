@@ -6,10 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/notify"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/notify"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // withWebhook writes a .cernerc into projDir pointing [webhook] at url.

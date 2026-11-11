@@ -3,7 +3,7 @@ package store
 import (
 	"sort"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // ChildrenByParent groups features by their Parent ID. Features without a

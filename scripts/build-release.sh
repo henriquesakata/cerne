@@ -10,7 +10,7 @@
 set -euo pipefail
 
 VERSION="${1:-$(git describe --tags --always 2>/dev/null || echo dev)}"
-LDFLAGS="-s -w -X gitlab.com/rockt/cerne/internal/version.Version=${VERSION}"
+LDFLAGS="-s -w -X github.com/henriquesakata/cerne/internal/version.Version=${VERSION}"
 OUT="dist"
 
 # Matrix: os/arch pairs.

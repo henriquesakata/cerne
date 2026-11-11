@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/app"
 )
 
 // bindFromBash feeds the bind-work hook one Bash call and returns the W- the

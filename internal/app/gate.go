@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // ErrHumanGate is the sentinel for a lifecycle gate reserved to humans

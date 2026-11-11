@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/dectmpl"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/plantmpl"
-	"gitlab.com/rockt/cerne/internal/restmpl"
-	"gitlab.com/rockt/cerne/internal/runtmpl"
-	"gitlab.com/rockt/cerne/internal/spectmpl"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/dectmpl"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/plantmpl"
+	"github.com/henriquesakata/cerne/internal/restmpl"
+	"github.com/henriquesakata/cerne/internal/runtmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // docWith renders a real lifecycle doc body with the given sections as level-2

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // F-0123: starting a child feature pulls its ready ancestor epics into

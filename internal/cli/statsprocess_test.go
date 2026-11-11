@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/cost"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/stats"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/stats"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // seedPanel stages the process panel's inputs straight in the clone (stats is

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // planRoastBody is the explicit target the UI sends (F-0275); an absent or

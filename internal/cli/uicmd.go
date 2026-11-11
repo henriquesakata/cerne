@@ -20,10 +20,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/llm"
-	"gitlab.com/rockt/cerne/internal/server"
-	"gitlab.com/rockt/cerne/internal/store"
-	"gitlab.com/rockt/cerne/internal/verbs"
+	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/server"
+	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
 // The chat's tool channel (F-0323) derives its verb catalog from this very

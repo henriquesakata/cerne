@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestIdeasLeaveAPIOutputsUnchanged (F-0312 crit. 3, UI surfaces): /api/state

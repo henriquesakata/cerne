@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // `cerne msg` (F-0325): the shortcut to the project's permanent channel. No

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func TestUICmdPullIntervalFlag(t *testing.T) {

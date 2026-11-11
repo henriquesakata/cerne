@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // snapshotDir holds one <id>.json per live feature: the cost harvested so far,

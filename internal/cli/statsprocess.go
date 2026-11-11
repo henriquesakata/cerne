@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/stats"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/stats"
 )
 
 func runProcessStats(cmd *cobra.Command, dir string, asJSON bool) error {

@@ -3,8 +3,8 @@ package lint
 import (
 	"fmt"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // errataPendingFindings (F-0872) flags the errata items of live runbooks that

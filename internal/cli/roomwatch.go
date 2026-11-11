@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/spf13/cobra"
-	"gitlab.com/rockt/cerne/internal/project"
 )
 
 // roomCheckpoint is the durable cursor for one `room watch` consumer

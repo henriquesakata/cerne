@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/slug"
+	"github.com/henriquesakata/cerne/internal/slug"
 )
 
 // StatusRemoved reports a generated skill deleted because its source entity is

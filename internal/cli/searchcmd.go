@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/index"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/index"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 func newSearchCmd() *cobra.Command {

@@ -1,7 +1,7 @@
 package harness
 
 import (
-	"gitlab.com/rockt/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // Gap is one artifact or capability a provider does not get (F-0259).

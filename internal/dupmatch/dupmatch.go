@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/slug"
+	"github.com/henriquesakata/cerne/internal/slug"
 )
 
 // dupOverlapThreshold is the token-overlap ratio (against the smaller title)

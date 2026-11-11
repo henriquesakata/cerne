@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/cli"
+	"github.com/henriquesakata/cerne/internal/cli"
 )
 
 // TestMain doubles the test binary as the cerne the executor spawns: with

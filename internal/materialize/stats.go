@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // statKinds is the fixed set of entity kinds reported by ComputeStats. Every

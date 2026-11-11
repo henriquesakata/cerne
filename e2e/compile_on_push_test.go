@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // compileOnPushProject boots a cerne project wired to a fake Anthropic server

@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/harness"
+	"github.com/henriquesakata/cerne/internal/harness"
 )
 
 func newHarnessCmd() *cobra.Command {

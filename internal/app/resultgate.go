@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrResultIncomplete is the sentinel for a complete attempted over a result

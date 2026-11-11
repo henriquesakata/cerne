@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 // The docs.lock pin (autocommitLock) is best-effort by design, so it never

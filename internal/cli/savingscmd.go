@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/materialize"
+	"github.com/henriquesakata/cerne/internal/materialize"
 )
 
 // savingsKindOrder is the fixed display order of the per-kind table rows.

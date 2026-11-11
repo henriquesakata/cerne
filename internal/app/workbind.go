@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/cost"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // Session→work binding (F-0151): the work gate needs to answer "does THIS

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/app"
 )
 
 func newClassifyCmd() *cobra.Command {

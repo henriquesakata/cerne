@@ -9,11 +9,11 @@ import (
 	"slices"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/cost"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/stats"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/stats"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ProcessPerf collects the process panel (F-0321) from the backend clone at

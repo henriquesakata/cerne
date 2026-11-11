@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // resultGauntletSince is the rule's adoption cutoff (F-0545): only features

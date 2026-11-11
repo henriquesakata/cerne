@@ -9,10 +9,10 @@ import (
 	"slices"
 	"sync"
 
-	"gitlab.com/rockt/cerne/internal/llm"
-	"gitlab.com/rockt/cerne/internal/models"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 // llmConfigResponse is the GET/PUT /api/config/llm payload: the effective LLM

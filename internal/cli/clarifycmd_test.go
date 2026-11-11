@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/app"
 )
 
 func clarifySpecBody() string {

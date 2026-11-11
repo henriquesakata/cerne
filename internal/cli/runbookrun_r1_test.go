@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // F-0873 r1 achado 1: without --passos the list is inferred from the body and

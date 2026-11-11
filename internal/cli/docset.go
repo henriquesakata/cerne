@@ -1,6 +1,6 @@
 package cli
 
-import "gitlab.com/rockt/cerne/internal/doccheck"
+import "github.com/henriquesakata/cerne/internal/doccheck"
 
 // hasRealContent aliases doccheck.HasRealContent; the implementation lives
 // in internal/doccheck so internal/lint and internal/app can share the stub

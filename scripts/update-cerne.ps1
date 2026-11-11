@@ -64,7 +64,7 @@ git -C $Repo worktree add --quiet --force --detach $tmp $target
 if ($LASTEXITCODE -ne 0) { throw "git worktree add failed (exit $LASTEXITCODE)." }
 try {
   Push-Location $tmp
-  & $go install -ldflags "-X gitlab.com/rockt/cerne/internal/cli.version=$ver" ./cmd/cerne
+  & $go install -ldflags "-X github.com/henriquesakata/cerne/internal/version.Version=$ver" ./cmd/cerne
   if ($LASTEXITCODE -ne 0) { throw "go install failed (exit $LASTEXITCODE)." }
 }
 finally {

@@ -3,7 +3,7 @@ package importer
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func TestNormalizeTitle(t *testing.T) {

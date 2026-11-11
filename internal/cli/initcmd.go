@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/hooks"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/skills"
-	"gitlab.com/rockt/cerne/internal/slug"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/skills"
+	"github.com/henriquesakata/cerne/internal/slug"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrCacheBackendMismatch: the project id's cache already holds a clone of a

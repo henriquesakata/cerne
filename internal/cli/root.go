@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/telemetry"
-	"gitlab.com/rockt/cerne/internal/verbs"
-	"gitlab.com/rockt/cerne/internal/version"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/verbs"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 func Root() *cobra.Command {

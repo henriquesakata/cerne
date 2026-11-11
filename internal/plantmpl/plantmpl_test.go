@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
-	"gitlab.com/rockt/cerne/internal/plantmpl"
-	"gitlab.com/rockt/cerne/internal/spectmpl"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/plantmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
 )
 
 // TestSectionsCanonical pins the canonical sections and their order. Ordering is

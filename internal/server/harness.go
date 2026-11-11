@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"os"
 
-	"gitlab.com/rockt/cerne/internal/harness"
+	"github.com/henriquesakata/cerne/internal/harness"
 )
 
 // harnessHome resolves the user layer's home directory; a test overrides it so

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // mkTaggedReference: a current external reference with the given tags (helper for retag tests).

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // stagedLintRoot assembles a backend-shaped tree for linting local edits without
