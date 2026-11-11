@@ -1,0 +1,20 @@
+# gitleaks configuration: the default ruleset plus one narrow allowlist.
+#
+# ui/dist embeds @excalidraw/excalidraw, whose bundle ships excalidraw.com's
+# public Firebase web config (VITE_APP_FIREBASE_CONFIG, an "AIza…" key). It is
+# the vendor's public client key, not a secret of this project, and it reappears
+# on every UI rebuild. The allowlist requires ALL conditions (AND): one of the
+# two rules it trips, a path under ui/dist/, and the VITE_APP_FIREBASE_CONFIG
+# marker on the same line — a key anywhere else, or without the marker, is
+# still reported.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Excalidraw's public Firebase web config bundled in ui/dist (vendor key, not a project secret)"
+condition = "AND"
+targetRules = ["gcp-api-key", "generic-api-key"]
+paths = ['''^ui/dist/''']
+regexTarget = "line"
+regexes = ['''VITE_APP_FIREBASE_CONFIG''']

@@ -1,0 +1,25 @@
+name: ui-dist-drift
+
+# ui/dist is go:embed-ed, so the committed dist is what ships (F-0136). Rebuild
+# it on the canonical platform (node:24 Linux) and fail if it differs from the
+# committed copy — the guard against a stale embedded UI.
+on:
+  push:
+    branches: [main]
+    paths: ['ui/**']
+  pull_request:
+    paths: ['ui/**']
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    container: node:24
+    steps:
+      - uses: actions/checkout@v4
+      - run: cd ui && npm ci && npm run build
+      - run: |
+          git add -A ui/dist
+          git diff --cached --exit-code -- ui/dist

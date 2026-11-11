@@ -1,0 +1,17 @@
+name: docs-lock-immutable
+
+# docs.lock is written only by the main-branch pin job (pin.yml, F-0198).
+on:
+  pull_request:
+    paths: ['docs.lock']
+
+permissions:
+  contents: read
+
+jobs:
+  refuse:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "docs.lock is maintained only by the main-branch CI writer; remove it from this pull request"
+          exit 1
