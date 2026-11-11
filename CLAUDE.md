@@ -21,7 +21,7 @@ cerne is the **guardian and source of truth** for this project's documentation. 
 
 - **Go 1.26.4** lives at `C:\development\tools\go\bin` (on the user PATH for new shells). In the Bash tool, prefix commands: `export PATH="/c/development/tools/go/bin:$PATH"`.
 - **Node v24** for the UI (`ui/`).
-- Module path: `gitlab.com/rockt/cerne`.
+- Module path: `github.com/henriquesakata/cerne`.
 
 ## Build / test / run
 

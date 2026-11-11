@@ -22,16 +22,16 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/dectmpl"
-	"gitlab.com/rockt/cerne/internal/doccheck"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/mdlink"
-	"gitlab.com/rockt/cerne/internal/plantmpl"
-	"gitlab.com/rockt/cerne/internal/restmpl"
-	"gitlab.com/rockt/cerne/internal/runtmpl"
-	"gitlab.com/rockt/cerne/internal/spectmpl"
-	"gitlab.com/rockt/cerne/internal/store"
-	"gitlab.com/rockt/cerne/internal/wiki"
+	"github.com/henriquesakata/cerne/internal/dectmpl"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/mdlink"
+	"github.com/henriquesakata/cerne/internal/plantmpl"
+	"github.com/henriquesakata/cerne/internal/restmpl"
+	"github.com/henriquesakata/cerne/internal/runtmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
+	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/wiki"
 )
 
 // Rule names, in deterministic report order.

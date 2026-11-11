@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/models"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // ErrNoProviderForDelegation is returned by NewProvider when the config resolves

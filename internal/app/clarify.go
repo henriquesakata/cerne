@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/clarify"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/clarify"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrClarificationGone is the sentinel for an answer aimed at a marker that is

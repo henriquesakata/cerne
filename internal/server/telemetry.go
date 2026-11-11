@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 // statusWriter captures the response code for the request log and metric.

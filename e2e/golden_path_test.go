@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/cli"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/cli"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // cerne executes the root command with args, returning combined output.

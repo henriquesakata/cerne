@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/llm"
 )
 
 // RoastPersona is one adversarial critic lens (F-0271). Three fixed personas

@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // logMaxEntries caps the root log.md at the most recent events. A count (not a

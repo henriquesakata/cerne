@@ -4,12 +4,12 @@ import (
 	"errors"
 
 	"fmt"
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"strings"
 	"sync"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // F-0122 crit. 1: N concurrent creations of the same kind on the shared clone

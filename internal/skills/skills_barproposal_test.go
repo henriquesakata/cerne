@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 )
 
 // TestCerneAuthoringBarIsAProposal pins F-0308 crit. 10: the agent's Barra:

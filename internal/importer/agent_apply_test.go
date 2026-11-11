@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func TestApplyPlanCreatesEachKind(t *testing.T) {

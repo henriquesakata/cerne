@@ -17,9 +17,9 @@ import (
 	"text/template"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/slug"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/slug"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // featureDocFilenames are the lifecycle documents copied per feature, in

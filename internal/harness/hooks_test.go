@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // findItem returns the first item of class whose name matches.

@@ -12,10 +12,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/room"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/room"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // Permanent channel (F-0325): the agent side of the project channel stored by

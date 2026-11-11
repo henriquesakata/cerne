@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // ErrOpenClarifications is the sentinel for an approve attempted over a spec

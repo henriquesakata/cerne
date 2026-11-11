@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/app"
 )
 
 // startBoundWork registers a work in the project and binds session sess to it,

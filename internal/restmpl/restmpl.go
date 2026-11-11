@@ -16,7 +16,7 @@ package restmpl
 import (
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/models"
 )
 
 // exampleModel is the model id the stamp example shows — the catalog's default,

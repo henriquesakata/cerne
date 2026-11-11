@@ -4,9 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 // The full lint pass re-scans the backend (measured 4.9s average on the hub)

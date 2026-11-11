@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // settingsProject writes a backendless .cernerc (plus extra) and points the

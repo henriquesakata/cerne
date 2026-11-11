@@ -3,7 +3,7 @@ package lint
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestAcknowledgedOnLine pins crit. 1: the lint:ok-superseded marker is parsed

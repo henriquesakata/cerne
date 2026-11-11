@@ -14,7 +14,7 @@ import (
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // featureDocFilenames are the per-feature lifecycle documents indexed as

@@ -3,7 +3,7 @@ package materialize
 import (
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // okfIndexEntry is one concept row of the root index.md: title linked to the

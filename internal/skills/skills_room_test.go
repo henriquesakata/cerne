@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/cli"
+	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/spf13/cobra"
-	"gitlab.com/rockt/cerne/internal/cli"
-	"gitlab.com/rockt/cerne/internal/skills"
 )
 
 // undocumentedVerbs lists CLI leaf commands deliberately not covered by the

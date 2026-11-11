@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/version"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 // TestVersionEndpoint: GET /api/version returns the shortened MAJOR.MINOR

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
 // headPollInterval is how often the watcher reads the backend clone's HEAD.

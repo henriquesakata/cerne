@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // Ideas API (F-0312): thin handlers over app.*Idea — the same functions the

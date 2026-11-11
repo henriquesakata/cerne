@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestTransitionRevert (F-0169 crit. 6): POST .../transition {"action":"revert"}

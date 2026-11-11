@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/spectmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
 )
 
 func TestHasRealContent(t *testing.T) {

@@ -3,7 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
-	"gitlab.com/rockt/cerne/internal/materialize"
+	"github.com/henriquesakata/cerne/internal/materialize"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/lint"
-	"gitlab.com/rockt/cerne/internal/plantmpl"
-	"gitlab.com/rockt/cerne/internal/restmpl"
-	"gitlab.com/rockt/cerne/internal/spectmpl"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/plantmpl"
+	"github.com/henriquesakata/cerne/internal/restmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrUnknownDoc is returned by SaveFeatureDoc for a doc name outside the

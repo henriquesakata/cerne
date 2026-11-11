@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // safeSegment reports whether s is usable as a single path segment under

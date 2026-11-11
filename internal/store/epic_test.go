@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 func TestChildrenByParentAndProgress(t *testing.T) {

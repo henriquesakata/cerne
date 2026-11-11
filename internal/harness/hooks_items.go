@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // fixHookInstall is the repair command shown for a managed hook capability

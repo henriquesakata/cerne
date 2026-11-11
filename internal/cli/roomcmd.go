@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/room"
 	"github.com/spf13/cobra"
-	"gitlab.com/rockt/cerne/internal/app"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/room"
 )
 
 // formatRoomEvent renders one transcript event the same way for `room read`

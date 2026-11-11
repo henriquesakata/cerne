@@ -12,8 +12,8 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 func newLockCmd() *cobra.Command {

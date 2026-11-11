@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 )
 
 // okfMeta carries the structured fields projected into a concept's Open

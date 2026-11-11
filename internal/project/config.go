@@ -11,7 +11,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"gitlab.com/rockt/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/models"
 )
 
 // ErrNoProject is the sentinel for a LoadConfig walk that reaches the
@@ -156,7 +156,7 @@ type WebhookConfig struct {
 
 // DeliveryConfig is the optional [delivery] block of .cernerc (F-0179).
 // CommitURL is an explicit template with a {sha} placeholder (e.g.
-// "https://gitlab.com/rockt/cerne/-/commit/{sha}") used to resolve a bare
+// "https://github.com/henriquesakata/cerne/commit/{sha}") used to resolve a bare
 // commit SHA into a clickable URL — no forge heuristics: absent means a bare
 // SHA is refused and only full URLs are accepted.
 type DeliveryConfig struct {

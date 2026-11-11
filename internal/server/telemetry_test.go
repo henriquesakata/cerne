@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"gitlab.com/rockt/cerne/internal/telemetry"
 )
 
 // TestInstrumentedRouteUsesTemplatedLabel pins criterion 7 (F-0149): the log

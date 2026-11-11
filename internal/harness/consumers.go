@@ -3,7 +3,7 @@ package harness
 import (
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // allProviders is the known provider set, in the fixed display order.

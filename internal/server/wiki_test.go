@@ -16,12 +16,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/compile"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/store"
-	"gitlab.com/rockt/cerne/internal/telemetry"
-	"gitlab.com/rockt/cerne/internal/wiki"
+	"github.com/henriquesakata/cerne/internal/compile"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/wiki"
 )
 
 // writeWiki writes a compiled wiki page into the backend tree at

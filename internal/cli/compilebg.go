@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/compile"
+	"github.com/henriquesakata/cerne/internal/compile"
 )
 
 // The background-compile sidecars sit NEXT TO the backend clone (same rule as

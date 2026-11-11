@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/cli"
+	"github.com/henriquesakata/cerne/internal/cli"
 )
 
 // TestMain neutralizes CERNE_ACTOR inherited from the invoking environment

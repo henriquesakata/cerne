@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/stats"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/stats"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func newStatsCmd() *cobra.Command {

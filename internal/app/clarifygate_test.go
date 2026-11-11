@@ -9,8 +9,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // gateBarTail gives a fixture spec a valid bar, so the refusal has no hard

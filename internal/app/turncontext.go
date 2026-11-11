@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/ask"
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/ask"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // retrievalTopN is how many retrieved sources the turn context carries: enough

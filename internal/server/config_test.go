@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/models"
-	"gitlab.com/rockt/cerne/internal/project"
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 // TestLLMConfigGetDefault: with a .cernerc that has no [llm] block, the mode

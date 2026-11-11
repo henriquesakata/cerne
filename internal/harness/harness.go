@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/version"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 // Origins: where an item comes from. 3 of the 5 live outside the repository —

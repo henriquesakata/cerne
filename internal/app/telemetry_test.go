@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/gitback"
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 // ringRecord finds the ring record for a specific op id. The ring is global

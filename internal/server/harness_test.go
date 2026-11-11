@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gitlab.com/rockt/cerne/internal/harness"
-	"gitlab.com/rockt/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/harness"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // TestHarnessEndpoint: GET /api/harness returns the inventory with the hooks

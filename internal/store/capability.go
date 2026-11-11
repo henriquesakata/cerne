@@ -3,7 +3,7 @@ package store
 import (
 	"time"
 
-	"gitlab.com/rockt/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // Capability is the persisted form of a product-capability node (F-0188): the

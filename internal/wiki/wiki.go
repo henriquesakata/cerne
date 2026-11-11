@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 )
 
 // Source is one live entity feeding a wiki page. ContentHash is a digest of

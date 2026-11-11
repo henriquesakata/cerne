@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitlab.com/rockt/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 )
 
 // ErrSpecMissingBar is the sentinel for an approve attempted over a spec that

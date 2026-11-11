@@ -3,8 +3,8 @@ package lint
 import (
 	"fmt"
 
-	"gitlab.com/rockt/cerne/internal/domain"
-	"gitlab.com/rockt/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // CorrectionKind says which path corrects a document of a feature in a state.

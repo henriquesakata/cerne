@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/rockt/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/telemetry"
 )
 
 func newDoctorCmd() *cobra.Command {
