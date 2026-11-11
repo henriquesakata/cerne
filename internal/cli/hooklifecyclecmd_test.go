@@ -27,11 +27,17 @@ func TestHookLifecycleReminderOnFeatureNew(t *testing.T) {
 	if check < 0 || ask < 0 || check > ask {
 		t.Fatalf("reminder does not send the agent to --check before asking a human:\n%s", out)
 	}
-	// Open clarifications are the human's (F-0175): the agent fixes only the
-	// hard impediments.
-	if !strings.Contains(out, "fix the hard impediments it lists; leave open clarifications for the human, with the approve request") ||
-		strings.Contains(out, "until it reports approvable") {
-		t.Fatalf("reminder does not leave open clarifications to the human:\n%s", out)
+	// Open clarifications are the human's (F-0175); every other impediment,
+	// the soft card ones included (F-0336), is the agent's to fix.
+	if !strings.Contains(out, "fix every impediment it lists except open clarifications, which you leave for the human with the approve request") ||
+		strings.Contains(out, "until it reports approvable") || strings.Contains(out, "fix the hard impediments") {
+		t.Fatalf("reminder does not leave only open clarifications to the human:\n%s", out)
+	}
+	// F-0336 crit. 8: the whole card in the same turn — spec, tags, capability —
+	// each with its command, before the check.
+	tags, capab, check := strings.Index(out, "cerne feature retag F-0042"), strings.Index(out, "cerne feature capability F-0042 C-"), strings.Index(out, "--check")
+	if !strings.Contains(out, "Complete the card NOW") || tags < 0 || capab < 0 || tags > check || capab > check {
+		t.Fatalf("reminder does not ask for spec, tags and capability before the check:\n%s", out)
 	}
 }
 

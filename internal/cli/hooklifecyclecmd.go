@@ -11,8 +11,8 @@ import (
 
 // Lifecycle reminder plumbing (F-0170). PostToolUse/Bash hook: when the call
 // that just finished was a successful `cerne feature new` or `cerne feature
-// start`, inject the guidance for that exact moment — write the spec in this
-// same turn, or consult the project's notes/conventions before planning. Like
+// start`, inject the guidance for that exact moment — complete the card (spec,
+// tags, capability; F-0336) in this same turn, or consult the project's notes/conventions before planning. Like
 // the other hook subcommands it is hidden, silent on anything unexpected, and
 // always exits 0 (fail-open: a hook must never break the host session).
 
@@ -70,7 +70,7 @@ func runHookLifecycleReminder(cmd *cobra.Command) {
 			return
 		}
 		id := m[1] + m[3] // one of the two alternatives matched
-		msg = fmt.Sprintf("cerne: %s registered as a candidate. Write its real spec NOW, in this same turn — `cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push` — then run `cerne feature approve %s --check`, fix the hard impediments it lists; leave open clarifications for the human, with the approve request. Only then ask a human to run `cerne feature approve %s` (approving accepts the `Barra:` line you proposed) and STOP. Do not implement an unapproved feature.", id, id, id, id)
+		msg = fmt.Sprintf("cerne: %s registered as a candidate. Complete the card NOW, in this same turn: its real spec (`cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push`), its tags (`cerne feature retag %s --facet <f> --component <c>`, unless they went on `feature new`) and its capability (`cerne feature capability %s C-…`; the taxonomy: `cerne capability list --tree`). Then run `cerne feature approve %s --check` and fix every impediment it lists except open clarifications, which you leave for the human with the approve request. Only then ask a human to run `cerne feature approve %s` (approving accepts the `Barra:` line you proposed) and STOP. Do not implement an unapproved feature.", id, id, id, id, id, id)
 	case featureStartRe.MatchString(ti.Command):
 		if !strings.Contains(response, "in_development") {
 			return
