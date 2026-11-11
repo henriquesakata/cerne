@@ -36,7 +36,7 @@ func TestFeatureNewPrintsReadiness(t *testing.T) {
 		}
 	}
 
-	out, err = execCerne(t, "feature", "new", "Spec com barra", "--file", writeSpecFile(t, realDoc("F-0002", "Problema real descrito aqui.")), "--dir", projDir)
+	out, err = execCerne(t, "feature", "new", "Spec com barra", "--file", writeSpecFile(t, realDoc("F-0002", "Problema real descrito aqui.")), "--component", "test", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("feature new: %v\noutput: %s", err, out)
 	}

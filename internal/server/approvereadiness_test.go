@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestFeatureDetailApproveReadiness (F-0308 crit. 7, server side): a
@@ -17,6 +18,17 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 	writeDoc(t, repoDir, "F-0001", "spec.md", "# t\n\nProblema real. [ESCLARECER: qual o limite?]\n")
 	seedFeature(t, repoDir, "F-0002", "Com barra", domain.StateCandidate)
 	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\nBarra: cerne push --dry-run — ensaio com gate\n")
+	// Complete cards (F-0336): only the spec impediments show.
+	for _, id := range []string{"F-0001", "F-0002"} {
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Components = []string{"cli"}
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatal(err)
+		}
+	}
 	seedFeature(t, repoDir, "F-0003", "Aprovada", domain.StateApproved)
 	writeDoc(t, repoDir, "F-0003", "spec.md", "# t\n\nProblema real.\n")
 

@@ -9,6 +9,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/clarify"
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -18,6 +19,10 @@ const (
 	ImpedimentBarMissing        = "bar-missing"
 	ImpedimentBarMalformed      = "bar-malformed"
 	ImpedimentOpenClarification = "open-clarification"
+	// The card impediments (F-0336): soft, like an open clarification, but
+	// the agent's to fix — one command each — not a question for the human.
+	ImpedimentUntagged          = "untagged"
+	ImpedimentCapabilityMissing = "capability-missing"
 )
 
 // ApproveImpediment is one reason a candidate cannot be approved yet. Hard
@@ -32,11 +37,11 @@ type ApproveImpediment struct {
 // ApproveReadiness returns every impediment to approving candidate id — or
 // re-approving an approved one whose approval went stale (F-0318): the
 // document gate, then the bar gate (both hard: the shared core refuses them on
-// every surface), then one per open clarification (soft: only the CLI refuses
-// them, and it checks them first, before the core). It composes the same
-// predicates the gates run —
-// domain.CheckGate over FeatureDocSet, doccheck.SpecBar, clarify.Open — so an
-// empty hard list is exactly an approve the core accepts. A missing feature, one
+// every surface), then one per open clarification, then the card's own (all
+// soft: only the CLI refuses them, before the core). It composes the same
+// predicates the gates and the lint run — domain.CheckGate over FeatureDocSet,
+// doccheck.SpecBar, clarify.Open, lint.Untagged, lint.HasCapabilityTaxonomy —
+// so an empty hard list is exactly an approve the core accepts. A missing feature, one
 // past approval or an approved one with nothing to renew is an error, the
 // approve's own refusal.
 func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
@@ -77,6 +82,33 @@ func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
 			q = c.Raw
 		}
 		out = append(out, ApproveImpediment{ImpedimentOpenClarification, q, false})
+	}
+	card, err := cardImpediments(repoDir, f)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, card...), nil
+}
+
+// cardImpediments are the soft impediments of the card itself (F-0336): no
+// tag on either axis, and no capability linked while the project curates a
+// taxonomy. They ask the same predicates the untagged-live and
+// capability-orphan lint rules ask, so the check and the lint cannot drift.
+func cardImpediments(repoDir string, f store.Feature) ([]ApproveImpediment, error) {
+	var out []ApproveImpediment
+	if lint.Untagged(f.Facets, f.Components) {
+		out = append(out, ApproveImpediment{ImpedimentUntagged,
+			fmt.Sprintf("no tag (facet/component) — classify it with 'cerne feature retag %s --facet <f> --component <c>'", f.ID), false})
+	}
+	if len(f.Capabilities) == 0 {
+		caps, err := store.LoadAllCapabilities(repoDir)
+		if err != nil {
+			return nil, err
+		}
+		if lint.HasCapabilityTaxonomy(caps) {
+			out = append(out, ApproveImpediment{ImpedimentCapabilityMissing,
+				fmt.Sprintf("no capability linked — link it with 'cerne feature capability %s C-…' (the taxonomy: 'cerne capability list --tree')", f.ID), false})
+		}
 	}
 	return out, nil
 }

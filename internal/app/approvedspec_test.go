@@ -235,6 +235,7 @@ func TestReapproveRefusedWhenNotStale(t *testing.T) {
 func TestApproveRecordsLegacyBaseline(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md") // legacy: no copy
+	tagFeature(t, repoDir, "F-0001")                                          // a complete card (F-0336)
 	if !ApprovalBaselineMissing(repoDir, store.Feature{ID: "F-0001", State: domain.StateApproved}) {
 		t.Fatal("legacy approval not reported as missing its baseline")
 	}

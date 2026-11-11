@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -56,7 +58,8 @@ func TestApproveReadinessCodes(t *testing.T) {
 	for _, tc := range readinessCases {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir := t.TempDir()
-			if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate}); err != nil {
+			// Tagged, in a project with no taxonomy: only the spec impediments show.
+			if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate, Components: []string{"cli"}}); err != nil {
 				t.Fatal(err)
 			}
 			writeSpecFixture(t, repoDir, "F-0001", tc.spec)
@@ -83,7 +86,7 @@ func TestApproveReadinessCodes(t *testing.T) {
 // The open-clarification impediment carries the question itself.
 func TestApproveReadinessClarificationMessageIsTheQuestion(t *testing.T) {
 	repoDir := t.TempDir()
-	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate}); err != nil {
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate, Components: []string{"cli"}}); err != nil {
 		t.Fatal(err)
 	}
 	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nReal. [ESCLARECER: qual o limite?]\n\nBarra: x — y\n")
@@ -137,11 +140,18 @@ func TestApproveReadinessParity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ApproveReadiness: %v", err)
 			}
-			ready := true
+			ready, untagged := true, false
 			for _, im := range imps {
 				if im.Hard {
 					ready = false
 				}
+				untagged = untagged || im.Code == ImpedimentUntagged
+			}
+			// F-0336 crit. 6: the seed is untagged, so every case carries the
+			// soft untagged impediment — and the core still decides on the hard
+			// ones alone.
+			if !untagged {
+				t.Fatalf("untagged seed has no %s impediment: %+v", ImpedimentUntagged, imps)
 			}
 			_, err = TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
 			if accepted := err == nil; accepted != ready {
@@ -197,4 +207,108 @@ func TestApproveEventCarriesBar(t *testing.T) {
 		}
 	}
 	t.Fatal("no feature.approved event")
+}
+
+// cardCases are the card shapes (tags, capability, the project's taxonomy) the
+// readiness and the lint must agree on (F-0336). The spec is always valid, so
+// only the card impediments show.
+var cardCases = []struct {
+	name       string
+	facets     []string
+	components []string
+	caps       []string                 // capabilities linked to the card
+	taxonomy   []domain.CapabilityState // the project's capability nodes
+	codes      []string
+}{
+	{"untagged, no taxonomy", nil, nil, nil, nil, []string{ImpedimentUntagged}},
+	{"facet only, no taxonomy", []string{"code"}, nil, nil, nil, nil},
+	{"component only, no taxonomy", nil, []string{"cli"}, nil, nil, nil},
+	{"tagged, taxonomy, no capability", []string{"code"}, []string{"cli"}, nil, []domain.CapabilityState{domain.CapabilityActive}, []string{ImpedimentCapabilityMissing}},
+	{"untagged, taxonomy, no capability", nil, nil, nil, []domain.CapabilityState{domain.CapabilityActive}, []string{ImpedimentUntagged, ImpedimentCapabilityMissing}},
+	{"tagged and linked", []string{"code"}, []string{"cli"}, []string{"C-0001"}, []domain.CapabilityState{domain.CapabilityActive}, nil},
+	{"only a retired taxonomy", []string{"code"}, nil, nil, []domain.CapabilityState{domain.CapabilitySuperseded}, nil},
+}
+
+// seedCard writes a candidate with a valid spec and the case's card into a
+// fresh backend layout, plus the project's capability nodes.
+func seedCard(t *testing.T, facets, components, caps []string, taxonomy []domain.CapabilityState) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	if err := store.InitLayout(repoDir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, st := range taxonomy {
+		if err := store.SaveCapability(repoDir, store.Capability{ID: fmt.Sprintf("C-%04d", i+1), Title: "cap", State: st}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate, Facets: facets, Components: components, Capabilities: caps}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nProblema real.\n\nBarra: referência nomeada — acesso\n")
+	return repoDir
+}
+
+// TestApproveReadinessCardImpediments (F-0336 crit. 1-3): a card with no tag
+// on either axis is untagged; one with no capability in a project that curates
+// a taxonomy is capability-missing; a project with no active node never asks
+// for a capability. Both are soft, and each message carries the command that
+// fixes it.
+func TestApproveReadinessCardImpediments(t *testing.T) {
+	wantCmd := map[string][]string{
+		ImpedimentUntagged:          {"cerne feature retag F-0001 --facet <f> --component <c>"},
+		ImpedimentCapabilityMissing: {"cerne feature capability F-0001 C-", "cerne capability list --tree"},
+	}
+	for _, tc := range cardCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir := seedCard(t, tc.facets, tc.components, tc.caps, tc.taxonomy)
+			got, err := ApproveReadiness(repoDir, "F-0001")
+			if err != nil {
+				t.Fatalf("ApproveReadiness: %v", err)
+			}
+			var codes []string
+			for _, im := range got {
+				codes = append(codes, im.Code)
+				if im.Hard {
+					t.Errorf("%s is hard, want soft", im.Code)
+				}
+				for _, cmd := range wantCmd[im.Code] {
+					if !strings.Contains(im.Message, cmd) {
+						t.Errorf("%s message %q lacks %q", im.Code, im.Message, cmd)
+					}
+				}
+			}
+			if !reflect.DeepEqual(codes, tc.codes) {
+				t.Fatalf("codes = %v, want %v", codes, tc.codes)
+			}
+		})
+	}
+}
+
+// TestCardImpedimentsMatchLint (F-0336 crit. 4): for every card, the readiness
+// says untagged exactly when the lint says untagged-live, and
+// capability-missing exactly when it says capability-orphan — one rule, two
+// readers.
+func TestCardImpedimentsMatchLint(t *testing.T) {
+	for _, tc := range cardCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir := seedCard(t, tc.facets, tc.components, tc.caps, tc.taxonomy)
+			imps, err := ApproveReadiness(repoDir, "F-0001")
+			if err != nil {
+				t.Fatalf("ApproveReadiness: %v", err)
+			}
+			findings, err := lint.Run(repoDir)
+			if err != nil {
+				t.Fatalf("lint.Run: %v", err)
+			}
+			for code, rule := range map[string]string{ImpedimentUntagged: lint.RuleUntaggedLive, ImpedimentCapabilityMissing: lint.RuleCapabilityOrphan} {
+				inReadiness := slices.ContainsFunc(imps, func(im ApproveImpediment) bool { return im.Code == code })
+				inLint := slices.ContainsFunc(findings, func(f lint.Finding) bool { return f.Rule == rule && f.Entity == "F-0001" })
+				if inReadiness != inLint {
+					t.Errorf("%s in readiness = %v but %s in lint = %v", code, inReadiness, rule, inLint)
+				}
+			}
+		})
+	}
 }

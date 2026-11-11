@@ -15,6 +15,20 @@ import (
 // seedFeatureInState persists a feature directly in the given state, with the
 // lifecycle docs it would have accumulated, and commits the seed so the next
 // transition's auto-rebase finds a clean clone.
+// tagFeature gives feature id a component, so its approve readiness carries
+// no untagged impediment (F-0336).
+func tagFeature(t *testing.T, repoDir, id string) {
+	t.Helper()
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Components = []string{"cli"}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedFeatureInState(t *testing.T, repoDir string, id string, state domain.FeatureState, docs ...string) {
 	t.Helper()
 	f := store.Feature{ID: id, Title: "Feature " + id, State: state}
