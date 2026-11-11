@@ -56,6 +56,24 @@ func originURL(repo *git.Repository) (string, error) {
 	return urls[0], nil
 }
 
+// OriginURL returns the origin URL of the working copy at workdir.
+func OriginURL(workdir string) (string, error) {
+	repo, err := openRepo(workdir)
+	if err != nil {
+		return "", err
+	}
+	return originURL(repo)
+}
+
+// IsLocalPath reports whether backend u is a filesystem path rather than a
+// remote URL (scheme://… or scp-like git@host:path). A relative one must be
+// made absolute before it is cloned: the URL is stored verbatim as origin and
+// later git runs inside the cached clone, where the relative path points
+// elsewhere (F-0335).
+func IsLocalPath(u string) bool {
+	return !isSSHURL(u) && !strings.Contains(u, "://")
+}
+
 // Clone clones url (which may be a local path) into workdir on branch main.
 // An empty remote still yields a usable working copy wired to origin, with
 // HEAD pointing at the unborn main branch.
