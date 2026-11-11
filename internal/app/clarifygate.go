@@ -96,7 +96,11 @@ func CheckOpenClarifications(repoDir, id string) error {
 	b.WriteString("\nthe UI answers the same markers too (each one is a clickable chip in the spec).")
 	if len(hard) > 0 {
 		fmt.Fprintf(&b, "\nonce 'cerne feature approve %s --check' shows no hard impediment, run 'cerne feature approve %s' again.", id, id)
-		fmt.Fprintf(&b, "\n--force skips this check only; it does not get past %s.", hardList)
+		if len(card) > 0 {
+			fmt.Fprintf(&b, "\n--force skips this check and the card's (%s); it does not get past %s.", strings.Join(card, ", "), hardList)
+		} else {
+			fmt.Fprintf(&b, "\n--force skips this check only; it does not get past %s.", hardList)
+		}
 	} else if len(card) > 0 {
 		fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again — the card is incomplete too (%s): 'cerne feature approve %s --check' lists the commands that fix it.", id, strings.Join(card, ", "), id)
 		b.WriteString("\n--force skips this check and the card's: it approves with these questions still open and the card incomplete; the spec gates still apply.")

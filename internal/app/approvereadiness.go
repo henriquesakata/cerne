@@ -93,13 +93,14 @@ func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
 
 // cardImpediments are the soft impediments of the card itself (F-0336): no
 // tag on either axis, and no capability linked while the project curates a
-// taxonomy. They ask the same predicates the untagged-live and
-// capability-orphan lint rules ask, so the check and the lint cannot drift.
+// taxonomy. They ask the predicates the untagged-live and capability-orphan
+// lint rules ask (the lint's live-state filter is the approve's own state
+// guard here), so the check and the lint agree on every approvable card.
 func cardImpediments(repoDir string, f store.Feature) ([]ApproveImpediment, error) {
 	var out []ApproveImpediment
 	if lint.Untagged(f.Facets, f.Components) {
 		out = append(out, ApproveImpediment{ImpedimentUntagged,
-			fmt.Sprintf("no tag (facet/component) — classify it with 'cerne feature retag %s --facet <f> --component <c>'", f.ID), false})
+			fmt.Sprintf("no tag (facet/component) — classify it with 'cerne feature retag %s --facet <f> --component <c>' (facet: one of %s; component: free, e.g. the package it touches)", f.ID, strings.Join(domain.ValidFacets, ", ")), false})
 	}
 	if len(f.Capabilities) == 0 {
 		caps, err := store.LoadAllCapabilities(repoDir)
@@ -108,7 +109,7 @@ func cardImpediments(repoDir string, f store.Feature) ([]ApproveImpediment, erro
 		}
 		if lint.HasCapabilityTaxonomy(caps) {
 			out = append(out, ApproveImpediment{ImpedimentCapabilityMissing,
-				fmt.Sprintf("no capability linked — link it with 'cerne feature capability %s C-…' (the taxonomy: 'cerne capability list --tree')", f.ID), false})
+				fmt.Sprintf("no capability linked — link it with 'cerne feature capability %s C-…'; pick the node in 'cerne capability list --tree'", f.ID), false})
 		}
 	}
 	return out, nil
@@ -131,39 +132,44 @@ func AcceptedBar(repoDir, id string) (string, error) {
 // ErrIncompleteCard is the sentinel for an approve attempted over a card with
 // no tag, or with no capability while the project curates a taxonomy
 // (F-0336). Like ErrOpenClarifications it is enforced at the CLI and --force
-// crosses it: the shared core and the UI approve do not refuse it, so a
-// project without a taxonomy is never held to it.
+// crosses it; the shared core and the UI approve do not refuse it.
 var ErrIncompleteCard = errors.New("card missing tags or capability")
 
 // CheckIncompleteCard refuses when feature id's card lacks what the board
-// filters on, listing each impediment with the command that fixes it. An id
-// the approve itself would refuse (missing feature, invalid state) passes,
-// so the core names the refusal; any other load error fails closed. The id
-// is canonicalized first, as the core accepts a lowercase one.
+// filters on, listing each impediment with the command that fixes it. It
+// reads the card impediments off ApproveReadiness, so an approve the core
+// itself refuses (missing feature, invalid state, nothing to re-approve)
+// passes and the core names it; any other error fails closed. The id is
+// canonicalized first, as the core accepts a lowercase one.
 func CheckIncompleteCard(repoDir, id string) error {
 	id = domain.CanonicalID(id)
-	f, err := store.LoadFeature(repoDir, id)
-	if errors.Is(err, store.ErrNotFound) {
+	if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	imps, err := ApproveReadiness(repoDir, id)
+	if errors.Is(err, domain.ErrInvalidTransition) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("checking the card of %s: %w", id, err)
-	}
-	if _, err := domain.Transition(f.State, domain.ActionApprove); err != nil {
-		return nil
-	}
-	imps, err := cardImpediments(repoDir, f)
-	if err != nil {
-		return fmt.Errorf("checking the card of %s: %w", id, err)
-	}
-	if len(imps) == 0 {
-		return nil
 	}
 	var b strings.Builder
+	var lacks []string
 	for _, im := range imps {
+		switch im.Code {
+		case ImpedimentUntagged:
+			lacks = append(lacks, "untagged")
+		case ImpedimentCapabilityMissing:
+			lacks = append(lacks, "with no capability")
+		default:
+			continue
+		}
 		fmt.Fprintf(&b, "\n  - %s: %s", im.Code, im.Message)
 	}
+	if len(lacks) == 0 {
+		return nil
+	}
 	fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
-	b.WriteString("\n--force skips this check only: it approves the card as it is; the other approve gates still apply.")
-	return fmt.Errorf("%w — %s is not registered complete:%s", ErrIncompleteCard, id, b.String())
+	fmt.Fprintf(&b, "\n--force skips this check only: it approves the card %s; the spec gates still apply.", strings.Join(lacks, " and "))
+	return fmt.Errorf("%w — %s is not registered complete (the registering agent's to complete: fix it with the commands below, or hand it back):%s", ErrIncompleteCard, id, b.String())
 }

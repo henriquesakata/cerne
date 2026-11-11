@@ -61,6 +61,13 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 	if imps, bar, _ := get("F-0002"); len(imps) != 0 || bar != "Barra: cerne push --dry-run — ensaio com gate" {
 		t.Fatalf("F-0002 readiness = %+v bar %q, want none and the bar", imps, bar)
 	}
+	// F-0336: an untagged card with a valid spec carries the soft untagged
+	// impediment the UI lists (it does not block the UI approve).
+	seedFeature(t, repoDir, "F-0004", "Sem tag", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0004", "spec.md", "# t\n\nProblema real.\n\nBarra: cerne push --dry-run — ensaio com gate\n")
+	if imps, _, _ := get("F-0004"); len(imps) != 1 || imps[0].Code != "untagged" || imps[0].Hard {
+		t.Fatalf("F-0004 readiness = %+v, want one soft untagged", imps)
+	}
 	if imps, bar, present := get("F-0003"); present || bar != "" {
 		t.Fatalf("F-0003 (approved) readiness = %+v bar %q, want neither field", imps, bar)
 	}

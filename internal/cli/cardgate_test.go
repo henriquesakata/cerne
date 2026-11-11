@@ -8,6 +8,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -33,6 +34,10 @@ func incompleteCard(t *testing.T) (projDir, repoDir, id string) {
 // and nothing is written — a lowercase id included; --force crosses it.
 func TestApproveRefusesIncompleteCard(t *testing.T) {
 	projDir, repoDir, id := incompleteCard(t)
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, arg := range []string{id, strings.ToLower(id)} {
 		_, err := execCerne(t, "feature", "approve", arg, "--dir", projDir)
 		if !errors.Is(err, app.ErrIncompleteCard) {
@@ -42,6 +47,8 @@ func TestApproveRefusesIncompleteCard(t *testing.T) {
 			app.ImpedimentUntagged, "cerne feature retag " + id + " --facet <f> --component <c>",
 			app.ImpedimentCapabilityMissing, "cerne feature capability " + id + " C-",
 			"cerne feature approve " + id + "' again", "--force",
+			"the registering agent's to complete", "infra, code, data, process, auth",
+			"approves the card untagged and with no capability",
 		} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("refusal lacks %q:\n%v", want, err)
@@ -49,6 +56,9 @@ func TestApproveRefusesIncompleteCard(t *testing.T) {
 		}
 		if f, err := store.LoadFeature(repoDir, id); err != nil || f.State != domain.StateCandidate {
 			t.Fatalf("after the refusal: %+v, %v; want candidate", f, err)
+		}
+		if now, _ := gitback.HeadSHA(repoDir); now != head {
+			t.Fatalf("the refusal committed to the backend: %s → %s", head, now)
 		}
 	}
 	if out, err := execCerne(t, "feature", "approve", id, "--force", "--dir", projDir); err != nil {
@@ -137,5 +147,19 @@ func TestClarificationRefusalNamesIncompleteCard(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "the other approve gates still apply") {
 		t.Fatalf("refusal says --force leaves the card check standing:\n%v", err)
+	}
+}
+
+// An approved card whose spec is the approved version has nothing to renew:
+// the card gate stays out of the way so the core names that refusal, never a
+// card one the --force could not get past anyway (F-0336 critic, finding 1).
+func TestCardGateLeavesNothingToRenewToTheCore(t *testing.T) {
+	projDir, _, id := incompleteCard(t)
+	if _, err := execCerne(t, "feature", "approve", id, "--force", "--dir", projDir); err != nil {
+		t.Fatalf("approve --force: %v", err)
+	}
+	_, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if !errors.Is(err, app.ErrNothingToReapprove) || errors.Is(err, app.ErrIncompleteCard) {
+		t.Fatalf("re-approve with nothing to renew err = %v, want ErrNothingToReapprove alone", err)
 	}
 }
