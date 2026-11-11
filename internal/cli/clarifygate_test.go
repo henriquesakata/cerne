@@ -22,7 +22,7 @@ func newFeatureWithSpec(t *testing.T, projDir, title, specBody string) {
 	if err := os.WriteFile(specFile, []byte(specBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := execCerne(t, "feature", "new", title, "--file", specFile, "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", title, "--file", specFile, "--component", "test", "--dir", projDir); err != nil {
 		t.Fatalf("feature new --file: %v\noutput: %s", err, out)
 	}
 }

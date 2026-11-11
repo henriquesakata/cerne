@@ -58,3 +58,20 @@ func TestRegisterRulesBarIsAProposal(t *testing.T) {
 		}
 	}
 }
+
+// TestRegisterRulesCompleteCard (F-0336 crit. 8): the session rule asks for
+// the whole card in the registration act — spec, tags and capability — in
+// both session-start copies, not the spec alone.
+func TestRegisterRulesCompleteCard(t *testing.T) {
+	body, err := os.ReadFile("assets/cerne-register-reminder.sh")
+	if err != nil {
+		t.Fatalf("read asset: %v", err)
+	}
+	for name, text := range map[string]string{"RegisterRules": RegisterRules, "cerne-register-reminder.sh": string(body)} {
+		for _, want := range []string{"Register it complete in that same act", "--facet", "--component", "cerne feature capability <id> C-"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing %q", name, want)
+			}
+		}
+	}
+}

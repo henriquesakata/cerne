@@ -19,7 +19,9 @@ import (
 // newFeature creates a feature via the CLI and returns its expected ID.
 func newFeature(t *testing.T, projDir, title string, seq int) string {
 	t.Helper()
-	out, err := execCerne(t, "feature", "new", title, "--context", "ctx de teste", "--dir", projDir)
+	// Born tagged: a complete card (F-0336), so the approve gates under test
+	// are the spec's, not the card's.
+	out, err := execCerne(t, "feature", "new", title, "--context", "ctx de teste", "--component", "test", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("feature new %q: %v\noutput: %s", title, err, out)
 	}

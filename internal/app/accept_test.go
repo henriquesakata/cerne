@@ -168,3 +168,20 @@ func TestCompleteHumanGateStopsAtImplemented(t *testing.T) {
 		t.Fatalf("outcome To = %s, want implemented (human gate keeps Ready)", out.To)
 	}
 }
+
+// tagFeature gives feature id a component, so its approve readiness carries
+// no untagged impediment (F-0336), and commits it like the seed it follows.
+func tagFeature(t *testing.T, repoDir, id string) {
+	t.Helper()
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Components = []string{"cli"}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "tag "+id); err != nil {
+		t.Fatalf("CommitAndPush tag: %v", err)
+	}
+}

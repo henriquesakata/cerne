@@ -32,7 +32,7 @@ func TestShowFeature(t *testing.T) {
 
 func TestShowEpicAndTask(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	if _, err := execCerne(t, "epic", "new", "Épico teste", "--context", "ctx de teste", "--dir", projDir); err != nil {
+	if _, err := execCerne(t, "epic", "new", "Épico teste", "--context", "ctx de teste", "--component", "test", "--dir", projDir); err != nil {
 		t.Fatalf("epic new: %v", err)
 	}
 	// The approve bar gate (F-0545) also covers epic specs; the creation-seeded
