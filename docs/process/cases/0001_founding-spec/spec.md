@@ -1,95 +1,97 @@
-# Case 0001 — Spec fundadora do cerne
+> **Translated from Brazilian Portuguese.** Historical record: this document reflects the state of the project when it was written, not the current one. For the current state, see the README and `cerne status`.
+
+# Case 0001 — cerne founding spec
 
 tags: #spec #cerne #founding #docs-as-code #ai-agents
 
-**Status:** Done — v1 entregue (v0.2.0, 2026-06-12); ver [result.md](result.md)
-**Tipo:** Spec fundadora — define o produto, a arquitetura e o corte do v1.
-**Origem:** Brainstorming em 2026-06-12, motivado pela dor real do Rockt Hub: agentes de IA se perdendo em documentação histórica e citando estruturas que não existem mais.
+**Status:** Done — v1 shipped (v0.2.0, 2026-06-12); see [result.md](result.md)
+**Type:** Founding spec — defines the product, the architecture, and the v1 cut.
+**Origin:** Brainstorming on 2026-06-12, driven by a real pain in the Rockt Hub: AI agents getting lost in historical documentation and citing structures that no longer exist.
 
 ---
 
-## Problema
+## Problem
 
-Projetos de software desenvolvidos com agentes de IA acumulam documentação **append-only**: specs, planos, resultados, ADRs e notas crescem sem parar, mas nada distingue mecanicamente o que está **vigente** do que é **histórico**. Consequências observadas no projeto de referência (Rockt Hub, ~6 meses de desenvolvimento intensivo com agentes):
+Software projects developed with AI agents accumulate **append-only** documentation: specs, plans, results, ADRs, and notes keep growing, but nothing mechanically distinguishes what is **current** from what is **history**. Consequences observed in the reference project (Rockt Hub, ~6 months of intensive development with agents):
 
-1. **Escala** — ~1.000 arquivos markdown (786 em `docs/`, 226 em `apps/*/docs/`), incluindo 241 cases cross-app e 46 ADRs. Nenhum agente consegue (nem deve) ler isso para obter contexto.
-2. **Estado é prosa, não dado** — "quais features foram criadas, quais implementadas, quais pendentes?" não tem resposta sem ler dezenas de arquivos e interpretar texto livre.
-3. **Índices manuais mentem** — o `features.md` do hub ainda lista Bills e Investments como módulos separados, sendo que ambos foram absorvidos pelo Finance. O documento que deveria ser o mapa do estado atual é, ele mesmo, fonte de informação obsoleta. Agentes que o leem "aprendem" a estrutura errada e a propagam.
-4. **Histórico e corrente têm o mesmo peso** — um case rejeitado de 2025 custa os mesmos tokens de leitura que a spec aprovada ontem. O agente não tem como saber a diferença.
+1. **Scale** — ~1,000 markdown files (786 in `docs/`, 226 in `apps/*/docs/`), including 241 cross-app cases and 46 ADRs. No agent can (or should) read all of that to get context.
+2. **State is prose, not data** — "which features were created, which were implemented, which are pending?" has no answer without reading dozens of files and interpreting free text.
+3. **Manual indexes lie** — the hub's `features.md` still lists Bills and Investments as separate modules, although both were absorbed by Finance. The document that should be the map of the current state is itself a source of obsolete information. Agents that read it "learn" the wrong structure and propagate it.
+4. **History and current carry the same weight** — a rejected case from 2025 costs the same reading tokens as the spec approved yesterday. The agent has no way to tell the difference.
 
-O problema não é específico do hub: **qualquer projeto que use IA no desenvolvimento e documente o processo vai chegar aqui**. Ferramentas existentes não resolvem:
+The problem is not specific to the hub: **any project that uses AI in development and documents the process will end up here**. Existing tools don't solve it:
 
-- **RAG** recupera trechos relevantes, mas não tem noção de estado (recupera o obsoleto com a mesma confiança que o vigente).
-- **Jira/Notion/Confluence** têm estado, mas não têm camada de consumo para agentes (não materializam contexto em arquivos) nem amarração com o repositório de código.
-- **LLM Wiki (Karpathy, 2025)** propõe a camada compilada de síntese mantida por LLM, mas não tem eventos estruturados de ciclo de vida — a detecção de obsolescência depende de passes de lint por LLM.
+- **RAG** retrieves relevant snippets but has no notion of state (it retrieves the obsolete with the same confidence as the current).
+- **Jira/Notion/Confluence** have state, but no consumption layer for agents (they don't materialize context into files) and no binding to the code repository.
+- **LLM Wiki (Karpathy, 2025)** proposes the compiled synthesis layer maintained by an LLM, but has no structured lifecycle events — obsolescence detection depends on LLM lint passes.
 
-**A tese do cerne é a união dos três:** ciclo de vida estruturado (estado como dado) + camada compilada para consumo de agentes (wiki) + materialização do estado vigente em arquivos no repo do usuário.
+**cerne's thesis is the union of the three:** structured lifecycle (state as data) + a compiled layer for agent consumption (wiki) + materialization of the current state into files in the user's repo.
 
-> O nome: *cerne* é o lenho duro no centro da árvore — a parte durável que permanece enquanto a árvore cresce. A ferramenta preserva o cerne do projeto; o resto é histórico consultável.
-
----
-
-## Visão do produto
-
-**cerne** é uma ferramenta independente de plataforma (CLI + UI local, um único binário, open source em potencial) que gerencia a documentação viva de um projeto de software:
-
-- O repositório do usuário ganha uma pasta **`.docs/` materializada e gitignored** contendo *apenas o estado vigente*: specs ativas, ADRs ativas, references vigentes e uma wiki compilada. É o que agentes leem — nativamente, sem protocolo.
-- O **histórico completo** mora no backend do cerne (v1: um repositório git separado), com busca full-text local.
-- **Transições de estado** (aprovar, rejeitar, substituir) são operações validadas da ferramenta — nunca edição de texto.
-- Um **`docs.lock` commitado** amarra cada estado do código ao snapshot de docs correspondente.
-
-Públicos: times que desenvolvem com agentes (Claude Code, Cursor, etc.) **e** criadores não-técnicos/amadores — para estes, o fluxo opinativo da ferramenta É o guia metodológico ("sua spec foi aprovada; o próximo passo é o plano").
-
-O Rockt Hub é o primeiro cliente (dogfooding via `cerne import`); o Studio da plataforma Rockt será, no futuro, um cliente da API do cerne para projetos da plataforma. O cerne **não depende** da plataforma.
+> The name: *cerne* is the hard heartwood at the center of the tree — the durable part that remains while the tree grows. The tool preserves the project's *cerne*; the rest is queryable history.
 
 ---
 
-## Decisões (validadas no brainstorming)
+## Product vision
 
-| # | Decisão | Alternativas descartadas |
+**cerne** is a platform-independent tool (CLI + local UI, a single binary, potentially open source) that manages the living documentation of a software project:
+
+- The user's repository gains a **materialized, gitignored `.docs/` folder** containing *only the current state*: active specs, active ADRs, current references, and a compiled wiki. It is what agents read — natively, with no protocol.
+- The **full history** lives in cerne's backend (v1: a separate git repository), with local full-text search.
+- **State transitions** (approve, reject, supersede) are validated tool operations — never text edits.
+- A **committed `docs.lock`** binds each state of the code to the corresponding docs snapshot.
+
+Audiences: teams developing with agents (Claude Code, Cursor, etc.) **and** non-technical/hobbyist creators — for them, the tool's opinionated flow IS the methodological guide ("your spec was approved; the next step is the plan").
+
+The Rockt Hub is the first client (dogfooding via `cerne import`); the Rockt platform's Studio will, in the future, be a client of the cerne API for platform projects. cerne **does not depend** on the platform.
+
+---
+
+## Decisions (validated in brainstorming)
+
+| # | Decision | Discarded alternatives |
 |---|---------|--------------------------|
-| 1 | **Produto independente**, open source em potencial; hub é o primeiro adotante | Ferramenta interna do hub; módulo do Studio |
-| 2 | **Híbrido files + estado estruturado**: conteúdo em markdown, grafo de estado como dado de primeira classe; `.docs/` materializada (gitignored) + `docs.lock` commitado + backend remoto com histórico | Files-first puro (estado vira prosa de novo); database-first (lock-in, agente refém de API) |
-| 3 | **Escrita híbrida**: conteúdo edita-se como arquivo + `push`; transições de estado só via comando validado | Tudo via arquivo (sem consistência); tudo via API (atrito para agentes) |
-| 4 | **CLI-first**; MCP como casca fina no v2 | MCP-only (restringe clientes); CLI+MCP simultâneos no v1 (escopo) |
-| 5 | **Ciclo de vida fixo e opinativo no v1**: a ferramenta é a metodologia. Feature como entidade central | Workflow configurável tipo Jira (motor de workflow ≠ produto de opinião) |
-| 6 | **Núcleo determinístico + LLM plugável**: materialização, lifecycle, lint estrutural e busca funcionam sem LLM; compilação de wiki e Q&A são camadas opcionais | LLM embutido obrigatório (custo + barreira para amador) |
-| 7 | **UI web local servida pelo próprio binário** (`cerne ui`); Excalidraw embarcado para revisão visual de specs | Sem GUI (amador não vive no terminal); SaaS desde o dia 1 (infra prematura) |
-| 8 | **Backend v1 = git-como-backend** (repo git separado gerenciado pelo cerne): zero infra, histórico auditável de graça | Server self-hosted ou SaaS no v1 (ambos viram backends futuros atrás da mesma interface) |
+| 1 | **Independent product**, potentially open source; the hub is the first adopter | Internal hub tool; Studio module |
+| 2 | **Hybrid files + structured state**: content in markdown, state graph as first-class data; materialized `.docs/` (gitignored) + committed `docs.lock` + remote backend with history | Pure files-first (state becomes prose again); database-first (lock-in, agent held hostage by an API) |
+| 3 | **Hybrid writing**: content is edited as files + `push`; state transitions only via a validated command | Everything via files (no consistency); everything via API (friction for agents) |
+| 4 | **CLI-first**; MCP as a thin shell in v2 | MCP-only (restricts clients); CLI+MCP simultaneously in v1 (scope) |
+| 5 | **Fixed, opinionated lifecycle in v1**: the tool is the methodology. Feature as the central entity | Jira-style configurable workflow (a workflow engine ≠ an opinionated product) |
+| 6 | **Deterministic core + pluggable LLM**: materialization, lifecycle, structural lint, and search work without an LLM; wiki compilation and Q&A are optional layers | Mandatory embedded LLM (cost + barrier for hobbyists) |
+| 7 | **Local web UI served by the binary itself** (`cerne ui`); Excalidraw embedded for visual spec review | No GUI (hobbyists don't live in the terminal); SaaS from day 1 (premature infra) |
+| 8 | **v1 backend = git-as-backend** (a separate git repo managed by cerne): zero infra, auditable history for free | Self-hosted server or SaaS in v1 (both become future backends behind the same interface) |
 
 ---
 
-## Modelo de domínio
+## Domain model
 
-Seis tipos de entidade. Todas têm **ID estável** e **status como dado** (nunca prosa):
+Six entity types. All have a **stable ID** and **status as data** (never prose):
 
-| Entidade | Papel | Estados |
+| Entity | Role | States |
 |---|---|---|
-| **Project** | Raiz; define módulos/escopos (ex.: finance, identity) | — |
-| **Feature** | Entidade central (work item) | `candidata → aprovada → em-desenvolvimento → implementada`; terminais alternativos: `rejeitada`, `substituída` |
-| **Document** | Spec, plano ou resultado — sempre pertence a uma Feature (são estágios dela) | derivado do estado da Feature |
-| **Decision (ADR)** | Decisão arquitetural | `ativa / substituída` |
-| **Reference** | Arquitetura, runbooks, guias | `vigente / obsoleto` |
-| **Artifact** | Diagramas `.excalidraw`, imagens — anexados a Documents | — |
+| **Project** | Root; defines modules/scopes (e.g., finance, identity) | — |
+| **Feature** | Central entity (work item) | `candidata → aprovada → em-desenvolvimento → implementada`; alternative terminals: `rejeitada`, `substituída` |
+| **Document** | Spec, plan, or result — always belongs to a Feature (they are its stages) | derived from the Feature's state |
+| **Decision (ADR)** | Architectural decision | `ativa / substituída` |
+| **Reference** | Architecture, runbooks, guides | `vigente / obsoleto` |
+| **Artifact** | `.excalidraw` diagrams, images — attached to Documents | — |
 
-**Relações com semântica:** `superseded_by` carrega motivo + link (ex.: Feature Bills → `superseded_by: finance-absorption, reason: "absorvida pelo Finance"`). ADRs linkam às Features que as motivaram. É o que transforma "nota de rodapé que agentes ignoram" em registro estruturado que o lint usa.
+**Relations with semantics:** `superseded_by` carries a reason + link (e.g., Feature Bills → `superseded_by: finance-absorption, reason: "absorvida pelo Finance"`). ADRs link to the Features that motivated them. This is what turns "a footnote agents ignore" into a structured record the lint uses.
 
-**Gates do ciclo (fixos no v1):**
+**Lifecycle gates (fixed in v1):**
 
-- `aprovar` exige spec presente
-- `iniciar desenvolvimento` exige plano
-- `concluir` exige resultado
+- `aprovar` requires a spec to be present
+- `iniciar desenvolvimento` requires a plan
+- `concluir` requires a result
 
-**Log de eventos append-only:** toda transição vira evento (`feature.approved`, `feature.superseded`, `adr.superseded`, …). O log alimenta:
+**Append-only event log:** every transition becomes an event (`feature.approved`, `feature.superseded`, `adr.superseded`, …). The log feeds:
 
-1. **Lint determinístico** — "Bills foi substituída → N páginas a referenciam → flagrar". Sem LLM.
-2. **Invalidação de wiki** — páginas compiladas afetadas são marcadas sujas para recompilação.
+1. **Deterministic lint** — "Bills was superseded → N pages reference it → flag them". No LLM.
+2. **Wiki invalidation** — affected compiled pages are marked dirty for recompilation.
 
 ---
 
-## Arquitetura
+## Architecture
 
-Um único binário, quatro camadas:
+A single binary, four layers:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -107,17 +109,17 @@ Um único binário, quatro camadas:
 └─────────────────────────────────────────────────┘
 ```
 
-**Pegada no projeto do usuário:**
+**Footprint in the user's project:**
 
-| Item | Versionado? | Conteúdo |
+| Item | Versioned? | Content |
 |---|---|---|
-| `.docs/` | não (gitignored) | materialização: docs vigentes + wiki + `CONTEXT.md` |
-| `docs.lock` | **sim** | snapshot-id do estado dos docs ↔ estado do código |
-| `.cernerc` | sim | config: backend, escopo padrão, nome do projeto |
+| `.docs/` | no (gitignored) | materialization: current docs + wiki + `CONTEXT.md` |
+| `docs.lock` | **yes** | snapshot-id of the docs state ↔ code state |
+| `.cernerc` | yes | config: backend, default scope, project name |
 
-O `docs.lock` é a correção do maior risco do modelo "docs fora do git": sem ele, checkout antigo não sabe qual era o estado dos docs, e PRs não amarram código a spec. Com ele, `cerne pull` reconstrói a materialização de qualquer commit (analogia: `package.json`/lockfile vs `node_modules`).
+The `docs.lock` fixes the biggest risk of the "docs outside git" model: without it, an old checkout doesn't know what the docs state was, and PRs don't bind code to spec. With it, `cerne pull` rebuilds the materialization of any commit (analogy: `package.json`/lockfile vs `node_modules`).
 
-### Layout da materialização
+### Materialization layout
 
 ```
 .docs/
@@ -129,87 +131,87 @@ O `docs.lock` é a correção do maior risco do modelo "docs fora do git": sem e
     └── references/       ← só docs vigentes
 ```
 
-**Contrato com o agente (1 parágrafo no CLAUDE.md do projeto):** *"Estado atual do projeto em `.docs/` — comece por `CONTEXT.md`. Não cite documentação fora de `.docs/`. Histórico via `cerne search` / `cerne ask`."*
+**Contract with the agent (1 paragraph in the project's CLAUDE.md):** *"Current project state in `.docs/` — start at `CONTEXT.md`. Do not cite documentation outside `.docs/`. History via `cerne search` / `cerne ask`."*
 
-**Promoção na conclusão (regra anti-crescimento):** spec, plano e resultado são documentos *de processo*. Quando a Feature vira `implementada`, eles saem da materialização (ficam no histórico); o conhecimento durável é promovido (decisões → ADR, comportamento → Reference, visão → wiki). O corrente não cresce com a idade do projeto — cresce só com o tamanho atual dele.
+**Promotion on completion (anti-growth rule):** spec, plan, and result are *process* documents. When the Feature becomes `implementada`, they leave the materialization (they stay in history); durable knowledge is promoted (decisions → ADR, behavior → Reference, vision → wiki). The current set does not grow with the project's age — it grows only with its current size.
 
 ---
 
-## Comandos (v1)
+## Commands (v1)
 
-| Comando | Função |
+| Command | Function |
 |---|---|
-| `cerne init` | projeto novo: cria backend, lock, `.docs/` |
-| `cerne import` | repo existente: varre docs, propõe mapeamento (case→Feature, adr→Decision), popula backend |
-| `cerne pull [--scope X]` | materializa `.docs/` (fatia opcional); idempotente |
-| `cerne push` | valida schema/links, grava no backend, atualiza lock, lint incremental |
-| `cerne status` | tabela de features por estado |
-| `cerne feature new "título"` | cria Feature `candidata` |
-| `cerne feature approve F-042` | valida gate (spec existe?), registra evento |
-| `cerne feature supersede F-007 --by F-042 --reason "..."` | substituição estruturada |
-| `cerne lint [--fix-tasks]` | relatório determinístico: referências a substituídos, links quebrados, órfãos, gates pendentes; `--fix-tasks` emite tarefas para o agente hospedeiro executar |
-| `cerne search "query"` | FTS local sobre o histórico completo |
-| `cerne ui` | abre dashboard local |
+| `cerne init` | new project: creates backend, lock, `.docs/` |
+| `cerne import` | existing repo: scans docs, proposes a mapping (case→Feature, adr→Decision), populates the backend |
+| `cerne pull [--scope X]` | materializes `.docs/` (optional slice); idempotent |
+| `cerne push` | validates schema/links, writes to the backend, updates the lock, incremental lint |
+| `cerne status` | table of features by state |
+| `cerne feature new "título"` | creates a `candidata` Feature |
+| `cerne feature approve F-042` | validates the gate (does the spec exist?), records an event |
+| `cerne feature supersede F-007 --by F-042 --reason "..."` | structured supersession |
+| `cerne lint [--fix-tasks]` | deterministic report: references to superseded entities, broken links, orphans, pending gates; `--fix-tasks` emits tasks for the host agent to execute |
+| `cerne search "query"` | local FTS over the full history |
+| `cerne ui` | opens the local dashboard |
 
-**Conflitos:** `push` detecta drift remoto (lock desatualizado) e exige `pull` antes — modelo git-like. Conteúdo é markdown e o backend v1 é git: merges difíceis caem em ferramentas existentes.
+**Conflicts:** `push` detects remote drift (outdated lock) and requires a `pull` first — a git-like model. Content is markdown and the v1 backend is git: hard merges fall back to existing tools.
 
-**v1.5 (LLM plugável):** `cerne compile` (recompila páginas wiki sujas) e `cerne ask "pergunta"` (Q&A: responde pela wiki, mergulha no histórico se preciso). Modos: BYO API key ou delegação ao agente hospedeiro.
-
----
-
-## UI local (v1)
-
-`cerne ui` serve em `localhost`:
-
-1. **Kanban de features por estado** — resposta visual a "o que está criado/implementado/pendente"
-2. **Página da feature** — abas spec/plano/resultado, diff contra a última versão aprovada
-3. **Tela de aprovação** — spec + diagramas lado a lado; aprovar/rejeitar com motivo obrigatório (vira evento)
-4. **Relatório de lint** e timeline de eventos
-
-**Excalidraw:** componente React open source embarcado. O agente gera o JSON `.excalidraw` (diagrama de sequência, arquitetura) como Artifact anexado à spec; o humano visualiza e edita no embed antes de aprovar.
+**v1.5 (pluggable LLM):** `cerne compile` (recompiles dirty wiki pages) and `cerne ask "pergunta"` (Q&A: answers from the wiki, dives into history if needed). Modes: BYO API key or delegation to the host agent.
 
 ---
 
-## Corte de versões
+## Local UI (v1)
+
+`cerne ui` serves on `localhost`:
+
+1. **Feature kanban by state** — a visual answer to "what is created/implemented/pending"
+2. **Feature page** — spec/plan/result tabs, diff against the last approved version
+3. **Approval screen** — spec + diagrams side by side; approve/reject with a mandatory reason (becomes an event)
+4. **Lint report** and event timeline
+
+**Excalidraw:** open-source React component, embedded. The agent generates the `.excalidraw` JSON (sequence diagram, architecture) as an Artifact attached to the spec; the human views and edits it in the embed before approving.
+
+---
+
+## Version cut
 
 | v1 (MVP) | v1.5 | v2+ |
 |---|---|---|
-| CLI: init, import, pull, push, status, lifecycle, lint, search | `compile` + `ask` (LLM plugável) | MCP server |
-| Backend git + lock + materialização | | Server self-hosted / SaaS |
-| UI: kanban + revisão de spec + aprovação c/ Excalidraw | | Integração com Studio (Rockt) |
+| CLI: init, import, pull, push, status, lifecycle, lint, search | `compile` + `ask` (pluggable LLM) | MCP server |
+| Git backend + lock + materialization | | Self-hosted server / SaaS |
+| UI: kanban + spec review + approval w/ Excalidraw | | Studio integration (Rockt) |
 
 ---
 
-## Critérios de sucesso
+## Success criteria
 
-1. **Teste de aceitação real — `cerne import` do Rockt Hub:** importa 241 cases + 46 ADRs propondo mapeamento correto; o lint flagra, sem intervenção, as referências a Bills/Investments como entidades substituídas (o bug real do `features.md`).
-2. **Redução de contexto:** agente no hub passa de ~1.000 arquivos visíveis para dezenas (features ativas + ADRs ativas + references vigentes). O caso "agente cita Bills como módulo vivo" morre por construção.
-3. **`cerne status` responde em 1 comando** o que hoje exige ler dezenas de arquivos.
-4. **Golden path e2e:** `init → feature new → push spec → approve → pull` funciona num repo virgem em < 5 minutos, sem LLM e sem infra além de um repo git para backend.
-5. **Rastreabilidade:** checkout de commit antigo + `cerne pull` reconstrói a materialização daquela época.
-
----
-
-## Estratégia de testes
-
-- O núcleo determinístico paga aqui: gates de lifecycle, snapshots de materialização e regras de lint são testes de unidade/integração puros, **sem mock de LLM**.
-- E2e do golden path (critério 4).
-- Dogfooding contínuo: o próprio repositório do cerne usa cerne (este case 0001 será importado como Feature F-001 quando o `import` existir).
+1. **Real acceptance test — `cerne import` of the Rockt Hub:** imports 241 cases + 46 ADRs proposing a correct mapping; the lint flags, unassisted, the references to Bills/Investments as superseded entities (the real `features.md` bug).
+2. **Context reduction:** an agent in the hub goes from ~1,000 visible files to dozens (active features + active ADRs + current references). The "agent cites Bills as a live module" case dies by construction.
+3. **`cerne status` answers in 1 command** what today requires reading dozens of files.
+4. **E2e golden path:** `init → feature new → push spec → approve → pull` works on a pristine repo in < 5 minutes, with no LLM and no infra beyond a git repo for the backend.
+5. **Traceability:** checking out an old commit + `cerne pull` rebuilds the materialization from that time.
 
 ---
 
-## Questões em aberto
+## Testing strategy
 
-1. **Stack** — requisito "um binário, CLI + UI embarcada + SQLite" aponta para **Go ou Rust**; decidir no plan.md (critérios: velocidade de iteração, embed de assets web, FTS do SQLite, distribuição multiplataforma).
-2. **Licença e idioma** — se open source: licença (MIT/Apache-2.0?) e idioma da documentação pública (inglês) vs docs de processo (pt-BR hoje). Decidir antes do primeiro release público.
-3. **Nome no GitHub** — npm `cerne` livre em 2026-06-12; verificar org/repo no GitHub na criação do remoto.
-4. **Multi-usuário** — v1 assume um usuário/agente por vez por projeto (lock otimista). Modelo de colaboração simultânea fica para o server v2.
-5. **Granularidade do orçamento de tokens do `CONTEXT.md`** — heurística inicial vs configurável.
+- The deterministic core pays off here: lifecycle gates, materialization snapshots, and lint rules are pure unit/integration tests, **with no LLM mocking**.
+- E2e of the golden path (criterion 4).
+- Continuous dogfooding: cerne's own repository uses cerne (this case 0001 will be imported as Feature F-001 once `import` exists).
 
 ---
 
-## Próximos passos
+## Open questions
 
-1. `plan.md` neste case (skill `writing-plans`): decidir stack, esqueleto do repo, ordem de implementação TDD (sugestão: lifecycle/estado → lock/materialização → import → lint → search → UI).
-2. Implementar v1 com o hub como cobaia de `import` desde cedo.
-3. `result.md` ao concluir; status desta spec → Done.
+1. **Stack** — the "one binary, CLI + embedded UI + SQLite" requirement points to **Go or Rust**; decide in plan.md (criteria: iteration speed, embedding web assets, SQLite FTS, cross-platform distribution).
+2. **License and language** — if open source: license (MIT/Apache-2.0?) and the language of the public documentation (English) vs process docs (pt-BR today). Decide before the first public release.
+3. **Name on GitHub** — npm `cerne` free as of 2026-06-12; check the GitHub org/repo when creating the remote.
+4. **Multi-user** — v1 assumes one user/agent at a time per project (optimistic lock). The simultaneous collaboration model is left for the v2 server.
+5. **Granularity of the `CONTEXT.md` token budget** — initial heuristic vs configurable.
+
+---
+
+## Next steps
+
+1. `plan.md` in this case (`writing-plans` skill): decide the stack, the repo skeleton, the TDD implementation order (suggestion: lifecycle/state → lock/materialization → import → lint → search → UI).
+2. Implement v1 with the hub as the `import` guinea pig from early on.
+3. `result.md` on completion; this spec's status → Done.

@@ -5,20 +5,20 @@ pin_branch = "main"
 # F-0198: only the serialized main-branch CI job writes the committed pin.
 # Local clients always use the gitignored .docs/.snapshot sidecar.
 pin_writer = "ci"
-# F-0178: pull também reconcilia golden paths (notes/runbooks marcados) em
-# .claude/skills/learned-* — quem puxa docs já recebe as skills aprendidas.
+# F-0178: pull also reconciles golden paths (marked notes/runbooks) into
+# .claude/skills/learned-* — whoever pulls docs also gets the learned skills.
 sync_skills = true
-# F-0117: todo push recompila (incremental) as páginas sujas da wiki via [llm].
+# F-0117: every push incrementally recompiles the dirty wiki pages via [llm].
 compile_on_push = true
 
-# F-0179: SHA puro em `feature complete --commit` / `feature deliver` resolve
-# para URL clicável via este template ({sha} obrigatório).
+# F-0179: a bare SHA in `feature complete --commit` / `feature deliver` resolves
+# to a clickable URL through this template ({sha} is required).
 [delivery]
 commit_url = "https://gitlab.com/rockt/cerne/-/commit/{sha}"
 
-# Drift código→doc (F-0113/F-0116): este projeto não tem módulos, então o
-# eixo é component (tags das features). Cobertura cresce com `cerne feature
-# retag` no backlog; component sem feature correspondente é inócuo.
+# Code→doc drift (F-0113/F-0116): this project has no modules, so the axis
+# is component (the features' tags). Coverage grows with `cerne feature retag`
+# on the backlog; a component with no matching feature is harmless.
 [component_paths]
 drift = ["internal/lint/drift.go", "internal/cli/drift.go", "internal/app/autodrift.go", "internal/app/draft.go", "internal/app/projecthead.go", "internal/gitback/changedpaths.go", "internal/project/projecthead.go"]
 lint = ["internal/lint/**"]
@@ -27,8 +27,8 @@ compile = ["internal/compile/**", "internal/cli/compilecmd.go"]
 wiki = ["internal/wiki/**"]
 gitback = ["internal/gitback/**"]
 
-# LLM chamável via assinatura do Claude Code (sem API key): habilita
-# `cerne compile` single-phase (sem as duas fases de delegação),
-# `cerne drift --auto` (errata automática, D-0005) e `cerne ask` direto.
+# LLM callable through the Claude Code subscription (no API key): enables
+# single-phase `cerne compile` (no two-phase delegation),
+# `cerne drift --auto` (automatic errata, D-0005) and direct `cerne ask`.
 [llm]
 mode = "claude-cli"
