@@ -91,7 +91,7 @@ func TestDriftSuspectGoldenPath(t *testing.T) {
 	appendToFile(t, filepath.Join(proj, ".cernerc"), "\n[module_paths]\ncore = [\"internal/core/**\"]\n")
 
 	// Drive F-0001 all the way to implemented.
-	mustCerne(t, "feature", "new", "Motor de core", "--context", "ctx de teste", "--module", "core", "--dir", proj)
+	mustCerne(t, "feature", "new", "Motor de core", "--context", "ctx de teste", "--facet", "code", "--module", "core", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 	fdir := featureDir(t, proj)
 	writeReal(t, fdir, "spec.md", "Motor de core")

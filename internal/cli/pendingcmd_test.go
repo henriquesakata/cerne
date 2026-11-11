@@ -475,7 +475,7 @@ func TestPushDryRunAdvisoryPolicy(t *testing.T) {
 // out; the accept and the reject print the pendings they moved.
 func TestPendingFollowsFeatureLifecycleCLI(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	newOriginFeature(t, projDir, "Origem")
+	newOriginFeature(t, projDir, "Origem", "--component", "test") // the promoted card inherits it (F-0336)
 	pendingNew(t, projDir, "Débito pago no accept", "--from", "F-0001")
 	pendingNew(t, projDir, "Débito de uma feature rejeitada", "--from", "F-0001")
 	if out, err := execCerne(t, "pending", "promote", "P-0001", "--as", "feature", "--dir", projDir); err != nil {

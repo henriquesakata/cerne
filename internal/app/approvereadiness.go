@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/henriquesakata/cerne/internal/clarify"
 	"github.com/henriquesakata/cerne/internal/doccheck"
@@ -125,4 +126,44 @@ func AcceptedBar(repoDir, id string) (string, error) {
 	}
 	bar, _ := doccheck.SpecBar(spec)
 	return bar, nil
+}
+
+// ErrIncompleteCard is the sentinel for an approve attempted over a card with
+// no tag, or with no capability while the project curates a taxonomy
+// (F-0336). Like ErrOpenClarifications it is enforced at the CLI and --force
+// crosses it: the shared core and the UI approve do not refuse it, so a
+// project without a taxonomy is never held to it.
+var ErrIncompleteCard = errors.New("card missing tags or capability")
+
+// CheckIncompleteCard refuses when feature id's card lacks what the board
+// filters on, listing each impediment with the command that fixes it. An id
+// the approve itself would refuse (missing feature, invalid state) passes,
+// so the core names the refusal; any other load error fails closed. The id
+// is canonicalized first, as the core accepts a lowercase one.
+func CheckIncompleteCard(repoDir, id string) error {
+	id = domain.CanonicalID(id)
+	f, err := store.LoadFeature(repoDir, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("checking the card of %s: %w", id, err)
+	}
+	if _, err := domain.Transition(f.State, domain.ActionApprove); err != nil {
+		return nil
+	}
+	imps, err := cardImpediments(repoDir, f)
+	if err != nil {
+		return fmt.Errorf("checking the card of %s: %w", id, err)
+	}
+	if len(imps) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, im := range imps {
+		fmt.Fprintf(&b, "\n  - %s: %s", im.Code, im.Message)
+	}
+	fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
+	b.WriteString("\n--force skips this check only: it approves the card as it is; the other approve gates still apply.")
+	return fmt.Errorf("%w — %s is not registered complete:%s", ErrIncompleteCard, id, b.String())
 }

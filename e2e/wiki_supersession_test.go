@@ -45,7 +45,7 @@ func TestCompileResolvesSupersessionThenLintClean(t *testing.T) {
 	// An implemented feature whose spec cites the superseded D-0001. Implemented
 	// specs are not lint-scanned, so the only place the stale id could surface is
 	// the generated wiki — exactly the case F-0069 fixes.
-	mustCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", proj)
+	mustCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--facet", "code", "--module", "finance", "--dir", proj)
 	feat := filepath.Join(docs, "current", "features", "F-0001-boletos")
 	mustCerne(t, "pull", "--dir", proj)
 	writeDoc(t, filepath.Join(feat, "spec.md"), "F-0001",

@@ -124,6 +124,12 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			if err := app.CheckOpenClarifications(ctx.repoDir, id); err != nil {
 				return err
 			}
+			// A card with no tag, or no capability while the project curates a
+			// taxonomy, is the agent's half-registration (F-0336, N-0028): same
+			// CLI-side placement, same --force escape, the core never refuses it.
+			if err := app.CheckIncompleteCard(ctx.repoDir, id); err != nil {
+				return err
+			}
 		}
 	}
 	if action == domain.ActionRevert {

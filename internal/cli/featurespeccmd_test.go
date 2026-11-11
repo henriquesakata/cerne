@@ -85,7 +85,7 @@ func TestFeatureSpecFromFile(t *testing.T) {
 // body (criterion 3) and unknown id named in the error (criterion 11).
 func TestFeatureSpecRefusals(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
-	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx", "--component", "test", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\noutput: %s", err, out)
 	}
 
