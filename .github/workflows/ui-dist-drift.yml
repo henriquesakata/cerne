@@ -6,9 +6,9 @@ name: ui-dist-drift
 on:
   push:
     branches: [main]
-    paths: ['ui/**']
+    paths: ['ui/**', '.github/workflows/ui-dist-drift.yml']
   pull_request:
-    paths: ['ui/**']
+    paths: ['ui/**', '.github/workflows/ui-dist-drift.yml']
 
 permissions:
   contents: read
@@ -20,6 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cd ui && npm ci && npm run build
+      # The node:24 container runs as root over a workspace owned by the runner
+      # user, so git refuses it as "dubious ownership" (exit 128) without this.
       - run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add -A ui/dist
           git diff --cached --exit-code -- ui/dist
