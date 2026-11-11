@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      # -timeout 30m is required, not decorative: the default is 10 min per
+      # package and internal/cli + internal/app spawn real git per test (F-0289).
+      - run: go test $(go list ./... | grep -v '/internal/app$') -count=1 -timeout 30m
+      # internal/app runs apart with up to 3 attempts, as on the previous CI.
+      - name: go test ./internal/app
+        run: |
+          for i in 1 2 3; do
+            go test ./internal/app -count=1 -timeout 30m && exit 0
+          done
+          exit 1
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # .gitleaks.toml at the repo root is picked up automatically.
+      - run: >
+          docker run --rm -v "$PWD:/repo" -w /repo
+          ghcr.io/gitleaks/gitleaks:v8.30.1 git . --redact --no-banner

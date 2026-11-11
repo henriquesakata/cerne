@@ -1,0 +1,56 @@
+name: pin docs.lock
+
+# The only writer of the committed docs.lock (.cernerc pin_writer = "ci",
+# F-0198): after each push to main, pin the cerne-docs backend snapshot.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-lock-pin
+  cancel-in-progress: false
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: pin
+        env:
+          CERNE_DOCS_DEPLOY_KEY: ${{ secrets.CERNE_DOCS_DEPLOY_KEY }}
+        run: |
+          set -eu
+          if [ -z "${CERNE_DOCS_DEPLOY_KEY:-}" ]; then
+            echo "skipping docs.lock pin: CERNE_DOCS_DEPLOY_KEY is not set."
+            echo "Add the private half of a read-only deploy key for the cerne-docs backend"
+            echo "as a repository secret named CERNE_DOCS_DEPLOY_KEY."
+            exit 0
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$CERNE_DOCS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo 'gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf' >> ~/.ssh/known_hosts
+          go run ./cmd/cerne lock pin
+          changed="$(git diff --name-only)"
+          if [ -n "$changed" ] && [ "$changed" != "docs.lock" ]; then
+            echo "refusing to pin: unexpected changed paths:"
+            echo "$changed"
+            exit 1
+          fi
+          if git diff --quiet -- docs.lock; then
+            echo "docs.lock already points at the current backend snapshot"
+            exit 0
+          fi
+          git config user.name "cerne-ci"
+          git config user.email "cerne-ci@users.noreply.github.com"
+          git add docs.lock
+          git commit -m "chore(docs): pin docs.lock [skip ci]"
+          git push origin HEAD:main

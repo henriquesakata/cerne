@@ -1,0 +1,28 @@
+name: release
+
+# A v* tag cross-compiles the release matrix (scripts/build-release.sh stamps
+# internal/version.Version) and publishes a GitHub Release with the binaries
+# and SHA256SUMS.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: bash scripts/build-release.sh "$GITHUB_REF_NAME"
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --title "cerne $GITHUB_REF_NAME"
+          --notes "Cross-compiled binaries (linux and darwin amd64/arm64, windows amd64) and SHA256SUMS. Install: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/INSTALL.md"
