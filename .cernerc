@@ -14,7 +14,7 @@ compile_on_push = true
 # F-0179: a bare SHA in `feature complete --commit` / `feature deliver` resolves
 # to a clickable URL through this template ({sha} is required).
 [delivery]
-commit_url = "https://gitlab.com/rockt/cerne/-/commit/{sha}"
+commit_url = "https://github.com/henriquesakata/cerne/commit/{sha}"
 
 # Code→doc drift (F-0113/F-0116): this project has no modules, so the axis
 # is component (the features' tags). Coverage grows with `cerne feature retag`
