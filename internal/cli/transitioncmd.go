@@ -206,7 +206,7 @@ const barForms = `The spec's Verificação section needs one of the three litera
 
 // runApproveCheck prints every impediment to approving id and returns
 // errCheckImpediments while the list is not empty (crit. 3). Hard impediments
-// are the agent's to fix; open clarifications are questions for the human
+// and the card's (F-0336) are the agent's to fix; open clarifications are questions for the human
 // (F-0175), never for the agent to answer — so with only those left the check
 // says there is no hard impediment and shows the bar the approve would accept.
 // It only reads the backend clone.
@@ -215,21 +215,30 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 	if err != nil {
 		return err
 	}
-	var hard, soft []app.ApproveImpediment
+	// Open clarifications are the human's; everything else is the agent's to
+	// fix — the hard ones and the card's (F-0336), soft as they are.
+	var agent, soft []app.ApproveImpediment
+	hard := 0
 	for _, im := range imps {
 		if im.Hard {
-			hard = append(hard, im)
-		} else {
+			hard++
+		}
+		if im.Code == app.ImpedimentOpenClarification {
 			soft = append(soft, im)
+		} else {
+			agent = append(agent, im)
 		}
 	}
-	if len(hard) > 0 {
+	if len(agent) > 0 {
 		fmt.Fprintf(w, "Check: %s is not approvable yet — %d impediment(s) (nothing approved, nothing written):\n", id, len(imps))
 		barProblem := false
 		for _, im := range imps {
 			suffix := ""
-			if !im.Hard {
+			switch {
+			case im.Code == app.ImpedimentOpenClarification:
 				suffix = " (for a human to answer; the CLI approve refuses it without --force, the UI does not)"
+			case !im.Hard:
+				suffix = " (yours to fix; the CLI approve refuses it without --force, the UI does not)"
 			}
 			fmt.Fprintf(w, "  - %s: %s%s\n", im.Code, im.Message, suffix)
 			barProblem = barProblem || im.Code == app.ImpedimentBarMissing || im.Code == app.ImpedimentBarMalformed
@@ -237,7 +246,12 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		if barProblem {
 			fmt.Fprint(w, "\n"+barForms)
 		}
-		fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
+		if hard > 0 {
+			fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
+		}
+		if len(agent) > hard {
+			fmt.Fprintln(w, "Complete the card with the commands above, then check again.")
+		}
 	} else {
 		head := "is approvable"
 		if len(soft) > 0 {
@@ -264,7 +278,7 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		fmt.Fprintf(w, "Do not answer them yourself: leave the questions for the human, with the approve request: 'cerne clarify list %s'.\n", id)
 	}
 	if len(imps) > 0 {
-		return fmt.Errorf("%w: %s has %d (%d hard)", errCheckImpediments, id, len(imps), len(hard))
+		return fmt.Errorf("%w: %s has %d (%d hard)", errCheckImpediments, id, len(imps), hard)
 	}
 	if app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()) != nil {
 		fmt.Fprintf(w, "Next: ask a human to run 'cerne feature approve %s'.\n", id)
@@ -303,15 +317,15 @@ func printApproveReadiness(w io.Writer, repoDir, id string) {
 		return
 	}
 	var codes []string
-	hard := false
+	agent := false // anything but an open clarification is the agent's to fix (F-0336)
 	for _, im := range imps {
-		hard = hard || im.Hard
+		agent = agent || im.Code != app.ImpedimentOpenClarification
 		if !slices.Contains(codes, im.Code) {
 			codes = append(codes, im.Code)
 		}
 	}
 	verdict := "not approvable — " + strings.Join(codes, ", ")
-	if !hard {
+	if !agent {
 		// Only open clarifications: questions for a human, not the agent (F-0175).
 		verdict = "no hard impediment — open-clarification pending for a human"
 	}

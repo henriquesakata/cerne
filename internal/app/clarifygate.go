@@ -59,11 +59,16 @@ func CheckOpenClarifications(repoDir, id string) error {
 	digits := len(strconv.Itoa(open[len(open)-1].Index))
 	// Hard impediments lead (critic C4): answering, or --force, does not get
 	// past them, so the refusal says so before the questions.
-	var hard []string
+	// The card impediments (F-0336) wait behind this check too, and --force
+	// crosses them as well: say so rather than "the other gates still apply".
+	var hard, card []string
 	if imps, err := ApproveReadiness(repoDir, id); err == nil {
 		for _, im := range imps {
-			if im.Hard {
+			switch {
+			case im.Hard:
 				hard = append(hard, im.Code)
+			case im.Code != ImpedimentOpenClarification:
+				card = append(card, im.Code)
 			}
 		}
 	}
@@ -92,6 +97,9 @@ func CheckOpenClarifications(repoDir, id string) error {
 	if len(hard) > 0 {
 		fmt.Fprintf(&b, "\nonce 'cerne feature approve %s --check' shows no hard impediment, run 'cerne feature approve %s' again.", id, id)
 		fmt.Fprintf(&b, "\n--force skips this check only; it does not get past %s.", hardList)
+	} else if len(card) > 0 {
+		fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again — the card is incomplete too (%s): 'cerne feature approve %s --check' lists the commands that fix it.", id, strings.Join(card, ", "), id)
+		b.WriteString("\n--force skips this check and the card's: it approves with these questions still open and the card incomplete; the spec gates still apply.")
 	} else {
 		fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
 		b.WriteString("\n--force skips this check only: it approves with these questions still open in the spec; the other approve gates still apply.")

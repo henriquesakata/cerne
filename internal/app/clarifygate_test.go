@@ -29,7 +29,8 @@ func clarifyGateFixture(t *testing.T, spec string) (repoDir string, err error) {
 func clarifyGateSeed(t *testing.T, spec string) (repoDir string, err error) {
 	t.Helper()
 	repoDir = t.TempDir()
-	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0007", Title: "x", State: domain.StateCandidate}); err != nil {
+	// A complete card (F-0336): the refusal under test is the clarification one alone.
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0007", Title: "x", State: domain.StateCandidate, Components: []string{"cli"}}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
 	dir := filepath.Join(repoDir, "content", "features", "F-0007")

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -58,3 +59,83 @@ func TestApproveRefusesIncompleteCard(t *testing.T) {
 	}
 }
 
+// TestApproveCheckIncompleteCard (F-0336 crit. 7): the check treats the card
+// impediments as the agent's to fix — "not approvable yet", each with its
+// command, no "for a human" label, a non-zero exit — and a clarification
+// next to them is still left for the human.
+func TestApproveCheckIncompleteCard(t *testing.T) {
+	projDir, repoDir, id := incompleteCard(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+	if !errors.Is(err, errCheckImpediments) {
+		t.Fatalf("check err = %v, want errCheckImpediments\noutput: %s", err, out)
+	}
+	for _, want := range []string{
+		"not approvable yet",
+		app.ImpedimentUntagged + ": no tag", "cerne feature retag " + id + " --facet <f> --component <c>",
+		app.ImpedimentCapabilityMissing + ": no capability", "cerne feature capability " + id + " C-",
+		"yours to fix; the CLI approve refuses it without --force",
+		"Complete the card with the commands above, then check again.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("check output missing %q:\n%s", want, out)
+		}
+	}
+	for _, gone := range []string{"for a human", "Next: ask a human", "'cerne push', and check again"} {
+		if strings.Contains(out, gone) {
+			t.Fatalf("check output carries %q:\n%s", gone, out)
+		}
+	}
+
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real. [ESCLARECER: pública ou privada?]"))
+	commitBackend(t, repoDir)
+	out, _ = execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+	for _, want := range []string{"not approvable yet", "pública ou privada? (for a human to answer", "Do not answer them yourself"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("check with a question missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestReadinessLineNamesCardCodes (F-0336 crit. 7): the one-line readiness a
+// spec write ends with names the card codes — never "no hard impediment".
+func TestReadinessLineNamesCardCodes(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	mustExec(t, projDir, "capability", "new", "Studio")
+	specFile := t.TempDir() + "/spec.md"
+	if err := os.WriteFile(specFile, []byte(realDoc("F-0001", "Problema real descrito aqui.")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "feature", "new", "Card sem tag", "--file", specFile, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feature new --file: %v\noutput: %s", err, out)
+	}
+	if want := "Approve readiness: not approvable — untagged, capability-missing; details: 'cerne feature approve F-0001 --check'"; !strings.Contains(out, want) {
+		t.Fatalf("readiness line missing %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "no hard impediment") {
+		t.Fatalf("readiness line reads the card impediments as a human's:\n%s", out)
+	}
+}
+
+// TestClarificationRefusalNamesIncompleteCard (F-0336): the clarification
+// refusal runs first, and its --force crosses the card check too — so with an
+// incomplete card behind it, it says so instead of "the other approve gates
+// still apply".
+func TestClarificationRefusalNamesIncompleteCard(t *testing.T) {
+	projDir, repoDir, id := incompleteCard(t)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real. [ESCLARECER: qual o limite?]"))
+	commitBackend(t, repoDir)
+	_, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if !errors.Is(err, app.ErrOpenClarifications) {
+		t.Fatalf("err = %v, want ErrOpenClarifications", err)
+	}
+	for _, want := range []string{"the card is incomplete too (untagged, capability-missing)", "cerne feature approve " + id + " --check", "--force skips this check and the card's"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal lacks %q:\n%v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "the other approve gates still apply") {
+		t.Fatalf("refusal says --force leaves the card check standing:\n%v", err)
+	}
+}
