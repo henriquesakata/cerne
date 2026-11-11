@@ -70,7 +70,7 @@ func runHookLifecycleReminder(cmd *cobra.Command) {
 			return
 		}
 		id := m[1] + m[3] // one of the two alternatives matched
-		msg = fmt.Sprintf("cerne: %s registered as a candidate. Complete the card NOW, in this same turn: its real spec (`cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push`), its tags (`cerne feature retag %s --facet <f> --component <c>`, unless they went on `feature new`) and its capability (`cerne feature capability %s C-…`; the taxonomy: `cerne capability list --tree`). Then run `cerne feature approve %s --check` and fix every impediment it lists except open clarifications, which you leave for the human with the approve request. Only then ask a human to run `cerne feature approve %s` (approving accepts the `Barra:` line you proposed) and STOP. Do not implement an unapproved feature.", id, id, id, id, id, id)
+		msg = fmt.Sprintf("cerne: %s registered as a candidate. Complete the card NOW, in this same turn: its real spec (`cerne pull`, fill .docs/current/features/%s-*/spec.md, `cerne push`), its tags (`cerne feature retag %s --facet <f> --component <c>`, unless they went on `feature new`) and, if the project has a capability taxonomy (`cerne capability list --tree`), its capability (`cerne feature capability %s C-…`). Then run `cerne feature approve %s --check` and fix every impediment it lists except open clarifications, which you leave for the human with the approve request. Only then ask a human to run `cerne feature approve %s` (approving accepts the `Barra:` line you proposed) and STOP. Do not implement an unapproved feature.", id, id, id, id, id, id)
 	case featureStartRe.MatchString(ti.Command):
 		if !strings.Contains(response, "in_development") {
 			return
