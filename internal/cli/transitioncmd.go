@@ -67,7 +67,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
-		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL (complete only)")
+		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
 		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
 		if ts.action == domain.ActionApprove {
 			cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
@@ -97,6 +97,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		d, err := app.ResolveDelivery(ctx.cfg, commit, mr)
 		if err != nil {
 			return err
+		}
+		// With a [delivery] forge, ask it for the PR (F-0355); a failure only
+		// prints how to link it by hand.
+		if line := app.DiscoverPR(ctx.cfg, id, &d); line != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), line)
 		}
 		delivery = &d
 	}

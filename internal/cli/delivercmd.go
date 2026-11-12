@@ -33,6 +33,9 @@ func newFeatureDeliverCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if line := app.DiscoverPR(ctx.cfg, args[0], &d); line != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), line)
+			}
 			if err := app.SetFeatureDelivery(ctx.repoDir, ctx.projDir, args[0], d); err != nil {
 				return err
 			}
@@ -48,6 +51,6 @@ func newFeatureDeliverCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url")
-	cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL")
+	cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> resolved via [delivery] pr_url")
 	return verbs.MarkLifecycle(cmd)
 }
