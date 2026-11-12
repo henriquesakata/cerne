@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -235,5 +236,144 @@ func TestGateDoesNotParseCerncerc(t *testing.T) {
 	out, err := execCerne(t, "hook", "install", "--dir", dir)
 	if err != nil {
 		t.Fatalf("hook install with a malformed .cernerc: %v\n%s", err, out)
+	}
+}
+
+// gitRun runs git in dir, failing the test on error.
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// nestedClone creates a git repository (no .cernerc) inside projDir and
+// returns it, as a fixture or example clone would sit in a cerne project.
+func nestedClone(t *testing.T, projDir string) string {
+	t.Helper()
+	clone := filepath.Join(projDir, "examples", "clone")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, clone, "init", "-q")
+	return clone
+}
+
+// F-0372 crit. 1 + 2: without --dir, a command run inside a nested git
+// repository refuses before touching the backend and names the git root, the
+// project above and the --dir escape — which works.
+func TestNestedGitRefusesWithoutDir(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, origin, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	t.Chdir(clone)
+	before := originHead(t, origin)
+
+	want := "no cerne project in this git repository (" + clone + "); the nearest .cernerc is at " + projDir +
+		", outside it — use --dir " + projDir + " to work on that project on purpose"
+	for _, args := range [][]string{
+		{"feature", "new", "Boletos", "--context", "x"},
+		{"status"},
+	} {
+		out, err := execCerne(t, args...)
+		if !errors.Is(err, project.ErrNoProject) {
+			t.Fatalf("%v: want ErrNoProject, got err=%v out=%s", args, err, out)
+		}
+		if err.Error() != want {
+			t.Fatalf("%v: message = %q\nwant %q", args, err.Error(), want)
+		}
+	}
+	if after := originHead(t, origin); after != before {
+		t.Fatalf("backend gained a commit: %s -> %s", before, after)
+	}
+	if out, err := execCerne(t, "status", "--dir", projDir); err != nil {
+		t.Fatalf("the --dir escape: %v\n%s", err, out)
+	}
+}
+
+// F-0372 crit. 3 + 5: a subdirectory of the project's own repository, and a
+// git worktree of it carrying the versioned .cernerc (this repository's
+// .claude/worktrees/<name>/ layout), resolve as before.
+func TestNestedGitSameRepoAndWorktreeResolve(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, _, _ := setupProject(t)
+	gitRun(t, projDir, "init", "-q")
+	gitRun(t, projDir, "add", ".cernerc")
+	gitRun(t, projDir, "commit", "-q", "-m", "init")
+	sub := filepath.Join(projDir, "internal", "x")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+	if out, err := execCerne(t, "status"); err != nil {
+		t.Fatalf("status from a subdir of the project's repo: %v\n%s", err, out)
+	}
+
+	wt := filepath.Join(projDir, ".claude", "worktrees", "wt")
+	gitRun(t, projDir, "worktree", "add", "-q", "-b", "wt", wt)
+	if fi, err := os.Lstat(filepath.Join(wt, ".git")); err != nil || fi.IsDir() {
+		t.Fatalf("worktree .git must be a file: %v", err)
+	}
+	t.Chdir(wt)
+	if out, err := execCerne(t, "status"); err != nil {
+		t.Fatalf("status from the project's git worktree: %v\n%s", err, out)
+	}
+}
+
+// F-0372 crit. 6: init inside a nested git repository is exempt and creates
+// the nested project.
+func TestNestedGitInitWorks(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, _, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	t.Chdir(clone)
+	if out, err := execInit(t, "--name", "inner", "--backend", newOrigin(t)); err != nil {
+		t.Fatalf("init in a nested clone: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "status"); err != nil {
+		t.Fatalf("status in the new nested project: %v\n%s", err, out)
+	}
+}
+
+// F-0372 crit. 7: CERNE_ROOT still wins at the git boundary, and is announced.
+func TestNestedGitCerneRootIsAnnounced(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	t.Setenv("CERNE_ROOT", projDir)
+	t.Chdir(clone)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	out, cerr := execCerne(t, "status")
+	os.Stderr = old
+	w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	if cerr != nil {
+		t.Fatalf("status via CERNE_ROOT: %v\n%s", cerr, out)
+	}
+	if want := "using CERNE_ROOT=" + projDir; !strings.Contains(buf.String(), want) {
+		t.Fatalf("adoption not announced (want %q):\n%s", want, buf.String())
+	}
+}
+
+// F-0372 / N-0021: a hook fired inside a nested git repository fails open —
+// no error, no injected rules from the project above.
+func TestNestedGitHookFailsOpen(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	for _, env := range []string{"GEMINI_PROJECT_DIR", "GEMINI_CWD", "CURSOR_PROJECT_DIR", "CLAUDE_PROJECT_DIR"} {
+		t.Setenv(env, "")
+	}
+	projDir, _, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	t.Chdir(clone)
+	out, err := execCerneStdin(t, hookJSON(t, "s", clone, "", nil, nil), "hook", "session-context")
+	if err != nil || strings.TrimSpace(out) != "" {
+		t.Fatalf("hook in a nested clone: err=%v out=%s", err, out)
 	}
 }

@@ -590,11 +590,34 @@ func walkUpToConfigDir(dir string) (string, bool) {
 }
 
 // findConfigDir walks up from startDir to the directory holding a .cernerc,
-// without decoding it. ErrNoProject when none exists up to the root, or when
-// the only one lies above the first git root the walk crossed (F-0372; a .git
-// directory or file, so worktrees and submodules are roots too) — CERNE_ROOT,
-// an explicit request, still wins there.
+// without decoding it, falling back to CERNE_ROOT when the walk finds none.
+// The walk refuses a .cernerc above the first git root it crossed (F-0372);
+// CERNE_ROOT, an explicit request, still wins there.
 func findConfigDir(startDir string) (string, error) {
+	dir, err := walkToConfigDir(startDir)
+	if !errors.Is(err, ErrNoProject) {
+		return dir, err
+	}
+	var crossed *crossedGitRootError
+	if errors.As(err, &crossed) && os.Getenv("CERNE_ROOT") == "" {
+		return "", err
+	}
+	return rootFromEnv(startDir)
+}
+
+// FoundByWalk reports whether the upward walk from startDir alone, without
+// CERNE_ROOT, resolves a project — so the CLI announces every adoption of
+// CERNE_ROOT, including one at a git boundary inside the project (F-0372).
+func FoundByWalk(startDir string) bool {
+	_, err := walkToConfigDir(startDir)
+	return err == nil
+}
+
+// walkToConfigDir walks up from startDir to the nearest .cernerc. It records
+// the first git root it crosses (a .git directory or file, so worktrees and
+// submodules are roots too) and a .cernerc above it is crossedGitRootError
+// (F-0372). Plain ErrNoProject when none exists up to the filesystem root.
+func walkToConfigDir(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", err
@@ -603,13 +626,10 @@ func findConfigDir(startDir string) (string, error) {
 	for {
 		_, err := os.Stat(filepath.Join(dir, configFilename))
 		if err == nil {
-			if gitRoot == "" {
-				return dir, nil
+			if gitRoot != "" {
+				return "", &crossedGitRootError{GitRoot: gitRoot, ProjectDir: dir}
 			}
-			if os.Getenv("CERNE_ROOT") != "" {
-				return rootFromEnv(startDir)
-			}
-			return "", &crossedGitRootError{GitRoot: gitRoot, ProjectDir: dir}
+			return dir, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			return "", err
@@ -621,7 +641,7 @@ func findConfigDir(startDir string) (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return rootFromEnv(startDir)
+			return "", ErrNoProject
 		}
 		dir = parent
 	}

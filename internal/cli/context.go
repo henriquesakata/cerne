@@ -130,17 +130,13 @@ func refuseProjectlessDir(cmd *cobra.Command) error {
 
 // noteCerneRoot says on stderr when the project was found through CERNE_ROOT
 // and not by walking up from startDir (F-0876), so adopting the variable is
-// never silent. A startDir inside projDir was found by the walk: no note.
+// never silent — also inside projDir, past a nested git root (F-0372).
 func noteCerneRoot(startDir, projDir string) {
-	env := os.Getenv("CERNE_ROOT")
-	if env == "" {
+	if os.Getenv("CERNE_ROOT") == "" || project.FoundByWalk(startDir) {
 		return
 	}
 	abs, err := filepath.Abs(startDir)
 	if err != nil {
-		return
-	}
-	if rel, err := filepath.Rel(projDir, abs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "cerne: no project from %s; using CERNE_ROOT=%s\n", abs, projDir)
