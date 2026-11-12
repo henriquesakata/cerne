@@ -91,6 +91,7 @@ type MergeResult struct {
 func MergeErrata(repoDir, projDir, id, actor string) (MergeResult, error) {
 	var res MergeResult
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		res = MergeResult{} // the mutate may run again (F-0356)
 		if err := requireRunbook(repoDir, id); err != nil {
 			return "", err
 		}
