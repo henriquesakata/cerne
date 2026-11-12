@@ -459,6 +459,26 @@ func TestShowFeatureDocRevEdges(t *testing.T) {
 	}
 }
 
+// TestAmendRevisionOutsideLintAndIndex (F-0338, round 2): a replaced body
+// stays out of lint (no finding cites content/revisions/) and out of the search
+// index (a word only the old body has finds nothing).
+func TestAmendRevisionOutsideLintAndIndex(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateApproved, realDoc("F-0001", "Zebraantiga unica."), realDoc("F-0001", "Plano."))
+	amendDoc(t, projDir, "F-0001", "spec", realDoc("F-0001", "Spec vigente."), "troca")
+	lintOut, _ := execCerne(t, "lint", "--dir", projDir)
+	if strings.Contains(lintOut, "revisions/") {
+		t.Fatalf("lint cites a revision:\n%s", lintOut)
+	}
+	out, _ := execCerne(t, "search", "Zebraantiga", "--dir", projDir)
+	if !strings.Contains(out, "Nothing found") || strings.Contains(out, "F-0001") {
+		t.Fatalf("search found the replaced body:\n%s", out)
+	}
+	if out, _ := execCerne(t, "search", "vigente", "--dir", projDir); !strings.Contains(out, "F-0001") {
+		t.Fatalf("control search for the current body found nothing (test proves nothing):\n%s", out)
+	}
+}
+
 // seedShowGolden seeds the feature of the show golden: in development, with a
 // spec, a plan and a result, an erratum and an open pending — the documents
 // and the blocks a feature show prints, and no revision.
