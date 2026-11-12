@@ -476,6 +476,10 @@ func LoadConfig(startDir string) (Config, string, error) {
 	if err != nil {
 		return Config{}, "", err
 	}
+	return readConfig(dir)
+}
+
+func readConfig(dir string) (Config, string, error) {
 	path := filepath.Join(dir, configFilename)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -489,6 +493,54 @@ func LoadConfig(startDir string) (Config, string, error) {
 		return Config{}, "", fmt.Errorf("%s: %w", path, err)
 	}
 	return c, dir, nil
+}
+
+// noProjectAtError is ErrNoProject for an explicit directory (F-0354); its text
+// is the user-facing message, so it carries no sentinel prefix.
+type noProjectAtError struct{ msg string }
+
+func (e *noProjectAtError) Error() string        { return e.msg }
+func (e *noProjectAtError) Is(target error) bool { return target == ErrNoProject }
+
+// RequireConfigAt checks that <dir> holds a .cernerc, without walking up and
+// without parsing it (F-0354): a directory the user named explicitly (--dir) is
+// the project, never a place to start a search from. CERNE_ROOT does not apply
+// either. The error names the nearest project above dir, if any, so the fix is
+// one line.
+func RequireConfigAt(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stat(filepath.Join(abs, configFilename))
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	msg := fmt.Sprintf("no %s in %s (--dir names the project directory; it does not search parent directories)", configFilename, abs)
+	if parent := filepath.Dir(abs); parent != abs {
+		if above, ok := walkUpToConfigDir(parent); ok {
+			msg += fmt.Sprintf("\nnearest project above: %s — pass --dir %s to use it", above, above)
+		}
+	}
+	return &noProjectAtError{msg}
+}
+
+// walkUpToConfigDir returns the nearest directory at or above dir (absolute)
+// holding a .cernerc.
+func walkUpToConfigDir(dir string) (string, bool) {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, configFilename)); err == nil {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
 // findConfigDir walks up from startDir to the directory holding a .cernerc,

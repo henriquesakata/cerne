@@ -149,6 +149,7 @@ func TestCerneRootAdoptionIsAnnounced(t *testing.T) {
 	projDir, _, _, _ := pulledProject(t)
 	outside := t.TempDir()
 	t.Setenv("CERNE_ROOT", projDir)
+	t.Chdir(outside) // F-0354: an explicit --dir never falls back to CERNE_ROOT; the cwd does
 
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -156,7 +157,7 @@ func TestCerneRootAdoptionIsAnnounced(t *testing.T) {
 	}
 	old := os.Stderr
 	os.Stderr = w
-	_, stderr, cerr := execCerneSplit(t, "push", "--dir", outside)
+	_, stderr, cerr := execCerneSplit(t, "push")
 	os.Stderr = old
 	w.Close()
 	var buf bytes.Buffer

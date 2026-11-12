@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const finalLineAnnotation = "cerne/final-line"
+
 // withFinalLine makes cmd end with one stable stderr line, the last thing it
 // prints (F-0876): `cerne: resultado=OK` or `cerne: resultado=FALHA <cause>`.
 // stderr bypasses a `| tail` on stdout, so an agent that pipes push/sync still
@@ -16,6 +18,10 @@ import (
 func withFinalLine(cmd *cobra.Command) *cobra.Command {
 	run := cmd.RunE
 	cmd.SilenceErrors = true
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[finalLineAnnotation] = "1" // the root pre-run gate (F-0354) must end in the line too
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		err := run(c, args)
 		noteWrite(c.ErrOrStderr()) // F-0347: before the line that must stay last

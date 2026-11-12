@@ -22,13 +22,20 @@ func Root() *cobra.Command {
 		Version:       version.Short(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			startWriteNotice()
 			if verbose {
 				// Text to stderr: op timings become visible without ever
 				// polluting the command's stdout (F-0149).
 				telemetry.SetupLogger(os.Stderr, false, slog.LevelDebug)
 			}
+			if err := refuseProjectlessDir(cmd); err != nil {
+				if cmd.Annotations[finalLineAnnotation] != "" { // push/sync: the refusal ends in the FALHA line (F-0876)
+					return failWithLine(cmd, err)
+				}
+				return err
+			}
+			return nil
 		},
 		// The docs.lock pin is deferred+coalesced (F-0153); a one-shot CLI
 		// process must land it before exiting.
