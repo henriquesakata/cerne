@@ -68,7 +68,8 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 	if len(res) >= limit || ftsSyntax.MatchString(query) || len(terms) < 2 {
 		return res, false, nil
 	}
-	more, err := coverageEntities(db, terms, limit+len(res))
+	// limit suffices: at most len(res) of the top limit are already listed.
+	more, err := coverageEntities(db, terms, limit)
 	if err != nil {
 		return nil, false, err
 	}
