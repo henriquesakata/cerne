@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Living documentation for projects built with AI agents.</strong><br>
-  Your agent reads what is true today. Everything else stays searchable, out of its context.
+  You steer from a dashboard. Your agent does the paperwork, and reads only what is true today.
 </p>
 
 <p align="center">
@@ -14,12 +14,13 @@
 
 <p align="center">
   <a href="#try-it-in-two-minutes">Quickstart</a> ·
+  <a href="#you-use-the-dashboard-your-agent-uses-the-cli">Who does what</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#what-you-get">Features</a> ·
   <a href="INSTALL.md">Install guide</a>
 </p>
 
-![cerne in the terminal: a rejected feature leaves the current state and stays searchable](docs/assets/demo.gif)
+![The cerne web UI: a dashboard of what is waiting on you, the kanban board, and a feature page with its spec and the Accept button](docs/assets/ui-tour.gif)
 
 ## The problem
 
@@ -29,12 +30,28 @@ A human skims and guesses. An AI agent reads everything with the same weight, th
 
 ## What cerne does
 
-cerne is a single binary (CLI + local web UI) that keeps the lifecycle of your features and decisions as **structured data** and hands the agent **only the current state**.
+cerne is a single binary that keeps the lifecycle of your features and decisions as **structured data** and hands the agent **only the current state**. You follow and steer the work in a local web UI; the agent drives it through a CLI.
 
 - **State is data, never prose.** A feature is `candidate`, `approved`, `in development`, `implemented` or `done` because a gated command moved it there, with an event log behind it. No "Status: WIP" line rotting in a markdown file.
 - **The agent reads a projection, not the archive.** `cerne pull` materializes the current state into a gitignored `.docs/` folder with a generated `CONTEXT.md`. Finished, rejected and superseded work stays out.
 - **History is kept, and searchable.** Nothing is deleted. `cerne search` and `cerne ask` reach the whole history when you need the why behind a decision.
 - **Staleness is linted deterministically.** Because state is data, `cerne lint` can flag a doc that links to a superseded decision, a broken reference, or a feature closed without evidence. No LLM guessing.
+
+## You use the dashboard, your agent uses the CLI
+
+cerne has two faces, and you only need to learn one of them.
+
+| | You, in the browser (`cerne ui`) | Your agent, in the terminal |
+|---|---|---|
+| **Starting work** | Describe a feature, or read the spec the agent drafted | Registers the feature and writes its spec |
+| **The gate in** | **Approve** the spec. The agent cannot | Waits for your approval, then plans and builds |
+| **While it runs** | Watch the board move; see what each agent is on | Moves the feature through the lifecycle as it works |
+| **The gate out** | Read the result and its evidence, then **Accept** | Writes the result, with evidence for each acceptance criterion |
+| **Later** | Search why something was decided or rejected | Reads only what is current, so it does not cite the past |
+
+The CLI has many commands because the agent needs them. `cerne init` installs the skills and hooks that teach it the whole workflow, so in practice you ask for a feature in plain words and review it in the UI. Every command is still there for you: nothing the agent does is hidden or out of reach.
+
+![A feature page: the spec the agent wrote, its state, and the Accept button reserved for a human](docs/assets/ui-feature.png)
 
 ### The number
 
@@ -57,20 +74,32 @@ curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.s
 
 The script downloads the latest release for your machine, verifies its SHA-256 and installs it without `sudo`. On Windows, or to install by hand or with Go, see [INSTALL.md](INSTALL.md).
 
-Then, inside any git repository. A local bare repo is enough to try it out:
+Then, inside your project's git repository. A local bare repo is enough to try it out:
 
 ```bash
 git init --bare ~/my-project-docs.git
 cerne init --backend ~/my-project-docs.git --name my-project
 echo ".docs/" >> .gitignore
+cerne ui        # your dashboard, at http://localhost:7717
+```
 
+That is all you need to type. Now open your agent in the project (Claude Code picks up what `init` installed) and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec; the card shows up on your board, waiting for you to approve it.
+
+For a team, point `--backend` at an empty private repository on GitHub or GitLab instead.
+
+<details>
+<summary>Prefer the terminal, or working without an agent? The same flow by hand.</summary>
+
+```bash
 cerne feature new "Sign in with Google" --context "Users asked for social login."
 cerne pull      # materializes the current state into .docs/
 cerne status    # features grouped by state
-cerne ui        # dashboard and kanban at http://localhost:7717
+cerne search facebook   # history stays searchable
 ```
 
-For a team, point `--backend` at an empty private repository on GitHub or GitLab instead.
+![cerne in the terminal: a rejected feature leaves the current state and stays searchable](docs/assets/demo.gif)
+
+</details>
 
 ### See it with data
 
@@ -80,7 +109,7 @@ An empty project does not show what cerne is for. This builds a fictional one wi
 git clone https://github.com/henriquesakata/cerne && sh cerne/examples/demo/seed.sh
 ```
 
-Then `cd cerne-demo/taskflow && cerne ui`. What is in it and what to try: [examples/demo](examples/demo/README.md).
+Then `cd cerne-demo/taskflow && cerne ui` and click around. What is in it and what to try: [examples/demo](examples/demo/README.md).
 
 ## How it works
 
@@ -107,18 +136,20 @@ flowchart LR
 
 | | |
 |---|---|
-| **Gated lifecycle** | `approve` needs a real spec with an acceptance bar, `start` needs a plan, `complete` needs a result. `approve` and `accept` are human acts by default: the agent cannot sign off its own work. |
-| **Kanban and dashboard** | `cerne ui` serves a local web UI: board, epics, activity, flow metrics, lint debts. English and Portuguese. |
+| **A dashboard for humans** | `cerne ui` serves a local web UI: what is waiting on you, the kanban board, epics, agent activity, flow metrics, lint debts. English and Portuguese. |
+| **Gated lifecycle** | A spec needs an acceptance bar before it is approved, a plan before work starts, a result with evidence before it is done. Approving and accepting are human acts by default, one click in the UI: the agent cannot sign off its own work. |
 | **Decisions, runbooks, notes, references** | ADRs with supersession, operational procedures, durable team knowledge, and external sources registered as provenance instead of loose links. |
 | **Search and Q&A over history** | Full-text search (SQLite FTS5) over everything, including what was rejected. `cerne ask` answers with citations. |
 | **Deterministic lint** | Stale references, broken links, orphans, missing gate documents, unregistered sources. |
 | **Built for parallel agents** | Per-document merge on `pull`, auto-rebase on `push`, a conflict-free `docs.lock` across branches and worktrees. |
-| **Claude Code integration** | `cerne init` installs skills and hooks that teach the agent the workflow, so you just ask for the feature. |
+| **Your agent already knows how** | `cerne init` installs the skills and hooks that teach Claude Code the workflow, so you just ask for the feature. |
 | **Single binary** | macOS, Linux and Windows. The UI is embedded. No runtime dependencies. |
 
-![The cerne dashboard: features by state, lint debts and context savings](docs/assets/ui-dashboard.png)
+![The dashboard: what is waiting on you, features by state, lint debts and context savings](docs/assets/ui-dashboard.png)
 
-![The cerne kanban board](docs/assets/ui-kanban.png)
+![The kanban board: every feature in its state, epics and tags](docs/assets/ui-kanban.png)
+
+The screenshots are from the [demo project](examples/demo/README.md), which you can build on your machine in a few seconds.
 
 ## Why not just…
 
