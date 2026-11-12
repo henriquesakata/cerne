@@ -40,22 +40,39 @@ var (
 	mentionRangeRe = regexp.MustCompile(`(\d+)\s*(?:[-–—]|\ba\b)\s*(\d+)`)
 )
 
+// criterionLine is one line of the acceptance-criteria section: N is its
+// 1-based line in the spec file, Text the line as written.
+type criterionLine struct {
+	N    int
+	Text string
+}
+
+// criteriaLines returns the lines of the acceptance-criteria section of a
+// spec, heading excluded — the one cut of "where the criteria are" shared by
+// result-missing-evidence and spec-cli-literal-pt (F-0353).
+func criteriaLines(spec []byte) []criterionLine {
+	var out []criterionLine
+	inSection := false
+	for i, line := range strings.Split(string(spec), "\n") {
+		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
+			inSection = strings.EqualFold(strings.TrimSpace(h), criteriaSection)
+			continue
+		}
+		if inSection {
+			out = append(out, criterionLine{i + 1, line})
+		}
+	}
+	return out
+}
+
 // specCriteria returns the numbers of the numbered list items inside the
 // acceptance-criteria section of a spec, in order. No section or no numbered
 // items means no contract to enforce (F-0272, criterion 4).
 func specCriteria(spec []byte) []int {
 	var out []int
 	seen := map[int]bool{}
-	inSection := false
-	for _, line := range strings.Split(string(spec), "\n") {
-		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
-			inSection = strings.EqualFold(strings.TrimSpace(h), criteriaSection)
-			continue
-		}
-		if !inSection {
-			continue
-		}
-		if m := numberedItemRe.FindStringSubmatch(line); m != nil {
+	for _, l := range criteriaLines(spec) {
+		if m := numberedItemRe.FindStringSubmatch(l.Text); m != nil {
 			n, err := strconv.Atoi(m[1])
 			if err == nil && !seen[n] {
 				seen[n] = true
