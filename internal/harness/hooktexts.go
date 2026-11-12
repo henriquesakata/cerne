@@ -1,14 +1,17 @@
 package harness
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/lint"
 )
+
+// maxHookFile bounds what is read as hook text (1 MB).
+const maxHookFile = 1 << 20
 
 // ProjectHookTexts returns the text of every hook that belongs to the project
 // (F-0340 crit. 6), for lint rules that read what the agent reads: the scripts
@@ -24,7 +27,12 @@ func ProjectHookTexts(projDir string) ([]lint.HookText, error) {
 			return
 		}
 		seen[rel] = true
-		if b, err := os.ReadFile(filepath.Join(projDir, filepath.FromSlash(rel))); err == nil {
+		full := filepath.Join(projDir, filepath.FromSlash(rel))
+		if fi, err := os.Stat(full); err != nil || fi.Size() > maxHookFile {
+			return
+		}
+		// A NUL byte means a binary, not a script the agent reads.
+		if b, err := os.ReadFile(full); err == nil && !bytes.ContainsRune(b, 0) {
 			out = append(out, lint.HookText{Path: rel, Text: string(b)})
 		}
 	}
@@ -39,12 +47,9 @@ func ProjectHookTexts(projDir string) ([]lint.HookText, error) {
 
 	ls := readLayers(projDir, "") // home "" = no user layer
 	layerFile := map[string]string{OriginProject: ".claude/settings.json", OriginLocal: ".claude/settings.local.json"}
-	idx := map[string]int{}
 	var files []string
 	for _, w := range ls.hooks {
-		key := w.Origin + "#" + w.Event
-		path := layerFile[w.Origin] + "#hooks." + w.Event + "[" + strconv.Itoa(idx[key]) + "]"
-		idx[key]++
+		path := layerFile[w.Origin] + "#" + w.Locator
 		out = append(out, lint.HookText{Path: path, Text: w.Command})
 		files = append(files, commandProjectFiles(w.Command, projDir)...)
 	}
