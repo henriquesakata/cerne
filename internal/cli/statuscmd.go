@@ -105,9 +105,10 @@ func runStatus(cmd *cobra.Command, dir string, all, active, asJSON bool) error {
 		}{features, historicals, gauntlet})
 	}
 	// Light mode is a choice the reader must see (F-0364): one line, only
-	// when the Gauntlet is off, so a project with it on reads as before.
+	// when the Gauntlet is off, so a project with it on reads as before —
+	// and last, so a parser of the first line reads what it read before.
 	if gauntlet == "off" {
-		fmt.Fprintln(out, `Gauntlet: off (light mode) — turn it on with [gates] gauntlet = "on" in .cernerc`)
+		defer fmt.Fprintln(out, `Gauntlet: off (light mode) — turn it on with [gates] gauntlet = "on" in .cernerc`)
 	}
 	if active {
 		printChannelLead(out, ctx.cfg.ProjectID)
