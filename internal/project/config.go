@@ -567,26 +567,23 @@ func RequireConfigAt(dir string) error {
 	}
 	msg := fmt.Sprintf("no %s in %s (--dir names the project directory; it does not search parent directories)", configFilename, abs)
 	if parent := filepath.Dir(abs); parent != abs {
-		if above, ok := walkUpToConfigDir(parent); ok {
+		if above := nearestProjectAbove(parent); above != "" {
 			msg += fmt.Sprintf("\nnearest project above: %s — pass --dir %s to use it", above, above)
 		}
 	}
 	return &noProjectAtError{msg}
 }
 
-// walkUpToConfigDir returns the nearest directory at or above dir (absolute)
-// holding a .cernerc.
-func walkUpToConfigDir(dir string) (string, bool) {
-	for {
-		if _, err := os.Stat(filepath.Join(dir, configFilename)); err == nil {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
+// nearestProjectAbove is the project the single walk (walkToConfigDir) finds
+// from dir, across a git boundary too: it only words a hint for a --dir the
+// user named, never resolves a project to read or write. "" when none.
+func nearestProjectAbove(dir string) string {
+	found, err := walkToConfigDir(dir)
+	var crossed *crossedGitRootError
+	if errors.As(err, &crossed) {
+		return crossed.ProjectDir
 	}
+	return found
 }
 
 // findConfigDir walks up from startDir to the directory holding a .cernerc,

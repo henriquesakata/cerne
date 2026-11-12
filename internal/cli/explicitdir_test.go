@@ -377,3 +377,62 @@ func TestNestedGitHookFailsOpen(t *testing.T) {
 		t.Fatalf("hook in a nested clone: err=%v out=%s", err, out)
 	}
 }
+
+// F-0372 round 1: the F-0354 hint for an explicit --dir comes from the same
+// walk as resolution; across a git boundary it still names the project above
+// (the user named --dir, so the hint is the escape) and resolves nothing.
+func TestNestedGitExplicitDirHintNamesProjectAbove(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, origin, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	before := originHead(t, origin)
+	_, err := execCerne(t, "feature", "new", "Boletos", "--context", "x", "--dir", clone)
+	want := "no .cernerc in " + clone + " (--dir names the project directory; it does not search parent directories)\n" +
+		"nearest project above: " + projDir + " — pass --dir " + projDir + " to use it"
+	if !errors.Is(err, project.ErrNoProject) || err.Error() != want {
+		t.Fatalf("got %v\nwant %s", err, want)
+	}
+	if after := originHead(t, origin); after != before {
+		t.Fatalf("backend gained a commit: %s -> %s", before, after)
+	}
+}
+
+// F-0372 round 1: the ui resolves its first project from the cwd through
+// resolveProject; from a nested clone it refuses and the backend is untouched.
+func TestNestedGitUIResolverRefuses(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, origin, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	before := originHead(t, origin)
+	if _, _, _, _, err := uiResolver(clone); !errors.Is(err, project.ErrNoProject) {
+		t.Fatalf("uiResolver from a nested clone: want ErrNoProject, got %v", err)
+	}
+	if after := originHead(t, origin); after != before {
+		t.Fatalf("backend gained a commit: %s -> %s", before, after)
+	}
+}
+
+// F-0372 round 1: hook install never resolves a project — it writes into the
+// directory it runs in. From a nested clone that is the clone, never the
+// project above, and the backend is untouched.
+func TestNestedGitHookInstallStaysLocal(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, origin, _ := setupProject(t)
+	clone := nestedClone(t, projDir)
+	t.Chdir(clone)
+	before := originHead(t, origin)
+	aboveSettings := filepath.Join(projDir, ".claude", "settings.json")
+	aboveBefore, _ := os.ReadFile(aboveSettings) // init may have written it
+	if out, err := execCerne(t, "hook", "install", "--provider", "claude"); err != nil {
+		t.Fatalf("hook install: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(clone, ".claude", "settings.json")); err != nil {
+		t.Fatalf("settings not written in the clone: %v", err)
+	}
+	if aboveAfter, _ := os.ReadFile(aboveSettings); !bytes.Equal(aboveAfter, aboveBefore) {
+		t.Fatalf("project above's settings changed")
+	}
+	if after := originHead(t, origin); after != before {
+		t.Fatalf("backend gained a commit: %s -> %s", before, after)
+	}
+}
