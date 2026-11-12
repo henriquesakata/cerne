@@ -55,6 +55,65 @@ func TestErrataFromFile(t *testing.T) {
 	}
 }
 
+// F-0345 crit. 1: a runbook erratum with neither --altera nor --sem-passo is
+// refused, naming both flags, and writes nothing.
+func TestRunbookErrataRefusesNoStep(t *testing.T) {
+	projDir, repoDir := runbookFixture(t)
+	out, err := execCerne(t, "runbook", "errata", "RB-0001", "Sem passo.", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("want a refusal, got:\n%s", out)
+	}
+	for _, want := range []string{"--altera <step>", "--sem-passo"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal must name %q: %v", want, err)
+		}
+	}
+	if _, serr := os.Stat(filepath.Join(repoDir, "content", "errata", "RB-0001.md")); serr == nil {
+		t.Fatal("a refused erratum must not write")
+	}
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Nota geral.", "--sem-passo")
+}
+
+// F-0345 crit. 2: a list writes one item per step and prints the ids.
+func TestRunbookErrataListWritesOneItemPerStep(t *testing.T) {
+	projDir, repoDir := runbookFixture(t)
+	out := rb(t, projDir, "runbook", "errata", "RB-0001", "Vale nos dois.", "--altera", "S6.6, S6.7")
+	if !strings.Contains(out, "E1") || !strings.Contains(out, "E2") {
+		t.Fatalf("must print the created ids:\n%s", out)
+	}
+	doc, _ := store.LoadErrata(repoDir, "RB-0001")
+	items := store.ParseErrataItems(doc)
+	if len(items) != 2 || items[0].Target != "S6.6" || items[1].Target != "S6.7" {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
+// F-0345 crit. 3: a step the body lacks is refused, named, and nothing is written.
+func TestRunbookErrataRefusesUnknownStep(t *testing.T) {
+	projDir, repoDir := runbookFixture(t)
+	out, err := execCerne(t, "runbook", "errata", "RB-0001", "x", "--altera", "S6.6,S9.9", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "S9.9") {
+		t.Fatalf("want a refusal naming S9.9, got err=%v out=%s", err, out)
+	}
+	if _, serr := os.Stat(filepath.Join(repoDir, "content", "errata", "RB-0001.md")); serr == nil {
+		t.Fatal("a refused erratum must not write")
+	}
+}
+
+// F-0345 crit. 4: feature errata keeps today's behavior; --sem-passo is refused there.
+func TestFeatureErrataStaysAndRefusesSemPasso(t *testing.T) {
+	projDir, _, _ := setupProject(t, "finance")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "errata", "F-0001", "Correção.", "--dir", projDir); err != nil {
+		t.Fatalf("feature errata with no --altera must stay allowed: %v\n%s", err, out)
+	}
+	if _, err := execCerne(t, "feature", "errata", "F-0001", "Correção.", "--sem-passo", "--dir", projDir); err == nil {
+		t.Fatal("--sem-passo on a feature must be refused")
+	}
+}
+
 func TestErrataWiredOnEachEntity(t *testing.T) {
 	root := Root()
 	for _, parent := range []string{"feature", "decision", "runbook", "note"} {
