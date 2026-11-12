@@ -85,12 +85,17 @@ func hookItems(opts Options, ls layerSet) []Item {
 			it := Item{
 				Class:  "hooks",
 				Name:   s.Name,
-				Path:   filepath.Join(".git", "hooks", s.Name),
+				Path:   s.Path,
 				Origin: OriginLocal,
 				State:  s.State,
 				Detail: s.Detail,
 			}
-			if s.State != StateOK && s.Detail == "" {
+			switch {
+			case s.External && filepath.IsAbs(s.Path):
+				it.OutsideRepo = true
+			case s.External: // the hook manager's file is versioned (F-0360)
+				it.Origin = OriginProject
+			case s.State != StateOK && s.Detail == "":
 				it.Fix = fixHookInstall
 			}
 			items = append(items, it)
@@ -118,7 +123,7 @@ func managedCapability(projDir string, a hooks.Asset, ls layerSet) Item {
 		it.State = StateOK
 	case script == hooks.FileDivergent && wired:
 		it.State = StateDivergent
-		it.Detail = "script differs from the canonical asset of this cerne build"
+		it.Detail = "script differs from the canonical asset of this cerne build — cerne hook install replaces it and drops local lines; to turn the hook off for a process, set CERNE_NO_AGENT_HOOKS=1" // F-0360
 		it.Fix = fixHookInstall
 	case !wired && script != hooks.FileMissing:
 		it.State = StateMissing

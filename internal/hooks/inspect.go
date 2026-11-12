@@ -57,35 +57,117 @@ func ScriptState(projDir, script string) string {
 	}
 }
 
-// GitHookState is the state of one managed .git/hooks slot.
+// GitHookState is the state of one managed git hook slot.
 type GitHookState struct {
-	Name   string // hook slot (prepare-commit-msg, commit-msg)
-	State  string // FileOK / FileMissing / FileDivergent
-	Detail string
+	Name     string // hook slot (prepare-commit-msg, commit-msg)
+	State    string // FileOK / FileMissing / FileDivergent
+	Detail   string
+	Path     string // file read, relative to projDir when inside it (F-0360)
+	External bool   // owned by a hook manager (core.hooksPath): install skips it
 }
 
 // GitHookStates inspects the two git hook slots Install manages. A foreign
 // hook without our content/marker reports divergent with the manual snippet —
-// install deliberately skips it, so "reinstall" is not the whole fix.
+// install deliberately skips it, so "reinstall" is not the whole fix. With a
+// core.hooksPath the slots belong to the hook manager (F-0360): each is ok when
+// the file the manager runs carries the cerne invocation, missing otherwise.
 func GitHookStates(projDir string) []GitHookState {
+	if hp, set := GitHooksPath(projDir); set {
+		return []GitHookState{
+			managedSlot(projDir, hp, trailerHookName, trailerSnippet),
+			managedSlot(projDir, hp, guardHookName, guardSnippet),
+		}
+	}
 	out := make([]GitHookState, 0, 2)
 
-	trailerPath := filepath.Join(projDir, ".git", "hooks", trailerHookName)
-	if raw, err := os.ReadFile(trailerPath); err != nil {
-		out = append(out, GitHookState{Name: trailerHookName, State: FileMissing})
+	trailerRel := filepath.Join(".git", "hooks", trailerHookName)
+	if raw, err := os.ReadFile(filepath.Join(projDir, trailerRel)); err != nil {
+		out = append(out, GitHookState{Name: trailerHookName, State: FileMissing, Path: trailerRel})
 	} else if string(raw) == trailerHookContent {
-		out = append(out, GitHookState{Name: trailerHookName, State: FileOK})
+		out = append(out, GitHookState{Name: trailerHookName, State: FileOK, Path: trailerRel})
 	} else {
-		out = append(out, GitHookState{Name: trailerHookName, State: FileDivergent, Detail: "foreign hook in slot — integrate manually: " + trailerSnippet})
+		out = append(out, GitHookState{Name: trailerHookName, State: FileDivergent, Path: trailerRel, Detail: "foreign hook in slot — integrate manually: " + trailerSnippet})
 	}
 
-	guardPath := filepath.Join(projDir, ".git", "hooks", guardHookName)
-	if raw, err := os.ReadFile(guardPath); err != nil {
-		out = append(out, GitHookState{Name: guardHookName, State: FileMissing})
+	guardRel := filepath.Join(".git", "hooks", guardHookName)
+	if raw, err := os.ReadFile(filepath.Join(projDir, guardRel)); err != nil {
+		out = append(out, GitHookState{Name: guardHookName, State: FileMissing, Path: guardRel})
 	} else if strings.Contains(string(raw), guardMarker) {
-		out = append(out, GitHookState{Name: guardHookName, State: FileOK})
+		out = append(out, GitHookState{Name: guardHookName, State: FileOK, Path: guardRel})
 	} else {
-		out = append(out, GitHookState{Name: guardHookName, State: FileDivergent, Detail: "foreign hook in slot — integrate manually: " + guardSnippet})
+		out = append(out, GitHookState{Name: guardHookName, State: FileDivergent, Path: guardRel, Detail: "foreign hook in slot — integrate manually: " + guardSnippet})
 	}
 	return out
+}
+
+// managedSlot looks for the cerne invocation of one slot under a hook
+// manager's core.hooksPath: <hooksPath>/<slot>, and for husky 9 (hooksPath
+// ending in .husky/_) first .husky/<slot>, the file its runner executes.
+func managedSlot(projDir, hooksPath, slot, snippet string) GitHookState {
+	dir := hooksPath
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(projDir, dir)
+	}
+	candidates := []string{filepath.Join(dir, slot)}
+	if clean := filepath.Clean(dir); filepath.Base(clean) == "_" && filepath.Base(filepath.Dir(clean)) == ".husky" {
+		candidates = append([]string{filepath.Join(filepath.Dir(dir), slot)}, candidates...)
+	}
+	invocation, _, _ := strings.Cut(snippet, ` "$1"`)
+	st := GitHookState{Name: slot, State: FileMissing, External: true,
+		Detail: "core.hooksPath=" + hooksPath + " — add to your hook manager: " + snippet}
+	found := ""
+	for _, c := range candidates {
+		raw, err := os.ReadFile(c)
+		if err != nil {
+			continue
+		}
+		if found == "" {
+			found = c
+		}
+		if callsCerne(string(raw), invocation) {
+			found, st.State, st.Detail = c, FileOK, ""
+			break
+		}
+	}
+	if found == "" {
+		found = candidates[len(candidates)-1]
+	}
+	st.Path = found
+	if rel, ok := relInside(projDir, found); ok {
+		st.Path = rel
+	}
+	return st
+}
+
+// relInside returns path relative to root when it lies inside it, resolving
+// symlinks on both sides (/var vs /private/var on macOS) when the plain paths
+// disagree.
+func relInside(root, path string) (string, bool) {
+	inside := func(r, p string) (string, bool) {
+		rel, err := filepath.Rel(r, p)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", false
+		}
+		return rel, true
+	}
+	if rel, ok := inside(root, path); ok {
+		return rel, true
+	}
+	r, err1 := filepath.EvalSymlinks(root)
+	p, err2 := filepath.EvalSymlinks(path)
+	if err1 != nil || err2 != nil {
+		return "", false
+	}
+	return inside(r, p)
+}
+
+// callsCerne reports whether a hook body runs the invocation on a line that is
+// not a shell comment.
+func callsCerne(body, invocation string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		if t := strings.TrimSpace(line); !strings.HasPrefix(t, "#") && strings.Contains(t, invocation) {
+			return true
+		}
+	}
+	return false
 }

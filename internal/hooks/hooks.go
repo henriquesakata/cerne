@@ -249,7 +249,7 @@ func installGuardCommitMsgGitHook(projDir string) Result {
 	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
 		return skipped("not a git repository — integrate manually: " + guardSnippet)
 	}
-	if raw, err := os.ReadFile(filepath.Join(gitDir, "config")); err == nil && strings.Contains(string(raw), "hooksPath") {
+	if _, set := GitHooksPath(projDir); set {
 		return skipped("custom core.hooksPath — add to your hook manager: " + guardSnippet)
 	}
 	dst := filepath.Join(gitDir, "hooks", guardHookName)
@@ -313,7 +313,7 @@ func installCommitTrailerGitHook(projDir string) Result {
 	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
 		return skipped("not a git repository — integrate manually: " + trailerSnippet)
 	}
-	if raw, err := os.ReadFile(filepath.Join(gitDir, "config")); err == nil && strings.Contains(string(raw), "hooksPath") {
+	if _, set := GitHooksPath(projDir); set {
 		return skipped("custom core.hooksPath — add to your hook manager: " + trailerSnippet)
 	}
 	dst := filepath.Join(gitDir, "hooks", trailerHookName)
