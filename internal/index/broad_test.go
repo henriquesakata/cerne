@@ -100,6 +100,19 @@ func TestSearchBroadSkipsSyntaxAndSingleTerm(t *testing.T) {
 	}
 }
 
+// Criterion 1 guard: the AND is empty ("de" is in A, "criptografia" only in B),
+// but the one keyword alone would hit B; with fewer than 2 keywords it must not broaden.
+func TestSearchBroadSingleKeywordDoesNotBroaden(t *testing.T) {
+	db := seedBroad(t, docA, docB)
+	rs, broadened, err := SearchBroad(db, "criptografia de", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if broadened || len(rs) != 0 {
+		t.Fatalf("got broadened=%v hits=%+v, want none", broadened, rs)
+	}
+}
+
 // Criterion 5: nothing even after broadening -> empty, not broadened.
 func TestSearchBroadNothingFound(t *testing.T) {
 	db := seedBroad(t, docA, docB)
