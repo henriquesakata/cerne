@@ -145,6 +145,23 @@ func TestStartWorkHandoffSeamsWithPlanning(t *testing.T) {
 		}
 	})
 
+	t.Run("c: held by another session, handoff with hint", func(t *testing.T) {
+		repoDir, projDir := setup(t, false)
+		if err := BindSession(filepath.Dir(repoDir), "sess-other", "W-0001"); err != nil {
+			t.Fatal(err)
+		}
+		w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(w.Held, []string{"W-0001"}) {
+			t.Fatalf("held = %v, want [W-0001]", w.Held)
+		}
+		if len(w.Handoffs) != 1 || w.Handoffs[0].ID != "W-0001" || !w.Handoffs[0].Hint {
+			t.Fatalf("handoffs = %+v, want W-0001 with hint", w.Handoffs)
+		}
+	})
+
 	t.Run("c: kept active, handoff with hint", func(t *testing.T) {
 		repoDir, projDir := setup(t, false)
 		w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil, "")
