@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
@@ -117,6 +118,23 @@ func Search(dbPath, query string, limit int) ([]Result, error) {
 		return runQuery(db, quotePhrase(query), limit)
 	}
 	return results, nil
+}
+
+// ftsSyntax matches FTS5 query syntax: quotes, prefix star, grouping, column
+// filter, and the uppercase boolean operators.
+var ftsSyntax = regexp.MustCompile(`["*():^+]|\b(AND|OR|NOT|NEAR)\b`)
+
+// SearchBroad is Search, but when no document has all the terms it retries
+// with the query's keywords OR-joined (bm25 order) and reports broadened=true.
+// It does not retry when the query already uses FTS5 syntax or has fewer than
+// two keywords (F-0343).
+func SearchBroad(dbPath, query string, limit int) ([]Result, bool, error) {
+	results, err := Search(dbPath, query, limit)
+	if err != nil || len(results) > 0 || ftsSyntax.MatchString(query) || len(keywordTerms(query)) < 2 {
+		return results, false, err
+	}
+	results, err = Search(dbPath, Keywords(query), limit)
+	return results, len(results) > 0, err
 }
 
 func runQuery(db *sql.DB, query string, limit int) ([]Result, error) {

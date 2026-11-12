@@ -69,7 +69,7 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 		return err
 	}
 
-	results, err := index.Search(dbPath, query, limit)
+	results, broadened, err := index.SearchBroad(dbPath, query, limit)
 	if err != nil {
 		return err
 	}
@@ -90,13 +90,17 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Results []searchHitJSON `json:"results"`
-		}{hits})
+			Results   []searchHitJSON `json:"results"`
+			Broadened bool            `json:"broadened,omitempty"`
+		}{hits, broadened})
 	}
 
 	if len(results) == 0 {
 		fmt.Fprintf(out, "Nothing found for \"%s\".\n", query)
 		return nil
+	}
+	if broadened {
+		fmt.Fprintln(out, "No document has all the terms; showing those that have any.")
 	}
 	for _, r := range results {
 		fmt.Fprintln(out, resultHeader(r))
