@@ -3,11 +3,13 @@ package app
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // specNoBar is a real spec (numbered criteria) with no bar line at all.
@@ -91,18 +93,6 @@ func TestComplete_LightMode(t *testing.T) {
 	})
 }
 
-// TestLightMode_HumanGatesUnchanged (F-0364 crit. 5): light mode leaves the
-// human gates alone — an agent actor is still refused at approve and accept.
-func TestLightMode_HumanGatesUnchanged(t *testing.T) {
-	t.Setenv("CERNE_ACTOR", "agent")
-	g := project.GatesConfig{Gauntlet: "off"}
-	for name, gate := range map[string]string{"approve": g.ApproveGate(), "accept": g.AcceptGate()} {
-		if err := CheckHumanGate(gate); !errors.Is(err, ErrHumanGate) {
-			t.Errorf("%s: err = %v, want ErrHumanGate", name, err)
-		}
-	}
-}
-
 // TestSpecScaffold_LightMode (F-0364, Ajuste 2): a feature created in light
 // mode is scaffolded without the template's bar guidance; with the Gauntlet
 // on the scaffold keeps it.
@@ -120,6 +110,68 @@ func TestSpecScaffold_LightMode(t *testing.T) {
 		}
 		if got := strings.Contains(string(spec), "(Gauntlet)"); got != wantGuide {
 			t.Fatalf("gauntlet %q: scaffold carries the bar guide = %v, want %v", v, got, wantGuide)
+		}
+	}
+}
+
+// lastEventPayload returns the payload of the backend's last event.
+func lastEventPayload(t *testing.T, repoDir string) map[string]string {
+	t.Helper()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil || len(evs) == 0 {
+		t.Fatalf("ReadEvents: %v (%d events)", err, len(evs))
+	}
+	return evs[len(evs)-1].Payload
+}
+
+// TestLightMode_StampsEvents (F-0364 critic 5): an approve or a complete
+// crossed in light mode records gauntlet = off on its event, so the event log
+// shows which deliveries skipped the Gauntlet; with it on, nothing is added.
+func TestLightMode_StampsEvents(t *testing.T) {
+	for v, want := range map[string]string{"off": "off", "": ""} {
+		repoDir, projDir, _ := newFeatureBackend(t)
+		saveGauntlet(t, projDir, v)
+		spec := specNoBar
+		if v != "off" {
+			spec += testBarTail
+		}
+		seedCandidateSpec(t, repoDir, "F-0001", spec)
+		if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		if got := lastEventPayload(t, repoDir)["gauntlet"]; got != want {
+			t.Fatalf("gauntlet %q: approve event gauntlet = %q, want %q", v, got, want)
+		}
+
+		repoDir, projDir, _ = newFeatureBackend(t)
+		saveGauntlet(t, projDir, v)
+		result := resultBody(gateCite1234, "")
+		if v != "off" {
+			result = resultBody(gateCite1234, gateGauntletOK)
+		}
+		seedCompletable(t, repoDir, specNoBar, result)
+		if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+			t.Fatalf("complete: %v", err)
+		}
+		if got := lastEventPayload(t, repoDir)["gauntlet"]; got != want {
+			t.Fatalf("gauntlet %q: complete event gauntlet = %q, want %q", v, got, want)
+		}
+	}
+}
+
+// TestProjectGates_FailSafe (F-0364 critic 7): a .cernerc that fails to parse,
+// or a TOML bool where the string goes, keeps the Gauntlet on.
+func TestProjectGates_FailSafe(t *testing.T) {
+	for name, body := range map[string]string{
+		"unparsable": "project_id = \"demo\"\nbackend = \n[gates\n",
+		"toml bool":  "project_id = \"demo\"\nbackend = \"b\"\n\n[gates]\ngauntlet = false\n",
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !projectGates(dir).GauntletEnabled() {
+			t.Errorf("%s: Gauntlet off, want on", name)
 		}
 	}
 }

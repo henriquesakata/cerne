@@ -284,6 +284,15 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			}
 			payload["guard"] = "forced"
 		}
+		// Light mode is part of the record (F-0364): an approve or complete
+		// that skipped the Gauntlet says so on its event, auditable even after
+		// .cernerc flips back.
+		if !gauntletOn && (action == domain.ActionApprove || action == domain.ActionComplete) {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["gauntlet"] = "off"
+		}
 		// Approving is accepting the proposed bar (F-0308 crit. 8): the line the
 		// gate just validated goes on the event, with the actor.
 		var bar string
