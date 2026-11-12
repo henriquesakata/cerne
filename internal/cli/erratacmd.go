@@ -62,7 +62,7 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file, altera strin
 		steps = []string{altera}
 	}
 	id := args[0]
-	ids, err := app.AddErrataSteps(ctx.repoDir, ctx.projDir, id, text, eventActor(), steps, semPasso)
+	ids, err := app.AddErrataSteps(ctx.repoDir, ctx.projDir, id, text, app.EventActor(), steps, semPasso)
 	if err != nil {
 		return err
 	}
