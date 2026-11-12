@@ -40,6 +40,9 @@ func TestWorkIDsAreCanonical(t *testing.T) {
 	if hs, _ := store.LoadHandoffs(repoDir, "W-0001"); len(hs) != 1 {
 		t.Fatalf("handoff must be stored under W-0001, got %+v", hs)
 	}
+	if n := countEvents(t, repoDir, "W-0001", "work.handoff"); n != 1 {
+		t.Fatalf("work.handoff events under W-0001 = %d, want 1", n)
+	}
 	w, err := StartWork(repoDir, projDir, "Retomada do plano", nil, "", false, nil, "w-0001")
 	if err != nil {
 		t.Fatal(err)

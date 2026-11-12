@@ -128,10 +128,10 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) er
 		if err := store.SaveWork(repoDir, w); err != nil {
 			return "", err
 		}
-		if err := store.AppendEvent(repoDir, domain.NewEvent(id, "work.handoff", map[string]string{"next": next}, EventActor())); err != nil {
+		if err := store.AppendEvent(repoDir, domain.NewEvent(w.ID, "work.handoff", map[string]string{"next": next}, EventActor())); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("cerne: handoff %s", id), nil
+		return fmt.Sprintf("cerne: handoff %s", w.ID), nil
 	})
 }
 
