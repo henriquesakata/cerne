@@ -1054,6 +1054,9 @@ const ptBR = {
       'Wiki': 'Wiki',
       "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.":
         "Desligado, para o compile_on_push e transforma a dívida de lint da wiki em achados informativos, fora do 'cerne next'; a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
+      'Notes on edit': 'Notas ao editar',
+      'Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.':
+        'Desligado, o gancho work-gate deixa de mostrar as notas que citam um arquivo quando o agente vai editá-lo.',
     } as Record<string, string>,
   },
 }
