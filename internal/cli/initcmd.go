@@ -52,13 +52,12 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "project name")
-	cmd.Flags().StringVar(&backend, "backend", "", "backend git URL or local path")
+	cmd.Flags().StringVar(&backend, "backend", "", "backend git URL or local path (default: a local bare repo in the per-user data dir)")
 	cmd.Flags().StringArrayVar(&modules, "module", nil, "module to register (repeatable)")
 	cmd.Flags().StringVar(&docs, "docs-language", "", "language cerne scaffolds documents in, for a new backend: en (default) or pt-BR")
 	cmd.Flags().StringVar(&dir, "dir", "", "target project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("backend")
 	return cmd
 }
 
@@ -67,6 +66,19 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	docsLang := doclang.EN
 	if docs != "" {
 		if docsLang, err = doclang.Parse(docs); err != nil {
+			return err
+		}
+	}
+	projectID := slug.Make(name)
+	if projectID == "" {
+		return fmt.Errorf("project name %q yields an empty project id", name)
+	}
+	// No --backend: the backend is a local bare repo at a stable per-project
+	// path outside the cache; it is created below unless it already exists, in
+	// which case init joins it like any existing backend (F-0365).
+	localBackend := backend == ""
+	if localBackend {
+		if backend, err = project.BackendDataDir(projectID); err != nil {
 			return err
 		}
 	}
@@ -84,9 +96,17 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		return err
 	}
 
-	projectID := slug.Make(name)
-	if projectID == "" {
-		return fmt.Errorf("project name %q yields an empty project id", name)
+	if localBackend {
+		if _, err := os.Stat(filepath.Join(backend, "HEAD")); errors.Is(err, os.ErrNotExist) {
+			if err := os.MkdirAll(filepath.Dir(backend), 0o755); err != nil {
+				return err
+			}
+			if err := gitback.InitBare(backend); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
 	}
 
 	cacheDir, err := project.CacheDir(projectID)
@@ -179,6 +199,10 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		fmt.Fprintf(out, "Joined existing backend %s as project %q.\n", backend, projectID)
 	} else {
 		fmt.Fprintf(out, "Initialized project %q with backend %s.\n", projectID, backend)
+	}
+
+	if localBackend {
+		fmt.Fprintf(out, "Backend is local: %s. To move it to a remote: git -C %q push --mirror <url>, set backend = \"<url>\" in .cernerc, then delete %q (the cached clone still points here).\n", backend, backend, repoDir)
 	}
 
 	// Install cerne's canonical Claude Code skills so a new project ships with

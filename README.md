@@ -74,18 +74,17 @@ curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.s
 
 The script downloads the latest release for your machine, verifies its SHA-256 and installs it without `sudo`. On Windows, or to install by hand or with Go, see [INSTALL.md](INSTALL.md).
 
-Then, inside your project's git repository. A local bare repo is enough to try it out:
+Then, inside your project's git repository (with no `--backend`, `init` creates a local backend for you):
 
 ```bash
-git init --bare ~/my-project-docs.git
-cerne init --backend ~/my-project-docs.git --name my-project
+cerne init --name my-project
 echo ".docs/" >> .gitignore
 cerne ui        # your dashboard, at http://localhost:7717
 ```
 
 That is all you need to type. Now open your agent in the project (Claude Code picks up what `init` installed) and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec; the card shows up on your board, waiting for you to approve it.
 
-For a team, point `--backend` at an empty private repository on GitHub or GitLab instead.
+For a team, pass `--backend` an empty private repository on GitHub or GitLab instead. `init` prints how to move a local backend to a remote later.
 
 <details>
 <summary>Prefer the terminal, or working without an agent? The same flow by hand.</summary>

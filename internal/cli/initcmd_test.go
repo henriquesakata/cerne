@@ -363,3 +363,97 @@ func TestInitCachedCloneOtherBackendRefuses(t *testing.T) {
 		t.Fatalf("cached clone origin = %q (err %v), want it untouched at %q", got, err, originA)
 	}
 }
+
+// localBackendEnv isolates the data and cache roots; the data root contains a
+// space on purpose (macOS "Application Support").
+func localBackendEnv(t *testing.T) (dataRoot, cacheRoot string) {
+	t.Helper()
+	dataRoot = filepath.Join(t.TempDir(), "data root")
+	cacheRoot = t.TempDir()
+	t.Setenv("CERNE_DATA_DIR", dataRoot)
+	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
+	return dataRoot, cacheRoot
+}
+
+func TestInit_NoBackendCreatesLocal(t *testing.T) {
+	dataRoot, _ := localBackendEnv(t)
+	dir := t.TempDir()
+	out, err := execInit(t, "--name", "Solo", "--dir", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	bare := filepath.Join(dataRoot, "backends", "solo.git")
+	if _, err := os.Stat(filepath.Join(bare, "HEAD")); err != nil {
+		t.Fatalf("bare backend not created at %s: %v", bare, err)
+	}
+	cfg, _, err := project.LoadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Backend != bare {
+		t.Fatalf("Backend = %q, want %q", cfg.Backend, bare)
+	}
+	if !strings.Contains(out, bare) {
+		t.Fatalf("output does not print the created path %s:\n%s", bare, out)
+	}
+}
+
+func TestInit_LocalBackendOutsideProjectAndCache(t *testing.T) {
+	_, cacheRoot := localBackendEnv(t)
+	dir := t.TempDir()
+	if out, err := execInit(t, "--name", "solo", "--dir", dir); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	cfg, _, err := project.LoadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(cfg.Backend, dir) || strings.HasPrefix(cfg.Backend, cacheRoot) {
+		t.Fatalf("backend %s lives inside the project %s or the cache %s", cfg.Backend, dir, cacheRoot)
+	}
+	// Deleting the cache must not lose the backend.
+	if err := os.RemoveAll(cacheRoot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cfg.Backend); err != nil {
+		t.Fatalf("backend gone after deleting the cache: %v", err)
+	}
+}
+
+func TestInit_NoBackendJoinsExistingLocal(t *testing.T) {
+	dataRoot, _ := localBackendEnv(t)
+	first, second := t.TempDir(), t.TempDir()
+	if out, err := execInit(t, "--name", "solo", "--dir", first); err != nil {
+		t.Fatalf("first init: %v\n%s", err, out)
+	}
+	out, err := execInit(t, "--name", "solo", "--dir", second)
+	if err != nil {
+		t.Fatalf("second init: %v\n%s", err, out)
+	}
+	bare := filepath.Join(dataRoot, "backends", "solo.git")
+	if !strings.Contains(out, "Joined existing backend "+bare) {
+		t.Fatalf("second init did not join %s:\n%s", bare, out)
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "backends", "solo-2.git")); err == nil {
+		t.Fatal("a second backend was created")
+	}
+}
+
+func TestInit_NoBackendPrintsHint(t *testing.T) {
+	localBackendEnv(t)
+	out, err := execInit(t, "--name", "solo", "--dir", t.TempDir())
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Backend is local:") || !strings.Contains(out, "push --mirror") || !strings.Contains(out, ".cernerc") || !strings.Contains(out, "then delete") {
+		t.Fatalf("missing local-backend hint:\n%s", out)
+	}
+	// An explicit --backend keeps today's output: no hint.
+	out, err = execInit(t, "--name", "other", "--backend", newOrigin(t), "--dir", t.TempDir())
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Backend is local") {
+		t.Fatalf("hint printed with explicit --backend:\n%s", out)
+	}
+}
