@@ -199,3 +199,68 @@ func TestPlanningOptOutOnStart(t *testing.T) {
 	}
 	assertActive(t, repoDir, "W-0001")
 }
+
+// TestPlanningClosedOnExit (crit. 2, 6 and 7): leaving the live cycle closes
+// the planning works still active — done on complete, abandoned on reject or
+// supersede, from candidate, approved or in_development — in the transition's
+// commit. A manual work opened during development (after the start) stays, as
+// does everything when the feature leaves from a terminal state or the
+// project opted out.
+func TestPlanningClosedOnExit(t *testing.T) {
+	cases := []struct {
+		name   string
+		from   domain.FeatureState
+		action domain.Action
+		optOut bool
+		want   domain.WorkState // of the planning work; active = untouched
+		note   string
+	}{
+		{"complete from in_development", domain.StateInDevelopment, domain.ActionComplete, false, domain.WorkDone, "feature complete"},
+		{"supersede from in_development", domain.StateInDevelopment, domain.ActionSupersede, false, domain.WorkAbandoned, "feature supersede"},
+		{"supersede from approved", domain.StateApproved, domain.ActionSupersede, false, domain.WorkAbandoned, "feature supersede"},
+		{"supersede from candidate", domain.StateCandidate, domain.ActionSupersede, false, domain.WorkAbandoned, "feature supersede"},
+		{"reject from candidate", domain.StateCandidate, domain.ActionReject, false, domain.WorkAbandoned, "feature reject"},
+		{"supersede from implemented", domain.StateImplemented, domain.ActionSupersede, false, domain.WorkActive, ""},
+		{"opt-out", domain.StateInDevelopment, domain.ActionComplete, true, domain.WorkActive, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			if tc.optOut {
+				optOutActivity(t, projDir)
+			}
+			seedFeatureInState(t, repoDir, "F-0001", tc.from, "spec.md", "plan.md", "result.md")
+			seedFeatureInState(t, repoDir, "F-0002", domain.StateCandidate, "spec.md")
+			seedActiveWork(t, repoDir, "W-0001", "outro@host", "F-0001", false)
+			developed := tc.from == domain.StateInDevelopment || tc.from == domain.StateImplemented
+			if developed {
+				seedStartEvent(t, repoDir, "F-0001", time.Now().UTC())
+				seedActiveWork(t, repoDir, "W-0002", "outro@host", "F-0001", false)
+			}
+			before, err := gitback.HeadSHA(repoDir)
+			if err != nil {
+				t.Fatalf("HeadSHA: %v", err)
+			}
+
+			by, reason := "", ""
+			switch tc.action {
+			case domain.ActionSupersede:
+				by, reason = "F-0002", "substituída"
+			case domain.ActionReject:
+				reason = "fora de escopo"
+			}
+			if _, err := TransitionFeature(repoDir, projDir, "F-0001", tc.action, by, reason, nil); err != nil {
+				t.Fatalf("%s: %v", tc.action, err)
+			}
+			if tc.want == domain.WorkActive {
+				assertActive(t, repoDir, "W-0001")
+			} else {
+				assertClosedAuto(t, repoDir, "W-0001", tc.want, tc.note)
+				assertOneCommit(t, repoDir, before, "entities/works/W-0001.json", "entities/features/F-0001.json")
+			}
+			if developed {
+				assertActive(t, repoDir, "W-0002") // opened during development (crit. 6)
+			}
+		})
+	}
+}
