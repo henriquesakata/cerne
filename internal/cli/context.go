@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,47 @@ type projCtx struct {
 	cfg     project.Config
 	projDir string // directory holding .cernerc and docs.lock
 	repoDir string // cached backend clone
+}
+
+// lastProject is the project the latest resolvePaths picked: the root's
+// PersistentPostRun names it when the command wrote to the backend (F-0347).
+var lastProject struct{ id, backend, cernerc string }
+
+// writeNotice tracks the F-0347 line for the running command: the pushes
+// count at its start (a delta, so several commands in one process stay exact)
+// and whether the line already went out.
+var writeNotice struct {
+	pushes0 int64
+	printed bool
+}
+
+func startWriteNotice() {
+	writeNotice.pushes0, writeNotice.printed = gitback.Pushes(), false
+	lastProject.id = ""
+}
+
+// noteWrite prints, once, where the command's write landed. push/sync call it
+// before their final line (F-0876 wants that one last); the root's
+// PersistentPostRun covers every other command.
+func noteWrite(w io.Writer) {
+	if writeNotice.printed || gitback.Pushes() <= writeNotice.pushes0 || lastProject.id == "" {
+		return
+	}
+	writeNotice.printed = true
+	fmt.Fprintf(w, "cerne: wrote to project %q (%s) — .cernerc at %s\n",
+		lastProject.id, lastProject.backend, lastProject.cernerc)
+}
+
+// backendForDisplay drops the userinfo of a URL backend so a token embedded in
+// it never reaches stderr. The scp form (git@host:path) and local paths are not
+// URLs and stay as written.
+func backendForDisplay(backend string) string {
+	u, err := url.Parse(backend)
+	if err != nil || u.Host == "" {
+		return backend
+	}
+	u.User = nil
+	return u.String()
 }
 
 // resolvePaths locates the cerne project from startDir (cwd when empty)
@@ -36,6 +79,8 @@ func resolvePaths(startDir string) (projCtx, error) {
 		return projCtx{}, err
 	}
 	noteCerneRoot(startDir, projDir)
+	lastProject.id, lastProject.backend = cfg.ProjectID, backendForDisplay(cfg.Backend)
+	lastProject.cernerc = filepath.Join(projDir, ".cernerc")
 	cacheDir, err := project.CacheDir(cfg.ProjectID)
 	if err != nil {
 		return projCtx{}, err

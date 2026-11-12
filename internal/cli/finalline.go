@@ -18,6 +18,7 @@ func withFinalLine(cmd *cobra.Command) *cobra.Command {
 	cmd.SilenceErrors = true
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		err := run(c, args)
+		noteWrite(c.ErrOrStderr()) // F-0347: before the line that must stay last
 		if err == nil {
 			fmt.Fprintln(c.ErrOrStderr(), "cerne: resultado=OK")
 			return nil

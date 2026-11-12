@@ -23,6 +23,7 @@ func Root() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			startWriteNotice()
 			if verbose {
 				// Text to stderr: op timings become visible without ever
 				// polluting the command's stdout (F-0149).
@@ -33,6 +34,7 @@ func Root() *cobra.Command {
 		// process must land it before exiting.
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			app.FlushAutocommits()
+			noteWrite(cmd.ErrOrStderr())
 		},
 	}
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "log operation timings (phases, retries) to stderr")
