@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -281,5 +282,24 @@ func TestMCP_NoWriteTools(t *testing.T) {
 	}
 	if after := gitHead(t, origin); after != originBefore {
 		t.Fatalf("origin HEAD moved: %s -> %s", originBefore, after)
+	}
+}
+
+// TestMCP_ToolCommandsNeverTouchProcessStdio: the six commands behind the MCP
+// tools write only through cmd.OutOrStdout/ErrOrStderr. A direct os.Stdout,
+// os.Stdin, fmt.Print* or os.Exit would corrupt the protocol channel (stdout)
+// or kill the server, so any appearance in their sources fails here.
+func TestMCP_ToolCommandsNeverTouchProcessStdio(t *testing.T) {
+	banned := regexp.MustCompile(`os\.Stdout|os\.Stdin|os\.Exit\(|fmt\.Print(ln|f)?\(`)
+	for _, name := range []string{"status", "brief", "next", "search", "show", "ask"} {
+		src, err := os.ReadFile(name + "cmd.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if m := banned.FindString(line); m != "" {
+				t.Errorf("%scmd.go:%d uses %s — write through cmd.OutOrStdout()/ErrOrStderr() instead (cerne mcp serves it over stdio)", name, i+1, m)
+			}
+		}
 	}
 }
