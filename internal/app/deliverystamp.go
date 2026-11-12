@@ -23,17 +23,20 @@ var (
 // fence or the end of the text.
 func sectionSpan(result string, heading *regexp.Regexp) (start, end int, ok bool) {
 	start, end = -1, len(result)
-	fence, off := "", 0
+	var fchar byte // the open fence's character, 0 outside a fence
+	fn, off := 0, 0
 	for _, line := range strings.SplitAfter(result, "\n") {
 		text := strings.TrimRight(line, "\r\n")
-		trimmed := strings.TrimLeft(text, " ")
+		ch, n, rest := fenceRun(text)
 		switch {
-		case fence != "":
-			if strings.HasPrefix(trimmed, fence) {
-				fence = ""
+		case fchar != 0:
+			// CommonMark: closed only by the same character, at least as long,
+			// with nothing but spaces after it.
+			if ch == fchar && n >= fn && strings.TrimSpace(rest) == "" {
+				fchar = 0
 			}
-		case strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~"):
-			fence = trimmed[:3]
+		case n >= 3 && !(ch == '`' && strings.Contains(rest, "`")):
+			fchar, fn = ch, n
 		case start < 0:
 			if heading.MatchString(text) {
 				start = off
@@ -44,6 +47,21 @@ func sectionSpan(result string, heading *regexp.Regexp) (start, end int, ok bool
 		off += len(line)
 	}
 	return start, end, start >= 0
+}
+
+// fenceRun reads the run of backticks or tildes that starts a line (up to three
+// spaces of indent): its character, length and the text after it. Length 0 when
+// the line starts no such run.
+func fenceRun(line string) (ch byte, n int, rest string) {
+	t := strings.TrimLeft(line, " ")
+	if len(line)-len(t) > 3 || t == "" || (t[0] != '`' && t[0] != '~') {
+		return 0, 0, ""
+	}
+	ch = t[0]
+	for n < len(t) && t[n] == ch {
+		n++
+	}
+	return ch, n, t[n:]
 }
 
 // deliveryBlock renders the "## Entrega" section — document content, pt-BR like
