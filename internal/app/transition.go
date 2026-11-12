@@ -177,8 +177,8 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			baseline = ApprovalBaselineMissing(repoDir, f)
 		}
 		if action == domain.ActionStart {
-			if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
-				return "", fmt.Errorf("%w: %s — a human re-approves it with 'cerne feature approve %s' (or 'cerne feature revert %s' sends it back to the Backlog)", ErrApprovalStale, id, id, id)
+			if err := CheckStartNotStale(repoDir, f); err != nil {
+				return "", err
 			}
 		}
 
@@ -203,8 +203,8 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		if err != nil {
 			return "", err
 		}
-		if err := domain.CheckGate(id, action, docs); err != nil {
-			return "", fmt.Errorf("%w — write content/features/%s/%s in the backend and run 'cerne push'", err, id, gateDocFilename(err))
+		if err := checkActionDocs(id, action, docs); err != nil {
+			return "", err
 		}
 		// Gauntlet bar gate (F-0295): a property of the spec, not of who
 		// approves, so it lives here where CLI and UI share it — as a CLI-only
@@ -222,11 +222,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Result record gate (F-0303): the lint's result rules, charged while the
 		// result is still editable — after complete it is frozen out of .docs/.
 		if action == domain.ActionComplete {
-			if err := CheckResultRecord(repoDir, f, gates); err != nil {
-				return "", fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, id)
-			}
-			// The result names each debt the feature pays (F-0885), while it can.
-			if err := CheckPaidCited(repoDir, f); err != nil {
+			if err := CheckCompleteResult(repoDir, f, gates); err != nil {
 				return "", err
 			}
 		}
@@ -631,4 +627,34 @@ func gateDocFilename(gateErr error) string {
 	default:
 		return "spec.md"
 	}
+}
+
+// CheckStartNotStale is the stale-approval gate of the start (F-0318): the spec
+// to implement is the one a human approved. The transition and NextStep (F-0371)
+// both call it.
+func CheckStartNotStale(repoDir string, f store.Feature) error {
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+		return fmt.Errorf("%w: %s — a human re-approves it with 'cerne feature approve %s' (or 'cerne feature revert %s' sends it back to the Backlog)", ErrApprovalStale, f.ID, f.ID, f.ID)
+	}
+	return nil
+}
+
+// checkActionDocs is the document gate of an action (a real plan to start, a
+// real result to complete): domain.CheckGate over the feature's doc set, with
+// the file to write named.
+func checkActionDocs(id string, action domain.Action, docs domain.DocSet) error {
+	if err := domain.CheckGate(id, action, docs); err != nil {
+		return fmt.Errorf("%w — write content/features/%s/%s in the backend and run 'cerne push'", err, id, gateDocFilename(err))
+	}
+	return nil
+}
+
+// CheckCompleteResult is the result-record part of the complete gate: the
+// lint's result rules (F-0303) and the debts the result must cite (F-0885).
+// The transition and NextStep (F-0371) both call it.
+func CheckCompleteResult(repoDir string, f store.Feature, gates project.GatesConfig) error {
+	if err := CheckResultRecord(repoDir, f, gates); err != nil {
+		return fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, f.ID)
+	}
+	return CheckPaidCited(repoDir, f)
 }
