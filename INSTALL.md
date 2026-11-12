@@ -94,7 +94,7 @@ Same process: replace the old executable with the new one.
   - **SSH** (`git@github.com:you/my-project-docs.git`): uses your SSH agent, or your key files (`~/.ssh/id_ed25519`, `id_rsa` or `id_ecdsa`). Check that `ssh -T git@github.com` works. For a passphrase-protected key, load it into the agent first with `ssh-add`.
   - **HTTPS** (`https://…`): export a token in `CERNE_GIT_TOKEN` (and the user in `CERNE_GIT_USER`, if the host requires it).
   - **Just trying it out?** Skip the backend: `cerne init --name my-project` creates a local one for you (see below).
-- **An AI agent** (optional, recommended): cerne is built to work alongside one. Claude Code, Cursor, Codex CLI and Gemini CLI are supported; `init` installs the skills and hooks that teach the agent to use cerne (see "AI agents" below).
+- **An AI agent** (optional, recommended): cerne is built to work alongside one. Claude Code, Cursor, Codex CLI and Gemini CLI are supported; `init` installs the skills and hooks that teach Claude Code to use cerne, and delivers the authoring guide to the other agents it detects (see "AI agents" below).
 
 ## 4. Getting started
 
@@ -117,23 +117,21 @@ Besides those files, `init` also writes:
 
 ### AI agents
 
-`init` and `cerne skill install` detect Cursor, Codex CLI and Gemini CLI by their config folder (`.cursor/`, `.codex/`, `.gemini/`) in the project, and wire the ones they find next to Claude Code. If the folder does not exist yet, `cerne hook install --provider …` creates it; run `cerne skill install` afterwards so the guide reaches that agent too:
+`init` and `cerne skill install` deliver the `cerne-authoring` guide to Claude Code and to every agent whose config folder exists in the project (`.cursor/`, `.codex/`, `.gemini/`), and print one line per agent, including the ones not detected. "Delivered" means the file is in place: cerne cannot verify that an agent loads it, so each line adds what the agent's own docs say about loading. `cerne hook install` wires the hooks the same way (Claude Code plus detected agents). To add an agent whose folder is missing, create it with its hooks first, then deliver the guide:
 
 ```bash
-cerne hook install --provider cursor,codex,gemini   # the hooks; creates each agent's config folder; omit --provider for Claude Code plus detected agents
-cerne skill install                                 # the authoring guide, for Claude Code plus agents whose config folder exists
+cerne hook install --provider cursor,codex,gemini   # hooks; creates each agent's config folder
+cerne skill install                                 # the authoring guide, for agents whose config folder exists
 ```
 
-What each agent receives:
+| Agent | Hooks | Authoring guide (`cerne-authoring`) | Load condition (agent's docs) |
+|---|---|---|---|
+| Claude Code | `.claude/hooks/`, `.claude/settings.json` | `.claude/skills/` | loaded automatically |
+| Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json` | `.cursor/skills/` | documented as loaded automatically; no setting documented |
+| Codex CLI | `.codex/hooks.json`, `.codex/config.toml` | `.agents/skills/`, plus a one-line pointer in `AGENTS.md` | detected automatically; restart Codex if it does not appear |
+| Gemini CLI | `.gemini/settings.json`, `.gemini/.env` | `.gemini/skills/`, plus a one-line pointer in `GEMINI.md` | only while the skill is enabled (`/skills list`, `/skills enable cerne-authoring`); asks your consent on activation |
 
-| Agent | Hooks | Authoring guide (`cerne-authoring`) |
-|---|---|---|
-| Claude Code | `.claude/hooks/`, `.claude/settings.json` | `.claude/skills/` |
-| Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json` | `.cursor/skills/` |
-| Codex CLI | `.codex/hooks.json`, `.codex/config.toml` | `.agents/skills/`, plus a one-line pointer in `AGENTS.md` |
-| Gemini CLI | `.gemini/settings.json`, `.gemini/.env` | `.gemini/skills/`, plus a one-line pointer in `GEMINI.md` |
-
-Some hooks cannot be hosted by a given agent's extension surface; the install prints them as `skipped`, with the manual step. The full table is in [docs/provider-parity.md](docs/provider-parity.md).
+Some hooks cannot be hosted by a given agent's extension surface; the hook install prints them as `skipped`, with the manual step. The full table is in [docs/provider-parity.md](docs/provider-parity.md).
 
 Day to day:
 

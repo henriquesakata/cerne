@@ -81,7 +81,7 @@ cerne init --name my-project
 cerne ui        # your dashboard, at http://localhost:7717
 ```
 
-That is all you need to type. Now open your agent in the project (Claude Code picks up what `init` installed; Cursor, Codex CLI and Gemini CLI get theirs when their config folder is present) and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec; the card shows up on your board, waiting for you to approve it.
+That is all you need to type. Now open your agent in the project (Claude Code picks up what `init` installed; Cursor, Codex CLI and Gemini CLI get the authoring guide when their config folder is present) and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec; the card shows up on your board, waiting for you to approve it.
 
 For a team, pass `--backend` an empty private repository on GitHub or GitLab instead. `init` prints how to move a local backend to a remote later.
 
@@ -166,7 +166,7 @@ flowchart LR
 | **Search and Q&A over history** | Full-text search (SQLite FTS5) over everything, including what was rejected. `cerne ask` answers with citations. |
 | **Deterministic lint** | Stale references, broken links, orphans, missing gate documents, unregistered sources. |
 | **Built for parallel agents** | Per-document merge on `pull`, auto-rebase on `push`, a conflict-free `docs.lock` across branches and worktrees. |
-| **Your agent already knows how** | `cerne init` installs the skills and hooks that teach your agent the workflow, so you just ask for the feature. Supported agents: **Claude Code, Cursor, Codex CLI and Gemini CLI**; what each one receives, and what degrades, is in the [provider parity matrix](docs/provider-parity.md). |
+| **Your agent already knows how** | `cerne init` installs the skills and hooks that teach Claude Code the workflow, and delivers the authoring guide to Cursor, Codex CLI and Gemini CLI when their config folder is present, so you just ask for the feature. Supported agents: **Claude Code, Cursor, Codex CLI and Gemini CLI**; what each one receives, and what degrades, is in the [provider parity matrix](docs/provider-parity.md). |
 | **Single binary** | macOS, Linux and Windows. The UI is embedded. No runtime dependencies. |
 
 ![The dashboard: what is waiting on you, features by state, lint debts and context savings](docs/assets/ui-dashboard.png)
