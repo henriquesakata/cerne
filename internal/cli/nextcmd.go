@@ -92,6 +92,11 @@ type nextFinding struct {
 	File   string `json:"file,omitempty"`
 	Detail string `json:"detail"`
 	Line   int    `json:"line,omitempty"`
+	Fix    string `json:"fix,omitempty"`
+}
+
+func newNextFinding(f lint.Finding) nextFinding {
+	return nextFinding{f.Rule, f.Entity, f.File, f.Detail, f.Line, f.Fix}
 }
 
 // nextJSON is `cerne next --json`: the text output's sections, as data.
@@ -185,7 +190,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		return f.Rule == lint.RuleStalePending || f.Rule == lint.RuleSpecChangedAfterApproval || f.Downgraded
 	})
 	for _, f := range findings {
-		q.Debts = append(q.Debts, nextFinding{f.Rule, f.Entity, f.File, f.Detail, f.Line})
+		q.Debts = append(q.Debts, newNextFinding(f))
 	}
 
 	// Pending automatic drift updates (F-0115, D-0005): informational, so the

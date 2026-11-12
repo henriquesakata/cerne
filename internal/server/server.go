@@ -1159,7 +1159,12 @@ type lintFinding struct {
 	File     string `json:"file,omitempty"`
 	Detail   string `json:"detail"`
 	Line     int    `json:"line,omitempty"`
+	Fix      string `json:"fix,omitempty"`
 	Advisory bool   `json:"advisory,omitempty"`
+}
+
+func newLintFinding(f lint.Finding) lintFinding {
+	return lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail, Line: f.Line, Fix: f.Fix, Advisory: !lint.Blocking(f)}
 }
 
 // lintResponse is the GET /api/lint payload; findings come already ordered
@@ -1195,7 +1200,7 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	lint.DowngradeWikiDebt(findings, wikiOn)
 	out := make([]lintFinding, len(findings))
 	for i, f := range findings {
-		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail, Line: f.Line, Advisory: !lint.Blocking(f)}
+		out[i] = newLintFinding(f)
 	}
 	writeJSON(w, http.StatusOK, lintResponse{Findings: out, Stale: stale})
 }

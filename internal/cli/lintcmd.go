@@ -96,7 +96,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 		rows := make([]nextFinding, 0, len(findings))
 		for _, f := range findings {
-			rows = append(rows, nextFinding{f.Rule, f.Entity, f.File, f.Detail, f.Line})
+			rows = append(rows, newNextFinding(f))
 		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
