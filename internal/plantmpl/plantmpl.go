@@ -51,10 +51,9 @@ mudança trivial (≤3 arquivos) cabe em uma única tarefa e seções que não s
 — não infle um plano pequeno com cerimônia. Antes de cerne feature start: nenhum [ESCLARECER] restante;
 cada tarefa pequena, com teste e verificação ligada a um critério da spec. -->
 
-<!-- METADADOS (preencha como linhas **Spec:** / **Branch:** / **Status:** / **Saída (Gauntlet):**):
+<!-- METADADOS (preencha como linhas **Spec:** / **Branch:** / **Saída (Gauntlet):**):
 Spec: link para a spec aprovada (../<id>/spec.md) — a fonte dos critérios de aceitação.
 Branch: a branch/worktree onde o trabalho acontece.
-Status: Rascunho (AAAA-MM-DD) — plano para revisão.
 Saída (Gauntlet): herde a barra da spec (repita a referência + acesso e a condição de saída — vencer/empatar,
 derrota abre nova rodada, parar perdendo só por encerramento humano), OU declare em 1 linha por que o loop
 não se aplica a esta entrega. Sem esta linha, a implementação começa sem saber contra o que será comparada. -->
