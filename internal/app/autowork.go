@@ -177,8 +177,12 @@ func closeWork(repoDir string, w store.Work, workAction domain.Action, note stri
 // active, manual, refs exactly [featureID], and created before the feature's
 // last feature.started — or at any time if it never entered development. The
 // shape, never the title, makes a planning work; `feature start`, the exit
-// from the live cycle and `work start` all ask this one function.
-func planningWorks(repoDir string, works []store.Work, featureID string) ([]store.Work, error) {
+// from the live cycle and `work start` all ask this one function. state is
+// the feature's state before the transition at hand: past approved with no
+// feature.started in the log (legacy or imported), "never entered
+// development" cannot be told, so there are none — the work-outlived-feature
+// lint is the net.
+func planningWorks(repoDir string, works []store.Work, featureID string, state domain.FeatureState) ([]store.Work, error) {
 	events, err := store.ReadEvents(repoDir)
 	if err != nil {
 		return nil, err
@@ -188,6 +192,9 @@ func planningWorks(repoDir string, works []store.Work, featureID string) ([]stor
 		if ev.EntityID == featureID && ev.Type == eventTypes[domain.ActionStart] && ev.At.After(lastStart) {
 			lastStart = ev.At
 		}
+	}
+	if lastStart.IsZero() && state != domain.StateCandidate && state != domain.StateApproved {
+		return nil, nil
 	}
 	var out []store.Work
 	for _, w := range works {
@@ -202,15 +209,16 @@ func planningWorks(repoDir string, works []store.Work, featureID string) ([]stor
 	return out, nil
 }
 
-// closePlanningWorks (F-0341) closes every planning work of featureID, of any
-// actor, with workAction and note — the same transition and event as
-// closeAutoWorks, so it lands in the caller's transition commit.
-func closePlanningWorks(repoDir, featureID string, workAction domain.Action, note string) error {
+// closePlanningWorks (F-0341) closes every planning work of featureID (in
+// state before the transition), of any actor, with workAction and note — the
+// same transition and event as closeAutoWorks, so it lands in the caller's
+// transition commit.
+func closePlanningWorks(repoDir, featureID string, state domain.FeatureState, workAction domain.Action, note string) error {
 	works, err := store.LoadAllWorks(repoDir)
 	if err != nil {
 		return err
 	}
-	planning, err := planningWorks(repoDir, works, featureID)
+	planning, err := planningWorks(repoDir, works, featureID, state)
 	if err != nil {
 		return err
 	}

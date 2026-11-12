@@ -128,9 +128,14 @@ func TestPlanningWorks(t *testing.T) {
 		work("W-0005", 0, true, domain.WorkActive, "F-0001"),             // auto
 		work("W-0006", 0, false, domain.WorkDone, "F-0001"),              // already closed
 		work("W-0007", 10*time.Hour, false, domain.WorkActive, "F-0002"), // F-0002 never started
+		work("W-0008", 0, false, domain.WorkActive, "F-0003"),            // F-0003 past approved, no start logged
 	}
-	for feature, want := range map[string][]string{"F-0001": {"W-0001", "W-0002"}, "F-0002": {"W-0007"}} {
-		got, err := planningWorks(dir, works, feature)
+	for feature, want := range map[string][]string{"F-0001": {"W-0001", "W-0002"}, "F-0002": {"W-0007"}, "F-0003": {}} {
+		state := domain.StateApproved
+		if feature == "F-0003" {
+			state = domain.StateInDevelopment
+		}
+		got, err := planningWorks(dir, works, feature, state)
 		if err != nil {
 			t.Fatalf("planningWorks %s: %v", feature, err)
 		}
@@ -263,6 +268,43 @@ func TestPlanningClosedOnExit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPlanningLegacyWithoutStart: a feature already past approved with no
+// feature.started in the log (legacy or imported) has no planning works —
+// nothing tells its manual works apart from development ones — so neither its
+// exit nor a work start closes them; the work-outlived-feature lint is the net.
+func TestPlanningLegacyWithoutStart(t *testing.T) {
+	for _, action := range []domain.Action{domain.ActionComplete, domain.ActionSupersede} {
+		t.Run(string(action), func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+			seedFeatureInState(t, repoDir, "F-0002", domain.StateCandidate, "spec.md")
+			seedActiveWork(t, repoDir, "W-0001", "outro@host", "F-0001", false)
+			by, reason := "", ""
+			if action == domain.ActionSupersede {
+				by, reason = "F-0002", "substituída"
+			}
+			if _, err := TransitionFeature(repoDir, projDir, "F-0001", action, by, reason, nil); err != nil {
+				t.Fatalf("%s: %v", action, err)
+			}
+			assertActive(t, repoDir, "W-0001")
+		})
+	}
+	t.Run("work start", func(t *testing.T) {
+		t.Setenv("CERNE_SESSION", "")
+		repoDir, projDir, _ := newFeatureBackend(t)
+		seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
+		seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+		w, err := StartWork(repoDir, projDir, "Revisão da feature legada", []string{"F-0001"}, "", false, nil)
+		if err != nil {
+			t.Fatalf("StartWork: %v", err)
+		}
+		if len(w.Superseded) != 0 {
+			t.Fatalf("superseded %v, want none", w.Superseded)
+		}
+		assertActive(t, repoDir, "W-0001")
+	})
 }
 
 // TestAutoWorkAdoptsOtherIdentity (crit. 3): the F-0208 adoption recognizes

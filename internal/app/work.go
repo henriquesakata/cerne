@@ -118,7 +118,11 @@ func supersedePlanning(repoDir string, works []store.Work, refs []string, newID 
 		if !domain.IsFeatureID(ref) {
 			continue
 		}
-		planning, err := planningWorks(repoDir, works, ref)
+		f, err := store.LoadFeature(repoDir, ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		planning, err := planningWorks(repoDir, works, ref, f.State)
 		if err != nil {
 			return nil, nil, err
 		}

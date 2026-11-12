@@ -344,7 +344,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if action == domain.ActionComplete {
 				workAction = domain.ActionComplete
 			}
-			if err := closePlanningWorks(repoDir, id, workAction, "feature "+string(action)); err != nil {
+			if err := closePlanningWorks(repoDir, id, oldState, workAction, "feature "+string(action)); err != nil {
 				return "", err
 			}
 		}
@@ -361,7 +361,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			// Planning ends where development begins (F-0341 crit. 1): every
 			// planning work, of any actor, closes before the auto work opens.
 			if activityAutoEnabled(projDir) {
-				if err := closePlanningWorks(repoDir, id, domain.ActionComplete, "planning closed: feature start"); err != nil {
+				if err := closePlanningWorks(repoDir, id, oldState, domain.ActionComplete, "planning closed: feature start"); err != nil {
 					return "", err
 				}
 				if err := openAutoWork(repoDir, f); err != nil {
