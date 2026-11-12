@@ -47,16 +47,44 @@ func TestExplicitDirWithoutCernercRefuses(t *testing.T) {
 }
 
 // F-0354: the decision is by origin of the directory, not by value: an
-// explicit --dir . from a subfolder does not climb either.
-func TestExplicitDirDotDoesNotClimb(t *testing.T) {
+// explicit --dir . (or a relative path) does not climb either, and the message
+// names the ABSOLUTE path.
+func TestExplicitRelativeDirDoesNotClimb(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	sub := filepath.Join(projDir, "sub")
-	if err := os.Mkdir(sub, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(sub, "evidence", "sim"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(sub)
-	if _, err := execCerne(t, "status", "--dir", "."); !errors.Is(err, project.ErrNoProject) {
-		t.Fatalf("--dir . from a subfolder: want ErrNoProject, got %v", err)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ flag, abs string }{
+		{".", wd},
+		{filepath.Join("evidence", "sim"), filepath.Join(wd, "evidence", "sim")},
+	} {
+		_, err := execCerne(t, "status", "--dir", tc.flag)
+		if !errors.Is(err, project.ErrNoProject) {
+			t.Fatalf("--dir %s: want ErrNoProject, got %v", tc.flag, err)
+		}
+		above, ok := "", false
+		for d := filepath.Dir(tc.abs); ; d = filepath.Dir(d) {
+			if _, e := os.Stat(filepath.Join(d, ".cernerc")); e == nil {
+				above, ok = d, true
+				break
+			}
+			if d == filepath.Dir(d) {
+				break
+			}
+		}
+		want := "no .cernerc in " + tc.abs + " (--dir names the project directory; it does not search parent directories)"
+		if ok {
+			want += "\nnearest project above: " + above + " — pass --dir " + above + " to use it"
+		}
+		if err.Error() != want {
+			t.Fatalf("--dir %s: message = %q\nwant %q", tc.flag, err.Error(), want)
+		}
 	}
 }
 
