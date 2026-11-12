@@ -30,6 +30,12 @@ func publishFromOtherSession(t *testing.T, origin, kind, id, title string) {
 		err = store.SaveFeature(other, store.Feature{ID: id, Title: title, State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now})
 	case "note":
 		err = store.SaveNote(other, store.Note{ID: id, Title: title, State: domain.NoteActive, CreatedAt: now, UpdatedAt: now})
+	case "decision":
+		err = store.SaveDecision(other, store.Decision{ID: id, Title: title, State: domain.DecisionActive, CreatedAt: now, UpdatedAt: now})
+	case "reference":
+		err = store.SaveReference(other, store.Reference{ID: id, Title: title, State: domain.ReferenceCurrent, CreatedAt: now, UpdatedAt: now})
+	case "runbook":
+		err = store.SaveRunbook(other, store.Runbook{ID: id, Title: title, State: domain.RunbookActive, CreatedAt: now, UpdatedAt: now})
 	case "work":
 		err = store.SaveWork(other, store.Work{ID: id, Title: title, State: domain.WorkActive, Actor: "other@host", CreatedAt: now, UpdatedAt: now})
 	}
@@ -117,6 +123,9 @@ func TestMintRemintsIDTakenUpstream(t *testing.T) {
 	}{
 		{"feature new", "feature", "F-0002", "F-0003", []string{"feature", "new", "Gamma", "--context", "x", "--component", "test"}},
 		{"note new", "note", "N-0001", "N-0002", []string{"note", "new", "Gamma note", "--facet", "code", "--informs", "F-0001", "--component", "test", "--file", noteBody(t)}},
+		{"decision new", "decision", "D-0001", "D-0002", []string{"decision", "new", "Gamma decision", "--component", "test", "--file", noteBody(t)}},
+		{"reference new", "reference", "R-0001", "R-0002", []string{"reference", "new", "Gamma ref", "--url", "https://example.com/g", "--component", "test", "--file", noteBody(t)}},
+		{"runbook new", "runbook", "RB-0001", "RB-0002", []string{"runbook", "new", "Gamma runbook", "--file", noteBody(t)}},
 		{"work start", "work", "W-0001", "W-0002", []string{"work", "start", "Gamma work"}},
 	}
 	for _, c := range cases {

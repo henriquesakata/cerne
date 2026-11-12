@@ -82,6 +82,10 @@ func CommitAndSnapshot(repoDir, projDir, msg string) error {
 // writes behind (best-effort reset). Same tail semantics: ErrNothingToCommit
 // when mutate changed nothing, *ConflictError on a same-document collision,
 // docs.lock snapshot refreshed on success.
+// CONTRACT: mutate may run more than once (re-mint, F-0356: when every conflict
+// is on a path it created, it is redone on the new remote tip); it only writes
+// into the clone and has no effect outside it (no stdout/stderr, no project
+// files, no network, no ledger) and must reset any state it captures.
 // It mints its own telemetry Op (kind "backend") so CLI one-shots record
 // phases too; the server path uses MutateAndSnapshotOp with the request's Op.
 func MutateAndSnapshot(repoDir, projDir string, mutate func() (string, error)) error {
@@ -98,12 +102,7 @@ func mutateAndSnapshotLatest(repoDir, projDir string, mutate func() (string, err
 
 func mutateAndSnapshot(repoDir, projDir string, latest bool, mutate func() (string, error)) error {
 	op := telemetry.StartOp("backend")
-	remints, err := mutateAndSnapshotOp(op, repoDir, projDir, latest, mutate)
-	if RemintNotice != nil {
-		for _, o := range slices.Sorted(maps.Keys(remints)) {
-			RemintNotice(o, remints[o])
-		}
-	}
+	err := mutateAndSnapshotOp(op, repoDir, projDir, latest, mutate)
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -116,11 +115,10 @@ func mutateAndSnapshot(repoDir, projDir string, latest bool, mutate func() (stri
 // reset, mutate, then the reconcile loop's fetch/merge/commit/push, snapshot)
 // on the caller's Op (F-0149) — nil-safe, the caller owns End().
 func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func() (string, error)) error {
-	_, err := mutateAndSnapshotOp(op, repoDir, projDir, false, mutate)
-	return err
+	return mutateAndSnapshotOp(op, repoDir, projDir, false, mutate)
 }
 
-func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool, mutate func() (string, error)) (map[string]string, error) {
+func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool, mutate func() (string, error)) error {
 	var head string
 	var conflicts []Conflict
 	var remints map[string]string
@@ -151,18 +149,23 @@ func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool,
 		return err
 	})
 	if lockErr != nil {
-		return nil, lockErr
+		return lockErr
 	}
 	if len(conflicts) > 0 {
-		return nil, &ConflictError{Conflicts: conflicts}
+		return &ConflictError{Conflicts: conflicts}
+	}
+	if RemintNotice != nil {
+		for _, o := range slices.Sorted(maps.Keys(remints)) {
+			RemintNotice(o, remints[o])
+		}
 	}
 	if head != "" {
 		stop := op.Phase("snapshot")
 		err := updateSnapshot(projDir, head)
 		stop()
-		return remints, err
+		return err
 	}
-	return remints, nil
+	return nil
 }
 
 // ErrIDRaceLost is returned when a re-minted id kept colliding with another
@@ -171,7 +174,9 @@ var ErrIDRaceLost = errors.New("id race lost 3 times; run 'cerne pull' and retry
 
 // RemintNotice, when set (by the CLI root), is told each id a one-shot command
 // minted that was taken upstream, with the id it registered instead, in stable
-// order. The server path (MutateAndSnapshotOp) never calls it.
+// order. Called from the shared tail, so the server's MutateAndSnapshotOp path
+// reaches it too: the `ui` process logs the line on its own stderr, never in
+// the HTTP response.
 var RemintNotice func(oldID, newID string)
 
 // fastForwardToOrigin fetches and, when origin is ahead of base, moves the

@@ -96,3 +96,19 @@ func TestConflictErrorMessageIsEnglish(t *testing.T) {
 		t.Fatalf("Error() = %q, want %q", e.Error(), want)
 	}
 }
+
+// F-0356: the notice fires from the shared tail, so the server's
+// MutateAndSnapshotOp path reports a re-mint too.
+func TestMutateAndSnapshotOpNotifiesRemint(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	remoteWork(t, origin, "W-0001", "other@host")
+	var got [][2]string
+	RemintNotice = func(o, n string) { got = append(got, [2]string{o, n}) }
+	t.Cleanup(func() { RemintNotice = nil })
+	if err := MutateAndSnapshotOp(nil, repoDir, projDir, mintWork(repoDir, nil)); err != nil {
+		t.Fatalf("MutateAndSnapshotOp: %v", err)
+	}
+	if len(got) != 1 || got[0] != [2]string{"W-0001", "W-0002"} {
+		t.Fatalf("notices = %v, want W-0001 -> W-0002", got)
+	}
+}
