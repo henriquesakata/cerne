@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -57,12 +58,16 @@ func TestNotesSeenUnsafeSession(t *testing.T) {
 	}
 }
 
-// fakeGit puts a git on PATH that logs each call and prints a tracked list.
-func fakeGit(t *testing.T) (log string) {
+// fakeGit puts a git on PATH that prints list (NUL-separated paths) after
+// sleeping for sleep seconds ("0" = no sleep), and logs each call.
+func fakeGit(t *testing.T, list, sleep string) (log string) {
 	t.Helper()
+	old := uniqueBudget
+	uniqueBudget = 3 * time.Second // exec of a fresh script can be slow under scanners
+	t.Cleanup(func() { uniqueBudget = old })
 	bin := t.TempDir()
 	log = filepath.Join(t.TempDir(), "calls")
-	script := "#!/bin/sh\necho x >> " + log + "\nprintf 'a/package.json\\0b/package.json\\0infra/release.sh\\0'\n"
+	script := "#!/bin/sh\necho \"$@\" >> " + log + "\n[ " + sleep + " != 0 ] && exec sleep " + sleep + "\nprintf '" + list + "'\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -70,37 +75,63 @@ func fakeGit(t *testing.T) (log string) {
 	return log
 }
 
-func calls(t *testing.T, log string) int {
+func TestUniqueNamesCountsOneName(t *testing.T) {
+	log := fakeGit(t, `infra/release.sh\0`, "0")
+	if !UniqueNames(context.Background(), t.TempDir())("release.sh") {
+		t.Fatal("one tracked file: want unique")
+	}
 	b, _ := os.ReadFile(log)
-	return strings.Count(string(b), "x")
-}
-
-func TestUniqueNamesRunsGitOncePerSession(t *testing.T) {
-	log := fakeGit(t)
-	c := t.TempDir()
-	u := UniqueNames(context.Background(), c, "s1", t.TempDir())
-	if u("package.json") || !u("release.sh") || u("missing.txt") {
-		t.Fatal("uniqueness wrong")
+	if !strings.Contains(string(b), ":(glob)**/release.sh") {
+		t.Fatalf("pathspec not used: %s", b)
 	}
-	u2 := UniqueNames(context.Background(), c, "s1", t.TempDir())
-	if !u2("release.sh") || u2("package.json") {
-		t.Fatal("cached uniqueness wrong")
+	fakeGit(t, `a/package.json\0b/package.json\0`, "0")
+	if UniqueNames(context.Background(), t.TempDir())("package.json") {
+		t.Fatal("two tracked files: want not unique")
 	}
-	if n := calls(t, log); n != 1 {
-		t.Fatalf("git ran %d times, want 1", n)
+	fakeGit(t, ``, "0")
+	if UniqueNames(context.Background(), t.TempDir())("gone.txt") {
+		t.Fatal("none tracked: want not unique")
 	}
 }
 
-func TestUniqueNamesNoSessionNoCache(t *testing.T) {
-	log := fakeGit(t)
+func TestUniqueNamesEscapesGlob(t *testing.T) {
+	log := fakeGit(t, `x/[a]*.txt\0`, "0")
+	UniqueNames(context.Background(), t.TempDir())("[a]*.txt")
+	b, _ := os.ReadFile(log)
+	if !strings.Contains(string(b), `:(glob)**/\[a]\*.txt`) {
+		t.Fatalf("name not glob-escaped: %s", b)
+	}
+}
+
+// A slow git burns only its own sub-budget and answers "not unique".
+func TestUniqueNamesSlowGitIsBounded(t *testing.T) {
+	fakeGit(t, `x/release.sh\0`, "10")
+	uniqueBudget = 300 * time.Millisecond
+	start := time.Now()
+	if UniqueNames(context.Background(), t.TempDir())("release.sh") {
+		t.Fatal("timed out: want false")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %v", d)
+	}
+}
+
+func TestNotesSeenPrunesOldSessions(t *testing.T) {
 	c := t.TempDir()
-	if !UniqueNames(context.Background(), c, "", t.TempDir())("release.sh") {
-		t.Fatal("want unique")
+	if err := MarkNotesSeen(c, "old", []string{"N-1"}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(c, "notes-seen")); err == nil {
-		t.Fatal("no session must not write a cache")
+	old := time.Now().Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(c, notesSeenSubdir, "old"), old, old); err != nil {
+		t.Fatal(err)
 	}
-	if calls(t, log) != 1 {
-		t.Fatal("git should run once")
+	if err := MarkNotesSeen(c, "new", []string{"N-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(c, notesSeenSubdir, "old")); err == nil {
+		t.Fatal("old session file not pruned")
+	}
+	if !SeenNotes(c, "new")["N-2"] {
+		t.Fatal("new session lost")
 	}
 }

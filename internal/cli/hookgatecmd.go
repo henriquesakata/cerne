@@ -335,7 +335,7 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string 
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(projDir, abs)
 	}
-	rel, err := filepath.Rel(projDir, abs)
+	rel, err := filepath.Rel(realPath(projDir), realPath(abs))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return ""
 	}
@@ -345,7 +345,7 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), notesBudget)
 	defer cancel()
-	notes, err := app.NotesForPath(ctx, cacheDir, repoDir, rel, app.UniqueNames(ctx, cacheDir, sess, projDir))
+	notes, err := app.NotesForPath(ctx, cacheDir, repoDir, rel, app.UniqueNames(ctx, projDir))
 	if err != nil || ctx.Err() != nil {
 		return ""
 	}
@@ -360,16 +360,44 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string 
 		return ""
 	}
 	shown := fresh[:min(3, len(fresh))]
-	var b strings.Builder
-	fmt.Fprintf(&b, "cerne notes on %s:", rel)
 	var ids []string
 	for _, n := range shown {
-		fmt.Fprintf(&b, "\n- %s — %s", n.ID, n.Title)
 		ids = append(ids, n.ID)
 	}
-	if rest := len(fresh) - len(shown); rest > 0 {
-		fmt.Fprintf(&b, "\n(+%d: cerne note list --path %s)", rest, rel)
+	// No usable session id: dedup is impossible, and the same notes on every
+	// edit are worse than silence.
+	if app.MarkNotesSeen(cacheDir, sess, ids) != nil {
+		return ""
 	}
-	_ = app.MarkNotesSeen(cacheDir, sess, ids)
+	var b strings.Builder
+	fmt.Fprintf(&b, "cerne notes on %s:", rel)
+	for _, n := range shown {
+		fmt.Fprintf(&b, "\n- %s — %s", n.ID, flatTitle(n.Title))
+	}
+	// Same basis as `note list --path`: every match beyond the ones listed here.
+	if rest := len(notes) - len(shown); rest > 0 {
+		hint := rel
+		if strings.ContainsAny(hint, " \t'\"") {
+			hint = "'" + strings.ReplaceAll(hint, "'", `'\''`) + "'"
+		}
+		fmt.Fprintf(&b, "\n(+%d: cerne note list --path %s)", rest, hint)
+	}
 	return b.String()
+}
+
+// flatTitle flattens a title so it cannot break the block's line structure.
+func flatTitle(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// realPath resolves symlinks (macOS /var vs /private/var) even for a path that
+// does not exist yet, by resolving its nearest existing ancestor.
+func realPath(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	if d := filepath.Dir(p); d != p {
+		return filepath.Join(realPath(d), filepath.Base(p))
+	}
+	return p
 }

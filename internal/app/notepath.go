@@ -26,20 +26,24 @@ type PathNote struct {
 // only the local index and the clone, honors ctx, and treats a missing index, a
 // busy index or an expired ctx as "no notes" (the work-gate hook must never
 // fail an edit over them). uniqueName says whether a bare file name is tracked
-// exactly once in the repository; nil means never.
+// exactly once in the repository; it is asked lazily, only when a note cites
+// the bare name and nothing more specific, and nil means never. A file at the
+// repository root has no directory to cite, so it is name-only.
 func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName func(string) bool) ([]PathNote, error) {
 	rel = strings.Trim(filepath.ToSlash(rel), "/")
 	if rel == "" {
 		return nil, nil
 	}
-	cands := map[string]int{rel: 3} // phrase -> score
+	cands := map[string]int{} // phrase -> score
 	parts := strings.Split(rel, "/")
-	for i := 1; i < len(parts)-1; i++ {
-		cands[strings.Join(parts[i:], "/")] = 2
+	base := parts[len(parts)-1]
+	if len(parts) > 1 {
+		cands[rel] = 3
+		for i := 1; i < len(parts)-1; i++ {
+			cands[strings.Join(parts[i:], "/")] = 2
+		}
 	}
-	if base := parts[len(parts)-1]; len(parts) > 1 && uniqueName != nil && uniqueName(base) {
-		cands[base] = 1
-	}
+	cands[base] = 1 // name-only: needs uniqueName, asked lazily below
 	phrases := make([]string, 0, len(cands))
 	for p := range cands {
 		phrases = append(phrases, p)
@@ -51,15 +55,28 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 		}
 		return nil, err
 	}
+	uniq := -1 // memo: -1 unasked, 0 no, 1 yes
+	unique := func() bool {
+		if uniq < 0 {
+			uniq = 0
+			if uniqueName != nil && uniqueName(base) {
+				uniq = 1
+			}
+		}
+		return uniq == 1
+	}
 	var out []PathNote
 	for _, h := range hits {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
 		best := 0
 		for p, sc := range cands {
 			if sc > best && (citesPath(h.Body, p) || citesPath(h.Title, p)) {
 				best = sc
 			}
 		}
-		if best == 0 {
+		if best == 0 || best == 1 && !unique() {
 			continue
 		}
 		pn := PathNote{ID: h.ID, Title: h.Title, Score: best}
@@ -91,10 +108,23 @@ func citesPath(text, p string) bool {
 		}
 		i += from
 		end := i + len(p)
-		if (i == 0 || !pathChar(text[i-1])) && (end == len(text) || !pathChar(text[end]) || text[end] == '.' && (end+1 == len(text) || !pathChar(text[end+1]))) {
+		if leftBoundary(text, i) && (end == len(text) || !pathChar(text[end]) || text[end] == '.' && (end+1 == len(text) || !pathChar(text[end+1]))) {
 			return true
 		}
 		from = i + 1
+	}
+}
+
+// leftBoundary: the match at i starts a path token. A '/' before it means the
+// text cites a longer path ("other/src/app.go"), except "./".
+func leftBoundary(text string, i int) bool {
+	if i == 0 {
+		return true
+	}
+	if c := text[i-1]; c == '/' {
+		return i >= 2 && text[i-2] == '.' && (i == 2 || !pathChar(text[i-3]))
+	} else {
+		return !pathChar(c)
 	}
 }
 

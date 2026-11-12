@@ -9,11 +9,11 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // notesSeenSubdir holds, per session, the note ids the work-gate already showed
-// (<sess>, one per line) and the repository's tracked-file listing
-// (<sess>.names, git ls-files -z output) so git runs once per session (F-0366).
+// (<sess>, one per line; F-0366).
 const notesSeenSubdir = "notes-seen"
 
 // SeenNotes returns the note ids already shown in session sess. An unsafe
@@ -54,35 +54,48 @@ func MarkNotesSeen(cacheDir, sess string, ids []string) error {
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
+	pruneSeen(dir)
 	return werr
 }
 
+// uniqueBudget bounds the one git call that decides whether a bare file name
+// is unique; past it the name-only citations are dropped, path ones still show.
+var uniqueBudget = 50 * time.Millisecond // var: tests with a fake git need slack to exec it
+
 // UniqueNames returns whether a bare file name is tracked exactly once in the
-// repository at repoRoot. The `git ls-files -z` listing is cached per session;
-// with no safe session it runs once per call and caches nothing. A git failure
-// yields a func that is always false (name-only citations are then ignored).
-func UniqueNames(ctx context.Context, cacheDir, sess, repoRoot string) func(string) bool {
-	var listing []byte
-	cache := ""
-	if safeSessionID(sess) == nil {
-		cache = filepath.Join(cacheDir, notesSeenSubdir, sess+".names")
-		listing, _ = os.ReadFile(cache)
-	}
-	if listing == nil {
-		out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-files", "-z").Output()
+// repository at repoRoot, counted with a pathspec for that one name (no full
+// listing). Any git failure or timeout answers false.
+func UniqueNames(ctx context.Context, repoRoot string) func(string) bool {
+	return func(name string) bool {
+		ctx, cancel := context.WithTimeout(ctx, uniqueBudget)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-files", "-z", "--",
+			":(glob)**/"+globEscaper.Replace(name)).Output()
 		if err != nil {
-			return func(string) bool { return false }
+			return false
 		}
-		listing = out
-		if cache != "" && os.MkdirAll(filepath.Dir(cache), 0o755) == nil {
-			_ = os.WriteFile(cache, listing, 0o644)
+		n := 0
+		for _, p := range bytes.Split(out, []byte{0}) {
+			if len(p) > 0 && path.Base(string(p)) == name {
+				n++
+			}
+		}
+		return n == 1
+	}
+}
+
+var globEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`, "[", `\[`)
+
+// pruneSeen removes the shown-lists of sessions untouched for a week.
+func pruneSeen(dir string) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	for _, e := range ents {
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
-	count := map[string]int{}
-	for _, p := range bytes.Split(listing, []byte{0}) {
-		if len(p) > 0 {
-			count[path.Base(string(p))]++
-		}
-	}
-	return func(name string) bool { return count[name] == 1 }
 }

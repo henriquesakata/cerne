@@ -147,3 +147,54 @@ func TestNotesForPath_Deadline(t *testing.T) {
 		t.Fatalf("got=%v err=%v", got, err)
 	}
 }
+
+// Criterion 2: a root-level file is name-only (needs uniqueness), and a path
+// cited under another directory is not a citation of this one.
+func TestNotesForPathRootFileIsNameOnly(t *testing.T) {
+	repo := t.TempDir()
+	t0 := time.Now().UTC()
+	seedPathNote(t, repo, "N-0001", "root", "bump package.json first", domain.NoteActive, t0)
+	seedPathNote(t, repo, "N-0002", "web", "web/package.json pins node", domain.NoteActive, t0)
+	cache := buildIndex(t, repo)
+	got, err := NotesForPath(context.Background(), cache, repo, "package.json", func(string) bool { return true })
+	if err != nil || !sameIDs(noteIDs(got), []string{"N-0001"}) {
+		t.Fatalf("unique: %v %v", noteIDs(got), err)
+	}
+	got, _ = NotesForPath(context.Background(), cache, repo, "package.json", func(string) bool { return false })
+	if len(got) != 0 {
+		t.Fatalf("not unique: %v", noteIDs(got))
+	}
+}
+
+func TestNotesForPathLeftBoundary(t *testing.T) {
+	repo := t.TempDir()
+	t0 := time.Now().UTC()
+	seedPathNote(t, repo, "N-0001", "longer", "see other/src/app.go", domain.NoteActive, t0)
+	seedPathNote(t, repo, "N-0002", "dot-slash", "run ./src/app.go", domain.NoteActive, t0)
+	seedPathNote(t, repo, "N-0003", "plain", "edit src/app.go (twice)", domain.NoteActive, t0)
+	seedPathNote(t, repo, "N-0004", "dotdot", "see ../src/app.go", domain.NoteActive, t0)
+	cache := buildIndex(t, repo)
+	got, err := NotesForPath(context.Background(), cache, repo, "src/app.go", func(string) bool { return false })
+	if err != nil || !sameIDs(noteIDs(got), []string{"N-0002", "N-0003"}) {
+		t.Fatalf("ids = %v %v", noteIDs(got), err)
+	}
+}
+
+// Uniqueness is asked lazily: only for a bare-name hit, and at most once.
+func TestNotesForPathUniquenessIsLazy(t *testing.T) {
+	repo := t.TempDir()
+	t0 := time.Now().UTC()
+	seedPathNote(t, repo, "N-0001", "full", relRelease, domain.NoteActive, t0)
+	cache := buildIndex(t, repo)
+	n := 0
+	u := func(string) bool { n++; return true }
+	if _, err := NotesForPath(context.Background(), cache, repo, relRelease, u); err != nil || n != 0 {
+		t.Fatalf("calls = %d err=%v, want 0", n, err)
+	}
+	seedPathNote(t, repo, "N-0002", "n1", "release.sh a", domain.NoteActive, t0)
+	seedPathNote(t, repo, "N-0003", "n2", "release.sh b", domain.NoteActive, t0)
+	cache = buildIndex(t, repo)
+	if _, err := NotesForPath(context.Background(), cache, repo, relRelease, u); err != nil || n != 1 {
+		t.Fatalf("calls = %d err=%v, want 1", n, err)
+	}
+}

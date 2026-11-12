@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,5 +194,85 @@ func TestNoteListPath(t *testing.T) {
 	}
 	if out, err := execCerne(t, "note", "list", "--path", "nowhere/else.go", "--dir", projDir); err != nil || !strings.Contains(out, "No active notes cite nowhere/else.go") {
 		t.Fatalf("empty: %v %q", err, out)
+	}
+}
+
+func slowGit(t *testing.T, sleep, out string) {
+	t.Helper()
+	bin := t.TempDir()
+	body := "#!/bin/sh\n[ " + sleep + " != 0 ] && exec sleep " + sleep + "\nprintf '" + out + "'\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// A cold, slow git costs only the bare-name hits: path notes still show.
+func TestNotesOnEditSlowGitKeepsPathNotes(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer")
+	seedEditNotes(t, repoDir, map[string][2]string{
+		"N-0001": {"path", "run infra/release.sh"},
+		"N-0002": {"bare", "release.sh is flaky"},
+	})
+	origPath := os.Getenv("PATH")
+	slowGit(t, "5", "")
+	out, _ := execCerneStdin(t, editJSON(t, "sess-a", projDir, "infra/release.sh"), "hook", "work-gate")
+	if !strings.Contains(out, "N-0001") || strings.Contains(out, "N-0002") {
+		t.Fatalf("slow git:\n%s", out)
+	}
+	// real git (a fresh fake script can exceed the 50 ms sub-budget to exec)
+	t.Setenv("PATH", origPath)
+	for _, args := range [][]string{{"init", "-q", "."}, {"add", "-N", "infra/release.sh"}} {
+		if args[0] == "add" {
+			if err := os.MkdirAll(filepath.Join(projDir, "infra"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			_ = os.WriteFile(filepath.Join(projDir, "infra", "release.sh"), nil, 0o644)
+		}
+		if out, err := exec.Command("git", append([]string{"-C", projDir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	out, _ = execCerneStdin(t, editJSON(t, "sess-b", projDir, "infra/release.sh"), "hook", "work-gate")
+	if !strings.Contains(out, "N-0001") || !strings.Contains(out, "N-0002") {
+		t.Fatalf("unique name:\n%s", out)
+	}
+}
+
+// Without a usable session id dedup is impossible: no block at all.
+func TestNotesOnEditNoSessionNoBlock(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedEditNotes(t, repoDir, map[string][2]string{"N-0001": {"t", "run infra/release.sh"}})
+	for _, sess := range []string{"", "a/b"} {
+		if out, err := execCerneStdin(t, editJSON(t, sess, projDir, "infra/release.sh"), "hook", "work-gate"); err != nil || out != "" {
+			t.Fatalf("sess %q: %v %q", sess, err, out)
+		}
+	}
+}
+
+// The (+N) count is the further matches `note list --path` shows (seen ones
+// included); the hint quotes a path with spaces; newlines in a title are flat.
+func TestNotesOnEditHintBasisAndSanitizing(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer")
+	seedEditNotes(t, repoDir, map[string][2]string{
+		"N-0001": {"one\nline\r", "my dir/a b.sh"},
+		"N-0002": {"two", "my dir/a b.sh"},
+		"N-0003": {"three", "my dir/a b.sh"},
+		"N-0004": {"four", "my dir/a b.sh"},
+	})
+	out, _ := execCerneStdin(t, editJSON(t, "sess-a", projDir, "my dir/a b.sh"), "hook", "work-gate")
+	ctx := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext
+	if !strings.Contains(ctx, "\n(+1: cerne note list --path 'my dir/a b.sh')") {
+		t.Fatalf("hint:\n%s", ctx)
+	}
+	if strings.Count(ctx, "\n") != 4 || strings.Contains(ctx, "\r") {
+		t.Fatalf("title not flattened:\n%q", ctx)
+	}
+	// second edit: one fresh note left, but the list still holds 4 → (+3)
+	out, _ = execCerneStdin(t, editJSON(t, "sess-a", projDir, "my dir/a b.sh"), "hook", "work-gate")
+	if c := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext; !strings.Contains(c, "(+3: cerne note list --path") {
+		t.Fatalf("second:\n%s", c)
 	}
 }

@@ -74,7 +74,7 @@ func notesCitingPath(ctx projCtx, notes []store.Note, file string) ([]store.Note
 		rel = filepath.ToSlash(r)
 	}
 	cacheDir := filepath.Dir(ctx.repoDir)
-	found, err := app.NotesForPath(context.Background(), cacheDir, ctx.repoDir, rel, app.UniqueNames(context.Background(), cacheDir, "", ctx.projDir))
+	found, err := app.NotesForPath(context.Background(), cacheDir, ctx.repoDir, rel, app.UniqueNames(context.Background(), ctx.projDir))
 	if err != nil {
 		return nil, err
 	}
