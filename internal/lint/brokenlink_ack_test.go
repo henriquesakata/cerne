@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,9 @@ func TestBrokenLinkErrataFixText(t *testing.T) {
 	const want = "cerne feature errata F-0001 '<!-- lint:ok-broken-link N-9999 --> <the right target, or why the link is history>'"
 	if len(got) != 1 || got[0].Fix != want {
 		t.Fatalf("got %+v, want Fix %q", got, want)
+	}
+	if strings.Contains(got[0].Detail, "then 'cerne push'") || !strings.HasSuffix(got[0].Detail, want) {
+		t.Fatalf("a non-editable doc's action is the Fix itself, got %q", got[0].Detail)
 	}
 }
 

@@ -15,10 +15,10 @@ func TestBrokenLinkSuggestsLastID(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("findings = %+v, want 2", got)
 	}
-	if want := "broken wiki-link [[N-0009]] — no such id; the last N- id is N-0003: point the link to an existing id or remove it"; got[0].Detail != want {
+	if want := "broken wiki-link [[N-0009]] — no such id; the last N- id is N-0003: point the link to an existing id ('cerne brief' lists them) or remove it, then 'cerne push'"; got[0].Detail != want {
 		t.Errorf("detail = %q, want %q", got[0].Detail, want)
 	}
-	if want := "broken wiki-link [[Z-0001]] — no such id: point the link to an existing id or remove it"; got[1].Detail != want {
+	if want := "broken wiki-link [[Z-0001]] — no such id: point the link to an existing id ('cerne brief' lists them) or remove it, then 'cerne push'"; got[1].Detail != want {
 		t.Errorf("unknown prefix Z-: detail = %q, want %q", got[1].Detail, want)
 	}
 }
@@ -31,7 +31,7 @@ func TestBrokenLinkSuggestsPadding(t *testing.T) {
 		t.Fatalf("findings = %+v, want 2 (the exact id resolves)", got)
 	}
 	for _, target := range []string{"f-12", "F-12"} {
-		want := "broken wiki-link [[" + target + "]] — did you mean [[F-0012]]? replace the link with it"
+		want := "broken wiki-link [[" + target + "]] — did you mean [[F-0012]]? replace the link with it, then 'cerne push'"
 		if got[0].Detail != want && got[1].Detail != want {
 			t.Errorf("no finding %q in %+v", want, got)
 		}
@@ -50,7 +50,7 @@ func TestBrokenLinkSuggestsPath(t *testing.T) {
 		t.Fatalf("findings = %+v, want 3", got)
 	}
 	// The hint is relative to the document's folder, so applying it resolves (A2).
-	if want := "broken link ./a.md — did you mean ../../old/a.md? update the link to it"; got[0].Detail != want {
+	if want := "broken link ./a.md — did you mean ../../old/a.md? update the link to it, then 'cerne push'"; got[0].Detail != want {
 		t.Errorf("detail = %q, want %q", got[0].Detail, want)
 	}
 	writeDoc(t, dir, "content/features/F-0001/spec.md", "---\ncerne_id: F-0001\n---\n\n# Spec\n\n[a](../../old/a.md)\n")
@@ -58,7 +58,7 @@ func TestBrokenLinkSuggestsPath(t *testing.T) {
 		t.Errorf("the link rewritten with the hint must resolve, got %+v", after)
 	}
 	for _, f := range got[1:] {
-		if !strings.HasSuffix(f.Detail, " — no such file: fix the path or remove the link") {
+		if !strings.HasSuffix(f.Detail, " — no such file: fix the path or remove the link, then 'cerne push'") {
 			t.Errorf("ambiguous or missing name must say no such file, got %q", f.Detail)
 		}
 	}

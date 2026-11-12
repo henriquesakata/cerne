@@ -53,7 +53,7 @@ func TestWikiLinkFindings(t *testing.T) {
 		t.Fatalf("wiki findings = %+v, want exactly one for [[N-9999]]", wiki)
 	}
 	want := Finding{Rule: RuleBrokenLink, Entity: "F-0001", File: "content/features/F-0001/spec.md",
-		Line: 8, Detail: "broken wiki-link [[N-9999]] — no such id; the last N- id is N-0001: point the link to an existing id or remove it"}
+		Line: 8, Detail: "broken wiki-link [[N-9999]] — no such id; the last N- id is N-0001: point the link to an existing id ('cerne brief' lists them) or remove it, then 'cerne push'"}
 	if wiki[0] != want {
 		t.Fatalf("finding = %+v, want %+v", wiki[0], want)
 	}
@@ -86,7 +86,7 @@ func TestWikiLinkFindingsEpicTask(t *testing.T) {
 			details = append(details, fd.Detail)
 		}
 	}
-	want := []string{"broken wiki-link [[E-9999]] — no such id; the last E- id is E-0001: point the link to an existing id or remove it", "broken wiki-link [[T-9999]] — no such id; the last T- id is T-0001: point the link to an existing id or remove it"}
+	want := []string{"broken wiki-link [[E-9999]] — no such id; the last E- id is E-0001: point the link to an existing id ('cerne brief' lists them) or remove it, then 'cerne push'", "broken wiki-link [[T-9999]] — no such id; the last T- id is T-0001: point the link to an existing id ('cerne brief' lists them) or remove it, then 'cerne push'"}
 	if len(details) != 2 || details[0] != want[0] || details[1] != want[1] {
 		t.Fatalf("wiki findings = %v, want %v", details, want)
 	}

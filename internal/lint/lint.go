@@ -1286,6 +1286,10 @@ func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint string) Fin
 	if strings.HasPrefix(d.rel, "content/errata/") {
 		fix = fmt.Sprintf("cerne %s errata %s '<!-- lint:ok-broken-link %s --> <the right target, or why the link is history>'", errataKind(d.entity), d.entity, r.Target)
 		detail += "; append-only errata: append the correction with " + fix
+	} else {
+		// Same decision as ref-to-superseded: only an errata is not editable
+		// (the scan reads concluded entities through their errata alone).
+		detail += ", then 'cerne push'"
 	}
 	return Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line, Detail: detail, Fix: fix}
 }
@@ -1340,9 +1344,9 @@ func idHint(target string, ids map[string]bool) string {
 		return "did you mean [[" + same[0] + "]]? replace the link with it"
 	}
 	if last != "" {
-		return "no such id; the last " + prefix + "- id is " + last + ": point the link to an existing id or remove it"
+		return "no such id; the last " + prefix + "- id is " + last + ": point the link to an existing id ('cerne brief' lists them) or remove it"
 	}
-	return "no such id: point the link to an existing id or remove it"
+	return "no such id: point the link to an existing id ('cerne brief' lists them) or remove it"
 }
 
 // knownEntityIDs collects every entity id, canonicalized, as the id-form
