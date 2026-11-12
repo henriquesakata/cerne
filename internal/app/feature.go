@@ -836,8 +836,12 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 	if reason == "" {
 		return store.Feature{}, 0, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
 	}
+	if strings.ContainsAny(reason, "\r\n") {
+		return store.Feature{}, 0, false, errors.New("the reason must be one line: no line breaks in --reason")
+	}
+	emptyBody := fmt.Errorf("empty %s body: pass the full %s via --file <%s.md> or on stdin", doc, doc, doc)
 	if strings.TrimSpace(body) == "" {
-		return store.Feature{}, 0, false, fmt.Errorf("empty %s body: pass the full %s via --file <%s.md> or on stdin", doc, doc, doc)
+		return store.Feature{}, 0, false, emptyBody
 	}
 	if lines := lint.AmendmentLines(strings.ReplaceAll(body, "\r\n", "\n")); len(lines) > 0 {
 		return store.Feature{}, 0, false, fmt.Errorf("%w (line %d): write the amendment into the criterion or task it changes, then amend the whole %s", ErrAppendedAmendment, lines[0], doc)
@@ -845,6 +849,9 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 	content, err := stampedDoc(id, doc, body, false)
 	if err != nil {
 		return store.Feature{}, 0, false, err
+	}
+	if !doccheck.HasRealContent([]byte(content)) {
+		return store.Feature{}, 0, false, emptyBody // frontmatter or a stub only
 	}
 	filename := doc + ".md"
 	err = mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {

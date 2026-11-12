@@ -13,6 +13,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/plantmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -436,6 +437,37 @@ func TestAmendDocRefusesMissingDoc(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0002", "plan.md")); string(got) != stub {
 		t.Fatalf("a refused amend replaced the stub: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refusal archived a revision: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
+// TestAmendDocRefusesBodyWithoutRealContent (F-0338 crit. 4, round 2): a new
+// body that is only frontmatter or a template stub, and a reason with a line
+// break, are refused before the backend: nothing written, no revision.
+func TestAmendDocRefusesBodyWithoutRealContent(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	head0, _ := gitback.HeadSHA(origin)
+	before, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
+	for _, tc := range []struct{ name, body, reason, text string }{
+		{"frontmatter only", "---\ncerne_id: F-0001\n---\n", "r", "empty"},
+		{"spec stub", spectmpl.Stub("Feature F-0001"), "r", "empty"},
+		{"plan stub as spec", "---\ncerne_id: F-0001\n---\n\n" + plantmpl.Stub("Feature F-0001"), "r", "empty"},
+		{"reason with LF", amendedSpec, "a\n## x", "one line"},
+		{"reason with CR", amendedSpec, "a\rb", "one line"},
+	} {
+		_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", tc.body, tc.reason)
+		if err == nil || !strings.Contains(err.Error(), tc.text) {
+			t.Fatalf("%s: err = %v, want %q", tc.name, err, tc.text)
+		}
+	}
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md")); string(got) != string(before) {
+		t.Fatalf("a refused amend replaced the spec: %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("a refusal archived a revision: %v", err)
