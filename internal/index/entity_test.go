@@ -134,8 +134,8 @@ func TestSearchEntitiesKeepsExplicitSyntax(t *testing.T) {
 }
 
 // When fewer entities than the limit have every term in one document, the
-// rest of the list is filled by coverage, after the exact ones and without
-// the broadened notice (a real query lost its note to two exact hits).
+// rest of the list is filled by coverage, after the exact ones and marked
+// Partial (a real query lost its note to two exact hits).
 func TestSearchEntitiesFillsAfterExactHits(t *testing.T) {
 	db := seedEntities(t,
 		fixtureFeature{"F-0001", "Sala", map[string]string{"spec": "resume session route rooms"}},
@@ -143,11 +143,14 @@ func TestSearchEntitiesFillsAfterExactHits(t *testing.T) {
 		fixtureFeature{"F-0003", "Agenda", map[string]string{"spec": "consultas da semana"}},
 	)
 	rs, broadened, err := SearchEntities(db, "resume session route rooms", 10)
-	if err != nil || broadened {
-		t.Fatalf("SearchEntities: %v broadened=%v", err, broadened)
+	if err != nil || !broadened {
+		t.Fatalf("SearchEntities: %v broadened=%v, want broadened (a partial line was added)", err, broadened)
 	}
 	if got := entityIDs(rs); !reflect.DeepEqual(got, []string{"F-0001", "F-0002"}) {
 		t.Fatalf("order = %v, want the exact F-0001, then F-0002 by coverage", got)
+	}
+	if rs[0].Partial || !rs[1].Partial {
+		t.Fatalf("Partial = %v, %v; want the exact line false and the filled one true", rs[0].Partial, rs[1].Partial)
 	}
 	if rs[1].Snippet == "" {
 		t.Fatalf("filled entity has no snippet: %+v", rs[1])

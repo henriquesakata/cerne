@@ -123,10 +123,13 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 		fmt.Fprintf(out, "Nothing found for \"%s\".\n", query)
 		return nil
 	}
-	if broadened {
+	if broadened && (perDoc || results[0].Partial) {
 		fmt.Fprintln(out, "No document has all the terms; showing those that have any.")
 	}
-	for _, r := range results {
+	for i, r := range results {
+		if r.Partial && i > 0 && !results[i-1].Partial {
+			fmt.Fprintln(out, "The lines below have only some of the terms.")
+		}
 		if perDoc {
 			fmt.Fprintln(out, resultHeader(r.Result))
 		} else {

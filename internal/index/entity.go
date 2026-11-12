@@ -32,11 +32,13 @@ const (
 
 // EntityResult is one entity of a search: its best-ranked document (Result),
 // every document of it that matched, and how many distinct query terms its
-// documents cover (set on the coverage path only).
+// documents cover. Partial marks a line of the coverage path: no single
+// document of it was required to hold every term.
 type EntityResult struct {
 	Result
 	Docs     []string
 	Coverage int
+	Partial  bool
 	best     int64 // rowid of the best document, for its snippet
 }
 
@@ -45,7 +47,7 @@ type EntityResult struct {
 // are fewer than limit, the list is filled by coverage: the keywords ORed with
 // their stems, entities ordered by the distinct terms their documents cover
 // plus those in their title, then bm25 of the best document (title weighted).
-// broadened is true when nothing was exact. Explicit FTS5 syntax and
+// broadened is true when any line is Partial. Explicit FTS5 syntax and
 // single-keyword queries stay exact (F-0343).
 func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, error) {
 	db, err := sql.Open("sqlite", dbPath)
@@ -70,7 +72,7 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 	if err != nil {
 		return nil, false, err
 	}
-	exact := len(res) > 0
+	exact := len(res)
 	seen := map[string]bool{}
 	for _, r := range res {
 		seen[r.EntityID] = true
@@ -80,7 +82,7 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 			res = append(res, r)
 		}
 	}
-	return res, !exact && len(res) > 0, nil
+	return res, len(res) > exact, nil
 }
 
 // RankEntities is the coverage ranking of SearchEntities on its own, for a
@@ -145,6 +147,7 @@ func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, er
 	score := make(map[string]int, len(res))
 	for i := range res {
 		res[i].Coverage = len(covered[res[i].EntityID])
+		res[i].Partial = true
 		score[res[i].EntityID] = res[i].Coverage + titleHits(res[i].Title, terms)
 	}
 	sort.SliceStable(res, func(i, j int) bool { return score[res[i].EntityID] > score[res[j].EntityID] })

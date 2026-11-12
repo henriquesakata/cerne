@@ -111,3 +111,27 @@ func TestSearchJSONDocsAlwaysPresent(t *testing.T) {
 		t.Fatalf("--per-doc JSON must keep today's shape (no docs):\n%s", out)
 	}
 }
+
+// F-0367: when exact lines are followed by partial ones, a line marks the
+// boundary; --json carries broadened.
+func TestSearchMarksPartialLinesAfterExact(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	newFeature(t, projDir, "Sala", 1)
+	newFeature(t, projDir, "Rota", 2)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "resume session route rooms"))
+	writeDoc(t, repoDir, "F-0002", "spec.md", realDoc("F-0002", "resume rooms"))
+	out, err := execCerne(t, "search", "resume session route rooms", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("search: %v\n%s", err, out)
+	}
+	exact, mark, partial := strings.Index(out, "F-0001 ["), strings.Index(out, partialLine), strings.Index(out, "F-0002 [")
+	if exact < 0 || mark < exact || partial < mark || strings.Contains(out, broadLine) {
+		t.Fatalf("want F-0001, then %q, then F-0002:\n%s", partialLine, out)
+	}
+	out, err = execCerne(t, "search", "resume session route rooms", "--json", "--dir", projDir)
+	if err != nil || !strings.Contains(out, `"broadened": true`) {
+		t.Fatalf("--json must carry broadened: %v\n%s", err, out)
+	}
+}
+
+const partialLine = "The lines below have only some of the terms."
