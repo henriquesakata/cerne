@@ -56,7 +56,7 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 			if r.OriginClosed {
 				fmt.Fprintf(out, "closed %s (handed off to %s via %s)\n", r.From, r.ID, r.Taken.ID)
 			} else {
-				fmt.Fprintf(out, "%s was already done: left as it is\n", r.Taken.FromWork)
+				fmt.Fprintf(out, "%s is %s: left as it is\n", r.Taken.FromWork, r.OriginState)
 			}
 			if r.Warning != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", r.Warning)

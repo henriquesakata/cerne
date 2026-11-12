@@ -152,12 +152,21 @@ func TestHandoffCmdTakeAndCancel(t *testing.T) {
 }
 
 // F-0368 crit. 5 through the CLI: an origin no longer active is said so.
+// The origin's real state is named (critic round 1, item 5).
 func TestHandoffCmdTakeOriginDone(t *testing.T) {
-	projDir, _ := handoffProject(t)
-	mustCerne(t, "work", "done", "W-0001", "--dir", projDir)
-	out := mustCerne(t, "handoff", "take", "HO-0001", "--title", "Retomada", "--dir", projDir)
-	if !strings.Contains(out, "W-0001 was already done: left as it is") || !strings.Contains(out, "W-0002 created (active) — Retomada") {
-		t.Fatalf("take output:\n%s", out)
+	for _, tc := range []struct {
+		close []string
+		want  string
+	}{
+		{[]string{"work", "done", "W-0001"}, "W-0001 is done: left as it is"},
+		{[]string{"work", "abandon", "W-0001", "--reason", "desisti"}, "W-0001 is abandoned: left as it is"},
+	} {
+		projDir, _ := handoffProject(t)
+		mustCerne(t, append(tc.close, "--dir", projDir)...)
+		out := mustCerne(t, "handoff", "take", "HO-0001", "--title", "Retomada", "--dir", projDir)
+		if !strings.Contains(out, tc.want) || !strings.Contains(out, "W-0002 created (active) — Retomada") {
+			t.Fatalf("take output, want %q:\n%s", tc.want, out)
+		}
 	}
 }
 

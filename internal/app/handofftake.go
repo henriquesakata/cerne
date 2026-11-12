@@ -39,6 +39,7 @@ type TakeResult struct {
 	StartedWork
 	Brief        string
 	OriginClosed bool
+	OriginState  domain.WorkState // the origin's state when it was left as it is
 	Warning      string
 }
 
@@ -78,7 +79,7 @@ func TakeHandoff(repoDir, projDir, cacheDir, sess, id, title, note string) (Take
 			p.from = origin.ID
 		}
 		sw, ft, msg, err := startWorkTx(repoDir, projDir, p)
-		out, fromTitle = TakeResult{StartedWork: sw, Brief: strings.TrimSpace(body), OriginClosed: p.from != ""}, ft
+		out, fromTitle = TakeResult{StartedWork: sw, Brief: strings.TrimSpace(body), OriginClosed: p.from != "", OriginState: origin.State}, ft
 		return msg, err
 	})
 	if err != nil {
