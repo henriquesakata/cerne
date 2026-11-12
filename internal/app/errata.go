@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,12 +50,20 @@ func AddErrataSteps(repoDir, projDir, id, text, author string, steps []string, s
 	if stepless && (!isRB || len(steps) > 0) {
 		return nil, fmt.Errorf("%s only applies to a runbook erratum that declares no --altera", NoStepFlag)
 	}
-	for i, st := range steps {
-		steps[i] = strings.TrimSpace(st)
-		if steps[i] == "" || strings.ContainsAny(steps[i], "\r\n") {
+	var uniq []string // a repeated step is one item, order kept
+	for _, st := range steps {
+		st = strings.TrimSpace(st)
+		if st == "" || strings.ContainsAny(st, "\r\n") {
 			return nil, fmt.Errorf("--altera takes step references (e.g. S6.6), got %q", st)
 		}
+		if st == store.NoStep {
+			return nil, fmt.Errorf("--altera %q is the no-step marker, not a step: name a step, or use %s", st, NoStepFlag)
+		}
+		if !slices.Contains(uniq, st) {
+			uniq = append(uniq, st)
+		}
 	}
+	steps = uniq
 	var ids []string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		ids = nil

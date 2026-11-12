@@ -70,6 +70,84 @@ func TestAddErrataStepsRefusesMissingStepWithoutWriting(t *testing.T) {
 	}
 }
 
+func errataEvents(t *testing.T, repoDir, id string) int {
+	t.Helper()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, ev := range evs {
+		if ev.EntityID == id && ev.Type == "errata.added" {
+			n++
+		}
+	}
+	return n
+}
+
+// F-0345 crit. 2: numbering continues after the items already there, each item
+// names the other two, one commit, one errata.added event per item.
+func TestAddErrataStepsNumbersAfterExistingItems(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	rb, err := CreateRunbook(repoDir, projDir, "Rb", stepsBody+"\n## S3. Terceiro\n\nTexto 3.\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddErrataSteps(repoDir, projDir, rb.ID, "Antiga.", "ator", []string{"S1", "S2"}, false); err != nil {
+		t.Fatal(err)
+	}
+	commits, events := commitCount(t, repoDir), errataEvents(t, repoDir, rb.ID)
+	ids, err := AddErrataSteps(repoDir, projDir, rb.ID, "Nova.", "ator", []string{"S1", "S2", "S3"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != "E3,E4,E5" {
+		t.Fatalf("ids = %v, want E3,E4,E5", ids)
+	}
+	if got := commitCount(t, repoDir) - commits; got != 1 {
+		t.Fatalf("commits = %d, want 1", got)
+	}
+	if got := errataEvents(t, repoDir, rb.ID) - events; got != 3 {
+		t.Fatalf("errata.added events = %d, want 3 (one per item)", got)
+	}
+	doc, _ := store.LoadErrata(repoDir, rb.ID)
+	items := store.ParseErrataItems(doc)
+	for i, want := range map[int]string{2: "Parte de: E4, E5", 3: "Parte de: E3, E5", 4: "Parte de: E3, E4"} {
+		if !strings.HasSuffix(items[i].Text, want) {
+			t.Errorf("%s text = %q, want suffix %q", items[i].ID, items[i].Text, want)
+		}
+	}
+}
+
+// F-0345: a repeated step is one item, not two pointing at each other; order is kept.
+func TestAddErrataStepsDedupesSteps(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	rb, err := CreateRunbook(repoDir, projDir, "Rb", stepsBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := AddErrataSteps(repoDir, projDir, rb.ID, "x", "ator", []string{"S2", "S1", "S2"}, false)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("ids = %v err = %v, want 2 items", ids, err)
+	}
+	doc, _ := store.LoadErrata(repoDir, rb.ID)
+	if items := store.ParseErrataItems(doc); items[0].Target != "S2" || items[1].Target != "S1" {
+		t.Fatalf("order must be kept: %+v", items)
+	}
+}
+
+// F-0345: `--altera -` is the no-step marker, not a step: refused.
+func TestAddErrataStepsRefusesNoStepMarker(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	rb, err := CreateRunbook(repoDir, projDir, "Rb", stepsBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddErrataSteps(repoDir, projDir, rb.ID, "x", "ator", []string{store.NoStep}, false); err == nil || !strings.Contains(err.Error(), "not a step") {
+		t.Fatal("--altera - must be refused")
+	}
+}
+
 // F-0345: --sem-passo writes the deliberate marker.
 func TestAddErrataStepsStepless(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
