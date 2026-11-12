@@ -73,11 +73,13 @@ func TestAutoWorkOpensOnStart(t *testing.T) {
 }
 
 // TestAutoWorkSkipsWhenActorAlreadyOnIt (crit. 3): an existing active work by
-// the same actor referencing the feature suppresses the auto-open.
+// the same actor referencing the feature suppresses the auto-open. The work is
+// the pickup auto-work a plan push opens (F-0208 crit. 1): a manual one is a
+// planning work, which the start closes (F-0341).
 func TestAutoWorkSkipsWhenActorAlreadyOnIt(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
-	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", false)
+	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", true)
 
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
 		t.Fatalf("start: %v", err)
