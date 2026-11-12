@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Kanban from './Kanban'
@@ -53,7 +53,6 @@ beforeEach(() => {
   payload = state()
   live.version = 0
   localStorage.clear()
-  vi.restoreAllMocks()
 })
 
 describe('Kanban — badge de esclarecimento pendente (F-0195)', () => {
@@ -284,13 +283,18 @@ describe('Kanban — coluna Backlog recolhível (F-0342)', () => {
     features: [
       feature('F-0010', { state: 'candidate', priority: 'p2', components: ['ui'] }),
       feature('F-0011', { state: 'candidate', priority: 'p0', components: ['cli'] }),
-      feature('F-0012', { state: 'approved' }),
+      feature('F-0012', { state: 'approved', components: ['api'] }),
     ],
   })
   const backlog = () => document.querySelector('.backlog-column') as HTMLDetailsElement | null
   const backlogIds = () =>
     Array.from(backlog()?.querySelectorAll('.card-id') ?? []).map((el) => el.textContent)
-  const toggle = () => fireEvent.click(backlog()!.querySelector('summary')!)
+  // fireEvent devolve !defaultPrevented: false prova que o toggle nativo do
+  // <summary> foi cancelado — sem isso o browser reabriria o <details> por
+  // cima do estado do React, e o jsdom pode não reproduzir esse toggle.
+  const toggle = () => expect(fireEvent.click(backlog()!.querySelector('summary')!)).toBe(false)
+
+  afterEach(() => vi.restoreAllMocks())
 
   // Critério 1: primeira coluna do board, só candidatas, por prioridade.
   it('mostra as candidatas por prioridade na primeira coluna do board', async () => {
@@ -301,6 +305,12 @@ describe('Kanban — coluna Backlog recolhível (F-0342)', () => {
     expect(backlog()?.querySelector('summary .column-count')).toHaveTextContent('2')
     expect(cardOf('F-0011')).toHaveAttribute('href', '#/f/F-0011')
     expect(backlog()?.textContent).not.toContain('F-0012')
+    // Critério 8: as colunas de ciclo seguem as mesmas e a candidata só aparece uma vez.
+    const lifecycle = Array.from(document.querySelectorAll('section.column > h2')).map(
+      (h) => h.childNodes[0].textContent,
+    )
+    expect(lifecycle).toEqual(['Aprovadas', 'Em desenvolvimento', 'Prontas', 'Concluídas'])
+    expect(document.querySelectorAll('a[href="#/f/F-0011"]')).toHaveLength(1)
   })
 
   // Critério 2: recolher tira os cards do DOM e mantém título + contagem.
@@ -365,12 +375,25 @@ describe('Kanban — coluna Backlog recolhível (F-0342)', () => {
     expect(backlog()?.querySelector('summary .column-count')).toHaveTextContent('1')
   })
 
-  // Critério 5: sem candidatas, estado vazio apontando para o Backlog.
+  // Critério 5: sem candidatas, estado vazio apontando para o Backlog — um link só.
   it('mostra estado vazio com link para o Backlog', async () => {
     render(<Kanban />)
     await waitFor(() => expect(backlog()).toBeInTheDocument())
-    expect(backlog()).toHaveTextContent('Nenhuma candidata')
-    expect(backlog()?.querySelector('.column-empty a[href="#/backlog"]')).toBeInTheDocument()
+    const empty = backlog()?.querySelector('.column-empty a[href="#/backlog"]')
+    expect(empty).toHaveTextContent('Nenhuma candidata — criar no Backlog')
+    expect(backlog()?.querySelectorAll('a[href="#/backlog"]')).toHaveLength(1)
+  })
+
+  // Critérios 4+5: filtro que esconde todas as candidatas não diz que não há nenhuma.
+  it('distingue "nenhuma no filtro" de "nenhuma candidata"', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlogIds()).toHaveLength(2))
+    fireEvent.click(screen.getByRole('button', { name: /^api/ }))
+    await waitFor(() => expect(backlogIds()).toHaveLength(0))
+    expect(backlog()?.querySelector('.column-empty')).toHaveTextContent('Nenhuma candidata no filtro')
+    expect(backlog()?.querySelector('.column-empty a')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Abrir no Backlog' })).toHaveAttribute('href', '#/backlog')
   })
 
   // Critério 6: atalho para o Backlog; criação não vem para o Kanban.
@@ -379,7 +402,11 @@ describe('Kanban — coluna Backlog recolhível (F-0342)', () => {
     render(<Kanban />)
     await waitFor(() => expect(backlogIds()).toHaveLength(2))
     expect(screen.getByRole('link', { name: 'Abrir no Backlog' })).toHaveAttribute('href', '#/backlog')
-    expect(document.querySelector('textarea, form')).toBeNull()
+    expect(
+      document.querySelector(
+        'textarea, form, [contenteditable], input[type="text"], .ideas-panel, [class^="backlog-chat"]',
+      ),
+    ).toBeNull()
   })
 
   // Critério 7: agrupado por épico, a coluna some (as raias já mostram candidatas).

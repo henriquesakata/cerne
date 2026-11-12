@@ -275,6 +275,14 @@ h2 {
 
 .backlog-column:not([open]) > summary { writing-mode: vertical-rl; }
 
+/* A contagem é o único dado da tira: de pé, como o marcador, para "12" não
+   ser lido deitado. */
+.backlog-column:not([open]) > summary .column-count {
+  display: inline-block;
+  writing-mode: horizontal-tb;
+  margin-top: 0.3rem;
+}
+
 .backlog-column-open { font-size: 0.8rem; color: var(--link); }
 .backlog-column-open:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
 

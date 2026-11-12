@@ -3,7 +3,7 @@ import {
   useMemo,
   useState,
   type Dispatch,
-  type MouseEvent,
+  type MouseEvent as ReactMouseEvent,
   type SetStateAction,
 } from 'react'
 import {
@@ -347,6 +347,7 @@ function Columns({
     <div className="board">
       <BacklogColumn
         candidates={byState.get('candidate') ?? []}
+        total={features.filter((f) => f.state === 'candidate').length}
         isEpic={isEpic}
         isStale={isStale}
         pendingClarify={pendingClarify}
@@ -422,12 +423,14 @@ function writeBacklogOpen(open: boolean) {
 // React é a única fonte do estado; recolhida, nenhum card vai ao DOM.
 function BacklogColumn({
   candidates,
+  total,
   isEpic,
   isStale,
   pendingClarify,
   activeWorkFor,
 }: {
   candidates: Feature[]
+  total: number
   isEpic: (id: string) => boolean
   isStale: (id: string) => boolean
   pendingClarify: (id: string) => number
@@ -435,7 +438,7 @@ function BacklogColumn({
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(readBacklogOpen)
-  const toggle = (e: MouseEvent) => {
+  const toggle = (e: ReactMouseEvent) => {
     e.preventDefault()
     const next = !open
     setOpen(next)
@@ -451,13 +454,21 @@ function BacklogColumn({
       </summary>
       {open && (
         <>
-          <a className="backlog-column-open" href="#/backlog">
-            {t.kanban.backlogColumnOpen}
-          </a>
-          {candidates.length === 0 ? (
+          {/* Sem candidata alguma, o link do estado vazio já leva ao Backlog —
+              dois links iguais lado a lado só somariam uma parada de Tab. */}
+          {total > 0 && (
+            <a className="backlog-column-open" href="#/backlog">
+              {t.kanban.backlogColumnOpen}
+            </a>
+          )}
+          {total === 0 ? (
             <p className="column-empty">
-              {t.kanban.backlogColumnEmpty} <a href="#/backlog">{t.nav.backlog}</a>
+              <a href="#/backlog">{t.kanban.backlogColumnEmpty}</a>
             </p>
+          ) : candidates.length === 0 ? (
+            // Há candidatas, o filtro é que as escondeu: dizer "nenhuma" aqui
+            // convidaria a registrar duplicata.
+            <p className="column-empty">{t.kanban.backlogColumnNoMatch}</p>
           ) : (
             sortByPriority(candidates).map((f) => (
               <Card

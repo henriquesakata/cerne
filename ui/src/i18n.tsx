@@ -275,7 +275,8 @@ const ptBR = {
       `Em andamento por: ${actors.join(', ')}`,
     backlogColumn: 'Backlog',
     backlogColumnOpen: 'Abrir no Backlog',
-    backlogColumnEmpty: 'Nenhuma candidata — abra uma no',
+    backlogColumnEmpty: 'Nenhuma candidata — criar no Backlog',
+    backlogColumnNoMatch: 'Nenhuma candidata no filtro.',
   },
   pendings: {
     title: 'Pendências',
@@ -1304,7 +1305,8 @@ const en: Messages = {
     activeWorkTitle: (actors: string[]) => `In progress by: ${actors.join(', ')}`,
     backlogColumn: 'Backlog',
     backlogColumnOpen: 'Open in Backlog',
-    backlogColumnEmpty: 'No candidates — open one in the',
+    backlogColumnEmpty: 'No candidates yet — create one in the Backlog',
+    backlogColumnNoMatch: 'No candidate matches the filter.',
   },
   pendings: {
     title: 'Pendings',
