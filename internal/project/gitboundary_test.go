@@ -169,3 +169,37 @@ func TestFindConfig_CerneRootAfterGitBoundary(t *testing.T) {
 		t.Fatalf("bad CERNE_ROOT at the boundary:\n got %v\nwant %s", err, want)
 	}
 }
+
+// F-0372 limit (accepted): a worktree whose .cernerc is not versioned is its
+// own git root without a project, so the main checkout's .cernerc is refused
+// there; --dir escapes.
+func TestFindConfig_WorktreeWithoutCernercRefuses(t *testing.T) {
+	isolateLookup(t)
+	main := t.TempDir()
+	mkProject(t, main, "p")
+	gitDir(t, main)
+	wt := filepath.Join(main, ".claude", "worktrees", "unversioned")
+	gitFile(t, wt)
+	_, _, err := LoadConfig(wt)
+	want := (&crossedGitRootError{GitRoot: wt, ProjectDir: main}).Error()
+	if !errors.Is(err, ErrNoProject) || err.Error() != want {
+		t.Fatalf("got %v\nwant %s", err, want)
+	}
+}
+
+// FoundByWalk is true only when the walk alone resolves, whatever CERNE_ROOT says.
+func TestFoundByWalk(t *testing.T) {
+	isolateLookup(t)
+	proj := t.TempDir()
+	mkProject(t, proj, "p")
+	sub := filepath.Join(proj, "sub")
+	clone := filepath.Join(proj, "clone")
+	mkdirs(t, sub)
+	gitDir(t, clone)
+	t.Setenv("CERNE_ROOT", proj)
+	for dir, want := range map[string]bool{proj: true, sub: true, clone: false, t.TempDir(): false} {
+		if got := FoundByWalk(dir); got != want {
+			t.Errorf("FoundByWalk(%s) = %v, want %v", dir, got, want)
+		}
+	}
+}

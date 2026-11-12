@@ -376,6 +376,37 @@ func TestNestedGitHookFailsOpen(t *testing.T) {
 	if err != nil || strings.TrimSpace(out) != "" {
 		t.Fatalf("hook in a nested clone: err=%v out=%s", err, out)
 	}
+	// Positive control: the same hook from the project dir does inject.
+	t.Chdir(projDir)
+	out, err = execCerneStdin(t, hookJSON(t, "s", projDir, "", nil, nil), "hook", "session-context")
+	if err != nil || !strings.Contains(out, "ACTIVE WORK RIGHT NOW") {
+		t.Fatalf("hook in the project: err=%v out=%s", err, out)
+	}
+}
+
+// F-0876 / F-0372: with CERNE_ROOT set, noteCerneRoot stays silent when the
+// walk wins (the cwd belongs to another project).
+func TestNestedGitCerneRootSilentWhenWalkWins(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	other := t.TempDir()
+	if err := project.SaveConfig(other, project.Config{ProjectID: "other", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_ROOT", other)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	noteCerneRoot(projDir, projDir)
+	os.Stderr = old
+	w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	if buf.Len() != 0 {
+		t.Fatalf("no note expected when the walk wins:\n%s", buf.String())
+	}
 }
 
 // F-0372 round 1: the F-0354 hint for an explicit --dir comes from the same
