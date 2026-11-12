@@ -19,7 +19,7 @@
   <a href="INSTALL.md">Install guide</a>
 </p>
 
-![The cerne dashboard: features by state, lint debts and context savings](docs/assets/ui-dashboard.png)
+![cerne in the terminal: a rejected feature leaves the current state and stays searchable](docs/assets/demo.gif)
 
 ## The problem
 
@@ -105,6 +105,8 @@ flowchart LR
 | **Built for parallel agents** | Per-document merge on `pull`, auto-rebase on `push`, a conflict-free `docs.lock` across branches and worktrees. |
 | **Claude Code integration** | `cerne init` installs skills and hooks that teach the agent the workflow, so you just ask for the feature. |
 | **Single binary** | macOS, Linux and Windows. The UI is embedded. No runtime dependencies. |
+
+![The cerne dashboard: features by state, lint debts and context savings](docs/assets/ui-dashboard.png)
 
 ![The cerne kanban board](docs/assets/ui-kanban.png)
 
