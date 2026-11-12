@@ -176,10 +176,10 @@ func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, 
 func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string) (store.Feature, error) {
 	n, err := prepareFeature(prefix, title, module, parent, facets, components, specBody, force, owner, priority)
 	n.fixes = fixes
-	n.light = !projectGates(projDir).GauntletEnabled()
 	if err != nil {
 		return store.Feature{}, err
 	}
+	n.light = !projectGates(projDir).GauntletEnabled()
 	// The whole creation — duplicate guard, id mint, entity+spec+event writes —
 	// runs inside ONE critical section of the backend lock (F-0121): a
 	// concurrent local process can neither sweep the half-written state into
