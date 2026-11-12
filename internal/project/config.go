@@ -538,6 +538,16 @@ type noProjectAtError struct{ msg string }
 func (e *noProjectAtError) Error() string        { return e.msg }
 func (e *noProjectAtError) Is(target error) bool { return target == ErrNoProject }
 
+// crossedGitRootError is ErrNoProject for a walk that found a .cernerc only
+// above the first git root it crossed (F-0372): a clone, fixture or submodule
+// living inside a cerne project is not that project unless the user says so.
+type crossedGitRootError struct{ GitRoot, ProjectDir string }
+
+func (e *crossedGitRootError) Error() string {
+	return fmt.Sprintf("no cerne project in this git repository (%s); the nearest %s is at %s, outside it — use --dir %s to work on that project on purpose", e.GitRoot, configFilename, e.ProjectDir, e.ProjectDir)
+}
+func (e *crossedGitRootError) Is(target error) bool { return target == ErrNoProject }
+
 // RequireConfigAt checks that <dir> holds a .cernerc, without walking up and
 // without parsing it (F-0354): a directory the user named explicitly (--dir) is
 // the project, never a place to start a search from. CERNE_ROOT does not apply
@@ -580,19 +590,34 @@ func walkUpToConfigDir(dir string) (string, bool) {
 }
 
 // findConfigDir walks up from startDir to the directory holding a .cernerc,
-// without decoding it. ErrNoProject when none exists up to the root.
+// without decoding it. ErrNoProject when none exists up to the root, or when
+// the only one lies above the first git root the walk crossed (F-0372; a .git
+// directory or file, so worktrees and submodules are roots too) — CERNE_ROOT,
+// an explicit request, still wins there.
 func findConfigDir(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", err
 	}
+	gitRoot := ""
 	for {
 		_, err := os.Stat(filepath.Join(dir, configFilename))
 		if err == nil {
-			return dir, nil
+			if gitRoot == "" {
+				return dir, nil
+			}
+			if os.Getenv("CERNE_ROOT") != "" {
+				return rootFromEnv(startDir)
+			}
+			return "", &crossedGitRootError{GitRoot: gitRoot, ProjectDir: dir}
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			return "", err
+		}
+		if gitRoot == "" {
+			if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+				gitRoot = dir
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
