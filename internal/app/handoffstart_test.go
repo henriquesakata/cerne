@@ -50,7 +50,7 @@ func TestStartWorkFrom(t *testing.T) {
 	if len(b.Handoffs) != 1 || b.Handoffs[0].ID != a.ID || b.Handoffs[0].Hint || !strings.Contains(b.Handoffs[0].Entry.Text, "brief um") {
 		t.Fatalf("handoffs = %+v, want A's entry without hint", b.Handoffs)
 	}
-	assertClosedAuto(t, repoDir, a.ID, domain.WorkDone, "handed off to "+b.ID)
+	assertClosedByFrom(t, repoDir, a.ID, "handed off to "+b.ID)
 	assertOneCommit(t, repoDir, before, "entities/works/"+a.ID+".json", "entities/works/"+b.ID+".json")
 	if len(b.Superseded) != 0 {
 		t.Fatalf("superseded = %v, want none", b.Superseded)
@@ -125,7 +125,7 @@ func TestStartWorkHandoffSeamsWithPlanning(t *testing.T) {
 		if len(w.Superseded) != 0 || len(w.Kept) != 0 {
 			t.Fatalf("superseded %v kept %v, want none: --from owns W-0001", w.Superseded, w.Kept)
 		}
-		assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "handed off to W-0002")
+		assertClosedByFrom(t, repoDir, "W-0001", "handed off to W-0002")
 		if n := countEvents(t, repoDir, "W-0001", "work.done"); n != 1 {
 			t.Fatalf("work.done events on W-0001 = %d, want 1", n)
 		}

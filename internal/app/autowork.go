@@ -158,15 +158,33 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 // ActionComplete, abandoned on ActionAbandon, with note on the entity and
 // on the work.done/work.abandoned event, marked via=auto.
 func closeWork(repoDir string, w store.Work, workAction domain.Action, note string) error {
-	_, err := closeWorkEntity(repoDir, w, workAction, note, map[string]string{"note": note, "via": "auto"})
+	_, err := closeWorkRecord(repoDir, w, workAction, note, map[string]string{"note": note, "via": "auto"})
 	return err
 }
 
-// closeWorkEntity is the one way a work is closed (FinishWork, closeWork and
-// work start --from go through it): the transition, the note, the
-// work.done/work.abandoned event with payload, and the end of the work's
-// runbook run (F-0873), if it has one. It returns the new state.
+// closeWorkEntity is the explicit close (FinishWork and work start --from):
+// the record of closeWorkRecord plus the end of the work's runbook run
+// (F-0873), if it has one. The automatic closes do not end runs. It returns
+// the new state.
 func closeWorkEntity(repoDir string, w store.Work, workAction domain.Action, note string, payload map[string]string) (domain.WorkState, error) {
+	newState, err := closeWorkRecord(repoDir, w, workAction, note, payload)
+	if err != nil {
+		return "", err
+	}
+	if r, err := store.LoadRun(repoDir, w.ID); err == nil {
+		r.State = store.RunClosed
+		if err := store.SaveRun(repoDir, r); err != nil {
+			return "", err
+		}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	return newState, nil
+}
+
+// closeWorkRecord is the transition, the note and the work.done/work.abandoned
+// event with payload; it returns the new state.
+func closeWorkRecord(repoDir string, w store.Work, workAction domain.Action, note string, payload map[string]string) (domain.WorkState, error) {
 	newState, err := domain.TransitionWork(w.State, workAction)
 	if err != nil {
 		return "", err
@@ -182,14 +200,6 @@ func closeWorkEntity(repoDir string, w store.Work, workAction domain.Action, not
 		return "", err
 	}
 	if err := store.AppendEvent(repoDir, domain.NewEvent(w.ID, eventType, payload, EventActor())); err != nil {
-		return "", err
-	}
-	if r, err := store.LoadRun(repoDir, w.ID); err == nil {
-		r.State = store.RunClosed
-		if err := store.SaveRun(repoDir, r); err != nil {
-			return "", err
-		}
-	} else if !errors.Is(err, store.ErrNotFound) {
 		return "", err
 	}
 	return newState, nil

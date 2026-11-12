@@ -136,7 +136,9 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		out = StartedWork{Work: w, From: from, Handoffs: handoffs}
 		fromTitle = origin.Title
 		if from != "" {
-			if err := closeWork(repoDir, origin, domain.ActionComplete, "handed off to "+id); err != nil {
+			// An explicit handoff, closed like `work done`: ends the run, no via=auto.
+			note := "handed off to " + id
+			if _, err := closeWorkEntity(repoDir, origin, domain.ActionComplete, note, map[string]string{"note": note}); err != nil {
 				return "", err
 			}
 		}
