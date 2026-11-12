@@ -644,8 +644,12 @@ func walkToConfigDir(startDir string) (string, error) {
 			return "", err
 		}
 		if gitRoot == "" {
-			if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			// Any .git entry marks a root, as git's own discovery treats it.
+			_, err := os.Lstat(filepath.Join(dir, ".git"))
+			if err == nil {
 				gitRoot = dir
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return "", err
 			}
 		}
 		parent := filepath.Dir(dir)
