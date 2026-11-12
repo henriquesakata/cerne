@@ -66,6 +66,55 @@ func BindSessionAgent(cacheDir, sess, agent, harness, id string) error {
 	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, TS: time.Now().UTC()})
 }
 
+// TouchBinding refreshes the mtime of session sess's binding file — the
+// session's "last signal" (F-0361). A session without a binding file is a
+// silent no-op: it never creates one. Contents are untouched; local only.
+func TouchBinding(cacheDir, sess string) error {
+	if err := safeSessionID(sess); err != nil {
+		return err
+	}
+	now := time.Now()
+	err := os.Chtimes(filepath.Join(cacheDir, sessionsSubdir, sess), now, now)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+// SessionSignal is one session binding on this machine and when it last
+// signalled (F-0361).
+type SessionSignal struct {
+	Session    string
+	Entity     string
+	LastSignal time.Time
+}
+
+// SessionSignals lists every binding file under <cacheDir>/sessions read-only:
+// no cleanup, no liveness check — callers decide what is relevant (F-0361).
+func SessionSignals(cacheDir string) []SessionSignal {
+	dir := filepath.Join(cacheDir, sessionsSubdir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []SessionSignal
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, SessionSignal{Session: e.Name(), Entity: strings.TrimSpace(string(raw)), LastSignal: info.ModTime().UTC()})
+	}
+	return out
+}
+
 // CurrentBinding resolves the binding for session sess against the backend
 // clone at repoDir: it returns the bound id only while the entity is still
 // live (active work / in_development feature). A missing binding is (_, false,

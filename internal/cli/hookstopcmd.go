@@ -68,6 +68,7 @@ func runHookStopCheck(cmd *cobra.Command) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
+	_ = app.TouchBinding(cacheDir, in.SessionID) // F-0361: sign of life, one stat + one chtimes, local
 
 	// F-0309: keep the session's live features' cost snapshot current, so a
 	// pruned transcript does not lose it before the stamp. Silent, fail-open.
