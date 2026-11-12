@@ -188,8 +188,8 @@ func TestGitLabOnDefaultBranch(t *testing.T) {
 func giteaServer(t *testing.T, token string, h func(w http.ResponseWriter, r *http.Request)) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "token "+token {
-			t.Errorf("Authorization = %q, want the token header", got)
+		if _, p, basic := r.BasicAuth(); r.Header.Get("Authorization") != "token "+token && !(basic && p == token) {
+			t.Errorf("Authorization = %q, want the token (header or Basic retry)", r.Header.Get("Authorization"))
 		}
 		if got, want := r.Header.Get("User-Agent"), "cerne/"+version.Version; got != want {
 			t.Errorf("User-Agent = %q, want %q", got, want)
@@ -197,10 +197,10 @@ func giteaServer(t *testing.T, token string, h func(w http.ResponseWriter, r *ht
 		h(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	oldBase, oldCred := apiBase, credentialToken
-	t.Cleanup(func() { apiBase, credentialToken = oldBase, oldCred })
+	oldBase, oldCred := apiBase, credentialFill
+	t.Cleanup(func() { apiBase, credentialFill = oldBase, oldCred })
 	apiBase = func(string) string { return srv.URL + "/api/v1" }
-	credentialToken = func(context.Context, string) (string, error) { return token, nil }
+	credentialFill = func(context.Context, string) (string, string) { return "root", token }
 }
 
 func TestGiteaPRForCommit(t *testing.T) {
@@ -241,7 +241,9 @@ func TestGiteaTokenNeverInErrors(t *testing.T) {
 		t.Fatalf("err = %v: want an error without the token", err)
 	}
 	// An unreachable server: the transport error must not leak either.
-	httpDo = func(*http.Request) (*http.Response, error) { return nil, errors.New("dial: Authorization: token " + token) }
+	httpDo = func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial: Authorization: token " + token)
+	}
 	t.Cleanup(func() { httpDo = func(req *http.Request) (*http.Response, error) { return http.DefaultClient.Do(req) } })
 	_, _, err = g.PRForCommit(context.Background(), "abc1234")
 	if err == nil || strings.Contains(err.Error(), token) {
@@ -252,12 +254,15 @@ func TestGiteaTokenNeverInErrors(t *testing.T) {
 // F-0355 crit. 10: without a credential there is no request and the reason
 // names the host.
 func TestGiteaNoCredentials(t *testing.T) {
-	old := credentialToken
-	t.Cleanup(func() { credentialToken = old })
-	credentialToken = func(context.Context, string) (string, error) { return "", nil }
+	old := credentialFill
+	t.Cleanup(func() { credentialFill = old })
+	credentialFill = func(context.Context, string) (string, string) { return "root", "" }
 	oldDo := httpDo
 	t.Cleanup(func() { httpDo = oldDo })
-	httpDo = func(*http.Request) (*http.Response, error) { t.Fatal("request sent without a credential"); return nil, nil }
+	httpDo = func(*http.Request) (*http.Response, error) {
+		t.Fatal("request sent without a credential")
+		return nil, nil
+	}
 	g, _ := New("gitea", "https://git.rockt.com.br/rockt/hub/commit/{sha}")
 	_, _, err := g.PRForCommit(context.Background(), "abc1234")
 	if err == nil || err.Error() != "no credentials for git.rockt.com.br" {
@@ -287,10 +292,48 @@ func TestGiteaOnDefaultBranch(t *testing.T) {
 
 func TestParseCredential(t *testing.T) {
 	out := "protocol=https\nhost=h\nusername=root\npassword=tok\n"
-	if got := parseCredential(out); got != "tok" {
+	if u, got := parseCredential(out); got != "tok" || u != "root" {
+		t.Fatalf("got %q %q", u, got)
+	}
+	if _, got := parseCredential("protocol=https\n"); got != "" {
 		t.Fatalf("got %q", got)
 	}
-	if got := parseCredential("protocol=https\n"); got != "" {
-		t.Fatalf("got %q", got)
+}
+
+// The helper may hold the account password, not an access token: the token
+// header is refused (401) and the one retry goes as HTTP Basic (seen against
+// git.rockt.com.br, 2026-11-12).
+func TestGiteaBasicFallback(t *testing.T) {
+	const secret = "the-account-password"
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = append(sent, r.Header.Get("Authorization"))
+		if u, p, ok := r.BasicAuth(); !ok || u != "root" || p != secret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if got, want := r.Header.Get("User-Agent"), "cerne/"+version.Version; got != want {
+			t.Errorf("User-Agent = %q, want %q", got, want)
+		}
+		fmt.Fprint(w, `{"number":5,"html_url":"https://git.rockt.com.br/rockt/hub/pulls/5"}`)
+	}))
+	t.Cleanup(srv.Close)
+	oldBase, oldCred := apiBase, credentialFill
+	t.Cleanup(func() { apiBase, credentialFill = oldBase, oldCred })
+	apiBase = func(string) string { return srv.URL + "/api/v1" }
+	credentialFill = func(context.Context, string) (string, string) { return "root", secret }
+	g, _ := New("gitea", "https://git.rockt.com.br/rockt/hub/commit/{sha}")
+	_, n, err := g.PRForCommit(context.Background(), "abc1234")
+	if err != nil || n != 5 {
+		t.Fatalf("got %d %v", n, err)
+	}
+	if len(sent) != 2 || sent[0] != "token "+secret || !strings.HasPrefix(sent[1], "Basic ") {
+		t.Fatalf("attempts = %d, want token then Basic", len(sent))
+	}
+	// Both refused: the error is the 401, without the secret.
+	credentialFill = func(context.Context, string) (string, string) { return "root", "wrong" }
+	_, _, err = g.PRForCommit(context.Background(), "abc1234")
+	if err == nil || err.Error() != "gitea: HTTP 401" {
+		t.Fatalf("err = %v", err)
 	}
 }
