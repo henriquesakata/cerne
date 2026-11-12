@@ -200,8 +200,27 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	if err != nil {
 		return err
 	}
-	if body := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er)))); body != "" {
-		res.content = append(res.content, showDoc{name: "errata", body: body})
+	errBody := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er))))
+	// F-0351: a runbook's items already folded into the body show as one line,
+	// not again in full; read-only, the errata file is never rewritten.
+	var merged []mergedErrataJSON
+	if res.kind == "runbook" {
+		if merged, err = mergedErrata(ctx.repoDir, id, store.ParseErrataItems(er)); err != nil {
+			return err
+		}
+		if len(merged) > 0 {
+			byItem := map[string]mergedErrataJSON{}
+			for _, m := range merged {
+				byItem[m.Item] = m
+			}
+			errBody = store.ReplaceMerged(errBody, func(it store.ErrataItem) string {
+				m := byItem[it.ID]
+				return fmt.Sprintf("%s merged into revision %d (%s)", m.Item, m.Revision, m.Date)
+			})
+		}
+	}
+	if errBody != "" {
+		res.content = append(res.content, showDoc{name: "errata", body: errBody})
 	}
 	// F-0345: a runbook's errata items not yet folded into the body, and those
 	// with no step; nil while nothing is open.
@@ -308,6 +327,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		enc.SetIndent("", "  ")
 		j := res.toJSON(handoffs)
 		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
+		j.MergedErrata = merged
 		return enc.Encode(j)
 	}
 	if f, ok := res.entity.(store.Feature); ok && !all {
@@ -668,6 +688,46 @@ type showJSON struct {
 	OpenErrata     *int                 `json:"open_errata,omitempty"`     // runbooks with open items only (F-0345)
 	SteplessErrata *int                 `json:"stepless_errata,omitempty"` // idem: those with no step
 	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`        // works only (F-0339)
+	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`   // runbooks only (F-0351)
+}
+
+type mergedErrataJSON struct {
+	Item     string `json:"item"`
+	Revision int    `json:"revision"`
+	Date     string `json:"date"`
+}
+
+// mergedErrata lists the merged items of runbook id: the revision is the one
+// the item records (`Fundida: revisão N`), the date is the `at` of the
+// errata.merged event that folded it.
+func mergedErrata(repoDir, id string, items []store.ErrataItem) ([]mergedErrataJSON, error) {
+	var out []mergedErrataJSON
+	var evs []domain.Event
+	loaded := false
+	for _, it := range items {
+		if it.Merged == "" {
+			continue
+		}
+		var rev int
+		fmt.Sscanf(it.Merged, "revisão %d", &rev)
+		if !loaded {
+			var err error
+			if evs, err = store.ReadEvents(repoDir); err != nil {
+				return nil, err
+			}
+			loaded = true
+		}
+		date := "date unknown"
+		for _, ev := range evs {
+			if ev.EntityID == id && ev.Type == "errata.merged" && ev.Payload["revision"] == fmt.Sprint(rev) &&
+				slices.Contains(strings.Split(ev.Payload["items"], ","), it.ID) {
+				date = ev.At.UTC().Format("2006-01-02")
+				break
+			}
+		}
+		out = append(out, mergedErrataJSON{it.ID, rev, date})
+	}
+	return out, nil
 }
 
 type showDocJSON struct {
