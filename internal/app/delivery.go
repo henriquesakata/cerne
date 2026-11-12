@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -29,9 +30,9 @@ var ErrDeliveryInvalid = errors.New("invalid delivery link")
 var ErrDeliveryNoTemplate = errors.New("no [delivery] commit_url template configured")
 
 // ErrDeliveryState is the sentinel for a post-hoc delivery update on a
-// feature whose state does not accept one: only in_development and
-// implemented do — closed history (rejected/superseded/done) stays closed and
-// pre-development states have nothing delivered yet.
+// feature whose state does not accept one: only in_development, implemented
+// and done do (done takes the data only, F-0355) — rejected/superseded stay
+// closed and pre-development states have nothing delivered yet.
 var ErrDeliveryState = errors.New("feature state does not accept delivery links")
 
 // shaRe matches a bare git commit SHA (short to full form).
@@ -89,7 +90,7 @@ func SetFeatureDelivery(repoDir, projDir, id string, d Delivery) error {
 		if err != nil {
 			return "", err
 		}
-		if f.State != domain.StateInDevelopment && f.State != domain.StateImplemented {
+		if f.State != domain.StateInDevelopment && f.State != domain.StateImplemented && f.State != domain.StateDone {
 			return "", fmt.Errorf("%w: %s is %s", ErrDeliveryState, id, f.State)
 		}
 		if d.CommitURL != "" {
@@ -99,6 +100,13 @@ func SetFeatureDelivery(repoDir, projDir, id string, d Delivery) error {
 			f.DeliveryMRURL = d.MRURL
 		}
 		f.UpdatedAt = time.Now().UTC()
+		// Only an implemented feature's result carries the block: a draft gets it
+		// at complete, and a done result is history, left untouched (F-0355).
+		if f.State == domain.StateImplemented {
+			if err := stampDeliveryInResult(repoDir, f); err != nil {
+				return "", err
+			}
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
@@ -114,4 +122,26 @@ func SetFeatureDelivery(repoDir, projDir, id string, d Delivery) error {
 		}
 		return fmt.Sprintf("cerne: deliver %s", id), nil
 	})
+}
+
+// stampDeliveryInResult writes f's "## Entrega" block into its result.md in the
+// backend clone (F-0355). A feature with no delivery link leaves the result
+// alone; the write joins the caller's critical section.
+func stampDeliveryInResult(repoDir string, f store.Feature) error {
+	if f.DeliveryCommitURL == "" && f.DeliveryMRURL == "" {
+		return nil
+	}
+	path := FeatureDocPath(repoDir, f.ID, "result.md")
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // no result to carry the block
+	}
+	if err != nil {
+		return err
+	}
+	body := StampDelivery(string(raw), f.DeliveryCommitURL, f.DeliveryMRURL)
+	if body == string(raw) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(body), 0o644)
 }
