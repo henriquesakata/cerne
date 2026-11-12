@@ -39,6 +39,19 @@ func TestBrokenLinkErrataFixText(t *testing.T) {
 	if strings.Contains(got[0].Detail, "then 'cerne push'") || !strings.HasSuffix(got[0].Detail, want) {
 		t.Fatalf("a non-editable doc's action is the Fix itself, got %q", got[0].Detail)
 	}
+	// A5: the hint is diagnosis only — no instruction to edit the errata.
+	appendErr(t, dir, 2, "e [x](./nada.md)")
+	for _, f := range errataBrokenLinks(t, dir) {
+		diag, _, _ := strings.Cut(f.Detail, "; append-only errata")
+		for _, verb := range []string{"fix", "replace", "update", "remove", "point"} {
+			if strings.Contains(diag, verb) {
+				t.Errorf("errata diagnosis %q must not say %q", diag, verb)
+			}
+		}
+		if !strings.HasSuffix(f.Detail, f.Fix) {
+			t.Errorf("Detail must end with the Fix: %q", f.Detail)
+		}
+	}
 }
 
 // F-0352 A1 (a)+(b)+(c): applying the Fix clears earlier occurrences; a new

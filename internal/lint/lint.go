@@ -1246,14 +1246,14 @@ func linkFindings(repoDir string, d scannedDoc, text string, names func() map[st
 		if brokenAcked(d, text, r) {
 			continue
 		}
-		hint := "no such file: fix the path or remove the link"
+		hint, action := "no such file", ": fix the path or remove the link"
 		if c := names()[path.Base(clean)]; len(c) == 1 {
 			// Relative to the document's folder, the way the link resolves.
 			if rel, err := filepath.Rel(path.Dir(d.rel), c[0]); err == nil {
-				hint = "did you mean " + filepath.ToSlash(rel) + "? update the link to it"
+				hint, action = "did you mean "+filepath.ToSlash(rel)+"?", " update the link to it"
 			}
 		}
-		findings = append(findings, brokenLinkFinding(d, r, "link", r.Target, hint))
+		findings = append(findings, brokenLinkFinding(d, r, "link", r.Target, hint, action))
 	}
 	return findings
 }
@@ -1277,19 +1277,17 @@ func brokenAcked(d scannedDoc, text string, r mdlink.Ref) bool {
 // brokenLinkFinding builds one broken-link finding (F-0352): the line, the
 // suggestion after " — ", and — in an append-only errata — the errata command
 // that adds the correction (F-0329).
-func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint string) Finding {
-	detail := fmt.Sprintf("broken %s %s", kind, token)
-	if hint != "" {
-		detail += " — " + hint
-	}
+func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint, action string) Finding {
+	detail := fmt.Sprintf("broken %s %s — %s", kind, token, hint)
 	var fix string
 	if strings.HasPrefix(d.rel, "content/errata/") {
+		// Diagnosis only: the errata cannot be edited, the Fix is the action.
 		fix = fmt.Sprintf("cerne %s errata %s '<!-- lint:ok-broken-link %s --> <the right target, or why the link is history>'", errataKind(d.entity), d.entity, r.Target)
 		detail += "; append-only errata: append the correction with " + fix
 	} else {
 		// Same decision as ref-to-superseded: only an errata is not editable
 		// (the scan reads concluded entities through their errata alone).
-		detail += ", then 'cerne push'"
+		detail += action + ", then 'cerne push'"
 	}
 	return Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line, Detail: detail, Fix: fix}
 }
@@ -1319,7 +1317,7 @@ func backendFileNames(repoDir string) map[string][]string {
 
 // idHint explains an unknown id-form wiki-link target: the same id with
 // another zero padding, else the last id of a known prefix.
-func idHint(target string, ids map[string]bool) string {
+func idHint(target string, ids map[string]bool) (hint, action string) {
 	split := func(id string) (string, int, bool) {
 		p, n, ok := strings.Cut(id, "-")
 		v, err := strconv.Atoi(n)
@@ -1340,13 +1338,14 @@ func idHint(target string, ids map[string]bool) string {
 			last, lastNum = id, n
 		}
 	}
+	const pick = ": point the link to an existing id ('cerne brief' lists them) or remove it"
 	if len(same) == 1 {
-		return "did you mean [[" + same[0] + "]]? replace the link with it"
+		return "did you mean [[" + same[0] + "]]?", " replace the link with it"
 	}
 	if last != "" {
-		return "no such id; the last " + prefix + "- id is " + last + ": point the link to an existing id ('cerne brief' lists them) or remove it"
+		return "no such id; the last " + prefix + "- id is " + last, pick
 	}
-	return "no such id: point the link to an existing id ('cerne brief' lists them) or remove it"
+	return "no such id", pick
 }
 
 // knownEntityIDs collects every entity id, canonicalized, as the id-form
@@ -1389,7 +1388,8 @@ func wikiLinkFindings(d scannedDoc, text string, ids map[string]bool) []Finding 
 		if brokenAcked(d, text, r) {
 			continue
 		}
-		findings = append(findings, brokenLinkFinding(d, r, "wiki-link", "[["+r.Target+"]]", idHint(r.Target, ids)))
+		hint, action := idHint(r.Target, ids)
+		findings = append(findings, brokenLinkFinding(d, r, "wiki-link", "[["+r.Target+"]]", hint, action))
 	}
 	return findings
 }
