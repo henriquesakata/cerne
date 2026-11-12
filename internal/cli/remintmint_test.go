@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -39,22 +41,60 @@ func publishFromOtherSession(t *testing.T, origin, kind, id, title string) {
 	}
 }
 
-// F-0356 crit. 3: the redone mutate runs its duplicate-title guard on the new
-// tip, so a title the other session just registered is refused, not re-minted.
-func TestMintRemintRunsDuplicateGuardOnTip(t *testing.T) {
-	projDir, origin, _ := setupProject(t)
-	newFeature(t, projDir, "Alpha", 1)
-	publishFromOtherSession(t, origin, "feature", "F-0002", "Gamma")
-	stdout, stderr, err := execCerneSplit(t, "feature", "new", "Gamma", "--context", "x", "--component", "test", "--dir", projDir)
-	if err == nil {
-		t.Fatalf("want the duplicate guard to refuse\nstdout: %s\nstderr: %s", stdout, stderr)
+// F-0356 crit. 3: the redone mutate runs its guards on the new tip, so the
+// refusal comes from the guard (not from a ConflictError) and nothing is
+// minted. The parent guard is reachable too: the other session takes the same
+// id AND closes the parent, which a mint never edits (so the conflict stays on
+// created paths and the redo reaches validateParent, feature.go:255).
+func TestMintRemintRunsGuardsOnTip(t *testing.T) {
+	cases := []struct {
+		name  string
+		args  []string
+		setup func(t *testing.T, origin string)
+		want  error
+	}{
+		{"duplicate title", []string{"feature", "new", "Gamma", "--context", "x", "--component", "test"},
+			func(t *testing.T, origin string) { publishFromOtherSession(t, origin, "feature", "F-0002", "Gamma") },
+			app.ErrDuplicateTitle},
+		{"closed parent", []string{"feature", "new", "Delta", "--context", "x", "--component", "test", "--parent", "F-0001"},
+			func(t *testing.T, origin string) {
+				other := filepath.Join(t.TempDir(), "other")
+				if err := gitback.Clone(origin, other); err != nil {
+					t.Fatal(err)
+				}
+				now := time.Now().UTC()
+				for _, f := range []store.Feature{
+					{ID: "F-0001", Title: "Alpha", State: domain.StateRejected, CreatedAt: now, UpdatedAt: now},
+					{ID: "F-0002", Title: "theirs", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now},
+				} {
+					if err := store.SaveFeature(other, f); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := gitback.CommitAndPush(other, "theirs F-0002, F-0001 closed"); err != nil {
+					t.Fatal(err)
+				}
+			},
+			app.ErrParentTerminal},
 	}
-	verify := filepath.Join(t.TempDir(), "verify")
-	if err := gitback.Clone(origin, verify); err != nil {
-		t.Fatalf("Clone verify: %v", err)
-	}
-	if fs, err := store.LoadAllFeatures(verify); err != nil || len(fs) != 2 {
-		t.Fatalf("features = %+v err=%v, want only F-0001 and theirs F-0002", fs, err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			projDir, origin, _ := setupProject(t)
+			newFeature(t, projDir, "Alpha", 1)
+			c.setup(t, origin)
+			stdout, stderr, err := execCerneSplit(t, append(c.args, "--dir", projDir)...)
+			var ce *app.ConflictError
+			if errors.As(err, &ce) || !errors.Is(err, c.want) {
+				t.Fatalf("err = %v, want the guard's %v (not a ConflictError)\nstdout: %s\nstderr: %s", err, c.want, stdout, stderr)
+			}
+			verify := filepath.Join(t.TempDir(), "verify")
+			if err := gitback.Clone(origin, verify); err != nil {
+				t.Fatalf("Clone verify: %v", err)
+			}
+			if fs, err := store.LoadAllFeatures(verify); err != nil || len(fs) != 2 {
+				t.Fatalf("features = %+v err=%v, want only F-0001 and theirs F-0002", fs, err)
+			}
+		})
 	}
 }
 
