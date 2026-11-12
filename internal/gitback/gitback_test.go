@@ -389,3 +389,23 @@ func TestOriginURL(t *testing.T) {
 		t.Fatalf("OriginURL = %q, want %q", got, origin)
 	}
 }
+
+// F-0347: Pushes counts successful pushes (the funnel every backend write
+// ends in) and ignores failed ones.
+func TestPushesCountsSuccessOnly(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	before := Pushes()
+	writeFile(t, clone1, "n.txt", "n")
+	if _, err := CommitAndPush(clone1, "second"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	if got := Pushes() - before; got != 1 {
+		t.Fatalf("pushes after one write = %d, want 1", got)
+	}
+	if err := Push(filepath.Join(t.TempDir(), "not-a-repo")); err == nil {
+		t.Fatal("Push on a non-repo succeeded")
+	}
+	if got := Pushes() - before; got != 1 {
+		t.Fatalf("pushes after a failed push = %d, want 1", got)
+	}
+}

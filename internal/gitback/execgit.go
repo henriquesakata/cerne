@@ -371,6 +371,7 @@ func execPushRefspec(workdir, refspec string) error {
 	err := gitRunNet(workdir, "push", "push", "--porcelain", remoteName, refspec)
 	if err == nil {
 		markSynced(workdir)
+		pushes.Add(1)
 		return nil
 	}
 	// No second substring test over the whole error: it embeds the arguments,
