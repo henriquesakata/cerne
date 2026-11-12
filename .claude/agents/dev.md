@@ -28,7 +28,7 @@ You implement one cerne feature delegated by the tech lead. The brief is all you
 
 1. `go vet` on the touched packages and `go build ./...`.
 2. `git push -u origin <branch>` and open a draft PR against `main` with `gh pr create --draft` (body ends with the attribution line from the brief).
-3. Write `result.md` (criterion N → evidence: test name, command, output file) in `.docs/current/features/F-NNNN-*/`, then `cerne push`. Do not run `cerne feature complete`: the tech lead closes after review and the Gauntlet.
+3. Write `result.md` in `.docs/current/features/F-NNNN-*/` on the template `cerne pull` materialized: keep its section headings in the backend's docs language (`Resultado`, `Aceitação`, `O que mudou`, `Débitos e follow-ups`, `Aprendizados e desvios`, `Gauntlet` for pt-BR) — `cerne lint --staged` flags a missing one and `cerne feature complete` refuses it. Under Aceitação, cite each criterion in words (`critério N` → evidence: test name, command, output file). Run `cerne lint --staged`, then `cerne push`. Do not run `cerne feature complete`: the tech lead closes after review and the Gauntlet.
 
 ## Return (at most 40 lines)
 
