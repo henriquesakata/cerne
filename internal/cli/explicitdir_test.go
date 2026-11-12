@@ -206,6 +206,25 @@ func TestResolvePathsClimbsForComputedPath(t *testing.T) {
 	}
 }
 
+// F-0354 x F-0876: the root gate's refusal ends push/sync in the same single
+// FALHA line as every other failure.
+func TestGateRefusalEndsInFinalLine(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	sub := filepath.Join(projDir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"push", "sync"} {
+		_, stderr, err := execCerneSplit(t, name, "--dir", sub)
+		if !errors.Is(err, project.ErrNoProject) {
+			t.Fatalf("%s: want ErrNoProject, got %v", name, err)
+		}
+		if n := strings.Count(stderr, "cerne: resultado=FALHA "); n != 1 || !strings.HasPrefix(lastLine(stderr), "cerne: resultado=FALHA no .cernerc in "+sub) {
+			t.Fatalf("%s: want one FALHA line, last, got:\n%s", name, stderr)
+		}
+	}
+}
+
 // F-0354: the gate only checks that .cernerc exists; a malformed one is not
 // the F-0354 refusal for commands that never read it.
 func TestGateDoesNotParseCerncerc(t *testing.T) {
