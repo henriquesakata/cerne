@@ -310,41 +310,32 @@ func TestPlanningLegacyWithoutStart(t *testing.T) {
 	})
 }
 
-// TestAutoWorkAdoptsOtherIdentity (crit. 3): the F-0208 adoption recognizes
-// either identity of the process — a work opened as <user>@<host> is adopted
-// by a complete run under CERNE_ACTOR. The work is opened after the start, so
-// only the adoption (not the planning rule) can close it.
-func TestAutoWorkAdoptsOtherIdentity(t *testing.T) {
-	t.Setenv("CERNE_ACTOR", "agent")
-	repoDir, projDir, _ := newFeatureBackend(t)
-	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
-	seedStartEvent(t, repoDir, "F-0001", time.Now().UTC().Add(-time.Hour))
-	seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
-
-	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
-		t.Fatalf("complete: %v", err)
-	}
-	assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "feature complete (adotado)")
-}
-
-// TestAutoWorkAdoptionSparesBoundWork (crit. 3 with the crit. 5 rule): the
-// F-0208 adoption never closes a work another session is bound to. A review
-// work another session on this machine opened after the start (same
-// <user>@<host>) stays active when an agent process completes the feature;
-// unbound, or bound to this session, it is adopted as before.
+// TestAutoWorkAdoptionSparesBoundWork (crit. 3, the owner's decision of
+// 2026-11-11 applied): the F-0208 adoption by the work's own identity
+// (autoWorkActor) works as before, except for a work another session is
+// bound to. Adoption by the process's OTHER identity — this feature's
+// widening — needs proof: the work bound to this very session. A
+// <user>@<host> work a human opened in a terminal (no binding) stays when an
+// agent process completes the feature. Every work is opened after the start,
+// so only the adoption (not the planning rule) can close it.
 func TestAutoWorkAdoptionSparesBoundWork(t *testing.T) {
 	cases := []struct {
-		name, mySession, boundSession string
-		held                          bool
+		name, cerneActor, mySession, boundSession string
+		held                                      bool
 	}{
-		{"bound to another session", "sess-me", "sess-other", true},
-		{"no CERNE_SESSION, any binding holds", "", "sess-other", true},
-		{"bound to this session", "sess-me", "sess-me", false},
-		{"unbound", "sess-me", "", false},
+		{"same identity, unbound", "", "sess-me", "", false},
+		{"same identity, no CERNE_SESSION", "", "", "", false},
+		{"same identity, bound to this session", "", "sess-me", "sess-me", false},
+		{"same identity, bound to another session", "", "sess-me", "sess-other", true},
+		{"same identity, no CERNE_SESSION, any binding holds", "", "", "sess-other", true},
+		{"other identity, bound to this session", "agent", "sess-me", "sess-me", false},
+		{"other identity, unbound", "agent", "sess-me", "", true},
+		{"other identity, no CERNE_SESSION", "agent", "", "", true},
+		{"other identity, bound to another session", "agent", "sess-me", "sess-other", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("CERNE_ACTOR", "agent")
+			t.Setenv("CERNE_ACTOR", tc.cerneActor)
 			t.Setenv("CERNE_SESSION", tc.mySession)
 			repoDir, projDir, _ := newFeatureBackend(t)
 			seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")

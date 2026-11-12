@@ -125,13 +125,15 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 		// adopted here too, so a work opened by openAutoWorkForPush never
 		// outlives the feature it registered — only single-ref works of the
 		// SAME actor qualify; a broader-scoped or another actor's work is left
-		// for its owner (stale-work lint still nags a forgotten one). Same
-		// actor is either identity of this process (F-0341 crit. 3) — and
-		// <user>@<host> is every session on the machine, so a work another
-		// session is bound to (F-0151) is that session's, never adopted (the
-		// crit. 5 rule).
+		// for its owner (stale-work lint still nags a forgotten one). A work
+		// another session is bound to (F-0151) is that session's and never
+		// adopted. A work under this process's OTHER identity (F-0341 crit. 3,
+		// the owner's decision of 2026-11-11) is adopted only when bound to
+		// this very session: unbound proves nothing — a human's terminal
+		// carries the same <user>@<host>.
 		isAuto := w.Auto
-		isAdoptedManual := !w.Auto && slices.Contains(mine, w.Actor) && len(w.Refs) == 1 && w.Refs[0] == featureID &&
+		ownIdentity := w.Actor == autoWorkActor() || (slices.Contains(mine, w.Actor) && bindings[sess] == w.ID)
+		isAdoptedManual := !w.Auto && ownIdentity && len(w.Refs) == 1 && w.Refs[0] == featureID &&
 			!boundElsewhere(bindings, w.ID, sess)
 		if (!isAuto && !isAdoptedManual) || !slices.Contains(w.Refs, featureID) {
 			continue
