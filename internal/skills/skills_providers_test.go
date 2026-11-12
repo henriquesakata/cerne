@@ -237,3 +237,157 @@ func TestSkillInstall_ProviderFailureIsSkipped(t *testing.T) {
 		t.Fatalf("expected skipped: %+v", rs)
 	}
 }
+
+func block(skill string) string {
+	return pointerBegin + "\ncerne authoring guide: before creating or managing cerne features, decisions or references, read `" + skill + "`.\n" + pointerEnd
+}
+
+// Markers quoted inside a user's code fence are text, not our block: the file
+// stays intact and a real block is appended.
+func TestSkillInstall_PointerIgnoresMarkersInFence(t *testing.T) {
+	dir := t.TempDir()
+	agents := filepath.Join(dir, "AGENTS.md")
+	user := "# Doc\n\n```md\n" + pointerBegin + "\nuser example\n" + pointerEnd + "\n```\n"
+	os.WriteFile(agents, []byte(user), 0o644)
+	if _, err := Install(dir, hooks.ProviderCodex); err != nil {
+		t.Fatal(err)
+	}
+	want := user + "\n" + block(".agents/skills/cerne-authoring/SKILL.md") + "\n"
+	if got := read(t, agents); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	// A marker mid-line is not a marker either.
+	os.WriteFile(agents, []byte("see "+pointerBegin+" inline\n"), 0o644)
+	Install(dir, hooks.ProviderCodex)
+	if got := read(t, agents); !strings.HasPrefix(got, "see "+pointerBegin+" inline\n\n") || !strings.HasSuffix(got, block(".agents/skills/cerne-authoring/SKILL.md")+"\n") {
+		t.Fatalf("inline marker mishandled:\n%s", got)
+	}
+}
+
+func TestSkillInstall_PointerDuplicatedMarkersSkipped(t *testing.T) {
+	dir := t.TempDir()
+	agents := filepath.Join(dir, "AGENTS.md")
+	body := block("a") + "\nmid\n" + block("b") + "\n"
+	os.WriteFile(agents, []byte(body), 0o644)
+	rs, err := Install(dir, hooks.ProviderCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read(t, agents) != body {
+		t.Fatal("rewrote a file with duplicated blocks")
+	}
+	var skipped bool
+	for _, r := range rs {
+		skipped = skipped || (r.Path == "AGENTS.md" && r.Status == StatusSkipped)
+	}
+	if !skipped {
+		t.Fatalf("%+v", rs)
+	}
+}
+
+func TestSkillInstall_PointerEdgeFiles(t *testing.T) {
+	skill := ".agents/skills/cerne-authoring/SKILL.md"
+	for name, c := range map[string]struct{ in, want string }{
+		"empty":          {"", block(skill) + "\n"},
+		"no trailing nl": {"abc", "abc\n\n" + block(skill) + "\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			agents := filepath.Join(dir, "AGENTS.md")
+			os.WriteFile(agents, []byte(c.in), 0o644)
+			Install(dir, hooks.ProviderCodex)
+			if got := read(t, agents); got != c.want {
+				t.Fatalf("got %q want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestSkillInstall_PointerSkipsNonUTF8AndUTF16(t *testing.T) {
+	for name, in := range map[string][]byte{
+		"utf16le": {0xFF, 0xFE, 'a', 0},
+		"utf16be": {0xFE, 0xFF, 0, 'a'},
+		"latin1":  []byte("caf\xe9\n"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			agents := filepath.Join(dir, "AGENTS.md")
+			os.WriteFile(agents, in, 0o644)
+			rs, _ := Install(dir, hooks.ProviderCodex)
+			b, _ := os.ReadFile(agents)
+			if !bytes.Equal(b, in) {
+				t.Fatal("touched an unsupported encoding")
+			}
+			var skipped bool
+			for _, r := range rs {
+				skipped = skipped || (r.Path == "AGENTS.md" && r.Status == StatusSkipped)
+			}
+			if !skipped {
+				t.Fatalf("%+v", rs)
+			}
+		})
+	}
+}
+
+func TestSkillInstall_MixedEndingsUsePredominant(t *testing.T) {
+	dir := t.TempDir()
+	agents := filepath.Join(dir, "AGENTS.md")
+	os.WriteFile(agents, []byte("a\nb\nc\nd\r\n"), 0o640)
+	Install(dir, hooks.ProviderCodex)
+	b, _ := os.ReadFile(agents)
+	if bytes.Contains(b[len("a\nb\nc\nd\r\n"):], []byte("\r")) {
+		t.Fatalf("mostly-LF file got CRLF block: %q", b)
+	}
+	if fi, _ := os.Stat(agents); fi.Mode().Perm() != 0o640 {
+		t.Fatalf("mode not preserved: %v", fi.Mode())
+	}
+}
+
+// Nothing is created or written through a symlink anywhere on the path.
+func TestSkillInstall_SymlinkedSkillPathsSkipped(t *testing.T) {
+	cases := map[string]func(dir, outside string) string{
+		"skills dir": func(dir, outside string) string {
+			os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755)
+			os.Symlink(outside, filepath.Join(dir, ".cursor", "skills"))
+			return ".cursor/skills/cerne-authoring"
+		},
+		"guide dir": func(dir, outside string) string {
+			os.MkdirAll(filepath.Join(dir, ".cursor", "skills"), 0o755)
+			os.Symlink(outside, filepath.Join(dir, ".cursor", "skills", "cerne-authoring"))
+			return ".cursor/skills/cerne-authoring"
+		},
+		"SKILL.md": func(dir, outside string) string {
+			d := filepath.Join(dir, ".cursor", "skills", "cerne-authoring")
+			os.MkdirAll(d, 0o755)
+			os.WriteFile(filepath.Join(outside, "f"), []byte("keep"), 0o644)
+			os.Symlink(filepath.Join(outside, "f"), filepath.Join(d, "SKILL.md"))
+			return ".cursor/skills/cerne-authoring"
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir, outside := t.TempDir(), t.TempDir()
+			path := setup(dir, outside)
+			rs, err := Install(dir, hooks.ProviderCursor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ents, _ := os.ReadDir(outside)
+			for _, e := range ents {
+				if e.Name() != "f" {
+					t.Fatalf("wrote %s through a symlink", e.Name())
+				}
+			}
+			if b, err := os.ReadFile(filepath.Join(outside, "f")); err == nil && string(b) != "keep" {
+				t.Fatal("overwrote symlink target")
+			}
+			var skipped bool
+			for _, r := range rs {
+				skipped = skipped || (r.Path == path && r.Status == StatusSkipped && strings.Contains(r.Note, "symlink"))
+			}
+			if !skipped {
+				t.Fatalf("%+v", rs)
+			}
+		})
+	}
+}
