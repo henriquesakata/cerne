@@ -281,3 +281,125 @@ func TestAutoWorkAdoptsOtherIdentity(t *testing.T) {
 	}
 	assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "feature complete (adotado)")
 }
+
+// TestStartWorkSupersedesPlanning (crit. 4): a new work on F-0001 closes the
+// same actor's planning work of F-0001 as done, superseded by the new one, in
+// the work start's commit, and reports it.
+func TestStartWorkSupersedesPlanning(t *testing.T) {
+	t.Setenv("CERNE_SESSION", "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+	before, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+
+	w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil)
+	if err != nil {
+		t.Fatalf("StartWork: %v", err)
+	}
+	if w.ID != "W-0002" || !slices.Equal(w.Superseded, []string{"W-0001"}) || len(w.Bound) != 0 {
+		t.Fatalf("started = %s superseded %v bound %v, want W-0002 superseding [W-0001]", w.ID, w.Superseded, w.Bound)
+	}
+	assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "superseded by W-0002")
+	assertActive(t, repoDir, "W-0002")
+	assertOneCommit(t, repoDir, before, "entities/works/W-0001.json", "entities/works/W-0002.json")
+}
+
+// TestStartWorkPlanningBindings (crit. 4 and 5): a planning work bound to
+// another session stays active and comes back as Bound; a binding of this
+// session, or one whose target no longer exists, lets it close. With no
+// CERNE_SESSION every binding counts as another session's.
+func TestStartWorkPlanningBindings(t *testing.T) {
+	cases := []struct {
+		name, mySession, boundSession, boundTo string
+		held                                   bool
+	}{
+		{"bound to another session", "sess-me", "sess-other", "W-0001", true},
+		{"no CERNE_SESSION, any binding holds", "", "sess-other", "W-0001", true},
+		{"bound to this session", "sess-me", "sess-me", "W-0001", false},
+		{"other session bound to a target that is gone", "sess-me", "sess-other", "W-0099", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CERNE_SESSION", tc.mySession)
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+			seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+			if err := BindSession(filepath.Dir(repoDir), tc.boundSession, tc.boundTo); err != nil {
+				t.Fatalf("BindSession: %v", err)
+			}
+
+			w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil)
+			if err != nil {
+				t.Fatalf("StartWork: %v", err)
+			}
+			if tc.held {
+				assertActive(t, repoDir, "W-0001")
+				if !slices.Equal(w.Bound, []string{"W-0001"}) || len(w.Superseded) != 0 {
+					t.Fatalf("bound %v superseded %v, want bound [W-0001]", w.Bound, w.Superseded)
+				}
+				return
+			}
+			assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "superseded by W-0002")
+			if !slices.Equal(w.Superseded, []string{"W-0001"}) || len(w.Bound) != 0 {
+				t.Fatalf("superseded %v bound %v, want superseded [W-0001]", w.Superseded, w.Bound)
+			}
+		})
+	}
+}
+
+// TestStartWorkLeavesNonPlanning (crit. 4, 6 and 7): work start never closes
+// another actor's planning work, a work with two refs, an auto work, a work
+// opened after the feature started, nor a work on a decision; and nothing at
+// all when the project opted out.
+func TestStartWorkLeavesNonPlanning(t *testing.T) {
+	t.Setenv("CERNE_SESSION", "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateInDevelopment, "spec.md", "plan.md")
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "ADR", State: domain.DecisionActive}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	me := defaultWorkActor()
+	seedActiveWork(t, repoDir, "W-0001", "outro@host", "F-0001", false) // another actor
+	seedActiveWork(t, repoDir, "W-0002", me, "F-0001", true)            // auto
+	seedStartEvent(t, repoDir, "F-0002", time.Now().UTC())
+	seedActiveWork(t, repoDir, "W-0003", me, "F-0002", false) // opened during development
+	seedActiveWork(t, repoDir, "W-0004", me, "D-0001", false) // a decision, not a feature
+	now := time.Now().UTC()
+	multi := store.Work{ID: "W-0005", Title: "Duas refs", State: domain.WorkActive, Actor: me, Refs: []string{"F-0001", "F-0002"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveWork(repoDir, multi); err != nil {
+		t.Fatalf("SaveWork: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed W-0005"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001", "F-0002", "D-0001"}, "", false, nil)
+	if err != nil {
+		t.Fatalf("StartWork: %v", err)
+	}
+	if len(w.Superseded) != 0 || len(w.Bound) != 0 {
+		t.Fatalf("superseded %v bound %v, want none", w.Superseded, w.Bound)
+	}
+	for _, id := range []string{"W-0001", "W-0002", "W-0003", "W-0004", "W-0005"} {
+		assertActive(t, repoDir, id)
+	}
+
+	t.Run("opt-out", func(t *testing.T) {
+		repoDir, projDir, _ := newFeatureBackend(t)
+		optOutActivity(t, projDir)
+		seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+		seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+		w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil)
+		if err != nil {
+			t.Fatalf("StartWork: %v", err)
+		}
+		if len(w.Superseded) != 0 {
+			t.Fatalf("superseded %v, want none (opt-out)", w.Superseded)
+		}
+		assertActive(t, repoDir, "W-0001")
+	})
+}

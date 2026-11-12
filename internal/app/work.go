@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,23 +20,33 @@ type WorkOutcome struct {
 	To   domain.WorkState
 }
 
+// StartedWork is what StartWork did: the new work, plus the planning works of
+// this process's actors it closed as superseded (F-0341 crit. 4) and the ones
+// it left active because another session is bound to them (crit. 5).
+type StartedWork struct {
+	store.Work
+	Superseded []string
+	Bound      []string
+}
+
 // StartWork mints a new active work (agent activity, F-0130) in the backend
 // clone at repoDir: validates each ref (F-/D- id) exists, allocates the next
 // W- id, persists the entity, appends the work.started event and commits+
 // pushes the backend, refreshing the docs.lock snapshot in projDir. actor is
 // agent when non-empty, else "<os user>@<hostname>" — the default identity of
-// whoever/whatever is running this activity.
-func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string) (store.Work, error) {
+// whoever/whatever is running this activity. In the same commit, the new work
+// supersedes the same actor's planning works on its features (F-0341).
+func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string) (StartedWork, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return store.Work{}, fmt.Errorf("the activity description cannot be empty")
+		return StartedWork{}, fmt.Errorf("the activity description cannot be empty")
 	}
 	actor := strings.TrimSpace(agent)
 	if actor == "" {
 		actor = defaultWorkActor()
 	}
 	paths = cleanWorkPaths(paths)
-	var w store.Work
+	var out StartedWork
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateWorkRefs(repoDir, refs)
 		if err != nil {
@@ -47,12 +59,16 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		if err != nil {
 			return "", err
 		}
+		prior, err := store.LoadAllWorks(repoDir)
+		if err != nil {
+			return "", err
+		}
 		id, err := store.NextID(repoDir, "W")
 		if err != nil {
 			return "", err
 		}
 		now := time.Now().UTC()
-		w = store.Work{
+		w := store.Work{
 			ID:        id,
 			Title:     title,
 			State:     domain.WorkActive,
@@ -73,13 +89,54 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
+		out = StartedWork{Work: w}
+		if activityAutoEnabled(projDir) {
+			if out.Superseded, out.Bound, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
+				return "", err
+			}
+		}
 		return fmt.Sprintf("cerne: start %s (%s)", id, title), nil
 	})
 	if err != nil {
-		return store.Work{}, err
+		return StartedWork{}, err
 	}
-	dispatchWebhook(projDir, w.ID, "work", "start", "", string(w.State), w.Title)
-	return w, nil
+	dispatchWebhook(projDir, out.ID, "work", "start", "", string(out.State), out.Title)
+	return out, nil
+}
+
+// supersedePlanning (F-0341 crit. 4/5) closes, as superseded by newID, the
+// planning works this process's actors hold on each feature in refs; works
+// lists the board before newID existed. A work bound to another session
+// (F-0151) stays and comes back in bound — binding files outlive their
+// session, so a dead session's leftover holds the work too, and the
+// work-outlived-feature lint is the net once the feature closes.
+func supersedePlanning(repoDir string, works []store.Work, refs []string, newID string) (closed, bound []string, err error) {
+	mine := myActors()
+	bindings := sessionBindingsIn(filepath.Dir(repoDir))
+	sess := os.Getenv("CERNE_SESSION")
+	for _, ref := range refs {
+		if !domain.IsFeatureID(ref) {
+			continue
+		}
+		planning, err := planningWorks(repoDir, works, ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, w := range planning {
+			if !slices.Contains(mine, w.Actor) {
+				continue
+			}
+			if boundElsewhere(bindings, w.ID, sess) {
+				bound = append(bound, w.ID)
+				continue
+			}
+			if err := closeWork(repoDir, w, domain.ActionComplete, "superseded by "+newID); err != nil {
+				return nil, nil, err
+			}
+			closed = append(closed, w.ID)
+		}
+	}
+	return closed, bound, nil
 }
 
 // FinishWork ends work id in the backend clone at repoDir: active -> done
