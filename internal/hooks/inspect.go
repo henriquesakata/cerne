@@ -109,7 +109,7 @@ func managedSlot(projDir, hooksPath, slot, snippet string) GitHookState {
 		dir = filepath.Join(projDir, dir)
 	}
 	candidates := []string{filepath.Join(dir, slot)}
-	if strings.HasSuffix(filepath.ToSlash(filepath.Clean(dir)), ".husky/_") {
+	if clean := filepath.Clean(dir); filepath.Base(clean) == "_" && filepath.Base(filepath.Dir(clean)) == ".husky" {
 		candidates = append([]string{filepath.Join(filepath.Dir(dir), slot)}, candidates...)
 	}
 	invocation, _, _ := strings.Cut(snippet, ` "$1"`)
@@ -133,10 +133,32 @@ func managedSlot(projDir, hooksPath, slot, snippet string) GitHookState {
 		found = candidates[len(candidates)-1]
 	}
 	st.Path = found
-	if rel, err := filepath.Rel(projDir, found); err == nil && !strings.HasPrefix(rel, "..") {
+	if rel, ok := relInside(projDir, found); ok {
 		st.Path = rel
 	}
 	return st
+}
+
+// relInside returns path relative to root when it lies inside it, resolving
+// symlinks on both sides (/var vs /private/var on macOS) when the plain paths
+// disagree.
+func relInside(root, path string) (string, bool) {
+	inside := func(r, p string) (string, bool) {
+		rel, err := filepath.Rel(r, p)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", false
+		}
+		return rel, true
+	}
+	if rel, ok := inside(root, path); ok {
+		return rel, true
+	}
+	r, err1 := filepath.EvalSymlinks(root)
+	p, err2 := filepath.EvalSymlinks(path)
+	if err1 != nil || err2 != nil {
+		return "", false
+	}
+	return inside(r, p)
 }
 
 // callsCerne reports whether a hook body runs the invocation on a line that is

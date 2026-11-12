@@ -9,7 +9,8 @@ import (
 // GitHooksPath reports core.hooksPath from the project's .git/config [core]
 // section (key case-insensitive, last value wins, comments ignored), and
 // whether it is set. Install and the harness both decide by it (F-0360).
-// ponytail: only .git/config — no global config, include or worktree .git file.
+// ponytail: only .git/config — no global config, include, worktree .git file,
+// `~` expansion or escapes inside quotes; add them when a project needs one.
 func GitHooksPath(projDir string) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(projDir, ".git", "config"))
 	if err != nil {
@@ -23,8 +24,8 @@ func GitHooksPath(projDir string) (string, bool) {
 			continue
 		}
 		if line[0] == '[' {
-			name := strings.TrimSpace(strings.Trim(line, "[]"))
-			inCore = strings.EqualFold(name, "core")
+			name, _, _ := strings.Cut(line[1:], "]") // `[core] # comment` is still [core]
+			inCore = strings.EqualFold(strings.TrimSpace(name), "core")
 			continue
 		}
 		key, val, ok := strings.Cut(line, "=")

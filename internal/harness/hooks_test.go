@@ -235,6 +235,29 @@ func TestGitSlotsFollowHooksPath(t *testing.T) {
 			},
 		},
 		{
+			name: "absolute path through a symlink of the project dir",
+			config: func(proj string) string {
+				real, err := filepath.EvalSymlinks(proj)
+				if err != nil {
+					real = proj
+				}
+				return "[core]\n\thooksPath = " + filepath.Join(real, ".husky", "_") + "\n"
+			},
+			files: map[string]string{".husky/commit-msg": guardInv, ".husky/prepare-commit-msg": trailerInv},
+			want: map[string]want{
+				"commit-msg":         {StateOK, filepath.Join(".husky", "commit-msg"), "", ""},
+				"prepare-commit-msg": {StateOK, filepath.Join(".husky", "prepare-commit-msg"), "", ""},
+			},
+		},
+		{
+			name:   "a dir merely ending in .husky/_ is not husky",
+			config: func(string) string { return "[core]\n\thooksPath = foo.husky/_\n" },
+			files:  map[string]string{"foo.husky/commit-msg": guardInv},
+			want: map[string]want{
+				"commit-msg": {StateMissing, filepath.Join("foo.husky", "_", "commit-msg"), "core.hooksPath=foo.husky/_ — add to your hook manager: " + strings.TrimSpace(guardInv), ""},
+			},
+		},
+		{
 			name:   "invocation only in a comment",
 			config: func(string) string { return "[core]\n\thooksPath = githooks\n" },
 			files:  map[string]string{"githooks/commit-msg": "# " + guardInv, "githooks/prepare-commit-msg": "  #" + trailerInv},

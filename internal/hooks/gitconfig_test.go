@@ -40,6 +40,8 @@ func TestGitHooksPath(t *testing.T) {
 		{"comment only", "[core]\n\tbare = false\n# hooksPath = .husky/_\n; hooksPath = x\n", "", false},
 		{"other section", "[core]\n\tbare = false\n[alias]\n\thooksPath = x\n[remote \"origin\"]\n\thooksPath = y\n", "", false},
 		{"empty value", "[core]\n\thooksPath =\n", "", false},
+		{"comment after header", "[core] # husky\n\thooksPath = .husky/_\n", ".husky/_", true},
+		{"crlf", "[core]\r\n\thooksPath = .husky/_\r\n", ".husky/_", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
