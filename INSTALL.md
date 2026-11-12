@@ -94,7 +94,7 @@ Same process: replace the old executable with the new one.
   - **SSH** (`git@github.com:you/my-project-docs.git`): uses your SSH agent, or your key files (`~/.ssh/id_ed25519`, `id_rsa` or `id_ecdsa`). Check that `ssh -T git@github.com` works. For a passphrase-protected key, load it into the agent first with `ssh-add`.
   - **HTTPS** (`https://…`): export a token in `CERNE_GIT_TOKEN` (and the user in `CERNE_GIT_USER`, if the host requires it).
   - **Just trying it out?** Skip the backend: `cerne init --name my-project` creates a local one for you (see below).
-- **Claude Code** (optional, recommended): cerne is built to work alongside an AI agent. `init` installs the skills and hooks that teach the agent to use cerne.
+- **An AI agent** (optional, recommended): cerne is built to work alongside one. Claude Code, Cursor, Codex CLI and Gemini CLI are supported; `init` installs the skills and hooks that teach the agent to use cerne (see "AI agents" below).
 
 ## 4. Getting started
 
@@ -114,6 +114,26 @@ Besides those files, `init` also writes:
 
 - `.claude/` for Claude Code: the `cerne-authoring` and `cerne-self-learning` skills, hooks, and `settings.json`. This repository commits `.claude/settings.json` and `.claude/hooks/` and ignores `.claude/skills/`, which `cerne skill install` recreates.
 - Two git hooks in `.git/hooks/`: `prepare-commit-msg` and `commit-msg`. The latter refuses a commit that cites a feature id (`F-NNNN`) still in candidate or approved state, or already closed.
+
+### AI agents
+
+`init` detects Cursor, Codex CLI and Gemini CLI by their config folder (`.cursor/`, `.codex/`, `.gemini/`) in the project, and wires the ones it finds next to Claude Code. To wire them explicitly, or later:
+
+```bash
+cerne hook install --provider cursor,codex,gemini   # the hooks; omit --provider for Claude Code plus detected agents
+cerne skill install                                 # the authoring guide, for Claude Code plus detected agents
+```
+
+What each agent receives:
+
+| Agent | Hooks | Authoring guide (`cerne-authoring`) |
+|---|---|---|
+| Claude Code | `.claude/hooks/`, `.claude/settings.json` | `.claude/skills/` |
+| Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json` | `.cursor/skills/` |
+| Codex CLI | `.codex/hooks.json`, `.codex/config.toml` | `.agents/skills/`, plus a one-line pointer in `AGENTS.md` |
+| Gemini CLI | `.gemini/settings.json`, `.gemini/.env` | `.gemini/skills/`, plus a one-line pointer in `GEMINI.md` |
+
+Some hooks cannot be hosted by a given agent's extension surface; the install prints them as `skipped`, with the manual step. The full table is in [docs/provider-parity.md](docs/provider-parity.md).
 
 Day to day:
 
