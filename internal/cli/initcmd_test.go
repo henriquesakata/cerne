@@ -485,3 +485,24 @@ func TestInit_WritesLightMode(t *testing.T) {
 		})
 	}
 }
+
+// TestInit_JoinLeavesGauntletAbsent (F-0364 critic 3): joining a backend that
+// already holds a project does not pick a mode for it — no gauntlet key, no
+// invitation; only a new backend layout starts in light mode.
+func TestInit_JoinLeavesGauntletAbsent(t *testing.T) {
+	first, origin, _ := setupProject(t)
+	newFeature(t, first, "Feature existente", 1)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	dir := t.TempDir()
+	out, err := execInit(t, "--name", "demo", "--backend", origin, "--dir", dir)
+	if err != nil {
+		t.Fatalf("join: %v\n%s", err, out)
+	}
+	cfg, _, err := project.LoadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Gates.Gauntlet != "" || strings.Contains(out, "Gauntlet is off") {
+		t.Fatalf("join wrote gauntlet = %q / printed the invitation:\n%s", cfg.Gates.Gauntlet, out)
+	}
+}
