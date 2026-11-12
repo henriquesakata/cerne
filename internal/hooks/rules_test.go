@@ -118,3 +118,25 @@ func TestSessionRules_LightMode(t *testing.T) {
 		}
 	}
 }
+
+// handoffRuleLines are the two F-0368 crit. 14 lines every session reads.
+var handoffRuleLines = []string{
+	"Passing the baton? `cerne work handoff W-… --next …` and pass only the HO- code.",
+	"Received an HO-? First action: `cerne handoff take HO-…`.",
+}
+
+// TestRegisterRulesHandoff (F-0368 crit. 14): both session-start copies, with
+// the Gauntlet on and off, tell how to pass and how to take the baton.
+func TestRegisterRulesHandoff(t *testing.T) {
+	body, err := os.ReadFile("assets/cerne-register-reminder.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"RegisterRules": RegisterRules, "SessionRules(false)": SessionRules(false), "cerne-register-reminder.sh": string(body)} {
+		for _, want := range handoffRuleLines {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing %q", name, want)
+			}
+		}
+	}
+}
