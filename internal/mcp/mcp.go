@@ -72,6 +72,9 @@ func (g *gate) run(ctx context.Context, exec Exec, args []string) ([]byte, error
 	fin := make(chan struct{})
 	go func() {
 		defer func() {
+			if p := recover(); p != nil { // a panicking command must not take the server down
+				err = fmt.Errorf("%s: internal error: %v", args[0], p)
+			}
 			g.mu.Lock()
 			g.stuck, finished = false, true
 			g.mu.Unlock()

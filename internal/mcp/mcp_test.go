@@ -230,3 +230,21 @@ func TestMCP_HungCallTimesOutThenBusy(t *testing.T) {
 		t.Fatalf("exec ran %d times, want 2 (the busy call never runs)", got)
 	}
 }
+
+// TestMCP_PanicBecomesToolError: a command that panics answers its caller with
+// a tool error and leaves the server serving.
+func TestMCP_PanicBecomesToolError(t *testing.T) {
+	var n atomic.Int32
+	cs := connect(t, func([]string) ([]byte, error) {
+		if n.Add(1) == 1 {
+			panic("boom")
+		}
+		return []byte("{}\n"), nil
+	})
+	if text, isErr := callText(t, cs, "brief"); !isErr || !strings.Contains(text, "boom") {
+		t.Fatalf("panicking call: isError=%v text=%q, want a tool error naming the panic", isErr, text)
+	}
+	if text, isErr := callText(t, cs, "brief"); isErr {
+		t.Fatalf("call after a panic: %q, want service to go on", text)
+	}
+}
