@@ -1,15 +1,20 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/harness"
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 // runtimeHookSubcommands are the `cerne hook` subcommands an agent host runs
@@ -128,5 +133,90 @@ func TestInstallAndGitHooksIgnoreSwitch(t *testing.T) {
 	p = writeMsgFile(t, projDir, "feat: coisa (F-0001)\n")
 	if out, err := execCerneStdin(t, "", "guard", "commit-msg", p); err == nil {
 		t.Fatalf("guard commit-msg let an approved feature pass with the switch on\noutput: %s", out)
+	}
+}
+
+// hubEvalLine is the guard the rockt-hub added by hand to three managed
+// scripts (F-0812), which every `cerne hook install` then wiped.
+const hubEvalLine = "# F-0812: the eval harness runs agents without cerne's hooks.\n[ -n \"${ROCKT_EVAL:-}\" ] && exit 0\n"
+
+// TestHubCaseMigratesToSwitch (F-0360 crit. 8): with the three hand-edited
+// hub copies on disk, `cerne hook install` brings all seven managed hooks back
+// to ok, and those scripts run silent, without calling cerne, under
+// CERNE_NO_AGENT_HOOKS=1.
+func TestHubCaseMigratesToSwitch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook assets are POSIX shell scripts")
+	}
+	projDir, _, _ := setupProject(t)
+	t.Setenv("HOME", t.TempDir())
+	if _, err := hooks.Install(projDir); err != nil {
+		t.Fatal(err)
+	}
+	edited := map[string]string{
+		"cerne-register-reminder.sh": "cat <<'RULES'",
+		"cerne-work-gate.sh":         "command -v",
+		"cerne-stop-closeout.sh":     "command -v",
+	}
+	for script, anchor := range edited {
+		p := filepath.Join(projDir, ".claude", "hooks", script)
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(raw)
+		i := strings.Index(body, anchor)
+		if i < 0 {
+			t.Fatalf("%s: anchor %q not found", script, anchor)
+		}
+		if err := os.WriteFile(p, []byte(body[:i]+hubEvalLine+body[i:]), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if out, err := execCerne(t, "hook", "install", "--dir", projDir); err != nil {
+		t.Fatalf("hook install: %v\noutput: %s", err, out)
+	}
+	out, err := execCerne(t, "harness", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("harness --json: %v\noutput: %s", err, out)
+	}
+	var inv harness.Inventory
+	if err := json.Unmarshal([]byte(out), &inv); err != nil {
+		t.Fatalf("harness output is not JSON: %v\n%s", err, out)
+	}
+	states := map[string]string{}
+	for _, c := range inv.Classes {
+		for _, it := range c.Items {
+			if c.Name == "hooks" {
+				states[it.Name] = it.State
+			}
+		}
+	}
+	for _, a := range hooks.Assets() {
+		if states[a.Script] != harness.StateOK {
+			t.Errorf("%s after install = %q, want ok", a.Script, states[a.Script])
+		}
+	}
+
+	bin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "calls")
+	fake := "#!/bin/sh\necho \"$*\" >> \"$CERNE_FAKE_LOG\"\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "cerne"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for script := range edited {
+		cmd := exec.Command("bash", filepath.Join(projDir, ".claude", "hooks", script))
+		cmd.Dir = projDir
+		cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + t.TempDir(),
+			"CERNE_FAKE_LOG=" + logPath, "CLAUDE_PROJECT_DIR=" + projDir, "CERNE_NO_AGENT_HOOKS=1"}
+		cmd.Stdin = strings.NewReader(`{"session_id":"s","cwd":"` + projDir + `"}`)
+		got, err := cmd.CombinedOutput()
+		if err != nil || len(got) != 0 {
+			t.Errorf("%s with the switch on: err %v, output %q", script, err, got)
+		}
+	}
+	if _, err := os.Stat(logPath); err == nil {
+		t.Error("a script called cerne with the switch on")
 	}
 }
