@@ -256,6 +256,8 @@ A note whose components include the reserved slug **`convention`** is a **conven
 
 **Before building a page, form, or feature slice: consult the conventions.** Run **`cerne note tags`** (`--json` for machines) — it prints the tag catalog across active notes (each facet/component with counts), i.e. the topic menu — then pull only what's relevant: `cerne note list --component <topico>` and `cerne note show N-NNNN`. The plan template prompts this lookup in Estratégia and asks you to **cite the applicable N-NNNN ids in the plan**, so the conventions that govern the work are on the record before coding starts.
 
+**Renumbering or dropping a numbered rule of a note?** Run `cerne lint` in the project afterwards: a project hook may cite it ("regra K da N-xxxx"), and `hook-cites-missing-rule` fails the lint when the note is gone, not active, or has fewer rules than the hook cites (F-0340). Rules are the unindented numbered-list items of the body.
+
 ## Agent activity registry (work-in-progress across agents/machines)
 
 Not every task is a feature. Investigating an error, reviewing an MR, doing an ops chore — these are transient activity, not a lifecycle to gate, yet another agent (this machine, another, or a teammate) has no way to see they're already in progress without it. `cerne work` closes that gap with a lightweight registry in the same shared backend:
