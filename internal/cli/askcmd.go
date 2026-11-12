@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,17 +99,38 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 	// byo-key: call the Provider and print the answer. Delegation (default)
 	// prints the assembled prompt for the host agent to answer inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
+		// F-0346: a model failure (login, network, quota, missing key) must not
+		// lose the sources already found — fall back to the delegation output.
+		var answer string
 		prov, err := llm.NewProvider(ctx.cfg.LLM)
-		if err != nil {
-			return err
+		if err == nil {
+			answer, err = prov.Complete(cmd.Context(), prompt)
 		}
-		answer, err := prov.Complete(cmd.Context(), prompt)
+		if errors.Is(err, context.Canceled) {
+			return err // Ctrl-C is not a model failure: scripts must see it
+		}
 		if err != nil {
-			return err
+			fmt.Fprintf(cmd.ErrOrStderr(), "cerne ask: the model failed (%s); here are the sources to answer from\n", askFailureCause(err))
+			fmt.Fprint(out, prompt)
+			return nil
 		}
 		fmt.Fprintln(out, answer)
 		return nil
 	}
 	fmt.Fprint(out, prompt)
 	return nil
+}
+
+// askFailureCause is the first non-empty line of err, trimmed and cut to 200
+// runes; "unknown error" when there is none.
+func askFailureCause(err error) string {
+	for _, l := range strings.Split(err.Error(), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			if r := []rune(l); len(r) > 200 {
+				l = string(r[:200])
+			}
+			return l
+		}
+	}
+	return "unknown error"
 }
