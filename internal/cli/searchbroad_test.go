@@ -34,7 +34,7 @@ func TestSearchBroadenedText(t *testing.T) {
 		t.Fatalf("missing broadened notice:\n%s", out)
 	}
 	lines := resultLines(out)
-	if len(lines) != 2 || !strings.Contains(out, "F-0001 [feature/spec]") || !strings.Contains(out, "F-0002 [feature/spec]") {
+	if len(lines) != 2 || !strings.Contains(out, "F-0001 [candidate]") || !strings.Contains(out, "F-0002 [candidate]") {
 		t.Fatalf("want hits for F-0001 and F-0002, got:\n%s", out)
 	}
 	if strings.Index(out, broadLine) > strings.Index(out, lines[0]) {

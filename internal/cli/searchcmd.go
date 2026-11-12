@@ -16,18 +16,19 @@ import (
 func newSearchCmd() *cobra.Command {
 	var dir string
 	var limit int
-	var asJSON bool
+	var asJSON, perDoc bool
 	cmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Full-text search over the whole history (superseded and rejected included)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSearch(cmd, dir, args[0], limit, asJSON)
+			return runSearch(cmd, dir, args[0], limit, asJSON, perDoc)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
-	cmd.Flags().IntVar(&limit, "limit", 10, "maximum number of results")
+	cmd.Flags().IntVar(&limit, "limit", 10, "maximum number of results (entities; documents with --per-doc)")
+	cmd.Flags().BoolVar(&perDoc, "per-doc", false, "one line per document instead of per entity")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
 }
@@ -36,16 +37,17 @@ func newSearchCmd() *cobra.Command {
 // payload (internal/server's searchHit) so an agent gets the same JSON whether
 // it queries via the CLI or the server.
 type searchHitJSON struct {
-	EntityID     string `json:"entity_id"`
-	Kind         string `json:"kind"`
-	Doc          string `json:"doc"`
-	State        string `json:"state"`
-	Title        string `json:"title"`
-	Snippet      string `json:"snippet"`
-	SupersededBy string `json:"superseded_by,omitempty"`
+	EntityID     string   `json:"entity_id"`
+	Kind         string   `json:"kind"`
+	Doc          string   `json:"doc"`
+	State        string   `json:"state"`
+	Title        string   `json:"title"`
+	Snippet      string   `json:"snippet"`
+	SupersededBy string   `json:"superseded_by,omitempty"`
+	Docs         []string `json:"docs,omitempty"` // matching documents of the entity (F-0367)
 }
 
-func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) error {
+func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc bool) error {
 	// Offline by design: search reads the cached clone and the local index,
 	// never the remote. 'cerne pull' is the sync point that refreshes both.
 	ctx, err := resolvePaths(dir)
@@ -69,7 +71,17 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 		return err
 	}
 
-	results, broadened, err := index.SearchBroad(dbPath, query, limit)
+	var results []index.EntityResult
+	var broadened bool
+	if perDoc {
+		var docs []index.Result
+		docs, broadened, err = index.SearchBroad(dbPath, query, limit)
+		for _, r := range docs {
+			results = append(results, index.EntityResult{Result: r})
+		}
+	} else {
+		results, broadened, err = index.SearchEntities(dbPath, query, limit)
+	}
 	if err != nil {
 		return err
 	}
@@ -85,6 +97,7 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 				Title:        r.Title,
 				Snippet:      r.Snippet,
 				SupersededBy: r.SupersededBy,
+				Docs:         r.Docs,
 			}
 		}
 		enc := json.NewEncoder(out)
@@ -103,7 +116,11 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON bool) er
 		fmt.Fprintln(out, "No document has all the terms; showing those that have any.")
 	}
 	for _, r := range results {
-		fmt.Fprintln(out, resultHeader(r))
+		if perDoc {
+			fmt.Fprintln(out, resultHeader(r.Result))
+		} else {
+			fmt.Fprintln(out, entityHeader(r))
+		}
 		if r.Snippet != "" {
 			fmt.Fprintln(out, "  "+r.Snippet)
 		}
@@ -126,5 +143,22 @@ func resultHeader(r index.Result) string {
 		b.WriteString(" → " + r.SupersededBy)
 	}
 	b.WriteString(" — " + r.Title)
+	return b.String()
+}
+
+// entityHeader renders one entity line (F-0367):
+// "F-0007 [superseded → F-0009] Bills (boletos) — spec, result". The arrow
+// appears only on superseded entities; the matching documents only on
+// features, whose docs are the lifecycle documents.
+func entityHeader(r index.EntityResult) string {
+	var b strings.Builder
+	b.WriteString(r.EntityID + " [" + r.State)
+	if r.SupersededBy != "" {
+		b.WriteString(" → " + r.SupersededBy)
+	}
+	b.WriteString("] " + r.Title)
+	if r.Kind == "feature" && len(r.Docs) > 0 {
+		b.WriteString(" — " + strings.Join(r.Docs, ", "))
+	}
 	return b.String()
 }

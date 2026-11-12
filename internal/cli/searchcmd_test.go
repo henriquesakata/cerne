@@ -48,7 +48,7 @@ func TestSearchAutoBuildsIndexAndFindsSpec(t *testing.T) {
 	if !strings.Contains(out, "Building index...") {
 		t.Fatalf("missing index auto-build message:\n%s", out)
 	}
-	if !strings.Contains(out, "F-0001 [feature/spec] candidate — Parcelamento") {
+	if !strings.Contains(out, "F-0001 [candidate] Parcelamento — spec") {
 		t.Fatalf("missing result line:\n%s", out)
 	}
 	if !strings.Contains(out, "«parcelas»") {
@@ -95,7 +95,7 @@ func TestSearchSupersededArrowAndKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "F-0001 [feature/spec] superseded → F-0002 — Bills (boletos)") {
+	if !strings.Contains(out, "F-0001 [superseded → F-0002] Bills (boletos) — spec") {
 		t.Fatalf("missing superseded arrow line:\n%s", out)
 	}
 
@@ -103,8 +103,8 @@ func TestSearchSupersededArrowAndKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search decision: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "D-0001 [decision] active — Usar Postgres") {
-		t.Fatalf("missing decision line (title-only, no /doc suffix):\n%s", out)
+	if !strings.Contains(out, "D-0001 [active] Usar Postgres\n") {
+		t.Fatalf("missing decision line (no docs list outside features):\n%s", out)
 	}
 }
 
