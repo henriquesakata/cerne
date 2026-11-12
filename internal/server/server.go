@@ -1191,9 +1191,9 @@ type lintResponse struct {
 
 func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 	var p lintParams
-	gauntletOn := true
+	var gates project.GatesConfig // zero = Gauntlet on, the fail-safe
 	if cfg, _, err := project.LoadConfig(projDir); err == nil {
-		gauntletOn = cfg.Gates.GauntletEnabled()
+		gates = cfg.Gates
 		p = lintParams{
 			staleReadyDays: cfg.StaleReadyWindowDays(),
 			staleWorkHours: cfg.StaleWorkWindowHours(),
@@ -1210,7 +1210,7 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	}
 	// A copy: the findings may be the cache's, and the downgrade is this
 	// request's wiki.enabled, never a stamp left on them.
-	findings = lint.DropGauntletRules(slices.Clone(findings), gauntletOn) // light mode, F-0364
+	findings = app.LintMode(slices.Clone(findings), gates) // light mode, F-0364
 	wikiOn, _ := project.WikiEnabled(projDir)
 	lint.DowngradeWikiDebt(findings, wikiOn)
 	out := make([]lintFinding, len(findings))

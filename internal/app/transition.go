@@ -211,7 +211,8 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// check the UI approved specs with no bar.
 		// Light mode (F-0364) skips it: the project chose to run without the
 		// Gauntlet, and status says so.
-		gauntletOn := projectGates(projDir).GauntletEnabled()
+		gates := projectGates(projDir)
+		gauntletOn := gates.GauntletEnabled()
 		if action == domain.ActionApprove && gauntletOn {
 			if err := CheckSpecBar(repoDir, id); err != nil {
 				return "", err
@@ -221,7 +222,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Result record gate (F-0303): the lint's result rules, charged while the
 		// result is still editable — after complete it is frozen out of .docs/.
 		if action == domain.ActionComplete {
-			if err := CheckResultRecord(repoDir, f, gauntletOn); err != nil {
+			if err := CheckResultRecord(repoDir, f, gates); err != nil {
 				return "", fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, id)
 			}
 			// The result names each debt the feature pays (F-0885), while it can.

@@ -233,11 +233,10 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 		return err
 	}
 	defer cleanup()
-	findings, err := lint.RunConfig(root, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), ctx.cfg.SourceIgnore()...)
+	findings, err := app.ProjectLint(root, ctx.cfg)
 	if err != nil {
 		return err
 	}
-	findings = lint.DropGauntletRules(findings, ctx.cfg.Gates.GauntletEnabled()) // light mode, F-0364
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 	if len(findings) == 0 {
 		fmt.Fprintln(out, "Lint: no problems found.")

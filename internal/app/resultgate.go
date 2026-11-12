@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -18,11 +19,10 @@ var ErrResultIncomplete = errors.New("result incompleto")
 
 // CheckResultRecord refuses when the feature's result would be flagged by the
 // lint's result rules (evidence per criterion, Gauntlet record) right after
-// completion. Both call lint.CheckResult, so they cannot drift apart. With
-// gauntletOn false (light mode, F-0364) only the evidence per criterion is
-// charged.
-func CheckResultRecord(repoDir string, f store.Feature, gauntletOn bool) error {
-	findings := lint.DropGauntletRules(lint.CheckResult(repoDir, f), gauntletOn)
+// completion. Both call lint.CheckResult, so they cannot drift apart. In light
+// mode (F-0364) LintMode leaves only the evidence per criterion.
+func CheckResultRecord(repoDir string, f store.Feature, gates project.GatesConfig) error {
+	findings := LintMode(lint.CheckResult(repoDir, f), gates)
 	if len(findings) == 0 {
 		return nil
 	}
