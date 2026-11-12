@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -159,8 +161,28 @@ type WebhookConfig struct {
 // "https://github.com/henriquesakata/cerne/commit/{sha}") used to resolve a bare
 // commit SHA into a clickable URL — no forge heuristics: absent means a bare
 // SHA is refused and only full URLs are accepted.
+//
+// Forge (F-0355) names the forge that hosts the delivery repository —
+// "github", "gitlab" or "gitea" — and turns on the PR lookup on complete and
+// the default-branch check on accept; host, owner and repo come from CommitURL.
+// PRURL is a template with {n} that resolves `--mr #<n>` / `!<n>`.
 type DeliveryConfig struct {
 	CommitURL string `toml:"commit_url,omitempty"`
+	Forge     string `toml:"forge,omitempty"`
+	PRURL     string `toml:"pr_url,omitempty"`
+}
+
+// ErrDeliveryForge is the sentinel for an unsupported [delivery] forge.
+var ErrDeliveryForge = errors.New("unsupported [delivery] forge")
+
+// DeliveryForges are the supported [delivery] forge values (F-0355).
+var DeliveryForges = []string{"github", "gitlab", "gitea"}
+
+func (d DeliveryConfig) validate() error {
+	if d.Forge == "" || slices.Contains(DeliveryForges, d.Forge) {
+		return nil
+	}
+	return fmt.Errorf("%w: unknown [delivery] forge %q (supported: %s)", ErrDeliveryForge, d.Forge, strings.Join(DeliveryForges, ", "))
 }
 
 // TelemetryConfig is the optional [telemetry] block of .cernerc (F-0149).
@@ -466,6 +488,9 @@ func readConfig(dir string) (Config, string, error) {
 	var c Config
 	if err := toml.Unmarshal(data, &c); err != nil {
 		return Config{}, "", fmt.Errorf("%s: %w: %w", path, ErrConfigParse, err)
+	}
+	if err := c.Delivery.validate(); err != nil {
+		return Config{}, "", fmt.Errorf("%s: %w", path, err)
 	}
 	return c, dir, nil
 }

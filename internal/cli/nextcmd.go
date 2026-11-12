@@ -122,7 +122,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	findings, err := lint.RunConfig(ctx.repoDir, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), ctx.cfg.UnregisteredSourceIgnore...)
+	findings, err := lint.RunConfig(ctx.repoDir, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), ctx.cfg.SourceIgnore()...)
 	if err != nil {
 		return err
 	}

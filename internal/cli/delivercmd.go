@@ -6,6 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -33,6 +35,9 @@ func newFeatureDeliverCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if line := app.DiscoverPR(ctx.cfg, ctx.projDir, args[0], &d); line != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), line)
+			}
 			if err := app.SetFeatureDelivery(ctx.repoDir, ctx.projDir, args[0], d); err != nil {
 				return err
 			}
@@ -44,10 +49,16 @@ func newFeatureDeliverCmd(dir *string) *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), " — mr %s", d.MRURL)
 			}
 			fmt.Fprintln(cmd.OutOrStdout())
+			if f, err := store.LoadFeature(ctx.repoDir, args[0]); err == nil {
+				// Only an implemented feature's result carries the block.
+				if line := app.DeliveryLine(f, f.State == domain.StateImplemented); line != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), line)
+				}
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url")
-	cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL")
+	cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> resolved via [delivery] pr_url")
 	return verbs.MarkLifecycle(cmd)
 }

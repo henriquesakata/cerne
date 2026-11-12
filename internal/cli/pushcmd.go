@@ -233,7 +233,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 		return err
 	}
 	defer cleanup()
-	findings, err := lint.RunConfig(root, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), ctx.cfg.UnregisteredSourceIgnore...)
+	findings, err := lint.RunConfig(root, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), ctx.cfg.SourceIgnore()...)
 	if err != nil {
 		return err
 	}

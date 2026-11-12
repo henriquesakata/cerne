@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -29,9 +30,9 @@ var ErrDeliveryInvalid = errors.New("invalid delivery link")
 var ErrDeliveryNoTemplate = errors.New("no [delivery] commit_url template configured")
 
 // ErrDeliveryState is the sentinel for a post-hoc delivery update on a
-// feature whose state does not accept one: only in_development and
-// implemented do — closed history (rejected/superseded/done) stays closed and
-// pre-development states have nothing delivered yet.
+// feature whose state does not accept one: only in_development, implemented
+// and done do (done takes the data only, F-0355) — rejected/superseded stay
+// closed and pre-development states have nothing delivered yet.
 var ErrDeliveryState = errors.New("feature state does not accept delivery links")
 
 // shaRe matches a bare git commit SHA (short to full form).
@@ -39,16 +40,42 @@ var shaRe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 
 const shaPlaceholder = "{sha}"
 
+// prPlaceholder marks the PR number in the [delivery] pr_url template (F-0355).
+const prPlaceholder = "{n}"
+
+// mrRefRe matches the short PR/MR reference of --mr: #<n> or !<n>.
+var mrRefRe = regexp.MustCompile(`^[#!](\d+)$`)
+
+// ErrDeliveryNoPRTemplate is the sentinel for a #<n>/!<n> --mr reference given
+// without a usable [delivery] pr_url template in .cernerc.
+var ErrDeliveryNoPRTemplate = errors.New("no [delivery] pr_url template configured")
+
+// deliveryErr is an error whose text is fixed by the spec, matched through is.
+type deliveryErr struct {
+	msg string
+	is  error
+}
+
+func (e deliveryErr) Error() string { return e.msg }
+func (e deliveryErr) Unwrap() error { return e.is }
+
 // ResolveDelivery validates the --commit/--mr input and resolves a bare SHA
 // through the [delivery] commit_url template, so every stored delivery link
 // is a full URL. It fails fast — callers run it before any write.
 func ResolveDelivery(cfg project.Config, commit, mr string) (Delivery, error) {
 	var d Delivery
 	if mr != "" {
-		if !isHTTPURL(mr) {
-			return Delivery{}, fmt.Errorf("%w: --mr must be an http(s) URL, got %q", ErrDeliveryInvalid, mr)
+		if m := mrRefRe.FindStringSubmatch(mr); m != nil {
+			tmpl := cfg.Delivery.PRURL
+			if !strings.Contains(tmpl, prPlaceholder) {
+				return Delivery{}, deliveryErr{msg: fmt.Sprintf("--mr %s needs [delivery] pr_url in .cernerc", mr), is: ErrDeliveryNoPRTemplate}
+			}
+			d.MRURL = strings.ReplaceAll(tmpl, prPlaceholder, m[1])
+		} else if !isHTTPURL(mr) {
+			return Delivery{}, fmt.Errorf("%w: --mr must be an http(s) URL or #<n>/!<n>, got %q", ErrDeliveryInvalid, mr)
+		} else {
+			d.MRURL = mr
 		}
-		d.MRURL = mr
 	}
 	switch {
 	case commit == "":
@@ -89,7 +116,7 @@ func SetFeatureDelivery(repoDir, projDir, id string, d Delivery) error {
 		if err != nil {
 			return "", err
 		}
-		if f.State != domain.StateInDevelopment && f.State != domain.StateImplemented {
+		if f.State != domain.StateInDevelopment && f.State != domain.StateImplemented && f.State != domain.StateDone {
 			return "", fmt.Errorf("%w: %s is %s", ErrDeliveryState, id, f.State)
 		}
 		if d.CommitURL != "" {
@@ -99,6 +126,13 @@ func SetFeatureDelivery(repoDir, projDir, id string, d Delivery) error {
 			f.DeliveryMRURL = d.MRURL
 		}
 		f.UpdatedAt = time.Now().UTC()
+		// Only an implemented feature's result carries the block: a draft gets it
+		// at complete, and a done result is history, left untouched (F-0355).
+		if f.State == domain.StateImplemented {
+			if err := stampDeliveryInResult(repoDir, f); err != nil {
+				return "", err
+			}
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
@@ -114,4 +148,26 @@ func SetFeatureDelivery(repoDir, projDir, id string, d Delivery) error {
 		}
 		return fmt.Sprintf("cerne: deliver %s", id), nil
 	})
+}
+
+// stampDeliveryInResult writes f's "## Entrega" block into its result.md in the
+// backend clone (F-0355). A feature with no delivery link leaves the result
+// alone; the write joins the caller's critical section.
+func stampDeliveryInResult(repoDir string, f store.Feature) error {
+	if f.DeliveryCommitURL == "" && f.DeliveryMRURL == "" {
+		return nil
+	}
+	path := FeatureDocPath(repoDir, f.ID, "result.md")
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // no result to carry the block
+	}
+	if err != nil {
+		return err
+	}
+	body := StampDelivery(string(raw), f.DeliveryCommitURL, f.DeliveryMRURL)
+	if body == string(raw) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(body), 0o644)
 }

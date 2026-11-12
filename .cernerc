@@ -20,6 +20,11 @@ cli_output_language = "en"
 # to a clickable URL through this template ({sha} is required).
 [delivery]
 commit_url = "https://github.com/henriquesakata/cerne/commit/{sha}"
+# F-0355: the forge that hosts the repo above; `feature complete --commit` finds
+# the PR holding the commit and `feature accept` checks it reached the default
+# branch. `--mr #<n>` resolves through pr_url.
+forge = "github"
+pr_url = "https://github.com/henriquesakata/cerne/pull/{n}"
 
 # Code→doc drift (F-0113/F-0116): this project has no modules, so the axis
 # is component (the features' tags). Coverage grows with `cerne feature retag`
