@@ -174,9 +174,10 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			var err error
 			head, conflicts, err = reconcileLocked(nil, repoDir, base, msg, changes)
 			if err != nil || len(conflicts) == 0 || !onlyCreated(conflicts, created) {
-				if round > 0 && err == nil {
+				if round > 0 && err == nil && len(conflicts) > 0 {
 					// the conflict exit leaves the tree as the caller found it:
 					// the redone mutate wrote on the tip, so hand it back at base.
+					// (A success keeps the tree at head, where the snapshot points.)
 					err = resetToBase(repoDir, base)
 				}
 				return err

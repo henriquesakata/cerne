@@ -65,6 +65,10 @@ func TestReconcileRemintsAutoWorkOnNewTip(t *testing.T) {
 	if len(remints) != 1 || remints["W-0001"] != "W-0002" {
 		t.Fatalf("remints = %v, want W-0001 -> W-0002", remints)
 	}
+	// A1: the shared clone's tree sits at the pushed head, not back at base.
+	if ws, _ := store.LoadAllWorks(repoDir); len(ws) != 2 {
+		t.Fatalf("clone has %d works, want 2 (tree at head)", len(ws))
+	}
 	for _, p := range []string{"entities/works/W-0001.json", "entities/works/W-0002.json", remintPlan} {
 		if _, ok := originHas(t, origin, p); !ok {
 			t.Fatalf("origin lacks %s", p)
