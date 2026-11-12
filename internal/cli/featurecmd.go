@@ -133,28 +133,35 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 }
 
 func newFeatureAmendCmd(dir *string) *cobra.Command {
-	var file, reason string
+	var file, reason, doc string
 	cmd := &cobra.Command{
 		Use:   "amend <id>",
-		Short: "Replace the result of an implemented feature, with a reason (before the accept)",
-		Long: "Replaces the whole result.md of an IMPLEMENTED feature — the correction window between 'complete' and the " +
-			"human 'accept' (F-0305), which then reads the amended result. Start from the stored one: " +
-			"'cerne show <id> --doc result > result.md'. The new result must pass the result checks (evidence per " +
-			"criterion, Gauntlet record); the reason goes on the feature.doc_edited event. Only the result: spec and " +
-			"plan, and anything after the accept, are corrected with 'cerne feature errata'.",
+		Short: "Replace a feature document with a reason: the result before the accept, or the spec/plan while approved or in development",
+		Long: "Replaces a whole feature document, with the reason on the feature.doc_edited event. Three forms:\n" +
+			"  --doc result (default): the result.md of an IMPLEMENTED feature — the correction window between " +
+			"'complete' and the human 'accept' (F-0305); the new result must pass the result checks (evidence per " +
+			"criterion, Gauntlet record).\n" +
+			"  --doc spec | --doc plan: the spec or plan of an APPROVED or IN-DEVELOPMENT feature (F-0338). Write the " +
+			"amendment into the criterion or task it changes — a body with an appended amendment section is refused. " +
+			"The replaced text stays readable as a revision ('cerne show <id> --doc <doc> --rev N'); amending an " +
+			"approved spec stales the approval until a human re-approves.\n" +
+			"Start from the stored text: 'cerne show <id> --doc <doc> > <doc>.md'. Before the approve a spec is a " +
+			"draft (pull/push); anything else is corrected with 'cerne feature errata'.",
 		Example: "  cerne feature amend F-0001 --file result.md --reason \"criterion 2 had no evidence\"\n" +
-			"  cat result.md | cerne feature amend F-0001 --reason \"<why>\"",
+			"  cerne feature amend F-0001 --doc spec --file spec.md --reason \"<why>\"\n" +
+			"  cat plan.md | cerne feature amend F-0001 --doc plan --reason \"<why>\"",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureAmend(cmd, *dir, args[0], file, reason)
+			return runFeatureAmend(cmd, *dir, args[0], doc, file, reason)
 		},
 	}
-	cmd.Flags().StringVar(&file, "file", "", "file with the full result body (defaults to piped stdin)")
-	cmd.Flags().StringVar(&reason, "reason", "", "why the result is amended (required; recorded on the event)")
+	cmd.Flags().StringVar(&doc, "doc", "result", "document to amend: result|spec|plan")
+	cmd.Flags().StringVar(&file, "file", "", "file with the full document body (defaults to piped stdin)")
+	cmd.Flags().StringVar(&reason, "reason", "", "why the document is amended (required; recorded on the event)")
 	return cmd
 }
 
-func runFeatureAmend(cmd *cobra.Command, dir, id, file, reason string) error {
+func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -162,6 +169,19 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, file, reason string) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
+	}
+	if doc != "result" {
+		f, rev, changed, err := app.AmendFeatureDoc(ctx.repoDir, ctx.projDir, id, doc, body, reason)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s %s unchanged — nothing to amend.\n", f.ID, doc)
+			return nil
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s %s amended (%s) — revision %d keeps the previous text: 'cerne show %s --doc %s --rev %d'. Run 'cerne pull' to refresh .docs/.\n",
+			f.ID, doc, f.State, rev, f.ID, doc, rev)
+		return nil
 	}
 	f, changed, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, reason)
 	if err != nil {

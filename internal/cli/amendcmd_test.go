@@ -188,3 +188,61 @@ func TestAmendFromDocsCopySaysToRemoveIt(t *testing.T) {
 		}
 	}
 }
+
+// seedDocFeature persists feature id in state s straight into the backend, with
+// a real spec and plan, committed.
+func seedDocFeature(t *testing.T, repoDir, id string, s domain.FeatureState, spec, plan string) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "Feature " + id, State: s, Facets: []string{"code"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	writeDoc(t, repoDir, id, "spec.md", spec)
+	writeDoc(t, repoDir, id, "plan.md", plan)
+	commitBackend(t, repoDir)
+}
+
+// bodyFile writes body to a temp file and returns its path.
+func bodyFile(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "doc.md")
+	mustWrite(t, p, body)
+	return p
+}
+
+// TestFeatureAmendDocCommand (F-0338 crit. 1, CLI side): `--doc spec|plan`
+// amends the document of an approved or in-development feature and says which
+// revision kept the old text and how to read it; the same body again is a
+// no-op that says so, and an unknown --doc is refused.
+func TestFeatureAmendDocCommand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateApproved, realDoc("F-0001", "Spec original."), realDoc("F-0001", "Plano original."))
+	seedDocFeature(t, repoDir, "F-0002", domain.StateInDevelopment, realDoc("F-0002", "Spec original."), realDoc("F-0002", "Plano original."))
+
+	for _, tc := range []struct{ id, doc, state string }{{"F-0001", "spec", "approved"}, {"F-0002", "plan", "in_development"}} {
+		file := bodyFile(t, realDoc(tc.id, "Texto emendado."))
+		out, err := execCerne(t, "feature", "amend", tc.id, "--doc", tc.doc, "--file", file, "--reason", "prefixo mudou", "--dir", projDir)
+		if err != nil {
+			t.Fatalf("amend --doc %s: %v\n%s", tc.doc, err, out)
+		}
+		for _, want := range []string{
+			"✓ " + tc.id + " " + tc.doc + " amended (" + tc.state + ") — revision 1 keeps the previous text: 'cerne show " + tc.id + " --doc " + tc.doc + " --rev 1'",
+			"'cerne pull'",
+		} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("output = %q, want %q", out, want)
+			}
+		}
+		got, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", tc.id, tc.doc+".md"))
+		if !strings.Contains(string(got), "Texto emendado.") {
+			t.Fatalf("%s not replaced:\n%s", tc.doc, got)
+		}
+		out, err = execCerne(t, "feature", "amend", tc.id, "--doc", tc.doc, "--file", file, "--reason", "de novo", "--dir", projDir)
+		if want := tc.id + " " + tc.doc + " unchanged — nothing to amend."; err != nil || !strings.Contains(out, want) {
+			t.Fatalf("identical amend: err %v, output %q, want %q", err, out, want)
+		}
+	}
+	if _, err := execCerne(t, "feature", "amend", "F-0001", "--doc", "xyz", "--file", bodyFile(t, "x"), "--reason", "r", "--dir", projDir); !errors.Is(err, app.ErrUnknownDoc) {
+		t.Fatalf("--doc xyz: err = %v, want app.ErrUnknownDoc", err)
+	}
+}
