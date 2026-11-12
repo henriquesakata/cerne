@@ -76,6 +76,12 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 			if origin.State != domain.WorkActive {
 				return "", fmt.Errorf("--from: activity %s is %s, not active", from, origin.State)
 			}
+			// Owner's principle (F-0341): live work of another session is not
+			// closed on a guess. A handoff is the proof the owner let go; a
+			// typo like W-0043 has none, and another session holds the binding.
+			if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, os.Getenv("CERNE_SESSION")) {
+				return "", fmt.Errorf("--from: %s has no handoff and is bound to another session — it may be live work; confirm with that session, or use --force to take it over anyway", from)
+			}
 			if len(cleaned) == 0 {
 				cleaned = origin.Refs
 			}

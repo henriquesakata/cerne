@@ -52,7 +52,7 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/D- ids this activity relates to")
 	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to '<user>@<hostname>')")
 	cmd.Flags().StringVar(&paths, "paths", "", "comma-separated path globs this activity intends to touch")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem; with --from, also take over a work without handoff that another session is bound to")
 	return cmd
 }
 
