@@ -41,10 +41,11 @@ func stem(term string) string {
 }
 
 // termQuery is the FTS5 expression for one OR term: the term itself, plus its
-// stem as a prefix when the stem differs ("troca" -> "troca OR troc*").
+// stem as a prefix when the stem differs (troca -> "troca" OR "troc"*). Both
+// are quoted, so a term never reaches MATCH as an operator or as syntax.
 func termQuery(term string) string {
 	if s := stem(slug.Fold(term)); s != slug.Fold(term) {
-		return term + " OR " + s + "*"
+		return quotePhrase(term) + " OR " + quotePhrase(s) + "*"
 	}
-	return term
+	return quotePhrase(term)
 }

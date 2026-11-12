@@ -41,7 +41,7 @@ func TestStemLeavesShortTermsAndKeepsFourLetters(t *testing.T) {
 
 func TestKeywordsAddsStemPrefix(t *testing.T) {
 	got := Keywords("troca de conta chave criptografia dual")
-	want := "troca OR troc* OR conta OR cont* OR chave OR criptografia OR criptograf* OR dual"
+	want := `"troca" OR "troc"* OR "conta" OR "cont"* OR "chave" OR "criptografia" OR "criptograf"* OR "dual"`
 	if got != want {
 		t.Fatalf("Keywords = %q, want %q", got, want)
 	}

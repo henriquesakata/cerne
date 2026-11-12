@@ -170,3 +170,19 @@ func TestSearchEntitiesTitleTermsCountInCoverage(t *testing.T) {
 		t.Fatalf("order = %v, want the title match F-0001 first", got)
 	}
 }
+
+// Every OR term reaches MATCH quoted: a question carrying FTS5 operators and
+// punctuation (the ask path) is retrieved by its keywords, never parsed.
+func TestRankEntitiesQuotesTerms(t *testing.T) {
+	db := seedEntities(t,
+		fixtureFeature{"F-0001", "Cofre", map[string]string{"spec": "o cofre guarda a troca de conta no modo dual"}},
+		fixtureFeature{"F-0002", "Agenda", map[string]string{"spec": "consultas da semana"}},
+	)
+	rs, err := RankEntities(db, `cofre NOT "dual": NEAR troca AND conta OR`, 10)
+	if err != nil {
+		t.Fatalf("RankEntities: %v", err)
+	}
+	if got := entityIDs(rs); !reflect.DeepEqual(got, []string{"F-0001"}) {
+		t.Fatalf("got %v, want [F-0001]", got)
+	}
+}
