@@ -33,10 +33,14 @@ var httpDo = func(req *http.Request) (*http.Response, error) { return noRedirect
 // credentialFill asks `git credential fill` for the host's login: the secret is
 // the password= line, which on a Gitea host is an access token or the account
 // password. A variable so tests replace the helper.
-var credentialFill = func(ctx context.Context, host string) (user, secret string) {
+var credentialFill = fillCredential
+
+func fillCredential(ctx context.Context, host string) (user, secret string) {
 	cmd := exec.CommandContext(ctx, "git", "credential", "fill")
 	cmd.Stdin = strings.NewReader("protocol=https\nhost=" + host + "\n\n")
-	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
+	// No prompt, askpass program or GUI may open: a later entry wins over the
+	// inherited one.
+	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=", "GCM_INTERACTIVE=never")
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
 	if errors.Is(err, exec.ErrWaitDelay) {
