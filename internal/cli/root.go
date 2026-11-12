@@ -24,6 +24,9 @@ func Root() *cobra.Command {
 		SilenceErrors: false,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			startWriteNotice()
+			app.RemintNotice = func(oldID, newID string) { // F-0356
+				fmt.Fprintf(cmd.ErrOrStderr(), "cerne: %s was taken upstream; registered as %s\n", oldID, newID)
+			}
 			if verbose {
 				// Text to stderr: op timings become visible without ever
 				// polluting the command's stdout (F-0149).
