@@ -38,6 +38,17 @@ func TestGroupWithoutArgsPrintsHelp(t *testing.T) { // criterion 4
 	}
 }
 
+func TestGroupHelpArgSuggestsRootHelpWithPath(t *testing.T) { // review: `feature help approve`
+	_, err := execCerne(t, "feature", "help", "approve")
+	if err == nil || !strings.Contains(err.Error(), "Did you mean: cerne help feature approve?") {
+		t.Fatalf("err = %v", err)
+	}
+	out, err := execCerne(t, "help", "feature", "approve")
+	if err != nil || !strings.Contains(out, "Approve a candidate") {
+		t.Fatalf("suggested command: err=%v out=%q", err, out)
+	}
+}
+
 func TestEveryGroupRejectsUnknownSubcommand(t *testing.T) { // criterion 5
 	n := 0
 	var walk func(c *cobra.Command)

@@ -108,6 +108,10 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if args[0] == "help" { // root help takes the group path: `feature help approve` -> `help feature approve`
+		path := strings.TrimPrefix(cmd.CommandPath(), "cerne ")
+		return fmt.Errorf("%s\n\nDid you mean: cerne help %s?", msg, strings.Join(append([]string{path}, args[1:]...), " "))
+	}
 	for _, rc := range cmd.Root().Commands() {
 		if rc.Name() == args[0] {
 			return fmt.Errorf("%s\n\nDid you mean: cerne %s?", msg, strings.Join(args, " "))
