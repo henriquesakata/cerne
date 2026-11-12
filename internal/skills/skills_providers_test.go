@@ -391,3 +391,32 @@ func TestSkillInstall_SymlinkedSkillPathsSkipped(t *testing.T) {
 		})
 	}
 }
+
+// The parity table's "Authoring guide" cells and the installer's targets are
+// one fact: changing either alone fails here.
+func TestParityRowMatchesTargets(t *testing.T) {
+	var row *hooks.ParityRow
+	for _, r := range hooks.ParityRows() {
+		if r.Capability == "Authoring guide" {
+			r := r
+			row = &r
+		}
+	}
+	if row == nil {
+		t.Fatal("no Authoring guide row")
+	}
+	if !strings.Contains(row.For(hooks.ProviderClaude), ".claude/skills/"+guideName) {
+		t.Errorf("claude cell: %q", row.For(hooks.ProviderClaude))
+	}
+	for p, tg := range targets {
+		cell := row.For(p)
+		if !strings.Contains(cell, tg.skillsDir+"/"+guideName+"/") {
+			t.Errorf("%s cell %q lacks %s", p, cell, tg.skillsDir)
+		}
+		for _, f := range []string{"AGENTS.md", "GEMINI.md"} {
+			if strings.Contains(cell, f) != (tg.pointer == f) {
+				t.Errorf("%s cell %q disagrees with pointer %q", p, cell, tg.pointer)
+			}
+		}
+	}
+}
