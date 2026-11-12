@@ -24,6 +24,20 @@ func seedActiveWork(t *testing.T, repoDir, id, actor, ref string, auto bool) {
 	}
 }
 
+// seedStartEvent logs (and pushes) a feature.started for featureID at at:
+// the last one is where planningWorks cuts (F-0341).
+func seedStartEvent(t *testing.T, repoDir, featureID string, at time.Time) {
+	t.Helper()
+	ev := domain.NewEvent(featureID, "feature.started", nil, "test")
+	ev.At = at
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed start "+featureID); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+}
+
 func loadWorks(t *testing.T, repoDir string) []store.Work {
 	t.Helper()
 	ws, err := store.LoadAllWorks(repoDir)
@@ -73,11 +87,13 @@ func TestAutoWorkOpensOnStart(t *testing.T) {
 }
 
 // TestAutoWorkSkipsWhenActorAlreadyOnIt (crit. 3): an existing active work by
-// the same actor referencing the feature suppresses the auto-open.
+// the same actor referencing the feature suppresses the auto-open. The work is
+// the pickup auto-work a plan push opens (F-0208 crit. 1): a manual one is a
+// planning work, which the start closes (F-0341).
 func TestAutoWorkSkipsWhenActorAlreadyOnIt(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
-	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", false)
+	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", true)
 
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
 		t.Fatalf("start: %v", err)
@@ -131,10 +147,13 @@ func TestAutoWorkAbandonedOnSupersede(t *testing.T) {
 }
 
 // TestAutoWorkLeavesManualOpen (crit. 5): the automatic close never touches a
-// manually opened work (Auto=false), even when it references the feature.
+// manually opened work (Auto=false), even when it references the feature. The
+// work is opened during development — after the feature.started — so it is
+// not a planning work, which leaving the cycle closes (F-0341).
 func TestAutoWorkLeavesManualOpen(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+	seedStartEvent(t, repoDir, "F-0001", time.Now().UTC().Add(-time.Hour))
 	seedActiveWork(t, repoDir, "W-0001", "outro@host", "F-0001", false)
 
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {

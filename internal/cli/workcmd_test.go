@@ -347,3 +347,54 @@ func TestWorkDoneClearsBindings(t *testing.T) {
 		t.Fatalf("binding file should be removed after done: %v", err)
 	}
 }
+
+// TestWorkStartReportsPlanning (F-0341 crit. 4 and 5): a second work start on
+// the same feature says which planning work it closed — the one bound to this
+// session — or, when this session is not bound to it, which one it kept and
+// how to close it.
+func TestWorkStartReportsPlanning(t *testing.T) {
+	for _, tc := range []struct{ name, boundSession string }{
+		{"superseded", "sess-me"},
+		{"unbound", ""},
+		{"bound elsewhere", "sess-other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _, repoDir := setupProject(t)
+			t.Setenv("CERNE_SESSION", "sess-me")
+			if out, err := execCerne(t, "feature", "new", "Feature base", "--context", "ctx", "--dir", projDir); err != nil {
+				t.Fatalf("feature new: %v\noutput: %s", err, out)
+			}
+			if out, err := execCerne(t, "work", "start", "F-0001: plano — planejamento", "--ref", "F-0001", "--dir", projDir); err != nil {
+				t.Fatalf("work start: %v\noutput: %s", err, out)
+			}
+			if tc.boundSession != "" {
+				if err := app.BindSession(filepath.Dir(repoDir), tc.boundSession, "W-0001"); err != nil {
+					t.Fatalf("BindSession: %v", err)
+				}
+			}
+
+			out, err := execCerne(t, "work", "start", "Retomada noutra sessão", "--ref", "F-0001", "--dir", projDir)
+			if err != nil {
+				t.Fatalf("second work start: %v\noutput: %s", err, out)
+			}
+			w, err := store.LoadWork(repoDir, "W-0001")
+			if err != nil {
+				t.Fatalf("LoadWork: %v", err)
+			}
+			want, state := "closed W-0001 (superseded by W-0002)", domain.WorkDone
+			switch tc.boundSession {
+			case "":
+				want, state = "W-0001 left active (not bound to this session); if it is finished: cerne work done W-0001", domain.WorkActive
+			case "sess-other":
+				// Possibly live work: no closing command offered.
+				want, state = "W-0001 left active: another session holds it", domain.WorkActive
+				if strings.Contains(out, "cerne work done") {
+					t.Fatalf("output offers to close a work another session holds:\n%s", out)
+				}
+			}
+			if !strings.Contains(out, want+"\n") || w.State != state {
+				t.Fatalf("W-0001 = %s, output:\n%s\nwant line %q and state %s", w.State, out, want, state)
+			}
+		})
+	}
+}
