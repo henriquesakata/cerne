@@ -75,9 +75,9 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths, from string
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active) — %s (actor: %s)\n", w.ID, w.Title, w.Actor)
 	if from != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "closed %s (handed off to %s)\n", from, w.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "closed %s (handed off to %s)\n", w.From, w.ID)
 		// The origin is closed: session bindings pointing at it are dead (F-0151 crit. 5).
-		if err := app.ClearBindings(filepath.Dir(ctx.repoDir), from); err != nil {
+		if err := app.ClearBindings(filepath.Dir(ctx.repoDir), w.From); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: clearing session bindings: %v\n", err)
 		}
 	}

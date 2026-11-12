@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var handoffHeaderRe = regexp.MustCompile(`^## handoff (\d{4}-\d{2}-\d{2}) — (.+)$`)
+var handoffHeaderRe = regexp.MustCompile(`^## handoff (\d{4}-\d{2}-\d{2}) — (.*)$`)
 
 // HandoffEntry is one session handoff of a work (F-0339): what the session
 // leaving wrote for the one arriving.

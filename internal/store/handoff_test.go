@@ -13,13 +13,15 @@ import (
 func TestAppendErrataBytesUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-	for _, txt := range []string{"um", "dois\n## errata 2026-01-01 — x"} {
+	// The third text cites a handoff header: defangHeadings now escapes it in an
+	// erratum too (F-0339, accepted change of bytes).
+	for _, txt := range []string{"um", "dois\n## errata 2026-01-01 — x", "tres\n## handoff 2026-01-01 — y"} {
 		if err := AppendErrata(dir, "F-0001", txt, "ator", at); err != nil {
 			t.Fatal(err)
 		}
 	}
 	got, _ := LoadErrata(dir, "F-0001")
-	want := "---\ncerne_id: F-0001\n---\n\n## errata 2026-06-25 — ator\n\num\n\n## errata 2026-06-25 — ator\n\ndois\n\\## errata 2026-01-01 — x\n"
+	want := "---\ncerne_id: F-0001\n---\n\n## errata 2026-06-25 — ator\n\num\n\n## errata 2026-06-25 — ator\n\ndois\n\\## errata 2026-01-01 — x\n\n## errata 2026-06-25 — ator\n\ntres\n\\## handoff 2026-01-01 — y\n"
 	if got != want {
 		t.Fatalf("errata bytes changed:\n%q\nwant\n%q", got, want)
 	}

@@ -71,7 +71,7 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) er
 	}
 	text += "\n\nPróximo passo: " + next
 	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		w, err := store.LoadWork(repoDir, id)
+		w, err := store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(id)))
 		if errors.Is(err, store.ErrNotFound) {
 			return "", fmt.Errorf("activity %s not found in the backend", id)
 		}
@@ -82,7 +82,11 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) er
 			return "", fmt.Errorf("activity %s is %s, not active: a handoff goes on an active work", id, w.State)
 		}
 		now := time.Now().UTC()
-		if err := store.AppendHandoff(repoDir, id, text, w.Actor, now); err != nil {
+		author := w.Actor
+		if author == "" {
+			author = EventActor()
+		}
+		if err := store.AppendHandoff(repoDir, w.ID, text, author, now); err != nil {
 			return "", err
 		}
 		w.HandoffAt, w.UpdatedAt = &now, now

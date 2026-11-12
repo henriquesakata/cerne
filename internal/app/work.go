@@ -29,6 +29,7 @@ type StartedWork struct {
 	Superseded []string
 	Kept       []string
 	Held       []string
+	From       string        // the canonical id of the --from origin ("" without it)
 	Handoffs   []WorkHandoff // what to read before starting (F-0339): the --from origin's, then the crossing refs'
 }
 
@@ -63,11 +64,14 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		// they are idempotent by construction.
 		var origin store.Work
 		if from != "" {
-			if origin, err = store.LoadWork(repoDir, from); errors.Is(err, store.ErrNotFound) {
+			if origin, err = store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(from))); errors.Is(err, store.ErrNotFound) {
 				return "", fmt.Errorf("--from: activity %s not found in the backend", from)
 			} else if err != nil {
 				return "", err
 			}
+			// Every comparison below uses the stored id: on a case-insensitive
+			// filesystem the raw one may have loaded a differently-cased file.
+			from = origin.ID
 			if origin.State != domain.WorkActive {
 				return "", fmt.Errorf("--from: activity %s is %s, not active", from, origin.State)
 			}
@@ -122,7 +126,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
-		out = StartedWork{Work: w, Handoffs: handoffs}
+		out = StartedWork{Work: w, From: from, Handoffs: handoffs}
 		if from != "" {
 			if err := closeWork(repoDir, origin, domain.ActionComplete, "handed off to "+id); err != nil {
 				return "", err
