@@ -1137,9 +1137,10 @@ func markedOnLine(line string, rx *regexp.Regexp, id string) bool {
 	if m == nil {
 		return false
 	}
-	want := strings.ToUpper(strings.TrimSpace(id))
+	norm := func(s string) string { s, _, _ = strings.Cut(strings.TrimSpace(s), "#"); return strings.ToUpper(s) }
+	want := norm(id)
 	for _, part := range strings.Split(m[1], ",") {
-		if strings.ToUpper(strings.TrimSpace(part)) == want {
+		if norm(part) == want {
 			return true
 		}
 	}
