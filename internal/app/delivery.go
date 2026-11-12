@@ -40,16 +40,42 @@ var shaRe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 
 const shaPlaceholder = "{sha}"
 
+// prPlaceholder marks the PR number in the [delivery] pr_url template (F-0355).
+const prPlaceholder = "{n}"
+
+// mrRefRe matches the short PR/MR reference of --mr: #<n> or !<n>.
+var mrRefRe = regexp.MustCompile(`^[#!](\d+)$`)
+
+// ErrDeliveryNoPRTemplate is the sentinel for a #<n>/!<n> --mr reference given
+// without a usable [delivery] pr_url template in .cernerc.
+var ErrDeliveryNoPRTemplate = errors.New("no [delivery] pr_url template configured")
+
+// deliveryErr is an error whose text is fixed by the spec, matched through is.
+type deliveryErr struct {
+	msg string
+	is  error
+}
+
+func (e deliveryErr) Error() string { return e.msg }
+func (e deliveryErr) Unwrap() error { return e.is }
+
 // ResolveDelivery validates the --commit/--mr input and resolves a bare SHA
 // through the [delivery] commit_url template, so every stored delivery link
 // is a full URL. It fails fast — callers run it before any write.
 func ResolveDelivery(cfg project.Config, commit, mr string) (Delivery, error) {
 	var d Delivery
 	if mr != "" {
-		if !isHTTPURL(mr) {
-			return Delivery{}, fmt.Errorf("%w: --mr must be an http(s) URL, got %q", ErrDeliveryInvalid, mr)
+		if m := mrRefRe.FindStringSubmatch(mr); m != nil {
+			tmpl := cfg.Delivery.PRURL
+			if !strings.Contains(tmpl, prPlaceholder) {
+				return Delivery{}, deliveryErr{msg: fmt.Sprintf("--mr %s needs [delivery] pr_url in .cernerc", mr), is: ErrDeliveryNoPRTemplate}
+			}
+			d.MRURL = strings.ReplaceAll(tmpl, prPlaceholder, m[1])
+		} else if !isHTTPURL(mr) {
+			return Delivery{}, fmt.Errorf("%w: --mr must be an http(s) URL or #<n>/!<n>, got %q", ErrDeliveryInvalid, mr)
+		} else {
+			d.MRURL = mr
 		}
-		d.MRURL = mr
 	}
 	switch {
 	case commit == "":
