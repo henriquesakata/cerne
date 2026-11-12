@@ -252,14 +252,26 @@ func appendFile(repoDir, rel, text string) error {
 }
 
 // F-0349 crit. 2: a push that opens two works (two approved features) loses
-// only one id, whose entity AND content both collide upstream; the report
-// pairs the old id with the new one of the SAME feature, once.
+// only the id of the SECOND feature's work (the remote takes W-0002), whose
+// entity AND content both collide upstream; the report pairs the old id with
+// the new one of the SAME feature, not with the one by position.
 func TestReconcileRemintReportsPairByFeature(t *testing.T) {
 	origin, repoDir, projDir, _ := remintFixture(t)
 	seedFeatureInState(t, repoDir, "F-0002", domain.StateApproved, "plan.md")
 	base, _ := gitback.RemoteHeadSHA(repoDir)
-	remoteWork(t, origin, "W-0001", "other@host") // refs F-0001
-	advanceRemote(t, origin, "content/works/W-0001/note.md", "theirs\n")
+	// Remote takes W-0002 for F-0002 (another actor), plus its content.
+	other := filepath.Join(t.TempDir(), "other")
+	if err := gitback.Clone(origin, other); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.SaveWork(other, store.Work{ID: "W-0002", Title: "theirs", State: domain.WorkActive, Actor: "other@host", Refs: []string{"F-0002"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	writeBackendFile(t, other, "content/works/W-0002/note.md", "theirs\n")
+	if _, err := gitback.CommitAndPush(other, "theirs W-0002"); err != nil {
+		t.Fatal(err)
+	}
 
 	plan2 := "content/features/F-0002/plan.md"
 	changes := []FileChange{
@@ -285,7 +297,30 @@ func TestReconcileRemintReportsPairByFeature(t *testing.T) {
 	if err != nil || len(conflicts) != 0 || head == "" {
 		t.Fatalf("head=%q conflicts=%+v err=%v, want clean push", head, conflicts, err)
 	}
-	if len(remints) != 1 || remints["W-0001"] != "W-0002" {
-		t.Fatalf("remints = %v, want only W-0001 -> W-0002 (F-0001's new work)", remints)
+	// Round 0 minted W-0001 (F-0001) and W-0002 (F-0002); W-0002 was taken. On
+	// the tip F-0001 -> W-0003 and F-0002 -> W-0004: the pair is F-0002's.
+	if len(remints) != 1 || remints["W-0002"] != "W-0004" {
+		t.Fatalf("remints = %v, want only W-0002 -> W-0004 (F-0002's new work)", remints)
+	}
+}
+
+// F-0349: a caller doc byte-equal to base (a no-op push of it) must not revert
+// the remote's edit of it when a re-mint round reconciles against the tip.
+func TestReconcileRemintKeepsRemoteEditOfNoopDoc(t *testing.T) {
+	origin, repoDir, projDir, base := remintFixture(t)
+	baseBody, _ := originHas(t, origin, remintPlan)
+	remoteWork(t, origin, "W-0001", "other@host")
+	advanceRemote(t, origin, remintPlan, "edição remota\n")
+
+	changes := []FileChange{{Path: remintPlan, Content: []byte(baseBody)}}
+	mutate := func() error {
+		return OpenAutoWorkForPush(repoDir, projDir, changes)
+	}
+	head, conflicts, remints, err := ReconcileCommitPushMutate(repoDir, projDir, base, "push plan", changes, mutate)
+	if err != nil || len(conflicts) != 0 || head == "" || len(remints) != 1 {
+		t.Fatalf("head=%q conflicts=%+v remints=%v err=%v, want clean re-mint", head, conflicts, remints, err)
+	}
+	if got, _ := originHas(t, origin, remintPlan); got != "edição remota\n" {
+		t.Fatalf("plan.md = %q, remote edit was reverted", got)
 	}
 }
