@@ -78,7 +78,7 @@ func TestWorkStartShowsHandoff(t *testing.T) {
 }
 
 // F-0339 crit. 9: show prints the legacy entries after the work's fields;
-// --json has them in `legacy_handoffs` (F-0368).
+// --json has them in `handoffs`, the F-0339 shape kept (F-0368).
 func TestShowWorkHandoffs(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	mustCerne(t, "work", "start", "Operação longa de migração", "--dir", projDir)
@@ -90,7 +90,7 @@ func TestShowWorkHandoffs(t *testing.T) {
 		t.Fatalf("show W-0001:\n%s", out)
 	}
 	var j struct {
-		Handoffs []struct{ Date, Author, Text string } `json:"legacy_handoffs"`
+		Handoffs []struct{ Date, Author, Text string } `json:"handoffs"`
 	}
 	if err := json.Unmarshal([]byte(mustCerne(t, "show", "W-0001", "--json", "--dir", projDir)), &j); err != nil {
 		t.Fatal(err)
@@ -260,16 +260,16 @@ func TestShowHandoff(t *testing.T) {
 		t.Fatalf("show W-0002 must list the handoff it came from:\n%s", out)
 	}
 	var j struct {
-		Handoffs []struct {
+		Records []struct {
 			ID    string `json:"id"`
 			State string `json:"state"`
-		} `json:"handoffs"`
-		Legacy []struct{ Text string } `json:"legacy_handoffs"`
+		} `json:"handoff_records"`
+		Legacy []struct{ Date, Author, Text string } `json:"handoffs"` // the F-0339 shape, unchanged
 	}
 	if err := json.Unmarshal([]byte(mustCerne(t, "show", "W-0001", "--json", "--dir", projDir)), &j); err != nil {
 		t.Fatal(err)
 	}
-	if len(j.Handoffs) != 1 || j.Handoffs[0].ID != "HO-0001" || j.Handoffs[0].State != "taken" || len(j.Legacy) != 1 {
+	if len(j.Records) != 1 || j.Records[0].ID != "HO-0001" || j.Records[0].State != "taken" || len(j.Legacy) != 1 || j.Legacy[0].Text != "entrada antiga" || j.Legacy[0].Date == "" {
 		t.Fatalf("json = %+v", j)
 	}
 }

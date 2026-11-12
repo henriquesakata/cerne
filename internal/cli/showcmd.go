@@ -351,7 +351,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		j := res.toJSON(handoffs)
-		j.Handoffs = records
+		j.HandoffRecords = records
 		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
 		j.MergedErrata, j.EarlierBodyRev = merged, earlier
 		return enc.Encode(j)
@@ -752,8 +752,8 @@ type showJSON struct {
 	Amendments     []amendmentJSON      `json:"amendments,omitempty"`       // features only (F-0338)
 	OpenErrata     *int                 `json:"open_errata,omitempty"`      // runbooks with open items only (F-0345)
 	SteplessErrata *int                 `json:"stepless_errata,omitempty"`  // idem: those with no step
-	Handoffs       []store.Handoff      `json:"handoffs,omitempty"`         // works only (F-0368): from or into it
-	LegacyHandoffs []store.HandoffEntry `json:"legacy_handoffs,omitempty"`  // works only (F-0339)
+	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`         // works only: the F-0339 entries, shape kept for existing consumers (MCP show)
+	HandoffRecords []store.Handoff      `json:"handoff_records,omitempty"`  // works only (F-0368): the HO- from or into it
 	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`    // runbooks only (F-0351)
 	EarlierBodyRev int                  `json:"earlier_body_rev,omitempty"` // idem: the revision before the first merge listed
 }
@@ -834,7 +834,7 @@ func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 			docs = append(docs, showDocJSON{d.name, d.body})
 		}
 	}
-	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, LegacyHandoffs: handoffs}
+	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Handoffs: handoffs}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the
