@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // F-0355: the "## Entrega" block of a result — the commit and PR that delivered
@@ -64,26 +66,56 @@ func fenceRun(line string) (ch byte, n int, rest string) {
 	return ch, n, t[n:]
 }
 
+// commitLabel is the first 9 characters of the commit URL's last segment.
+func commitLabel(commitURL string) string {
+	if i := strings.LastIndex(commitURL, "/"); i >= 0 && i < len(commitURL)-1 {
+		label := commitURL[i+1:]
+		if len(label) > 9 {
+			label = label[:9]
+		}
+		return label
+	}
+	return commitURL
+}
+
+// prLabel is "<owner>/<repo>#<n>" for a PR/MR URL, else the URL itself.
+func prLabel(prURL string) string {
+	if m := prURLRe.FindStringSubmatch(prURL); m != nil {
+		return m[1] + "#" + m[2]
+	}
+	return prURL
+}
+
+// DeliveryLine is the stdout line that says what complete/deliver recorded
+// (F-0355 T1); "" when the feature carries no link. stamped says the result's
+// "## Entrega" block was written by this command.
+func DeliveryLine(f store.Feature, stamped bool) string {
+	var parts []string
+	if f.DeliveryCommitURL != "" {
+		parts = append(parts, "commit "+commitLabel(f.DeliveryCommitURL))
+	}
+	if f.DeliveryMRURL != "" {
+		parts = append(parts, "PR "+prLabel(f.DeliveryMRURL))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	line := "delivery: " + strings.Join(parts, " · ")
+	if stamped {
+		line += fmt.Sprintf(" — '## Entrega' in its result (cerne show %s --doc result)", f.ID)
+	}
+	return line
+}
+
 // deliveryBlock renders the "## Entrega" section — document content, pt-BR like
 // the "## Custo" block. "" when there is nothing to show.
 func deliveryBlock(commitURL, prURL string) string {
 	var b strings.Builder
 	if commitURL != "" {
-		label := commitURL
-		if i := strings.LastIndex(commitURL, "/"); i >= 0 && i < len(commitURL)-1 {
-			label = commitURL[i+1:]
-			if len(label) > 9 {
-				label = label[:9]
-			}
-		}
-		fmt.Fprintf(&b, "- Commit: [`%s`](%s)\n", label, commitURL)
+		fmt.Fprintf(&b, "- Commit: [`%s`](%s)\n", commitLabel(commitURL), commitURL)
 	}
 	if prURL != "" {
-		label := prURL
-		if m := prURLRe.FindStringSubmatch(prURL); m != nil {
-			label = m[1] + "#" + m[2]
-		}
-		fmt.Fprintf(&b, "- PR: [%s](%s)\n", label, prURL)
+		fmt.Fprintf(&b, "- PR: [%s](%s)\n", prLabel(prURL), prURL)
 	}
 	if b.Len() == 0 {
 		return ""

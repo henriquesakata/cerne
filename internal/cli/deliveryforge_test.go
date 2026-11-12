@@ -15,6 +15,8 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
+var errTestForge = errors.New("forge unavailable")
+
 // cliFakeForge stands in for the real forge (F-0355) and counts every call.
 type cliFakeForge struct {
 	url   string
