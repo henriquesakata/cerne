@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #0d1117; }
+  #win { width: 920px; height: 500px; box-sizing: border-box; background: #161b22; border: 1px solid #30363d;
+         border-radius: 10px; margin: 10px; overflow: hidden; font: 15px/1.5 Menlo, Monaco, monospace; color: #c9d1d9; }
+  #bar { height: 32px; background: #21262d; display: flex; align-items: center; padding-left: 12px; gap: 7px; }
+  #bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  #bar span { color: #8b949e; font: 12px -apple-system, sans-serif; margin-left: 12px; }
+  #out { padding: 14px 18px; white-space: pre-wrap; word-break: break-word; }
+  .p { color: #3fb950; } .c { color: #e6edf3; } .k { color: #8b949e; } .hl { color: #f0b72f; }
+  .cur { background: #c9d1d9; color: #161b22; }
+</style>
+<div id="win"><div id="bar"><i style="background:#ff5f56"></i><i style="background:#ffbd2e"></i><i style="background:#27c93f"></i><span>my-app</span></div><div id="out"></div></div>
+<script>
+// Each scene clears the screen. Outputs are the real output of cerne v0.5.0,
+// trimmed to their first line(s) where marked with "…".
+const scenes = [
+  [
+    { cmd: 'cerne init --backend ~/docs.git --name my-app',
+      out: 'Initialized project "my-app" with backend ~/docs.git.\n…' },
+    { cmd: 'cerne feature new "Sign in with Google" --context "Users asked for social login."',
+      out: 'F-0001 created (candidate) with its context seeded into the spec. …' },
+    { cmd: 'cerne feature new "Sign in with Facebook" --context "Considered alongside Google."',
+      out: 'F-0002 created (candidate) with its context seeded into the spec. …' },
+    { note: '# six months later, Facebook login is dropped' },
+    { cmd: 'cerne feature reject F-0002 --reason "Dropped: under 2% of signups."',
+      out: 'F-0002: candidate → <span class="hl">rejected</span>' },
+  ],
+  [
+    { note: '# what the agent reads: only the current state' },
+    { cmd: 'cerne pull', out: 'Materialized: 1 feature(s), 0 decision(s), 0 reference(s) into .docs/ (snapshot 6253ab90).' },
+    { cmd: 'cerne status', out: 'CANDIDATES (1)\n  F-0001  Sign in with Google\n\nTotal: 1 feature(s)' },
+    { note: '# the rejected one is history, still one search away' },
+    { cmd: 'cerne search facebook | head -1', out: 'F-0002 [feature/spec] <span class="hl">rejected</span> — Sign in with Facebook' },
+  ],
+]
+
+// Flatten into frames: {scene, upto item index, typed chars, showOut, hold ms}
+const frames = []
+scenes.forEach((items, s) => {
+  items.forEach((it, i) => {
+    const text = it.cmd ?? it.note
+    const step = it.note ? text.length : 6
+    for (let n = step; n < text.length; n += step) frames.push({ s, i, n, out: false, ms: 70 })
+    frames.push({ s, i, n: text.length, out: false, ms: it.note ? 900 : 350 })
+    if (it.cmd) frames.push({ s, i, n: text.length, out: true, ms: 1100 })
+  })
+  frames[frames.length - 1].ms = 3200
+})
+window.frameCount = frames.length
+window.frameMs = (k) => frames[k].ms
+const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+window.render = (k) => {
+  const f = frames[k]
+  let html = ''
+  scenes[f.s].forEach((it, i) => {
+    if (i > f.i) return
+    const last = i === f.i
+    const text = it.cmd ?? it.note
+    const shown = last ? text.slice(0, f.n) : text
+    const cursor = last && !f.out ? '<span class="cur"> </span>' : ''
+    html += it.note
+      ? `<span class="k">${esc(shown)}</span>${cursor}\n`
+      : `<span class="p">$</span> <span class="c">${esc(shown)}</span>${cursor}\n`
+    if (it.cmd && (!last || f.out)) html += `<span>${it.out}</span>\n\n`
+  })
+  if (f.out && f.i === scenes[f.s].length - 1) html += '<span class="p">$</span> <span class="cur"> </span>'
+  document.getElementById('out').innerHTML = html
+}
+window.render(0)
+</script>
