@@ -156,6 +156,43 @@ func TestHasStepTokenRefusesProseAndAcceptsRealForms(t *testing.T) {
 }
 
 // Gauntlet r2 (N10): the replaced decision is read back and shown.
+// F-0345: StepExists is the matching InsertAtSteps uses, asked on its own.
+func TestStepExistsMatchesLikeInsertAtSteps(t *testing.T) {
+	for step, want := range map[string]bool{"S6.6": true, "S6.7": true, "S6.1": false, "S9.9": false, "Regra": false} {
+		if got := StepExists(bodyFixture, step); got != want {
+			t.Errorf("StepExists(%q) = %v, want %v", step, got, want)
+		}
+	}
+}
+
+// F-0345: `Sem passo: sim` marks a step-less erratum as deliberate.
+func TestParseErrataItemsReadsSemPasso(t *testing.T) {
+	doc := "---\ncerne_id: RB-0001\n---\n\n## errata 2026-11-11 — agent\n\nAltera: -\nSem passo: sim\n\nNota geral.\n\n## errata 2026-11-11 — agent\n\nAltera: -\n\nEsquecida.\n"
+	items := ParseErrataItems(doc)
+	if len(items) != 2 || !items[0].Stepless || items[1].Stepless {
+		t.Fatalf("items = %+v, want E1 stepless and E2 not", items)
+	}
+	if items[0].Text != "Nota geral." {
+		t.Fatalf("marker must not leak into the text: %q", items[0].Text)
+	}
+}
+
+// F-0345: open = not merged and not (step-less and decided). A step-less item is
+// never merged, so deciding it retires it; a deliberate step-less proposal is open.
+func TestErrataItemOpen(t *testing.T) {
+	dec := "Estado: decidida — \"ok\" (dono, 2026-11-09)\n"
+	doc := "## errata 2026-11-11 — a\n\nAltera: S1\n\nA.\n\n" + // E1 proposal with step
+		"## errata 2026-11-11 — a\n\nAltera: S1\n" + dec + "Fundida: revisão 2\n\nB.\n\n" + // E2 merged
+		"## errata 2026-11-11 — a\n\nAltera: -\n" + dec + "\nC.\n\n" + // E3 step-less decided
+		"## errata 2026-11-11 — a\n\nAltera: -\nSem passo: sim\n\nD.\n" // E4 step-less proposal
+	want := []bool{true, false, false, true}
+	for i, it := range ParseErrataItems(doc) {
+		if it.Open() != want[i] {
+			t.Errorf("%s Open() = %v, want %v", it.ID, it.Open(), want[i])
+		}
+	}
+}
+
 func TestStateLabelShowsPreviousDecisions(t *testing.T) {
 	doc := "## errata 2026-11-07 — a\n\nAltera: S6.6\nAnterior: decidida — \"primeira\" (dono, 2026-11-08)\nEstado: decidida — \"segunda\" (chefe, 2026-11-09)\n\nt\n"
 	it := ParseErrataItems(doc)[0]

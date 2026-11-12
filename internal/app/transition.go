@@ -336,6 +336,18 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				return "", err
 			}
 		}
+		// Leaving the live cycle ends its planning, of any actor (F-0341
+		// crit. 2). After closeAutoWorks, so a work the F-0208 adoption already
+		// closed is not touched twice.
+		if featureLive(oldState) && !featureLive(newState) && activityAutoEnabled(projDir) {
+			workAction := domain.ActionAbandon
+			if action == domain.ActionComplete {
+				workAction = domain.ActionComplete
+			}
+			if err := closePlanningWorks(repoDir, id, oldState, workAction, "feature "+string(action)); err != nil {
+				return "", err
+			}
+		}
 		// Starting development opens the result phase: scaffold the result stub so it
 		// is committed alongside the transition (mirrors the plan stub at approve).
 		var propagated []string
@@ -346,7 +358,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			// Auto-registered activity (F-0146): entering development records who
 			// is on it. Only the leaf feature the agent actually picked up — the
 			// epic propagation below never opens works of its own (crit. 4).
+			// Planning ends where development begins (F-0341 crit. 1): every
+			// planning work, of any actor, closes before the auto work opens.
 			if activityAutoEnabled(projDir) {
+				if err := closePlanningWorks(repoDir, id, oldState, domain.ActionComplete, "planning closed: feature start"); err != nil {
+					return "", err
+				}
 				if err := openAutoWork(repoDir, f); err != nil {
 					return "", err
 				}

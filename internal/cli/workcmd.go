@@ -71,6 +71,18 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths string, forc
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active) — %s (actor: %s)\n", w.ID, w.Title, w.Actor)
+	// The planning works this one replaced, the unbound ones it kept, and the
+	// ones another session holds — no closing command for those, they may be
+	// live (F-0341 crit. 4 and 5).
+	for _, id := range w.Superseded {
+		fmt.Fprintf(cmd.OutOrStdout(), "closed %s (superseded by %s)\n", id, w.ID)
+	}
+	for _, id := range w.Kept {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s left active (not bound to this session); if it is finished: cerne work done %s\n", id, id)
+	}
+	for _, id := range w.Held {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s left active: another session holds it\n", id)
+	}
 	for _, m := range overlaps {
 		fmt.Fprintf(cmd.OutOrStdout(), "warning: paths overlap active %s (%s) on %s — coordinate before touching shared files\n",
 			m.ID, m.Title, joinRefs(m.Globs))
