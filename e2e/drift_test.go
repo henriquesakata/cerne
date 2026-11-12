@@ -152,12 +152,37 @@ func TestDriftSuspectGoldenPath(t *testing.T) {
 
 func appendToFile(t *testing.T, path, extra string) {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("open %s: %v", path, err)
+		t.Fatalf("read %s: %v", path, err)
 	}
-	defer f.Close()
-	if _, err := f.WriteString(extra); err != nil {
-		t.Fatalf("append %s: %v", path, err)
+	// Top-level keys in extra (the lines before its first [table]) go above
+	// the file's first table — init now ends .cernerc with [gates] (F-0364),
+	// and a key appended after it would land inside that table. Tables are
+	// appended at the end.
+	top, tables := extra, ""
+	if k := tableStart(extra); k >= 0 {
+		top, tables = extra[:k], extra[k:]
 	}
+	out := string(data)
+	if k := tableStart(out); k >= 0 && strings.TrimSpace(top) != "" {
+		out = out[:k] + strings.TrimLeft(top, "\n") + "\n" + out[k:]
+	} else {
+		out += top
+	}
+	if err := os.WriteFile(path, []byte(out+tables), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// tableStart is the offset of the first line opening a TOML table, or -1.
+func tableStart(s string) int {
+	off := 0
+	for _, line := range strings.SplitAfter(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			return off
+		}
+		off += len(line)
+	}
+	return -1
 }
