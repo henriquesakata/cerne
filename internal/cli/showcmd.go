@@ -110,6 +110,12 @@ func newShowCmd() *cobra.Command {
 			"feature document raw (spec|plan|result), and --json for machine output.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if kind, _ := kindForID(strings.ToUpper(strings.TrimSpace(args[0]))); rev != 0 && kind == "feature" {
+				if consolidated || asJSON {
+					return errors.New("--rev prints a feature document revision as text: --consolidado and --json do not apply")
+				}
+				return runShowDocRevision(cmd, dir, args[0], doc, rev)
+			}
 			if consolidated || rev != 0 {
 				if consolidated && rev != 0 {
 					return errors.New("--consolidado and --rev are alternatives: pick one")
@@ -123,12 +129,34 @@ func newShowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&consolidated, "consolidado", false, "runbook only: the body with each erratum placed at the step it changes (read-only)")
-	cmd.Flags().IntVar(&rev, "rev", 0, "runbook only: print revision N of the body (the one before each errata merge stays readable)")
+	cmd.Flags().IntVar(&rev, "rev", 0, "print revision N: of a runbook's body (the one before each errata merge stays readable), or with --doc spec|plan of a feature document (the one before each amend)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().StringVar(&doc, "doc", "", "print only this feature document, raw: "+strings.Join(featureDocNames, "|"))
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output (entity + content)")
 	return cmd
+}
+
+// runShowDocRevision prints revision rev of a feature's spec or plan raw, byte
+// for byte (F-0338): the text before each amend, or the current one at K+1.
+func runShowDocRevision(cmd *cobra.Command, dir, id, doc string, rev int) error {
+	if doc != "spec" && doc != "plan" {
+		return fmt.Errorf("%w: --rev on a feature reads a spec or plan revision: pass --doc spec or --doc plan", ErrNoSuchDoc)
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	id = strings.ToUpper(strings.TrimSpace(id))
+	if _, err := store.LoadFeature(ctx.repoDir, id); err != nil {
+		return fmt.Errorf("feature %s: %w", id, err)
+	}
+	body, err := store.LoadDocRevision(ctx.repoDir, id, doc, rev)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(cmd.OutOrStdout(), body)
+	return nil
 }
 
 func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {

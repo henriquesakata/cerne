@@ -400,3 +400,37 @@ func TestShowAmendments(t *testing.T) {
 		}
 	}
 }
+
+// TestShowFeatureDocRev (F-0338 crit. 9): `--doc spec|plan --rev N` prints
+// revision N of that document byte for byte (K+1 is the current one); an N
+// outside the range is refused naming it, and on a feature --rev needs --doc
+// spec or --doc plan (and is text, not --json).
+func TestShowFeatureDocRev(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	original := realDoc("F-0001", "Spec original.")
+	seedDocFeature(t, repoDir, "F-0001", domain.StateApproved, original, realDoc("F-0001", "Plano original."))
+	amendDoc(t, projDir, "F-0001", "spec", realDoc("F-0001", "Spec vigente."), "prefixo mudou")
+
+	if out, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--rev", "1", "--dir", projDir); err != nil || out != original {
+		t.Fatalf("--rev 1 = %q, %v — want the original spec byte for byte %q", out, err, original)
+	}
+	current, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if out, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--rev", "2", "--dir", projDir); err != nil || out != string(current) {
+		t.Fatalf("--rev 2 = %q, %v — want the current spec", out, err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--doc", "spec", "--rev", "3"}, "F-0001 spec has revisions 1..2, no revision 3"},
+		{[]string{"--doc", "plan", "--rev", "2"}, "F-0001 plan has revisions 1..1, no revision 2"},
+		{[]string{"--rev", "1"}, "pass --doc spec or --doc plan"},
+		{[]string{"--doc", "result", "--rev", "1"}, "pass --doc spec or --doc plan"},
+		{[]string{"--doc", "spec", "--rev", "1", "--json"}, "--json"},
+	} {
+		out, err := execCerne(t, append([]string{"show", "F-0001", "--dir", projDir}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: err %v, want %q\n%s", tc.args, err, tc.want, out)
+		}
+	}
+}
