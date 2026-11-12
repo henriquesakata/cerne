@@ -138,7 +138,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	}
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
-	missing, err := implementedMissing(ctx.repoDir, ctx.projDir)
+	missing, err := implementedMissing(ctx.repoDir, ctx.projDir, features)
 	if err != nil {
 		return err
 	}
@@ -305,26 +305,27 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 }
 
 // implementedMissing maps each implemented feature whose next step is the
-// agent's to its exact commands (F-0371). The list is app.AcceptQueue's, the
-// UI's, and the decision is app.NextStep's: the queue and `next <id>` share one
-// rule.
-func implementedMissing(repoDir, projDir string) (map[string][]string, error) {
-	rows, err := app.AcceptQueue(repoDir)
-	if err != nil {
-		return nil, err
-	}
+// agent's to the lines under it (F-0371): the exact commands still owed, or the
+// failed check. The decision is app.NextStep's, per feature — the queue and
+// `next <id>` share one rule.
+func implementedMissing(repoDir, projDir string, features []store.Feature) (map[string][]string, error) {
 	missing := map[string][]string{}
-	for _, r := range rows {
-		st, err := app.NextStep(repoDir, projDir, r.ID)
+	for _, f := range features {
+		if f.State != domain.StateImplemented {
+			continue
+		}
+		st, err := app.NextStep(repoDir, projDir, f.ID)
 		if err != nil {
 			return nil, err
 		}
-		if st.Actor == app.ActorAgent {
-			f, err := store.LoadFeature(repoDir, r.ID)
-			if err != nil {
-				return nil, err
-			}
-			missing[r.ID] = app.ImplementedOwes(repoDir, f)
+		switch {
+		case st.Actor != app.ActorAgent:
+		case len(st.Commands) > 0:
+			missing[f.ID] = st.Commands
+		case st.Command != "":
+			missing[f.ID] = []string{st.Command}
+		default:
+			missing[f.ID] = []string{st.Step}
 		}
 	}
 	return missing, nil

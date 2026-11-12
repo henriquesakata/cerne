@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -150,6 +151,12 @@ func nextAfterCompleteProject(t *testing.T) (string, string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "result.md"), []byte(stamped), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	// F-0010 and F-0014 have a bound session with a transcript; F-0012 is stamped.
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	for i, id := range []string{"F-0010", "F-0014"} {
+		writeTranscript(t, root, "sess-"+id+".jsonl", costLine("2026-11-01T10:02:00Z", "m"+strconv.Itoa(i), "claude-opus-5-5", "", 1, 2, 3, 4))
 	}
 	for _, id := range []string{"F-0010", "F-0012", "F-0014"} {
 		costBind(t, filepath.Dir(repoDir), "sess-"+id, id, "2026-11-01T10:00:00Z")
@@ -311,7 +318,65 @@ func TestNextByID(t *testing.T) {
 	if backendHead(t, repoDir) != head {
 		t.Error("next <id> moved the backend HEAD")
 	}
+	js, err = execCerne(t, "next", "F-0013", "--dir", projDir, "--json")
+	if err != nil || json.Unmarshal([]byte(js), &st) != nil || st["actor"] != "none" || st["command"] != "" {
+		t.Errorf("terminal json = %s (%v); want actor none", js, err)
+	}
 	if _, err := execCerne(t, "next", "F-9999", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "F-9999") {
 		t.Errorf("unknown id error = %v", err)
+	}
+}
+
+// TestNextQueueAgreesWithNextByID (F-0371): each implemented feature sits in the
+// group its own `next <id>` implies — an agent step in FINISH DELIVERY, a human
+// one in WAITING FOR HUMAN ACCEPT, a terminal one in neither.
+func TestNextQueueAgreesWithNextByID(t *testing.T) {
+	projDir, _ := nextAfterCompleteProject(t)
+	js, err := execCerne(t, "next", "--dir", projDir, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q nextJSON
+	if err := json.Unmarshal([]byte(js), &q); err != nil {
+		t.Fatal(err)
+	}
+	group := map[string]string{}
+	for _, g := range q.Groups {
+		if g.State == domain.StateImplemented {
+			for _, f := range g.Features {
+				group[f.ID] = g.Queue
+			}
+		}
+	}
+	want := map[string]string{"agent": "finish_delivery", "human": "awaiting_accept", "none": ""}
+	for _, id := range []string{"F-0010", "F-0011", "F-0012", "F-0013", "F-0014"} {
+		out, err := execCerne(t, "next", id, "--dir", projDir, "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var st map[string]string
+		if err := json.Unmarshal([]byte(out), &st); err != nil {
+			t.Fatal(err)
+		}
+		if group[id] != want[st["actor"]] {
+			t.Errorf("%s: next <id> actor %q but the queue put it in %q", id, st["actor"], group[id])
+		}
+	}
+}
+
+// TestNextLedgerUnreadable (critic 5): a cost ledger that cannot be read shows in
+// the queue and in `next <id>`; the feature is not sent to the human accept.
+func TestNextLedgerUnreadable(t *testing.T) {
+	projDir, repoDir := nextAfterCompleteProject(t)
+	ledger := filepath.Join(filepath.Dir(repoDir), "costbind.ndjson")
+	if err := os.Remove(ledger); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(ledger, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "next", "F-0010", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "cost check failed") || strings.Contains(out, "waiting on a human") {
+		t.Errorf("next F-0010 = %q, %v", out, err)
 	}
 }

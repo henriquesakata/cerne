@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/app"
 )
 
 // TestMain neutralizes CERNE_ACTOR inherited from the invoking environment
@@ -27,6 +29,7 @@ func TestMain(m *testing.M) {
 	os.Unsetenv("CLAUDECODE")
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
 	claudeRoots = func() []string { return strings.Split(os.Getenv("CLAUDE_CONFIG_DIR"), ",") }
+	app.CostRoots = claudeRoots
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
