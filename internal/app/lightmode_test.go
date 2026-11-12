@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -97,6 +99,27 @@ func TestLightMode_HumanGatesUnchanged(t *testing.T) {
 	for name, gate := range map[string]string{"approve": g.ApproveGate(), "accept": g.AcceptGate()} {
 		if err := CheckHumanGate(gate); !errors.Is(err, ErrHumanGate) {
 			t.Errorf("%s: err = %v, want ErrHumanGate", name, err)
+		}
+	}
+}
+
+// TestSpecScaffold_LightMode (F-0364, Ajuste 2): a feature created in light
+// mode is scaffolded without the template's bar guidance; with the Gauntlet
+// on the scaffold keeps it.
+func TestSpecScaffold_LightMode(t *testing.T) {
+	for v, wantGuide := range map[string]bool{"off": false, "": true} {
+		repoDir, projDir, _ := newFeatureBackend(t)
+		saveGauntlet(t, projDir, v)
+		f, err := CreateFeature(repoDir, projDir, "Leve", "", "", nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec, err := os.ReadFile(FeatureDocPath(repoDir, f.ID, "spec.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(string(spec), "(Gauntlet)"); got != wantGuide {
+			t.Fatalf("gauntlet %q: scaffold carries the bar guide = %v, want %v", v, got, wantGuide)
 		}
 	}
 }

@@ -185,6 +185,7 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 			return "", err
 		}
 		n.fromIdea = i.ID
+		n.light = !projectGates(projDir).GauntletEnabled()
 		if f, _, err = n.mint(repoDir); err != nil {
 			return "", err
 		}

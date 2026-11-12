@@ -85,11 +85,7 @@ Invariantes estruturais entram como asserção direta e mensurável. -->
 schemas, endpoints, eventos). Inclua o HOW — não o omita. -->
 
 ## Verificação
-<!-- Plano de testes (TDD), 1:1 com os critérios de aceitação. Padrão de parada (Gauntlet),
-uma das três formas: Barra (referência nomeada + acesso) + Método (comparação cega, crítico
-fresco) + Saída (vencer/empatar; parar perdendo só por encerramento humano); "Barra: não
-aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>";
-ou "Barra: dispensada por decisão humana". -->
+<!-- Plano de testes (TDD), 1:1 com os critérios de aceitação.` + gauntletGuidePT + ` -->
 
 
 ## Execução recomendada (agente)
@@ -135,11 +131,7 @@ Structural invariants go in as a direct, measurable assertion. -->
 schemas, endpoints, events). Include the HOW — do not leave it out. -->
 
 ## Verification
-<!-- Test plan (TDD), 1:1 with the acceptance criteria. Stopping standard (Gauntlet),
-one of three forms: Bar (named reference + access) + Method (blind comparison, fresh
-critic) + Exit (win/tie; stopping while losing only by a recorded human decision); "Bar: not
-applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>";
-or "Bar: waived by human decision (<quote of the words that waived it>)". -->
+<!-- Test plan (TDD), 1:1 with the acceptance criteria.` + gauntletGuideEN + ` -->
 
 
 ## Recommended execution (agent)
@@ -210,4 +202,28 @@ func StubWithContext(title, context string) string {
 		s = enMarkers.Replace(s)
 	}
 	return s
+}
+
+// The Gauntlet sentence of the Verificação guide, split out so a light-mode
+// project (F-0364) gets a scaffold that does not ask for a bar.
+const (
+	gauntletGuidePT = ` Padrão de parada (Gauntlet),
+uma das três formas: Barra (referência nomeada + acesso) + Método (comparação cega, crítico
+fresco) + Saída (vencer/empatar; parar perdendo só por encerramento humano); "Barra: não
+aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>";
+ou "Barra: dispensada por decisão humana".`
+	gauntletGuideEN = ` Stopping standard (Gauntlet),
+one of three forms: Bar (named reference + access) + Method (blind comparison, fresh
+critic) + Exit (win/tie; stopping while losing only by a recorded human decision); "Bar: not
+applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>";
+or "Bar: waived by human decision (<quote of the words that waived it>)".`
+)
+
+var gauntletGuides = strings.NewReplacer(gauntletGuidePT, "", gauntletGuideEN, "")
+
+// WithoutGauntlet drops the Gauntlet guidance from a scaffolded spec, for a
+// project in light mode ([gates] gauntlet = "off", F-0364). Text the author
+// wrote is left alone: only the template's own sentence matches.
+func WithoutGauntlet(spec string) string {
+	return gauntletGuides.Replace(spec)
 }

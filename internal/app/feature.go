@@ -176,6 +176,7 @@ func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, 
 func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string) (store.Feature, error) {
 	n, err := prepareFeature(prefix, title, module, parent, facets, components, specBody, force, owner, priority)
 	n.fixes = fixes
+	n.light = !projectGates(projDir).GauntletEnabled()
 	if err != nil {
 		return store.Feature{}, err
 	}
@@ -204,6 +205,7 @@ type newFeature struct {
 	force                                                    bool
 	fromIdea                                                 string // F-0312: the idea a promote mints it from
 	fixes                                                    string // F-0321: the feature this one corrects
+	light                                                    bool   // F-0364: light mode — scaffold without the bar guide
 }
 
 func prepareFeature(prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (newFeature, error) {
@@ -294,10 +296,13 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			return err
 		}
 		if strings.TrimSpace(specBody) != "" {
+			if n.light {
+				specBody = spectmpl.WithoutGauntlet(specBody)
+			}
 			if _, err := writeSpecBody(repoDir, id, specBody, true); err != nil {
 				return err
 			}
-		} else if err := writeSpecStub(repoDir, id, title); err != nil {
+		} else if err := writeSpecStub(repoDir, id, title, n.light); err != nil {
 			return err
 		}
 		// F-0235: a parent gaining its first (or another) child is decomposition —
@@ -1084,12 +1089,16 @@ func writeSpecBody(repoDir, id, body string, fresh bool) (changed bool, err erro
 // canonical spec template (spectmpl): the section skeleton with inline
 // guidance. The approve gate (doccheck) treats that scaffold as "spec still
 // pending" until the author fills a section.
-func writeSpecStub(repoDir, id, title string) error {
+func writeSpecStub(repoDir, id, title string, light bool) error {
 	path := FeatureDocPath(repoDir, id, "spec.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + spectmpl.StubIn(store.DocsLanguage(repoDir), title)
+	stub := spectmpl.StubIn(store.DocsLanguage(repoDir), title)
+	if light {
+		stub = spectmpl.WithoutGauntlet(stub)
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + stub
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
