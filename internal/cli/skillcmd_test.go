@@ -7,12 +7,16 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func TestSkillInstall(t *testing.T) {
 	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil { // F-0354: --dir must name a project
+		t.Fatal(err)
+	}
 
 	out, err := execCerne(t, "skill", "install", "--dir", dir)
 	if err != nil {

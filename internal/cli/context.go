@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -80,14 +82,19 @@ func backendForDisplay(backend string) string {
 // that must inspect the remote before syncing (push drift detection) start
 // here instead of resolveProject.
 func resolvePaths(startDir string) (projCtx, error) {
-	if startDir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
+	var cfg project.Config
+	var projDir string
+	var err error
+	if startDir != "" { // from --dir: it names the project, no climbing (F-0354)
+		cfg, projDir, err = project.LoadConfigAt(startDir)
+	} else {
+		var wd string
+		if wd, err = os.Getwd(); err != nil {
 			return projCtx{}, err
 		}
 		startDir = wd
+		cfg, projDir, err = project.LoadConfig(startDir)
 	}
-	cfg, projDir, err := project.LoadConfig(startDir)
 	if err != nil {
 		return projCtx{}, err
 	}
@@ -110,6 +117,20 @@ func resolvePaths(startDir string) (projCtx, error) {
 		return projCtx{}, err
 	}
 	return projCtx{cfg: cfg, projDir: projDir, repoDir: repoDir}, nil
+}
+
+// refuseProjectlessDir is the root pre-run check of F-0354: a --dir the user
+// passed names the project directory, so a folder without .cernerc is refused
+// before the command reads or writes anything, whether the command resolves
+// the project through resolvePaths or on its own (msg, room, hook, settings…).
+// init is exempt: it creates the .cernerc. A default value is not "passed".
+func refuseProjectlessDir(cmd *cobra.Command) error {
+	f := cmd.Flag("dir")
+	if f == nil || !f.Changed || cmd.Name() == "init" {
+		return nil
+	}
+	_, _, err := project.LoadConfigAt(f.Value.String())
+	return err
 }
 
 // noteCerneRoot says on stderr when the project was found through CERNE_ROOT

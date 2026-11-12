@@ -98,10 +98,17 @@ func TestPendingListStateValidation(t *testing.T) {
 	for _, tc := range []struct{ state, dir string }{
 		{"bogus", projDir},
 		{"", projDir},
-		{"bogus", t.TempDir()}, // not a project: the state error still comes first
+		{"bogus", ""}, // cwd is not a project: the state error still comes first
 	} {
+		if tc.dir == "" {
+			t.Chdir(t.TempDir()) // F-0354: an explicit --dir must be a project, so only the cwd can be projectless here
+		}
 		want := fmt.Sprintf("--state %q: want one of open, resolved, dropped, promoted, all", tc.state)
-		out, err := execCerne(t, "pending", "list", "--state", tc.state, "--dir", tc.dir)
+		args := []string{"pending", "list", "--state", tc.state}
+		if tc.dir != "" {
+			args = append(args, "--dir", tc.dir)
+		}
+		out, err := execCerne(t, args...)
 		if !errors.Is(err, app.ErrPendingStateInvalid) || err.Error() != want {
 			t.Fatalf("--state %q in %s: err = %v, want %q (ErrPendingStateInvalid)\n%s", tc.state, tc.dir, err, want, out)
 		}
