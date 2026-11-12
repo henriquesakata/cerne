@@ -117,11 +117,11 @@ Besides those files, `init` also writes:
 
 ### AI agents
 
-`init` detects Cursor, Codex CLI and Gemini CLI by their config folder (`.cursor/`, `.codex/`, `.gemini/`) in the project, and wires the ones it finds next to Claude Code. To wire them explicitly, or later:
+`init` and `cerne skill install` detect Cursor, Codex CLI and Gemini CLI by their config folder (`.cursor/`, `.codex/`, `.gemini/`) in the project, and wire the ones they find next to Claude Code. If the folder does not exist yet, `cerne hook install --provider …` creates it; run `cerne skill install` afterwards so the guide reaches that agent too:
 
 ```bash
-cerne hook install --provider cursor,codex,gemini   # the hooks; omit --provider for Claude Code plus detected agents
-cerne skill install                                 # the authoring guide, for Claude Code plus detected agents
+cerne hook install --provider cursor,codex,gemini   # the hooks; creates each agent's config folder; omit --provider for Claude Code plus detected agents
+cerne skill install                                 # the authoring guide, for Claude Code plus agents whose config folder exists
 ```
 
 What each agent receives:
