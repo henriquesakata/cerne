@@ -314,3 +314,15 @@ func TestMCP_ToolCommandsNeverTouchProcessStdio(t *testing.T) {
 		}
 	}
 }
+
+// TestMCP_DirFlagDocumented: MCP clients rarely honour a cwd for stdio
+// servers, so a global config names the project with --dir: it is visible.
+func TestMCP_DirFlagDocumented(t *testing.T) {
+	out, err := execCerne(t, "mcp", "--help")
+	if err != nil {
+		t.Fatalf("mcp --help: %v", err)
+	}
+	if !strings.Contains(out, "--dir") {
+		t.Fatalf("mcp --help does not document --dir:\n%s", out)
+	}
+}

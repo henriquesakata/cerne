@@ -16,7 +16,9 @@ func newMCPCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve the project's state, search and reading as read-only MCP tools over stdio",
-		Long: "Speaks MCP on stdin/stdout for an MCP client (register it with command \"cerne\", args [\"mcp\"], cwd = the project).\n" +
+		Long: "Speaks MCP on stdin/stdout for an MCP client. Register it with command \"cerne\" and args [\"mcp\"] in a\n" +
+			"project-scoped config (the client starts it in the project root), or args [\"mcp\", \"--dir\", \"/path/to/project\"]\n" +
+			"in a global one.\n" +
 			"Tools: status, brief, next, search, show, ask. Each runs the command of the same name with --json and returns its output unchanged; none writes the backend.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -29,8 +31,7 @@ func newMCPCmd() *cobra.Command {
 			return mcp.NewServer(version.Short(), jsonExec(ctx.projDir)).Run(cmd.Context(), &sdk.StdioTransport{})
 		},
 	}
-	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
-	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory to serve (defaults to the current directory); use it in a global MCP client config")
 	return cmd
 }
 
