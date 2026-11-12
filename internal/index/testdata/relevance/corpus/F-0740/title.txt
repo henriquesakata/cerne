@@ -1,0 +1,1 @@
+Pin do rollback nunca sai: revisão fixada sem volta

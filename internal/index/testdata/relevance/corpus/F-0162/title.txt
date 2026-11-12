@@ -1,0 +1,1 @@
+Work start em comando composto não vincula a sessão

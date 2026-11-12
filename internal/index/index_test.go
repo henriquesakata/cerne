@@ -298,3 +298,18 @@ func TestRebuildTwiceNoDupes(t *testing.T) {
 		t.Fatalf("results after two rebuilds = %d, want 1 (drop+recreate): %+v", len(results), results)
 	}
 }
+
+// F-0367 criterion 6: a feature's errata is one more document of the feature.
+func TestIndexFeatureErrata(t *testing.T) {
+	repoDir := seedBackend(t)
+	writeContent(t, repoDir, "content/errata/F-0002.md",
+		"---\ncerne_id: F-0002\n---\n\n## errata 2026-07-02 — local\n\nA criptografia do cofre mudou.\n")
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	rs, err := Search(dbPath, "criptografia", 10)
+	if err != nil || len(rs) != 1 || rs[0].EntityID != "F-0002" || rs[0].Doc != "errata" {
+		t.Fatalf("Search(criptografia) = %+v, %v; want F-0002 doc=errata", rs, err)
+	}
+}

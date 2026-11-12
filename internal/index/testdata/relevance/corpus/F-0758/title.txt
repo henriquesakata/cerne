@@ -1,0 +1,1 @@
+Cutover em transações curtas: a espera do gate sai da transação de 300 s

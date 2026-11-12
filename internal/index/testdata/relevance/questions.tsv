@@ -1,0 +1,21 @@
+# question<TAB>expected entity<TAB>in the top 5 before F-0367 (origin/main c8370ebd, per-document lines)
+troca de conta chave criptografia switcher dual	F-0396	no
+troca silenciosa sessão SSO conta original	F-0396	yes
+trocar senha e chave no primeiro acesso	F-0910	yes
+Keycloak senha em claro fase 3	F-0822	yes
+ativar login entrega da chave produção	F-0823	yes
+trocar chave criptografia senhas antigas	F-0824	yes
+CSRF logout	F-0865	yes
+flyway migração numeração out-of-order	F-0671	yes
+proxmox disco nó resize	F-0476	yes
+isCli realpath symlink	F-0442	yes
+kube-router ipBlock 0.0.0.0/0	F-0607	yes
+convenção de fuso horário UTC Brasília em relatos	F-0605	yes
+transação cutover timeout 300	F-0758	yes
+teste de regressão bug reproduz erro	F-0220	yes
+rollback pinnedRevision revisão fixada	F-0740	yes
+matcher ancorado segmento middleware	F-0717	yes
+work start dentro de if hook bind não vincula sessão	F-0162	yes
+switcher conta vinculada chave crua	F-0725	yes
+rotating MinIO credentials	F-0310	no
+segredo próprio da criptografia do cofre	F-0396	yes

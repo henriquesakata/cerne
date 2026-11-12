@@ -1,0 +1,1 @@
+Cofre de segredos no OpenBao

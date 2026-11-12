@@ -1,0 +1,1 @@
+Fase 3: o Keycloak deixa de receber a senha em claro

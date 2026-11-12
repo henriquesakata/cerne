@@ -1,0 +1,1 @@
+Seletor de perfil mostra chave crua no lugar do app

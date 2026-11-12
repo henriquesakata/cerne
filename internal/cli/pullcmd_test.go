@@ -143,7 +143,7 @@ func TestPullRebuildsIndex(t *testing.T) {
 	if strings.Contains(out, "Construindo índice...") {
 		t.Fatalf("search rebuilt the index, want pull to have done it:\n%s", out)
 	}
-	if !strings.Contains(out, "F-0001 [feature/plan] candidate — Parcelamento") {
+	if !strings.Contains(out, "F-0001 [candidate] Parcelamento — plan\n") {
 		t.Fatalf("missing plan hit indexed by pull:\n%s", out)
 	}
 }

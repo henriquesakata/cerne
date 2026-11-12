@@ -1,0 +1,1 @@
+Egress para a internet some calado no kube-router

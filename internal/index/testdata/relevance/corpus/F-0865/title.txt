@@ -1,0 +1,1 @@
+Saída dos apps recusa pedido de outro site (CSRF de logout)
