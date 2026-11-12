@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -105,8 +106,11 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		if err == nil {
 			answer, err = prov.Complete(cmd.Context(), prompt)
 		}
+		if errors.Is(err, context.Canceled) {
+			return err // Ctrl-C is not a model failure: scripts must see it
+		}
 		if err != nil {
-			first := []rune(strings.SplitN(err.Error(), "\n", 2)[0])
+			first :=[]rune(strings.SplitN(err.Error(), "\n", 2)[0])
 			if len(first) > 200 {
 				first = first[:200]
 			}

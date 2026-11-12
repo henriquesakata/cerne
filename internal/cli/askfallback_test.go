@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,6 +75,33 @@ func TestAskProviderUnavailableFallsBackAndCutsByRunes(t *testing.T) {
 	cause := strings.TrimSuffix(strings.TrimPrefix(stderr, pre), suf)
 	if n := utf8.RuneCountInString(cause); n != 200 || !utf8.ValidString(cause) {
 		t.Fatalf("cause = %d runes (valid=%v), want 200 valid runes", n, utf8.ValidString(cause))
+	}
+}
+
+// F-0346 rodada 2 (A): a cancelled context (Ctrl-C) is not a model failure —
+// the error must surface (non-zero exit), with no fallback.
+func TestAskCancelledContextIsNotFallback(t *testing.T) {
+	projDir := askFallbackProject(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	root := Root()
+	o, e := &bytes.Buffer{}, &bytes.Buffer{}
+	root.SetOut(o)
+	root.SetErr(e)
+	root.SetArgs([]string{"ask", "o que é boletos?", "--dir", projDir})
+	err := root.ExecuteContext(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled\nstdout: %s\nstderr: %s", err, o, e)
+	}
+	if strings.Contains(o.String(), "Pergunta:") || strings.Contains(e.String(), "the model failed") {
+		t.Fatalf("cancellation fell back to sources:\n%s\n%s", o, e)
 	}
 }
 
