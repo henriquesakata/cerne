@@ -32,7 +32,7 @@ func TestApproveWarnings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `spec-cli-literal-pt: line 9: CLI output literal reads pt-BR (pt-BR word "nenhuma"): nenhuma feature encontrada`
+	want := `spec-cli-literal-pt: line 9: CLI output literal reads pt-BR (pt-BR word "nenhuma"): nenhuma feature encontrada — rewrite the message in English in the criterion (CLI output is English), then 'cerne push'`
 	if len(got) != 1 || got[0] != want {
 		t.Fatalf("warnings = %q, want [%q]", got, want)
 	}

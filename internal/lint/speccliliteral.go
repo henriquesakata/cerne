@@ -18,6 +18,13 @@ import (
 // "en", so the lint package never reads settings.
 const RuleSpecCLILiteralPT = "spec-cli-literal-pt"
 
+// The fix a finding ends with: where (the line) and what (the literal) come
+// first; editing an approved spec stales its approval, so that state says when.
+const (
+	cliLiteralFixCandidate = " — rewrite the message in English in the criterion (CLI output is English), then 'cerne push'"
+	cliLiteralFixApproved  = " — rewrite the message in English in the criterion (CLI output is English); editing an approved spec stales the approval — fix it right after 'cerne feature start'"
+)
+
 var (
 	backtickSpanRe = regexp.MustCompile("`([^`]+)`")
 	// outputTermRe: an output term (criterion 2) must sit right before the
@@ -36,11 +43,11 @@ var (
 // starts with "cerne:" or follows an output term right before it (outputTermRe) — is not
 // a command, path or identifier, and reads pt-BR to doccheck.PTReason, the
 // detector the runtime-output guard uses.
-func SpecCLILiteralPT(id string, spec []byte) []Finding {
+func SpecCLILiteralPT(id string, approved bool, spec []byte) []Finding {
 	var out []Finding
 	var item []criterionLine
 	flush := func() {
-		out = append(out, itemFindings(id, item)...)
+		out = append(out, itemFindings(id, approved, item)...)
 		item = nil
 	}
 	inComment := false
@@ -74,7 +81,7 @@ func SpecCLILiteralPT(id string, spec []byte) []Finding {
 // itemFindings scans one criterion — its lines joined into one text, so a term
 // at the end of a line still reaches the literal on the next (A3) — and
 // reports each finding on the file line that holds the literal.
-func itemFindings(id string, item []criterionLine) []Finding {
+func itemFindings(id string, approved bool, item []criterionLine) []Finding {
 	var out []Finding
 	var text strings.Builder
 	var starts []int // offset of each line in text
@@ -84,6 +91,10 @@ func itemFindings(id string, item []criterionLine) []Finding {
 		text.WriteByte(' ')
 	}
 	joined := text.String()
+	fix := cliLiteralFixCandidate
+	if approved {
+		fix = cliLiteralFixApproved
+	}
 	for _, m := range backtickSpanRe.FindAllStringSubmatchIndex(joined, -1) {
 		lit := joined[m[2]:m[3]]
 		if !isCLIOutput(joined[:m[0]], lit) || isCommandPathOrIdentifier(lit) {
@@ -98,7 +109,7 @@ func itemFindings(id string, item []criterionLine) []Finding {
 			}
 			out = append(out, Finding{
 				Rule: RuleSpecCLILiteralPT, Entity: id, File: "content/features/" + id + "/spec.md",
-				Detail: fmt.Sprintf("line %d: CLI output literal reads pt-BR (%s): %s", n, why, lit),
+				Detail: fmt.Sprintf("line %d: CLI output literal reads pt-BR (%s): %s%s", n, why, lit, fix),
 			})
 		}
 	}
@@ -140,7 +151,7 @@ func SpecCLILiteralFindings(repoDir string) ([]Finding, error) {
 		if err != nil {
 			continue // no spec yet: nothing to read (specs are optional until the gate)
 		}
-		out = append(out, SpecCLILiteralPT(f.ID, spec)...)
+		out = append(out, SpecCLILiteralPT(f.ID, f.State == domain.StateApproved, spec)...)
 	}
 	return out, nil
 }

@@ -16,8 +16,8 @@ func specWithCriteria(criteria string) string {
 
 func cliLiteralDetails(spec string) []string {
 	var out []string
-	for _, f := range SpecCLILiteralPT("F-0001", []byte(spec)) {
-		out = append(out, f.Detail)
+	for _, f := range SpecCLILiteralPT("F-0001", false, []byte(spec)) {
+		out = append(out, strings.TrimSuffix(f.Detail, cliLiteralFixCandidate))
 	}
 	return out
 }
@@ -136,6 +136,23 @@ func TestSpecCLILiteralFindings(t *testing.T) {
 		}
 		if want == 1 && (got[0].Rule != RuleSpecCLILiteralPT || got[0].Entity != "F-0001" || got[0].File != "content/features/F-0001/spec.md") {
 			t.Errorf("%s: finding = %+v", state, got[0])
+		}
+	}
+}
+
+// TestSpecCLILiteralDetailEndsWithTheFix (F-0353 round 1, T1): the Detail says
+// where, what and how to fix it — and for an approved spec warns that the edit
+// stales the approval.
+func TestSpecCLILiteralDetailEndsWithTheFix(t *testing.T) {
+	spec := []byte(specWithCriteria("1. Imprime `nenhuma feature encontrada`.\n"))
+	const head = `line 9: CLI output literal reads pt-BR (pt-BR word "nenhuma"): nenhuma feature encontrada`
+	for approved, want := range map[bool]string{
+		false: head + " — rewrite the message in English in the criterion (CLI output is English), then 'cerne push'",
+		true:  head + " — rewrite the message in English in the criterion (CLI output is English); editing an approved spec stales the approval — fix it right after 'cerne feature start'",
+	} {
+		got := SpecCLILiteralPT("F-0001", approved, spec)
+		if len(got) != 1 || got[0].Detail != want {
+			t.Errorf("approved=%v: %+v, want Detail %q", approved, got, want)
 		}
 	}
 }

@@ -5,8 +5,10 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ApproveWarnings lists what `feature approve --check` shows about feature
@@ -25,8 +27,12 @@ func ApproveWarnings(repoDir, projDir, id string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return nil, err
+	}
 	var out []string
-	for _, f := range lint.SpecCLILiteralPT(id, spec) {
+	for _, f := range lint.SpecCLILiteralPT(id, f.State == domain.StateApproved, spec) {
 		out = append(out, f.Rule+": "+f.Detail)
 	}
 	return out, nil
