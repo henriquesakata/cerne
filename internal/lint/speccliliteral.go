@@ -21,13 +21,13 @@ const RuleSpecCLILiteralPT = "spec-cli-literal-pt"
 var (
 	backtickSpanRe = regexp.MustCompile("`([^`]+)`")
 	// outputTermRe: an output term (criterion 2) must sit right before the
-	// literal: only spaces, ":" and the listed bridge words — "no stderr",
-	// "no stdout", "na saída", "a mensagem", "com" — may come between the term's
-	// end and the backtick. Matched only in the prose, never inside backticks.
-	outputTermRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:imprime|imprimir|recusa com|mensagem|erro|stderr|stdout|saída)(?:[\s:]+(?:no stderr|no stdout|na saída|a mensagem|com))*[\s:]*$`)
-	// sentenceEndRe: a sentence ends at . ! ? followed by a space — "1. " of a
-	// numbered item included, so the term must sit in the literal's own sentence.
-	sentenceEndRe = regexp.MustCompile(`[.!?]\s`)
+	// literal: only spaces, ":", "," and the listed bridges — "no stderr",
+	// "no stdout", "na saída", "a mensagem", "com" and the abbreviations
+	// "p. ex.", "ex.", "e.g." (their period is no sentence end) — may come
+	// between the term's end and the backtick. A real sentence end between them
+	// breaks the match, so no separate sentence cut is needed. Matched only in
+	// the prose, never inside backticks.
+	outputTermRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:imprime|imprimir|recusa com|mensagem|erro|stderr|stdout|saída)(?:[\s:,]+(?:no stderr|no stdout|na saída|a mensagem|com|p\. ?ex\.|ex\.|e\.g\.))*[\s:,]*$`)
 )
 
 // SpecCLILiteralPT returns the spec-cli-literal-pt findings of one spec: every
@@ -38,8 +38,12 @@ var (
 // detector the runtime-output guard uses.
 func SpecCLILiteralPT(id string, spec []byte) []Finding {
 	var out []Finding
-	rel := "content/features/" + id + "/spec.md"
-	inItem, inComment := false, false
+	var item []criterionLine
+	flush := func() {
+		out = append(out, itemFindings(id, item)...)
+		item = nil
+	}
+	inComment := false
 	for _, l := range criteriaLines(spec) {
 		t := strings.TrimSpace(l.Text)
 		switch {
@@ -55,41 +59,60 @@ func SpecCLILiteralPT(id string, spec []byte) []Finding {
 		// follows the list is not a criterion).
 		switch {
 		case numberedItemRe.MatchString(l.Text):
-			inItem = true
-		case t == "" || !strings.HasPrefix(l.Text, " ") && !strings.HasPrefix(l.Text, "\t"):
-			inItem = false
+			flush()
+			item = []criterionLine{l}
+		case item != nil && t != "" && (strings.HasPrefix(l.Text, " ") || strings.HasPrefix(l.Text, "\t")):
+			item = append(item, l)
+		default:
+			flush()
 		}
-		if !inItem {
+	}
+	flush()
+	return out
+}
+
+// itemFindings scans one criterion — its lines joined into one text, so a term
+// at the end of a line still reaches the literal on the next (A3) — and
+// reports each finding on the file line that holds the literal.
+func itemFindings(id string, item []criterionLine) []Finding {
+	var out []Finding
+	var text strings.Builder
+	var starts []int // offset of each line in text
+	for _, l := range item {
+		starts = append(starts, text.Len())
+		text.WriteString(l.Text)
+		text.WriteByte(' ')
+	}
+	joined := text.String()
+	for _, m := range backtickSpanRe.FindAllStringSubmatchIndex(joined, -1) {
+		lit := joined[m[2]:m[3]]
+		if !isCLIOutput(joined[:m[0]], lit) || isCommandPathOrIdentifier(lit) {
 			continue
 		}
-		for _, m := range backtickSpanRe.FindAllStringSubmatchIndex(l.Text, -1) {
-			lit := l.Text[m[2]:m[3]]
-			if !isCLIOutput(l.Text[:m[0]], lit) || isCommandPathOrIdentifier(lit) {
-				continue
+		if why := doccheck.PTReason(lit); why != "" {
+			n := item[0].N
+			for i, st := range starts {
+				if st <= m[0] {
+					n = item[i].N
+				}
 			}
-			if why := doccheck.PTReason(lit); why != "" {
-				out = append(out, Finding{
-					Rule: RuleSpecCLILiteralPT, Entity: id, File: rel,
-					Detail: fmt.Sprintf("line %d: CLI output literal reads pt-BR (%s): %s", l.N, why, lit),
-				})
-			}
+			out = append(out, Finding{
+				Rule: RuleSpecCLILiteralPT, Entity: id, File: "content/features/" + id + "/spec.md",
+				Detail: fmt.Sprintf("line %d: CLI output literal reads pt-BR (%s): %s", n, why, lit),
+			})
 		}
 	}
 	return out
 }
 
-// isCLIOutput: lit starts with "cerne:", or an output term sits in its own
-// sentence before it. before is the line up to the literal's opening backtick;
+// isCLIOutput: lit starts with "cerne:", or an output term sits right before
+// it (outputTermRe). before is the text up to the literal's opening backtick;
 // earlier backtick spans are blanked so a term quoted there is not a term.
 func isCLIOutput(before, lit string) bool {
 	if strings.HasPrefix(lit, "cerne:") {
 		return true
 	}
-	before = backtickSpanRe.ReplaceAllString(before, " ")
-	if ends := sentenceEndRe.FindAllStringIndex(before, -1); len(ends) > 0 {
-		before = before[ends[len(ends)-1][1]:]
-	}
-	return outputTermRe.MatchString(before)
+	return outputTermRe.MatchString(backtickSpanRe.ReplaceAllString(before, " "))
 }
 
 // isCommandPathOrIdentifier: a literal that is a cerne command, or one token
