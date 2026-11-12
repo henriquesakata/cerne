@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -23,6 +24,10 @@ var resultEvidenceSince = time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 // spectmpl.Sections so a template rename cannot silently detach the rule.
 const criteriaSection = "Objetivo e critérios de aceitação"
 
+// criteriaSectionIndex is that section's position in the spec template; the
+// rule reads it under either language's heading (F-0359).
+const criteriaSectionIndex = 1
+
 // maxCriteriaRange caps how wide a cited "critérios N-M" range may expand.
 const maxCriteriaRange = 100
 
@@ -36,8 +41,11 @@ var (
 	// only expand for the plural keyword, so prose like "critério 2 a 3 horas"
 	// cannot vouch for criterion 3.
 	mentionRe      = regexp.MustCompile(`(?i)crit(?:é|e\x{0301}|e)rio(s?)\s*(?:[:#]|n[ºo°]\.?)?\s*(\d+(?:\s*(?:[-–—]|\ba\b|,|\be\b|\bou\b)\s*\d+)*)`)
+	// The English citation (F-0359): "criterion 2", "criteria 1-3", "criteria 2
+	// to 4", "criteria: 1, 3 and 5". Group 1 is "a" for the plural.
+	mentionENRe    = regexp.MustCompile(`(?i)\bcriteri(?:on|(a))\s*(?:[:#]|no\.?)?\s*(\d+(?:\s*(?:[-–—]|\bto\b|,|\band\b|\bor\b)\s*\d+)*)`)
 	mentionNumsRe  = regexp.MustCompile(`\d+`)
-	mentionRangeRe = regexp.MustCompile(`(\d+)\s*(?:[-–—]|\ba\b)\s*(\d+)`)
+	mentionRangeRe = regexp.MustCompile(`(\d+)\s*(?:[-–—]|\ba\b|\bto\b)\s*(\d+)`)
 )
 
 // criterionLine is one line of the acceptance-criteria section: N is its
@@ -55,7 +63,7 @@ func criteriaLines(spec []byte) []criterionLine {
 	inSection := false
 	for i, line := range strings.Split(string(spec), "\n") {
 		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
-			inSection = strings.EqualFold(strings.TrimSpace(h), criteriaSection)
+			inSection = doclang.IsSection(doclang.Spec, criteriaSectionIndex, h)
 			continue
 		}
 		if inSection {
@@ -87,7 +95,8 @@ func specCriteria(spec []byte) []int {
 // "critério N" (single, range "N-M"/"N a M", or list "N, M e K").
 func resultMentions(result []byte) map[int]bool {
 	out := map[int]bool{}
-	for _, m := range mentionRe.FindAllStringSubmatch(string(result), -1) {
+	matches := append(mentionRe.FindAllStringSubmatch(string(result), -1), mentionENRe.FindAllStringSubmatch(string(result), -1)...)
+	for _, m := range matches {
 		plural, nums := m[1] != "", m[2]
 		if !plural {
 			// singular vouches for exactly one criterion — the first number;

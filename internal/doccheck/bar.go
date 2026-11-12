@@ -25,11 +25,17 @@ var (
 	// heading or table markers, emphasis around the label, a short qualifier
 	// before the colon ("Barra (da spec):"). Matched per line: across lines,
 	// RE2's \s let an empty "Barra:" take the next line as its value.
-	barLineRe            = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel\s*\(([^)]*)`)
-	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(([^)]*)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`)
-	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
+	barLineRe = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
+	// The English label (F-0359). "Bar" is also an everyday word, so its
+	// qualifier must be parenthesized: "Bar (from the spec):" is a bar line,
+	// "Bar chart: …" is prose.
+	barLineENRe = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Bar[*_]*(?:[ \t]*\([^:\n)]{0,39}\))?:[*_]*(.*)$`)
+	// The exemption forms, Portuguese then English.
+	naoAplicavelRe       = regexp.MustCompile(`(?i)^(?:n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel|not[\s-]+applicable)\s*\(([^)]*)`)
+	dispensadaRe         = regexp.MustCompile(`(?i)^(?:dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana|waived\s+by\s+human\s+decision)\s*\(([^)]*)`)
+	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^(?:n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel|not[\s-]+applicable)`)
+	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^(?:dispensada|waived\b)`)
+	englishFormRe        = regexp.MustCompile(`(?i)^(?:not|waived)\b`)
 	// Template slots left unfilled, with only separators between them:
 	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
 	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
@@ -72,9 +78,17 @@ func BarValue(value string) (exempt bool, err error) {
 	case slots(t):
 		return false, fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
 	case naoAplicavelPrefixRe.MatchString(plain):
-		return true, exemptionError(naoAplicavelRe, plain, `"não aplicável" needs its one-line justification in parentheses`)
+		name := `"não aplicável"`
+		if englishFormRe.MatchString(plain) {
+			name = `"not applicable"`
+		}
+		return true, exemptionError(naoAplicavelRe, plain, name+` needs its one-line justification in parentheses`)
 	case dispensadaPrefixRe.MatchString(plain):
-		return true, exemptionError(dispensadaRe, plain, `"dispensada por decisão humana" needs the quoted words in parentheses`)
+		name := `"dispensada por decisão humana"`
+		if englishFormRe.MatchString(plain) {
+			name = `"waived by human decision"`
+		}
+		return true, exemptionError(dispensadaRe, plain, name+` needs the quoted words in parentheses`)
 	}
 	return false, nil
 }
@@ -109,7 +123,7 @@ func SpecBar(body []byte) (string, error) {
 		}
 		_, err := BarValue(value)
 		if err == nil {
-			return "Barra: " + value, nil
+			return barLabel(line) + ": " + value, nil
 		}
 		if firstInvalid == ErrBarMissing {
 			firstInvalid = err
@@ -124,7 +138,18 @@ func SpecBar(body []byte) (string, error) {
 func BarLine(line string) (value string, ok bool) {
 	m := barLineRe.FindStringSubmatch(line)
 	if m == nil {
+		m = barLineENRe.FindStringSubmatch(line)
+	}
+	if m == nil {
 		return "", false
 	}
 	return strings.TrimSpace(m[1]), true
+}
+
+// barLabel is the label a bar line was written with: "Barra" or "Bar".
+func barLabel(line string) string {
+	if barLineRe.MatchString(line) {
+		return "Barra"
+	}
+	return "Bar"
 }

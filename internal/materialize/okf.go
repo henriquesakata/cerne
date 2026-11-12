@@ -137,9 +137,11 @@ func firstProseParagraph(body []byte, limit int) string {
 // the context — F-0120), falling back to the body's first prose paragraph when
 // the section is absent or empty.
 func specDescription(body []byte, limit int) string {
-	if sec := sectionBody(body, "## Problema"); len(sec) > 0 {
-		if d := firstProseParagraph(sec, limit); d != "" {
-			return d
+	for _, heading := range []string{"## Problema", "## Problem"} { // either language (F-0359)
+		if sec := sectionBody(body, heading); len(sec) > 0 {
+			if d := firstProseParagraph(sec, limit); d != "" {
+				return d
+			}
 		}
 	}
 	return firstProseParagraph(body, limit)

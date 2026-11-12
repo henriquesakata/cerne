@@ -38,22 +38,22 @@ var (
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
-	roundAnchorRe = regexp.MustCompile(`^Rodada[\s\x{00A0}]+(\d+)\b`)
-	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da)[*_]*:`)
-	criticLineRe  = regexp.MustCompile(`(?i)^Achados? do cr(?:í|i\x{0301}|i)tico`)
+	roundAnchorRe = regexp.MustCompile(`^(?:Rodada|Round)[\s\x{00A0}]+(\d+)\b`)
+	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da|Method|Exit)[*_]*:`)
+	criticLineRe  = regexp.MustCompile(`(?i)^(?:Achados? do cr(?:í|i\x{0301}|i)tico|Critic(?:'s)? findings?\b)`)
 	headingRe     = regexp.MustCompile(`^\s*#{1,6}(\s|$)`)
 	listItemRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
 	codeSpanRe    = regexp.MustCompile("`[^`\n]*`")
-	verdictLitRe  = regexp.MustCompile(`(?i:veredito):\s*(?:A|B|EMPATE)\b`)
+	verdictLitRe  = regexp.MustCompile(`(?i:veredito|verdict):\s*(?:A|B|EMPATE|TIE)\b`)
 	quoteRe       = regexp.MustCompile(`["“”][^"“”]*[^\s"“”][^"“”]*["“”]|«[^»]*[^\s»][^»]*»`)
 	// A cited verdict: vitória/derrota/empate (NFC or NFD accents), which the
 	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
-	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
+	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate|win|loss|tie)\b`)
 	// Recorded exemptions count as a complete record: no rounds exist to cite.
 	// A round's outcome on a line of its own (C6): "Veredito: derrota",
 	// "Resultado: DERROTA." or a line that opens with the outcome word.
-	outcomeLineRe = regexp.MustCompile(`(?i)^(?:(?:veredito|resultado)[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(vit(?:ó|o\x{0301}|o)ria|derrota|empate)\b`)
-	exemptionRe   = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)\s*\(`)
+	outcomeLineRe = regexp.MustCompile(`(?i)^(?:(?:veredito|resultado|verdict|result|outcome)[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(vit(?:ó|o\x{0301}|o)ria|derrota|empate|win|loss|tie)\b`)
+	exemptionRe   = regexp.MustCompile(`(?i)(?:Barra:\s*(?:n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)|\bBar:\s*(?:not\s+applicable|waived\s+by\s+human\s+decision))\s*\(`)
 )
 
 // gauntletSections returns the body of every "## Gauntlet" section, in order.
@@ -313,13 +313,14 @@ func GauntletRounds(result []byte) (hasGauntlet bool, derrotas int) {
 	return true, 0
 }
 
-// outcomeOf maps a verdict-word match to a round outcome: 2 derrota, 1
-// vitória or empate (the group's only words; only derrota starts with d), 0 none.
+// outcomeOf maps a verdict-word match to a round outcome: 2 derrota or loss,
+// 1 vitória, empate, win or tie, 0 none. Of the group's six words only the
+// two defeats start with "d" or "l".
 func outcomeOf(v []string) int8 {
 	switch {
 	case v == nil:
 		return 0
-	case strings.EqualFold(v[1][:1], "d"):
+	case strings.ContainsAny(strings.ToLower(v[1][:1]), "dl"):
 		return 2
 	}
 	return 1
