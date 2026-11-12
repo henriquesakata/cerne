@@ -66,10 +66,13 @@ func backendForDisplay(backend string) string {
 	if !ok {
 		return backend
 	}
+	// Userinfo first, over the whole rest: a "?" or "#" inside a token must not
+	// end the search for its "@" (over-redaction on an "@" in the query is safe).
+	rest = rest[strings.LastIndex(rest, "@")+1:]
 	if i := strings.IndexAny(rest, "?#"); i >= 0 {
 		rest = rest[:i]
 	}
-	return scheme + "://" + rest[strings.LastIndex(rest, "@")+1:]
+	return scheme + "://" + rest
 }
 
 // resolvePaths locates the cerne project from startDir (cwd when empty)

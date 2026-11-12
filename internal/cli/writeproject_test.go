@@ -68,6 +68,8 @@ func TestBackendForDisplayDropsCredentials(t *testing.T) {
 		"https://git.host/x.git?access_token=abc#frag":      "https://git.host/x.git",
 		"https://u:p@ss@git.host/x.git":                     "https://git.host/x.git",
 		"https://u:pa/ss@git.host/x.git":                    "https://git.host/x.git",
+		"https://u:p?ss@git.host/x.git":                     "https://git.host/x.git",
+		"https://u:p#ss@git.host/x.git":                     "https://git.host/x.git",
 		"/tmp/origin.git":                                   "/tmp/origin.git",
 	} {
 		if got := backendForDisplay(in); got != want {
