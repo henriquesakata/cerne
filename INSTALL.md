@@ -90,10 +90,10 @@ Same process: replace the old executable with the new one.
 ## 3. What you need
 
 - **git**: recommended. Without it cerne still works, falling back to a built-in Git implementation that is much slower.
-- **An empty git repository to be the *backend***: this is where the documentation lives (JSON + markdown + event history). Create an empty private repo on GitHub/GitLab. Authentication:
+- **A git repository to be the *backend*** (optional: without one, `cerne init` creates a local one): this is where the documentation lives (JSON + markdown + event history). Create an empty private repo on GitHub/GitLab. Authentication:
   - **SSH** (`git@github.com:you/my-project-docs.git`): uses your SSH agent, or your key files (`~/.ssh/id_ed25519`, `id_rsa` or `id_ecdsa`). Check that `ssh -T git@github.com` works. For a passphrase-protected key, load it into the agent first with `ssh-add`.
   - **HTTPS** (`https://…`): export a token in `CERNE_GIT_TOKEN` (and the user in `CERNE_GIT_USER`, if the host requires it).
-  - **Just trying it out?** A local folder works: `git init --bare ~/my-project-docs.git`.
+  - **Just trying it out?** Skip the backend: `cerne init --name my-project` creates a local one for you (see below).
 - **Claude Code** (optional, recommended): cerne is built to work alongside an AI agent. `init` installs the skills and hooks that teach the agent to use cerne.
 
 ## 4. Getting started
@@ -101,7 +101,9 @@ Same process: replace the old executable with the new one.
 Inside your project's repository:
 
 ```bash
-cerne init --backend git@github.com:you/my-project-docs.git --name my-project
+cerne init --name my-project   # no --backend: creates a local backend in your user data dir
+# or, for a team, an existing empty remote:
+# cerne init --backend git@github.com:you/my-project-docs.git --name my-project
 echo ".docs/" >> .gitignore
 git add .cernerc docs.lock .gitattributes .gitignore
 git commit -m "chore: adopt cerne"

@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // CacheDir returns the per-project cerne cache directory:
@@ -44,4 +45,34 @@ func IndexPath(projectID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "index.db"), nil
+}
+
+// BackendDataDir returns where `cerne init` creates a project's local backend
+// when no --backend is given: <data root>/cerne/backends/<projectID>.git. It
+// lives outside CacheDir on purpose — the cache is derived and deletable, the
+// backend is the source of truth (F-0365). CERNE_DATA_DIR, when set, replaces
+// the data root whole (yielding <CERNE_DATA_DIR>/backends/<projectID>.git) so
+// tests stay hermetic. Otherwise $XDG_DATA_HOME, then ~/.local/share on linux,
+// then os.UserConfigDir() elsewhere (macOS Application Support, Windows
+// %AppData%) — the stdlib has no user data dir.
+func BackendDataDir(projectID string) (string, error) {
+	if root := os.Getenv("CERNE_DATA_DIR"); root != "" {
+		return filepath.Join(root, "backends", projectID+".git"), nil
+	}
+	root := os.Getenv("XDG_DATA_HOME")
+	if root == "" {
+		var err error
+		if runtime.GOOS == "linux" {
+			var home string
+			if home, err = os.UserHomeDir(); err == nil {
+				root = filepath.Join(home, ".local", "share")
+			}
+		} else {
+			root, err = os.UserConfigDir()
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(root, "cerne", "backends", projectID+".git"), nil
 }
