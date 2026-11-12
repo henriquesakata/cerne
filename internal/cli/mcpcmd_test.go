@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -324,5 +325,38 @@ func TestMCP_DirFlagDocumented(t *testing.T) {
 	}
 	if !strings.Contains(out, "--dir") {
 		t.Fatalf("mcp --help does not document --dir:\n%s", out)
+	}
+}
+
+// TestMCP_AskMakesNoModelCall: with a byo-key [llm] pointing at an endpoint
+// nobody listens on, the plain `ask` tries the model and reports the failure
+// on stderr (control: the config is live; F-0346 falls back to the sources),
+// while the MCP ask tool answers with the sources and no such attempt.
+func TestMCP_AskMakesNoModelCall(t *testing.T) {
+	projDir, _, _ := mcpFixture(t)
+	rc := filepath.Join(projDir, ".cernerc")
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, rc, string(data)+"\n[llm]\nmode = \"byo-key\"\nbase_url = \"http://127.0.0.1:1\"\nkey_env = \"CERNE_TEST_KEY\"\n")
+	t.Setenv("CERNE_TEST_KEY", "test-key")
+	if _, stderr, _ := execCerneSplit(t, "ask", "qual banco usar?", "--dir", projDir); !strings.Contains(stderr, "the model failed") {
+		t.Fatalf("control: plain ask did not try the unreachable model; stderr:\n%s", stderr)
+	}
+	if _, stderr, err := execCerneSplit(t, "ask", "qual banco usar?", "--json", "--dir", projDir); err != nil || strings.Contains(stderr, "model") {
+		t.Fatalf("ask --json touched the model: err=%v stderr=%q", err, stderr)
+	}
+
+	cs, _, stop := startMCP(t, projDir)
+	text := callTool(t, cs, "ask", map[string]any{"question": "qual banco usar?"})
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
+	}
+	var got struct {
+		Sources []json.RawMessage `json:"sources"`
+	}
+	if err := json.Unmarshal([]byte(text), &got); err != nil || len(got.Sources) == 0 {
+		t.Fatalf("ask tool = %q (err %v), want sources", text, err)
 	}
 }
