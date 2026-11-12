@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/mdlink"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -38,24 +39,33 @@ type HookCitation struct {
 // near an N-") would flag "N-0600 tem 14 regras". It grows by test.
 const (
 	hookNum  = `\d+(?:\s*(?:,|e|and)\s*\d+)*`
-	hookNote = `N-\d+`
+	hookNote = `N-\d{4,}` // uppercase on purpose: `n-1`, `arr[N-1]` are code, not notes
 )
 
 var (
-	hookRuleOfNote = regexp.MustCompile(`(?i)\b(?:regras?|rules?)\s+(` + hookNum + `)\s+(?:da|de|do|of)\s+\b(` + hookNote + `)\b`)
-	hookNoteRule   = regexp.MustCompile(`(?i)\b(` + hookNote + `)\b\s*,?\s*(?:regras?|rules?)\s+(` + hookNum + `)\b`)
-	hookBareNote   = regexp.MustCompile(`(?i)\b` + hookNote + `\b`)
+	hookRuleOfNote = regexp.MustCompile(`\b(?i:regras?|rules?)\s+(` + hookNum + `)\s+(?i:da|de|do|of)\s+\b(` + hookNote + `)\b`)
+	hookNoteRule   = regexp.MustCompile(`\b(` + hookNote + `)\b\s*,?\s*(?i:regras?|rules?)\s+(` + hookNum + `)\b`)
+	hookBareNote   = regexp.MustCompile(`\b` + hookNote + `\b`)
 	hookNumber     = regexp.MustCompile(`\d+`)
-	noteRuleItem   = regexp.MustCompile(`(?m)^(\d+)\.(?:\s|$)`)
+	noteRuleItem   = regexp.MustCompile(`^(\d{1,3})\.(?:\s|$)`)
 )
 
 // NoteRuleCount is the number of rules of a note body (F-0340 crit. 2): the
 // highest number among the unindented numbered-list items; 0 with no list.
 func NoteRuleCount(body string) int {
-	max := 0
-	for _, m := range noteRuleItem.FindAllStringSubmatch(body, -1) {
-		if n, err := strconv.Atoi(m[1]); err == nil && n > max {
-			max = n
+	max, fenced := 0, false
+	for _, line := range strings.Split(body, "\n") {
+		if mdlink.IsFenceDelim(line) {
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			continue
+		}
+		if m := noteRuleItem.FindStringSubmatch(line); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil && n > max {
+				max = n
+			}
 		}
 	}
 	return max
@@ -86,17 +96,13 @@ func HookCitations(text string) []HookCitation {
 			add(m, line[m[4]:m[5]], line[m[2]:m[3]])
 		}
 		for _, m := range hookNoteRule.FindAllStringSubmatchIndex(line, -1) {
+			if overlaps(spans, m[0], m[1]) {
+				continue // consumed by the explicit "regra K da N-x" form
+			}
 			add(m, line[m[2]:m[3]], line[m[4]:m[5]])
 		}
 		for _, m := range hookBareNote.FindAllStringIndex(line, -1) {
-			covered := false
-			for _, s := range spans {
-				if m[0] >= s[0] && m[1] <= s[1] {
-					covered = true
-					break
-				}
-			}
-			if !covered {
+			if !overlaps(spans, m[0], m[1]) {
 				hits = append(hits, hit{m[0], HookCitation{Note: strings.ToUpper(line[m[0]:m[1]]), Line: i + 1}})
 			}
 		}
@@ -106,6 +112,15 @@ func HookCitations(text string) []HookCitation {
 		}
 	}
 	return out
+}
+
+func overlaps(spans [][2]int, start, end int) bool {
+	for _, s := range spans {
+		if start < s[1] && end > s[0] {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckHookCitations confirms every note citation in the hooks against the
@@ -122,9 +137,17 @@ func CheckHookCitations(repoDir string, hooks []HookText) ([]Finding, error) {
 	}
 	total := map[string]int{}
 	var findings []Finding
+	emitted := map[string]bool{}
 	for _, h := range hooks {
 		for _, c := range HookCitations(h.Text) {
 			where := fmt.Sprintf("%s:%d", h.Path, c.Line)
+			emit := func(rule int, f Finding) { // one finding per (note, rule, line)
+				key := fmt.Sprintf("%s|%s|%d", where, c.Note, rule)
+				if !emitted[key] {
+					emitted[key] = true
+					findings = append(findings, f)
+				}
+			}
 			nt, ok := byID[c.Note]
 			var problem string
 			switch {
@@ -134,7 +157,7 @@ func CheckHookCitations(repoDir string, hooks []HookText) ([]Finding, error) {
 				problem = fmt.Sprintf("o hook cita a %s, que está %s e não ativa", c.Note, nt.State)
 			}
 			if problem != "" {
-				findings = append(findings, Finding{Rule: RuleHookCitesMissingRule, Entity: c.Note, File: where,
+				emit(0, Finding{Rule: RuleHookCitesMissingRule, Entity: c.Note, File: where,
 					Detail: problem + ": cite uma nota ativa ou corrija o hook"})
 				continue
 			}
@@ -152,7 +175,7 @@ func CheckHookCitations(repoDir string, hooks []HookText) ([]Finding, error) {
 			}
 			for _, k := range c.Rules {
 				if k > t {
-					findings = append(findings, Finding{Rule: RuleHookCitesMissingRule, Entity: c.Note, File: where,
+					emit(k, Finding{Rule: RuleHookCitesMissingRule, Entity: c.Note, File: where,
 						Detail: fmt.Sprintf("o hook cita a regra %d da %s, que tem %d regras numeradas: acrescente a regra à nota (cerne push) ou corrija o hook", k, c.Note, t)})
 				}
 			}

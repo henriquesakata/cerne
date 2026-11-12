@@ -27,7 +27,7 @@ func TestHookCitations(t *testing.T) {
 		{"N, regra K", "(N-0600, regra 15)", []HookCitation{{Note: "N-0600", Rules: []int{15}, Line: 1}}},
 		{"rule K of", "rule 7 of N-0600", []HookCitation{{Note: "N-0600", Rules: []int{7}, Line: 1}}},
 		{"N rule K", "N-0600 rule 7", []HookCitation{{Note: "N-0600", Rules: []int{7}, Line: 1}}},
-		{"sem diferenciar maiúsculas", "REGRA 5 DA n-0600", []HookCitation{{Note: "N-0600", Rules: []int{5}, Line: 1}}},
+		{"sem diferenciar maiúsculas", "REGRA 5 DA N-0600", []HookCitation{{Note: "N-0600", Rules: []int{5}, Line: 1}}},
 		{"menção solta", "leia a N-0600 antes", []HookCitation{{Note: "N-0600", Line: 1}}},
 		{"linha certa", "a\nb\nN-0600 regra 2", []HookCitation{{Note: "N-0600", Rules: []int{2}, Line: 3}}},
 		{"duas notas na linha", "regra 1 da N-0001 e N-0002 regra 2", []HookCitation{
