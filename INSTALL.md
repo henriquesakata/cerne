@@ -100,6 +100,7 @@ Same process: replace the old executable with the new one.
 
 Inside your project's repository:
 
+<!-- quickstart -->
 ```bash
 cerne init --name my-project   # no --backend: creates a local backend in your user data dir
 # or, for a team, an existing empty remote:
