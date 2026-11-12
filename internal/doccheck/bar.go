@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // The two ways a spec fails the Gauntlet bar (F-0545). SpecBar wraps
@@ -19,23 +21,34 @@ var (
 // spelling, mirroring the lint-side mention matching. An exemption's
 // parenthesized text runs to ")" or to the end of the line: hard-wrapped
 // markdown closes it on a later line.
+// lineMarkers is the markdown a protocol line may open with: list, quote,
+// heading and table markers, emphasis, "N." — in any layout.
+const lineMarkers = `(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`
+
 var (
 	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
 	// A "Barra:" line in any layout both readers take (F-0327): list, quote,
 	// heading or table markers, emphasis around the label, a short qualifier
 	// before the colon ("Barra (da spec):"). Matched per line: across lines,
 	// RE2's \s let an empty "Barra:" take the next line as its value.
-	barLineRe = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
-	// The English label (F-0359). "Bar" is also an everyday word, so its
-	// qualifier must be parenthesized: "Bar (from the spec):" is a bar line,
-	// "Bar chart: …" is prose.
-	barLineENRe = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Bar[*_]*(?:[ \t]*\([^:\n)]{0,39}\))?:[*_]*(.*)$`)
-	// The exemption forms, Portuguese then English.
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^(?:n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel|not[\s-]+applicable)\s*\(([^)]*)`)
-	dispensadaRe         = regexp.MustCompile(`(?i)^(?:dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana|waived\s+by\s+human\s+decision)\s*\(([^)]*)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^(?:n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel|not[\s-]+applicable)`)
-	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^(?:dispensada|waived\b)`)
-	englishFormRe        = regexp.MustCompile(`(?i)^(?:not|waived)\b`)
+	// The words come from doclang; only the layout around them lives here.
+	// Portuguese keeps the loose layout documents already rely on: any case,
+	// and a short free qualifier before the colon.
+	barLineRe = regexp.MustCompile(`(?i)^` + lineMarkers + doclang.In(doclang.BarLabel, doclang.PT) + `[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
+	// The other languages are strict (doclang.Strict): the label as written,
+	// capital included, and only a parenthesized qualifier. "Bar (from the
+	// spec):" is a bar line; "Bar chart: …" and a YAML "bar: 42" are not.
+	barLineStrictRes = func() map[doclang.Lang]*regexp.Regexp {
+		m := map[doclang.Lang]*regexp.Regexp{}
+		for _, l := range doclang.Strict() {
+			m[l] = regexp.MustCompile(`^` + lineMarkers + doclang.In(doclang.BarLabel, l) + `[*_]*(?:[ \t]*\([^:\n)]{0,39}\))?:[*_]*(.*)$`)
+		}
+		return m
+	}()
+	naoAplicavelRe       = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.NotApplicable) + `\s*\(([^)]*)`)
+	dispensadaRe         = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.Waived) + `\s*\(([^)]*)`)
+	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.NotApplicable))
+	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.WaivedOpen))
 	// Template slots left unfilled, with only separators between them:
 	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
 	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
@@ -78,17 +91,11 @@ func BarValue(value string) (exempt bool, err error) {
 	case slots(t):
 		return false, fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
 	case naoAplicavelPrefixRe.MatchString(plain):
-		name := `"não aplicável"`
-		if englishFormRe.MatchString(plain) {
-			name = `"not applicable"`
-		}
-		return true, exemptionError(naoAplicavelRe, plain, name+` needs its one-line justification in parentheses`)
+		name := doclang.Display(doclang.NotApplicable, doclang.LangAt(doclang.NotApplicable, plain))
+		return true, exemptionError(naoAplicavelRe, plain, `"`+name+`" needs its one-line justification in parentheses`)
 	case dispensadaPrefixRe.MatchString(plain):
-		name := `"dispensada por decisão humana"`
-		if englishFormRe.MatchString(plain) {
-			name = `"waived by human decision"`
-		}
-		return true, exemptionError(dispensadaRe, plain, name+` needs the quoted words in parentheses`)
+		name := doclang.Display(doclang.Waived, doclang.LangAt(doclang.WaivedOpen, plain))
+		return true, exemptionError(dispensadaRe, plain, `"`+name+`" needs the quoted words in parentheses`)
 	}
 	return false, nil
 }
@@ -117,13 +124,13 @@ func exemptionError(form *regexp.Regexp, plain, need string) error {
 func SpecBar(body []byte) (string, error) {
 	firstInvalid := ErrBarMissing
 	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
-		value, ok := BarLine(line)
+		value, l, ok := barLine(line)
 		if !ok {
 			continue
 		}
 		_, err := BarValue(value)
 		if err == nil {
-			return barLabel(line) + ": " + value, nil
+			return doclang.Display(doclang.BarLabel, l) + ": " + value, nil
 		}
 		if firstInvalid == ErrBarMissing {
 			firstInvalid = err
@@ -136,20 +143,19 @@ func SpecBar(body []byte) (string, error) {
 // and the result reader take: ok, and the text after the colon (past the
 // label's closing emphasis), trimmed.
 func BarLine(line string) (value string, ok bool) {
-	m := barLineRe.FindStringSubmatch(line)
-	if m == nil {
-		m = barLineENRe.FindStringSubmatch(line)
-	}
-	if m == nil {
-		return "", false
-	}
-	return strings.TrimSpace(m[1]), true
+	value, _, ok = barLine(line)
+	return value, ok
 }
 
-// barLabel is the label a bar line was written with: "Barra" or "Bar".
-func barLabel(line string) string {
-	if barLineRe.MatchString(line) {
-		return "Barra"
+// barLine is BarLine plus the language the label was written in.
+func barLine(line string) (value string, l doclang.Lang, ok bool) {
+	if m := barLineRe.FindStringSubmatch(line); m != nil {
+		return strings.TrimSpace(m[1]), doclang.PT, true
 	}
-	return "Bar"
+	for _, l := range doclang.Strict() {
+		if m := barLineStrictRes[l].FindStringSubmatch(line); m != nil {
+			return strings.TrimSpace(m[1]), l, true
+		}
+	}
+	return "", "", false
 }

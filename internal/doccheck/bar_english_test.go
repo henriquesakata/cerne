@@ -48,3 +48,29 @@ func TestBarValue_EnglishExemptions(t *testing.T) {
 		t.Errorf("a named reference starting with \"not\" read as exempt=%v err=%v", exempt, err)
 	}
 }
+
+// Everyday uses of the word must not open a bar line (critic, round 1).
+func TestSpecBar_EnglishIsStrict(t *testing.T) {
+	for _, body := range []string{
+		"  bar: 42\n",                          // a YAML sample
+		"bar: lower case is not the label\n",   // the label is written capitalized
+		"BAR: shouting\n",                      //
+		"Bar chart: shows the weekly totals\n", // a free qualifier is prose
+		"Barcelona: the office\n",
+	} {
+		if got, err := SpecBar([]byte(body)); !errors.Is(err, ErrBarMissing) {
+			t.Errorf("SpecBar(%q) = %q, %v; want ErrBarMissing", body, got, err)
+		}
+	}
+	// A named reference that merely starts with the waiver's first word is a
+	// reference, not a malformed waiver.
+	if got, err := SpecBar([]byte("Bar: Waived-fee checkout flow at staging.example\n")); err != nil || got == "" {
+		t.Errorf("a reference starting with \"Waived\" was refused: %q, %v", got, err)
+	}
+	// Portuguese keeps its loose layout.
+	for _, body := range []string{"barra: internal/x.go\n", "Barra da spec: internal/x.go\n"} {
+		if _, err := SpecBar([]byte(body)); err != nil {
+			t.Errorf("SpecBar(%q) refused: %v", body, err)
+		}
+	}
+}

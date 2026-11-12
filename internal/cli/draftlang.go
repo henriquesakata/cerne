@@ -20,7 +20,7 @@ section headings listed above. Wherever the instructions above name a Portuguese
 - metadata labels: **Type:** (New feature | Fix | Refactor), **Origin:**, **Level:** (light | standard | advanced),
   **Spec:**, **Branch:**, **Exit (Gauntlet):**, **Date:**, **Agent:**, **Owner:**; an unknown value is "unknown";
 - Gauntlet: "Bar:", "Method:", "Exit:"; the exemptions "Bar: not applicable (<justification>)" and
-  "Bar: waived by human decision (<quote>)"; "Round N — win|loss|tie: \"<quote>\""; "Critic findings:";
+  "Bar: waived by human decision (<quote>)"; a round line of the form: Round N — win|loss|tie: "<quote of the judge>"; "Critic findings:";
 - evidence: cite "criterion N" for every numbered criterion; mark each MET or UNMET.
 Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.
 `

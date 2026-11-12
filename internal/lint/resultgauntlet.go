@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -38,23 +39,106 @@ var (
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
 	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
-	roundAnchorRe = regexp.MustCompile(`^(?:Rodada|Round)[\s\x{00A0}]+(\d+)\b`)
-	headerLineRe  = regexp.MustCompile(`(?i)^(?:M(?:é|e\x{0301}|e)todo|Sa(?:í|i\x{0301}|i)da|Method|Exit)[*_]*:`)
-	criticLineRe  = regexp.MustCompile(`(?i)^(?:Achados? do cr(?:í|i\x{0301}|i)tico|Critic(?:'s)? findings?\b)`)
+	roundAnchorRe = regexp.MustCompile(`^` + doclang.In(doclang.Round, doclang.PT) + `[\s\x{00A0}]+(\d+)\b`)
+	headerLineRe  = regexp.MustCompile(`(?i)^(?:` + doclang.Alt(doclang.MethodLabel) + `|` + doclang.Alt(doclang.ExitLabel) + `)[*_]*:`)
+	criticLineRe  = regexp.MustCompile(`(?i)^(?:` + doclang.In(doclang.CriticFindings, doclang.PT) + strictAlt(doclang.CriticFindings, `|`, `\b`) + `)`)
 	headingRe     = regexp.MustCompile(`^\s*#{1,6}(\s|$)`)
 	listItemRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
 	codeSpanRe    = regexp.MustCompile("`[^`\n]*`")
-	verdictLitRe  = regexp.MustCompile(`(?i:veredito|verdict):\s*(?:A|B|EMPATE|TIE)\b`)
+	verdictLitRe  = regexp.MustCompile(`(?i:` + doclang.In(doclang.VerdictLabel, doclang.PT) + `):\s*(?:A|B|` + doclang.In(doclang.TieLetter, doclang.PT) + `)\b`)
 	quoteRe       = regexp.MustCompile(`["“”][^"“”]*[^\s"“”][^"“”]*["“”]|«[^»]*[^\s»][^»]*»`)
 	// A cited verdict: vitória/derrota/empate (NFC or NFD accents), which the
 	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
-	verdictRe = regexp.MustCompile(`(?i)\b(vit(?:ó|o\x{0301}|o)ria|derrota|empate|win|loss|tie)\b`)
+	verdictRe = regexp.MustCompile(`(?i)\b(` + outcomeWords(doclang.PT) + `)\b`)
 	// Recorded exemptions count as a complete record: no rounds exist to cite.
 	// A round's outcome on a line of its own (C6): "Veredito: derrota",
 	// "Resultado: DERROTA." or a line that opens with the outcome word.
-	outcomeLineRe = regexp.MustCompile(`(?i)^(?:(?:veredito|resultado|verdict|result|outcome)[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(vit(?:ó|o\x{0301}|o)ria|derrota|empate|win|loss|tie)\b`)
-	exemptionRe   = regexp.MustCompile(`(?i)(?:Barra:\s*(?:n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)|\bBar:\s*(?:not\s+applicable|waived\s+by\s+human\s+decision))\s*\(`)
+	outcomeLineRe = regexp.MustCompile(`(?i)^(?:` + doclang.In(doclang.OutcomeLabel, doclang.PT) + `[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(` + outcomeWords(doclang.PT) + `)\b`)
+	// Legacy predicate only (records older than the strict reader), so
+	// Portuguese only: no English record predates it.
+	exemptionRe = regexp.MustCompile(`(?i)Barra:\s*(n(?:ã|a\x{0303}|a)o\s+aplic(?:á|a\x{0301}|a)vel|dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana)\s*\(`)
 )
+
+// The strict languages (doclang.Strict, F-0359). Their words — Round, win,
+// loss, tie, verdict — are everyday English, so each form must look like a
+// protocol line to count, where the Portuguese forms above match loosely:
+//   - a round anchor is the word, the number, then nothing or punctuation
+//     ("Round 2 — …", not "Round 2 of benchmarking was skipped");
+//   - an outcome word stands alone, never inside a hyphenated compound
+//     ("tie", not "tie-break"), and on its own line is followed by nothing or
+//     punctuation ("Loss: …", not "Loss of precision was noted");
+//   - the judge's literal is the label, the letter, then nothing or
+//     punctuation ("VERDICT: A", not "Verdict: A clear improvement").
+var (
+	strictRoundAnchorRe = regexp.MustCompile(`^` + strictAlt(doclang.Round, ``, ``) + `[\s\x{00A0}]+(\d+)[ \t\x{00A0}]*(?:$|[—–:(.,;-])`)
+	strictVerdictRe     = regexp.MustCompile(`(?i)(?:^|[^\pL\pN_-])(` + strictOutcomeWords() + `)(?:$|[^\pL\pN_-])`)
+	strictOutcomeLineRe = regexp.MustCompile(`(?i)^(?:` + strictAlt(doclang.OutcomeLabel, ``, ``) + `[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(` + strictOutcomeWords() + `)[*_]*[ \t]*(?:$|[.:;,!(—–]|-\s)`)
+	strictVerdictLitRe  = regexp.MustCompile(`(?i:` + strictAlt(doclang.VerdictLabel, ``, ``) + `):\s*(?:A|B|` + strictAlt(doclang.TieLetter, ``, ``) + `)[ \t]*(?:$|[^\pL\pN_ \t])`)
+)
+
+// outcomeWords is the three outcome words of language l as one alternation.
+func outcomeWords(l doclang.Lang) string {
+	return doclang.In(doclang.Win, l) + `|` + doclang.In(doclang.Loss, l) + `|` + doclang.In(doclang.Tie, l)
+}
+
+func strictOutcomeWords() string {
+	var parts []string
+	for _, l := range doclang.Strict() {
+		parts = append(parts, outcomeWords(l))
+	}
+	return strings.Join(parts, `|`)
+}
+
+// strictAlt is term t in the strict languages as one alternation, each form
+// followed by after; lead is written before it when there is any form at all
+// (so it can extend another alternation).
+func strictAlt(t doclang.Term, lead, after string) string {
+	var parts []string
+	for _, l := range doclang.Strict() {
+		parts = append(parts, doclang.In(t, l)+after)
+	}
+	if len(parts) == 0 {
+		return ``
+	}
+	return lead + `(?:` + strings.Join(parts, `|`) + `)`
+}
+
+// roundAnchor reads s as a round anchor in any language: the round number.
+func roundAnchor(s string) (n int, ok bool) {
+	m := roundAnchorRe.FindStringSubmatch(s)
+	if m == nil {
+		m = strictRoundAnchorRe.FindStringSubmatch(s)
+	}
+	if m == nil {
+		return 0, false
+	}
+	n, _ = strconv.Atoi(m[1])
+	return n, true
+}
+
+// outcomeIn returns the first outcome word in s, in any language, or "".
+func outcomeIn(s string) string {
+	pt, strict := verdictRe.FindStringSubmatchIndex(s), strictVerdictRe.FindStringSubmatchIndex(s)
+	switch {
+	case pt == nil && strict == nil:
+		return ""
+	case strict == nil || (pt != nil && pt[2] <= strict[2]):
+		return s[pt[2]:pt[3]]
+	}
+	return s[strict[2]:strict[3]]
+}
+
+// outcomeLine returns the outcome word of a line that states a round's
+// outcome on its own ("Veredito: derrota", "Loss."), or "".
+func outcomeLine(s string) string {
+	if m := outcomeLineRe.FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	if m := strictOutcomeLineRe.FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	return ""
+}
 
 // gauntletSections returns the body of every "## Gauntlet" section, in order.
 func gauntletSections(result []byte) []string {
@@ -176,9 +260,9 @@ func parseGauntlet(section string) gauntletRecord {
 	var implicitOutcome int8
 	var implicitWord string
 	// raise records the outcome of an outcome-word match; derrota outranks the rest.
-	raise := func(o *int8, w *string, m []string) {
-		if v := outcomeOf(m); v > *o {
-			*o, *w = v, strings.ToLower(m[1])
+	raise := func(o *int8, w *string, word string) {
+		if v := outcomeOf(word); v > *o {
+			*o, *w = v, strings.ToLower(word)
 		}
 	}
 	cur, curIdx := (*strings.Builder)(nil), -1 // the open round; nil/-1 = outside any
@@ -207,14 +291,10 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 		list := listItemRe.MatchString(line)
 		if critic { // Achados block: excluded from every round until it ends
-			m := roundAnchorRe.FindStringSubmatch(s)
-			newRound := false
-			if m != nil {
-				n, _ := strconv.Atoi(m[1])
-				newRound = !slices.Contains(nums, n)
-			}
+			n, anchored := roundAnchor(s)
+			newRound := anchored && !slices.Contains(nums, n)
 			switch {
-			case m != nil && !list,
+			case anchored && !list,
 				newRound && criticList && len(line)-len(strings.TrimLeft(line, " \t")) <= criticIndent:
 				critic = false
 			default:
@@ -226,8 +306,7 @@ func parseGauntlet(section string) gauntletRecord {
 			criticIndent = len(line) - len(strings.TrimLeft(line, " \t"))
 			continue
 		}
-		if m := roundAnchorRe.FindStringSubmatch(s); m != nil {
-			n, _ := strconv.Atoi(m[1])
+		if n, anchored := roundAnchor(s); anchored {
 			i := slices.Index(nums, n) // same number = same round
 			if i < 0 {
 				blocks, nums, outcomes, words = append(blocks, &strings.Builder{}), append(nums, n), append(outcomes, 0), append(words, "")
@@ -240,14 +319,14 @@ func parseGauntlet(section string) gauntletRecord {
 			if q := strings.IndexAny(s, "\"“«"); q >= 0 {
 				head = s[:q]
 			}
-			raise(&outcomes[i], &words[i], verdictRe.FindStringSubmatch(head))
-		} else if m := outcomeLineRe.FindStringSubmatch(s); outcomeOf(m) > 0 {
-			target, word := &implicitOutcome, &implicitWord
+			raise(&outcomes[i], &words[i], outcomeIn(head))
+		} else if word := outcomeLine(s); word != "" {
+			target, w := &implicitOutcome, &implicitWord
 			if curIdx >= 0 {
-				target, word = &outcomes[curIdx], &words[curIdx]
+				target, w = &outcomes[curIdx], &words[curIdx]
 			}
 			if *target == 0 { // the round's first outcome line decides
-				raise(target, word, m)
+				raise(target, w, word)
 			}
 		}
 		if cur != nil {
@@ -261,7 +340,9 @@ func parseGauntlet(section string) gauntletRecord {
 	}
 	for i, b := range blocks {
 		text := b.String()
-		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: gauntletVerdict(text), quote: gauntletQuote(text), outcome: outcomes[i], word: words[i]})
+		// An outcome read from the anchor or from an outcome line is a verdict
+		// in any language; the loose scan of the whole block stays Portuguese.
+		rec.rounds = append(rec.rounds, gauntletRound{n: nums[i], verdict: outcomes[i] != 0 || gauntletVerdict(text), quote: gauntletQuote(text), outcome: outcomes[i], word: words[i]})
 	}
 	return rec
 }
@@ -313,21 +394,28 @@ func GauntletRounds(result []byte) (hasGauntlet bool, derrotas int) {
 	return true, 0
 }
 
-// outcomeOf maps a verdict-word match to a round outcome: 2 derrota or loss,
-// 1 vitória, empate, win or tie, 0 none. Of the group's six words only the
-// two defeats start with "d" or "l".
-func outcomeOf(v []string) int8 {
+// outcomeOf maps an outcome word to a round outcome: 2 a loss, 1 a win or a
+// tie, 0 no word. The catalog classifies it, in any language.
+func outcomeOf(word string) int8 {
 	switch {
-	case v == nil:
+	case word == "":
 		return 0
-	case strings.ContainsAny(strings.ToLower(v[1][:1]), "dl"):
+	case doclang.Is(doclang.Loss, word):
 		return 2
 	}
 	return 1
 }
 
 func gauntletVerdict(text string) bool {
-	return verdictLitRe.MatchString(text) || verdictRe.MatchString(text)
+	if verdictLitRe.MatchString(text) || verdictRe.MatchString(text) {
+		return true
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strictVerdictLitRe.MatchString(line) {
+			return true
+		}
+	}
+	return false
 }
 
 // gauntletQuote reports a quoted span with content; a span that only holds a

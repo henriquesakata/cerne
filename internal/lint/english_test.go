@@ -116,3 +116,83 @@ func TestGauntletRounds_English(t *testing.T) {
 		t.Errorf("GauntletVerdict = %q, %v; want tie", v, ok)
 	}
 }
+
+// Everyday English must not turn into protocol (critic, round 1): each line
+// below was misread by the first, loose version of the English forms.
+func TestResultGauntlet_EnglishIsStrict(t *testing.T) {
+	t.Run("a compound does not flip the outcome", func(t *testing.T) {
+		for _, section := range []string{
+			"Bar: internal/x.go\nRound 2 — tie-breaker run — loss: \"B wins on robustness\"\n",
+			"Barra: internal/x.go\nRodada 2 (tie-break) — derrota: \"B vence em robustez\"\n",
+		} {
+			if ok, losses := GauntletRounds([]byte("## Gauntlet\n\n" + section)); !ok || losses != 1 {
+				t.Errorf("%q: GauntletRounds = %v, %d; want true, 1", section, ok, losses)
+			}
+		}
+	})
+	t.Run("prose does not state an outcome", func(t *testing.T) {
+		for _, line := range []string{
+			"Loss of precision was noted on input 3.",
+			"Win rate: 60%",
+			"Tie the output to the fixture",
+			"Win for A on clarity.",
+			"Result: winning is not the point",
+		} {
+			if w := outcomeLine(line); w != "" {
+				t.Errorf("outcomeLine(%q) = %q, want none", line, w)
+			}
+		}
+		for line, want := range map[string]string{"Loss.": "Loss", "Verdict: tie": "tie", "Outcome: **win**": "win", "win — after the fix": "win", "Veredito: derrota": "derrota", "Derrota técnica": "Derrota"} {
+			if w := outcomeLine(line); w != want {
+				t.Errorf("outcomeLine(%q) = %q, want %q", line, w, want)
+			}
+		}
+	})
+	t.Run("prose does not open a round", func(t *testing.T) {
+		for _, line := range []string{"Round 2 of benchmarking was skipped", "Round 10 times and average", "Rounding 2 digits"} {
+			if _, ok := roundAnchor(line); ok {
+				t.Errorf("roundAnchor(%q) opened a round", line)
+			}
+		}
+		for line, want := range map[string]int{"Round 2 — win: \"x\"": 2, "Round 3": 3, "Round 4: tie": 4, "Round 5 (new judge) — loss": 5, "Rodada 6 de novo": 6} {
+			if n, ok := roundAnchor(line); !ok || n != want {
+				t.Errorf("roundAnchor(%q) = %d, %v; want %d", line, n, ok, want)
+			}
+		}
+	})
+	t.Run("an article is not the judge's letter", func(t *testing.T) {
+		if gauntletVerdict("Verdict: A clear improvement over the bar") {
+			t.Error("\"Verdict: A clear improvement\" read as the literal verdict A")
+		}
+		for _, text := range []string{"VERDICT: A", "the judge ended with \"VERDICT: B\".", "Verdict: TIE", "VEREDITO: EMPATE"} {
+			if !gauntletVerdict(text) {
+				t.Errorf("gauntletVerdict(%q) = false", text)
+			}
+		}
+	})
+	t.Run("an outcome word in prose is not a verdict", func(t *testing.T) {
+		// Quoted, but the round never says who won: the block mentions "tie"
+		// and "win" only in passing.
+		section := "Bar: internal/x.go\nRound 1: \"we tie the two outputs together to compare\"; a quick win for readability\n"
+		if got := parseGauntlet(section).problem(); got != "rodada 1 sem veredito" {
+			t.Errorf("problem = %q, want the missing verdict", got)
+		}
+	})
+	t.Run("the typographic apostrophe", func(t *testing.T) {
+		section := "Bar: internal/x.go\nCritic’s findings: 2 — one called it \"a win\"\n"
+		if got := parseGauntlet(section).problem(); got != "rodada sem citação do juiz" {
+			t.Errorf("problem = %q: the critic's line was read as a round", got)
+		}
+	})
+}
+
+func TestResultEvidence_EnglishIsStrict(t *testing.T) {
+	// "subcriterion 3" is another word; Portuguese always matched inside one.
+	if got := resultMentions([]byte("see subcriterion 3 and Criteria 1 or 2")); got[3] || !got[1] || !got[2] {
+		t.Errorf("mentions = %v", got)
+	}
+	// Each language joins its own numbers with its own words.
+	if got := resultMentions([]byte("critérios 1 to 3")); got[2] || got[3] {
+		t.Errorf("a Portuguese citation expanded an English range: %v", got)
+	}
+}

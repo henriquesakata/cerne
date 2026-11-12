@@ -139,7 +139,7 @@ schemas, endpoints, events). Include the HOW — do not leave it out. -->
 one of three forms: Bar (named reference + access) + Method (blind comparison, fresh
 critic) + Exit (win/tie; stopping while losing only by a recorded human decision); "Bar: not
 applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>";
-or "Bar: waived by human decision". -->
+or "Bar: waived by human decision (<quote of the words that waived it>)". -->
 
 
 ## Recommended execution (agent)
