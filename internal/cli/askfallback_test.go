@@ -122,6 +122,21 @@ func TestAskFailureCause(t *testing.T) {
 	}
 }
 
+// F-0346 rodada 2 (C), crit. 4: --json never reaches the model, so a failing
+// provider changes nothing.
+func TestAskJSONIgnoresFailingProvider(t *testing.T) {
+	projDir := askFallbackProject(t)
+	want, _, err := execCerneSplit(t, "ask", "o que é boletos?", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("ask --json: %v", err)
+	}
+	enableByoKey(t, projDir, "http://127.0.0.1:1", "TEST_UNSET_KEY_F0346")
+	got, stderr, err := execCerneSplit(t, "ask", "o que é boletos?", "--json", "--dir", projDir)
+	if err != nil || got != want || stderr != "" {
+		t.Fatalf("--json changed with a failing provider: err=%v stderr=%q\n got: %s\nwant: %s", err, stderr, got, want)
+	}
+}
+
 // F-0346 crit. 5: --no-preamble is honored in the fallback text.
 func TestAskModelFailureNoPreamble(t *testing.T) {
 	projDir := askFallbackProject(t)
