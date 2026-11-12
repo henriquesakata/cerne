@@ -457,3 +457,31 @@ func TestInit_NoBackendPrintsHint(t *testing.T) {
 		t.Fatalf("hint printed with explicit --backend:\n%s", out)
 	}
 }
+
+// TestInit_WritesLightMode (F-0364, Ajuste 1): a new project starts without
+// the Gauntlet — [gates] gauntlet = "off" in .cernerc — and init invites the
+// user to turn it on, with --backend or without.
+func TestInit_WritesLightMode(t *testing.T) {
+	const invite = `Gauntlet is off (light mode). Turn it on any time: set gauntlet = "on" under [gates] in .cernerc.`
+	localBackendEnv(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	for name, extra := range map[string][]string{"local": nil, "with --backend": {"--backend", newOrigin(t)}} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			out, err := execInit(t, append([]string{"--name", "Leve " + name, "--dir", dir}, extra...)...)
+			if err != nil {
+				t.Fatalf("init: %v\n%s", err, out)
+			}
+			cfg, _, err := project.LoadConfig(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Gates.Gauntlet != "off" {
+				t.Fatalf(".cernerc gauntlet = %q, want off", cfg.Gates.Gauntlet)
+			}
+			if !strings.Contains(out, invite) {
+				t.Fatalf("init output lacks the invitation:\n%s", out)
+			}
+		})
+	}
+}

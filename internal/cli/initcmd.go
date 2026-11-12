@@ -178,7 +178,11 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if err != nil {
 		return err
 	}
-	if err := project.SaveConfig(targetDir, project.Config{ProjectID: projectID, Backend: backend}); err != nil {
+	// A new project starts in light mode (F-0364): the bar and the Gauntlet
+	// record are an opt-in, not the first hour's wall. The invitation below
+	// says how to turn it on.
+	cfg := project.Config{ProjectID: projectID, Backend: backend, Gates: project.GatesConfig{Gauntlet: "off"}}
+	if err := project.SaveConfig(targetDir, cfg); err != nil {
 		return err
 	}
 	created = false // the configured project owns the clone now
@@ -229,6 +233,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not register the docs.lock merge driver: %v\n", err)
 	}
 
+	fmt.Fprintln(out, `Gauntlet is off (light mode). Turn it on any time: set gauntlet = "on" under [gates] in .cernerc.`)
 	fmt.Fprintln(out, "Next steps:")
 	fmt.Fprintln(out, "  - add .docs/ to your project's .gitignore (cerne never edits it for you)")
 	fmt.Fprintln(out, "  - commit .cernerc, docs.lock and .gitattributes to your project repository")

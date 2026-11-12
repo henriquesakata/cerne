@@ -45,6 +45,9 @@ func setupProject(t *testing.T, modules ...string) (projDir, origin, repoDir str
 	if out, err := execInit(t, args...); err != nil {
 		t.Fatalf("init: %v\noutput: %s", err, out)
 	}
+	// Gauntlet on: the suite predates light mode (F-0364), which init now
+	// writes; light mode has its own tests.
+	setGauntlet(t, projDir, "")
 	return projDir, origin, filepath.Join(cacheRoot, "demo", "repo")
 }
 
