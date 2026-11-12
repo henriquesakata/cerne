@@ -434,3 +434,38 @@ func TestShowFeatureDocRev(t *testing.T) {
 		}
 	}
 }
+
+// seedShowGolden seeds the feature of the show golden: in development, with a
+// spec, a plan and a result, an erratum and an open pending — the documents
+// and the blocks a feature show prints, and no revision.
+func seedShowGolden(t *testing.T) (projDir, repoDir string) {
+	t.Helper()
+	projDir, _, repoDir = setupProject(t)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateInDevelopment, realDoc("F-0001", "A spec da feature."), realDoc("F-0001", "O plano da feature."))
+	writeDoc(t, repoDir, "F-0001", "result.md", realDoc("F-0001", "O result da feature."))
+	if err := store.AppendErrata(repoDir, "F-0001", "Uma errata.", "x", time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	pendingNew(t, projDir, "Débito aberto", "--from", "F-0001")
+	return projDir, repoDir
+}
+
+// TestShowGoldenAll (F-0338 crit. 15): the full show of a feature with the
+// three documents and no revision, byte for byte against
+// testdata/show_all.golden — recorded from the show of before the stage view,
+// so the full output stays provably what it was.
+func TestShowGoldenAll(t *testing.T) {
+	projDir, _ := seedShowGolden(t)
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, out)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "show_all.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != string(want) {
+		t.Fatalf("show differs from testdata/show_all.golden:\ngot:\n%s\nwant:\n%s", out, want)
+	}
+}
