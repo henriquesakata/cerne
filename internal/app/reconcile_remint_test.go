@@ -79,16 +79,24 @@ func TestReconcileNoRemintWhenCallerDocConflicts(t *testing.T) {
 	remoteWork(t, origin, "W-0001", "other@host")
 	theirHead := advanceRemote(t, origin, remintPlan, "plano deles\n")
 
-	head, conflicts, remints, err := remintPush(repoDir, projDir, base, nil)
-	if err != nil || head != "" || len(remints) != 0 {
-		t.Fatalf("head=%q remints=%v err=%v, want abort", head, remints, err)
+	calls := 0
+	changes := []FileChange{{Path: remintPlan, Content: []byte("# plano novo\n")}}
+	head, conflicts, _, err := ReconcileCommitPushMutate(repoDir, projDir, base, "push plan", changes, func() error {
+		calls++
+		return OpenAutoWorkForPush(repoDir, projDir, changes)
+	})
+	if err != nil || head != "" {
+		t.Fatalf("head=%q err=%v, want abort", head, err)
 	}
-	found := false
+	if calls != 1 {
+		t.Fatalf("mutate ran %d times, want 1 (no re-mint)", calls)
+	}
+	got := map[string]bool{}
 	for _, c := range conflicts {
-		found = found || c.Path == remintPlan
+		got[c.Path] = true
 	}
-	if !found {
-		t.Fatalf("conflicts = %+v, want plan.md listed", conflicts)
+	if len(got) != 2 || !got[remintPlan] || !got["entities/works/W-0001.json"] {
+		t.Fatalf("conflicts = %+v, want plan.md and W-0001.json", conflicts)
 	}
 	if rh, _ := gitback.RemoteHeadSHA(repoDir); rh != theirHead {
 		t.Fatalf("remote head moved: %q != %q", rh, theirHead)
