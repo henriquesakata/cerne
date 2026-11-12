@@ -273,6 +273,10 @@ const ptBR = {
     activeWork: (n: number) => `👤 ${n}`,
     activeWorkTitle: (actors: string[]) =>
       `Em andamento por: ${actors.join(', ')}`,
+    backlogColumn: 'Backlog',
+    backlogColumnOpen: 'Abrir no Backlog',
+    backlogColumnEmpty: 'Nenhuma candidata — criar no Backlog',
+    backlogColumnNoMatch: 'Nenhuma candidata no filtro.',
   },
   pendings: {
     title: 'Pendências',
@@ -1299,6 +1303,10 @@ const en: Messages = {
     pendingClarifyTitle: (n: number) => `${n} clarification(s) awaiting your answer`,
     activeWork: (n: number) => `👤 ${n}`,
     activeWorkTitle: (actors: string[]) => `In progress by: ${actors.join(', ')}`,
+    backlogColumn: 'Backlog',
+    backlogColumnOpen: 'Open in Backlog',
+    backlogColumnEmpty: 'No candidates yet — create one in the Backlog',
+    backlogColumnNoMatch: 'No candidate matches the filter.',
   },
   pendings: {
     title: 'Pendings',

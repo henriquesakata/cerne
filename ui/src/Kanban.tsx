@@ -3,6 +3,7 @@ import {
   useMemo,
   useState,
   type Dispatch,
+  type MouseEvent as ReactMouseEvent,
   type SetStateAction,
 } from 'react'
 import {
@@ -344,6 +345,14 @@ function Columns({
   }
   return (
     <div className="board">
+      <BacklogColumn
+        candidates={byState.get('candidate') ?? []}
+        total={features.filter((f) => f.state === 'candidate').length}
+        isEpic={isEpic}
+        isStale={isStale}
+        pendingClarify={pendingClarify}
+        activeWorkFor={activeWorkFor}
+      />
       {columns.map((s) => {
         const fs = byState.get(s) ?? []
         return (
@@ -384,6 +393,97 @@ function Columns({
         )
       })}
     </div>
+  )
+}
+
+// F-0342: a escolha recolhida/expandida da coluna Backlog é preferência de quem
+// olha, por navegador. Storage inacessível (modo privado, site data bloqueado)
+// cai no padrão expandido e nunca quebra o board.
+const BACKLOG_OPEN_KEY = 'cerne.kanban.backlogOpen'
+
+function readBacklogOpen(): boolean {
+  try {
+    return localStorage.getItem(BACKLOG_OPEN_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function writeBacklogOpen(open: boolean) {
+  try {
+    localStorage.setItem(BACKLOG_OPEN_KEY, String(open))
+  } catch {
+    // preferência não persistida; o toggle da sessão continua valendo
+  }
+}
+
+// BacklogColumn (F-0342): candidatas à esquerda de "Aprovadas", fora de
+// OPEN_COLUMNS — não é etapa do ciclo (F-0202), é uma vista recolhível. O
+// <summary> controla o open via onClick (Enter/Espaço disparam click), então o
+// React é a única fonte do estado; recolhida, nenhum card vai ao DOM.
+function BacklogColumn({
+  candidates,
+  total,
+  isEpic,
+  isStale,
+  pendingClarify,
+  activeWorkFor,
+}: {
+  candidates: Feature[]
+  total: number
+  isEpic: (id: string) => boolean
+  isStale: (id: string) => boolean
+  pendingClarify: (id: string) => number
+  activeWorkFor: (id: string) => { id: string; actor: string }[]
+}) {
+  const { t } = useT()
+  const [open, setOpen] = useState(readBacklogOpen)
+  const toggle = (e: ReactMouseEvent) => {
+    e.preventDefault()
+    const next = !open
+    setOpen(next)
+    writeBacklogOpen(next)
+  }
+  return (
+    <details className="column backlog-column" open={open}>
+      <summary onClick={toggle}>
+        <h2>
+          {t.kanban.backlogColumn}{' '}
+          <span className="column-count">{candidates.length}</span>
+        </h2>
+      </summary>
+      {open && (
+        <>
+          {/* Sem candidata alguma, o link do estado vazio já leva ao Backlog —
+              dois links iguais lado a lado só somariam uma parada de Tab. */}
+          {total > 0 && (
+            <a className="backlog-column-open" href="#/backlog">
+              {t.kanban.backlogColumnOpen}
+            </a>
+          )}
+          {total === 0 ? (
+            <p className="column-empty">
+              <a href="#/backlog">{t.kanban.backlogColumnEmpty}</a>
+            </p>
+          ) : candidates.length === 0 ? (
+            // Há candidatas, o filtro é que as escondeu: dizer "nenhuma" aqui
+            // convidaria a registrar duplicata.
+            <p className="column-empty">{t.kanban.backlogColumnNoMatch}</p>
+          ) : (
+            sortByPriority(candidates).map((f) => (
+              <Card
+                key={f.id}
+                feature={f}
+                isEpic={isEpic(f.id)}
+                stale={isStale(f.id)}
+                pending={pendingClarify(f.id)}
+                activeWork={activeWorkFor(f.id)}
+              />
+            ))
+          )}
+        </>
+      )}
+    </details>
   )
 }
 
