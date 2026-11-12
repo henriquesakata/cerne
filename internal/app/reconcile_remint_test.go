@@ -3,7 +3,9 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,4 +190,63 @@ func TestReconcileNoRemintWhenMutateAltersExistingWork(t *testing.T) {
 	if len(conflicts) != 1 || conflicts[0].Path != "entities/works/W-0001.json" {
 		t.Fatalf("conflicts = %+v, want W-0001.json", conflicts)
 	}
+}
+
+// F-0349: the redone mutate writes on the new tip, so what it rewrites there is
+// reconciled against that tip, not against the stale base: a remote change
+// base->tip to a file the mutate rewrites is not ours, and the event log keeps
+// every line exactly once.
+func TestReconcileRemintReconcilesFromTip(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	writeBackendFile(t, repoDir, "content/notes/X.md", "v1\n")
+	writeBackendFile(t, repoDir, "events/2026-11.ndjson", "{\"id\":\"a\"}\n")
+	if _, err := gitback.CommitAndPush(repoDir, "seed x"); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := gitback.RemoteHeadSHA(repoDir)
+	remoteWork(t, origin, "W-0001", "other@host")
+	advanceRemote(t, origin, "content/notes/X.md", "v2\n")
+
+	calls := 0
+	changes := []FileChange{{Path: remintPlan, Content: []byte("# plano novo\n")}}
+	mutate := func() error {
+		calls++
+		if err := OpenAutoWorkForPush(repoDir, projDir, changes); err != nil {
+			return err
+		}
+		line := fmt.Sprintf("{\"id\":\"m%d\"}\n", calls)
+		if err := appendFile(repoDir, "events/2026-11.ndjson", line); err != nil {
+			return err
+		}
+		if calls > 1 {
+			return appendFile(repoDir, "content/notes/X.md", "mine\n")
+		}
+		return nil
+	}
+	head, conflicts, remints, err := ReconcileCommitPushMutate(repoDir, projDir, base, "push plan", changes, mutate)
+	if err != nil || len(conflicts) != 0 || head == "" || len(remints) != 1 {
+		t.Fatalf("head=%q conflicts=%+v remints=%v err=%v, want clean re-mint", head, conflicts, remints, err)
+	}
+	if got, _ := originHas(t, origin, "content/notes/X.md"); got != "v2\nmine\n" {
+		t.Fatalf("X.md = %q, want v2+mine", got)
+	}
+	log, _ := originHas(t, origin, "events/2026-11.ndjson")
+	for _, l := range strings.Split(strings.TrimSpace(log), "\n") {
+		if strings.Count(log, l) != 1 {
+			t.Fatalf("event line %s repeated:\n%s", l, log)
+		}
+	}
+	if strings.Contains(log, "m1") {
+		t.Fatalf("event of the discarded mint leaked:\n%s", log)
+	}
+}
+
+func appendFile(repoDir, rel, text string) error {
+	f, err := os.OpenFile(filepath.Join(repoDir, filepath.FromSlash(rel)), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(text)
+	return err
 }

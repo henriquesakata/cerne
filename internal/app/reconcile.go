@@ -170,9 +170,14 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 		if err := capture(base); err != nil {
 			return err
 		}
+		// recBase is the tree the captured changes were authored against: base
+		// on round 0, the remote tip on a re-mint round (the caller's docs
+		// already merged cleanly on round 0, so only the redone mutate's
+		// writes, made on the tip, remain to reconcile).
+		recBase := base
 		for round := 0; ; round++ {
 			var err error
-			head, conflicts, err = reconcileLocked(nil, repoDir, base, msg, changes)
+			head, conflicts, err = reconcileLocked(nil, repoDir, recBase, msg, changes)
 			if err != nil || len(conflicts) == 0 || !onlyCreated(conflicts, created) {
 				if round > 0 && err == nil && len(conflicts) > 0 {
 					// the conflict exit leaves the tree as the caller found it:
@@ -199,6 +204,7 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 					old = append(old, id)
 				}
 			}
+			recBase = tip
 			if err := resetToBase(repoDir, tip); err != nil {
 				return err
 			}
