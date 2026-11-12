@@ -51,6 +51,8 @@ type Setting struct {
 	Default     any      `json:"default"`
 	Scopes      []string `json:"scopes"`
 	Description string   `json:"description"`
+	// Enum limits a string key to these values (F-0353); empty = any string.
+	Enum []string `json:"enum,omitempty"`
 }
 
 // ResolvedSetting is a Setting with its effective value and the scope it came
@@ -100,6 +102,11 @@ var settingsRegistry = []Setting{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Shows the Graph tab in the UI. Off hides it.",
+	},
+	{
+		ID: "lint.cli_output_language", Title: "CLI output language", Type: "string", Default: "", Enum: []string{"en"},
+		Scopes:      []string{ScopeProject},
+		Description: "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.",
 	},
 	{
 		ID: "mindmap.enabled", Title: "Mindmap", Type: "bool", Default: true,
@@ -176,7 +183,7 @@ func ResolveSettings(projDir string) SettingsView {
 			if err := checkDeclared(s.ID, scope); err != nil {
 				problem = err.Error()
 			} else if !hasSettingType(s, v) {
-				problem = fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, s.Type)
+				problem = fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, settingWant(s))
 			}
 			if problem != "" {
 				raw := fmt.Sprint(v)
@@ -205,9 +212,30 @@ func hasSettingType(s Setting, v any) bool {
 	case bool:
 		return s.Type == "bool"
 	case string:
-		return s.Type == "string"
+		return s.Type == "string" && (len(s.Enum) == 0 || slices.Contains(s.Enum, v.(string)))
 	}
 	return false
+}
+
+// settingWant names the type a refusal wants: "string", or the enum's values.
+func settingWant(s Setting) string {
+	if len(s.Enum) > 0 {
+		return "one of: " + strings.Join(s.Enum, ", ")
+	}
+	return s.Type
+}
+
+// CLIOutputLanguage is lint.cli_output_language for the project at (or above)
+// projDir (F-0353): "en" when the project declares its CLI output English, ""
+// otherwise — unset, invalid or outside a project.
+func CLIOutputLanguage(projDir string) string {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "lint.cli_output_language" {
+			v, _ := s.Value.(string)
+			return v
+		}
+	}
+	return ""
 }
 
 // maxSettingString bounds a string setting (a display name, F-0325).
@@ -239,7 +267,7 @@ func SetSettingValue(projDir, id, scope string, v any) error {
 	}
 	s := declared(id)
 	if !hasSettingType(s, v) {
-		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, s.Type)
+		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, settingWant(s))
 	}
 	if str, ok := v.(string); ok && (strings.TrimSpace(str) == "" || strings.ContainsAny(str, "\r\n") || utf8.RuneCountInString(str) > maxSettingString) {
 		return fmt.Errorf("%s: %w %q: want one non-blank line of at most %d characters", id, ErrInvalidSettingValue, str, maxSettingString)
