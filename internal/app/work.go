@@ -54,6 +54,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	}
 	paths = cleanWorkPaths(paths)
 	var out StartedWork
+	var fromTitle string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateWorkRefs(repoDir, refs)
 		if err != nil {
@@ -127,6 +128,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 			return "", err
 		}
 		out = StartedWork{Work: w, From: from, Handoffs: handoffs}
+		fromTitle = origin.Title
 		if from != "" {
 			if err := closeWork(repoDir, origin, domain.ActionComplete, "handed off to "+id); err != nil {
 				return "", err
@@ -148,6 +150,9 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	})
 	if err != nil {
 		return StartedWork{}, err
+	}
+	if out.From != "" { // the origin closed like `work done` would have (F-0339)
+		dispatchWebhook(projDir, out.From, "work", string(domain.ActionComplete), string(domain.WorkActive), string(domain.WorkDone), fromTitle)
 	}
 	dispatchWebhook(projDir, out.ID, "work", "start", "", string(out.State), out.Title)
 	return out, nil
@@ -221,23 +226,9 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 
 		action := domain.ActionComplete
 		closingNote := strings.TrimSpace(note)
-		eventType := "work.done"
 		if abandon {
 			action = domain.ActionAbandon
 			closingNote = strings.TrimSpace(reason)
-			eventType = "work.abandoned"
-		}
-
-		newState, err := domain.TransitionWork(w.State, action)
-		if err != nil {
-			return "", err
-		}
-		oldState := w.State
-		w.State = newState
-		w.Note = closingNote
-		w.UpdatedAt = time.Now().UTC()
-		if err := store.SaveWork(repoDir, w); err != nil {
-			return "", err
 		}
 		payload := map[string]string{}
 		if abandon {
@@ -245,17 +236,9 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 		} else if closingNote != "" {
 			payload["note"] = closingNote
 		}
-		ev := domain.NewEvent(id, eventType, payload, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
-			return "", err
-		}
-		// F-0873: closing the work concludes its run, if it has one.
-		if r, err := store.LoadRun(repoDir, id); err == nil {
-			r.State = store.RunClosed
-			if err := store.SaveRun(repoDir, r); err != nil {
-				return "", err
-			}
-		} else if !errors.Is(err, store.ErrNotFound) {
+		oldState := w.State
+		newState, err := closeWorkEntity(repoDir, w, action, closingNote, payload)
+		if err != nil {
 			return "", err
 		}
 		title = w.Title

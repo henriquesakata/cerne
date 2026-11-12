@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -157,9 +158,18 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 // ActionComplete, abandoned on ActionAbandon, with note on the entity and
 // on the work.done/work.abandoned event, marked via=auto.
 func closeWork(repoDir string, w store.Work, workAction domain.Action, note string) error {
+	_, err := closeWorkEntity(repoDir, w, workAction, note, map[string]string{"note": note, "via": "auto"})
+	return err
+}
+
+// closeWorkEntity is the one way a work is closed (FinishWork, closeWork and
+// work start --from go through it): the transition, the note, the
+// work.done/work.abandoned event with payload, and the end of the work's
+// runbook run (F-0873), if it has one. It returns the new state.
+func closeWorkEntity(repoDir string, w store.Work, workAction domain.Action, note string, payload map[string]string) (domain.WorkState, error) {
 	newState, err := domain.TransitionWork(w.State, workAction)
 	if err != nil {
-		return err
+		return "", err
 	}
 	eventType := "work.done"
 	if newState == domain.WorkAbandoned {
@@ -169,10 +179,20 @@ func closeWork(repoDir string, w store.Work, workAction domain.Action, note stri
 	w.Note = note
 	w.UpdatedAt = time.Now().UTC()
 	if err := store.SaveWork(repoDir, w); err != nil {
-		return err
+		return "", err
 	}
-	ev := domain.NewEvent(w.ID, eventType, map[string]string{"note": note, "via": "auto"}, EventActor())
-	return store.AppendEvent(repoDir, ev)
+	if err := store.AppendEvent(repoDir, domain.NewEvent(w.ID, eventType, payload, EventActor())); err != nil {
+		return "", err
+	}
+	if r, err := store.LoadRun(repoDir, w.ID); err == nil {
+		r.State = store.RunClosed
+		if err := store.SaveRun(repoDir, r); err != nil {
+			return "", err
+		}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	return newState, nil
 }
 
 // planningWorks (F-0341) picks the planning works of featureID out of works:
