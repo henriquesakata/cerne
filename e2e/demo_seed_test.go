@@ -248,3 +248,61 @@ func TestDemoSeed_NeedsCerne(t *testing.T) {
 		t.Errorf("the destination was created although the seed refused")
 	}
 }
+
+// cerne finds its project by walking up, so a demo created inside another
+// cerne project would be taken for part of it. This clone is one.
+func TestDemoSeed_RefusesInsideAnotherProject(t *testing.T) {
+	bin := demoBin(t)
+	outer := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outer, ".cernerc"), []byte("project_id = \"outer\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(outer, "sub", "demo")
+	if err := os.Mkdir(filepath.Join(outer, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runSeed(bin, t.TempDir(), dest)
+	if err == nil {
+		t.Fatalf("the seed ran inside another cerne project:\n%s", out)
+	}
+	if !strings.Contains(out, outer) {
+		t.Errorf("the refusal does not name the enclosing project:\n%s", out)
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Error("the destination was created although the seed refused")
+	}
+}
+
+// A failure midway must not leave a half-built demo with its gates open.
+func TestDemoSeed_FailureRemovesTheDemo(t *testing.T) {
+	bin := demoBin(t)
+	// A cerne that works until asked to reject a feature.
+	shim := t.TempDir()
+	wrapper := "#!/bin/sh\nif [ \"$1 $2\" = \"feature reject\" ]; then echo 'boom' >&2; exit 1; fi\nexec " + filepath.Join(bin, "cerne") + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(shim, "cerne"), []byte(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "my demo") // a space in the path, too
+	out, err := runSeed(shim, t.TempDir(), dest)
+	if err == nil {
+		t.Fatalf("the seed reported success although a command failed:\n%s", out)
+	}
+	if !strings.Contains(out, "feature reject") || !strings.Contains(out, "boom") {
+		t.Errorf("the failure does not name the command and its output:\n%s", out)
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Error("a half-built demo was left behind")
+	}
+}
+
+func TestDemoSeed_PathWithSpaces(t *testing.T) {
+	bin := demoBin(t)
+	dest := filepath.Join(t.TempDir(), "my demo")
+	out, err := runSeed(bin, t.TempDir(), dest)
+	if err != nil {
+		t.Fatalf("seeding into a path with a space failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `cd "`+dest) {
+		t.Errorf("the closing instructions do not quote the path:\n%s", out)
+	}
+}

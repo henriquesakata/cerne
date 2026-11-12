@@ -8,6 +8,7 @@
 # bare backend). Nothing leaves your machine. Uses only the public cerne CLI,
 # so this file doubles as a tour of the commands.
 set -eu
+unset CDPATH # with it set, "cd" may land elsewhere and print the path
 
 fail() {
   echo "seed: $*" >&2
@@ -20,6 +21,7 @@ content="$(cd "$(dirname "$0")" && pwd)/content"
 command -v cerne >/dev/null 2>&1 ||
   fail "cerne is not on your PATH. Install it first: curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.sh | sh"
 command -v git >/dev/null 2>&1 || fail "git is required"
+cerne --version >/dev/null 2>&1 || fail "the cerne on your PATH does not run (try: cerne --version)"
 # The demo is written in English, which cerne scaffolds and lints since the
 # release that added --docs-language.
 cerne init --help 2>/dev/null | grep -q -- '--docs-language' ||
@@ -27,8 +29,36 @@ cerne init --help 2>/dev/null | grep -q -- '--docs-language' ||
 [ -d "$content" ] || fail "content directory not found at $content"
 [ ! -e "$dest" ] || fail "$dest already exists; remove it or pass another directory"
 
-mkdir -p "$dest"
-dest="$(cd "$dest" && pwd)"
+# cerne finds its project by walking up from the current directory, so a demo
+# created inside another cerne project (this clone is one) would be taken for
+# part of it. Refuse before creating anything.
+case "$dest" in
+  /*) parent=$(dirname -- "$dest") ;;
+  *) parent=$(dirname -- "$PWD/$dest") ;;
+esac
+up=$parent
+while :; do
+  [ ! -e "$up/.cernerc" ] ||
+    fail "$dest would sit inside the cerne project at $up; pass a directory outside it, for example: sh $0 \"\$HOME/cerne-demo\""
+  [ "$up" != / ] && [ -n "$up" ] || break
+  up=$(dirname -- "$up")
+done
+
+mkdir -p -- "$dest"
+dest="$(cd -- "$dest" && pwd)"
+# From here on the directory is ours: a failure or an interrupt removes it, so
+# a half-built demo (with its gates still open) is never left behind and the
+# next run does not trip on "already exists".
+done_ok=""
+cleanup() {
+  if [ -z "$done_ok" ]; then
+    cd /
+    rm -rf -- "$dest"
+    echo "seed: stopped before finishing; removed $dest" >&2
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
 log="$dest/seed.log"
 # The demo keeps its cache inside <dir>, away from your real projects.
 export CERNE_CACHE_DIR="$dest/.cache"
@@ -37,17 +67,29 @@ export CERNE_CACHE_DIR="$dest/.cache"
 run() {
   if ! cerne "$@" >"$dest/.out" 2>&1; then
     cat "$dest/.out" >&2
-    fail "'cerne $*' failed (full log: $log)"
+    fail "'cerne $*' failed; its output is above"
   fi
   cat "$dest/.out" >>"$log"
 }
-# id_of: the entity id the last command printed (F-0001, D-0002, …).
+# id_of <prefix>: the id of that kind the last command printed (F-0001,
+# D-0002, RB-0001, …). Asking for the kind keeps a path or a related entity
+# named in the same output from being taken for it.
 id_of() {
-  grep -o '[A-Z][A-Z]*-[0-9][0-9]*' "$dest/.out" | head -1
+  found=$(grep -o "$1-[0-9][0-9][0-9][0-9]" "$dest/.out" | head -1)
+  [ -n "$found" ] || {
+    cat "$dest/.out" >&2
+    fail "the last cerne command printed no $1- id"
+  }
+  echo "$found"
 }
 # put <id> <slug> <doc>: copies a plan or result into the materialized slot.
 put() {
-  slot=$(ls -d ".docs/current/features/$1-"*)
+  slot=""
+  for d in ".docs/current/features/$1-"*; do
+    [ -d "$d" ] && slot=$d
+  done
+  [ -n "$slot" ] || fail "cerne pull did not materialize a folder for $1"
+  [ -f "$content/features/$2/$3.md" ] || fail "missing content file: features/$2/$3.md"
   {
     printf -- '---\ncerne_id: %s\n---\n\n' "$1"
     cat "$content/features/$2/$3.md"
@@ -59,7 +101,7 @@ feature() {
   slug=$1 title=$2 target=$3
   shift 3
   run feature new "$title" --file "$content/features/$slug/spec.md" "$@"
-  id=$(id_of)
+  id=$(id_of F)
   if [ "$target" != candidate ] && [ "$target" != rejected ]; then
     run feature approve "$id"
   fi
@@ -86,7 +128,7 @@ mkdir "$dest/taskflow"
 cd "$dest/taskflow"
 git init -q
 run init --backend "$dest/taskflow-docs.git" --name taskflow --docs-language en
-echo ".docs/" >.gitignore
+echo ".docs/" >>.gitignore
 
 # In a real project, approving a spec and accepting a delivery are human acts:
 # an AI agent cannot sign off its own work. While seeding, the script opens
@@ -117,32 +159,33 @@ feature offline-mode "Offline mode" candidate --facet code --component web,sync
 
 echo "Decisions, knowledge and sources:"
 run decision new "Use server-side session cookies for auth" --file "$content/decisions/session-cookies.md" --facet auth --component session
-cookies=$(id_of)
+cookies=$(id_of D)
 run decision new "Use JWT access tokens with rotating refresh tokens" --file "$content/decisions/jwt-tokens.md" --facet auth --component tokens
-jwt=$(id_of)
+jwt=$(id_of D)
 run decision substituir "$cookies" --by "$jwt" --reason "The public API and the mobile client cannot use cookies."
 echo "  $cookies  superseded by $jwt"
 run decision new "Use Postgres as the primary store" --file "$content/decisions/postgres.md" --facet data --component postgres
-echo "  $(id_of)  active decision"
+echo "  $(id_of D)  active decision"
 run note new "Google OAuth callback must stay on the apex domain" --informs "$jwt" --file "$content/notes/oauth-apex-domain.md" --facet auth --component oauth
-echo "  $(id_of)  note"
+echo "  $(id_of N)  note"
 run runbook new "Rotate the JWT signing key" --file "$content/runbooks/rotate-jwt-signing-key.md"
-runbook=$(id_of)
+runbook=$(id_of RB)
 run runbook retag "$runbook" --facet auth --component tokens
 echo "  $runbook  runbook"
 run reference new "RFC 6749: The OAuth 2.0 Authorization Framework" --url https://datatracker.ietf.org/doc/html/rfc6749 \
   --informs "$google" --file "$content/references/rfc6749.md" --facet auth --component oauth
-echo "  $(id_of)  external reference"
+echo "  $(id_of R)  external reference"
 
 mv "$dest/.cernerc.default" .cernerc # back to the default: both gates human
 run pull
 rm -f "$dest/.out"
+done_ok=1
 
 cat <<EOF
 
 Done. Explore it:
 
-  cd $dest/taskflow
+  cd "$dest/taskflow"
   cerne status               # features by state
   cerne ui                   # dashboard and kanban at http://localhost:7717
   cat .docs/CONTEXT.md       # what an AI agent reads: only the current state
@@ -150,5 +193,5 @@ Done. Explore it:
   cerne savings              # how much history stays out of the agent's context
   cerne feature accept $digest   # the weekly digest waits for you: accepting is a human act
 
-To start over, delete $dest.
+To start over, delete "$dest".
 EOF

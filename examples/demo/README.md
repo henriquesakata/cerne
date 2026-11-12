@@ -3,10 +3,12 @@
 A fictional project with a realistic cerne history, so you can explore cerne with data before adopting it. One command builds it on your machine:
 
 ```bash
-sh examples/demo/seed.sh
+sh examples/demo/seed.sh ~/cerne-demo
 ```
 
-It creates `cerne-demo/taskflow` (the project) and `cerne-demo/taskflow-docs.git` (a local bare backend). Nothing leaves your machine. Pass another directory as the first argument to put it elsewhere; delete the directory to start over. It needs `cerne` (a release with English documents, `--docs-language`) and `git`.
+It creates `~/cerne-demo/taskflow` (the project) and `~/cerne-demo/taskflow-docs.git` (a local bare backend). Nothing leaves your machine. The directory must not exist yet and must be outside this clone: the clone is itself a cerne project, and cerne finds its project by walking up. Delete the directory to start over. If the script fails midway it removes what it created.
+
+It needs `git` and a `cerne` newer than v0.5.0 (the first with English documents).
 
 ## What is in it
 
@@ -30,7 +32,7 @@ taskflow is a small task-tracking API. Its history was written to show what cern
 ## Things to try
 
 ```bash
-cd cerne-demo/taskflow
+cd ~/cerne-demo/taskflow
 cerne status                  # features by state, and the epic's progress
 cerne ui                      # dashboard and kanban at http://localhost:7717
 cat .docs/CONTEXT.md          # what an AI agent reads: only the current state
