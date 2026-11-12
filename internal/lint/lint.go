@@ -1246,11 +1246,11 @@ func linkFindings(repoDir string, d scannedDoc, text string, names func() map[st
 		if brokenAcked(d, text, r) {
 			continue
 		}
-		hint := ""
+		hint := "no such file: fix the path or remove the link"
 		if c := names()[path.Base(clean)]; len(c) == 1 {
 			// Relative to the document's folder, the way the link resolves.
 			if rel, err := filepath.Rel(path.Dir(d.rel), c[0]); err == nil {
-				hint = "did you mean " + filepath.ToSlash(rel) + "?"
+				hint = "did you mean " + filepath.ToSlash(rel) + "? update the link to it"
 			}
 		}
 		findings = append(findings, brokenLinkFinding(d, r, "link", r.Target, hint))
@@ -1337,12 +1337,12 @@ func idHint(target string, ids map[string]bool) string {
 		}
 	}
 	if len(same) == 1 {
-		return "did you mean [[" + same[0] + "]]?"
+		return "did you mean [[" + same[0] + "]]? replace the link with it"
 	}
 	if last != "" {
-		return "no such id; the last " + prefix + "- id is " + last
+		return "no such id; the last " + prefix + "- id is " + last + ": point the link to an existing id or remove it"
 	}
-	return ""
+	return "no such id: point the link to an existing id or remove it"
 }
 
 // knownEntityIDs collects every entity id, canonicalized, as the id-form
