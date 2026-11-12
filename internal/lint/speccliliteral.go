@@ -31,15 +31,15 @@ var (
 )
 
 // SpecCLILiteralPT returns the spec-cli-literal-pt findings of one spec: every
-// backticked literal inside a numbered criterion (the lines from the first
-// numbered item on, HTML-comment guidance skipped) that is a CLI output — it
+// backticked literal inside a numbered criterion (the item and its indented
+// continuation lines, HTML-comment guidance skipped) that is a CLI output — it
 // starts with "cerne:" or follows an output term right before it (outputTermRe) — is not
 // a command, path or identifier, and reads pt-BR to doccheck.PTReason, the
 // detector the runtime-output guard uses.
 func SpecCLILiteralPT(id string, spec []byte) []Finding {
 	var out []Finding
 	rel := "content/features/" + id + "/spec.md"
-	started, inComment := false, false
+	inItem, inComment := false, false
 	for _, l := range criteriaLines(spec) {
 		t := strings.TrimSpace(l.Text)
 		switch {
@@ -50,10 +50,16 @@ func SpecCLILiteralPT(id string, spec []byte) []Finding {
 			inComment = !strings.Contains(t, "-->")
 			continue
 		}
-		if numberedItemRe.MatchString(l.Text) {
-			started = true
+		// A criterion is its numbered line plus the indented lines after it; a
+		// blank line or any other line ends it (A2: the Barra:/Saída: block that
+		// follows the list is not a criterion).
+		switch {
+		case numberedItemRe.MatchString(l.Text):
+			inItem = true
+		case t == "" || !strings.HasPrefix(l.Text, " ") && !strings.HasPrefix(l.Text, "\t"):
+			inItem = false
 		}
-		if !started {
+		if !inItem {
 			continue
 		}
 		for _, m := range backtickSpanRe.FindAllStringSubmatchIndex(l.Text, -1) {
