@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -115,7 +116,8 @@ var reconcileHookAfterWrite func()
 // processes serialize on the shared clone. Disjoint documents never conflict;
 // append-only event logs are union-merged.
 func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChange) (string, []Conflict, error) {
-	return ReconcileCommitPushMutate(repoDir, projDir, base, msg, changes, nil)
+	head, conflicts, _, err := ReconcileCommitPushMutate(repoDir, projDir, base, msg, changes, nil)
+	return head, conflicts, err
 }
 
 // ReconcileCommitPushMutate is ReconcileCommitPush with an optional mutate
@@ -124,16 +126,27 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 // pickup auto-work, F-0208 criterion 1), and those writes are captured and
 // merged into changes alongside the caller's. A nil mutate makes this
 // identical to ReconcileCommitPush.
-func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []FileChange, mutate func() error) (string, []Conflict, error) {
+func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []FileChange, mutate func() error) (string, []Conflict, map[string]string, error) {
 	var head string
 	var conflicts []Conflict
+	remints := map[string]string{}
 	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
 		// Start from a clean base tree: discards any uncommitted caller writes
 		// (already captured in `changes`) so the merge is fully deterministic.
 		if err := resetToBase(repoDir, base); err != nil {
 			return err
 		}
-		if mutate != nil {
+		callerPaths := map[string]bool{}
+		for _, ch := range changes {
+			callerPaths[ch.Path] = true
+		}
+		callerChanges := changes
+		var created map[string]bool // paths the mutate CREATED (absent at base)
+		capture := func() error {
+			created = map[string]bool{}
+			if mutate == nil {
+				return nil
+			}
 			if err := mutate(); err != nil {
 				return err
 			}
@@ -141,24 +154,124 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			if err != nil {
 				return err
 			}
-			changes = append(changes, extra...)
+			for _, ch := range extra {
+				if ch.Deleted || callerPaths[ch.Path] {
+					continue
+				}
+				if _, exists, err := gitback.FileBlobAt(repoDir, base, ch.Path); err != nil {
+					return err
+				} else if !exists {
+					created[ch.Path] = true
+				}
+			}
+			changes = append(append([]FileChange(nil), callerChanges...), extra...)
+			return nil
 		}
-		var err error
-		head, conflicts, err = reconcileLocked(nil, repoDir, base, msg, changes)
-		return err
+		if err := capture(); err != nil {
+			return err
+		}
+		for round := 0; ; round++ {
+			var err error
+			head, conflicts, err = reconcileLocked(nil, repoDir, base, msg, changes)
+			if err != nil || len(conflicts) == 0 || !onlyCreated(conflicts, created) {
+				if round > 0 && err == nil {
+					// the conflict exit leaves the tree as the caller found it:
+					// the redone mutate wrote on the tip, so hand it back at base.
+					err = resetToBase(repoDir, base)
+				}
+				return err
+			}
+			// Every conflict is a path this mutate created (a minted id taken
+			// upstream, P-0020): redo it on the new tip instead of failing.
+			// ponytail: retry loop is per-lock; a faster race than 3 rounds is aborted.
+			if round == autoWorkRemintRounds {
+				conflicts = nil
+				return errors.Join(ErrAutoWorkRaceLost, resetToBase(repoDir, base))
+			}
+			tip, err := gitback.TrackingHeadSHA(repoDir)
+			if err != nil {
+				return err
+			}
+			old := make([]string, 0, len(conflicts))
+			for _, c := range conflicts {
+				if id := workIDOf(c.Path); id != "" {
+					old = append(old, id)
+				}
+			}
+			if err := resetToBase(repoDir, tip); err != nil {
+				return err
+			}
+			if err := capture(); err != nil {
+				return err
+			}
+			noteRemints(remints, old, created)
+		}
 	})
 	if lockErr != nil {
-		return "", nil, lockErr
+		return "", nil, nil, lockErr
 	}
 	if len(conflicts) > 0 {
-		return "", conflicts, nil
+		return "", conflicts, nil, nil
 	}
 	if head != "" {
 		if err := updateSnapshot(projDir, head); err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 	}
-	return head, nil, nil
+	return head, nil, remints, nil
+}
+
+// autoWorkRemintRounds caps how many times a lost id race redoes the mutate.
+const autoWorkRemintRounds = 3
+
+// ErrAutoWorkRaceLost is returned when the re-minted auto-work id kept
+// colliding with another session's past autoWorkRemintRounds redos.
+var ErrAutoWorkRaceLost = errors.New("auto-work id race lost 3 times; run 'cerne pull' and 'cerne push' again")
+
+// onlyCreated reports whether every conflict is on a path the mutate created.
+func onlyCreated(conflicts []Conflict, created map[string]bool) bool {
+	for _, c := range conflicts {
+		if !created[c.Path] {
+			return false
+		}
+	}
+	return len(created) > 0
+}
+
+// workIDOf returns the W- id a backend work path belongs to ("" otherwise).
+func workIDOf(p string) string {
+	for _, pre := range []string{"entities/works/", "content/works/"} {
+		if rest, ok := strings.CutPrefix(p, pre); ok {
+			id, _, _ := strings.Cut(rest, "/")
+			return strings.TrimSuffix(id, ".json")
+		}
+	}
+	return ""
+}
+
+// noteRemints pairs, sorted, the work ids that lost the race with the ids the
+// redone mutate minted instead, chaining through an earlier round's new id.
+func noteRemints(remints map[string]string, old []string, created map[string]bool) {
+	var fresh []string
+	for p := range created {
+		if id := workIDOf(p); id != "" && strings.HasPrefix(p, "entities/") {
+			fresh = append(fresh, id)
+		}
+	}
+	slices.Sort(old)
+	slices.Sort(fresh)
+	if len(old) != len(fresh) {
+		return
+	}
+	for i, o := range old {
+		orig := o
+		for k, v := range remints {
+			if v == o {
+				orig = k
+			}
+		}
+		remints[orig] = fresh[i]
+	}
 }
 
 // reconcileLocked is the fetch/merge/commit/push retry loop of
