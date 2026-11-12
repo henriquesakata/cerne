@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -310,6 +311,13 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		ids[mdlink.CanonicalID(i.ID)] = true
 	}
 	var findings []Finding
+	var fileNames map[string][]string
+	names := func() map[string][]string {
+		if fileNames == nil {
+			fileNames = backendFileNames(repoDir)
+		}
+		return fileNames
+	}
 	for _, d := range docs {
 		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(d.rel)))
 		if err != nil {
@@ -317,7 +325,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		}
 		text := string(data)
 		findings = append(findings, refFindings(d, text, needles)...)
-		findings = append(findings, linkFindings(repoDir, d, text)...)
+		findings = append(findings, linkFindings(repoDir, d, text, names)...)
 		findings = append(findings, wikiLinkFindings(d, text, ids)...)
 		findings = append(findings, clarificationFindings(d, text)...)
 		// unregistered-source is provenance of a decision — scoped to decisions and
@@ -1203,7 +1211,10 @@ func errataAckFrom(text, id string) int {
 // when resolved from the document's directory inside the backend tree.
 // External (http/https/mailto), pure-anchor and absolute targets are skipped;
 // a fragment suffix is stripped before resolving.
-func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
+//
+// names lists the backend files by base name (built lazily, once per run) to
+// suggest the path of a moved file.
+func linkFindings(repoDir string, d scannedDoc, text string, names func() map[string][]string) []Finding {
 	docDir := filepath.FromSlash(path.Dir(d.rel))
 	var findings []Finding
 	for _, r := range mdlink.Refs(text, false) {
@@ -1213,10 +1224,84 @@ func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
 		if _, err := os.Stat(filepath.Join(repoDir, docDir, filepath.FromSlash(clean))); err == nil {
 			continue
 		}
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line,
-			Detail: fmt.Sprintf("line %d: broken link %s", r.Line, r.Target)})
+		hint := ""
+		if c := names()[path.Base(clean)]; len(c) == 1 {
+			hint = "did you mean " + c[0] + "?"
+		}
+		findings = append(findings, brokenLinkFinding(d, r, "link", r.Target, hint))
 	}
 	return findings
+}
+
+// brokenLinkFinding builds one broken-link finding (F-0352): the line, the
+// suggestion after " — ", and — in an append-only errata — the errata command
+// that adds the correction (F-0329).
+func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint string) Finding {
+	detail := fmt.Sprintf("line %d: broken %s %s", r.Line, kind, token)
+	if hint != "" {
+		detail += " — " + hint
+	}
+	var fix string
+	if strings.HasPrefix(d.rel, "content/errata/") {
+		fix = fmt.Sprintf("cerne %s errata %s '<correction: %s should point to the right target>'", errataKind(d.entity), d.entity, token)
+		detail += "; append-only errata: append the correction with " + fix
+	}
+	return Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line, Detail: detail, Fix: fix}
+}
+
+// backendFileNames maps every file base name under repoDir (.git excluded) to
+// its backend-relative slash paths.
+func backendFileNames(repoDir string) map[string][]string {
+	out := map[string][]string{}
+	_ = filepath.WalkDir(repoDir, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if e.IsDir() {
+			if e.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel, err := filepath.Rel(repoDir, p); err == nil {
+			rel = filepath.ToSlash(rel)
+			out[path.Base(rel)] = append(out[path.Base(rel)], rel)
+		}
+		return nil
+	})
+	return out
+}
+
+// idHint explains an unknown id-form wiki-link target: the same id with
+// another zero padding, else the last id of a known prefix.
+func idHint(target string, ids map[string]bool) string {
+	split := func(id string) (string, int, bool) {
+		p, n, ok := strings.Cut(id, "-")
+		v, err := strconv.Atoi(n)
+		return p, v, ok && err == nil
+	}
+	prefix, num, _ := split(mdlink.CanonicalID(target))
+	var same []string
+	last, lastNum := "", -1
+	for id := range ids {
+		p, n, ok := split(id)
+		if !ok || p != prefix {
+			continue
+		}
+		if n == num {
+			same = append(same, id)
+		}
+		if n > lastNum {
+			last, lastNum = id, n
+		}
+	}
+	if len(same) == 1 {
+		return "did you mean [[" + same[0] + "]]?"
+	}
+	if last != "" {
+		return "no such id; the last " + prefix + "- id is " + last
+	}
+	return ""
 }
 
 // knownEntityIDs collects every entity id, canonicalized, as the id-form
@@ -1256,8 +1341,7 @@ func wikiLinkFindings(d scannedDoc, text string, ids map[string]bool) []Finding 
 		if ids[mdlink.CanonicalID(r.Target)] {
 			continue
 		}
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line,
-			Detail: fmt.Sprintf("line %d: broken wiki-link [[%s]]", r.Line, r.Target)})
+		findings = append(findings, brokenLinkFinding(d, r, "wiki-link", "[["+r.Target+"]]", idHint(r.Target, ids)))
 	}
 	return findings
 }
