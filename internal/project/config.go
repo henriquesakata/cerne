@@ -5,10 +5,12 @@ package project
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -487,6 +489,30 @@ func LoadConfig(startDir string) (Config, string, error) {
 	return readConfig(dir)
 }
 
+// configWarnings receives the config's non-fatal warnings (a var so tests
+// capture them).
+var configWarnings io.Writer = os.Stderr
+
+// warnedStray dedupes the stray-key warning per file and key: the config is
+// loaded many times per process (the UI server per request).
+var warnedStray sync.Map
+
+// warnStrayGatesKeys names every key decoded under [gates] that is not a
+// gates key (F-0364): init ends .cernerc with [gates], so a top-level key
+// appended at the end of the file lands inside the table and would otherwise
+// be ignored silently. A warning, never a refusal.
+func warnStrayGatesKeys(path string, md toml.MetaData) {
+	for _, k := range md.Undecoded() {
+		if len(k) != 2 || k[0] != "gates" {
+			continue
+		}
+		if _, seen := warnedStray.LoadOrStore(path+"\x00"+k[1], true); seen {
+			continue
+		}
+		fmt.Fprintf(configWarnings, "warning: %s: %q is not a [gates] key and is ignored there — move it above [gates] (top-level keys go before the first table)\n", path, k[1])
+	}
+}
+
 func readConfig(dir string) (Config, string, error) {
 	path := filepath.Join(dir, configFilename)
 	data, err := os.ReadFile(path)
@@ -494,9 +520,11 @@ func readConfig(dir string) (Config, string, error) {
 		return Config{}, "", err
 	}
 	var c Config
-	if err := toml.Unmarshal(data, &c); err != nil {
+	md, err := toml.Decode(string(data), &c)
+	if err != nil {
 		return Config{}, "", fmt.Errorf("%s: %w: %w", path, ErrConfigParse, err)
 	}
+	warnStrayGatesKeys(path, md)
 	if err := c.Delivery.validate(); err != nil {
 		return Config{}, "", fmt.Errorf("%s: %w", path, err)
 	}
