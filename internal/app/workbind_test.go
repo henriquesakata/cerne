@@ -2,8 +2,8 @@ package app
 
 import (
 	"bytes"
-	"errors"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -269,13 +269,17 @@ func oldBinding(t *testing.T, cacheDir, sess, id string) (string, time.Time) {
 // TestTouchBindingRefreshesMtimeKeepsContent (F-0361 crit. 1).
 func TestTouchBindingRefreshesMtimeKeepsContent(t *testing.T) {
 	cacheDir := t.TempDir()
-	path, old := oldBinding(t, cacheDir, "sess-1", "W-0001")
+	path, _ := oldBinding(t, cacheDir, "sess-1", "W-0001")
+	before := time.Now().Add(-2 * time.Second)
 	if err := TouchBinding(cacheDir, "sess-1"); err != nil {
 		t.Fatal(err)
 	}
-	fi, _ := os.Stat(path)
-	if !fi.ModTime().After(old.Add(time.Hour)) {
-		t.Fatalf("mtime not refreshed: %v", fi.ModTime())
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt := fi.ModTime(); mt.Before(before) || mt.After(time.Now()) {
+		t.Fatalf("mtime %v not in [%v, now]", mt, before)
 	}
 	if raw, _ := os.ReadFile(path); string(raw) != "W-0001\n" {
 		t.Fatalf("content changed: %q", raw)

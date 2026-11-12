@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -62,7 +63,31 @@ func sessionsSnapshot(t *testing.T, cacheDir string) map[string]time.Time {
 // TestWorkListSessionText (F-0361 crit. 3, 4, 6, 8) — also saves the text for the Gauntlet.
 func TestWorkListSessionText(t *testing.T) {
 	projDir, cacheDir := listFixture(t)
+	// Non-live bindings that only CurrentBinding/LiveBindings may clean (crit. 6).
+	repoDir := filepath.Join(cacheDir, "repo")
+	dw, err := store.LoadWork(repoDir, "W-0004")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dw.ID, dw.State = "W-0009", domain.WorkDone
+	if err := store.SaveWork(repoDir, dw); err != nil {
+		t.Fatal(err)
+	}
+	for sess, id := range map[string]string{"dead-done": "W-0009", "dead-nof": "F-9999"} {
+		if err := app.BindSession(cacheDir, sess, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "sessions", "corrupt"), []byte("\x00garbage"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "sessions", "empty"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	before := sessionsSnapshot(t, cacheDir)
+	if len(before) != 6 {
+		t.Fatalf("fixture sessions = %d, want 6", len(before))
+	}
 	out, err := execCerne(t, "work", "list", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("work list: %v\n%s", err, out)
@@ -96,7 +121,10 @@ func TestWorkListSessionText(t *testing.T) {
 func TestWorkListSessionMultiAndFeatureBinding(t *testing.T) {
 	projDir, cacheDir := listFixture(t)
 	repoDir := filepath.Join(cacheDir, "repo")
-	w, _ := store.LoadWork(repoDir, "W-0003")
+	w, err := store.LoadWork(repoDir, "W-0003")
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.Auto, w.Refs = true, []string{"F-0100"}
 	if err := store.SaveWork(repoDir, w); err != nil {
 		t.Fatal(err)
@@ -109,9 +137,14 @@ func TestWorkListSessionMultiAndFeatureBinding(t *testing.T) {
 			t.Fatal(err)
 		}
 		mt := time.Now().Add(-s.ago)
-		_ = os.Chtimes(filepath.Join(cacheDir, "sessions", s.sess), mt, mt)
+		if err := os.Chtimes(filepath.Join(cacheDir, "sessions", s.sess), mt, mt); err != nil {
+			t.Fatal(err)
+		}
 	}
-	out, _ := execCerne(t, "work", "list", "--dir", projDir)
+	out, err := execCerne(t, "work", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(out, "session: dddddddd signal 10m ago, cccccccc signal 3h ago") {
 		t.Fatalf("want newest-first joined sessions:\n%s", out)
 	}
@@ -140,20 +173,30 @@ func TestWorkListSessionJSON(t *testing.T) {
 	if _, ok := got.Sessions["W-0003"]; ok {
 		t.Fatal("unbound work must not appear in sessions")
 	}
-	// works byte-for-byte what the old shape would emit.
+	// works must be byte-for-byte what the pre-F-0361 shape emitted.
 	var works []store.Work
 	if err := json.Unmarshal(got.Works, &works); err != nil || len(works) != 4 {
 		t.Fatalf("works: %v %d", err, len(works))
 	}
-	want, _ := json.MarshalIndent(works, "  ", "  ")
-	if string(got.Works) != string(want) {
-		t.Fatalf("works encoding drifted:\n%s\nvs\n%s", got.Works, want)
+	var old bytes.Buffer
+	enc := json.NewEncoder(&old)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(struct {
+		Works []store.Work `json:"works"`
+	}{works}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, strings.TrimSuffix(old.String(), "\n}\n")) {
+		t.Fatalf("works part drifted from the old shape:\n%s\nvs\n%s", out, old.String())
 	}
 	// no bindings at all: key omitted.
 	if err := os.RemoveAll(filepath.Join(cacheDir, "sessions")); err != nil {
 		t.Fatal(err)
 	}
-	out, _ = execCerne(t, "work", "list", "--json", "--dir", projDir)
+	out, err = execCerne(t, "work", "list", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(out, `"sessions"`) {
 		t.Fatalf("sessions must be omitted when empty:\n%s", out)
 	}
