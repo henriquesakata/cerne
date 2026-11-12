@@ -203,6 +203,23 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	if body := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er)))); body != "" {
 		res.content = append(res.content, showDoc{name: "errata", body: body})
 	}
+	// F-0345: a runbook's errata items not yet folded into the body, and those
+	// with no step; nil while nothing is open.
+	var openErrata, steplessErrata *int
+	if res.kind == "runbook" {
+		var open, stepless int
+		for _, it := range store.ParseErrataItems(er) {
+			if it.Merged == "" {
+				open++
+				if it.Target == "" {
+					stepless++
+				}
+			}
+		}
+		if open > 0 {
+			openErrata, steplessErrata = &open, &stepless
+		}
+	}
 	if f, ok := res.entity.(store.Feature); ok {
 		stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f)
 		res.approvalStale = &stale
@@ -275,10 +292,15 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(res.toJSON())
+		j := res.toJSON()
+		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
+		return enc.Encode(j)
 	}
 	if f, ok := res.entity.(store.Feature); ok && !all {
 		res.stageView(f.State, id)
+	}
+	if openErrata != nil { // say where the version that applies is
+		fmt.Fprintf(w, "%d open errata item(s) (%d without a step). What applies now: cerne show %s --consolidado\n", *openErrata, *steplessErrata, id)
 	}
 	res.renderText(w)
 	return nil
@@ -624,11 +646,13 @@ func writeSuccession(w io.Writer, supersededBy, reason string) {
 }
 
 type showJSON struct {
-	Kind          string          `json:"kind"`
-	Entity        any             `json:"entity"`
-	Content       []showDocJSON   `json:"content,omitempty"`
-	ApprovalStale *bool           `json:"approval_stale,omitempty"` // features only (F-0318)
-	Amendments    []amendmentJSON `json:"amendments,omitempty"`     // features only (F-0338)
+	Kind           string          `json:"kind"`
+	Entity         any             `json:"entity"`
+	Content        []showDocJSON   `json:"content,omitempty"`
+	ApprovalStale  *bool           `json:"approval_stale,omitempty"`  // features only (F-0318)
+	Amendments     []amendmentJSON `json:"amendments,omitempty"`      // features only (F-0338)
+	OpenErrata     *int            `json:"open_errata,omitempty"`     // runbooks with open items only (F-0345)
+	SteplessErrata *int            `json:"stepless_errata,omitempty"` // idem: those with no step
 }
 
 type showDocJSON struct {
@@ -643,7 +667,7 @@ func (r showResult) toJSON() showJSON {
 			docs = append(docs, showDocJSON{d.name, d.body})
 		}
 	}
-	return showJSON{r.kind, r.entity, docs, r.approvalStale, r.amendments}
+	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the
