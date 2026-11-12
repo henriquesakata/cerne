@@ -15,6 +15,9 @@ import (
 const titleWeight = 4.0
 
 // maxCoverageTerms caps the per-term MATCH queries of the coverage ranking.
+// ponytail: the OR query reads the record of every matching row (~200 ms for
+// 3.3k rows on the rockt-hub index); a compact rowid->entity side table would
+// cut that if search latency starts to matter.
 const maxCoverageTerms = 8
 
 // entityRowsSQL ranks matching documents by bm25 over the columns entity_id,
@@ -23,7 +26,7 @@ var entityRowsSQL = fmt.Sprintf(`SELECT rowid, entity_id, kind, doc, state, titl
 	FROM docs WHERE docs MATCH ? ORDER BY bm25(docs, 1.0, 0, 0, 0, %g, 1.0, 0)`, titleWeight)
 
 const (
-	entityIDsSQL  = `SELECT DISTINCT entity_id FROM docs WHERE docs MATCH ?`
+	rowidsSQL     = `SELECT rowid FROM docs WHERE docs MATCH ?`
 	entitySnipSQL = `SELECT snippet(docs, 5, '«', '»', '…', 12) FROM docs WHERE docs MATCH ? AND rowid = ?`
 )
 
@@ -119,23 +122,29 @@ func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, er
 	if len(terms) > maxCoverageTerms {
 		terms = terms[:maxCoverageTerms]
 	}
-	coverage := map[string]int{}
 	parts := make([]string, len(terms))
 	for i, t := range terms {
 		parts[i] = termQuery(t)
-		if err := countCoverage(db, parts[i], coverage); err != nil {
-			return nil, err
-		}
 	}
 	match := strings.Join(parts, " OR ")
 	hits, err := entityRows(db, match)
 	if err != nil {
 		return nil, err
 	}
+	entityOf := make(map[int64]string, len(hits))
+	for _, h := range hits {
+		entityOf[h.rowid] = h.EntityID
+	}
+	covered := map[string]map[int]bool{} // entity -> indexes of the terms it covers
+	for i, p := range parts {
+		if err := markCoverage(db, p, i, entityOf, covered); err != nil {
+			return nil, err
+		}
+	}
 	res := groupRows(hits)
 	score := make(map[string]int, len(res))
 	for i := range res {
-		res[i].Coverage = coverage[res[i].EntityID]
+		res[i].Coverage = len(covered[res[i].EntityID])
 		score[res[i].EntityID] = res[i].Coverage + titleHits(res[i].Title, terms)
 	}
 	sort.SliceStable(res, func(i, j int) bool { return score[res[i].EntityID] > score[res[j].EntityID] })
@@ -195,18 +204,25 @@ func entityRows(db *sql.DB, match string) ([]rankedRow, error) {
 	return out, rows.Err()
 }
 
-func countCoverage(db *sql.DB, match string, coverage map[string]int) error {
-	rows, err := db.Query(entityIDsSQL, match)
+// markCoverage records term i as covered by the entity of every document
+// matching it. Only rowids are read: the entity comes from entityOf, built from
+// the OR query that every term's documents are part of.
+func markCoverage(db *sql.DB, match string, i int, entityOf map[int64]string, covered map[string]map[int]bool) error {
+	rows, err := db.Query(rowidsSQL, match)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var rowid int64
+		if err := rows.Scan(&rowid); err != nil {
 			return err
 		}
-		coverage[id]++
+		id := entityOf[rowid]
+		if covered[id] == nil {
+			covered[id] = map[int]bool{}
+		}
+		covered[id][i] = true
 	}
 	return rows.Err()
 }
