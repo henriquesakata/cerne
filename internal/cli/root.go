@@ -50,6 +50,7 @@ func Root() *cobra.Command {
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "log operation timings (phases, retries) to stderr")
 	root.SetVersionTemplate("cerne {{.Version}}\n")
 	root.AddCommand(verbs.MarkLocal(newInitCmd()))
+	root.AddCommand(verbs.MarkLocal(newDemoCmd()))
 	root.AddCommand(newFeatureCmd())
 	root.AddCommand(newEpicCmd())
 	root.AddCommand(newTaskCmd())
