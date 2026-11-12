@@ -8,6 +8,9 @@
 # stdin, so the hook payload reaches that call intact. Tool-managed — do not
 # edit; fix it upstream in internal/hooks/assets/ and re-run
 # `cerne hook install`.
+# To turn it off for a process (eval, CI), set CERNE_NO_AGENT_HOOKS=1
+# instead of editing it (F-0360).
+[ -n "${CERNE_NO_AGENT_HOOKS:-}" ] && exit 0
 cat <<'RULES'
 cerne project rules — make in-flight work visible from minute one:
 - Picking up a FEATURE? First action: `cerne feature new "<title>" --context "<1-3 sentences of why>"` (lands as a candidate on the kanban; --file spec.md for a one-shot spec). Register it complete in that same act: spec (`--file`), tags (`--facet`/`--component`) and, once the project has a capability taxonomy, capability (`cerne feature capability <id> C-…`) — `cerne feature approve <id> --check` flags a card without them and the approve refuses it. Advance it as you go: spec -> approve (HUMAN gate), plan -> `cerne feature start`, result -> `cerne feature complete`. Abandoned? `cerne feature reject <id> --reason "..."`.

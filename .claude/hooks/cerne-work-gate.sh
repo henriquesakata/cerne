@@ -9,6 +9,9 @@
 # broken install must never lock the user out of editing. Tool-managed — do
 # not edit; fix it upstream in internal/hooks/assets/ and re-run
 # `cerne hook install`.
+# To turn it off for a process (eval, CI), set CERNE_NO_AGENT_HOOKS=1
+# instead of editing it (F-0360).
+[ -n "${CERNE_NO_AGENT_HOOKS:-}" ] && exit 0
 
 command -v cerne >/dev/null 2>&1 || exit 0
 cerne hook work-gate 2>/dev/null || true
