@@ -27,7 +27,9 @@ command -v git >/dev/null 2>&1 || fail "git is required"
 cerne --version >/dev/null 2>&1 || fail "the cerne on your PATH does not run (try: cerne --version)"
 # Since F-0369 the binary builds the demo itself, from the same content/ files
 # embedded in it: hand over, so both paths give the same project.
-if cerne demo --help 2>/dev/null | grep -q 'cerne demo'; then
+# Probe by exit status: an older cerne exits 1 on "demo --help" (unknown
+# command), while "cerne help demo" exits 0 there too, so it cannot tell.
+if cerne demo --help >/dev/null 2>&1; then
   exec cerne demo "$dest"
 fi
 # The demo is written in English, which cerne scaffolds and lints since the

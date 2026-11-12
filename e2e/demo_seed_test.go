@@ -119,6 +119,13 @@ func TestDemoSeed_BuildsProject(t *testing.T) {
 	if strings.Contains(string(rc), "approve =") || strings.Contains(string(rc), "accept =") {
 		t.Errorf("the generated .cernerc still opens the gates:\n%s", rc)
 	}
+	// Criterion 5, stated: both gates are human and lint finds no debt.
+	if regexp.MustCompile(`(?m)^\s*(approve|accept)\s*=\s*"auto"`).Match(rc) {
+		t.Errorf("a gate is still auto:\n%s", rc)
+	}
+	if out, err := demoCerne(t, "lint"); err != nil {
+		t.Errorf("cerne lint on the demo: %v\n%s", err, out)
+	}
 }
 
 func TestDemoSeed_CoversEveryState(t *testing.T) {
@@ -348,5 +355,31 @@ func TestDemoSeed_ScriptDelegatesToCerneDemo(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, "seed.log")); !os.IsNotExist(err) {
 		t.Errorf("seed.sh seeded by itself (seed.log present) instead of calling cerne demo")
+	}
+}
+
+// An older cerne, without `demo`, still gets the demo from the script: the
+// probe is the exit status of `cerne demo --help`, which such a binary fails
+// (and `cerne help demo`, which it passes, is not used).
+func TestDemoSeed_ScriptSeedsItselfOnAnOldBinary(t *testing.T) {
+	bin := demoBin(t)
+	old := t.TempDir()
+	fake := "#!/bin/sh\n" +
+		"if [ \"$1\" = demo ]; then echo 'Error: unknown command \"demo\" for \"cerne\"' >&2; exit 1; fi\n" +
+		"if [ \"$1 $2\" = 'help demo' ]; then echo 'Unknown help topic [`demo`]'; exit 0; fi\n" +
+		"exec " + filepath.Join(bin, "cerne") + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(old, "cerne"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "demo")
+	out, err := runSeed(old, t.TempDir(), dest)
+	if err != nil {
+		t.Fatalf("seed.sh on an old binary failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "seed.log")); err != nil {
+		t.Errorf("seed.sh did not seed by itself (no seed.log):\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "taskflow", ".docs", "CONTEXT.md")); err != nil {
+		t.Errorf("the demo was not built: %v", err)
 	}
 }
