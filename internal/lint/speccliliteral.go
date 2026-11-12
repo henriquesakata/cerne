@@ -20,9 +20,11 @@ const RuleSpecCLILiteralPT = "spec-cli-literal-pt"
 
 var (
 	backtickSpanRe = regexp.MustCompile("`([^`]+)`")
-	// outputTermRe: the words that make the literal after them a CLI output
-	// (criterion 2). Matched only in the prose, never inside backticks.
-	outputTermRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:imprime|imprimir|recusa com|mensagem|erro|stderr|stdout|saída)(?:[^\p{L}]|$)`)
+	// outputTermRe: an output term (criterion 2) must sit right before the
+	// literal: only spaces, ":" and the listed bridge words — "no stderr",
+	// "no stdout", "na saída", "a mensagem", "com" — may come between the term's
+	// end and the backtick. Matched only in the prose, never inside backticks.
+	outputTermRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:imprime|imprimir|recusa com|mensagem|erro|stderr|stdout|saída)(?:[\s:]+(?:no stderr|no stdout|na saída|a mensagem|com))*[\s:]*$`)
 	// sentenceEndRe: a sentence ends at . ! ? followed by a space — "1. " of a
 	// numbered item included, so the term must sit in the literal's own sentence.
 	sentenceEndRe = regexp.MustCompile(`[.!?]\s`)
@@ -31,7 +33,7 @@ var (
 // SpecCLILiteralPT returns the spec-cli-literal-pt findings of one spec: every
 // backticked literal inside a numbered criterion (the lines from the first
 // numbered item on, HTML-comment guidance skipped) that is a CLI output — it
-// starts with "cerne:" or follows an output term in the same sentence — is not
+// starts with "cerne:" or follows an output term right before it (outputTermRe) — is not
 // a command, path or identifier, and reads pt-BR to doccheck.PTReason, the
 // detector the runtime-output guard uses.
 func SpecCLILiteralPT(id string, spec []byte) []Finding {
