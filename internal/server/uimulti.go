@@ -2,9 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"time"
@@ -13,6 +17,8 @@ import (
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/version"
+	"github.com/henriquesakata/cerne/ui"
 )
 
 // This is the multi-project variant of `cerne ui`: one process serves N local
@@ -349,7 +355,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	// Project set: list, register (by dir), deregister (by pid).
 	mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		infos, def := reg.list()
-		writeJSON(w, http.StatusOK, map[string]any{"projects": infos, "default": def})
+		writeJSON(w, http.StatusOK, map[string]any{"projects": infos, "default": def, "version": version.Version, "ui": UIIdentity()})
 	})
 	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -400,4 +406,49 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	})
 	mux.Handle("/", spaHandler())
 	return mux, nil
+}
+
+var (
+	uiIdentityOnce sync.Once
+	uiIdentity     string
+)
+
+// UIIdentity names the UI this binary embeds: a hash of the embedded ui/dist
+// plus the vcs revision it was built from, computed once. A panel keeps
+// serving the UI of the binary that hosts it (N-0022), so two processes with
+// the same identity show the same UI and the same server code.
+func UIIdentity() string {
+	uiIdentityOnce.Do(func() {
+		dist, err := fs.Sub(ui.Dist, "dist")
+		if err != nil {
+			return
+		}
+		uiIdentity = fsIdentity(dist)
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			for _, s := range bi.Settings {
+				if s.Key == "vcs.revision" && len(s.Value) >= 12 {
+					uiIdentity += "@" + s.Value[:12]
+				}
+			}
+		}
+	})
+	return uiIdentity
+}
+
+// fsIdentity hashes every file path and content of fsys, in walk order.
+func fsIdentity(fsys fs.FS) string {
+	h := sha256.New()
+	_ = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", path, len(b))
+		h.Write(b)
+		return nil
+	})
+	return hex.EncodeToString(h.Sum(nil))[:12]
 }

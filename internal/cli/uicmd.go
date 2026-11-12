@@ -24,6 +24,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 // The chat's tool channel (F-0323) derives its verb catalog from this very
@@ -95,6 +96,7 @@ func superviseUI(ctx context.Context, out io.Writer, dir string, port int, noBro
 	// process races for the same address.
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	first := true
+	warned := map[string]bool{} // host identities already warned about, per process
 	backoff := 250 * time.Millisecond
 	for ctx.Err() == nil {
 		ln, err := net.Listen("tcp", addr)
@@ -106,7 +108,7 @@ func superviseUI(ctx context.Context, out io.Writer, dir string, port int, noBro
 		if !isAddrInUse(err) {
 			return err
 		}
-		res, err := joinUI(ctx, out, dir, port, first)
+		res, err := joinUI(ctx, out, dir, port, first, noBrowser, warned)
 		if err != nil {
 			return err
 		}
@@ -199,9 +201,10 @@ const (
 // re-joins after a takeover those become joinRetry (the new host may still be
 // initializing — or died mid-init, in which case the loop races for the bind
 // again instead of waiting forever).
-func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin bool) (joinResult, error) {
+func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin, noBrowser bool, warned map[string]bool) (joinResult, error) {
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	if !probeCerneUI(base) {
+	hostVer, ok := probeCerneUI(base)
+	if !ok {
 		if firstJoin {
 			return 0, fmt.Errorf("port %d is already in use by another process (does not look like a cerne ui)", port)
 		}
@@ -221,10 +224,44 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin 
 		}
 		return joinRetry, nil
 	}
+	// The panel serves the UI and server code of the binary that hosts it
+	// (N-0022), so a host of another build, or one that reports no identity at
+	// all (older than F-0373), shows another UI. Warn first — once per host
+	// identity per process — then print and open the link.
+	host := hostInfo{Version: "unknown", UI: "unknown"}
+	if hostVer.Version != "" {
+		host.Version = hostVer.Version
+	}
+	if hostVer.UI != "" {
+		host.UI = hostVer.UI
+	}
+	myVersion, myUI := version.Version, server.UIIdentity()
+	// Bare base opens whichever project the panel already shows; the project's
+	// own pid in the link needs a panel that reads it, which only one with a UI
+	// identity does (F-0373).
+	target := base + "/?project=" + url.QueryEscape(pid)
+	oldPanel := hostVer.UI == ""
+	if oldPanel {
+		target = base
+	}
+	if hostVer.UI != myUI || hostVer.Version != myVersion {
+		if key := host.Version + "|" + host.UI; !warned[key] {
+			warned[key] = true
+			tail := ""
+			if oldPanel {
+				tail = " (that panel ignores project links, so this opens its base address)"
+			}
+			fmt.Fprintf(out, "warning: the cerne ui on %s is version %s (ui %s), this cerne is %s (ui %s); stop that ui (it serves its own embedded UI) and run cerne ui again%s\n",
+				base, host.Version, host.UI, myVersion, myUI, tail)
+		}
+	}
 	if firstJoin {
-		fmt.Fprintf(out, "project %q added to the cerne ui at %s (Ctrl+C to remove)\n", name, base)
+		fmt.Fprintf(out, "project %q added to the cerne ui at %s (Ctrl+C to remove)\n", name, target)
+		if !noBrowser {
+			openURL(target)
+		}
 	} else {
-		fmt.Fprintf(out, "reconnected: project %q registered with the cerne ui at %s\n", name, base)
+		fmt.Fprintf(out, "reconnected: project %q registered with the cerne ui at %s\n", name, target)
 	}
 
 	if err := monitorHost(ctx, base); err != nil {
@@ -295,25 +332,35 @@ var probeClient = &http.Client{Timeout: 2 * time.Second}
 // probeCerneUI checks that the server on base is a cerne ui (and not some other
 // app holding the port) by confirming GET /api/projects returns the expected
 // shape.
-func probeCerneUI(base string) bool {
+// hostInfo is what a cerne ui reports about itself on the probe; both fields
+// are empty on a panel older than F-0373.
+type hostInfo struct{ Version, UI string }
+
+func probeCerneUI(base string) (info hostInfo, ok bool) {
 	r, err := probeClient.Get(base + "/api/projects")
 	if err != nil {
-		return false
+		return hostInfo{}, false
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return false
+		return hostInfo{}, false
 	}
 	var body struct {
 		Projects []struct {
 			PID string `json:"pid"`
 		} `json:"projects"`
+		Version string `json:"version"` // absent on a panel built before F-0373
+		UI      string `json:"ui"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return false
+		return hostInfo{}, false
 	}
-	return body.Projects != nil // a cerne ui always returns a (possibly empty) array
+	// a cerne ui always returns a (possibly empty) array
+	return hostInfo{body.Version, body.UI}, body.Projects != nil
 }
+
+// openURL opens a URL in the browser; a variable so tests never launch one.
+var openURL = openBrowser
 
 // registerProject adds dir to the running cerne ui (POST /api/projects),
 // returning the minted project id and name.

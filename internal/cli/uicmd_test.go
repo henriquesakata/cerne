@@ -67,7 +67,7 @@ func fakeUIHost(t *testing.T, onRegister func(dir string)) *httptest.Server {
 func TestProbeAcceptsCerneUI(t *testing.T) {
 	srv := fakeUIHost(t, nil)
 	defer srv.Close()
-	if !probeCerneUI(srv.URL) {
+	if _, ok := probeCerneUI(srv.URL); !ok {
 		t.Fatal("probeCerneUI should accept a server exposing /api/projects")
 	}
 }
@@ -77,7 +77,7 @@ func TestProbeRejectsNonCerne(t *testing.T) {
 		_, _ = w.Write([]byte("hello, not cerne"))
 	}))
 	defer srv.Close()
-	if probeCerneUI(srv.URL) {
+	if _, ok := probeCerneUI(srv.URL); ok {
 		t.Fatal("probeCerneUI should reject a non-cerne server on the port")
 	}
 }

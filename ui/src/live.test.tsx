@@ -46,6 +46,80 @@ beforeEach(() => {
 })
 
 describe('LiveProvider', () => {
+  // F-0373: o link que o `cerne ui` imprime ao entrar num painel aberto.
+  it('F-0373: ?project=<pid> abre esse projeto, acima da escolha guardada', async () => {
+    sessionStorage.setItem('cerne.activePid', 'p1')
+    window.history.replaceState({}, '', '/?project=p2')
+    try {
+      render(
+        <LiveProvider>
+          <Probe />
+        </LiveProvider>,
+      )
+      expect(await screen.findByText('p2')).toBeInTheDocument()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('F-0373: ?project= é consumido uma vez e sai da URL', async () => {
+    window.history.replaceState({}, '', '/?project=p2&x=1#/kanban')
+    try {
+      render(
+        <LiveProvider>
+          <Probe />
+        </LiveProvider>,
+      )
+      expect(await screen.findByText('p2')).toBeInTheDocument()
+      expect(window.location.search).toBe('?x=1')
+      expect(window.location.hash).toBe('#/kanban')
+      // uma troca depois do link segue o usuário, e o reload não volta ao link
+      await act(async () => {
+        screen.getByText('p2').click()
+      })
+      expect(await screen.findByText('p1')).toBeInTheDocument()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('F-0373: ?project= com pid que pede escape (espaço, barra) acha o projeto', async () => {
+    mockProjects = [
+      { pid: 'p1', name: 'P1' },
+      { pid: 'a b/c', name: 'Esp' },
+    ]
+    window.history.replaceState({}, '', '/?project=' + encodeURIComponent('a b/c'))
+    try {
+      render(
+        <LiveProvider>
+          <Probe />
+        </LiveProvider>,
+      )
+      expect(await screen.findByText('a b/c')).toBeInTheDocument()
+    } finally {
+      mockProjects = [
+        { pid: 'p1', name: 'P1' },
+        { pid: 'p2', name: 'P2' },
+      ]
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('F-0373: ?project= de pid desconhecido cai na escolha de sempre e avisa', async () => {
+    window.history.replaceState({}, '', '/?project=nope')
+    try {
+      render(
+        <LiveProvider>
+          <Probe />
+        </LiveProvider>,
+      )
+      expect(await screen.findByText('p1')).toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent(/nope/)
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
   it('critério 1: troca via setActivePid reseta o hash para o dashboard', async () => {
     window.location.hash = '#/f/F-0001'
     render(

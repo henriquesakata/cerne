@@ -63,6 +63,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // (callbacks de SSE e o reload da lista), evitando closures velhas.
   const activeRef = useRef('')
 
+  // O link do `cerne ui` (?project=<pid>, F-0373) é lido uma vez no mount e
+  // consumido no primeiro load da lista: sai da URL, para que reload e
+  // navegação depois sigam a escolha do usuário.
+  const linkedRef = useRef(new URLSearchParams(window.location.search).get('project') ?? '')
+  const [linkMissing, setLinkMissing] = useState('')
+
   // apply troca o projeto ativo de forma síncrona: atualiza o ref, a base da
   // API (antes de qualquer refetch) e o estado; só bump de versão quando muda.
   const apply = (pid: string) => {
@@ -76,6 +82,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const pick = (list: ProjectInfo[], def: string): string => {
     const has = (p: string) => list.some((x) => x.pid === p)
     if (activeRef.current && has(activeRef.current)) return activeRef.current
+    // Link do `cerne ui` ao entrar num painel aberto (F-0373): vence a escolha
+    // guardada, mas só no boot (acima, activeRef já manda nos reloads).
+    const linked = linkedRef.current
+    if (linked && has(linked)) return linked
     const mine = sessionStorage.getItem(STORAGE_KEY) ?? '' // escolha desta aba
     if (mine && has(mine)) return mine
     const last = localStorage.getItem(STORAGE_KEY) ?? '' // default de aba nova
@@ -93,6 +103,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       .then(({ projects, default: def }) => {
         setProjects(projects)
         apply(pick(projects, def))
+        if (linkedRef.current) {
+          if (!projects.some((x) => x.pid === linkedRef.current)) setLinkMissing(linkedRef.current)
+          linkedRef.current = ''
+          const u = new URL(window.location.href)
+          u.searchParams.delete('project')
+          window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash)
+        }
         // Limpa badges de projetos que saíram do painel.
         setChanged((s) => new Set([...s].filter((p) => projects.some((x) => x.pid === p))))
         setBootError(null)
@@ -161,6 +178,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           <button type="button" onClick={() => void reload()}>
             {t.live.retry}
           </button>
+        </div>
+      )}
+      {linkMissing && (
+        <div className="load-notice live-refresh-notice" role="status">
+          <p className="form-error">{t.live.linkMissing(linkMissing)}</p>
         </div>
       )}
       {children}

@@ -325,3 +325,30 @@ describe('Nav: flags graph/mindmap (critério 7)', () => {
     expect(itemsOf('Explorar')).toEqual(['Wiki', 'Perguntar', 'Busca'])
   })
 })
+
+// F-0373 critério 6: o nome do projeto em exibição está no cabeçalho — a Nav é
+// montada por App em toda rota.
+describe('Nav: nome do projeto em exibição', () => {
+  it('com um projeto, mostra o nome', () => {
+    mockProjects = [{ pid: 'p1', name: 'Meu Projeto' }]
+    render(
+      <I18nProvider>
+        <Nav hash="#/kanban" />
+      </I18nProvider>,
+    )
+    expect(document.querySelector('.nav .nav-project-name')).toHaveTextContent('Meu Projeto')
+  })
+
+  it('com vários, o seletor tem o projeto ativo selecionado', () => {
+    mockProjects = [
+      { pid: 'p1', name: 'Meu Projeto' },
+      { pid: 'p2', name: 'Outro' },
+    ]
+    render(
+      <I18nProvider>
+        <Nav hash="#/kanban" />
+      </I18nProvider>,
+    )
+    expect(document.querySelector('.nav select.nav-project-select')).toHaveDisplayValue('Meu Projeto')
+  })
+})

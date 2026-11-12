@@ -11,11 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 func getJSON(t *testing.T, url string, v any) {
@@ -355,5 +357,44 @@ func TestProjectsListReadsNameFromBackend(t *testing.T) {
 	// registration-time name this feature removes.
 	if got := name(); got != "Renomeado" {
 		t.Fatalf("name without project.json = %q, want the last good read %q", got, "Renomeado")
+	}
+}
+
+// F-0373: the probe the CLI already makes (GET /api/projects) carries the
+// host's full version and the identity of the UI it embeds, so a joining
+// process can tell a panel serving another UI from its own.
+func TestProjectsListReportsVersionAndUIIdentity(t *testing.T) {
+	repoA, projA, _ := newGitBackendNoClean(t)
+	resolve := func(dir string) (string, string, string, string, error) {
+		return repoA, projA, "proj-a", "Projeto A", nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handler, err := NewUIMulti(ctx, resolve, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	var body struct {
+		Version string `json:"version"`
+		UI      string `json:"ui"`
+	}
+	getJSON(t, srv.URL+"/api/projects", &body)
+	if body.Version != version.Version {
+		t.Fatalf("version = %q, want the full %q", body.Version, version.Version)
+	}
+	if body.UI == "" || body.UI != UIIdentity() {
+		t.Fatalf("ui = %q, want the embedded UI identity %q", body.UI, UIIdentity())
+	}
+}
+
+func TestUIIdentityHashesTheEmbeddedFS(t *testing.T) {
+	a := fsIdentity(fstest.MapFS{"index.html": {Data: []byte("a")}})
+	b := fsIdentity(fstest.MapFS{"index.html": {Data: []byte("b")}})
+	a2 := fsIdentity(fstest.MapFS{"index.html": {Data: []byte("a")}})
+	if a == "" || a == b || a != a2 {
+		t.Fatalf("identities a=%q b=%q a2=%q: want stable per content and distinct across content", a, b, a2)
 	}
 }
