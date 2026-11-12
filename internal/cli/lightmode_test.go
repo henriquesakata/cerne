@@ -62,3 +62,32 @@ func TestLint_LightModeCLI(t *testing.T) {
 		t.Fatalf("light mode: lint still charges spec-missing-bar\n%s", out)
 	}
 }
+
+// TestStatus_ShowsLightMode (F-0364 crit. 2, 4): status says when the project
+// runs without the Gauntlet — one line in the text, a "gauntlet" field in the
+// JSON — and prints no such line with the Gauntlet on.
+func TestStatus_ShowsLightMode(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	const line = `Gauntlet: off (light mode) — turn it on with [gates] gauntlet = "on" in .cernerc`
+	for _, v := range []string{"", "off"} {
+		setGauntlet(t, projDir, v)
+		out, err := execCerne(t, "status", "--dir", projDir)
+		if err != nil {
+			t.Fatalf("status: %v\n%s", err, out)
+		}
+		if got := strings.Contains(out, line); got != (v == "off") {
+			t.Fatalf("gauntlet %q: light-mode line shown = %v\n%s", v, got, out)
+		}
+		js, err := execCerne(t, "status", "--json", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `"gauntlet": "on"`
+		if v == "off" {
+			want = `"gauntlet": "off"`
+		}
+		if !strings.Contains(js, want) {
+			t.Fatalf("gauntlet %q: json lacks %s\n%s", v, want, js)
+		}
+	}
+}

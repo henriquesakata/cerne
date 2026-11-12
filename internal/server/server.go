@@ -149,6 +149,9 @@ type stateResponse struct {
 	// approved one (F-0318), so the board badges them. Derived on every
 	// request through lint.SpecChangedAfterApproval; always present, never null.
 	StaleApprovals []string `json:"stale_approvals"`
+	// Gauntlet is "off" when the project runs in light mode (F-0364), "on"
+	// otherwise — the dashboard shows the choice.
+	Gauntlet string `json:"gauntlet"`
 }
 
 // activeWorkItem is one active W-item referencing a feature: enough to badge
@@ -193,7 +196,7 @@ func countOpenClarifications(repoDir string) map[string]int {
 	return open
 }
 
-func handleState(w http.ResponseWriter, repoDir string) {
+func handleState(w http.ResponseWriter, repoDir, projDir string) {
 	proj, err := store.LoadProject(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -249,7 +252,17 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		OpenClarifications: countOpenClarifications(repoDir),
 		ActiveWork:         activeWorkByRef(repoDir),
 		StaleApprovals:     stale,
+		Gauntlet:           gauntletMode(projDir),
 	})
+}
+
+// gauntletMode is the project's [gates] gauntlet as the UI reads it: "off" in
+// light mode (F-0364), "on" otherwise — including an unreadable config.
+func gauntletMode(projDir string) string {
+	if cfg, _, err := project.LoadConfig(projDir); err == nil && !cfg.Gates.GauntletEnabled() {
+		return "off"
+	}
+	return "on"
 }
 
 // workResponse is the GET /api/work payload (F-0130): every work regardless of

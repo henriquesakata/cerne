@@ -37,8 +37,8 @@ type dataRoute struct {
 // routes the Studio host calls: chat, chat/register, chat/note, transition).
 func dataRoutes() []dataRoute {
 	return []dataRoute{
-		{"GET", "/state", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
-			handleState(w, repoDir)
+		{"GET", "/state", true, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
+			handleState(w, repoDir, projDir)
 		}},
 		{"GET", "/savings", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleSavings(w, repoDir)
