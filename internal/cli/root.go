@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -84,5 +86,47 @@ func Root() *cobra.Command {
 	root.AddCommand(verbs.MarkLocal(newLockCmd()))
 	root.AddCommand(verbs.MarkLocal(newRoomCmd()))
 	root.AddCommand(verbs.MarkLocal(newMsgCmd()))
+	root.InitDefaultCompletionCmd() // cobra adds it only at Execute, after the guard would have run
+	for _, c := range root.Commands() {
+		if c.Name() == "completion" {
+			verbs.MarkLocal(c) // shell scaffolding: the human's terminal only
+		}
+	}
+	guardGroups(root)
 	return root
+}
+
+// guardGroups makes every group (subcommands, no Run of its own) fail on an
+// unknown first argument instead of printing help with exit 0 (F-0344): cobra
+// only checks that at the root, and a non-runnable group short-circuits to help
+// before argument validation.
+func guardGroups(c *cobra.Command) {
+	for _, sub := range c.Commands() {
+		if sub.HasSubCommands() && !sub.Runnable() {
+			sub.RunE = groupRunE
+			verbs.MarkGroup(sub)
+		}
+		guardGroups(sub)
+	}
+}
+
+func groupRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if args[0] == "help" { // root help takes the group path: `feature help approve` -> `help feature approve`
+		path := strings.TrimPrefix(cmd.CommandPath(), "cerne ")
+		return fmt.Errorf("%s\n\nDid you mean: cerne help %s?", msg, strings.Join(append([]string{path}, args[1:]...), " "))
+	}
+	for _, rc := range cmd.Root().Commands() {
+		if (rc.Name() == args[0] || rc.HasAlias(args[0])) && rc != cmd {
+			return fmt.Errorf("%s\n\nDid you mean: cerne %s?", msg, strings.Join(args, " "))
+		}
+	}
+	cmd.SuggestionsMinimumDistance = 2 // cobra only defaults this on the root
+	if sug := cmd.SuggestionsFor(args[0]); len(sug) > 0 {
+		msg += "\n\nDid you mean this?\n\t" + strings.Join(sug, "\n\t")
+	}
+	return fmt.Errorf("%s", msg)
 }

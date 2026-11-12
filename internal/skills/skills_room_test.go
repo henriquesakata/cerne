@@ -6,6 +6,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/cli"
 	"github.com/henriquesakata/cerne/internal/skills"
+	"github.com/henriquesakata/cerne/internal/verbs"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +55,7 @@ func collectLeaves(cmd *cobra.Command, fn func(path string)) {
 	if !cmd.Runnable() && len(cmd.Commands()) == 0 {
 		return
 	}
-	if cmd.Runnable() {
+	if verbs.IsVerb(cmd) {
 		fn(cmd.CommandPath())
 	}
 	for _, c := range cmd.Commands() {

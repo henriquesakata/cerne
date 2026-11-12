@@ -16,6 +16,7 @@ import (
 const (
 	classKey    = "cerne/chat-class"
 	chatToolKey = "cerne/chat-tool"
+	groupKey    = "cerne/group"
 )
 
 // The chat classes of a verb (F-0323 C4). Every user-facing verb carries one on
@@ -55,6 +56,14 @@ func MarkChatTool(cmd *cobra.Command) *cobra.Command {
 	return annotate(MarkChat(cmd), chatToolKey, "true")
 }
 
+// MarkGroup flags cmd as a command group that is runnable only through the
+// unknown-subcommand guard (F-0344): it prints help or errors, it is no verb.
+func MarkGroup(cmd *cobra.Command) *cobra.Command { return annotate(cmd, groupKey, "true") }
+
+// IsVerb reports whether c is a runnable command of the catalog: runnable and
+// not a guarded group. Every "is this a verb" test goes through here.
+func IsVerb(c *cobra.Command) bool { return c.Runnable() && c.Annotations[groupKey] == "" }
+
 func annotate(cmd *cobra.Command, key, value string) *cobra.Command {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
@@ -86,7 +95,7 @@ func From(root *cobra.Command) []Verb {
 		if c.Hidden {
 			continue
 		}
-		if c.Runnable() {
+		if IsVerb(c) {
 			out = append(out, verbOf(c))
 		}
 		out = append(out, From(c)...)
