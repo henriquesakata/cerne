@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -360,8 +361,9 @@ func TestProjectsListReadsNameFromBackend(t *testing.T) {
 }
 
 // F-0373: the probe the CLI already makes (GET /api/projects) carries the
-// host's version, so a joining process can tell a stale panel from its own.
-func TestProjectsListReportsVersion(t *testing.T) {
+// host's full version and the identity of the UI it embeds, so a joining
+// process can tell a panel serving another UI from its own.
+func TestProjectsListReportsVersionAndUIIdentity(t *testing.T) {
 	repoA, projA, _ := newGitBackendNoClean(t)
 	resolve := func(dir string) (string, string, string, string, error) {
 		return repoA, projA, "proj-a", "Projeto A", nil
@@ -377,9 +379,22 @@ func TestProjectsListReportsVersion(t *testing.T) {
 
 	var body struct {
 		Version string `json:"version"`
+		UI      string `json:"ui"`
 	}
 	getJSON(t, srv.URL+"/api/projects", &body)
-	if body.Version != version.Short() {
-		t.Fatalf("version = %q, want %q", body.Version, version.Short())
+	if body.Version != version.Version {
+		t.Fatalf("version = %q, want the full %q", body.Version, version.Version)
+	}
+	if body.UI == "" || body.UI != UIIdentity() {
+		t.Fatalf("ui = %q, want the embedded UI identity %q", body.UI, UIIdentity())
+	}
+}
+
+func TestUIIdentityHashesTheEmbeddedFS(t *testing.T) {
+	a := fsIdentity(fstest.MapFS{"index.html": {Data: []byte("a")}})
+	b := fsIdentity(fstest.MapFS{"index.html": {Data: []byte("b")}})
+	a2 := fsIdentity(fstest.MapFS{"index.html": {Data: []byte("a")}})
+	if a == "" || a == b || a != a2 {
+		t.Fatalf("identities a=%q b=%q a2=%q: want stable per content and distinct across content", a, b, a2)
 	}
 }
