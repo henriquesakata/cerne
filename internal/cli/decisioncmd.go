@@ -12,6 +12,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/dectmpl"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/slug"
@@ -269,7 +270,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	current := readDecisionCurrent(ctx.repoDir, id)
-	prompt := BuildDecisionDraftPrompt(d, current)
+	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Decision, BuildDecisionDraftPrompt(d, current))
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.

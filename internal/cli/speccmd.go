@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -56,7 +57,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	current := readSpecCurrent(ctx.repoDir, id)
-	prompt := BuildSpecDraftPrompt(f, current)
+	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Spec, BuildSpecDraftPrompt(f, current))
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.

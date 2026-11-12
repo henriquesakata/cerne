@@ -107,6 +107,8 @@ git add .cernerc docs.lock .gitattributes .gitignore
 git commit -m "chore: adopt cerne"
 ```
 
+cerne scaffolds your documents (specs, plans, results, decisions, runbooks) in English. For Portuguese, add `--docs-language pt-BR` to `cerne init`. The language is recorded in the backend, so everyone on the project gets the same one.
+
 Besides those files, `init` also writes:
 
 - `.claude/` for Claude Code: the `cerne-authoring` and `cerne-self-learning` skills, hooks, and `settings.json`. This repository commits `.claude/settings.json` and `.claude/hooks/` and ignores `.claude/skills/`, which `cerne skill install` recreates.
