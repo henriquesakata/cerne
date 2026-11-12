@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -218,5 +219,42 @@ func TestHubCaseMigratesToSwitch(t *testing.T) {
 	}
 	if _, err := os.Stat(logPath); err == nil {
 		t.Error("a script called cerne with the switch on")
+	}
+}
+
+// readSpy records whether a command read its stdin.
+type readSpy struct {
+	r    io.Reader
+	read bool
+}
+
+func (s *readSpy) Read(p []byte) (int, error) { s.read = true; return s.r.Read(p) }
+
+// TestRuntimeHooksSkipPayloadWhenOff (F-0360 crit. 4): every runtime
+// subcommand reads its payload without the switch, and none reads it with the
+// switch on — the wrapper returns before any of the subcommand's work.
+func TestRuntimeHooksSkipPayloadWhenOff(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	payload := hookJSON(t, "sess-spy", projDir, "Bash", map[string]any{"command": "ls"}, nil)
+	run := func(sub string) bool {
+		t.Helper()
+		spy := &readSpy{r: strings.NewReader(payload)}
+		root := Root()
+		root.SetIn(spy)
+		root.SetOut(io.Discard)
+		root.SetErr(io.Discard)
+		root.SetArgs([]string{"hook", sub})
+		_ = root.Execute()
+		return spy.read
+	}
+	for _, sub := range runtimeHookSubcommands {
+		t.Setenv("CERNE_NO_AGENT_HOOKS", "")
+		if !run(sub) {
+			t.Errorf("hook %s did not read its payload with the switch off — the check below proves nothing", sub)
+		}
+		t.Setenv("CERNE_NO_AGENT_HOOKS", "1")
+		if run(sub) {
+			t.Errorf("hook %s read its payload with the switch on", sub)
+		}
 	}
 }
