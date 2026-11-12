@@ -45,8 +45,8 @@ func PhraseNotes(ctx context.Context, dbPath string, phrases []string) ([]NoteHi
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx,
-		`SELECT entity_id, title, body FROM docs WHERE docs MATCH ? AND kind = 'note' AND state = 'active'`,
-		strings.Join(quoted, " OR "))
+		`SELECT entity_id, title, body FROM docs WHERE docs MATCH ? AND kind = 'note' AND state = 'active' LIMIT 500`,
+		"{title body} : ("+strings.Join(quoted, " OR ")+")")
 	if err != nil {
 		return nil, wrapBusy(err)
 	}

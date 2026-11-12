@@ -137,3 +137,18 @@ func benchIndex(tb testing.TB) string {
 	}
 	return db
 }
+
+// The MATCH is restricted to title and body: a phrase equal to an entity id
+// (or any other column) is not a citation.
+func TestPhraseNotesMatchesTitleAndBodyOnly(t *testing.T) {
+	repoDir := t.TempDir()
+	seedNote(t, repoDir, "N-0001", "plain", "nothing", domain.NoteActive)
+	db := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, db); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := PhraseNotes(context.Background(), db, []string{"N-0001"})
+	if err != nil || len(hits) != 0 {
+		t.Fatalf("hits=%v err=%v", hits, err)
+	}
+}
