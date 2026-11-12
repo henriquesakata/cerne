@@ -18,6 +18,10 @@
 //     they accepted may be refused. Every later language is "strict".
 //   - A list line that opens with the bar label and a colon is a bar line even
 //     when it is prose ("- Bar: the progress bar shows…"), in every language.
+//   - Messages that name the bar still say "Barra:" whatever the author's
+//     language: they are sentinel errors other code and tests compare.
+//   - A citation joins its numbers with the words of its own language:
+//     "criteria 1, 2 e 3" cites 1 and 2.
 //   - Words cerne itself writes into documents elsewhere are not here yet: the
 //     cost and delivery stamps, an epic's execution map, the origin line of a
 //     promoted pending or idea.
@@ -49,14 +53,15 @@ func Langs() []Lang { return append([]Lang(nil), langs...) }
 type layout int
 
 const (
+	// strict is every language added after Portuguese, and the zero value on
+	// purpose: its words are everyday prose (Bar, Round, win, tie), so a form
+	// must look like a protocol line to count.
+	strict layout = iota
 	// loose is Portuguese: the forms as they matched before the catalog —
 	// any case, a free qualifier before the bar's colon, an outcome word
 	// anywhere in a round. Its words (Barra, Rodada, vitória) rarely open a
 	// line by accident, and documents already rely on the looseness.
-	loose layout = iota
-	// strict is every later language: its words are everyday prose (Bar,
-	// Round, win, tie), so a form must look like a protocol line to count.
-	strict
+	loose
 )
 
 // layouts declares each language's layout; a language missing here fails
@@ -100,9 +105,26 @@ const (
 	Runbook
 )
 
-// specCriteria is the position, in the spec template, of the section whose
-// numbered items are the acceptance contract.
-const specCriteria = 1
+// Positions, in their templates, of the sections a reader looks for by role.
+const (
+	specProblem  = 0 // where feature new seeds the context
+	specCriteria = 1 // its numbered items are the acceptance contract
+	resultDebts  = 3 // what the delivery left open
+)
+
+// ProblemHeadings returns the heading of the spec's problem section in every
+// language of the catalog.
+func ProblemHeadings() []string {
+	out := make([]string, len(langs))
+	for i, l := range langs {
+		out[i] = sections[Spec][l][specProblem]
+	}
+	return out
+}
+
+// IsDebtsSection reports whether heading opens the result section that lists
+// what the delivery left open, in any language.
+func IsDebtsSection(heading string) bool { return IsSection(Result, resultDebts, heading) }
 
 // IsCriteriaSection reports whether heading opens the spec section whose
 // numbered items are the acceptance contract, in any language.
@@ -219,6 +241,8 @@ const (
 	RangeTo
 	ListAnd
 	ListOr
+	// Unmet marks an acceptance criterion the delivery did not meet.
+	Unmet
 	numTerms
 )
 
@@ -250,6 +274,7 @@ var terms = map[Term]map[Lang]form{
 	RangeTo:        {PT: {re: `a`}, EN: {re: `to`}},
 	ListAnd:        {PT: {re: `e`}, EN: {re: `and`}},
 	ListOr:         {PT: {re: `ou`}, EN: {re: `or`}},
+	Unmet:          {PT: {re: `PENDENTE`}, EN: {re: `UNMET`}},
 }
 
 // in is term t as a regular-expression fragment in language l.

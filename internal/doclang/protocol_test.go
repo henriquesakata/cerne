@@ -22,7 +22,7 @@ func TestBarLine(t *testing.T) {
 		{"no label here", "", "", false},
 	}
 	for _, tt := range tests {
-		v, l, ok := BarLine(tt.line)
+		v, l, ok := BarLine(tt.line, false)
 		if v != tt.value || l != tt.lang || ok != tt.ok {
 			t.Errorf("BarLine(%q) = %q, %q, %v; want %q, %q, %v", tt.line, v, l, ok, tt.value, tt.lang, tt.ok)
 		}
@@ -62,29 +62,38 @@ func TestRoundAnchor(t *testing.T) {
 	for line, want := range map[string]int{
 		"Rodada 1 — vitória": 1, "Rodada 6 de novo": 6, // loose
 		"Round 2 — win": 2, "Round 3": 3, "Round 4: tie": 4, "Round 5 (new judge) — loss": 5,
+		"Round 7** — win: \"x\"": 7, "Round 8 | loss | \"x\" |": 8, // after the leading ** or | is stripped
 	} {
-		if n, ok := RoundAnchor(line); !ok || n != want {
+		if n, _, ok := RoundAnchor(line); !ok || n != want {
 			t.Errorf("RoundAnchor(%q) = %d, %v; want %d", line, n, ok, want)
 		}
 	}
 	for _, line := range []string{"Round 2 of benchmarking was skipped", "Round 10 times and average", "Rounding 2 digits", "rodada 1", "Rodadas 2"} {
-		if _, ok := RoundAnchor(line); ok {
+		if _, _, ok := RoundAnchor(line); ok {
 			t.Errorf("RoundAnchor(%q) opened a round", line)
 		}
 	}
 }
 
 func TestOutcome(t *testing.T) {
-	for s, want := range map[string]string{
-		"Rodada 2 (tie-break) — derrota":   "derrota",
-		"Round 2 — tie-breaker run — loss": "loss",
-		" — WIN: ":                         "WIN",
-		"uma vitória e uma derrota":        "vitória",
-		"a win-win, they said":             "",
-		"lossless and untied":              "",
-	} {
-		if got := Outcome(s); got != want {
-			t.Errorf("Outcome(%q) = %q, want %q", s, got, want)
+	tests := []struct {
+		s      string
+		prefer Lang
+		want   string
+	}{
+		{"Rodada 2 (tie-break) — derrota", PT, "derrota"},
+		{"Round 2 — tie-breaker run — loss", EN, "loss"},
+		{" — WIN: ", EN, "WIN"},
+		{"uma vitória e uma derrota", PT, "vitória"},
+		{"Rodada 2 — quick win tentado, derrota", PT, "derrota"}, // the anchor's language first
+		{"Rodada 3 — win", PT, "win"},                            // another language only when it has none
+		{"Round 3 — empate", EN, "empate"},
+		{"a win-win, they said", EN, ""},
+		{"lossless and untied", EN, ""},
+	}
+	for _, tt := range tests {
+		if got := Outcome(tt.s, tt.prefer); got != tt.want {
+			t.Errorf("Outcome(%q, %s) = %q, want %q", tt.s, tt.prefer, got, tt.want)
 		}
 	}
 }
@@ -92,8 +101,9 @@ func TestOutcome(t *testing.T) {
 func TestOutcomeLine(t *testing.T) {
 	for s, want := range map[string]string{
 		"Veredito: derrota": "derrota", "Derrota técnica": "Derrota", "Resultado: EMPATE.": "EMPATE",
-		"Loss.": "Loss", "Verdict: tie": "tie", "Outcome: **win**": "win", "win — after the fix": "win",
+		"Loss.": "Loss", "Verdict: tie": "tie", "Outcome: **win**": "win", "**Win**": "Win", "Result: loss — B handles the empty case": "loss",
 		"Loss of precision was noted": "", "Win rate: 60%": "", "Tie the output to the fixture": "", "Win for A on clarity.": "",
+		"Loss: 0.31 no holdout": "", "Win: 3 of 5 seeds": "", "win — after the fix": "", // a bare word followed by text is a metric or prose
 	} {
 		if got := OutcomeLine(s); got != want {
 			t.Errorf("OutcomeLine(%q) = %q, want %q", s, got, want)
@@ -107,7 +117,7 @@ func TestVerdictIn(t *testing.T) {
 			t.Errorf("VerdictIn(%q) = false", text)
 		}
 	}
-	for _, text := range []string{"Verdict: A clear improvement", "we tie the outputs; a quick win", "nothing here"} {
+	for _, text := range []string{"Verdict: A clear improvement", "we tie the outputs; a quick win", "nothing here", "Verdict: A/B comparison still pending", "Verdict:\nA."} {
 		if VerdictIn(text) {
 			t.Errorf("VerdictIn(%q) = true", text)
 		}
@@ -157,7 +167,9 @@ func TestCitations(t *testing.T) {
 		{"critérios 2 a 4", []Citation{{Plural: true, Numbers: []int{2, 4}, Ranges: [][2]int{{2, 4}}}}},
 		{"Criterion 2 to 3 hours", []Citation{{Numbers: []int{2, 3}, Ranges: [][2]int{{2, 3}}}}}, // singular: the reader takes the first number only
 		{"criteria 1 to 3, 5 and 7", []Citation{{Plural: true, Numbers: []int{1, 3, 5, 7}, Ranges: [][2]int{{1, 3}}}}},
-		{"critérios 1 to 3", []Citation{{Plural: true, Numbers: []int{1}}}}, // each language joins with its own words
+		{"critérios 1 to 3", []Citation{{Plural: true, Numbers: []int{1}}}},           // each language joins with its own words
+		{"criteria 1, 2, and 3", []Citation{{Plural: true, Numbers: []int{1, 2, 3}}}}, // the serial comma
+		{"Criteria 2 TO 4", []Citation{{Plural: true, Numbers: []int{2, 4}, Ranges: [][2]int{{2, 4}}}}},
 		{"subcriterion 3", nil},
 		{"the criterion was met; see 1", nil},
 	}
@@ -165,5 +177,49 @@ func TestCitations(t *testing.T) {
 		if got := Citations(tt.text); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("Citations(%q) = %+v, want %+v", tt.text, got, tt.want)
 		}
+	}
+}
+
+// A code sample is not a bar (critic, pass 2), except where documents already
+// rely on it: the loose language shows its forms inside fences.
+func TestBarLine_Code(t *testing.T) {
+	for _, line := range []string{"    Bar: 1,", "\tBar: 1,", "      - Bar: nested four deep"} {
+		if _, _, ok := BarLine(line, false); ok {
+			t.Errorf("BarLine(%q) read an indented code line as a bar", line)
+		}
+	}
+	if _, _, ok := BarLine("Bar: 1", true); ok {
+		t.Error("a strict bar line inside a code fence counted")
+	}
+	if _, l, ok := BarLine("Barra: internal/x.go", true); !ok || l != PT {
+		t.Error("the loose language must still read a bar inside a code fence")
+	}
+	if _, _, ok := BarLine("   - **Bar:** internal/x.go", false); !ok {
+		t.Error("a list item indented three spaces is still a bar line")
+	}
+	if !Fence("```go") || !Fence("  ~~~") || Fence("`inline`") {
+		t.Error("Fence misreads")
+	}
+}
+
+func TestLegacyExemption_SpacesOnly(t *testing.T) {
+	if LegacyExemption("Barra: não-aplicável (sem referência)") {
+		t.Error("the legacy predicate never took the hyphenated form")
+	}
+}
+
+func TestUnmetCriterion(t *testing.T) {
+	for _, line := range []string{"- Criterion 3: UNMET — no test yet", "| criteria 1-2 | UNMET |"} {
+		if !UnmetCriterion(line) {
+			t.Errorf("UnmetCriterion(%q) = false", line)
+		}
+	}
+	for _, line := range []string{"Criterion 3 is UNMET in prose", "- Criterion 3: MET", "- critério 3: PENDENTE"} {
+		if UnmetCriterion(line) {
+			t.Errorf("UnmetCriterion(%q) = true", line)
+		}
+	}
+	if !IsDebtsSection("Debts and follow-ups") || !IsDebtsSection("Débitos e follow-ups") || len(ProblemHeadings()) != len(Langs()) {
+		t.Error("role sections misread")
 	}
 }

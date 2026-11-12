@@ -202,7 +202,7 @@ func parseGauntlet(section string) gauntletRecord {
 		}
 		list := listItemRe.MatchString(line)
 		if critic { // Achados block: excluded from every round until it ends
-			n, anchored := doclang.RoundAnchor(s)
+			n, _, anchored := doclang.RoundAnchor(s)
 			newRound := anchored && !slices.Contains(nums, n)
 			switch {
 			case anchored && !list,
@@ -217,7 +217,7 @@ func parseGauntlet(section string) gauntletRecord {
 			criticIndent = len(line) - len(strings.TrimLeft(line, " \t"))
 			continue
 		}
-		if n, anchored := doclang.RoundAnchor(s); anchored {
+		if n, anchorLang, anchored := doclang.RoundAnchor(s); anchored {
 			i := slices.Index(nums, n) // same number = same round
 			if i < 0 {
 				blocks, nums, outcomes, words = append(blocks, &strings.Builder{}), append(nums, n), append(outcomes, 0), append(words, "")
@@ -230,7 +230,7 @@ func parseGauntlet(section string) gauntletRecord {
 			if q := strings.IndexAny(s, "\"“«"); q >= 0 {
 				head = s[:q]
 			}
-			raise(&outcomes[i], &words[i], doclang.Outcome(head))
+			raise(&outcomes[i], &words[i], doclang.Outcome(head, anchorLang))
 		} else if word := doclang.OutcomeLine(s); word != "" {
 			target, w := &implicitOutcome, &implicitWord
 			if curIdx >= 0 {

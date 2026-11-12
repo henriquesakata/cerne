@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // okfMeta carries the structured fields projected into a concept's Open
@@ -137,8 +138,8 @@ func firstProseParagraph(body []byte, limit int) string {
 // the context — F-0120), falling back to the body's first prose paragraph when
 // the section is absent or empty.
 func specDescription(body []byte, limit int) string {
-	for _, heading := range []string{"## Problema", "## Problem"} { // either language (F-0359)
-		if sec := sectionBody(body, heading); len(sec) > 0 {
+	for _, heading := range doclang.ProblemHeadings() { // any language (F-0359)
+		if sec := sectionBody(body, "## "+heading); len(sec) > 0 {
 			if d := firstProseParagraph(sec, limit); d != "" {
 				return d
 			}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -47,12 +48,12 @@ var (
 	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\b|ainda\s+n[aã]o|pendente|aguardando|n/a\b|a\s+(?:verificar|conferir)|tbd\b|sem\s+(?:evid[eê]ncia|registro|dados?|informa)|nada\b)|^[\s*_\x60.—–-]*$`)
 	// PENDENTE counts only on an acceptance line (list item or table row that
 	// names a "critério"), never in loose prose.
-	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*(?:crit[ée]rio.*\bPENDENTE\b|(?i:criteri(?:on|a)).*\bUNMET\b)`)
+	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)
 	// The pendings sections the hub's results use (F-0887): "Débitos e follow-ups"
 	// already matches by Débitos; a title merely containing "débito" would match prose.
 	// Singular, bold and numbered titles ("## Pendência", "## **Débitos**",
 	// "## 5. Débitos") open it too.
-	pendingHead = regexp.MustCompile(`(?i)^(?:\d+[.)]\s+)?[*_]*(?:d[ée]bitos?|debts?|n[aã]o verificado|not verified|follow-?ups?|pend[êe]ncias?)\b`)
+	pendingHead = regexp.MustCompile(`(?i)^(?:\d+[.)]\s+)?[*_]*(?:d[ée]bitos?|n[aã]o verificado|follow-?ups?|pend[êe]ncias?)\b`)
 	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	bulletRe    = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$`)
 	// A pure zero declares no debt (F-0887): "Nenhum.", "Nenhum débito aberto.",
@@ -132,7 +133,7 @@ func summarizeResult(result []byte) AcceptRow {
 			if inSection && level <= secLevel { // only a heading of the same or higher level ends the section
 				inSection = false
 			}
-			if !inSection && level >= 2 && pendingHead.MatchString(m[2]) {
+			if !inSection && level >= 2 && (pendingHead.MatchString(m[2]) || doclang.IsDebtsSection(m[2])) {
 				inSection, secLevel, base = true, level, -1
 			}
 			prodSect = prodHeadRe.MatchString(strings.TrimSpace(m[2]))
@@ -151,7 +152,7 @@ func summarizeResult(result []byte) AcceptRow {
 				row.Production = clip(line)
 			}
 		}
-		if pendingWord.MatchString(line) {
+		if pendingWord.MatchString(line) || doclang.UnmetCriterion(line) {
 			row.PendingReported = true
 			row.Pending = append(row.Pending, clip(line))
 		} else if m := bulletRe.FindStringSubmatch(line); inSection && m != nil {

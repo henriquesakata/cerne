@@ -97,8 +97,13 @@ func exemptionError(inner string, complete bool, need string) error {
 // value, nor an exemption's justification or quote.
 func SpecBar(body []byte) (string, error) {
 	firstInvalid := ErrBarMissing
+	inCode := false
 	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
-		value, l, ok := doclang.BarLine(line)
+		if doclang.Fence(line) {
+			inCode = !inCode
+			continue
+		}
+		value, l, ok := doclang.BarLine(line, inCode)
 		if !ok {
 			continue
 		}
@@ -117,6 +122,6 @@ func SpecBar(body []byte) (string, error) {
 // and the result reader take: ok, and the text after the colon (past the
 // label's closing emphasis), trimmed.
 func BarLine(line string) (value string, ok bool) {
-	value, _, ok = doclang.BarLine(line)
+	value, _, ok = doclang.BarLine(line, false)
 	return value, ok
 }

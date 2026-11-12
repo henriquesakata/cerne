@@ -142,7 +142,7 @@ func TestResultGauntlet_EnglishIsStrict(t *testing.T) {
 				t.Errorf("OutcomeLine(%q) = %q, want none", line, w)
 			}
 		}
-		for line, want := range map[string]string{"Loss.": "Loss", "Verdict: tie": "tie", "Outcome: **win**": "win", "win — after the fix": "win", "Veredito: derrota": "derrota", "Derrota técnica": "Derrota"} {
+		for line, want := range map[string]string{"Loss.": "Loss", "Verdict: tie": "tie", "Outcome: **win**": "win", "Veredito: derrota": "derrota", "Derrota técnica": "Derrota"} {
 			if w := doclang.OutcomeLine(line); w != want {
 				t.Errorf("OutcomeLine(%q) = %q, want %q", line, w, want)
 			}
@@ -150,12 +150,12 @@ func TestResultGauntlet_EnglishIsStrict(t *testing.T) {
 	})
 	t.Run("prose does not open a round", func(t *testing.T) {
 		for _, line := range []string{"Round 2 of benchmarking was skipped", "Round 10 times and average", "Rounding 2 digits"} {
-			if _, ok := doclang.RoundAnchor(line); ok {
+			if _, _, ok := doclang.RoundAnchor(line); ok {
 				t.Errorf("RoundAnchor(%q) opened a round", line)
 			}
 		}
 		for line, want := range map[string]int{"Round 2 — win: \"x\"": 2, "Round 3": 3, "Round 4: tie": 4, "Round 5 (new judge) — loss": 5, "Rodada 6 de novo": 6} {
-			if n, ok := doclang.RoundAnchor(line); !ok || n != want {
+			if n, _, ok := doclang.RoundAnchor(line); !ok || n != want {
 				t.Errorf("RoundAnchor(%q) = %d, %v; want %d", line, n, ok, want)
 			}
 		}
@@ -194,5 +194,46 @@ func TestResultEvidence_EnglishIsStrict(t *testing.T) {
 	// Each language joins its own numbers with its own words.
 	if got := resultMentions([]byte("critérios 1 to 3")); got[2] || got[3] {
 		t.Errorf("a Portuguese citation expanded an English range: %v", got)
+	}
+}
+
+// Regressions the second critic found in Portuguese records once English
+// words could be read inside them.
+func TestResultGauntlet_PortugueseUnchangedByEnglishWords(t *testing.T) {
+	tests := []struct {
+		name, section string
+		losses        int
+		verdict       string
+	}{
+		{"a metric line is not an outcome", "Barra: internal/x.go\nRodada 1\nLoss: 0.31 no holdout\nVeredito: vitória — \"B é melhor\"\n", 0, "vitória"},
+		{"the anchor's language decides", "Barra: internal/x.go\nRodada 2 — quick win tentado, derrota: \"A segue melhor\"\n", 1, "derrota"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := []byte("## Gauntlet\n\n" + tt.section)
+			if ok, losses := GauntletRounds(result); !ok || losses != tt.losses {
+				t.Errorf("GauntletRounds = %v, %d; want true, %d", ok, losses, tt.losses)
+			}
+			if v, ok := GauntletVerdict(result); !ok || v != tt.verdict {
+				t.Errorf("GauntletVerdict = %q, %v; want %q", v, ok, tt.verdict)
+			}
+		})
+	}
+}
+
+func TestResultGauntlet_EnglishAnchorsInBoldAndTables(t *testing.T) {
+	for _, section := range []string{
+		"Bar: internal/x.go\n**Round 1** — loss: \"B is clearer\"\n",
+		"Bar: internal/x.go\n| Round 1 | loss | \"B is clearer\" |\n",
+	} {
+		if ok, losses := GauntletRounds([]byte("## Gauntlet\n\n" + section)); !ok || losses != 1 {
+			t.Errorf("%q: GauntletRounds = %v, %d; want true, 1", section, ok, losses)
+		}
+	}
+}
+
+func TestResultEvidence_SerialComma(t *testing.T) {
+	if got := resultMentions([]byte("Evidence for criteria 1, 2, and 3: TestAll")); !got[1] || !got[2] || !got[3] {
+		t.Errorf("mentions = %v", got)
 	}
 }

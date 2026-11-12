@@ -22,6 +22,7 @@ const wordEdge = `[^\pL\pN_-]`
 // matchers is every recognizer of one language, compiled once.
 type matchers struct {
 	bar          *regexp.Regexp // group 1: the value after the label
+	barInProse   bool           // a bar line counts inside a code block too
 	notApplic    *regexp.Regexp // the complete form; group 1: the parenthesized text
 	waived       *regexp.Regexp // the complete form; group 1: the parenthesized text
 	notApplicAt  *regexp.Regexp // a value that opens as that exemption
@@ -47,18 +48,28 @@ func words(l Lang, ts ...Term) string {
 
 func build(l Lang) matchers {
 	outcomes := words(l, Win, Loss, Tie)
-	joiners := `[-–—]|\b` + in(RangeTo, l) + `\b|,|\b` + in(ListAnd, l) + `\b|\b` + in(ListOr, l) + `\b`
+	and, or := `\b`+in(ListAnd, l)+`\b`, `\b`+in(ListOr, l)+`\b`
+	comma := `,`
+	if layouts[l] == strict {
+		comma = `,\s*(?:` + and + `|` + or + `)?` // the serial comma: "1, 2, and 3"
+	}
+	joiners := `[-–—]|\b` + in(RangeTo, l) + `\b|` + comma + `|` + and + `|` + or
 	numbers := `\s*(?:[:#]|n[ºo°]\.?)?\s*(\d+(?:\s*(?:` + joiners + `)\s*\d+)*)`
 	keyword := `(?:(` + in(Criteria, l) + `)|` + in(Criterion, l) + `)`
 	m := matchers{
-		notApplic:    regexp.MustCompile(`(?i)^` + in(NotApplicable, l) + `\s*\(([^)]*)`),
-		waived:       regexp.MustCompile(`(?i)^` + in(Waived, l) + `\s*\(([^)]*)`),
-		notApplicAt:  regexp.MustCompile(`(?i)^` + in(NotApplicable, l)),
-		waivedAt:     regexp.MustCompile(`(?i)^` + in(WaivedOpen, l)),
-		mentionRange: regexp.MustCompile(`(\d+)\s*(?:[-–—]|\b` + in(RangeTo, l) + `\b)\s*(\d+)`),
+		notApplic:   regexp.MustCompile(`(?i)^` + in(NotApplicable, l) + `\s*\(([^)]*)`),
+		waived:      regexp.MustCompile(`(?i)^` + in(Waived, l) + `\s*\(([^)]*)`),
+		notApplicAt: regexp.MustCompile(`(?i)^` + in(NotApplicable, l)),
+		waivedAt:    regexp.MustCompile(`(?i)^` + in(WaivedOpen, l)),
 	}
+	rangeCase := `(?i)` // "Criteria 2 TO 4", as the keyword itself is matched
+	if layouts[l] == loose {
+		rangeCase = ``
+	}
+	m.mentionRange = regexp.MustCompile(rangeCase + `(\d+)\s*(?:[-–—]|\b` + in(RangeTo, l) + `\b)\s*(\d+)`)
 	if layouts[l] == loose {
 		m.bar = regexp.MustCompile(`(?i)^` + lineMarkers + in(BarLabel, l) + `[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
+		m.barInProse = true // documents show the forms inside code fences
 		m.header = regexp.MustCompile(`(?i)^(?:` + words(l, MethodLabel, ExitLabel) + `)[*_]*:`)
 		m.critic = regexp.MustCompile(`(?i)^` + in(CriticFindings, l))
 		m.round = regexp.MustCompile(`^` + in(Round, l) + `[\s\x{00A0}]+(\d+)\b`)
@@ -71,20 +82,27 @@ func build(l Lang) matchers {
 	}
 	// Strict: the label as written, capital included, with only a
 	// parenthesized qualifier ("Bar (from the spec):", never "Bar chart: …"
-	// or a YAML "bar: 42").
-	m.bar = regexp.MustCompile(`^` + lineMarkers + in(BarLabel, l) + `[*_]*(?:[ \t]*\([^:\n)]{0,39}\))?:[*_]*(.*)$`)
+	// or a YAML "bar: 42"), at most three spaces in ("    Bar: 1," is code)
+	// and never inside a code block (BarLine's inCode).
+	m.bar = regexp.MustCompile(`^ {0,3}(?:(?:[#>*_|+-]+|\d+[.)])[ \t\x{00A0}]+)*[*_]*` + in(BarLabel, l) + `[*_]*(?:[ \t]*\([^:\n)]{0,39}\))?:[*_]*(.*)$`)
+
 	m.header = regexp.MustCompile(`^(?:` + words(l, MethodLabel, ExitLabel) + `)[*_]*:`)
 	m.critic = regexp.MustCompile(`(?i)^` + in(CriticFindings, l) + `\b`)
 	// The word, the number, then nothing or punctuation ("Round 2 — …",
 	// never "Round 2 of benchmarking was skipped").
-	m.round = regexp.MustCompile(`^` + in(Round, l) + `[\s\x{00A0}]+(\d+)[ \t\x{00A0}]*(?:$|[—–:(.,;-])`)
+	// Emphasis and a table cell may close the anchor ("**Round 1** — …",
+	// "| Round 1 | loss |"), as they may in a loose language.
+	m.round = regexp.MustCompile(`^` + in(Round, l) + `[\s\x{00A0}]+(\d+)[*_]*[ \t\x{00A0}]*(?:$|[—–:(.,;|-])`)
 	m.outcome = regexp.MustCompile(`(?i)(?:^|` + wordEdge + `)(` + outcomes + `)(?:$|` + wordEdge + `)`)
-	// On its own line the word is followed by nothing or punctuation
-	// ("Loss: …", never "Loss of precision was noted").
-	m.outcomeLine = regexp.MustCompile(`(?i)^(?:` + in(OutcomeLabel, l) + `[*_]*[ \t]*:[ \t]*[*_]*[ \t]*)?(` + outcomes + `)[*_]*[ \t]*(?:$|[.:;,!(—–]|-\s)`)
-	// The letter, then nothing or punctuation ("VERDICT: A", never
-	// "Verdict: A clear improvement").
-	m.verdictLit = regexp.MustCompile(`(?m)(?i:` + in(VerdictLabel, l) + `):\s*(?:A|B|` + in(TieLetter, l) + `)[ \t]*(?:$|[^\pL\pN_ \t])`)
+	// A line states an outcome when it is the labelled form ("Verdict: loss —
+	// B handles the empty case") or the bare word and nothing else ("Loss.").
+	// A bare word followed by text is prose or a metric: "Loss of precision
+	// was noted", "Loss: 0.31", "Win: 3 of 5 seeds".
+	m.outcomeLine = regexp.MustCompile(`(?i)^(?:` + in(OutcomeLabel, l) + `[*_]*[ \t]*:[ \t]*[*_]*[ \t]*(` + outcomes + `)[*_]*[ \t]*(?:$|[.:;,!(—–]|-\s)|[*_]*(` + outcomes + `)[*_]*[ \t]*[.!]?[ \t]*$)`)
+	// The letter on the label's own line, then nothing or a mark that closes
+	// a sentence or a quote ("VERDICT: A", `"VERDICT: B".`; never "Verdict:
+	// A clear improvement" or "Verdict: A/B comparison pending").
+	m.verdictLit = regexp.MustCompile(`(?m)(?i:` + in(VerdictLabel, l) + `):[ \t]*(?:A|B|` + in(TieLetter, l) + `)[ \t]*(?:$|["”»'’.!;)\]*_\x60])`)
 	m.mention = regexp.MustCompile(`(?i)\b` + keyword + numbers)
 	return m
 }
@@ -98,15 +116,27 @@ var byLang = func() map[Lang]matchers {
 }()
 
 // BarLine reads line as the bar line: the value after the label, trimmed, and
-// the language the label was written in.
-func BarLine(line string) (value string, l Lang, ok bool) {
+// the language the label was written in. inCode says the line sits inside a
+// fenced code block, where only a loose language still reads it: a code
+// sample ("Bar: 1,") is not a bar.
+func BarLine(line string, inCode bool) (value string, l Lang, ok bool) {
 	for _, l := range langs {
-		if m := byLang[l].bar.FindStringSubmatch(line); m != nil {
-			return strings.TrimSpace(m[1]), l, true
+		m := byLang[l]
+		if inCode && !m.barInProse {
+			continue
+		}
+		if sub := m.bar.FindStringSubmatch(line); sub != nil {
+			return strings.TrimSpace(sub[1]), l, true
 		}
 	}
 	return "", "", false
 }
+
+var fenceRe = regexp.MustCompile("^\\s*(`{3,}|~{3,})")
+
+// Fence reports whether line opens or closes a fenced code block. A reader
+// walking a document flips its inCode on it.
+func Fence(line string) bool { return fenceRe.MatchString(line) }
 
 // Exemption reads a bar value as one of the two exemption forms. ok reports
 // that the value opens as an exemption (so it is not a named reference); t is
@@ -153,27 +183,37 @@ func CriticLine(s string) bool {
 	return false
 }
 
-// RoundAnchor reads s as the line that opens a round: its number.
-func RoundAnchor(s string) (n int, ok bool) {
+// RoundAnchor reads s as the line that opens a round: its number and the
+// language the anchor was written in.
+func RoundAnchor(s string) (n int, l Lang, ok bool) {
 	for _, l := range langs {
 		if m := byLang[l].round.FindStringSubmatch(s); m != nil {
 			n, _ = strconv.Atoi(m[1])
-			return n, true
+			return n, l, true
 		}
 	}
-	return 0, false
+	return 0, "", false
 }
 
-// Outcome returns the first outcome word in s, in any language, or "".
-// Classify it with Is(Loss, word).
-func Outcome(s string) string {
-	word, at := "", -1
+// Outcome returns the first outcome word in s, or "". The words of language
+// prefer are looked for first, and another language's only when it has none:
+// in "Rodada 2 — quick win tentado, derrota" the round is a derrota, not a
+// win. Classify the word with Is(Loss, word).
+func Outcome(s string, prefer Lang) string {
+	order := []Lang{prefer}
 	for _, l := range langs {
-		if m := byLang[l].outcome.FindStringSubmatchIndex(s); m != nil && (at < 0 || m[2] < at) {
-			word, at = s[m[2]:m[3]], m[2]
+		if l != prefer {
+			order = append(order, l)
 		}
 	}
-	return word
+	for _, l := range order {
+		if m, ok := byLang[l]; ok {
+			if sub := m.outcome.FindStringSubmatch(s); sub != nil {
+				return sub[1]
+			}
+		}
+	}
+	return ""
 }
 
 // OutcomeLine returns the outcome a line states on its own ("Veredito:
@@ -181,7 +221,11 @@ func Outcome(s string) string {
 func OutcomeLine(s string) string {
 	for _, l := range langs {
 		if m := byLang[l].outcomeLine.FindStringSubmatch(s); m != nil {
-			return m[1]
+			for _, word := range m[1:] { // the labelled or the bare group
+				if word != "" {
+					return word
+				}
+			}
 		}
 	}
 	return ""
@@ -217,7 +261,10 @@ var legacyExemptionRe = func() *regexp.Regexp {
 	var parts []string
 	for _, l := range langs {
 		if layouts[l] == loose {
-			parts = append(parts, in(BarLabel, l)+`:\s*(?:`+words(l, NotApplicable, Waived)+`)\s*\(`)
+			// Those records spelled the form with spaces only; the catalog's
+			// fragment also takes a hyphen, which this predicate never did.
+			spaced := strings.ReplaceAll(words(l, NotApplicable, Waived), `[\s-]+`, `\s+`)
+			parts = append(parts, in(BarLabel, l)+`:\s*(?:`+spaced+`)\s*\(`)
 		}
 	}
 	return regexp.MustCompile(`(?i)(?:` + strings.Join(parts, `|`) + `)`)
@@ -261,3 +308,22 @@ func Citations(text string) []Citation {
 	}
 	return out
 }
+
+// unmetRe matches an acceptance line — a list item or table row naming a
+// criterion — that the delivery marked unmet, in the strict languages. The
+// loose language's heuristic predates the catalog and stays with its reader.
+var unmetRe = func() *regexp.Regexp {
+	var parts []string
+	for _, l := range langs {
+		if layouts[l] == strict {
+			parts = append(parts, `(?i:`+words(l, Criterion, Criteria)+`)\b.*\b`+in(Unmet, l)+`\b`)
+		}
+	}
+	if len(parts) == 0 {
+		return regexp.MustCompile(`^\b$`) // matches nothing
+	}
+	return regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*(?:` + strings.Join(parts, `|`) + `)`)
+}()
+
+// UnmetCriterion reports an acceptance line that marks a criterion unmet.
+func UnmetCriterion(line string) bool { return unmetRe.MatchString(line) }

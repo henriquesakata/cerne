@@ -74,3 +74,24 @@ func TestSpecBar_EnglishIsStrict(t *testing.T) {
 		}
 	}
 }
+
+// A code sample is not a bar, in an English or a Portuguese project (critic,
+// pass 2); a Portuguese bar shown inside a fence still is, as it always was.
+func TestSpecBar_CodeSamples(t *testing.T) {
+	for _, body := range []string{
+		"```go\nx := Foo{\n    Bar: 1,\n}\n```\n",
+		"```yaml\nBar: 1\n```\n",
+		"    Bar: 1,\n",
+	} {
+		if got, err := SpecBar([]byte(body)); !errors.Is(err, ErrBarMissing) {
+			t.Errorf("SpecBar(%q) = %q, %v; want ErrBarMissing", body, got, err)
+		}
+	}
+	if got, err := SpecBar([]byte("```\nBarra: internal/x.go\n```\n")); err != nil || got != "Barra: internal/x.go" {
+		t.Errorf("a fenced Portuguese bar: %q, %v", got, err)
+	}
+	// The sample no longer shadows the real bar below it.
+	if got, err := SpecBar([]byte("```go\n    Bar: 1,\n```\n\nBar: internal/x.go\n")); err != nil || got != "Bar: internal/x.go" {
+		t.Errorf("real bar after a sample: %q, %v", got, err)
+	}
+}
