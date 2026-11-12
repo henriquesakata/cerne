@@ -32,7 +32,7 @@ const alignCap = 40
 // presence is the core's concern — but the id is canonicalized first and one
 // the gate cannot load fails closed: the core accepts a lowercase id, so the
 // gate must too, never read it as unknown and let it through.
-func CheckOpenClarifications(repoDir, id string) error {
+func CheckOpenClarifications(repoDir, projDir, id string) error {
 	id = domain.CanonicalID(id)
 	items, err := ListClarifications(repoDir, id)
 	if err != nil {
@@ -62,7 +62,7 @@ func CheckOpenClarifications(repoDir, id string) error {
 	// The card impediments (F-0336) wait behind this check too, and --force
 	// crosses them as well: say so rather than "the other gates still apply".
 	var hard, card []string
-	if imps, err := ApproveReadiness(repoDir, id); err == nil {
+	if imps, err := ApproveReadiness(repoDir, projDir, id); err == nil {
 		for _, im := range imps {
 			switch {
 			case im.Hard:

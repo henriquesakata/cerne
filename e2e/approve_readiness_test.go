@@ -25,6 +25,16 @@ func TestApproveReadinessGoldenPath(t *testing.T) {
 	}
 	proj := t.TempDir()
 	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--dir", proj)
+	// Gauntlet on: this path walks the bar, which init's light mode (F-0364)
+	// does not charge.
+	cfg0, _, cfgErr := project.LoadConfig(proj)
+	if cfgErr != nil {
+		t.Fatal(cfgErr)
+	}
+	cfg0.Gates.Gauntlet = ""
+	if err := project.SaveConfig(proj, cfg0); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("CERNE_ACTOR", "agent")
 
 	specFile := func(body string) string {

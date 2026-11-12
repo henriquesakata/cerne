@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
-import { gateCounts } from './Dashboard'
+import { afterEach, describe, it, expect } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
+import { gateCounts, LightModeNotice } from './Dashboard'
 import type { Feature } from './api'
 
 // A faixa "Aguardando você" só vale se contar o gate certo: candidate espera
@@ -39,5 +41,23 @@ describe('gateCounts', () => {
       lint: 0,
       total: 0,
     })
+  })
+})
+
+afterEach(cleanup)
+
+// Modo leve (F-0364, critério 4): o projeto que roda sem o Gauntlet vê isso no
+// dashboard; com o Gauntlet ligado (ou servidor antigo, sem o campo) nada aparece.
+describe('LightModeNotice', () => {
+  it('avisa quando o projeto roda sem o Gauntlet', () => {
+    render(<LightModeNotice gauntlet="off" />)
+    expect(screen.getByText(/Modo leve: sem Gauntlet/)).toBeInTheDocument()
+  })
+
+  it('não aparece com o Gauntlet ligado nem sem o campo', () => {
+    const { container, rerender } = render(<LightModeNotice gauntlet="on" />)
+    expect(container).toBeEmptyDOMElement()
+    rerender(<LightModeNotice />)
+    expect(container).toBeEmptyDOMElement()
   })
 })

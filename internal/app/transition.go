@@ -209,7 +209,11 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Gauntlet bar gate (F-0295): a property of the spec, not of who
 		// approves, so it lives here where CLI and UI share it — as a CLI-only
 		// check the UI approved specs with no bar.
-		if action == domain.ActionApprove {
+		// Light mode (F-0364) skips it: the project chose to run without the
+		// Gauntlet, and status says so.
+		gates := projectGates(projDir)
+		gauntletOn := gates.GauntletEnabled()
+		if action == domain.ActionApprove && gauntletOn {
 			if err := CheckSpecBar(repoDir, id); err != nil {
 				return "", err
 			}
@@ -218,7 +222,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Result record gate (F-0303): the lint's result rules, charged while the
 		// result is still editable — after complete it is frozen out of .docs/.
 		if action == domain.ActionComplete {
-			if err := CheckResultRecord(repoDir, f); err != nil {
+			if err := CheckResultRecord(repoDir, f, gates); err != nil {
 				return "", fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, id)
 			}
 			// The result names each debt the feature pays (F-0885), while it can.
@@ -280,6 +284,15 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				payload = map[string]string{}
 			}
 			payload["guard"] = "forced"
+		}
+		// Light mode is part of the record (F-0364): an approve or complete
+		// that skipped the Gauntlet says so on its event, auditable even after
+		// .cernerc flips back.
+		if !gauntletOn && (action == domain.ActionApprove || action == domain.ActionComplete) {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["gauntlet"] = "off"
 		}
 		// Approving is accepting the proposed bar (F-0308 crit. 8): the line the
 		// gate just validated goes on the event, with the actor.

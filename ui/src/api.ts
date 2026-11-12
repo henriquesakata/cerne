@@ -123,6 +123,7 @@ export type StateResponse = {
   // F-0318: features aprovadas cuja spec difere da aprovada (aprovação
   // vencida), para o badge do card. Ausente em servidor antigo.
   stale_approvals?: string[]
+  gauntlet?: 'on' | 'off' // F-0364: 'off' = modo leve; ausente em servidor antigo
 }
 
 export type FeatureDocs = {

@@ -42,7 +42,7 @@ func clarifyGateSeed(t *testing.T, spec string) (repoDir string, err error) {
 			t.Fatal(err)
 		}
 	}
-	err = CheckOpenClarifications(repoDir, "F-0007")
+	err = CheckOpenClarifications(repoDir, t.TempDir(), "F-0007")
 	if !errors.Is(err, ErrOpenClarifications) {
 		t.Fatalf("err = %v, want ErrOpenClarifications", err)
 	}
@@ -89,11 +89,11 @@ func TestApproveClarifyRefusalNumbersQuestions(t *testing.T) {
 // load fails closed instead of passing.
 func TestApproveClarifyGateCanonicalAndFailClosed(t *testing.T) {
 	repoDir, _ := clarifyGateFixture(t, "[ESCLARECER: qual o prazo?]\n")
-	err := CheckOpenClarifications(repoDir, "f-0007")
+	err := CheckOpenClarifications(repoDir, t.TempDir(), "f-0007")
 	if !errors.Is(err, ErrOpenClarifications) || !strings.Contains(err.Error(), "cerne clarify answer F-0007 1") {
 		t.Errorf("lowercase id: %v, want the refusal with the canonical id", err)
 	}
-	if err := CheckOpenClarifications(repoDir, "F-9999"); !errors.Is(err, store.ErrNotFound) || !strings.Contains(err.Error(), "F-9999") {
+	if err := CheckOpenClarifications(repoDir, t.TempDir(), "F-9999"); !errors.Is(err, store.ErrNotFound) || !strings.Contains(err.Error(), "F-9999") {
 		t.Errorf("unknown feature: %v, want a not-found error naming it (fail closed)", err)
 	}
 }

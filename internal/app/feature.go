@@ -179,6 +179,7 @@ func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, f
 	if err != nil {
 		return store.Feature{}, err
 	}
+	n.light = !projectGates(projDir).GauntletEnabled()
 	// The whole creation — duplicate guard, id mint, entity+spec+event writes —
 	// runs inside ONE critical section of the backend lock (F-0121): a
 	// concurrent local process can neither sweep the half-written state into
@@ -204,6 +205,7 @@ type newFeature struct {
 	force                                                    bool
 	fromIdea                                                 string // F-0312: the idea a promote mints it from
 	fixes                                                    string // F-0321: the feature this one corrects
+	light                                                    bool   // F-0364: light mode — scaffold without the bar guide
 }
 
 func prepareFeature(prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (newFeature, error) {
@@ -294,10 +296,13 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			return err
 		}
 		if strings.TrimSpace(specBody) != "" {
+			if n.light {
+				specBody = spectmpl.WithoutGauntlet(specBody)
+			}
 			if _, err := writeSpecBody(repoDir, id, specBody, true); err != nil {
 				return err
 			}
-		} else if err := writeSpecStub(repoDir, id, title); err != nil {
+		} else if err := writeSpecStub(repoDir, id, title, n.light); err != nil {
 			return err
 		}
 		// F-0235: a parent gaining its first (or another) child is decomposition —
@@ -780,7 +785,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
-		if err := CheckResultRecord(repoDir, f); err != nil {
+		if err := CheckResultRecord(repoDir, f, projectGates(projDir)); err != nil {
 			return "", err // an amend does not trade one debt for another
 		}
 		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
@@ -1084,12 +1089,16 @@ func writeSpecBody(repoDir, id, body string, fresh bool) (changed bool, err erro
 // canonical spec template (spectmpl): the section skeleton with inline
 // guidance. The approve gate (doccheck) treats that scaffold as "spec still
 // pending" until the author fills a section.
-func writeSpecStub(repoDir, id, title string) error {
+func writeSpecStub(repoDir, id, title string, light bool) error {
 	path := FeatureDocPath(repoDir, id, "spec.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + spectmpl.StubIn(store.DocsLanguage(repoDir), title)
+	stub := spectmpl.StubIn(store.DocsLanguage(repoDir), title)
+	if light {
+		stub = spectmpl.WithoutGauntlet(stub)
+	}
+	content := "---\ncerne_id: " + id + "\n---\n\n" + stub
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 

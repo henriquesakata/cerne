@@ -136,9 +136,14 @@ echo ".docs/" >>.gitignore
 # and restores the default configuration before it finishes.
 cp .cernerc "$dest/.cernerc.default"
 # gates <approve> <accept>: sets who may cross each gate ("auto" or "human").
+# The keys go under the [gates] table init may already have written (F-0364),
+# never under a second header; with no table, one is added at the end.
 gates() {
-  cp "$dest/.cernerc.default" .cernerc
-  printf '\n[gates]\napprove = "%s"\naccept = "%s"\n' "$1" "$2" >>.cernerc
+  awk -v a="$1" -v c="$2" '
+    { print }
+    /^\[gates\]$/ { print "approve = \"" a "\""; print "accept = \"" c "\""; done = 1 }
+    END { if (!done) { print ""; print "[gates]"; print "approve = \"" a "\""; print "accept = \"" c "\"" } }
+  ' "$dest/.cernerc.default" >.cernerc
 }
 
 echo "Features:"

@@ -95,7 +95,8 @@ func TestDemoSeed_BuildsProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(rc), "[gates]") {
+	// init's own [gates] table (light mode, F-0364) stays; the seeding keys go.
+	if strings.Contains(string(rc), "approve =") || strings.Contains(string(rc), "accept =") {
 		t.Errorf("the generated .cernerc still opens the gates:\n%s", rc)
 	}
 }

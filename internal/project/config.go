@@ -5,10 +5,12 @@ package project
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -230,6 +232,7 @@ type GatesConfig struct {
 	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
 	WorkGateHint  string   `toml:"work_gate_hint,omitempty"`  // project-specific suffix appended to the gate's deny reason (F-0170)
 	CommitTrailer string   `toml:"commit_trailer,omitempty"`  // "on" | anything else = off — prepare-commit-msg Cerne: trailer (F-0173)
+	Gauntlet      string   `toml:"gauntlet,omitempty"`        // "off" = light mode (F-0364) | anything else = on (default)
 }
 
 // WorkGateEnabled resolves the edit gate: on only when explicitly configured.
@@ -244,10 +247,17 @@ func (g GatesConfig) CommitTrailerEnabled() bool {
 	return g.CommitTrailer == "on"
 }
 
+// GauntletEnabled resolves the Gauntlet (F-0364): on unless the literal "off"
+// — the bar at approve and the Gauntlet record at complete are charged. Like
+// approve/accept, a typo ("of", "OFF", "false") never opens a gate.
+func (g GatesConfig) GauntletEnabled() bool {
+	return g.Gauntlet != "off"
+}
+
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == ""
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == ""
 }
 
 // ApproveGate resolves the start gate: auto only when explicitly configured.
@@ -479,6 +489,30 @@ func LoadConfig(startDir string) (Config, string, error) {
 	return readConfig(dir)
 }
 
+// configWarnings receives the config's non-fatal warnings (a var so tests
+// capture them).
+var configWarnings io.Writer = os.Stderr
+
+// warnedStray dedupes the stray-key warning per file and key: the config is
+// loaded many times per process (the UI server per request).
+var warnedStray sync.Map
+
+// warnStrayGatesKeys names every key decoded under [gates] that is not a
+// gates key (F-0364): init ends .cernerc with [gates], so a top-level key
+// appended at the end of the file lands inside the table and would otherwise
+// be ignored silently. A warning, never a refusal.
+func warnStrayGatesKeys(path string, md toml.MetaData) {
+	for _, k := range md.Undecoded() {
+		if len(k) != 2 || k[0] != "gates" {
+			continue
+		}
+		if _, seen := warnedStray.LoadOrStore(path+"\x00"+k[1], true); seen {
+			continue
+		}
+		fmt.Fprintf(configWarnings, "warning: %s: %q is not a [gates] key and is ignored there — move it above [gates] (top-level keys go before the first table)\n", path, k[1])
+	}
+}
+
 func readConfig(dir string) (Config, string, error) {
 	path := filepath.Join(dir, configFilename)
 	data, err := os.ReadFile(path)
@@ -486,9 +520,11 @@ func readConfig(dir string) (Config, string, error) {
 		return Config{}, "", err
 	}
 	var c Config
-	if err := toml.Unmarshal(data, &c); err != nil {
+	md, err := toml.Decode(string(data), &c)
+	if err != nil {
 		return Config{}, "", fmt.Errorf("%s: %w: %w", path, ErrConfigParse, err)
 	}
+	warnStrayGatesKeys(path, md)
 	if err := c.Delivery.validate(); err != nil {
 		return Config{}, "", fmt.Errorf("%s: %w", path, err)
 	}

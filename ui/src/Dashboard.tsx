@@ -89,6 +89,14 @@ export function gateCounts(
   return { approve, accept, lint, total: approve + accept + lint }
 }
 
+// LightModeNotice (F-0364): o projeto escolheu rodar sem o Gauntlet — escolha
+// visível, nunca silenciosa. Nada com o Gauntlet ligado ou sem o campo.
+export function LightModeNotice({ gauntlet }: { gauntlet?: string }) {
+  const { t } = useT()
+  if (gauntlet !== 'off') return null
+  return <p className="dash-light-mode">{t.dashboard.lightMode}</p>
+}
+
 // AttentionBand (F-0233): a única coisa nesta tela que a CLI não faz sozinha.
 // Fica fora do .dash-grid de propósito — é uma linha de razão, não um nono card.
 function AttentionBand() {
@@ -145,6 +153,7 @@ export default function Dashboard() {
     <main className="page">
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
+      <LightModeBand />
       <AttentionBand />
       {/* Composição (F-0233): a faixa de gates lidera fora do grid — é o único
           trabalho que a CLI não faz por você. No grid, largura segue densidade:
@@ -166,6 +175,11 @@ export default function Dashboard() {
       </div>
     </main>
   )
+}
+
+function LightModeBand() {
+  const { data } = useCard(fetchState)
+  return <LightModeNotice gauntlet={data?.gauntlet} />
 }
 
 // HeatmapCard (F-0145): contribution graph diário dos eventos de lifecycle —

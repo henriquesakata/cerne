@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
 )
 
@@ -211,5 +212,28 @@ func TestStubBarFormsNeedNoPriorConfirmation(t *testing.T) {
 	}
 	if strings.Contains(s, "justificativa confirmada") {
 		t.Fatalf("stub still asks for a confirmed justification:\n%s", s)
+	}
+}
+
+// TestWithoutGauntlet (F-0364, Ajuste 2): the light-mode scaffold keeps the
+// Verificação guide but asks for no bar, in both languages; the full
+// template still carries the Gauntlet sentence.
+func TestWithoutGauntlet(t *testing.T) {
+	for name, stub := range map[string]string{"pt": spectmpl.Stub("t"), "en": spectmpl.StubIn(doclang.EN, "t")} {
+		if !strings.Contains(stub, "(Gauntlet)") {
+			t.Fatalf("%s: full template lost the Gauntlet guide", name)
+		}
+		light := spectmpl.WithoutGauntlet(stub)
+		for _, banned := range []string{"Gauntlet", "Barra", "Bar:"} {
+			if strings.Contains(light, banned) {
+				t.Errorf("%s: light scaffold still says %q:\n%s", name, banned, light)
+			}
+		}
+		if !strings.Contains(light, "TDD), 1:1") {
+			t.Errorf("%s: light scaffold lost the test-plan guide", name)
+		}
+	}
+	if got := spectmpl.WithoutGauntlet("Barra: minha — escrita pelo autor\n"); got != "Barra: minha — escrita pelo autor\n" {
+		t.Fatalf("author text changed: %q", got)
 	}
 }

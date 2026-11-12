@@ -1804,6 +1804,14 @@ h2 {
 
 .dash-attention > h2 { margin: 0 0 0.5rem; }
 
+/* F-0364: o modo leve é uma escolha visível, não um aviso de erro. */
+.dash-light-mode {
+  margin: 1rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
 .dash-attention-list {
   list-style: none;
   margin: 0;

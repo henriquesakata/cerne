@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/henriquesakata/cerne/internal/app"
 	"io"
 	"strings"
 
@@ -48,14 +49,14 @@ func newLintCmd() *cobra.Command {
 }
 
 func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feature, parent string) error {
-	repoDir, ignore, staleReadyDays, staleWorkHours, cleanup, driftCtx, err := lintRoot(dir, staged)
+	repoDir, cfg, cleanup, driftCtx, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
 	}
 	if cleanup != nil {
 		defer cleanup()
 	}
-	findings, err := lint.RunConfig(repoDir, staleReadyDays, staleWorkHours, ignore...)
+	findings, err := app.ProjectLint(repoDir, cfg)
 	if err != nil {
 		return err
 	}
@@ -199,20 +200,20 @@ func lintScope(repoDir, feature, parent string) (ids map[string]bool, label stri
 // The returned driftCtx is non-nil only in the default mode: it carries the
 // resolved project so runLint can compute drift-suspect findings (F-0113). In
 // staged mode it is nil — staged validates local .docs/ edits, not a code diff.
-func lintRoot(dir string, staged bool) (repoDir string, ignore []string, staleReadyDays, staleWorkHours int, cleanup func(), driftCtx *projCtx, err error) {
+func lintRoot(dir string, staged bool) (repoDir string, cfg project.Config, cleanup func(), driftCtx *projCtx, err error) {
 	if staged {
 		ctx, err := resolvePaths(dir)
 		if err != nil {
-			return "", nil, 0, 0, nil, nil, err
+			return "", project.Config{}, nil, nil, err
 		}
 		root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
-		return root, ctx.cfg.SourceIgnore(), ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), cleanup, nil, err
+		return root, ctx.cfg, cleanup, nil, err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
-		return "", nil, 0, 0, nil, nil, err
+		return "", project.Config{}, nil, nil, err
 	}
-	return ctx.repoDir, ctx.cfg.SourceIgnore(), ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), nil, &ctx, nil
+	return ctx.repoDir, ctx.cfg, nil, &ctx, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.

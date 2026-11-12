@@ -126,13 +126,13 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		// not prose (F-0175 crit. 7). Same CLI-side placement as the human gate:
 		// the UI path renders the markers as chips the human answers directly.
 		if !force {
-			if err := app.CheckOpenClarifications(ctx.repoDir, id); err != nil {
+			if err := app.CheckOpenClarifications(ctx.repoDir, ctx.projDir, id); err != nil {
 				return err
 			}
 			// A card with no tag, or no capability while the project curates a
 			// taxonomy, is the agent's half-registration (F-0336, N-0028): same
 			// CLI-side placement, same --force escape, the core never refuses it.
-			if err := app.CheckIncompleteCard(ctx.repoDir, id); err != nil {
+			if err := app.CheckIncompleteCard(ctx.repoDir, ctx.projDir, id); err != nil {
 				return err
 			}
 		}
@@ -217,6 +217,10 @@ const barForms = `The spec's Verificação section needs one of the three litera
   Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)
 `
 
+// lightModeApprove replaces the accepted-bar line when the project runs
+// without the Gauntlet (F-0364): a ready spec then has no bar to accept.
+const lightModeApprove = `light mode: no Gauntlet bar is charged ([gates] gauntlet = "off" in .cernerc)`
+
 // runApproveCheck prints every impediment to approving id and returns
 // errCheckImpediments while the list is not empty (crit. 3). Hard impediments
 // and the card's (F-0336) are the agent's to fix; open clarifications are questions for the human
@@ -224,7 +228,7 @@ const barForms = `The spec's Verificação section needs one of the three litera
 // says there is no hard impediment and shows the bar the approve would accept.
 // It only reads the backend clone.
 func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
-	imps, err := app.ApproveReadiness(ctx.repoDir, id)
+	imps, err := app.ApproveReadiness(ctx.repoDir, ctx.projDir, id)
 	if err != nil {
 		return err
 	}
@@ -285,7 +289,11 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "Approving accepts its bar:\n  %s\n", bar)
+		if bar == "" { // light mode (F-0364): no bar is charged
+			fmt.Fprintln(w, lightModeApprove)
+		} else {
+			fmt.Fprintf(w, "Approving accepts its bar:\n  %s\n", bar)
+		}
 	}
 	// Warnings never count as impediments (F-0353): the exit code ignores them.
 	warnings, err := app.ApproveWarnings(ctx.repoDir, ctx.projDir, id)
@@ -319,11 +327,11 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 // nothing — unless the write staled the approval (F-0318), whose re-approve
 // has the same readiness. An approval with no baseline yet is not staled by a
 // write, so it stays silent too.
-func printApproveReadiness(w io.Writer, repoDir, id string) {
+func printApproveReadiness(w io.Writer, repoDir, projDir, id string) {
 	if f, err := store.LoadFeature(repoDir, id); err == nil && app.ApprovalBaselineMissing(repoDir, f) {
 		return
 	}
-	imps, err := app.ApproveReadiness(repoDir, id)
+	imps, err := app.ApproveReadiness(repoDir, projDir, id)
 	if errors.Is(err, domain.ErrInvalidTransition) {
 		return
 	}
@@ -335,6 +343,10 @@ func printApproveReadiness(w io.Writer, repoDir, id string) {
 		bar, err := app.AcceptedBar(repoDir, id)
 		if err != nil {
 			fmt.Fprintf(w, "Approve readiness: unknown (%v)\n", err)
+			return
+		}
+		if bar == "" {
+			fmt.Fprintln(w, "Approve readiness: approvable — "+lightModeApprove)
 			return
 		}
 		fmt.Fprintf(w, "Approve readiness: approvable — approving accepts %s\n", bar)

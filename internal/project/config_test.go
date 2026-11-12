@@ -701,3 +701,27 @@ func TestAgentPlanRoastTimeout(t *testing.T) {
 		t.Errorf("PlanRoastTimeout below the 2x floor = %v, want %v", got, want)
 	}
 }
+
+// TestConfigGauntletToggle (F-0364 crit. 2): the [gates] gauntlet key
+// round-trips, and only the literal "off" turns the Gauntlet off — absent,
+// "on" and every typo keep it on (a typo never opens a gate).
+func TestConfigGauntletToggle(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{ProjectID: "demo", Backend: "x"}
+	cfg.Gates.Gauntlet = "off"
+	if err := SaveConfig(dir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Gates.GauntletEnabled() {
+		t.Fatal("gauntlet = off: want disabled")
+	}
+	for _, v := range []string{"", "on", "of", "OFF", "false", " off"} {
+		if !(GatesConfig{Gauntlet: v}).GauntletEnabled() {
+			t.Errorf("Gauntlet %q: want enabled", v)
+		}
+	}
+}

@@ -128,7 +128,7 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 	if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale {
 		fmt.Fprintln(cmd.OutOrStdout(), approvalStaleLine(f.ID))
 	}
-	printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
+	printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, ctx.projDir, f.ID)
 	return nil
 }
 

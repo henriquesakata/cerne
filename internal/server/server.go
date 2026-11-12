@@ -149,6 +149,9 @@ type stateResponse struct {
 	// approved one (F-0318), so the board badges them. Derived on every
 	// request through lint.SpecChangedAfterApproval; always present, never null.
 	StaleApprovals []string `json:"stale_approvals"`
+	// Gauntlet is "off" when the project runs in light mode (F-0364), "on"
+	// otherwise — the dashboard shows the choice.
+	Gauntlet string `json:"gauntlet"`
 }
 
 // activeWorkItem is one active W-item referencing a feature: enough to badge
@@ -193,7 +196,7 @@ func countOpenClarifications(repoDir string) map[string]int {
 	return open
 }
 
-func handleState(w http.ResponseWriter, repoDir string) {
+func handleState(w http.ResponseWriter, repoDir, projDir string) {
 	proj, err := store.LoadProject(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
@@ -249,7 +252,17 @@ func handleState(w http.ResponseWriter, repoDir string) {
 		OpenClarifications: countOpenClarifications(repoDir),
 		ActiveWork:         activeWorkByRef(repoDir),
 		StaleApprovals:     stale,
+		Gauntlet:           gauntletMode(projDir),
 	})
+}
+
+// gauntletMode is the project's [gates] gauntlet as the UI reads it: "off" in
+// light mode (F-0364), "on" otherwise — including an unreadable config.
+func gauntletMode(projDir string) string {
+	if cfg, _, err := project.LoadConfig(projDir); err == nil && !cfg.Gates.GauntletEnabled() {
+		return "off"
+	}
+	return "on"
 }
 
 // workResponse is the GET /api/work payload (F-0130): every work regardless of
@@ -340,7 +353,7 @@ type artifact struct {
 	Path string `json:"path"`
 }
 
-func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
+func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
@@ -431,7 +444,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	var readiness []app.ApproveImpediment
 	var bar string
 	if f.State == domain.StateCandidate || specChanged {
-		if readiness, err = app.ApproveReadiness(repoDir, id); err == nil {
+		if readiness, err = app.ApproveReadiness(repoDir, projDir, id); err == nil {
 			bar, err = app.AcceptedBar(repoDir, id)
 		}
 		if err != nil {
@@ -1180,7 +1193,9 @@ type lintResponse struct {
 
 func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 	var p lintParams
+	var gates project.GatesConfig // zero = Gauntlet on, the fail-safe
 	if cfg, _, err := project.LoadConfig(projDir); err == nil {
+		gates = cfg.Gates
 		p = lintParams{
 			staleReadyDays: cfg.StaleReadyWindowDays(),
 			staleWorkHours: cfg.StaleWorkWindowHours(),
@@ -1197,7 +1212,7 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	}
 	// A copy: the findings may be the cache's, and the downgrade is this
 	// request's wiki.enabled, never a stamp left on them.
-	findings = slices.Clone(findings)
+	findings = app.LintMode(slices.Clone(findings), gates) // light mode, F-0364
 	wikiOn, _ := project.WikiEnabled(projDir)
 	lint.DowngradeWikiDebt(findings, wikiOn)
 	out := make([]lintFinding, len(findings))
