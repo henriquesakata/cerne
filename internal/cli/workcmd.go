@@ -49,7 +49,7 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 			return runWorkStart(cmd, *dir, args[0], ref, agent, paths, from, force)
 		},
 	}
-	cmd.Flags().StringVar(&from, "from", "", "take over this active work: inherits its refs, prints its last handoff and closes it as done (handed off)")
+	cmd.Flags().StringVar(&from, "from", "", "take over this active work: inherits its refs, prints its last handoff, takes its pending HO- and closes it as done (handed off)")
 	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/D- ids this activity relates to")
 	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to '<user>@<hostname>')")
 	cmd.Flags().StringVar(&paths, "paths", "", "comma-separated path globs this activity intends to touch")
@@ -75,8 +75,12 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths, from string
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active) — %s (actor: %s)\n", w.ID, w.Title, w.Actor)
-	if from != "" {
+	if w.Taken.ID != "" { // F-0368 crit. 6: --from took the origin's pending handoff
+		fmt.Fprintf(cmd.OutOrStdout(), "took %s — closed %s (handed off to %s via %s)\n", w.Taken.ID, w.From, w.ID, w.Taken.ID)
+	} else if from != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "closed %s (handed off to %s)\n", w.From, w.ID)
+	}
+	if from != "" {
 		// The origin is closed: session bindings pointing at it are dead (F-0151 crit. 5).
 		if err := app.ClearBindings(filepath.Dir(ctx.repoDir), w.From); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: clearing session bindings: %v\n", err)
@@ -96,10 +100,7 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths, from string
 	}
 	// F-0339 crit. 6 and 8: what the session before left, read before starting.
 	for _, h := range w.Handoffs {
-		fmt.Fprintf(cmd.OutOrStdout(), "last handoff of %s (%s, %s):\n%s\n", h.ID, h.Entry.Date, h.Entry.Author, h.Entry.Text)
-		if h.Hint {
-			fmt.Fprintf(cmd.OutOrStdout(), "take it over: cerne work start \"<description>\" --from %s\n", h.ID)
-		}
+		printHandoff(cmd.OutOrStdout(), h)
 	}
 	for _, m := range overlaps {
 		fmt.Fprintf(cmd.OutOrStdout(), "warning: paths overlap active %s (%s) on %s — coordinate before touching shared files\n",

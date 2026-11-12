@@ -63,7 +63,7 @@ func TestWorkStartShowsHandoff(t *testing.T) {
 	projDir, _ := handoffProject(t)
 	out := mustCerne(t, "work", "start", "Assunto paralelo qualquer", "--ref", "F-0001", "--dir", projDir)
 	for _, want := range []string{"last handoff of W-0001", "Brief da sessão anterior.", "Próximo passo: rodar a suíte",
-		`cerne work start "<description>" --from W-0001`} {
+		"take it over: cerne handoff take HO-0001"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -112,11 +112,51 @@ func TestHandoffRealCase(t *testing.T) {
 		t.Fatalf("second start without the handoff:\n%s", out)
 	}
 	out = mustCerne(t, "work", "start", "Retomada da migração", "--from", "W-0001", "--dir", projDir)
-	if !strings.Contains(out, "W-0003 created") || !strings.Contains(out, "Brief da sessão anterior.") || strings.Contains(out, "--from W-0001") {
+	if !strings.Contains(out, "W-0003 created") || !strings.Contains(out, "Brief da sessão anterior.") || strings.Contains(out, "take it over") ||
+		!strings.Contains(out, "took HO-0001") {
 		t.Fatalf("--from output:\n%s", out)
 	}
-	wantWork(t, repoDir, "W-0001", domain.WorkDone, "handed off to W-0003")
+	wantWork(t, repoDir, "W-0001", domain.WorkDone, "handed off to W-0003 via HO-0001")
 	if ctx := pulledContext(t, projDir); strings.Contains(ctx, "W-0001") || !strings.Contains(ctx, "W-0003") {
 		t.Fatalf("panel after --from:\n%s", ctx)
+	}
+}
+
+// F-0368 crit. 3, 4 and 8 through the CLI: take prints the new work, the
+// closed origin, the brief and the next step; a second take refuses with the
+// why; cancel needs --reason.
+func TestHandoffCmdTakeAndCancel(t *testing.T) {
+	projDir, repoDir := handoffProject(t)
+	out := mustCerne(t, "handoff", "take", "HO-0001", "--note", "li tudo", "--dir", projDir)
+	for _, want := range []string{
+		"HO-0001 taken — W-0002 created (active) — Operação longa de migração",
+		"closed W-0001 (handed off to W-0002 via HO-0001)",
+		"Brief da sessão anterior.",
+		"next step: rodar a suíte",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("take output missing %q:\n%s", want, out)
+		}
+	}
+	wantWork(t, repoDir, "W-0001", domain.WorkDone, "handed off to W-0002 via HO-0001")
+	if _, err := execCerne(t, "handoff", "take", "HO-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "was taken by") {
+		t.Fatalf("second take err = %v", err)
+	}
+	mustCerne(t, "work", "handoff", "W-0002", "--file", writeBrief(t, "b"), "--next", "n", "--dir", projDir)
+	if _, err := execCerne(t, "handoff", "cancel", "HO-0002", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--reason") {
+		t.Fatalf("cancel without reason err = %v", err)
+	}
+	if out := mustCerne(t, "handoff", "cancel", "HO-0002", "--reason", "plano mudou", "--dir", projDir); !strings.Contains(out, "HO-0002 cancelled: plano mudou") {
+		t.Fatalf("cancel output:\n%s", out)
+	}
+}
+
+// F-0368 crit. 5 through the CLI: an origin no longer active is said so.
+func TestHandoffCmdTakeOriginDone(t *testing.T) {
+	projDir, _ := handoffProject(t)
+	mustCerne(t, "work", "done", "W-0001", "--dir", projDir)
+	out := mustCerne(t, "handoff", "take", "HO-0001", "--title", "Retomada", "--dir", projDir)
+	if !strings.Contains(out, "W-0001 was already done: left as it is") || !strings.Contains(out, "W-0002 created (active) — Retomada") {
+		t.Fatalf("take output:\n%s", out)
 	}
 }
