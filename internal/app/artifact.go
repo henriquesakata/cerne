@@ -3,8 +3,10 @@ package app
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -96,7 +98,12 @@ func mutateAndSnapshotLatest(repoDir, projDir string, mutate func() (string, err
 
 func mutateAndSnapshot(repoDir, projDir string, latest bool, mutate func() (string, error)) error {
 	op := telemetry.StartOp("backend")
-	err := mutateAndSnapshotOp(op, repoDir, projDir, latest, mutate)
+	remints, err := mutateAndSnapshotOp(op, repoDir, projDir, latest, mutate)
+	if RemintNotice != nil {
+		for _, o := range slices.Sorted(maps.Keys(remints)) {
+			RemintNotice(o, remints[o])
+		}
+	}
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -109,12 +116,14 @@ func mutateAndSnapshot(repoDir, projDir string, latest bool, mutate func() (stri
 // reset, mutate, then the reconcile loop's fetch/merge/commit/push, snapshot)
 // on the caller's Op (F-0149) — nil-safe, the caller owns End().
 func MutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, mutate func() (string, error)) error {
-	return mutateAndSnapshotOp(op, repoDir, projDir, false, mutate)
+	_, err := mutateAndSnapshotOp(op, repoDir, projDir, false, mutate)
+	return err
 }
 
-func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool, mutate func() (string, error)) error {
+func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool, mutate func() (string, error)) (map[string]string, error) {
 	var head string
 	var conflicts []Conflict
+	var remints map[string]string
 	stopLockWait := op.Phase("lock_wait")
 	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
 		stopLockWait()
@@ -137,39 +146,33 @@ func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool,
 				return err
 			}
 		}
-		stop := op.Phase("mutate")
-		msg, err := mutate()
-		stop()
-		if err != nil {
-			if base != "" {
-				_ = gitback.ResetHard(repoDir, base) // best-effort: drop partial writes
-			}
-			return err
-		}
-		changes, err := captureChanges(repoDir)
-		if err != nil {
-			return err
-		}
-		if len(changes) == 0 {
-			return fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, repoDir)
-		}
-		head, conflicts, err = reconcileLocked(op, repoDir, base, msg, changes)
+		// A mint whose id was taken upstream is redone on the new tip (F-0356).
+		head, conflicts, remints, err = remintLocked(op, repoDir, base, "", nil, mutate, true, ErrIDRaceLost)
 		return err
 	})
 	if lockErr != nil {
-		return lockErr
+		return nil, lockErr
 	}
 	if len(conflicts) > 0 {
-		return &ConflictError{Conflicts: conflicts}
+		return nil, &ConflictError{Conflicts: conflicts}
 	}
 	if head != "" {
 		stop := op.Phase("snapshot")
 		err := updateSnapshot(projDir, head)
 		stop()
-		return err
+		return remints, err
 	}
-	return nil
+	return remints, nil
 }
+
+// ErrIDRaceLost is returned when a re-minted id kept colliding with another
+// session's past autoWorkRemintRounds redos.
+var ErrIDRaceLost = errors.New("id race lost 3 times; run 'cerne pull' and retry")
+
+// RemintNotice, when set (by the CLI root), is told each id a one-shot command
+// minted that was taken upstream, with the id it registered instead, in stable
+// order. The server path (MutateAndSnapshotOp) never calls it.
+var RemintNotice func(oldID, newID string)
 
 // fastForwardToOrigin fetches and, when origin is ahead of base, moves the
 // clone onto it, returning the new base. A clone that diverged from origin
