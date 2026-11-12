@@ -9,7 +9,7 @@ import (
 
 // F-0354 crit. 1, 2 and 4: an explicit directory names the project; it is
 // never a place to start walking up from.
-func TestLoadConfigAt(t *testing.T) {
+func TestRequireConfigAt(t *testing.T) {
 	root := t.TempDir()
 	if err := SaveConfig(root, Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
@@ -21,13 +21,12 @@ func TestLoadConfigAt(t *testing.T) {
 	t.Setenv("CERNE_ROOT", root) // must not rescue an explicit directory
 
 	// crit. 4: a directory holding .cernerc is used as it is.
-	cfg, dir, err := LoadConfigAt(root)
-	if err != nil || cfg.ProjectID != "p" || dir != root {
-		t.Fatalf("LoadConfigAt(root) = %q, %q, %v", cfg.ProjectID, dir, err)
+	if err := RequireConfigAt(root); err != nil {
+		t.Fatalf("RequireConfigAt(root): %v", err)
 	}
 
 	// crit. 1 + 2: no .cernerc in sub, and the project above is named.
-	_, _, err = LoadConfigAt(sub)
+	err := RequireConfigAt(sub)
 	if !errors.Is(err, ErrNoProject) {
 		t.Fatalf("want ErrNoProject, got %v", err)
 	}
@@ -40,7 +39,7 @@ func TestLoadConfigAt(t *testing.T) {
 	// crit. 1 without a project above: a single line, no hint.
 	t.Setenv("CERNE_ROOT", "")
 	outside := t.TempDir()
-	_, _, err = LoadConfigAt(outside)
+	err = RequireConfigAt(outside)
 	want = "no .cernerc in " + outside + " (--dir names the project directory; it does not search parent directories)"
 	if !errors.Is(err, ErrNoProject) || err.Error() != want {
 		t.Fatalf("got %v, want %q", err, want)

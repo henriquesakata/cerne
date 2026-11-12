@@ -126,8 +126,7 @@ func refuseProjectlessDir(cmd *cobra.Command) error {
 	if f == nil || !f.Changed || cmd.Name() == "init" {
 		return nil
 	}
-	_, _, err := project.LoadConfigAt(f.Value.String())
-	return err
+	return project.RequireConfigAt(f.Value.String())
 }
 
 // noteCerneRoot says on stderr when the project was found through CERNE_ROOT

@@ -136,3 +136,16 @@ func TestResolvePathsClimbsForComputedPath(t *testing.T) {
 		t.Fatalf("resolvePaths(sub) = %q, %v; want %q", ctx.projDir, err, projDir)
 	}
 }
+
+// F-0354: the gate only checks that .cernerc exists; a malformed one is not
+// the F-0354 refusal for commands that never read it.
+func TestGateDoesNotParseCerncerc(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte("not [valid toml"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "hook", "install", "--dir", dir)
+	if err != nil {
+		t.Fatalf("hook install with a malformed .cernerc: %v\n%s", err, out)
+	}
+}

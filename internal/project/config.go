@@ -477,19 +477,22 @@ type noProjectAtError struct{ msg string }
 func (e *noProjectAtError) Error() string        { return e.msg }
 func (e *noProjectAtError) Is(target error) bool { return target == ErrNoProject }
 
-// LoadConfigAt reads <dir>/.cernerc without walking up (F-0354): a directory
-// the user named explicitly (--dir) is the project, never a place to start a
-// search from. CERNE_ROOT does not apply either. When dir has no .cernerc the
-// error names the nearest project above it, if any, so the fix is one line.
-func LoadConfigAt(dir string) (Config, string, error) {
+// RequireConfigAt checks that <dir> holds a .cernerc, without walking up and
+// without parsing it (F-0354): a directory the user named explicitly (--dir) is
+// the project, never a place to start a search from. CERNE_ROOT does not apply
+// either. The error names the nearest project above dir, if any, so the fix is
+// one line.
+func RequireConfigAt(dir string) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return Config{}, "", err
+		return err
 	}
-	if _, err := os.Stat(filepath.Join(abs, configFilename)); err == nil {
-		return readConfig(abs)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Config{}, "", err
+	_, err = os.Stat(filepath.Join(abs, configFilename))
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	msg := fmt.Sprintf("no %s in %s (--dir names the project directory; it does not search parent directories)", configFilename, abs)
 	if parent := filepath.Dir(abs); parent != abs {
@@ -497,7 +500,7 @@ func LoadConfigAt(dir string) (Config, string, error) {
 			msg += fmt.Sprintf("\nnearest project above: %s — pass --dir %s to use it", above, above)
 		}
 	}
-	return Config{}, "", &noProjectAtError{msg}
+	return &noProjectAtError{msg}
 }
 
 // walkUpToConfigDir returns the nearest directory at or above dir (absolute)
