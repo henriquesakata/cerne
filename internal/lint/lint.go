@@ -108,7 +108,7 @@ const StalePendingAfter = 30 * 24 * time.Hour
 
 // advisoryRules are the warning-severity rules: printed like any other, but
 // they never fail 'cerne lint' on their own.
-var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true}
+var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true}
 
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
@@ -136,7 +136,7 @@ func DowngradeWikiDebt(findings []Finding, wikiOn bool) {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleHookCitesMissingRule}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RuleHookCitesMissingRule}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -174,7 +174,8 @@ var ruleRank = map[string]int{
 	RuleAppendedAmendment:        30,
 	RuleStatusInBody:             31,
 	RuleWorkOutlivedFeature:      32,
-	RuleHookCitesMissingRule:     33,
+	RuleSpecCLILiteralPT:         33,
+	RuleHookCitesMissingRule:     34,
 }
 
 // Finding is one lint problem detected in the backend.

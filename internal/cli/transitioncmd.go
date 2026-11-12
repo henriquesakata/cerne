@@ -274,6 +274,17 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		}
 		fmt.Fprintf(w, "Approving accepts its bar:\n  %s\n", bar)
 	}
+	// Warnings never count as impediments (F-0353): the exit code ignores them.
+	warnings, err := app.ApproveWarnings(ctx.repoDir, ctx.projDir, id)
+	if err != nil {
+		return err
+	}
+	if len(warnings) > 0 {
+		fmt.Fprintln(w, "Warnings (they do not block the approve):")
+		for _, msg := range warnings {
+			fmt.Fprintf(w, "  - %s\n", msg)
+		}
+	}
 	if len(soft) > 0 {
 		fmt.Fprintf(w, "Do not answer them yourself: leave the questions for the human, with the approve request: 'cerne clarify list %s'.\n", id)
 	}

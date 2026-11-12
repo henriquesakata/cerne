@@ -11,6 +11,11 @@ sync_skills = true
 # F-0117: every push incrementally recompiles the dirty wiki pages via [llm].
 compile_on_push = true
 
+# F-0353: this CLI prints English (F-0124), so the lint warns when a spec
+# criterion quotes a pt-BR CLI message (spec-cli-literal-pt).
+[lint]
+cli_output_language = "en"
+
 # F-0179: a bare SHA in `feature complete --commit` / `feature deliver` resolves
 # to a clickable URL through this template ({sha} is required).
 [delivery]

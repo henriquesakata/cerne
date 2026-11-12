@@ -75,8 +75,8 @@ func TestSettingsList(t *testing.T) {
 func TestSettingsListJSON(t *testing.T) {
 	projDir, _ := settingsProject(t, "[mindmap]\nenabled = false\n")
 	byID := settingsJSON(t, projDir)
-	if len(byID) != 4 {
-		t.Fatalf("settings = %v, want the 4 declared keys", byID)
+	if len(byID) != 5 {
+		t.Fatalf("settings = %v, want the 5 declared keys", byID)
 	}
 	if m := byID["mindmap.enabled"]; m.Value != false || m.Origin != project.ScopeProject || m.Title == "" || m.Description == "" {
 		t.Errorf("mindmap.enabled = %+v", m)
@@ -195,7 +195,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, graph.enabled, mindmap.enabled, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, graph.enabled, lint.cli_output_language, mindmap.enabled, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
