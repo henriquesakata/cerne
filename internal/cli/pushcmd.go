@@ -237,6 +237,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	if err != nil {
 		return err
 	}
+	findings = lint.DropGauntletRules(findings, ctx.cfg.Gates.GauntletEnabled()) // light mode, F-0364
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 	if len(findings) == 0 {
 		fmt.Fprintln(out, "Lint: no problems found.")

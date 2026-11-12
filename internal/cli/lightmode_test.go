@@ -43,3 +43,22 @@ func TestApprove_LightModeCLI(t *testing.T) {
 		t.Fatalf("state = %s, want approved", f.State)
 	}
 }
+
+// TestLint_LightModeCLI (F-0364 crit. 3): 'cerne lint' in light mode does not
+// charge spec-missing-bar on a candidate whose spec has no bar.
+func TestLint_LightModeCLI(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature sem barra", 1)
+	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\n## Problema\n\nProblema real descrito aqui.\n")
+	commitBackend(t, repoDir)
+
+	out, _ := execCerne(t, "lint", "--dir", projDir)
+	if !strings.Contains(out, "SPEC-MISSING-BAR") {
+		t.Fatalf("gauntlet on: lint lacks spec-missing-bar\n%s", out)
+	}
+	setGauntlet(t, projDir, "off")
+	out, _ = execCerne(t, "lint", "--dir", projDir)
+	if strings.Contains(out, "SPEC-MISSING-BAR") {
+		t.Fatalf("light mode: lint still charges spec-missing-bar\n%s", out)
+	}
+}

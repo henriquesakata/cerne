@@ -126,6 +126,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	findings = lint.DropGauntletRules(findings, ctx.cfg.Gates.GauntletEnabled()) // light mode, F-0364
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}

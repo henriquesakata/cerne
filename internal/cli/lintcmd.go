@@ -91,6 +91,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		findings = append(findings, lits...)
 		lint.Sort(findings)
 	}
+	findings = lint.DropGauntletRules(findings, gauntletEnabled(dir)) // light mode, F-0364
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, dir))
 	out := cmd.OutOrStdout()
 	var label string
@@ -337,6 +338,13 @@ func taskAction(f lint.Finding) string {
 // wikiEnabled is project.WikiEnabled for a command that gates on it (F-0316):
 // a broken wiki.enabled source falls through as resolved, with its warning on
 // stderr so the wiki never flips back on in silence.
+// gauntletEnabled reads [gates] gauntlet from the project at dir (F-0364); an
+// unreadable config keeps the Gauntlet on, the fail-safe default.
+func gauntletEnabled(dir string) bool {
+	cfg, _, err := project.LoadConfig(dir)
+	return err != nil || cfg.Gates.GauntletEnabled()
+}
+
 func wikiEnabled(cmd *cobra.Command, dir string) bool {
 	on, warning := project.WikiEnabled(dir)
 	if warning != "" {
