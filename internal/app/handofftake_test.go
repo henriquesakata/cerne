@@ -200,3 +200,19 @@ func TestCancelHandoff(t *testing.T) {
 	}
 	assertCloneUntouched(t, repoDir, before)
 }
+
+// F-0368 critic round 1, item 4: take and cancel refuse a malformed id before
+// touching the store.
+func TestHandoffMalformedID(t *testing.T) {
+	repoDir, projDir := passBaton(t)
+	before, _ := gitback.HeadSHA(repoDir)
+	for _, id := range []string{"W-0001", "HO-", "HO-12a", "../entities/works/W-0001", "HO-0001/x"} {
+		if _, err := TakeHandoff(repoDir, projDir, filepath.Dir(repoDir), "s", id, "", ""); !errors.Is(err, ErrMalformedHandoffID) || !strings.Contains(err.Error(), "malformed handoff id") {
+			t.Fatalf("take %q err = %v", id, err)
+		}
+		if err := CancelHandoff(repoDir, projDir, id, "r"); !errors.Is(err, ErrMalformedHandoffID) {
+			t.Fatalf("cancel %q err = %v", id, err)
+		}
+	}
+	assertCloneUntouched(t, repoDir, before)
+}

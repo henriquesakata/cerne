@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,21 @@ import (
 // ErrHandoffNotPending is the sentinel for a take or cancel of a handoff that
 // was already taken, superseded or cancelled (F-0368 crit. 4).
 var ErrHandoffNotPending = errors.New("handoff is not pending")
+
+// ErrMalformedHandoffID is the sentinel for an id that is not HO-<digits>,
+// refused before the store is touched.
+var ErrMalformedHandoffID = errors.New("malformed handoff id")
+
+var handoffIDRe = regexp.MustCompile(`^HO-\d+$`)
+
+// canonicalHandoffID upper-cases id and checks it is HO-<digits>.
+func canonicalHandoffID(id string) (string, error) {
+	c := strings.ToUpper(strings.TrimSpace(id))
+	if !handoffIDRe.MatchString(c) {
+		return "", fmt.Errorf("%w: %q (want HO-NNNN)", ErrMalformedHandoffID, id)
+	}
+	return c, nil
+}
 
 // TakeResult is what TakeHandoff did: the new work (with the taken handoff in
 // Taken), the brief to read first, and whether the origin was closed — false
@@ -33,10 +49,13 @@ type TakeResult struct {
 // commit, the new work is bound to session sess (when set) in cacheDir. A
 // handoff that is not pending is refused, writing nothing (crit. 4).
 func TakeHandoff(repoDir, projDir, cacheDir, sess, id, title, note string) (TakeResult, error) {
-	id = strings.ToUpper(strings.TrimSpace(id))
+	id, err := canonicalHandoffID(id)
+	if err != nil {
+		return TakeResult{}, err
+	}
 	var out TakeResult
 	var fromTitle string
-	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		h, err := loadPendingHandoff(repoDir, id)
 		if err != nil {
 			return "", err
@@ -86,7 +105,10 @@ func CancelHandoff(repoDir, projDir, id, reason string) error {
 	if reason == "" {
 		return fmt.Errorf("--reason is required to cancel a handoff")
 	}
-	id = strings.ToUpper(strings.TrimSpace(id))
+	id, err := canonicalHandoffID(id)
+	if err != nil {
+		return err
+	}
 	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		h, err := loadPendingHandoff(repoDir, id)
 		if err != nil {
