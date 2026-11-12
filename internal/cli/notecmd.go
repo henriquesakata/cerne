@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -37,7 +39,7 @@ func newNoteCmd() *cobra.Command {
 
 func newNoteListCmd(dir *string) *cobra.Command {
 	var all, asJSON bool
-	var facet, component string
+	var facet, component, onPath string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes (durable knowledge) — active by default; --all includes history",
@@ -45,20 +47,51 @@ func newNoteListCmd(dir *string) *cobra.Command {
 			"knowledge even when '.docs/' is stale (no 'cerne pull'). By default shows only the " +
 			"active ones; --all includes the superseded (history). Each line carries id, state, title and markers " +
 			"(durable, informs F-/D-/RB-/N-, facet/component, successor). Filter by --facet and/or --component (logical AND). " +
+			"--path <file> lists the active notes that cite that file (full path, then dir suffix, then a unique bare name; newest first), the same rule as the edit hook, without its cap of 3. " +
 			"--json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteList(cmd, *dir, all, asJSON, facet, component)
+			return runNoteList(cmd, *dir, all, asJSON, facet, component, onPath)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "include superseded notes (history)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")
 	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. gitea)")
+	cmd.Flags().StringVar(&onPath, "path", "", "only the active notes that cite this file (repo-relative or absolute)")
 	return cmd
 }
 
-func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, component string) error {
+// notesCitingPath orders notes (already filtered) by how specifically they cite
+// file, dropping the ones that do not; shared rule with the work-gate hook.
+func notesCitingPath(ctx projCtx, notes []store.Note, file string) ([]store.Note, error) {
+	rel := filepath.ToSlash(file)
+	if filepath.IsAbs(file) {
+		r, err := filepath.Rel(ctx.projDir, file)
+		if err != nil {
+			return nil, err
+		}
+		rel = filepath.ToSlash(r)
+	}
+	cacheDir := filepath.Dir(ctx.repoDir)
+	found, err := app.NotesForPath(context.Background(), cacheDir, ctx.repoDir, rel, app.UniqueNames(context.Background(), cacheDir, "", ctx.projDir))
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]store.Note{}
+	for _, n := range notes {
+		byID[n.ID] = n
+	}
+	var out []store.Note
+	for _, f := range found {
+		if n, ok := byID[f.ID]; ok {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, component, onPath string) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -84,6 +117,11 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 			continue
 		}
 		shown = append(shown, n)
+	}
+	if onPath != "" {
+		if shown, err = notesCitingPath(ctx, shown, onPath); err != nil {
+			return err
+		}
 	}
 
 	if asJSON {
@@ -123,7 +161,9 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 		fmt.Fprintln(w, line)
 	}
 	if len(shown) == 0 {
-		if all {
+		if onPath != "" {
+			fmt.Fprintf(w, "No active notes cite %s (the index is rebuilt by 'cerne pull').\n", onPath)
+		} else if all {
 			fmt.Fprintln(w, "No notes registered. Use 'cerne note new \"<title>\"' to register durable knowledge.")
 		} else {
 			fmt.Fprintln(w, "No active notes. Use 'cerne note new \"<title>\"' to register one, or 'cerne note list --all' to see history.")

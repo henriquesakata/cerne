@@ -165,3 +165,33 @@ func mustRead(t *testing.T, p string) []byte {
 	}
 	return b
 }
+
+// TestNoteListPath (crit. 7, 9): `note list --path` lists every active note that
+// cites the file, same order as the hook, no cap of 3, no "seen" bookkeeping.
+func TestNoteListPath(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedEditNotes(t, repoDir, map[string][2]string{
+		"N-0001": {"sfx a", "scripts/release.sh"},
+		"N-0002": {"full", "infra/k8s/scripts/release.sh"},
+		"N-0003": {"sfx b", "scripts/release.sh"},
+		"N-0004": {"sfx c", "scripts/release.sh"},
+		"N-0005": {"sfx d", "scripts/release.sh"},
+		"N-0006": {"unrelated", "nothing here"},
+	})
+	for i := 0; i < 2; i++ { // twice: listing never marks notes as seen
+		out, err := execCerne(t, "note", "list", "--path", "infra/k8s/scripts/release.sh", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		if len(lines) != 5 || !strings.HasPrefix(lines[0], "N-0002  [active]  full") {
+			t.Fatalf("out:\n%s", out)
+		}
+		if strings.Contains(out, "N-0006") {
+			t.Fatalf("unrelated note listed:\n%s", out)
+		}
+	}
+	if out, err := execCerne(t, "note", "list", "--path", "nowhere/else.go", "--dir", projDir); err != nil || !strings.Contains(out, "No active notes cite nowhere/else.go") {
+		t.Fatalf("empty: %v %q", err, out)
+	}
+}
