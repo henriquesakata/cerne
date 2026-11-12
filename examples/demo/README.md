@@ -3,12 +3,12 @@
 A fictional project with a realistic cerne history, so you can explore cerne with data before adopting it. One command builds it on your machine:
 
 ```bash
-sh examples/demo/seed.sh ~/cerne-demo
+cerne demo ~/cerne-demo
 ```
 
-It creates `~/cerne-demo/taskflow` (the project) and `~/cerne-demo/taskflow-docs.git` (a local bare backend). Nothing leaves your machine. The directory must not exist yet and must be outside this clone: the clone is itself a cerne project, and cerne finds its project by walking up. Delete the directory to start over. If the script fails midway it removes what it created.
+It creates `~/cerne-demo/taskflow` (the project) and `~/cerne-demo/taskflow-docs.git` (a local bare backend) from the documents under [`content/`](content), which are embedded in the binary: no clone, no shell, no network. Nothing leaves your machine. The directory must not exist yet and must not sit inside another cerne project (a clone of this repository is one), because cerne finds its project by walking up. Delete the directory to start over. If a step fails midway, the command removes what it created and names the step.
 
-It needs `git` and a `cerne` newer than v0.5.0 (the first with English documents).
+It needs `git`. On a `cerne` without the `demo` command (older releases, newer than v0.5.0), run the script from a clone instead: `sh examples/demo/seed.sh ~/cerne-demo`. With a newer binary the script just calls `cerne demo`.
 
 ## What is in it
 
@@ -44,9 +44,9 @@ cerne feature accept F-0005   # accepting a delivery is a human act: try it
 
 ## How it was built
 
-[`seed.sh`](seed.sh) uses only the public CLI, so it doubles as a tour of the commands: `feature new`, `approve`, `pull`, `push`, `start`, `complete`, `reject`, `decision new`, `decision substituir`, `note new`, `runbook new`, `reference new`. The documents it feeds them are under [`content/`](content).
+`cerne demo` runs the same public commands a user types, in the order [`seed.sh`](seed.sh) lists them, so the script doubles as a tour of the commands: `feature new`, `approve`, `pull`, `push`, `start`, `complete`, `reject`, `decision new`, `decision substituir`, `note new`, `runbook new`, `reference new`. The documents it feeds them are under [`content/`](content).
 
 Two things in the demo differ from a real project, on purpose:
 
-- **The gates.** Approving a spec and accepting a delivery are human acts by default; an AI agent cannot sign off its own work. The script opens those gates while it seeds, so it can run unattended, and restores the default before it finishes. The generated project behaves like a real one.
+- **The gates.** Approving a spec and accepting a delivery are human acts by default; an AI agent cannot sign off its own work. The demo opens those gates while it builds, so it can run unattended, and restores the default before it finishes. The generated project behaves like a real one.
 - **The bar.** Every spec declares `Bar: not applicable (…)`. A real feature names a reference to be compared against; sample data has nothing real to compare with, and inventing a judge's verdict would be fabricating evidence.
