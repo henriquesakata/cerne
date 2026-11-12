@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // TestHookInstallAutoDetectsProviders (F-0174 crit. 2): a project with a
@@ -12,6 +14,9 @@ import (
 // degradations in the report.
 func TestHookInstallAutoDetectsProviders(t *testing.T) {
 	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil { // F-0354: --dir must name a project
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +43,9 @@ func TestHookInstallAutoDetectsProviders(t *testing.T) {
 // even without the config dir, and skips the default claude install.
 func TestHookInstallProviderFlag(t *testing.T) {
 	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil { // F-0354: --dir must name a project
+		t.Fatal(err)
+	}
 	out, err := execCerne(t, "hook", "install", "--dir", dir, "--provider", "codex")
 	if err != nil {
 		t.Fatalf("hook install: %v\noutput: %s", err, out)

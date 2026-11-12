@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 )
@@ -86,6 +88,8 @@ func resolvePaths(startDir string) (projCtx, error) {
 		}
 		startDir = wd
 	}
+	// The F-0354 rule lives in the root gate (refuseProjectlessDir): by here an
+	// explicit --dir already holds a .cernerc, and every other caller climbs.
 	cfg, projDir, err := project.LoadConfig(startDir)
 	if err != nil {
 		return projCtx{}, err
@@ -109,6 +113,19 @@ func resolvePaths(startDir string) (projCtx, error) {
 		return projCtx{}, err
 	}
 	return projCtx{cfg: cfg, projDir: projDir, repoDir: repoDir}, nil
+}
+
+// refuseProjectlessDir is the root pre-run check of F-0354: a --dir the user
+// passed names the project directory, so a folder without .cernerc is refused
+// before the command reads or writes anything, whether the command resolves
+// the project through resolvePaths or on its own (msg, room, hook, settings…).
+// init is exempt: it creates the .cernerc. A default value is not "passed".
+func refuseProjectlessDir(cmd *cobra.Command) error {
+	f := cmd.Flag("dir")
+	if f == nil || !f.Changed || (cmd.Parent() == cmd.Root() && cmd.Name() == "init") {
+		return nil
+	}
+	return project.RequireConfigAt(f.Value.String())
 }
 
 // noteCerneRoot says on stderr when the project was found through CERNE_ROOT
