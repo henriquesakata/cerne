@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,20 @@ func TestShowMergedErrataLineIsComplete(t *testing.T) {
 		t.Fatalf("errata block:\n%s\nwant:\n%s", got, want)
 	}
 
+	// A7: the text no longer repeats who decided and why; the body shows it, once.
+	if n := strings.Count(text, `"so com alerta firing" — tl`); n != 1 || strings.Count(text, "so com alerta firing") != 1 {
+		t.Fatalf("decision must appear exactly once in the text (got %d):\n%s", n, text)
+	}
+	// A6: the printed pointer is a command that works and returns the body before the merge.
+	m := regexp.MustCompile(`earlier body: 'cerne (show [^']+)'`).FindStringSubmatch(text)
+	if m == nil {
+		t.Fatalf("no earlier body pointer:\n%s", text)
+	}
+	old, err := execCerne(t, append(strings.Fields(m[1]), "--dir", projDir)...)
+	if err != nil || !strings.Contains(old, "Para no primeiro alerta.") || strings.Contains(old, "Errata E1") {
+		t.Fatalf("pointer %q: err=%v, want the body before the merge:\n%s", m[1], err, old)
+	}
+
 	var js struct {
 		Merged  []map[string]any `json:"merged_errata"`
 		Earlier int              `json:"earlier_body_rev"`
@@ -35,8 +50,8 @@ func TestShowMergedErrataLineIsComplete(t *testing.T) {
 	if err := json.Unmarshal([]byte(rb(t, projDir, "show", "RB-0001", "--json")), &js); err != nil {
 		t.Fatal(err)
 	}
-	m := js.Merged[0]
-	if m["step"] != "S6.6" || m["decided_by"] != "tl" || m["quote"] != "so com alerta firing" || js.Earlier != 1 {
+	jm := js.Merged[0]
+	if jm["step"] != "S6.6" || jm["decided_by"] != "tl" || jm["quote"] != "so com alerta firing" || js.Earlier != 1 {
 		t.Fatalf("json: %v earlier=%d", js.Merged, js.Earlier)
 	}
 }
