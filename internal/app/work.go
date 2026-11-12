@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,23 +20,41 @@ type WorkOutcome struct {
 	To   domain.WorkState
 }
 
+// StartedWork is what StartWork did: the new work, plus the planning works of
+// this process's actors it closed as superseded (F-0341 crit. 4), the
+// unbound ones it kept active (crit. 5) and the ones another session holds —
+// possibly live work, so never offered for closing.
+type StartedWork struct {
+	store.Work
+	Superseded []string
+	Kept       []string
+	Held       []string
+	From       string        // the canonical id of the --from origin ("" without it)
+	Handoffs   []WorkHandoff // what to read before starting (F-0339): the --from origin's, then the crossing refs'
+}
+
 // StartWork mints a new active work (agent activity, F-0130) in the backend
 // clone at repoDir: validates each ref (F-/D- id) exists, allocates the next
 // W- id, persists the entity, appends the work.started event and commits+
 // pushes the backend, refreshing the docs.lock snapshot in projDir. actor is
 // agent when non-empty, else "<os user>@<hostname>" — the default identity of
-// whoever/whatever is running this activity.
-func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string) (store.Work, error) {
+// whoever/whatever is running this activity. In the same commit, the new work
+// supersedes the same actor's planning works on its features (F-0341).
+// from (F-0339) is an active work this one takes over: its refs are inherited
+// when none are given, the duplicate guard ignores it, and it closes as done
+// ("handed off to <new>") in the same commit — F-0341 never also evaluates it.
+func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string, from string) (StartedWork, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return store.Work{}, fmt.Errorf("the activity description cannot be empty")
+		return StartedWork{}, fmt.Errorf("the activity description cannot be empty")
 	}
 	actor := strings.TrimSpace(agent)
 	if actor == "" {
 		actor = defaultWorkActor()
 	}
 	paths = cleanWorkPaths(paths)
-	var w store.Work
+	var out StartedWork
+	var fromTitle string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		cleaned, err := validateWorkRefs(repoDir, refs)
 		if err != nil {
@@ -43,16 +63,56 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		// Duplicate-registration guard (F-0147): someone may already be on
 		// this. The auto-registered works (F-0146) never pass through here —
 		// they are idempotent by construction.
-		forced, err := guardRegistration(repoDir, title, force)
+		var origin store.Work
+		if from != "" {
+			if origin, err = store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(from))); errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("--from: activity %s not found in the backend", from)
+			} else if err != nil {
+				return "", err
+			}
+			// Every comparison below uses the stored id: on a case-insensitive
+			// filesystem the raw one may have loaded a differently-cased file.
+			from = origin.ID
+			if origin.State != domain.WorkActive {
+				return "", fmt.Errorf("--from: activity %s is %s, not active", from, origin.State)
+			}
+			// Owner's principle (F-0341): live work of another session is not
+			// closed on a guess. A handoff is the proof the owner let go; a
+			// typo like W-0043 has none, and another session holds the binding.
+			if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, os.Getenv("CERNE_SESSION")) {
+				return "", fmt.Errorf("--from: %s has no handoff and is bound to another session — it may be live work; confirm with that session, or use --force to take it over anyway", from)
+			}
+			if len(cleaned) == 0 {
+				cleaned = origin.Refs
+			}
+		}
+		forced, err := guardRegistration(repoDir, title, force, from)
 		if err != nil {
 			return "", err
 		}
+		prior, err := store.LoadAllWorks(repoDir)
+		if err != nil {
+			return "", err
+		}
+		// The origin is closed by --from (crit. 8), never also by F-0341.
+		prior = slices.DeleteFunc(prior, func(w store.Work) bool { return from != "" && w.ID == from })
+		var handoffs []WorkHandoff
+		if e, ok, err := lastHandoff(repoDir, origin); err != nil {
+			return "", err
+		} else if ok {
+			handoffs = append(handoffs, WorkHandoff{ID: from, Entry: e})
+		}
+		crossing, err := HandoffsFor(repoDir, cleaned, from)
+		if err != nil {
+			return "", err
+		}
+		handoffs = append(handoffs, crossing...)
 		id, err := store.NextID(repoDir, "W")
 		if err != nil {
 			return "", err
 		}
 		now := time.Now().UTC()
-		w = store.Work{
+		w := store.Work{
 			ID:        id,
 			Title:     title,
 			State:     domain.WorkActive,
@@ -73,13 +133,82 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
+		out = StartedWork{Work: w, From: from, Handoffs: handoffs}
+		fromTitle = origin.Title
+		if from != "" {
+			// An explicit handoff, closed like `work done`: ends the run, no via=auto.
+			note := "handed off to " + id
+			if _, err := closeWorkEntity(repoDir, origin, domain.ActionComplete, note, map[string]string{"note": note}); err != nil {
+				return "", err
+			}
+		}
+		if activityAutoEnabled(projDir) {
+			if out.Superseded, out.Kept, out.Held, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
+				return "", err
+			}
+		}
+		// A work F-0341 closed in this very call cannot be taken over with
+		// --from (it would be refused): its handoff comes without the hint.
+		for i := range out.Handoffs {
+			if slices.Contains(out.Superseded, out.Handoffs[i].ID) {
+				out.Handoffs[i].Hint = false
+			}
+		}
 		return fmt.Sprintf("cerne: start %s (%s)", id, title), nil
 	})
 	if err != nil {
-		return store.Work{}, err
+		return StartedWork{}, err
 	}
-	dispatchWebhook(projDir, w.ID, "work", "start", "", string(w.State), w.Title)
-	return w, nil
+	if out.From != "" { // the origin closed like `work done` would have (F-0339)
+		dispatchWebhook(projDir, out.From, "work", string(domain.ActionComplete), string(domain.WorkActive), string(domain.WorkDone), fromTitle)
+	}
+	dispatchWebhook(projDir, out.ID, "work", "start", "", string(out.State), out.Title)
+	return out, nil
+}
+
+// supersedePlanning (F-0341 crit. 4/5, owner's decision of 2026-11-11)
+// closes, as superseded by newID, the planning work of this process's actors
+// on each feature in refs that this very session is bound to (F-0151): the
+// session re-registering. Every other one of theirs stays, to be warned
+// about — in held when another session is bound to it, else (unbound, or met
+// with no CERNE_SESSION) in kept: the agent actor is the same on every
+// machine, another machine's binding is not visible here, and "unbound" does
+// not prove the session ended. works lists the board before newID existed.
+func supersedePlanning(repoDir string, works []store.Work, refs []string, newID string) (closed, kept, held []string, err error) {
+	mine := myActors()
+	bindings := sessionBindingsIn(filepath.Dir(repoDir))
+	sess := os.Getenv("CERNE_SESSION")
+	for _, ref := range refs {
+		if !domain.IsFeatureID(ref) {
+			continue
+		}
+		f, err := store.LoadFeature(repoDir, ref)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		planning, err := planningWorks(repoDir, works, ref, f.State)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, w := range planning {
+			if !slices.Contains(mine, w.Actor) {
+				continue
+			}
+			if bindings[sess] != w.ID {
+				if boundElsewhere(bindings, w.ID, sess) {
+					held = append(held, w.ID)
+				} else {
+					kept = append(kept, w.ID)
+				}
+				continue
+			}
+			if err := closeWork(repoDir, w, domain.ActionComplete, "superseded by "+newID); err != nil {
+				return nil, nil, nil, err
+			}
+			closed = append(closed, w.ID)
+		}
+	}
+	return closed, kept, held, nil
 }
 
 // FinishWork ends work id in the backend clone at repoDir: active -> done
@@ -105,23 +234,9 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 
 		action := domain.ActionComplete
 		closingNote := strings.TrimSpace(note)
-		eventType := "work.done"
 		if abandon {
 			action = domain.ActionAbandon
 			closingNote = strings.TrimSpace(reason)
-			eventType = "work.abandoned"
-		}
-
-		newState, err := domain.TransitionWork(w.State, action)
-		if err != nil {
-			return "", err
-		}
-		oldState := w.State
-		w.State = newState
-		w.Note = closingNote
-		w.UpdatedAt = time.Now().UTC()
-		if err := store.SaveWork(repoDir, w); err != nil {
-			return "", err
 		}
 		payload := map[string]string{}
 		if abandon {
@@ -129,17 +244,9 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 		} else if closingNote != "" {
 			payload["note"] = closingNote
 		}
-		ev := domain.NewEvent(id, eventType, payload, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
-			return "", err
-		}
-		// F-0873: closing the work concludes its run, if it has one.
-		if r, err := store.LoadRun(repoDir, id); err == nil {
-			r.State = store.RunClosed
-			if err := store.SaveRun(repoDir, r); err != nil {
-				return "", err
-			}
-		} else if !errors.Is(err, store.ErrNotFound) {
+		oldState := w.State
+		newState, err := closeWorkEntity(repoDir, w, action, closingNote, payload)
+		if err != nil {
 			return "", err
 		}
 		title = w.Title

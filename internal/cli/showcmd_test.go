@@ -15,6 +15,58 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
+// F-0345 crit. 5: a runbook with open errata items opens its show with one line
+// pointing at the consolidated view; --json carries the two numbers.
+func TestShowRunbookOpensWithOpenErrataLine(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Com passo.", "--altera", "S6.6")
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Geral.", "--sem-passo")
+	out := rb(t, projDir, "show", "RB-0001")
+	first, _, _ := strings.Cut(out, "\n")
+	if want := "2 open errata item(s) (1 without a step). What applies now: cerne show RB-0001 --consolidado"; first != want {
+		t.Fatalf("first line = %q, want %q", first, want)
+	}
+	var js struct {
+		Open     *int `json:"open_errata"`
+		Stepless *int `json:"stepless_errata"`
+	}
+	if err := json.Unmarshal([]byte(rb(t, projDir, "show", "RB-0001", "--json")), &js); err != nil || js.Open == nil || js.Stepless == nil || *js.Open != 2 || *js.Stepless != 1 {
+		t.Fatalf("json = %+v (err %v), want open_errata 2 and stepless_errata 1", js, err)
+	}
+}
+
+// F-0345 crit. 6: no open item (none, or all folded into the body) keeps today's output.
+func TestShowRunbookWithoutOpenErrataIsUnchanged(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	if out := rb(t, projDir, "show", "RB-0001"); strings.Contains(out, "open errata") {
+		t.Fatalf("no errata, no line:\n%s", out)
+	}
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Regra.", "--altera", "S6.6")
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "vale")
+	rb(t, projDir, "runbook", "merge", "RB-0001")
+	if out := rb(t, projDir, "show", "RB-0001"); strings.Contains(out, "open errata") {
+		t.Fatalf("a merged item is not open:\n%s", out)
+	}
+	if strings.Contains(rb(t, projDir, "show", "RB-0001", "--json"), "open_errata") {
+		t.Fatal("json must not carry open_errata when nothing is open")
+	}
+}
+
+// F-0345: show and lint share one "open" (store.ErrataItem.Open): a step-less
+// item decided is retired and silent; a --sem-passo proposal counts in N and M.
+func TestShowRunbookStepLessOpenFollowsDecision(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Geral.", "--sem-passo")
+	first, _, _ := strings.Cut(rb(t, projDir, "show", "RB-0001"), "\n")
+	if !strings.HasPrefix(first, "1 open errata item(s) (1 without a step).") {
+		t.Fatalf("a --sem-passo proposal is open and step-less: %q", first)
+	}
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "ok")
+	if out := rb(t, projDir, "show", "RB-0001"); strings.Contains(out, "open errata") {
+		t.Fatalf("a decided step-less item is retired, no line:\n%s", out)
+	}
+}
+
 func TestShowFeature(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {

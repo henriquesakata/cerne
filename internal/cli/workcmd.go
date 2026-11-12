@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,6 +23,7 @@ func newWorkCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newWorkStartCmd(&dir))
+	cmd.AddCommand(newWorkHandoffCmd(&dir))
 	cmd.AddCommand(newWorkDoneCmd(&dir))
 	cmd.AddCommand(newWorkAbandonCmd(&dir))
 	cmd.AddCommand(newWorkListCmd(&dir))
@@ -30,7 +32,7 @@ func newWorkCmd() *cobra.Command {
 }
 
 func newWorkStartCmd(dir *string) *cobra.Command {
-	var ref, agent, paths string
+	var ref, agent, paths, from string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "start <description>",
@@ -43,17 +45,18 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 			"with another active work prints a warning (F-0151) — the conflict check becomes part of registering.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWorkStart(cmd, *dir, args[0], ref, agent, paths, force)
+			return runWorkStart(cmd, *dir, args[0], ref, agent, paths, from, force)
 		},
 	}
+	cmd.Flags().StringVar(&from, "from", "", "take over this active work: inherits its refs, prints its last handoff and closes it as done (handed off)")
 	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/D- ids this activity relates to")
 	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to '<user>@<hostname>')")
 	cmd.Flags().StringVar(&paths, "paths", "", "comma-separated path globs this activity intends to touch")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem; with --from, also take over a work without handoff that another session is bound to")
 	return cmd
 }
 
-func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths string, force bool) error {
+func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths, from string, force bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -66,16 +69,74 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths string, forc
 	if err != nil {
 		return err
 	}
-	w, err := app.StartWork(ctx.repoDir, ctx.projDir, title, splitInforms(ref), agent, force, declared)
+	w, err := app.StartWork(ctx.repoDir, ctx.projDir, title, splitInforms(ref), agent, force, declared, from)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active) — %s (actor: %s)\n", w.ID, w.Title, w.Actor)
+	if from != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "closed %s (handed off to %s)\n", w.From, w.ID)
+		// The origin is closed: session bindings pointing at it are dead (F-0151 crit. 5).
+		if err := app.ClearBindings(filepath.Dir(ctx.repoDir), w.From); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: clearing session bindings: %v\n", err)
+		}
+	}
+	// The planning works this one replaced, the unbound ones it kept, and the
+	// ones another session holds — no closing command for those, they may be
+	// live (F-0341 crit. 4 and 5).
+	for _, id := range w.Superseded {
+		fmt.Fprintf(cmd.OutOrStdout(), "closed %s (superseded by %s)\n", id, w.ID)
+	}
+	for _, id := range w.Kept {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s left active (not bound to this session); if it is finished: cerne work done %s\n", id, id)
+	}
+	for _, id := range w.Held {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s left active: another session holds it\n", id)
+	}
+	// F-0339 crit. 6 and 8: what the session before left, read before starting.
+	for _, h := range w.Handoffs {
+		fmt.Fprintf(cmd.OutOrStdout(), "last handoff of %s (%s, %s):\n%s\n", h.ID, h.Entry.Date, h.Entry.Author, h.Entry.Text)
+		if h.Hint {
+			fmt.Fprintf(cmd.OutOrStdout(), "take it over: cerne work start \"<description>\" --from %s\n", h.ID)
+		}
+	}
 	for _, m := range overlaps {
 		fmt.Fprintf(cmd.OutOrStdout(), "warning: paths overlap active %s (%s) on %s — coordinate before touching shared files\n",
 			m.ID, m.Title, joinRefs(m.Globs))
 	}
 	return nil
+}
+
+func newWorkHandoffCmd(dir *string) *cobra.Command {
+	var file, next, evidence string
+	cmd := &cobra.Command{
+		Use:   "handoff <id> --next <next step> [--file <brief.md>] [--evidence <ref>,…]",
+		Short: "Leave a session handoff (brief, evidence, next step) on an active activity",
+		Long: "Appends a handoff entry to an active work, in the backend (append-only): the brief (from --file or " +
+			"stdin), the evidence and the next step. The work stays active; the next session reads the entry in " +
+			"'cerne work start' (with a crossing --ref) or takes the work over with 'cerne work start … --from <id>'. " +
+			"--evidence lists durable references (path, URL, command, cerne id); a path in a temporary folder is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			brief, err := readOptionalBody(cmd, file)
+			if err != nil {
+				return err
+			}
+			if err := app.HandoffWork(ctx.repoDir, ctx.projDir, args[0], brief, next, splitInforms(evidence)); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: handoff recorded (next: %s)\n", args[0], strings.TrimSpace(next))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&file, "file", "", "markdown file with the brief (or pipe it on stdin)")
+	cmd.Flags().StringVar(&next, "next", "", "the next step (required)")
+	cmd.Flags().StringVar(&evidence, "evidence", "", "comma-separated durable references (path, URL, command, cerne id)")
+	return cmd
 }
 
 func newWorkDoneCmd(dir *string) *cobra.Command {

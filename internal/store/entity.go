@@ -144,12 +144,13 @@ type Work struct {
 	Note      string           `json:"note,omitempty"`  // closing note (done) or reason (abandoned)
 	Auto      bool             `json:"auto,omitempty"`  // opened by a feature transition (F-0146), not by `cerne work start`
 	Paths     []string         `json:"paths,omitempty"` // path globs this activity intends to touch (F-0151)
+	HandoffAt *time.Time       `json:"handoff_at,omitempty"` // last session handoff (F-0339); the text is content/works/<id>/handoff.md
 	CreatedAt time.Time        `json:"created_at"`
 	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 const (
-	featuresSubdir    = "entities/features"
+	featuresSubdir   = "entities/features"
 	decisionsSubdir   = "entities/decisions"
 	referencesSubdir  = "entities/references"
 	runbooksSubdir    = "entities/runbooks"

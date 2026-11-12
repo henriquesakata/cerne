@@ -13,6 +13,7 @@ import (
 //	Altera: S6.6                                  (the step it changes, declared, never inferred)
 //	Estado: decidida — "<quote>" (<nick>, <date>)  (absent = proposta)
 //	Fundida: revisão 3                             (set by the merge)
+//	Sem passo: sim                                 (F-0345: no step on purpose; written with `Altera: -`)
 //	Anterior: decidida — "<quote>" (<nick>, <date>) (a decision a redecide replaced; one line each)
 //
 // Only the block cerne writes is metadata: AddErrataAt always opens it (`Altera: -`
@@ -24,7 +25,7 @@ import (
 
 var (
 	errataHeaderRe = regexp.MustCompile(`^## errata (\d{4}-\d{2}-\d{2}) — (.+)$`)
-	errataMetaRe   = regexp.MustCompile(`^(Altera|Estado|Fundida|Anterior): (.*)$`)
+	errataMetaRe   = regexp.MustCompile(`^(Altera|Estado|Fundida|Anterior|Sem passo): (.*)$`)
 	errataStateRe  = regexp.MustCompile(`^decidida — "(.*)" \((.+), (\d{4}-\d{2}-\d{2})\)$`)
 	headingRe      = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 )
@@ -38,6 +39,7 @@ type ErrataItem struct {
 	Date      string // YYYY-MM-DD from the block title
 	Author    string
 	Target    string // declared step ("S6.6"); "" when none
+	Stepless  bool   // `Sem passo: sim`: no step by choice, not by omission (F-0345)
 	Quote     string // the decision, quoted; "" while a proposal
 	DecidedBy string
 	DecidedAt string
@@ -48,6 +50,13 @@ type ErrataItem struct {
 
 // Decided reports whether the item carries a decision.
 func (it ErrataItem) Decided() bool { return it.DecidedBy != "" }
+
+// Open reports whether the item still waits: not folded into the body, and not
+// a step-less one that was decided (nothing to fold, the decision retires it).
+// The one definition show and lint share (F-0345).
+func (it ErrataItem) Open() bool {
+	return it.Merged == "" && !(it.Target == "" && it.Decided())
+}
 
 // StateLabel is the item's state as shown to a reader.
 func (it ErrataItem) StateLabel() string {
@@ -98,6 +107,8 @@ func scanErrata(lines []string) []itemSpan {
 				if v != NoStep {
 					s.item.Target = v
 				}
+			case "Sem passo":
+				s.item.Stepless = v == "sim"
 			case "Anterior":
 				s.item.Previous = append(s.item.Previous, strings.TrimPrefix(v, "decidida — "))
 			case "Estado":
@@ -255,6 +266,35 @@ func startsWithStep(title, tok string) bool {
 	}
 }
 
+// stepSectionEnd is the line index where the section of step tok ends (where an
+// item for it is inserted), or -1 when no heading names the step.
+func stepSectionEnd(lines []string, hs []heading, tok string) int {
+	for k, h := range hs {
+		if !hasStepToken(h.title, tok) {
+			continue
+		}
+		end := len(lines)
+		for _, n := range hs[k+1:] {
+			if n.level <= h.level {
+				end = n.idx
+				break
+			}
+		}
+		for end > h.idx+1 && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		return end
+	}
+	return -1
+}
+
+// StepExists reports whether a heading of body names step: the same matching
+// InsertAtSteps places an item with (F-0345).
+func StepExists(body, step string) bool {
+	lines := strings.Split(body, "\n")
+	return stepSectionEnd(lines, headingsOutsideFences(lines), step) >= 0
+}
+
 // InsertAtSteps places each item as a quoted block at the end of the section of
 // the step it declares, in the body, and returns the items it could not place
 // (no declared step, or no section naming it) — those never break the caller.
@@ -267,23 +307,7 @@ func InsertAtSteps(body string, items []ErrataItem, status func(ErrataItem) stri
 	for _, it := range items {
 		pos := -1
 		if it.Target != "" {
-			for k, h := range hs {
-				if !hasStepToken(h.title, it.Target) {
-					continue
-				}
-				end := len(lines)
-				for _, n := range hs[k+1:] {
-					if n.level <= h.level {
-						end = n.idx
-						break
-					}
-				}
-				for end > h.idx+1 && strings.TrimSpace(lines[end-1]) == "" {
-					end--
-				}
-				pos = end
-				break
-			}
+			pos = stepSectionEnd(lines, hs, it.Target)
 		}
 		if pos < 0 {
 			orphans = append(orphans, it)
