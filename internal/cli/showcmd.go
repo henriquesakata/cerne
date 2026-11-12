@@ -719,14 +719,10 @@ func (m mergedErrataJSON) line() string {
 	if m.Date != "" {
 		l += " (" + m.Date + ")"
 	}
+	// who decided and why is not repeated: the body already shows it (JSON keeps it)
+	l += " — shown in the body"
 	if m.Step != "" {
 		l += " under " + m.Step
-	}
-	if m.By != "" {
-		l += " — decided by " + m.By
-		if m.Quote != "" {
-			l += fmt.Sprintf(": %q", m.Quote)
-		}
 	}
 	return l
 }

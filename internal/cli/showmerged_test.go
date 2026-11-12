@@ -69,8 +69,8 @@ func TestShowRunbookMergedErrataIsOneLine(t *testing.T) {
 	// crit 3: everything merged -> only the lines.
 	rb(t, projDir, "runbook", "decide", "RB-0001", "E2", "--by", "dono", "--quote", "vale")
 	rb(t, projDir, "runbook", "merge", "RB-0001")
-	want := "E1 merged into revision 2 (" + day + `) under S6.6 — decided by dono: "vale"` + "\n\n" +
-		"E2 merged into revision 3 (" + day + `) under S6.7 — decided by dono: "vale"` + "\n\n" +
+	want := "E1 merged into revision 2 (" + day + `) — shown in the body under S6.6` + "\n\n" +
+		"E2 merged into revision 3 (" + day + `) — shown in the body under S6.7` + "\n\n" +
 		"earlier body: 'cerne show RB-0001 --rev 1'"
 	all := rb(t, projDir, "show", "RB-0001")
 	_, block, _ := strings.Cut(all, "## errata\n")

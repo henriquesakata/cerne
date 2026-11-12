@@ -21,8 +21,8 @@ func TestShowMergedErrataLineIsComplete(t *testing.T) {
 
 	text := rb(t, projDir, "show", "RB-0001")
 	_, block, _ := strings.Cut(text, "## errata\n")
-	want := "E1 merged into revision 2 (" + day + `) under S6.6 — decided by tl: "so com alerta firing"` + "\n\n" +
-		"E2 merged into revision 3 (" + day + `) under S6.7 — decided by dono: "vale"` + "\n\n" +
+	want := "E1 merged into revision 2 (" + day + `) — shown in the body under S6.6` + "\n\n" +
+		"E2 merged into revision 3 (" + day + `) — shown in the body under S6.7` + "\n\n" +
 		"earlier body: 'cerne show RB-0001 --rev 1'"
 	if got := strings.TrimSpace(block); got != want {
 		t.Fatalf("errata block:\n%s\nwant:\n%s", got, want)
@@ -46,7 +46,7 @@ func TestShowMergedErrataLineDropsUnknownParts(t *testing.T) {
 	projDir, repoDir := runbookFixture(t)
 	seedMergedItem(t, repoDir, "Altera: -\nFundida: revisão 4", time.Now().UTC(), "", "", time.Time{})
 	text := rb(t, projDir, "show", "RB-0001")
-	if !strings.Contains(text, "E1 merged into revision 4\n") || strings.Contains(text, " under ") || strings.Contains(text, "decided by") {
+	if !strings.Contains(text, "E1 merged into revision 4 — shown in the body\n") || strings.Contains(text, " under ") || strings.Contains(text, "decided by") {
 		t.Fatalf("bare line expected:\n%s", text)
 	}
 	if !strings.Contains(text, "earlier body: 'cerne show RB-0001 --rev 3'") {

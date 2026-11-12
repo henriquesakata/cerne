@@ -45,7 +45,7 @@ func TestShowMergedErrataWithoutEventOrRevision(t *testing.T) {
 	projDir, repoDir := runbookFixture(t)
 	seedMergedItem(t, repoDir, "Altera: S6.6\nFundida: revisão 2", time.Now().UTC(), "", "", time.Time{})
 	text, js := showMerged(t, projDir)
-	if !strings.Contains(text, "E1 merged into revision 2 under S6.6\n") || strings.Contains(text, "unknown") {
+	if !strings.Contains(text, "E1 merged into revision 2 — shown in the body under S6.6\n") || strings.Contains(text, "unknown") {
 		t.Fatalf("no event: line without parenthesis:\n%s", text)
 	}
 	if _, has := js.Merged[0]["date"]; has || js.Merged[0]["revision"] != float64(2) {
@@ -55,7 +55,7 @@ func TestShowMergedErrataWithoutEventOrRevision(t *testing.T) {
 	projDir, repoDir = runbookFixture(t)
 	seedMergedItem(t, repoDir, "Altera: S6.6\nFundida: sim", time.Now().UTC(), "", "", time.Time{})
 	text, js = showMerged(t, projDir)
-	if !strings.Contains(text, "E1 merged under S6.6\n") {
+	if !strings.Contains(text, "E1 merged — shown in the body under S6.6\n") {
 		t.Fatalf("no revision: bare line:\n%s", text)
 	}
 	if _, has := js.Merged[0]["revision"]; has {
@@ -94,7 +94,7 @@ func TestShowMergedErrataTakesRevisionAndDateFromEvent(t *testing.T) {
 	at := time.Date(2026, 3, 4, 23, 30, 0, 0, time.UTC)
 	seedMergedItem(t, repoDir, "Altera: S6.6\nFundida: sim", hdr, "7", "E1", at)
 	text, js := showMerged(t, projDir)
-	if !strings.Contains(text, "E1 merged into revision 7 (2026-03-04) under S6.6\n") {
+	if !strings.Contains(text, "E1 merged into revision 7 (2026-03-04) — shown in the body under S6.6\n") {
 		t.Fatalf("revision and date from the event:\n%s", text)
 	}
 	if js.Merged[0]["date"] != "2026-03-04" || js.Merged[0]["revision"] != float64(7) {
