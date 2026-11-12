@@ -122,3 +122,17 @@ func TestEveryDirFlagCommandRefusesProjectless(t *testing.T) {
 		t.Fatalf("guard walked only %d commands with --dir; Root() traversal is broken", checked)
 	}
 }
+
+// F-0354 crit. 3: resolvePaths is not the rule (the root gate is): an internal
+// caller handing it a computed subfolder path still climbs to the project.
+func TestResolvePathsClimbsForComputedPath(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	sub := filepath.Join(projDir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := resolvePaths(sub)
+	if err != nil || ctx.projDir != projDir {
+		t.Fatalf("resolvePaths(sub) = %q, %v; want %q", ctx.projDir, err, projDir)
+	}
+}

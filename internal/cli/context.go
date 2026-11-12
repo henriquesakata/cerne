@@ -82,19 +82,16 @@ func backendForDisplay(backend string) string {
 // that must inspect the remote before syncing (push drift detection) start
 // here instead of resolveProject.
 func resolvePaths(startDir string) (projCtx, error) {
-	var cfg project.Config
-	var projDir string
-	var err error
-	if startDir != "" { // from --dir: it names the project, no climbing (F-0354)
-		cfg, projDir, err = project.LoadConfigAt(startDir)
-	} else {
-		var wd string
-		if wd, err = os.Getwd(); err != nil {
+	if startDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
 			return projCtx{}, err
 		}
 		startDir = wd
-		cfg, projDir, err = project.LoadConfig(startDir)
 	}
+	// The F-0354 rule lives in the root gate (refuseProjectlessDir): by here an
+	// explicit --dir already holds a .cernerc, and every other caller climbs.
+	cfg, projDir, err := project.LoadConfig(startDir)
 	if err != nil {
 		return projCtx{}, err
 	}
