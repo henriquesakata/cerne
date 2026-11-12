@@ -98,13 +98,21 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 	// byo-key: call the Provider and print the answer. Delegation (default)
 	// prints the assembled prompt for the host agent to answer inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) != llm.ModeDelegation {
+		// F-0346: a model failure (login, network, quota, missing key) must not
+		// lose the sources already found — fall back to the delegation output.
+		var answer string
 		prov, err := llm.NewProvider(ctx.cfg.LLM)
-		if err != nil {
-			return err
+		if err == nil {
+			answer, err = prov.Complete(cmd.Context(), prompt)
 		}
-		answer, err := prov.Complete(cmd.Context(), prompt)
 		if err != nil {
-			return err
+			first := []rune(strings.SplitN(err.Error(), "\n", 2)[0])
+			if len(first) > 200 {
+				first = first[:200]
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "cerne ask: the model failed (%s); here are the sources to answer from\n", string(first))
+			fmt.Fprint(out, prompt)
+			return nil
 		}
 		fmt.Fprintln(out, answer)
 		return nil
