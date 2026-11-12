@@ -118,7 +118,7 @@ func managedCapability(projDir string, a hooks.Asset, ls layerSet) Item {
 		it.State = StateOK
 	case script == hooks.FileDivergent && wired:
 		it.State = StateDivergent
-		it.Detail = "script differs from the canonical asset of this cerne build"
+		it.Detail = "script differs from the canonical asset of this cerne build — cerne hook install replaces it and drops local lines; to turn the hook off for a process, set CERNE_NO_AGENT_HOOKS=1" // F-0360
 		it.Fix = fixHookInstall
 	case !wired && script != hooks.FileMissing:
 		it.State = StateMissing

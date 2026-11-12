@@ -53,6 +53,12 @@ func TestManagedHookCapabilityStates(t *testing.T) {
 	if it.State != StateDivergent || it.Fix != "cerne hook install" {
 		t.Errorf("divergent capability = %s fix=%q, want divergent + cerne hook install", it.State, it.Fix)
 	}
+	// F-0360 crit. 7: the detail says the install drops local lines and names
+	// the switch that turns the hook off without editing it.
+	const wantDetail = "script differs from the canonical asset of this cerne build — cerne hook install replaces it and drops local lines; to turn the hook off for a process, set CERNE_NO_AGENT_HOOKS=1"
+	if it.Detail != wantDetail {
+		t.Errorf("divergent detail = %q, want %q", it.Detail, wantDetail)
+	}
 
 	// Script gone → capability missing even though wiring stays.
 	os.Remove(path)
