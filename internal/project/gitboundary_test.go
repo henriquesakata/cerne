@@ -160,8 +160,12 @@ func TestFindConfig_CerneRootAfterGitBoundary(t *testing.T) {
 		t.Fatalf("CERNE_ROOT at the boundary: id=%q dir=%q err=%v", cfg.ProjectID, dir, err)
 	}
 
-	t.Setenv("CERNE_ROOT", t.TempDir()) // no .cernerc there
-	if _, _, err := LoadConfig(clone); !errors.Is(err, ErrNoProject) {
-		t.Fatalf("bad CERNE_ROOT: want ErrNoProject, got %v", err)
+	// A CERNE_ROOT without .cernerc does not hide the boundary: the refusal
+	// still names the git root and the project above.
+	t.Setenv("CERNE_ROOT", t.TempDir())
+	_, _, err := LoadConfig(clone)
+	want := (&crossedGitRootError{GitRoot: clone, ProjectDir: proj}).Error()
+	if !errors.Is(err, ErrNoProject) || err == nil || err.Error() != want {
+		t.Fatalf("bad CERNE_ROOT at the boundary:\n got %v\nwant %s", err, want)
 	}
 }

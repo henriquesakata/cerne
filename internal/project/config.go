@@ -599,10 +599,19 @@ func findConfigDir(startDir string) (string, error) {
 		return dir, err
 	}
 	var crossed *crossedGitRootError
-	if errors.As(err, &crossed) && os.Getenv("CERNE_ROOT") == "" {
+	if !errors.As(err, &crossed) {
+		return rootFromEnv(startDir)
+	}
+	if os.Getenv("CERNE_ROOT") == "" {
 		return "", err
 	}
-	return rootFromEnv(startDir)
+	// A CERNE_ROOT without .cernerc keeps the boundary refusal, which names
+	// the git root and the project above.
+	root, envErr := rootFromEnv(startDir)
+	if errors.Is(envErr, ErrNoProject) {
+		return "", err
+	}
+	return root, envErr
 }
 
 // FoundByWalk reports whether the upward walk from startDir alone, without
