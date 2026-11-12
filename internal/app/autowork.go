@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -114,6 +115,8 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 		return err
 	}
 	mine := myActors()
+	bindings := sessionBindingsIn(filepath.Dir(repoDir))
+	sess := os.Getenv("CERNE_SESSION")
 	for _, w := range works {
 		if w.State != domain.WorkActive {
 			continue
@@ -123,9 +126,13 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 		// outlives the feature it registered — only single-ref works of the
 		// SAME actor qualify; a broader-scoped or another actor's work is left
 		// for its owner (stale-work lint still nags a forgotten one). Same
-		// actor is either identity of this process (F-0341 crit. 3).
+		// actor is either identity of this process (F-0341 crit. 3) — and
+		// <user>@<host> is every session on the machine, so a work another
+		// session is bound to (F-0151) is that session's, never adopted (the
+		// crit. 5 rule).
 		isAuto := w.Auto
-		isAdoptedManual := !w.Auto && slices.Contains(mine, w.Actor) && len(w.Refs) == 1 && w.Refs[0] == featureID
+		isAdoptedManual := !w.Auto && slices.Contains(mine, w.Actor) && len(w.Refs) == 1 && w.Refs[0] == featureID &&
+			!boundElsewhere(bindings, w.ID, sess)
 		if (!isAuto && !isAdoptedManual) || !slices.Contains(w.Refs, featureID) {
 			continue
 		}

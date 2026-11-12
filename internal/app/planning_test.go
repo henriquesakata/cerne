@@ -282,6 +282,47 @@ func TestAutoWorkAdoptsOtherIdentity(t *testing.T) {
 	assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "feature complete (adotado)")
 }
 
+// TestAutoWorkAdoptionSparesBoundWork (crit. 3 with the crit. 5 rule): the
+// F-0208 adoption never closes a work another session is bound to. A review
+// work another session on this machine opened after the start (same
+// <user>@<host>) stays active when an agent process completes the feature;
+// unbound, or bound to this session, it is adopted as before.
+func TestAutoWorkAdoptionSparesBoundWork(t *testing.T) {
+	cases := []struct {
+		name, mySession, boundSession string
+		held                          bool
+	}{
+		{"bound to another session", "sess-me", "sess-other", true},
+		{"no CERNE_SESSION, any binding holds", "", "sess-other", true},
+		{"bound to this session", "sess-me", "sess-me", false},
+		{"unbound", "sess-me", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CERNE_ACTOR", "agent")
+			t.Setenv("CERNE_SESSION", tc.mySession)
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+			seedStartEvent(t, repoDir, "F-0001", time.Now().UTC().Add(-time.Hour))
+			seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+			if tc.boundSession != "" {
+				if err := BindSession(filepath.Dir(repoDir), tc.boundSession, "W-0001"); err != nil {
+					t.Fatalf("BindSession: %v", err)
+				}
+			}
+
+			if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if tc.held {
+				assertActive(t, repoDir, "W-0001")
+				return
+			}
+			assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "feature complete (adotado)")
+		})
+	}
+}
+
 // TestStartWorkSupersedesPlanning (crit. 4): a new work on F-0001 closes the
 // same actor's planning work of F-0001 as done, superseded by the new one, in
 // the work start's commit, and reports it.
