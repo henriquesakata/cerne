@@ -22,8 +22,7 @@ func errataPendingFindings(repoDir string, runbooks []store.Runbook) []Finding {
 		}
 		for _, it := range store.ParseErrataItems(doc) {
 			switch {
-			case it.Merged != "":
-			case it.Decided() && it.Target == "": // step-less: nothing to fold, the decision retires it
+			case !it.Open(): // merged, or step-less and decided (the decision retires it)
 			case it.Decided():
 				out = append(out, Finding{Rule: RuleErrataPending, Entity: rb.ID, File: "content/errata/" + rb.ID + ".md",
 					Detail: fmt.Sprintf("erratum %s de %s decidido e ainda não fundido no corpo", it.ID, rb.ID),

@@ -52,6 +52,21 @@ func TestShowRunbookWithoutOpenErrataIsUnchanged(t *testing.T) {
 	}
 }
 
+// F-0345: show and lint share one "open" (store.ErrataItem.Open): a step-less
+// item decided is retired and silent; a --sem-passo proposal counts in N and M.
+func TestShowRunbookStepLessOpenFollowsDecision(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Geral.", "--sem-passo")
+	first, _, _ := strings.Cut(rb(t, projDir, "show", "RB-0001"), "\n")
+	if !strings.HasPrefix(first, "1 open errata item(s) (1 without a step).") {
+		t.Fatalf("a --sem-passo proposal is open and step-less: %q", first)
+	}
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "ok")
+	if out := rb(t, projDir, "show", "RB-0001"); strings.Contains(out, "open errata") {
+		t.Fatalf("a decided step-less item is retired, no line:\n%s", out)
+	}
+}
+
 func TestShowFeature(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {

@@ -51,6 +51,13 @@ type ErrataItem struct {
 // Decided reports whether the item carries a decision.
 func (it ErrataItem) Decided() bool { return it.DecidedBy != "" }
 
+// Open reports whether the item still waits: not folded into the body, and not
+// a step-less one that was decided (nothing to fold, the decision retires it).
+// The one definition show and lint share (F-0345).
+func (it ErrataItem) Open() bool {
+	return it.Merged == "" && !(it.Target == "" && it.Decided())
+}
+
 // StateLabel is the item's state as shown to a reader.
 func (it ErrataItem) StateLabel() string {
 	if !it.Decided() {

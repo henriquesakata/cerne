@@ -209,7 +209,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	if res.kind == "runbook" {
 		var open, stepless int
 		for _, it := range store.ParseErrataItems(er) {
-			if it.Merged == "" {
+			if it.Open() {
 				open++
 				if it.Target == "" {
 					stepless++

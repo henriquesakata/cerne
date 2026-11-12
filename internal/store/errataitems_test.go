@@ -177,6 +177,22 @@ func TestParseErrataItemsReadsSemPasso(t *testing.T) {
 	}
 }
 
+// F-0345: open = not merged and not (step-less and decided). A step-less item is
+// never merged, so deciding it retires it; a deliberate step-less proposal is open.
+func TestErrataItemOpen(t *testing.T) {
+	dec := "Estado: decidida — \"ok\" (dono, 2026-11-09)\n"
+	doc := "## errata 2026-11-11 — a\n\nAltera: S1\n\nA.\n\n" + // E1 proposal with step
+		"## errata 2026-11-11 — a\n\nAltera: S1\n" + dec + "Fundida: revisão 2\n\nB.\n\n" + // E2 merged
+		"## errata 2026-11-11 — a\n\nAltera: -\n" + dec + "\nC.\n\n" + // E3 step-less decided
+		"## errata 2026-11-11 — a\n\nAltera: -\nSem passo: sim\n\nD.\n" // E4 step-less proposal
+	want := []bool{true, false, false, true}
+	for i, it := range ParseErrataItems(doc) {
+		if it.Open() != want[i] {
+			t.Errorf("%s Open() = %v, want %v", it.ID, it.Open(), want[i])
+		}
+	}
+}
+
 func TestStateLabelShowsPreviousDecisions(t *testing.T) {
 	doc := "## errata 2026-11-07 — a\n\nAltera: S6.6\nAnterior: decidida — \"primeira\" (dono, 2026-11-08)\nEstado: decidida — \"segunda\" (chefe, 2026-11-09)\n\nt\n"
 	it := ParseErrataItems(doc)[0]
