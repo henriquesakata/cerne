@@ -84,8 +84,8 @@ func TestSearchBroadKeepsExactResult(t *testing.T) {
 func TestSearchBroadSkipsSyntaxAndSingleTerm(t *testing.T) {
 	db := seedBroad(t, docA, docB)
 	for _, q := range []string{
-		`"troca criptografia"`, "troca AND criptografia", "troca OR zzzz", "troca NOT conta",
-		"troca NEAR criptografia", "troca* criptografia", "(troca criptografia)", "title:troca criptografia",
+		`"troca criptografia"`, "troca AND criptografia", "zzzz OR yy troca", "troca NOT conta",
+		"troca NEAR criptografia", "troca* criptografia", "^troca criptografia", "troca + criptografia", "(troca criptografia)", "title:troca criptografia",
 	} {
 		_, broadened, err := SearchBroad(db, q, 10)
 		if err != nil {

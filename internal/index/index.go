@@ -122,7 +122,7 @@ func Search(dbPath, query string, limit int) ([]Result, error) {
 
 // ftsSyntax matches FTS5 query syntax: quotes, prefix star, grouping, column
 // filter, and the uppercase boolean operators.
-var ftsSyntax = regexp.MustCompile(`["*():]|\b(AND|OR|NOT|NEAR)\b`)
+var ftsSyntax = regexp.MustCompile(`["*():^+]|\b(AND|OR|NOT|NEAR)\b`)
 
 // SearchBroad is Search, but when no document has all the terms it retries
 // with the query's keywords OR-joined (bm25 order) and reports broadened=true.
