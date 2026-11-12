@@ -87,6 +87,11 @@ func Root() *cobra.Command {
 	root.AddCommand(verbs.MarkLocal(newRoomCmd()))
 	root.AddCommand(verbs.MarkLocal(newMsgCmd()))
 	root.InitDefaultCompletionCmd() // cobra adds it only at Execute, after the guard would have run
+	for _, c := range root.Commands() {
+		if c.Name() == "completion" {
+			verbs.MarkLocal(c) // shell scaffolding: the human's terminal only
+		}
+	}
 	guardGroups(root)
 	return root
 }
@@ -99,6 +104,7 @@ func guardGroups(c *cobra.Command) {
 	for _, sub := range c.Commands() {
 		if sub.HasSubCommands() && !sub.Runnable() {
 			sub.RunE = groupRunE
+			verbs.MarkGroup(sub)
 		}
 		guardGroups(sub)
 	}

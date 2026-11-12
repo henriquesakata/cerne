@@ -22,7 +22,7 @@ func verbPaths(c *cobra.Command) []string {
 		if sub.Hidden {
 			continue
 		}
-		if sub.Runnable() {
+		if verbs.IsVerb(sub) {
 			out = append(out, strings.TrimPrefix(sub.CommandPath(), "cerne "))
 		}
 		out = append(out, verbPaths(sub)...)

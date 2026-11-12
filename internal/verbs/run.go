@@ -124,7 +124,7 @@ func Run(ctx context.Context, root *cobra.Command, call Call, env Env) Result {
 	argv := append(strings.Fields(call.Verb), call.Args...)
 	cmd, rest, err := root.Find(argv)
 	want := strings.Join(append([]string{root.Name()}, strings.Fields(call.Verb)...), " ")
-	if err != nil || cmd == root || cmd.CommandPath() != want || !cmd.Runnable() || hidden(cmd) {
+	if err != nil || cmd == root || cmd.CommandPath() != want || !IsVerb(cmd) || hidden(cmd) {
 		return fail(fmt.Errorf("%w: %q (want a verb of the catalog)", ErrUnknownVerb, call.Verb), "")
 	}
 	switch classOf(cmd) {

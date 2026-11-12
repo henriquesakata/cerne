@@ -116,3 +116,16 @@ func TestAffectedIDsSeesIdeaEvents(t *testing.T) {
 		t.Fatalf("affectedIDs = %v, want [I-0001]", got)
 	}
 }
+
+func TestIsVerbExcludesMarkedGroups(t *testing.T) { // F-0344: a guarded group is runnable but not a verb
+	g := &cobra.Command{Use: "g", RunE: run}
+	leaf := &cobra.Command{Use: "leaf", RunE: run}
+	g.AddCommand(leaf)
+	if !IsVerb(g) {
+		t.Fatal("unmarked runnable command must be a verb")
+	}
+	MarkGroup(g)
+	if IsVerb(g) || !IsVerb(leaf) {
+		t.Fatalf("IsVerb(group)=%v IsVerb(leaf)=%v", IsVerb(g), IsVerb(leaf))
+	}
+}
