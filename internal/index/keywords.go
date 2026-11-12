@@ -44,12 +44,16 @@ func keywordTerms(query string) []string {
 }
 
 // Keywords turns a natural-language question into an FTS5 query: the
-// surviving terms of keywordTerms, OR-joined. When nothing survives it
+// surviving terms of keywordTerms, OR-joined, each 5+ letter term followed by
+// its stem prefix (termQuery, F-0367). When nothing survives it
 // returns the original query unchanged (Search already has a phrase fallback).
 func Keywords(query string) string {
 	kept := keywordTerms(query)
 	if len(kept) == 0 {
 		return query
+	}
+	for i, t := range kept {
+		kept[i] = termQuery(t)
 	}
 	return strings.Join(kept, " OR ")
 }
