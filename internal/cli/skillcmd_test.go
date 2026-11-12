@@ -167,8 +167,17 @@ func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
-	out, _ = execCerne(t, "skill", "install", "--dir", dir)
-	if strings.Contains(out, "created") || strings.Contains(out, "updated") {
-		t.Errorf("rerun not idempotent:\n%s", out)
+	out, err = execCerne(t, "skill", "install", "--dir", dir)
+	if err != nil {
+		t.Fatalf("rerun: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 7 {
+		t.Fatalf("want 7 result lines, got %d:\n%s", len(lines), out)
+	}
+	for _, l := range lines {
+		if !strings.Contains(l, ": up to date in ") {
+			t.Errorf("rerun line not unchanged: %q", l)
+		}
 	}
 }
