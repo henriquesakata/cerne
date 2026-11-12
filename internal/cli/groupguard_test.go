@@ -59,6 +59,13 @@ func TestCompletionGroupRejectsUnknownSubcommand(t *testing.T) { // review A: co
 	}
 }
 
+func TestGroupSuggestionIsNotCircular(t *testing.T) { // review B
+	_, err := execCerne(t, "feature", "feature", "F-1")
+	if err == nil || strings.Contains(err.Error(), "Did you mean: cerne feature F-1") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestEveryGroupRejectsUnknownSubcommand(t *testing.T) { // criterion 5
 	n := 0
 	var walk func(c *cobra.Command)
