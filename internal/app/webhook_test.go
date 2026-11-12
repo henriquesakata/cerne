@@ -128,7 +128,7 @@ func TestStartWorkFiresWebhook(t *testing.T) {
 	defer ts.Close()
 	withWebhook(t, projDir, ts.URL)
 
-	w, err := StartWork(repoDir, projDir, "investigar X", nil, "", false, nil)
+	w, err := StartWork(repoDir, projDir, "investigar X", nil, "", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestStartWorkFiresWebhook(t *testing.T) {
 // TestFinishWorkFiresWebhook (crit. 1, kind=work, action=complete).
 func TestFinishWorkFiresWebhook(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w, err := StartWork(repoDir, projDir, "investigar Y", nil, "", false, nil)
+	w, err := StartWork(repoDir, projDir, "investigar Y", nil, "", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}

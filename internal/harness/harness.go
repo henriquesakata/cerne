@@ -7,6 +7,7 @@ package harness
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +87,7 @@ type wiredHook struct {
 	Matcher string
 	Command string
 	Origin  string
+	Locator string // position in the settings file: hooks.<Event>[i].hooks[j]
 }
 
 // layerSet is the resolved settings merge: every layer consulted, the union
@@ -168,9 +170,10 @@ func parseSettings(raw []byte, origin string) ([]wiredHook, map[string]bool, err
 	}
 	var out []wiredHook
 	for event, entries := range doc.Hooks {
-		for _, e := range entries {
-			for _, h := range e.Hooks {
-				out = append(out, wiredHook{Event: event, Matcher: e.Matcher, Command: h.Command, Origin: origin})
+		for i, e := range entries {
+			for j, h := range e.Hooks {
+				loc := fmt.Sprintf("hooks.%s[%d].hooks[%d]", event, i, j)
+				out = append(out, wiredHook{Event: event, Matcher: e.Matcher, Command: h.Command, Origin: origin, Locator: loc})
 			}
 		}
 	}

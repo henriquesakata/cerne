@@ -220,6 +220,20 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 			openErrata, steplessErrata = &open, &stepless
 		}
 	}
+	// F-0339 crit. 9: a work's session handoffs, after its fields.
+	var handoffs []store.HandoffEntry
+	if res.kind == "work" {
+		if handoffs, err = store.LoadHandoffs(ctx.repoDir, id); err != nil {
+			return err
+		}
+		var parts []string
+		for _, h := range handoffs {
+			parts = append(parts, h.String())
+		}
+		if len(parts) > 0 {
+			res.content = append(res.content, showDoc{name: "handoff", body: strings.Join(parts, "\n\n")})
+		}
+	}
 	if f, ok := res.entity.(store.Feature); ok {
 		stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f)
 		res.approvalStale = &stale
@@ -292,7 +306,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		j := res.toJSON()
+		j := res.toJSON(handoffs)
 		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
 		return enc.Encode(j)
 	}
@@ -646,13 +660,14 @@ func writeSuccession(w io.Writer, supersededBy, reason string) {
 }
 
 type showJSON struct {
-	Kind           string          `json:"kind"`
-	Entity         any             `json:"entity"`
-	Content        []showDocJSON   `json:"content,omitempty"`
-	ApprovalStale  *bool           `json:"approval_stale,omitempty"`  // features only (F-0318)
-	Amendments     []amendmentJSON `json:"amendments,omitempty"`      // features only (F-0338)
-	OpenErrata     *int            `json:"open_errata,omitempty"`     // runbooks with open items only (F-0345)
-	SteplessErrata *int            `json:"stepless_errata,omitempty"` // idem: those with no step
+	Kind           string               `json:"kind"`
+	Entity         any                  `json:"entity"`
+	Content        []showDocJSON        `json:"content,omitempty"`
+	ApprovalStale  *bool                `json:"approval_stale,omitempty"`  // features only (F-0318)
+	Amendments     []amendmentJSON      `json:"amendments,omitempty"`      // features only (F-0338)
+	OpenErrata     *int                 `json:"open_errata,omitempty"`     // runbooks with open items only (F-0345)
+	SteplessErrata *int                 `json:"stepless_errata,omitempty"` // idem: those with no step
+	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`        // works only (F-0339)
 }
 
 type showDocJSON struct {
@@ -660,14 +675,14 @@ type showDocJSON struct {
 	Body string `json:"body"`
 }
 
-func (r showResult) toJSON() showJSON {
+func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 	var docs []showDocJSON
 	for _, d := range r.content {
-		if d.name != "amendments" { // structured in Amendments
+		if d.name != "amendments" && d.name != "handoff" { // structured in Amendments / Handoffs
 			docs = append(docs, showDocJSON{d.name, d.body})
 		}
 	}
-	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments}
+	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Handoffs: handoffs}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the

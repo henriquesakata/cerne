@@ -301,7 +301,7 @@ func TestPlanningLegacyWithoutStart(t *testing.T) {
 		if err := BindSession(filepath.Dir(repoDir), "sess-me", "W-0001"); err != nil {
 			t.Fatalf("BindSession: %v", err)
 		}
-		w, err := StartWork(repoDir, projDir, "Revisão da feature legada", []string{"F-0001"}, "", false, nil)
+		w, err := StartWork(repoDir, projDir, "Revisão da feature legada", []string{"F-0001"}, "", false, nil, "")
 		if err != nil {
 			t.Fatalf("StartWork: %v", err)
 		}
@@ -378,7 +378,7 @@ func TestStartWorkSupersedesPlanning(t *testing.T) {
 		t.Fatalf("HeadSHA: %v", err)
 	}
 
-	w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil)
+	w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestStartWorkPlanningBindings(t *testing.T) {
 				}
 			}
 
-			w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil)
+			w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil, "")
 			if err != nil {
 				t.Fatalf("StartWork: %v", err)
 			}
@@ -465,7 +465,7 @@ func TestStartWorkLeavesNonPlanning(t *testing.T) {
 		t.Fatalf("CommitAndPush: %v", err)
 	}
 
-	w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001", "F-0002", "D-0001"}, "", false, nil)
+	w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001", "F-0002", "D-0001"}, "", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestStartWorkLeavesNonPlanning(t *testing.T) {
 		optOutActivity(t, projDir)
 		seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
 		seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
-		w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil)
+		w, err := StartWork(repoDir, projDir, "Retomada do plano noutra sessão", []string{"F-0001"}, "", false, nil, "")
 		if err != nil {
 			t.Fatalf("StartWork: %v", err)
 		}

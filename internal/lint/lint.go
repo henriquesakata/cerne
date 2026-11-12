@@ -135,7 +135,7 @@ func DowngradeWikiDebt(findings []Finding, wikiOn bool) {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleHookCitesMissingRule}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -173,6 +173,7 @@ var ruleRank = map[string]int{
 	RuleAppendedAmendment:        30,
 	RuleStatusInBody:             31,
 	RuleWorkOutlivedFeature:      32,
+	RuleHookCitesMissingRule:     33,
 }
 
 // Finding is one lint problem detected in the backend.

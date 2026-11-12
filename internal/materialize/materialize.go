@@ -67,7 +67,7 @@ const contextTemplate = `# {{.ProjectName}} — current state
 {{if or .ActiveWorks .IdleWorks}}
 ## In progress
 
-{{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}})
+{{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}}){{if .HandoffAt}} — handoff {{.HandoffAt}}: cerne show {{.ID}}{{end}}
 {{end}}{{if .IdleWorks}}- {{.IdleWorks}} more active work(s) idle for over {{.IdleDays}} days (oldest: {{.IdleOldestID}}, idle since {{.IdleOldestSince}}) — triage: 'cerne work list', then 'cerne work done|abandon <id>'
 {{end}}{{end}}
 ## Features
@@ -127,7 +127,7 @@ type contextData struct {
 // workRow is one active work (agent activity, F-0130) in the CONTEXT.md
 // "Em andamento" section. Since is CreatedAt formatted YYYY-MM-DD.
 type workRow struct {
-	ID, Title, Actor, Since string
+	ID, Title, Actor, Since, HandoffAt string // HandoffAt: date of the last session handoff, "" when none (F-0339)
 }
 
 type featureRow struct {
@@ -262,12 +262,16 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			data.IdleWorks++
 			continue
 		}
-		data.ActiveWorks = append(data.ActiveWorks, workRow{
+		row := workRow{
 			ID:    w.ID,
 			Title: w.Title,
 			Actor: w.Actor,
 			Since: w.CreatedAt.Format("2006-01-02"),
-		})
+		}
+		if w.HandoffAt != nil {
+			row.HandoffAt = w.HandoffAt.UTC().Format("2006-01-02")
+		}
+		data.ActiveWorks = append(data.ActiveWorks, row)
 	}
 
 	var shown []store.Feature // in-scope, non-terminal features, for the epic breakdown
