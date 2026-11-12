@@ -1120,7 +1120,17 @@ var ackRx = regexp.MustCompile(`(?i)<!--\s*lint:ok-superseded\s+([a-z]+-\d+(?:\s
 // that names id (case-insensitive, space-tolerant). It declares a mention of a
 // superseded entity on that line as intentional history, not a debt (F-0089).
 func acknowledgedOnLine(line, id string) bool {
-	m := ackRx.FindStringSubmatch(line)
+	return markedOnLine(line, ackRx, id)
+}
+
+// brokenAckRx is the broken-link counterpart (F-0352): the list holds link
+// targets — ids or paths — without wiki brackets: <!-- lint:ok-broken-link X[, Y] -->.
+var brokenAckRx = regexp.MustCompile(`(?i)<!--\s*lint:ok-broken-link\s+([^\s,]+?(?:\s*,\s*[^\s,]+?)*)\s*-->`)
+
+// markedOnLine reports whether line carries an acknowledgment marker (rx)
+// naming id, case-insensitive and space-tolerant.
+func markedOnLine(line string, rx *regexp.Regexp, id string) bool {
+	m := rx.FindStringSubmatch(line)
 	if m == nil {
 		return false
 	}
@@ -1193,13 +1203,18 @@ var errataEntryRe = regexp.MustCompile(`^## errata \d{4}-\d{2}-\d{2} — `)
 // backward only: in the marker's own entry and after it, the same-line rule
 // still holds.
 func errataAckFrom(text, id string) int {
+	return errataAckFromRx(text, ackRx, id)
+}
+
+// errataAckFromRx is errataAckFrom for any acknowledgment marker rx.
+func errataAckFromRx(text string, rx *regexp.Regexp, id string) int {
 	entry, from := 0, 0
 	for off := 0; off < len(text); {
 		line, _, _ := strings.Cut(text[off:], "\n")
 		if errataEntryRe.MatchString(line) {
 			entry = off
 		}
-		if acknowledgedOnLine(line, id) {
+		if markedOnLine(line, rx, id) {
 			from = entry
 		}
 		off += len(line) + 1
@@ -1224,6 +1239,9 @@ func linkFindings(repoDir string, d scannedDoc, text string, names func() map[st
 		if _, err := os.Stat(filepath.Join(repoDir, docDir, filepath.FromSlash(clean))); err == nil {
 			continue
 		}
+		if brokenAcked(d, text, r) {
+			continue
+		}
 		hint := ""
 		if c := names()[path.Base(clean)]; len(c) == 1 {
 			// Relative to the document's folder, the way the link resolves.
@@ -1236,6 +1254,22 @@ func linkFindings(repoDir string, d scannedDoc, text string, names func() map[st
 	return findings
 }
 
+// brokenAcked reports whether a lint:ok-broken-link marker clears the
+// occurrence r: on its own line anywhere, and — in an append-only errata —
+// also when a later entry carries the marker (errataAckFromRx, as the
+// ref-to-superseded of F-0329).
+func brokenAcked(d scannedDoc, text string, r mdlink.Ref) bool {
+	lines := strings.Split(text, "\n")
+	if markedOnLine(lines[r.Line-1], brokenAckRx, r.Target) {
+		return true
+	}
+	if !strings.HasPrefix(d.rel, "content/errata/") {
+		return false
+	}
+	from := errataAckFromRx(text, brokenAckRx, r.Target)
+	return from > 0 && r.Line <= strings.Count(text[:from], "\n")
+}
+
 // brokenLinkFinding builds one broken-link finding (F-0352): the line, the
 // suggestion after " — ", and — in an append-only errata — the errata command
 // that adds the correction (F-0329).
@@ -1246,7 +1280,7 @@ func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint string) Fin
 	}
 	var fix string
 	if strings.HasPrefix(d.rel, "content/errata/") {
-		fix = fmt.Sprintf("cerne %s errata %s '<correction: %s should point to the right target>'", errataKind(d.entity), d.entity, token)
+		fix = fmt.Sprintf("cerne %s errata %s '<!-- lint:ok-broken-link %s --> <the right target, or why the link is history>'", errataKind(d.entity), d.entity, r.Target)
 		detail += "; append-only errata: append the correction with " + fix
 	}
 	return Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line, Detail: detail, Fix: fix}
@@ -1342,6 +1376,9 @@ func wikiLinkFindings(d scannedDoc, text string, ids map[string]bool) []Finding 
 	var findings []Finding
 	for _, r := range mdlink.Refs(text, true) {
 		if ids[mdlink.CanonicalID(r.Target)] {
+			continue
+		}
+		if brokenAcked(d, text, r) {
 			continue
 		}
 		findings = append(findings, brokenLinkFinding(d, r, "wiki-link", "[["+r.Target+"]]", idHint(r.Target, ids)))
