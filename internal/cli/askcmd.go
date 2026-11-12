@@ -110,11 +110,7 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 			return err // Ctrl-C is not a model failure: scripts must see it
 		}
 		if err != nil {
-			first :=[]rune(strings.SplitN(err.Error(), "\n", 2)[0])
-			if len(first) > 200 {
-				first = first[:200]
-			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "cerne ask: the model failed (%s); here are the sources to answer from\n", string(first))
+			fmt.Fprintf(cmd.ErrOrStderr(), "cerne ask: the model failed (%s); here are the sources to answer from\n", askFailureCause(err))
 			fmt.Fprint(out, prompt)
 			return nil
 		}
@@ -123,4 +119,18 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 	}
 	fmt.Fprint(out, prompt)
 	return nil
+}
+
+// askFailureCause is the first non-empty line of err, trimmed and cut to 200
+// runes; "unknown error" when there is none.
+func askFailureCause(err error) string {
+	for _, l := range strings.Split(err.Error(), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			if r := []rune(l); len(r) > 200 {
+				l = string(r[:200])
+			}
+			return l
+		}
+	}
+	return "unknown error"
 }

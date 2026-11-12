@@ -105,6 +105,23 @@ func TestAskCancelledContextIsNotFallback(t *testing.T) {
 	}
 }
 
+// F-0346 rodada 2 (B): the cause is the first non-empty line, trimmed (\r
+// included); with none, "unknown error".
+func TestAskFailureCause(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"\nfoo", "foo"},
+		{"  \r\n\r\nbar\r\nbaz", "bar"},
+		{"", "unknown error"},
+		{" \n \n", "unknown error"},
+		{"plain", "plain"},
+		{strings.Repeat("é", 300), strings.Repeat("é", 200)},
+	} {
+		if got := askFailureCause(errors.New(c.in)); got != c.want {
+			t.Errorf("askFailureCause(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // F-0346 crit. 5: --no-preamble is honored in the fallback text.
 func TestAskModelFailureNoPreamble(t *testing.T) {
 	projDir := askFallbackProject(t)
