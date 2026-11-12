@@ -76,6 +76,7 @@ The script downloads the latest release for your machine, verifies its SHA-256 a
 
 Then, inside your project's git repository (with no `--backend`, `init` creates a local backend for you):
 
+<!-- quickstart -->
 ```bash
 cerne init --name my-project
 cerne ui        # your dashboard, at http://localhost:7717
