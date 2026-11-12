@@ -23,18 +23,53 @@ type WorkHandoff struct {
 
 // tempDirs are the folders a cleaner may wipe: evidence living there is lost.
 func tempDirs() []string {
-	dirs := []string{"/tmp", "/private/tmp", "/var/folders"}
-	if d := strings.TrimRight(os.Getenv("TMPDIR"), "/"); d != "" {
-		dirs = append(dirs, filepath.Clean(d))
+	dirs := []string{"/tmp", "/private/tmp", "/var/folders", "/private/var/folders"}
+	if d := filepath.Clean(os.TempDir()); d != "/" {
+		dirs = append(dirs, d)
+		if r, err := filepath.EvalSymlinks(d); err == nil {
+			dirs = append(dirs, r)
+		}
 	}
 	return dirs
 }
 
-// tempEvidence names the first evidence item that points into a temporary
-// folder ("" when none does).
+// pathLike reports whether an evidence item reads as a filesystem path (not a
+// URL, a command or a cerne id).
+func pathLike(e string) bool {
+	return strings.HasPrefix(e, "file://") || (!strings.Contains(e, "://") && !strings.ContainsAny(e, " \t") &&
+		(strings.HasPrefix(e, "/") || strings.HasPrefix(e, "~") || strings.HasPrefix(e, "$") || strings.HasPrefix(e, "./") || strings.HasPrefix(e, "../")))
+}
+
+// resolveEvidencePath turns a path-like item into the absolute, cleaned path
+// it names: file:// stripped, $VAR and ~ expanded, relative to the cwd, with
+// symlinks followed when the path exists.
+func resolveEvidencePath(e string) string {
+	p := strings.TrimPrefix(e, "file://")
+	p = strings.TrimPrefix(p, "localhost") // file://localhost/tmp/x
+	p = os.ExpandEnv(p)
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = home + p[1:]
+		}
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+// tempEvidence names the first evidence item that resolves into a temporary
+// folder ("" when none does): text prefixes are not enough — //tmp, /var/../tmp,
+// $TMPDIR, ../../tmp and file:// all land in the same wiped place.
 func tempEvidence(evidence []string) string {
 	for _, e := range evidence {
-		p := strings.TrimPrefix(e, "file://")
+		if !pathLike(e) {
+			continue
+		}
+		p := resolveEvidencePath(e)
 		for _, d := range tempDirs() {
 			if p == d || strings.HasPrefix(p, d+"/") {
 				return e
