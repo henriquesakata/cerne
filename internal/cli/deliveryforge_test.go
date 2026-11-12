@@ -65,7 +65,12 @@ func forgeProject(t *testing.T, forgeName string, f *cliFakeForge) (projDir, rep
 
 func readBackendResult(t *testing.T, repoDir, id string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
+	// The committed result (HEAD of the backend clone), not the working tree:
+	// what the transition left uncommitted would never reach the backend.
+	if out, err := exec.Command("git", "-C", repoDir, "status", "--porcelain").Output(); err != nil || len(out) != 0 {
+		t.Fatalf("backend clone not clean after the command: %v\n%s", err, out)
+	}
+	raw, err := exec.Command("git", "-C", repoDir, "show", "HEAD:content/features/"+id+"/result.md").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
