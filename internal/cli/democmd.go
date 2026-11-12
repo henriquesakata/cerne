@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/go-git/go-git/v5"
@@ -23,7 +24,11 @@ import (
 var (
 	errDemoExists        = errors.New("already exists; remove it or pass another directory")
 	errDemoInsideProject = errors.New("would sit inside the cerne project at")
+	errDemoInterrupted   = errors.New("interrupted")
 )
+
+// demoCancelled is set by the interrupt handler; run checks it between steps.
+var demoCancelled atomic.Bool
 
 // demoRun, when set, replaces cerneInProcess so a test can fail one step.
 var demoRun func(body string, args ...string) (string, error)
@@ -64,12 +69,16 @@ step fails, everything the command created is removed.`,
 // sticks in err and every later call is a no-op, so the sequence reads like
 // the script.
 type demoBuild struct {
-	w   io.Writer
-	out string // what the last command printed
-	err error
+	w    io.Writer
+	proj string // absolute path of the project
+	out  string // what the last command printed
+	err  error
 }
 
 func (d *demoBuild) run(body string, args ...string) {
+	if d.err == nil && demoCancelled.Load() {
+		d.err = errDemoInterrupted
+	}
 	if d.err != nil {
 		return
 	}
@@ -116,7 +125,7 @@ func (d *demoBuild) put(id, slug, doc string) {
 	if d.err != nil {
 		return
 	}
-	slots, _ := filepath.Glob(filepath.Join(".docs", "current", "features", id+"-*"))
+	slots, _ := filepath.Glob(filepath.Join(d.proj, ".docs", "current", "features", id+"-*"))
 	if len(slots) == 0 {
 		d.err = fmt.Errorf("cerne pull did not materialize a folder for %s", id)
 		return
@@ -173,7 +182,7 @@ func (d *demoBuild) gates(rc, approve, accept string) {
 	if !done {
 		b.WriteString("\n[gates]\n" + keys)
 	}
-	d.err = os.WriteFile(".cernerc", []byte(b.String()), 0o644)
+	d.err = os.WriteFile(filepath.Join(d.proj, ".cernerc"), []byte(b.String()), 0o644)
 }
 
 func runDemo(w io.Writer, dest string) (err error) {
@@ -181,14 +190,33 @@ func runDemo(w io.Writer, dest string) (err error) {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Lstat(abs); err == nil {
+	// missing: the components of abs that do not exist yet, deepest first.
+	var missing []string
+	have := abs
+	for {
+		if _, err := os.Lstat(have); err == nil {
+			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		missing = append(missing, have)
+		if filepath.Dir(have) == have {
+			break
+		}
+		have = filepath.Dir(have)
+	}
+	if len(missing) == 0 {
 		return fmt.Errorf("%s %w", dest, errDemoExists)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
 	}
 	// cerne finds its project by walking up, so a demo inside another cerne
-	// project would be taken for part of it. Refuse before creating anything.
-	for up := filepath.Dir(abs); ; up = filepath.Dir(up) {
+	// project would be taken for part of it. Walk from the real path of the
+	// deepest existing parent (a symlink may lead into a project), and refuse
+	// before creating anything.
+	real, err := filepath.EvalSymlinks(have)
+	if err != nil {
+		return err
+	}
+	for up := real; ; up = filepath.Dir(up) {
 		if _, err := os.Stat(filepath.Join(up, ".cernerc")); err == nil {
 			home, _ := os.UserHomeDir()
 			return fmt.Errorf("%s %w %s; pass a directory outside it, for example: cerne demo \"%s\"",
@@ -199,47 +227,78 @@ func runDemo(w io.Writer, dest string) (err error) {
 		}
 	}
 
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return err
-	}
-	// From here on the directory is ours: a failure or an interrupt removes
-	// it, so a half-built demo (with its gates still open) is never left.
 	wd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	cleanup := func() {
-		_ = os.Chdir(wd) // Windows cannot remove the working directory
-		_ = os.RemoveAll(abs)
-	}
-	// ponytail: an interrupt races the step in flight (a file it writes after
-	// RemoveAll survives); per-step cancellation if that ever shows up.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sig)
-	go func() {
-		if _, ok := <-sig; ok {
-			cleanup()
-			fmt.Fprintf(os.Stderr, "cerne demo: interrupted; removed %s\n", abs)
-			os.Exit(130)
-		}
-	}()
-	cache, hadCache := os.LookupEnv("CERNE_CACHE_DIR")
+	// From the first directory created on, cleanup removes what the command
+	// created — never a directory that was there before — on any failure,
+	// panic or interrupt, so a half-built demo (gates open) is never left.
+	created, succeeded := "", false
 	defer func() {
-		if hadCache {
-			os.Setenv("CERNE_CACHE_DIR", cache)
-		} else {
-			os.Unsetenv("CERNE_CACHE_DIR")
+		_ = os.Chdir(wd) // Windows cannot remove the working directory
+		if succeeded || created == "" {
+			return
 		}
-		_ = os.Chdir(wd)
+		what := "removed " + created
+		if rerr := os.RemoveAll(created); rerr != nil {
+			what = fmt.Sprintf("could not remove %s: %v", created, rerr)
+		}
+		startWriteNotice() // the project is gone: no "wrote to" line after the error
 		if err != nil {
-			cleanup()
-			startWriteNotice() // the project is gone: no "wrote to" line after the error
-			err = fmt.Errorf("cerne demo stopped before finishing; removed %s\n%w", abs, err)
+			err = fmt.Errorf("cerne demo stopped before finishing; %s\n%w", what, err)
 		}
 	}()
-	// The demo keeps its cache inside <dir>, away from your real projects.
-	os.Setenv("CERNE_CACHE_DIR", filepath.Join(abs, ".cache"))
+	for i := len(missing) - 1; i >= 0; i-- {
+		if err := os.Mkdir(missing[i], 0o755); err != nil {
+			if i == 0 && errors.Is(err, fs.ErrExist) { // raced in since the check
+				return fmt.Errorf("%s %w", dest, errDemoExists)
+			}
+			return err
+		}
+		if created == "" {
+			created = missing[i]
+		}
+	}
+
+	// An interrupt only flags the build: the step in flight finishes, run
+	// stops before the next one, and cleanup happens here, on this goroutine.
+	// Nothing but this goroutine ever moves the process cwd.
+	demoCancelled.Store(false)
+	sig, done := make(chan os.Signal, 1), make(chan struct{})
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer func() { signal.Stop(sig); close(done) }()
+	go func() {
+		select {
+		case <-sig:
+			demoCancelled.Store(true)
+		case <-done:
+		}
+	}()
+
+	// Every user-level dir a step writes through points inside <dir> while
+	// building, so nothing reaches your real projects; CERNE_ROOT must not
+	// redirect a step to another project. All restored on every path.
+	for k, v := range map[string]string{
+		"CERNE_CACHE_DIR":  filepath.Join(abs, ".cache"),
+		"CERNE_DATA_DIR":   filepath.Join(abs, ".data"),
+		"CERNE_CONFIG_DIR": filepath.Join(abs, ".config"),
+		"CERNE_ROOT":       "",
+	} {
+		old, had := os.LookupEnv(k)
+		defer func() {
+			if had {
+				os.Setenv(k, old)
+			} else {
+				os.Unsetenv(k)
+			}
+		}()
+		if v == "" {
+			os.Unsetenv(k)
+		} else {
+			os.Setenv(k, v)
+		}
+	}
 
 	fmt.Fprintf(w, "Creating the taskflow demo in %s\n", abs)
 	backend := filepath.Join(abs, "taskflow-docs.git")
@@ -250,10 +309,12 @@ func runDemo(w io.Writer, dest string) (err error) {
 	if _, err := git.PlainInit(proj, false); err != nil {
 		return fmt.Errorf("creating the project repository: %w", err)
 	}
+	// Steps find the project from the cwd (most commands have no --dir), so
+	// it is set here once, before any step, and restored by the defer above.
 	if err := os.Chdir(proj); err != nil {
 		return err
 	}
-	d := &demoBuild{w: w}
+	d := &demoBuild{w: w, proj: proj}
 	d.run("", "init", "--backend", backend, "--name", "taskflow", "--docs-language", "en")
 	if d.err != nil {
 		return d.err
@@ -263,7 +324,7 @@ func runDemo(w io.Writer, dest string) (err error) {
 	// acts: an AI agent cannot sign off its own work. While building, the
 	// gates are open so it runs unattended (even under an agent), and the
 	// default configuration comes back before it finishes.
-	rc, err := os.ReadFile(".cernerc")
+	rc, err := os.ReadFile(filepath.Join(proj, ".cernerc"))
 	if err != nil {
 		return err
 	}
@@ -300,12 +361,13 @@ func runDemo(w io.Writer, dest string) (err error) {
 	d.say("  %s  external reference", d.id("R"))
 
 	if d.err == nil {
-		d.err = os.WriteFile(".cernerc", rc, 0o644) // back to the default: both gates human
+		d.err = os.WriteFile(filepath.Join(proj, ".cernerc"), rc, 0o644) // back to the default: both gates human
 	}
 	d.run("", "pull")
 	if d.err != nil {
 		return d.err
 	}
+	succeeded = true
 
 	fmt.Fprintf(w, `
 Done. Explore it from %[1]s:

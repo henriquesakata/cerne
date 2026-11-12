@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // demoTools is a PATH dir holding git and nothing else — no sh (criterion 6).
@@ -36,10 +38,45 @@ func demoEnv(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("PATH", tools)
 	t.Setenv("HOME", home)
-	for _, k := range []string{"CERNE_CACHE_DIR", "CERNE_DATA_DIR", "CERNE_CONFIG_DIR"} {
-		t.Setenv(k, filepath.Join(home, k))
+	for _, k := range demoSentinelVars {
+		dir := filepath.Join(home, k)
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(k, dir)
 	}
 	t.Chdir(t.TempDir())
+}
+
+// demoSentinelVars point at empty sentinel dirs during a test: the demo must
+// write nothing through them and give them back unchanged.
+var demoSentinelVars = []string{"CERNE_CACHE_DIR", "CERNE_DATA_DIR", "CERNE_CONFIG_DIR", "CERNE_ROOT"}
+
+func assertSentinelsUntouched(t *testing.T) {
+	t.Helper()
+	home := os.Getenv("HOME")
+	for _, k := range demoSentinelVars {
+		dir := filepath.Join(home, k)
+		if got := os.Getenv(k); got != dir {
+			t.Errorf("%s = %q after the demo, want it restored to %q", k, got, dir)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("the demo wrote into %s (%s): %v", k, dir, entries)
+		}
+	}
+}
+
+// failAt makes the step whose first two args are verb fail (or panic).
+func failAt(t *testing.T, verb string, act func()) {
+	t.Helper()
+	t.Cleanup(func() { demoRun = nil })
+	demoRun = func(body string, args ...string) (string, error) {
+		if len(args) > 1 && args[0]+" "+args[1] == verb {
+			act()
+			return "boom\n", errors.New("exit 1")
+		}
+		return cerneInProcess(body, args...)
+	}
 }
 
 func runDemoCmd(t *testing.T, args ...string) (string, error) {
@@ -70,19 +107,14 @@ func TestDemo_BuildsWithoutShell(t *testing.T) {
 	if _, err := os.Stat(filepath.Join("cerne-demo", "taskflow", ".docs", "CONTEXT.md")); err != nil {
 		t.Errorf("the demo was not materialized: %v", err)
 	}
+	assertSentinelsUntouched(t)
 }
 
 // A step failing after the gates were opened removes the whole demo and names
 // the step.
 func TestDemo_FailureRemovesTheDemo(t *testing.T) {
 	demoEnv(t)
-	t.Cleanup(func() { demoRun = nil })
-	demoRun = func(body string, args ...string) (string, error) {
-		if args[0] == "feature" && args[1] == "reject" {
-			return "boom\n", errors.New("exit 1")
-		}
-		return cerneInProcess(body, args...)
-	}
+	failAt(t, "feature reject", func() {})
 	out, err := runDemoCmd(t, "my demo")
 	if err == nil {
 		t.Fatalf("cerne demo succeeded although a step failed:\n%s", out)
@@ -93,6 +125,117 @@ func TestDemo_FailureRemovesTheDemo(t *testing.T) {
 	if _, statErr := os.Stat("my demo"); !os.IsNotExist(statErr) {
 		t.Error("a half-built demo was left behind")
 	}
+	assertSentinelsUntouched(t)
+}
+
+// Only what the command created goes: a parent that existed before stays.
+func TestDemo_FailureRemovesOnlyWhatItCreated(t *testing.T) {
+	demoEnv(t)
+	failAt(t, "feature reject", func() {})
+	if err := os.Mkdir("a", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("a", "keep.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runDemoCmd(t, filepath.Join("a", "b", "c")); err == nil {
+		t.Fatal("cerne demo succeeded although a step failed")
+	}
+	if entries, _ := os.ReadDir("a"); len(entries) != 1 || entries[0].Name() != "keep.txt" {
+		t.Errorf("a/ = %v, want only keep.txt (a/b was created by the command)", entries)
+	}
+	if _, err := runDemoCmd(t, filepath.Join("x", "y", "z")); err == nil {
+		t.Fatal("cerne demo succeeded although a step failed")
+	}
+	if _, err := os.Stat("x"); !os.IsNotExist(err) {
+		t.Error("x/ was created by the command and left behind")
+	}
+}
+
+// A panic in a step still removes the demo.
+func TestDemo_PanicRemovesTheDemo(t *testing.T) {
+	demoEnv(t)
+	failAt(t, "feature reject", func() { panic("step blew up") })
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = runDemoCmd(t, "demo")
+	}()
+	if _, err := os.Stat("demo"); !os.IsNotExist(err) {
+		t.Error("a panic left a half-built demo behind")
+	}
+}
+
+// When the removal itself fails, the error says so instead of claiming it.
+func TestDemo_FailedRemovalIsReported(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	demoEnv(t)
+	locked := ""
+	failAt(t, "feature reject", func() {
+		wd, _ := os.Getwd()
+		locked = filepath.Join(wd, "locked")
+		_ = os.Mkdir(locked, 0o755)
+		_ = os.WriteFile(filepath.Join(locked, "f"), nil, 0o644)
+		_ = os.Chmod(locked, 0o500)
+	})
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	_, err := runDemoCmd(t, "demo")
+	if err == nil || !strings.Contains(err.Error(), "could not remove") || strings.Contains(err.Error(), "; removed") {
+		t.Errorf("err = %v, want it to report the failed removal", err)
+	}
+}
+
+// An interrupt stops the build between steps; it never moves the process cwd
+// while a step runs, so neither the caller's cwd nor a sibling project is
+// touched.
+func TestDemo_InterruptLeavesCallerUntouched(t *testing.T) {
+	demoEnv(t)
+	caller, _ := os.Getwd()
+	if err := os.WriteFile("mine.txt", []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	sibling := filepath.Join(base, "sibling")
+	if err := os.Mkdir(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sibling, ".cernerc"), []byte("project_id = \"sib\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { demoRun = nil })
+	sent := false
+	demoRun = func(body string, args ...string) (string, error) {
+		out, err := cerneInProcess(body, args...)
+		if !sent && args[0] == "feature" && args[1] == "approve" {
+			sent = true
+			p, _ := os.FindProcess(os.Getpid())
+			if p.Signal(os.Interrupt) != nil {
+				t.Skip("cannot signal this process")
+			}
+			for i := 0; i < 200 && !demoCancelled.Load(); i++ {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		return out, err
+	}
+	_, err := runDemoCmd(t, filepath.Join(base, "demo"))
+	if !errors.Is(err, errDemoInterrupted) {
+		t.Fatalf("err = %v, want errDemoInterrupted", err)
+	}
+	if wd, _ := os.Getwd(); wd != caller {
+		t.Errorf("cwd = %s, want the caller's %s", wd, caller)
+	}
+	if entries, _ := os.ReadDir(caller); len(entries) != 1 {
+		t.Errorf("the caller's cwd changed: %v", entries)
+	}
+	if entries, _ := os.ReadDir(sibling); len(entries) != 1 {
+		t.Errorf("the sibling project changed: %v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(base, "demo")); !os.IsNotExist(err) {
+		t.Error("the interrupted demo was left behind")
+	}
+	assertSentinelsUntouched(t)
 }
 
 func TestDemo_Refusals(t *testing.T) {
@@ -111,5 +254,18 @@ func TestDemo_Refusals(t *testing.T) {
 	}
 	if _, err := os.Stat("sub"); !os.IsNotExist(err) {
 		t.Error("a refusal created something")
+	}
+	// A symlinked parent that leads into a project is inside it, too.
+	inner := filepath.Join(".", "inner")
+	if err := os.Mkdir(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	abs, _ := filepath.Abs(inner)
+	if err := os.Symlink(abs, link); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if _, err := runDemoCmd(t, filepath.Join(link, "demo")); !errors.Is(err, errDemoInsideProject) {
+		t.Errorf("symlinked parent into a project: err = %v, want errDemoInsideProject", err)
 	}
 }
