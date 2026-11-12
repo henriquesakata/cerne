@@ -230,6 +230,7 @@ type GatesConfig struct {
 	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
 	WorkGateHint  string   `toml:"work_gate_hint,omitempty"`  // project-specific suffix appended to the gate's deny reason (F-0170)
 	CommitTrailer string   `toml:"commit_trailer,omitempty"`  // "on" | anything else = off — prepare-commit-msg Cerne: trailer (F-0173)
+	Gauntlet      string   `toml:"gauntlet,omitempty"`        // "off" = light mode (F-0364) | anything else = on (default)
 }
 
 // WorkGateEnabled resolves the edit gate: on only when explicitly configured.
@@ -244,10 +245,17 @@ func (g GatesConfig) CommitTrailerEnabled() bool {
 	return g.CommitTrailer == "on"
 }
 
+// GauntletEnabled resolves the Gauntlet (F-0364): on unless the literal "off"
+// — the bar at approve and the Gauntlet record at complete are charged. Like
+// approve/accept, a typo ("of", "OFF", "false") never opens a gate.
+func (g GatesConfig) GauntletEnabled() bool {
+	return g.Gauntlet != "off"
+}
+
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == ""
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == ""
 }
 
 // ApproveGate resolves the start gate: auto only when explicitly configured.
