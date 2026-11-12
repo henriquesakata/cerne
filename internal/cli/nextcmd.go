@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -34,6 +36,9 @@ type nextGroup struct {
 var nextGroups = []nextGroup{
 	{domain.StateInDevelopment, false, "in_progress", "IN PROGRESS", "finish and run 'cerne feature complete'"},
 	{domain.StateApproved, false, "ready_to_start", "READY TO START", "run 'cerne feature start'"},
+	// F-0371: complete is not the end — the cost stamp and the delivery link are
+	// the agent's last steps; each line carries the exact command still missing.
+	{domain.StateImplemented, false, "finish_delivery", "FINISH DELIVERY", "run the command on each line"},
 	// F-0318: the spec changed since approval; start is refused until a human re-approves.
 	{domain.StateApproved, true, "awaiting_reapproval", "WAITING FOR RE-APPROVAL", "start is blocked: ask a human to run 'cerne feature approve <id>' (a human act)"},
 	// F-0308: rehearse with --check; the approve itself is a human act (F-0131).
@@ -75,6 +80,8 @@ func newNextCmd() *cobra.Command {
 type nextFeature struct {
 	store.Feature
 	ApprovalStale bool `json:"approval_stale"`
+	// Commands (F-0371): the exact commands still missing, finish_delivery only.
+	Commands []string `json:"commands,omitempty"`
 }
 
 type nextGroupJSON struct {
@@ -128,6 +135,11 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	}
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
+	missing, err := implementedMissing(ctx.repoDir, features)
+	if err != nil {
+		return err
+	}
+
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {
 		var fs []nextFeature
@@ -135,8 +147,14 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 			if f.State != g.state {
 				continue
 			}
+			if g.state == domain.StateImplemented {
+				if cmds, ok := missing[f.ID]; ok {
+					fs = append(fs, nextFeature{f, false, cmds})
+				}
+				continue
+			}
 			if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale == g.stale {
-				fs = append(fs, nextFeature{f, stale})
+				fs = append(fs, nextFeature{f, stale, nil})
 			}
 		}
 		if len(fs) > 0 {
@@ -227,6 +245,9 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 			if f.ApprovalStale {
 				fmt.Fprintln(out, "    "+approvalStaleLine(f.ID))
 			}
+			for _, c := range f.Commands {
+				fmt.Fprintln(out, "    "+c)
+			}
 		}
 		fmt.Fprintln(out)
 	}
@@ -278,4 +299,33 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		fmt.Fprintln(out, "Nothing pending. ✓")
 	}
 	return nil
+}
+
+// implementedMissing maps each implemented feature that still owes the agent a
+// step to its exact commands (F-0371). The list is app.AcceptQueue's, the
+// UI's. The cost stamp is owed only with a session bound; the delivery when
+// neither the commit nor the MR link is recorded.
+func implementedMissing(repoDir string, features []store.Feature) (map[string][]string, error) {
+	rows, err := app.AcceptQueue(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]store.Feature, len(features))
+	for _, f := range features {
+		byID[f.ID] = f
+	}
+	missing := map[string][]string{}
+	for _, r := range rows {
+		var cmds []string
+		if cost.NeedsStamp(filepath.Dir(repoDir), repoDir, r.ID) {
+			cmds = append(cmds, "cerne cost "+r.ID+" --stamp")
+		}
+		if f := byID[r.ID]; f.DeliveryCommitURL == "" && f.DeliveryMRURL == "" {
+			cmds = append(cmds, "cerne feature deliver "+r.ID+" --mr <url>")
+		}
+		if len(cmds) > 0 {
+			missing[r.ID] = cmds
+		}
+	}
+	return missing, nil
 }

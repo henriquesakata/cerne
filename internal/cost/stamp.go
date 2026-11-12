@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -204,6 +205,21 @@ func DropSnapshot(cacheDir, id string) error {
 // accept warns, since the stamp needs an implemented feature).
 func Unstamped(cacheDir, repoDir, id string) bool {
 	if _, err := os.Stat(snapshotPath(cacheDir, id)); err != nil {
+		return false
+	}
+	_, stamped := readAnchor(repoDir, id)
+	return !stamped
+}
+
+// NeedsStamp reports whether id has a session bound in the ledger (something
+// to stamp) and its result carries no cost anchor yet (F-0371): the same two
+// facts `cerne cost <id> --stamp` works from.
+func NeedsStamp(cacheDir, repoDir, id string) bool {
+	binds, _, err := readLedger(cacheDir)
+	if err != nil {
+		return false
+	}
+	if !slices.ContainsFunc(binds, func(b Bind) bool { return b.Entity == id }) {
 		return false
 	}
 	_, stamped := readAnchor(repoDir, id)
