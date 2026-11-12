@@ -110,6 +110,32 @@ git clone https://github.com/henriquesakata/cerne && sh cerne/examples/demo/seed
 
 Then `cd cerne-demo/taskflow && cerne ui` and click around. What is in it and what to try: [examples/demo](examples/demo/README.md).
 
+### Agents without a shell: MCP
+
+`cerne mcp` serves the project to any MCP client over stdio, with six read-only tools: `status`, `brief`, `next`, `search`, `show` and `ask`. Each returns exactly what the command of the same name prints with `--json`; none writes anything, and `ask` returns the sources without calling a model.
+
+In a project-scoped config (for example a `.mcp.json` at the project root, which the client starts from there):
+
+```json
+{
+  "mcpServers": {
+    "cerne": { "command": "cerne", "args": ["mcp"] }
+  }
+}
+```
+
+In a global client config, name the project with `--dir`:
+
+```json
+{
+  "mcpServers": {
+    "cerne": { "command": "cerne", "args": ["mcp", "--dir", "/path/to/your/project"] }
+  }
+}
+```
+
+Outside a cerne project the server refuses to start.
+
 ## How it works
 
 ```mermaid
