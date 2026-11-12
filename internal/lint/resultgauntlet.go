@@ -37,18 +37,13 @@ var (
 	nextHeadingRe = regexp.MustCompile(`(?m)^\s*##\s`)
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
-	lineMarkersRe = regexp.MustCompile(`^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`)
+	lineMarkersRe = regexp.MustCompile(`^` + doclang.LineMarkers)
 	headingRe     = regexp.MustCompile(`^\s*#{1,6}(\s|$)`)
 	listItemRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
 	codeSpanRe    = regexp.MustCompile("`[^`\n]*`")
 	quoteRe       = regexp.MustCompile(`["“”][^"“”]*[^\s"“”][^"“”]*["“”]|«[^»]*[^\s»][^»]*»`)
-	// A cited verdict: vitória/derrota/empate (NFC or NFD accents), which the
-	// record format puts on a "Rodada N — <veredito>: \"<citação>\"" line.
-	// Recorded exemptions count as a complete record: no rounds exist to cite.
-	// A round's outcome on a line of its own (C6): "Veredito: derrota",
-	// "Resultado: DERROTA." or a line that opens with the outcome word.
-	// Legacy predicate only (records older than the strict reader), so
-	// Portuguese only: no English record predates it.
+	// The words of the record (bar, round, outcome, verdict, critic) and the
+	// patterns that recognize them live in internal/doclang, per language.
 )
 
 // gauntletSections returns the body of every "## Gauntlet" section, in order.

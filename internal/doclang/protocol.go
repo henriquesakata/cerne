@@ -10,9 +10,10 @@ import (
 // a block and gets back what it is; which words, in which language, under
 // which layout, is decided here and nowhere else.
 
-// lineMarkers is the markdown a protocol line may open with: list, quote,
-// heading and table markers, emphasis, "N." — in any layout.
-const lineMarkers = `(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`
+// LineMarkers is the markdown a protocol line may open with: list, quote,
+// heading and table markers, emphasis, "N." — in any layout. A reader strips
+// it before handing a line to the recognizers that expect the bare text.
+const LineMarkers = `(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`
 
 // wordEdge is a position an outcome word may touch without being part of a
 // larger token: not a letter, digit, underscore or hyphen ("tie", never
@@ -68,7 +69,7 @@ func build(l Lang) matchers {
 	}
 	m.mentionRange = regexp.MustCompile(rangeCase + `(\d+)\s*(?:[-–—]|\b` + in(RangeTo, l) + `\b)\s*(\d+)`)
 	if layouts[l] == loose {
-		m.bar = regexp.MustCompile(`(?i)^` + lineMarkers + in(BarLabel, l) + `[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
+		m.bar = regexp.MustCompile(`(?i)^` + LineMarkers + in(BarLabel, l) + `[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
 		m.barInProse = true // documents show the forms inside code fences
 		m.header = regexp.MustCompile(`(?i)^(?:` + words(l, MethodLabel, ExitLabel) + `)[*_]*:`)
 		m.critic = regexp.MustCompile(`(?i)^` + in(CriticFindings, l))
