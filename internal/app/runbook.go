@@ -198,6 +198,6 @@ func writeRunbookStub(repoDir, id, title string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + runtmpl.Stub(title)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + runtmpl.StubIn(store.DocsLanguage(repoDir), title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }

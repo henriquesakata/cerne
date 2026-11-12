@@ -20,7 +20,7 @@ func TestNoteTagsGoldenPath(t *testing.T) {
 		t.Fatalf("InitBare: %v", err)
 	}
 	proj := t.TempDir()
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 
 	bodyFile := func(text string) string {
 		p := filepath.Join(t.TempDir(), "body.md")

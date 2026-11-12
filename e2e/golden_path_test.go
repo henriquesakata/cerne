@@ -81,7 +81,7 @@ func TestGoldenPath(t *testing.T) {
 	specPath := filepath.Join(specDir, "spec.md")
 
 	t.Log("stage 1: init — project skeleton + backend layout pushed to origin")
-	mustCerne(t, "init", "--name", "Demo Loja", "--backend", origin,
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo Loja", "--backend", origin,
 		"--module", "catalog", "--module", "checkout", "--dir", proj)
 	for _, rel := range []string{".cernerc", "docs.lock", filepath.Join(".docs", ".gitkeep")} {
 		if _, err := os.Stat(filepath.Join(proj, rel)); err != nil {

@@ -25,7 +25,7 @@ func compileOnPushProject(t *testing.T, srvURL string) (proj string) {
 	proj = t.TempDir()
 	// No --module: a moduleless project synthesizes the single "project"
 	// fallback page — the wiki shape of this very repo.
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--dir", proj)
 	extra := "\ncompile_on_push = true\n"
 	if srvURL != "" {
 		t.Setenv("CERNE_TEST_KEY", "test-key")

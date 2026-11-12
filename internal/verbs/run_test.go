@@ -48,7 +48,7 @@ func newProject(t *testing.T) verbs.Env {
 		t.Fatal(err)
 	}
 	proj := t.TempDir()
-	cerne(t, "init", "--name", "Verbs", "--backend", origin, "--dir", proj)
+	cerne(t, "init", "--docs-language", "pt-BR", "--name", "Verbs", "--backend", origin, "--dir", proj)
 	cfg, _, err := project.LoadConfig(proj)
 	if err != nil {
 		t.Fatal(err)

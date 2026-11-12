@@ -126,7 +126,7 @@ func runFeatureLikeNew(cmd *cobra.Command, dir, title, module, parent, facet, co
 	}
 	specBody := body
 	if hasContext {
-		specBody = spectmpl.StubWithContext(title, context)
+		specBody = spectmpl.StubWithContextIn(store.DocsLanguage(ctx.repoDir), title, context)
 	}
 	f, err := create(ctx.repoDir, ctx.projDir, title, module, parent,
 		splitInforms(facet), splitInforms(component), specBody, force, owner, priority)

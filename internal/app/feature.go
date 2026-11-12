@@ -1089,7 +1089,7 @@ func writeSpecStub(repoDir, id, title string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + spectmpl.Stub(title)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + spectmpl.StubIn(store.DocsLanguage(repoDir), title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
@@ -1116,7 +1116,7 @@ func writePlanStub(repoDir, id, title string) error {
 	if err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.StubForEpic(title, children)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + plantmpl.StubForEpicIn(store.DocsLanguage(repoDir), title, children)
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
@@ -1167,7 +1167,7 @@ func writeResultStub(repoDir, id, title string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	content := "---\ncerne_id: " + id + "\n---\n\n" + restmpl.Stub(title)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + restmpl.StubIn(store.DocsLanguage(repoDir), title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
@@ -1195,6 +1195,6 @@ func writeEpicResultStub(repoDir, id, title string, children []store.Feature) er
 		roster.WriteString(fmt.Sprintf("- %s: %s — result: content/features/%s/result.md\n", c.ID, c.Title, c.ID))
 	}
 	roster.WriteString("-->\n\n")
-	content := "---\ncerne_id: " + id + "\n---\n\n" + roster.String() + restmpl.Stub(title)
+	content := "---\ncerne_id: " + id + "\n---\n\n" + roster.String() + restmpl.StubIn(store.DocsLanguage(repoDir), title)
 	return os.WriteFile(path, []byte(content), 0o644)
 }

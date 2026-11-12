@@ -24,7 +24,7 @@ func TestApproveReadinessGoldenPath(t *testing.T) {
 		t.Fatalf("InitBare: %v", err)
 	}
 	proj := t.TempDir()
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--dir", proj)
 	t.Setenv("CERNE_ACTOR", "agent")
 
 	specFile := func(body string) string {

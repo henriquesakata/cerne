@@ -27,7 +27,7 @@ func TestNoteGoldenPath(t *testing.T) {
 	ctxPath := filepath.Join(docsDir, "CONTEXT.md")
 	notePath := filepath.Join(docsDir, "current", "notes", "N-0001-go-git-ignora-ssh-config.md")
 
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 
 	out := mustCerne(t, "note", "new", "go-git ignora ssh config", "--dir", proj)
 	if !strings.Contains(out, "N-0001 created (active)") {

@@ -180,7 +180,7 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 			}
 		}
 		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), i.Text)
-		n, err := prepareFeature("F", title, module, "", i.Facets, i.Components, spectmpl.StubWithContext(title, context), force, "", "")
+		n, err := prepareFeature("F", title, module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), force, "", "")
 		if err != nil {
 			return "", err
 		}

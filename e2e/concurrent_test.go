@@ -21,7 +21,7 @@ func TestConcurrentDisjointEditsRoundTripViaSync(t *testing.T) {
 
 	// Agent A's worktree seeds the backend with a feature and a note.
 	projA := t.TempDir()
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", projA)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--dir", projA)
 	mustCerne(t, "feature", "new", "Feature A", "--context", "ctx de teste", "--dir", projA)
 	mustCerne(t, "note", "new", "Nota B", "--dir", projA)
 	mustCerne(t, "pull", "--dir", projA)

@@ -27,7 +27,7 @@ func TestDecisionGoldenPath(t *testing.T) {
 	adrPath := filepath.Join(docsDir, "current", "decisions", "D-0001-adr-a.md")
 
 	t.Log("stage 1: init — project skeleton + backend layout pushed to origin")
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 	assertLockParity(t, proj, origin, "init")
 
 	t.Log("stage 2: decision new — D-0001 born active")

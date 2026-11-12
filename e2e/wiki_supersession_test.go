@@ -35,7 +35,7 @@ func TestCompileResolvesSupersessionThenLintClean(t *testing.T) {
 	proj := t.TempDir()
 	docs := filepath.Join(proj, ".docs")
 
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "finance", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "finance", "--dir", proj)
 
 	// D-0001 superseded by D-0002.
 	mustCerne(t, "decision", "new", "ADR base", "--dir", proj)
