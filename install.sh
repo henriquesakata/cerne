@@ -37,15 +37,23 @@ main() {
   esac
 
   command -v curl >/dev/null 2>&1 || fail "curl is required"
+  # The default origin is https and must stay https across redirects; a
+  # CERNE_BASE_URL the user set to http:// is their explicit choice.
+  case "$base" in
+    https://*) proto="--proto =https --proto-redir =https" ;;
+    *) proto="" ;;
+  esac
 
   if [ -z "$version" ]; then
     # The /releases/latest redirect ends at /releases/tag/<tag>: no API call,
     # so no anonymous rate limit.
-    latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$base/releases/latest") ||
-      fail "could not reach $base/releases/latest"
+    # shellcheck disable=SC2086 # $proto is a list of flags
+    latest=$(curl $proto -fsSLI -o /dev/null -w '%{url_effective}' "$base/releases/latest") ||
+      fail "could not resolve the latest release from $base/releases/latest; set CERNE_VERSION, e.g. CERNE_VERSION=v0.5.0"
     version="${latest##*/}"
   fi
   case "$version" in
+    *[!A-Za-z0-9._-]*) fail "invalid release version '$version'" ;;
     v[0-9]*) ;;
     *) fail "could not resolve a release version (got '$version'); set CERNE_VERSION, e.g. CERNE_VERSION=v0.5.0" ;;
   esac
@@ -54,18 +62,25 @@ main() {
     dir="$CERNE_INSTALL_DIR"
   elif [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
     dir=/usr/local/bin
-  else
+  elif [ -n "${HOME:-}" ]; then
     dir="$HOME/.local/bin"
+  else
+    fail "HOME is not set and /usr/local/bin is not writable; set CERNE_INSTALL_DIR"
   fi
+  [ ! -d "$dir/cerne" ] || fail "$dir/cerne is a directory; set CERNE_INSTALL_DIR to another directory"
 
   asset="cerne_${version}_${os}_${arch}"
-  tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
+  tmp=$(mktemp -d) || fail "could not create a temporary directory"
+  staged=""
+  trap 'rm -rf "$tmp" "$staged"' EXIT
+  trap 'exit 130' INT TERM HUP # dash runs the EXIT trap only on a normal exit
 
   echo "Downloading cerne $version ($os/$arch)..."
-  curl -fsSL -o "$tmp/$asset" "$base/releases/download/$version/$asset" ||
+  # shellcheck disable=SC2086
+  curl $proto -fsSL -o "$tmp/$asset" "$base/releases/download/$version/$asset" ||
     fail "could not download $asset from release $version"
-  curl -fsSL -o "$tmp/SHA256SUMS" "$base/releases/download/$version/SHA256SUMS" ||
+  # shellcheck disable=SC2086
+  curl $proto -fsSL -o "$tmp/SHA256SUMS" "$base/releases/download/$version/SHA256SUMS" ||
     fail "could not download SHA256SUMS from release $version"
 
   want=$(awk -v f="$asset" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
@@ -81,9 +96,14 @@ main() {
     fail "checksum mismatch for $asset (expected $want, got $got); nothing was installed"
 
   mkdir -p "$dir" || fail "could not create $dir; set CERNE_INSTALL_DIR to a directory you can write to"
-  chmod +x "$tmp/$asset"
-  mv "$tmp/$asset" "$dir/cerne" ||
+  # Stage inside the install dir, then rename: the rename is atomic, so an
+  # interrupted upgrade never leaves a truncated or missing cerne.
+  staged="$dir/.cerne.install.$$"
+  cp "$tmp/$asset" "$staged" ||
     fail "could not write to $dir; set CERNE_INSTALL_DIR to a directory you can write to"
+  chmod 755 "$staged"
+  mv -f "$staged" "$dir/cerne" || fail "could not replace $dir/cerne"
+  staged=""
 
   echo "Installed cerne $version to $dir/cerne"
   case ":$PATH:" in
@@ -94,6 +114,12 @@ main() {
       echo "  export PATH=\"$dir:\$PATH\""
       ;;
   esac
+  found=$(command -v cerne 2>/dev/null || true)
+  if [ -n "$found" ] && [ "$found" != "$dir/cerne" ]; then
+    echo
+    echo "Note: 'cerne' on your PATH still resolves to $found, which comes before $dir."
+    echo "Remove that copy, or put $dir earlier on your PATH, to run the one just installed."
+  fi
   echo
   echo "Next: run 'cerne init' inside your project. Guide: https://github.com/henriquesakata/cerne#try-it-in-two-minutes"
 }

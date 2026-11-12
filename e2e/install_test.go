@@ -200,3 +200,59 @@ func TestInstallScript_RunsUnderDash(t *testing.T) {
 	}
 	assertInstalled(t, dir, fakeLatest)
 }
+
+func TestInstallScript_RejectsMalformedVersion(t *testing.T) {
+	srv, hits := releaseServer(t, false)
+	dir := t.TempDir()
+	out, err := runInstall(t, "sh", "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1/../../x", "CERNE_INSTALL_DIR="+dir)
+	if err == nil {
+		t.Fatalf("install accepted a version with path characters:\n%s", out)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("made %d request(s) with a malformed version", n)
+	}
+}
+
+func TestInstallScript_RefusesDirectoryAtDestination(t *testing.T) {
+	srv, _ := releaseServer(t, false)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "cerne"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runInstall(t, "sh", "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", "CERNE_INSTALL_DIR="+dir)
+	if err == nil {
+		t.Fatalf("install reported success over a directory named cerne:\n%s", out)
+	}
+}
+
+func TestInstallScript_UpgradeReplacesAndLeavesNoStagingFile(t *testing.T) {
+	srv, _ := releaseServer(t, false)
+	dir := t.TempDir()
+	for _, v := range []string{"v1.2.3", "v1.2.4"} {
+		if out, err := runInstall(t, "sh", "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION="+v, "CERNE_INSTALL_DIR="+dir); err != nil {
+			t.Fatalf("install %s failed: %v\n%s", v, err, out)
+		}
+	}
+	assertInstalled(t, dir, "v1.2.4")
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("install dir holds %d entries, want only cerne: %v", len(entries), entries)
+	}
+}
+
+func TestInstallScript_NotesShadowingBinary(t *testing.T) {
+	srv, _ := releaseServer(t, false)
+	dir := t.TempDir()
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, "cerne"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runInstall(t, "sh", "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", "CERNE_INSTALL_DIR="+dir,
+		"PATH="+other+":"+dir+":"+os.Getenv("PATH"))
+	if err != nil {
+		t.Fatalf("install failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, filepath.Join(other, "cerne")) {
+		t.Errorf("output does not name the cerne that shadows the new one:\n%s", out)
+	}
+}
