@@ -204,6 +204,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	// F-0351: a runbook's items already folded into the body show as one line,
 	// not again in full; read-only, the errata file is never rewritten.
 	var merged []mergedErrataJSON
+	earlier := 0
 	if res.kind == "runbook" {
 		if merged, err = mergedErrata(ctx.repoDir, id, store.ParseErrataItems(er)); err != nil {
 			return err
@@ -216,6 +217,15 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 			errBody = store.ReplaceMerged(errBody, func(it store.ErrataItem) string {
 				return byItem[it.ID].line()
 			})
+			// the way back to the body the first listed merge replaced, said once
+			for _, m := range merged {
+				if m.Revision > 1 && (earlier == 0 || m.Revision-1 < earlier) {
+					earlier = m.Revision - 1
+				}
+			}
+			if earlier > 0 {
+				errBody += fmt.Sprintf("\n\nearlier body: 'cerne show %s --rev %d'", id, earlier)
+			}
 		}
 	}
 	if errBody != "" {
@@ -326,7 +336,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		enc.SetIndent("", "  ")
 		j := res.toJSON(handoffs)
 		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
-		j.MergedErrata = merged
+		j.MergedErrata, j.EarlierBodyRev = merged, earlier
 		return enc.Encode(j)
 	}
 	if f, ok := res.entity.(store.Feature); ok && !all {
@@ -682,18 +692,22 @@ type showJSON struct {
 	Kind           string               `json:"kind"`
 	Entity         any                  `json:"entity"`
 	Content        []showDocJSON        `json:"content,omitempty"`
-	ApprovalStale  *bool                `json:"approval_stale,omitempty"`  // features only (F-0318)
-	Amendments     []amendmentJSON      `json:"amendments,omitempty"`      // features only (F-0338)
-	OpenErrata     *int                 `json:"open_errata,omitempty"`     // runbooks with open items only (F-0345)
-	SteplessErrata *int                 `json:"stepless_errata,omitempty"` // idem: those with no step
-	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`        // works only (F-0339)
-	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`   // runbooks only (F-0351)
+	ApprovalStale  *bool                `json:"approval_stale,omitempty"`   // features only (F-0318)
+	Amendments     []amendmentJSON      `json:"amendments,omitempty"`       // features only (F-0338)
+	OpenErrata     *int                 `json:"open_errata,omitempty"`      // runbooks with open items only (F-0345)
+	SteplessErrata *int                 `json:"stepless_errata,omitempty"`  // idem: those with no step
+	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`         // works only (F-0339)
+	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`    // runbooks only (F-0351)
+	EarlierBodyRev int                  `json:"earlier_body_rev,omitempty"` // idem: the revision before the first merge listed
 }
 
 type mergedErrataJSON struct {
 	Item     string `json:"item"`
 	Revision int    `json:"revision,omitempty"` // 0: known neither from the item nor from the event
 	Date     string `json:"date,omitempty"`     // "": no errata.merged event for it
+	Step     string `json:"step,omitempty"`
+	By       string `json:"decided_by,omitempty"`
+	Quote    string `json:"quote,omitempty"`
 }
 
 // line is the item's row in the errata block: what is not known is left out.
@@ -704,6 +718,15 @@ func (m mergedErrataJSON) line() string {
 	}
 	if m.Date != "" {
 		l += " (" + m.Date + ")"
+	}
+	if m.Step != "" {
+		l += " under " + m.Step
+	}
+	if m.By != "" {
+		l += " — decided by " + m.By
+		if m.Quote != "" {
+			l += fmt.Sprintf(": %q", m.Quote)
+		}
 	}
 	return l
 }
@@ -741,7 +764,7 @@ func mergedErrata(repoDir, id string, items []store.ErrataItem) ([]mergedErrataJ
 				break
 			}
 		}
-		out = append(out, mergedErrataJSON{it.ID, rev, date})
+		out = append(out, mergedErrataJSON{it.ID, rev, date, it.Target, it.DecidedBy, it.Quote})
 	}
 	return out, nil
 }

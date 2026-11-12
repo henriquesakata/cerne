@@ -69,7 +69,9 @@ func TestShowRunbookMergedErrataIsOneLine(t *testing.T) {
 	// crit 3: everything merged -> only the lines.
 	rb(t, projDir, "runbook", "decide", "RB-0001", "E2", "--by", "dono", "--quote", "vale")
 	rb(t, projDir, "runbook", "merge", "RB-0001")
-	want := "E1 merged into revision 2 (" + day + ")\n\nE2 merged into revision 3 (" + day + ")"
+	want := "E1 merged into revision 2 (" + day + `) under S6.6 — decided by dono: "vale"` + "\n\n" +
+		"E2 merged into revision 3 (" + day + `) under S6.7 — decided by dono: "vale"` + "\n\n" +
+		"earlier body: 'cerne show RB-0001 --rev 1'"
 	all := rb(t, projDir, "show", "RB-0001")
 	_, block, _ := strings.Cut(all, "## errata\n")
 	if got := strings.TrimSpace(block); got != want {
@@ -85,7 +87,7 @@ func TestShowFeatureErrataUnchanged(t *testing.T) {
 	if err := store.AppendErrata(repoDir, "F-0001", "Fundida: revisão 1\n\nTexto da emenda.", "agent", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if out := rb(t, projDir, "show", "F-0001", "--all");!strings.Contains(out, "Fundida: revisão 1") || strings.Contains(out, "merged into revision") {
+	if out := rb(t, projDir, "show", "F-0001", "--all"); !strings.Contains(out, "Fundida: revisão 1") || strings.Contains(out, "merged into revision") {
 		t.Fatalf("feature errata must be verbatim:\n%s", out)
 	}
 }
