@@ -196,13 +196,13 @@ func lintRoot(dir string, staged bool) (repoDir string, ignore []string, staleRe
 			return "", nil, 0, 0, nil, nil, err
 		}
 		root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
-		return root, ctx.cfg.UnregisteredSourceIgnore, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), cleanup, nil, err
+		return root, ctx.cfg.SourceIgnore(), ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), cleanup, nil, err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return "", nil, 0, 0, nil, nil, err
 	}
-	return ctx.repoDir, ctx.cfg.UnregisteredSourceIgnore, ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), nil, &ctx, nil
+	return ctx.repoDir, ctx.cfg.SourceIgnore(), ctx.cfg.StaleReadyWindowDays(), ctx.cfg.StaleWorkWindowHours(), nil, &ctx, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.
