@@ -76,6 +76,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const pick = (list: ProjectInfo[], def: string): string => {
     const has = (p: string) => list.some((x) => x.pid === p)
     if (activeRef.current && has(activeRef.current)) return activeRef.current
+    // Link do `cerne ui` ao entrar num painel aberto (F-0373): vence a escolha
+    // guardada, mas só no boot (acima, activeRef já manda nos reloads).
+    const linked = new URLSearchParams(window.location.search).get('project') ?? ''
+    if (linked && has(linked)) return linked
     const mine = sessionStorage.getItem(STORAGE_KEY) ?? '' // escolha desta aba
     if (mine && has(mine)) return mine
     const last = localStorage.getItem(STORAGE_KEY) ?? '' // default de aba nova

@@ -46,6 +46,36 @@ beforeEach(() => {
 })
 
 describe('LiveProvider', () => {
+  // F-0373: o link que o `cerne ui` imprime ao entrar num painel aberto.
+  it('F-0373: ?project=<pid> abre esse projeto, acima da escolha guardada', async () => {
+    sessionStorage.setItem('cerne.activePid', 'p1')
+    window.history.replaceState({}, '', '/?project=p2')
+    try {
+      render(
+        <LiveProvider>
+          <Probe />
+        </LiveProvider>,
+      )
+      expect(await screen.findByText('p2')).toBeInTheDocument()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('F-0373: ?project= de pid desconhecido cai na escolha de sempre', async () => {
+    window.history.replaceState({}, '', '/?project=nope')
+    try {
+      render(
+        <LiveProvider>
+          <Probe />
+        </LiveProvider>,
+      )
+      expect(await screen.findByText('p1')).toBeInTheDocument()
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
   it('critério 1: troca via setActivePid reseta o hash para o dashboard', async () => {
     window.location.hash = '#/f/F-0001'
     render(
