@@ -1228,3 +1228,32 @@ func TestStateSurvivesClarifyScanFailure(t *testing.T) {
 		t.Fatalf("open_clarifications = %+v, want empty on scan failure", got.OpenClarifications)
 	}
 }
+
+// F-0367 criterion 7: the UI search returns one hit per entity with its
+// matching docs; the fields of today keep their names.
+func TestSearchEndpointOneHitPerEntity(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Boletos", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Pagamento de boletos mensais."))
+	writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "Gerar os boletos no lote."))
+	var got struct {
+		Results []struct {
+			EntityID string   `json:"entity_id"`
+			Doc      string   `json:"doc"`
+			Snippet  string   `json:"snippet"`
+			Docs     []string `json:"docs"`
+		} `json:"results"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-search"), http.MethodGet, "/api/search?q=boletos", "", &got)
+	if rec.Code != http.StatusOK || len(got.Results) != 1 {
+		t.Fatalf("code=%d results=%d, want 200 and one hit: %s", rec.Code, len(got.Results), rec.Body.String())
+	}
+	r := got.Results[0]
+	if r.EntityID != "F-0001" || r.Doc == "" || r.Snippet == "" || strings.Join(r.Docs, ",") != "spec,plan" {
+		t.Fatalf("hit = %+v, want F-0001 with docs [spec plan]", r)
+	}
+}

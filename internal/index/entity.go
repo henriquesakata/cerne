@@ -46,20 +46,54 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 	}
 	defer db.Close()
 
-	match := query
-	hits, err := entityRows(db, match)
+	hits, match, err := exactRows(db, query)
 	if err != nil {
-		match = quotePhrase(query) // same fallback as Search
-		if hits, err = entityRows(db, match); err != nil {
-			return nil, false, err
-		}
+		return nil, false, err
 	}
 	terms := keywordTerms(query)
 	if len(hits) > 0 || ftsSyntax.MatchString(query) || len(terms) < 2 {
 		res, err := topEntities(db, match, hits, nil, limit)
 		return res, false, err
 	}
+	res, err := coverageEntities(db, terms, limit)
+	return res, len(res) > 0, err
+}
 
+// RankEntities is the broadened path of SearchEntities on its own, for a
+// natural-language question (cerne ask): the keywords' coverage ranking,
+// whatever punctuation the question carries. A question with no keyword left
+// falls back to the exact search of the whole string.
+func RankEntities(dbPath, query string, limit int) ([]EntityResult, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	if terms := keywordTerms(query); len(terms) > 0 {
+		return coverageEntities(db, terms, limit)
+	}
+	hits, match, err := exactRows(db, query)
+	if err != nil {
+		return nil, err
+	}
+	return topEntities(db, match, hits, nil, limit)
+}
+
+// exactRows matches query as given, retried as one quoted phrase when FTS5
+// rejects it (the Search fallback); it returns the MATCH string that worked.
+func exactRows(db *sql.DB, query string) ([]rankedRow, string, error) {
+	if hits, err := entityRows(db, query); err == nil {
+		return hits, query, nil
+	}
+	match := quotePhrase(query)
+	hits, err := entityRows(db, match)
+	return hits, match, err
+}
+
+// coverageEntities ORs terms (each with its stem prefix) and orders the
+// entities by how many distinct terms their documents cover.
+func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, error) {
 	if len(terms) > maxCoverageTerms {
 		terms = terms[:maxCoverageTerms]
 	}
@@ -68,15 +102,15 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 	for i, t := range terms {
 		parts[i] = termQuery(t)
 		if err := countCoverage(db, parts[i], coverage); err != nil {
-			return nil, false, err
+			return nil, err
 		}
 	}
-	match = strings.Join(parts, " OR ")
-	if hits, err = entityRows(db, match); err != nil {
-		return nil, false, err
+	match := strings.Join(parts, " OR ")
+	hits, err := entityRows(db, match)
+	if err != nil {
+		return nil, err
 	}
-	res, err := topEntities(db, match, hits, coverage, limit)
-	return res, len(res) > 0, err
+	return topEntities(db, match, hits, coverage, limit)
 }
 
 // rankedRow is a matching document in bm25 order, without its snippet.

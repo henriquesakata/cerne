@@ -1,0 +1,1 @@
+Guard de CLI sai calado quando invocado por symlink

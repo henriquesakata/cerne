@@ -1,0 +1,1 @@
+Troca da chave de criptografia da conta: fechar o que as senhas vistas antes da fase 3 deixam aberto

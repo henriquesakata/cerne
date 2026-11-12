@@ -3,6 +3,7 @@ package ask
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -342,30 +343,6 @@ func TestRetrieveFeatureOnlyHitsSkipCrossCuttingPages(t *testing.T) {
 	}
 }
 
-func TestExtractKeywords(t *testing.T) {
-	got := extractKeywords("Por que abandonamos o módulo de pagamentos?")
-	for _, want := range []string{"pagamentos", "abandonamos", "módulo"} {
-		if !contains(got, want) {
-			t.Fatalf("extractKeywords = %q, missing %q", got, want)
-		}
-	}
-	for _, stop := range []string{"por", "que", " o ", "de"} {
-		if contains(got, stop) {
-			t.Fatalf("extractKeywords = %q, leaked stopword %q", got, stop)
-		}
-	}
-	if !contains(got, " OR ") {
-		t.Fatalf("extractKeywords = %q, want OR-joined terms", got)
-	}
-}
-
-func TestExtractKeywordsAllStopwords(t *testing.T) {
-	q := "por que o que de"
-	if got := extractKeywords(q); got != q {
-		t.Fatalf("extractKeywords(all-stopwords) = %q, want original %q", got, q)
-	}
-}
-
 func TestRetrieveNaturalLanguageQuestion(t *testing.T) {
 	repoDir, dbPath := seed(t)
 	// A natural-language question whose tokens, taken literally as an FTS AND
@@ -490,4 +467,32 @@ func contains(s, sub string) bool {
 		}
 	}
 	return len(sub) == 0
+}
+
+// F-0367 criterion 7: ask retrieves entities, not documents — a feature whose
+// spec, plan and result all match is one source — and keeps the vigency order
+// over them. A question with FTS5 punctuation still retrieves by its keywords.
+func TestRetrieveOneSourcePerEntity(t *testing.T) {
+	repoDir, _ := seedForRanking(t)
+	for _, doc := range []string{"plan.md", "result.md"} {
+		p := filepath.Join(repoDir, "content", "features", "F-0002", doc)
+		if err := os.WriteFile(p, []byte("# F-0002\n\nO ambiente segue igual.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	for _, q := range []string{"ambiente", "plataforma: qual o ambiente (k8s)?"} {
+		snips, err := Retrieve(repoDir, dbPath, q, false, 10)
+		if err != nil {
+			t.Fatalf("Retrieve(%q): %v", q, err)
+		}
+		got := entityOrder(snips)
+		want := []string{"D-0001", "F-0001", "F-0002", "F-0003"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Retrieve(%q) entity order = %v, want %v", q, got, want)
+		}
+	}
 }

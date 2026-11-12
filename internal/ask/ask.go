@@ -54,18 +54,15 @@ func vigencyTier(kind, state string) int {
 	}
 }
 
-// extractKeywords is index.Keywords, kept as the ask-local name (F-0343: the
-// extraction moved to internal/index so `cerne search` shares it).
-func extractKeywords(query string) string { return index.Keywords(query) }
-
 // Retrieve gathers context for the query: the FTS index hits (current-first;
 // terminal entities only when history is true) plus the compiled wiki pages
 // relevant to the hits — the project page (when present), the decisions page
 // when any hit is a decision, the references page when any hit is a reference,
 // and the module pages of the feature hits. Every snippet carries its state.
 func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet, error) {
-	q := extractKeywords(query)
-	hits, err := index.Search(dbPath, q, limit)
+	// One source per entity, ranked by keyword coverage (F-0367): the same
+	// retrieval as `cerne search`'s broadened path.
+	hits, err := index.RankEntities(dbPath, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +92,7 @@ func Retrieve(repoDir, dbPath, query string, history bool, limit int) ([]Snippet
 		entitySnips = append(entitySnips, snip)
 	}
 
-	// Precedence by vigency (stable, so BM25 order survives inside each tier):
+	// Precedence by vigency (stable, so the coverage/BM25 order survives inside each tier):
 	// the present must outrank the past regardless of match strength, and a
 	// later Trim then drops historical prose before live sources.
 	sort.SliceStable(entitySnips, func(i, j int) bool {

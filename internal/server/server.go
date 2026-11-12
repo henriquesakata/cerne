@@ -623,13 +623,14 @@ func readContentDoc(repoDir, kind, id string) (string, error) {
 // searchHit is one full-text search result in the API's snake_case contract,
 // projected from index.Result (which carries no JSON tags).
 type searchHit struct {
-	EntityID     string `json:"entity_id"`
-	Kind         string `json:"kind"`
-	Doc          string `json:"doc"`
-	State        string `json:"state"`
-	Title        string `json:"title"`
-	Snippet      string `json:"snippet"`
-	SupersededBy string `json:"superseded_by,omitempty"`
+	EntityID     string   `json:"entity_id"`
+	Kind         string   `json:"kind"`
+	Doc          string   `json:"doc"`
+	State        string   `json:"state"`
+	Title        string   `json:"title"`
+	Snippet      string   `json:"snippet"`
+	SupersededBy string   `json:"superseded_by,omitempty"`
+	Docs         []string `json:"docs,omitempty"` // the entity's matching documents (F-0367)
 }
 
 // searchResponse is the GET /api/search payload.
@@ -674,7 +675,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	results, broadened, err := index.SearchBroad(dbPath, query, limit)
+	results, broadened, err := index.SearchEntities(dbPath, query, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -689,6 +690,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 			Title:        res.Title,
 			Snippet:      res.Snippet,
 			SupersededBy: res.SupersededBy,
+			Docs:         res.Docs,
 		}
 	}
 	writeJSON(w, http.StatusOK, searchResponse{Results: hits, Broadened: broadened})
