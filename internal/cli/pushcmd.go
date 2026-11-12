@@ -109,7 +109,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	// The lock wait, the fetch and the push live in this one call and can each
 	// take long: the phase beats on stderr so the wait never looks like a hang.
 	endReconcile := startPhase(cmd.ErrOrStderr(), "reconciling with the backend")
-	head, conflicts, err := app.ReconcileCommitPushMutate(
+	head, conflicts, remints, err := app.ReconcileCommitPushMutate(
 		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,
 		func() error { return app.OpenAutoWorkForPush(ctx.repoDir, ctx.projDir, changes) })
@@ -119,6 +119,9 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	}
 	if len(conflicts) > 0 {
 		return reportPushConflicts(cmd, conflicts)
+	}
+	for _, old := range slices.Sorted(maps.Keys(remints)) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "cerne: auto-work id %s was taken upstream; registered as %s\n", old, remints[old])
 	}
 
 	// The backend now matches our docs (applied or already present): realign the
