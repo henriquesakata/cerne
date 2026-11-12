@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/app"
@@ -38,6 +38,11 @@ func startWriteNotice() {
 	lastProject.id = ""
 }
 
+// NoteWriteAfterError is for main: cobra skips PersistentPostRun when a command
+// fails, and a write followed by an error is when the destination matters most.
+// Safe after success too: the line goes out once.
+func NoteWriteAfterError(w io.Writer) { noteWrite(w) }
+
 // noteWrite prints, once, where the command's write landed. push/sync call it
 // before their final line (F-0876 wants that one last); the root's
 // PersistentPostRun covers every other command.
@@ -50,16 +55,22 @@ func noteWrite(w io.Writer) {
 		lastProject.id, lastProject.backend, lastProject.cernerc)
 }
 
-// backendForDisplay drops the userinfo of a URL backend so a token embedded in
-// it never reaches stderr. The scp form (git@host:path) and local paths are not
-// URLs and stay as written.
+// urlAuthority matches the scheme and userinfo of a URL backend.
+var urlAuthority = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@`)
+
+// backendForDisplay drops the userinfo, query and fragment of a URL backend so
+// a token embedded in it never reaches stderr. It does not depend on url.Parse,
+// which rejects (and so would echo raw) a malformed escape. The scp form
+// (git@host:path) and local paths have no "://" and stay as written.
 func backendForDisplay(backend string) string {
-	u, err := url.Parse(backend)
-	if err != nil || u.Host == "" {
+	if !strings.Contains(backend, "://") {
 		return backend
 	}
-	u.User = nil
-	return u.String()
+	backend = urlAuthority.ReplaceAllString(backend, "$1")
+	if i := strings.IndexAny(backend, "?#"); i >= 0 {
+		backend = backend[:i]
+	}
+	return backend
 }
 
 // resolvePaths locates the cerne project from startDir (cwd when empty)

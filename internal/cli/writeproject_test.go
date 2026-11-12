@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,10 +64,42 @@ func TestBackendForDisplayDropsCredentials(t *testing.T) {
 		"https://tok3n@git.example.com/rockt/docs.git":      "https://git.example.com/rockt/docs.git",
 		"ssh://git@git.example.com/rockt/docs.git":          "ssh://git.example.com/rockt/docs.git",
 		"git@github.com:henriquesakata/docs.git":            "git@github.com:henriquesakata/docs.git",
-		"/tmp/origin.git":                                   "/tmp/origin.git",
+		"https://root:p%zz@git.host/x.git":                  "https://git.host/x.git",
+		"https://git.host/x.git?access_token=abc#frag":      "https://git.host/x.git",
+		"/tmp/origin.git": "/tmp/origin.git",
 	} {
 		if got := backendForDisplay(in); got != want {
 			t.Errorf("backendForDisplay(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// writeTwice pushes twice through gitback, as one command doing several steps.
+func writeTwice(t *testing.T) {
+	t.Helper()
+	origin := newOrigin(t)
+	clone := filepath.Join(t.TempDir(), "c")
+	if err := gitback.Clone(origin, clone); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"a", "b"} {
+		mustWrite(t, filepath.Join(clone, n+".txt"), n)
+		if _, err := gitback.CommitAndPush(clone, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// F-0347 crit. 4 (two pushes, one line) and crit. 1 on the error path: main
+// calls NoteWriteAfterError when Execute fails, since cobra skips PostRun then.
+func TestNoteWriteOnceAfterTwoPushesAndError(t *testing.T) {
+	startWriteNotice()
+	lastProject.id, lastProject.backend, lastProject.cernerc = "demo", "b", "/p/.cernerc"
+	writeTwice(t)
+	var buf bytes.Buffer
+	NoteWriteAfterError(&buf)
+	noteWrite(&buf) // PostRun after a success path must not repeat it
+	if n := strings.Count(buf.String(), "wrote to project"); n != 1 {
+		t.Fatalf("line count = %d, want 1:\n%s", n, buf.String())
 	}
 }
