@@ -113,7 +113,7 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 	if err != nil {
 		return err
 	}
-	actor := autoWorkActor()
+	mine := myActors()
 	for _, w := range works {
 		if w.State != domain.WorkActive {
 			continue
@@ -122,9 +122,10 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 		// adopted here too, so a work opened by openAutoWorkForPush never
 		// outlives the feature it registered — only single-ref works of the
 		// SAME actor qualify; a broader-scoped or another actor's work is left
-		// for its owner (stale-work lint still nags a forgotten one).
+		// for its owner (stale-work lint still nags a forgotten one). Same
+		// actor is either identity of this process (F-0341 crit. 3).
 		isAuto := w.Auto
-		isAdoptedManual := !w.Auto && w.Actor == actor && len(w.Refs) == 1 && w.Refs[0] == featureID
+		isAdoptedManual := !w.Auto && slices.Contains(mine, w.Actor) && len(w.Refs) == 1 && w.Refs[0] == featureID
 		if (!isAuto && !isAdoptedManual) || !slices.Contains(w.Refs, featureID) {
 			continue
 		}

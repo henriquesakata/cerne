@@ -264,3 +264,20 @@ func TestPlanningClosedOnExit(t *testing.T) {
 		})
 	}
 }
+
+// TestAutoWorkAdoptsOtherIdentity (crit. 3): the F-0208 adoption recognizes
+// either identity of the process — a work opened as <user>@<host> is adopted
+// by a complete run under CERNE_ACTOR. The work is opened after the start, so
+// only the adoption (not the planning rule) can close it.
+func TestAutoWorkAdoptsOtherIdentity(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+	seedStartEvent(t, repoDir, "F-0001", time.Now().UTC().Add(-time.Hour))
+	seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "feature complete (adotado)")
+}
