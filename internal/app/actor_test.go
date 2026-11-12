@@ -2,7 +2,9 @@ package app
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -79,5 +81,59 @@ func TestParallelGuardAgentIdentities(t *testing.T) {
 		if !tc.blocked && err != nil {
 			t.Errorf("work by %q: start failed: %v", tc.actor, err)
 		}
+	}
+}
+
+// TestAgentIdentitiesNeverMine (F-0350 crit. 4, "só a mesma sessão"): the two
+// paths that close a work BECAUSE it is "mine" — the adoption on complete and
+// the supersede by `work start` of the session's bound planning — treat
+// agent:alice@m1 as mine and agent:alice@m2 and the legacy bare "agent" as
+// somebody else's, even when the work is bound to this very session. (The
+// start's planning rule closes the planning of any actor by design, F-0341, so
+// it cannot tell identities apart and is not what this pins.)
+func TestAgentIdentitiesNeverMine(t *testing.T) {
+	pinMachine(t, "alice", "m1")
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv("CERNE_SESSION", "sess-me")
+	cases := []struct {
+		actor string
+		mine  bool
+	}{{"agent:alice@m1", true}, {"agent:alice@m2", false}, {"agent", false}}
+	for _, tc := range cases {
+		t.Run("complete adoption/"+tc.actor, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+			seedStartEvent(t, repoDir, "F-0001", time.Now().UTC().Add(-time.Hour))
+			seedActiveWork(t, repoDir, "W-0001", tc.actor, "F-0001", false)
+			if err := BindSession(filepath.Dir(repoDir), "sess-me", "W-0001"); err != nil {
+				t.Fatalf("BindSession: %v", err)
+			}
+			if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if !tc.mine {
+				assertActive(t, repoDir, "W-0001")
+				return
+			}
+			assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "feature complete (adotado)")
+		})
+		t.Run("work start supersede/"+tc.actor, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+			seedActiveWork(t, repoDir, "W-0001", tc.actor, "F-0001", false)
+			if err := BindSession(filepath.Dir(repoDir), "sess-me", "W-0001"); err != nil {
+				t.Fatalf("BindSession: %v", err)
+			}
+			w, err := StartWork(repoDir, projDir, "Retomada do plano", []string{"F-0001"}, "", false, nil, "")
+			if err != nil {
+				t.Fatalf("StartWork: %v", err)
+			}
+			if got := len(w.Superseded) == 1; got != tc.mine {
+				t.Fatalf("superseded %v kept %v held %v, mine = %v", w.Superseded, w.Kept, w.Held, tc.mine)
+			}
+			if !tc.mine {
+				assertActive(t, repoDir, "W-0001")
+			}
+		})
 	}
 }
