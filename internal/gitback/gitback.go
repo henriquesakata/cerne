@@ -230,12 +230,15 @@ func Push(workdir string) error {
 			Auth:       auth,
 		})
 	})
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+	upToDate := errors.Is(err, git.NoErrAlreadyUpToDate)
+	if upToDate {
 		err = nil
 	}
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
-		pushes.Add(1)
+		if !upToDate {
+			pushes.Add(1)
+		}
 	}
 	return wrapAuthHint(err, url)
 }
@@ -269,12 +272,15 @@ func PushBranch(workdir, branch string) error {
 			Auth:       auth,
 		})
 	})
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+	upToDate := errors.Is(err, git.NoErrAlreadyUpToDate)
+	if upToDate {
 		err = nil
 	}
 	if err == nil {
 		markSynced(workdir)
-		pushes.Add(1)
+		if !upToDate {
+			pushes.Add(1)
+		}
 	}
 	return wrapAuthHint(err, url)
 }

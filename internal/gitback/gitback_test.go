@@ -409,3 +409,17 @@ func TestPushesCountsSuccessOnly(t *testing.T) {
 		t.Fatalf("pushes after a failed push = %d, want 1", got)
 	}
 }
+
+// F-0347: an already-up-to-date push writes nothing, so it does not count
+// (go-git path; the git-binary path keeps the limit, see execPushRefspec).
+func TestPushesIgnoresAlreadyUpToDate(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	t.Setenv("CERNE_SSH_DIR", t.TempDir()) // forces the go-git path
+	before := Pushes()
+	if err := Push(clone1); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if got := Pushes() - before; got != 0 {
+		t.Fatalf("no-op push counted %d, want 0", got)
+	}
+}
