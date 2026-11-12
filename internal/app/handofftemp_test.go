@@ -22,6 +22,10 @@ func TestTempEvidenceForms(t *testing.T) {
 		"file:///tmp/x",
 		"file://localhost/tmp/x",
 		"~/x",
+		"/tmp/roteiro final.md",
+		"$TMPDIR/roteiro final.md",
+		`C:\Users\u\AppData\Local\Temp\x`,
+		"C:/Temp/x",
 	} {
 		if got := tempEvidence([]string{"docs/ok.md", item}); got != item {
 			t.Errorf("tempEvidence(%q) = %q, want it refused", item, got)
@@ -35,6 +39,8 @@ func TestTempEvidenceForms(t *testing.T) {
 		"/var/lib/x",
 		"/Users/me/x",
 		"/tmpfoo/x",
+		"/Users/me/meu roteiro.md",
+		`D:\docs\x.md`,
 	} {
 		if got := tempEvidence([]string{item}); got != "" {
 			t.Errorf("tempEvidence(%q) = %q, want it accepted", item, got)

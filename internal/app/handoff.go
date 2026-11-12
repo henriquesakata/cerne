@@ -36,8 +36,33 @@ func tempDirs() []string {
 // pathLike reports whether an evidence item reads as a filesystem path (not a
 // URL, a command or a cerne id).
 func pathLike(e string) bool {
-	return strings.HasPrefix(e, "file://") || (!strings.Contains(e, "://") && !strings.ContainsAny(e, " \t") &&
-		(strings.HasPrefix(e, "/") || strings.HasPrefix(e, "~") || strings.HasPrefix(e, "$") || strings.HasPrefix(e, "./") || strings.HasPrefix(e, "../")))
+	if strings.HasPrefix(e, "file://") || windowsPath(e) {
+		return true
+	}
+	// A space is part of a path ("/tmp/roteiro final.md"), not a sign of a command.
+	for _, p := range []string{"/", "~", "$", "./", "../"} {
+		if strings.HasPrefix(e, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// windowsPath reports a drive-letter path (X:\… or X:/…).
+func windowsPath(e string) bool {
+	return len(e) >= 3 && (e[1] == ':') && (e[2] == '\\' || e[2] == '/') &&
+		(e[0] >= 'A' && e[0] <= 'Z' || e[0] >= 'a' && e[0] <= 'z')
+}
+
+// windowsTemp reports a drive-letter path with a Temp/Tmp folder in it. This
+// host cannot resolve it, so the segment name is the evidence.
+func windowsTemp(e string) bool {
+	for _, seg := range strings.FieldsFunc(e[2:], func(r rune) bool { return r == '\\' || r == '/' }) {
+		if s := strings.ToLower(seg); s == "temp" || s == "tmp" {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveEvidencePath turns a path-like item into the absolute, cleaned path
@@ -67,6 +92,12 @@ func resolveEvidencePath(e string) string {
 func tempEvidence(evidence []string) string {
 	for _, e := range evidence {
 		if !pathLike(e) {
+			continue
+		}
+		if windowsPath(e) {
+			if windowsTemp(e) {
+				return e
+			}
 			continue
 		}
 		p := resolveEvidencePath(e)
