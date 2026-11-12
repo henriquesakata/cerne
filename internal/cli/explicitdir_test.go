@@ -109,10 +109,11 @@ func TestExplicitDirWithCernercWorks(t *testing.T) {
 	}
 }
 
-// F-0354 crit. 5: every command declaring --dir (init excepted: it creates the
-// .cernerc) refuses a folder without .cernerc. cobra runs only the nearest
-// persistent pre-run, so the guard checks both halves: that hook is the root's
-// (no command in between overrides it) and the root's hook refuses.
+// F-0354 crit. 5: every command declaring --dir (the top-level init excepted,
+// by identity: it creates the .cernerc) refuses a folder without .cernerc.
+// cobra runs only the nearest persistent pre-run, so the guard checks both
+// halves: that hook is the root's (no command in between overrides it) and the
+// root's hook refuses. DisableFlagParsing would hide the flag from the gate.
 func TestEveryDirFlagCommandRefusesProjectless(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	sub := filepath.Join(projDir, "sub")
@@ -120,34 +121,74 @@ func TestEveryDirFlagCommandRefusesProjectless(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := Root()
+	initCmd, _, err := root.Find([]string{"init"})
+	if err != nil || initCmd.Parent() != root {
+		t.Fatalf("top-level init not found: %v", err)
+	}
 	checked := 0
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
 		for _, ch := range c.Commands() {
 			walk(ch)
 		}
-		if c == root || c.Name() == "init" || c.Flag("dir") == nil {
+		f := c.Flag("dir")
+		if c == root || f == nil {
 			return
 		}
-		checked++
+		if c.DisableFlagParsing {
+			t.Errorf("%s declares --dir with DisableFlagParsing: cobra never marks it Changed, so the gate cannot see it", c.CommandPath())
+		}
 		for p := c; p != root; p = p.Parent() {
 			if p.PersistentPreRun != nil || p.PersistentPreRunE != nil {
 				t.Errorf("%s overrides the root pre-run, so --dir is not checked", p.CommandPath())
 			}
 		}
-		f := c.Flag("dir")
 		if err := f.Value.Set(sub); err != nil {
 			t.Errorf("%s: %v", c.CommandPath(), err)
 			return
 		}
 		f.Changed = true
-		if err := root.PersistentPreRunE(c, nil); !errors.Is(err, project.ErrNoProject) {
+		err := root.PersistentPreRunE(c, nil)
+		if c == initCmd {
+			if err != nil {
+				t.Errorf("init must be exempt, got %v", err)
+			}
+			return
+		}
+		checked++
+		if !errors.Is(err, project.ErrNoProject) {
 			t.Errorf("%s --dir <no .cernerc>: want ErrNoProject, got %v", c.CommandPath(), err)
 		}
 	}
 	walk(root)
 	if checked < 20 {
 		t.Fatalf("guard walked only %d commands with --dir; Root() traversal is broken", checked)
+	}
+}
+
+// F-0354: the init exemption is the top-level command, not any command named
+// "init".
+func TestGateExemptsOnlyTopLevelInit(t *testing.T) {
+	root := &cobra.Command{Use: "cerne"}
+	topInit := &cobra.Command{Use: "init"}
+	group := &cobra.Command{Use: "group"}
+	nested := &cobra.Command{Use: "init"}
+	for _, c := range []*cobra.Command{topInit, nested} {
+		c.Flags().String("dir", "", "")
+	}
+	root.AddCommand(topInit, group)
+	group.AddCommand(nested)
+	sub := t.TempDir()
+	for _, c := range []*cobra.Command{topInit, nested} {
+		f := c.Flag("dir")
+		_ = f.Value.Set(sub)
+		f.Changed = true
+	}
+	if err := refuseProjectlessDir(topInit); err != nil {
+		t.Fatalf("top-level init must be exempt, got %v", err)
+	}
+	if err := refuseProjectlessDir(nested); !errors.Is(err, project.ErrNoProject) {
+		t.Fatalf("nested init must not be exempt, got %v", err)
 	}
 }
 

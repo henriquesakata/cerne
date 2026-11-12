@@ -123,7 +123,7 @@ func resolvePaths(startDir string) (projCtx, error) {
 // init is exempt: it creates the .cernerc. A default value is not "passed".
 func refuseProjectlessDir(cmd *cobra.Command) error {
 	f := cmd.Flag("dir")
-	if f == nil || !f.Changed || cmd.Name() == "init" {
+	if f == nil || !f.Changed || (cmd.Parent() == cmd.Root() && cmd.Name() == "init") {
 		return nil
 	}
 	return project.RequireConfigAt(f.Value.String())
