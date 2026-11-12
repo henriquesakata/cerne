@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -125,19 +126,29 @@ func TestReconcileRemintDedupsOnNewTip(t *testing.T) {
 	}
 }
 
-// F-0349 crit. 5: a mutate that collides on every try is dropped after 3
-// re-mints, with nothing sent.
+// F-0349 crit. 5: a third session takes the next id after every mint, so the
+// redone mutate collides on each round; it is dropped after 3 re-mints, with
+// nothing sent.
 func TestReconcileRemintGivesUpAfterThree(t *testing.T) {
 	origin, repoDir, projDir, base := remintFixture(t)
 	remoteWork(t, origin, "W-0001", "other@host")
-	calls := 0
-	always := func() error {
-		calls++
-		now := time.Now().UTC()
-		return store.SaveWork(repoDir, store.Work{ID: "W-0001", Title: "x" + time.Now().String(), State: domain.WorkActive, Actor: "me", CreatedAt: now, UpdatedAt: now})
-	}
 	theirHead, _ := gitback.RemoteHeadSHA(repoDir)
-	head, _, _, err := remintPush(repoDir, projDir, base, always)
+	calls := 0
+	changes := []FileChange{{Path: remintPlan, Content: []byte("# plano novo\n")}}
+	mutate := func() error {
+		calls++
+		next, err := store.NextID(repoDir, "W")
+		if err != nil {
+			return err
+		}
+		if err := OpenAutoWorkForPush(repoDir, projDir, changes); err != nil {
+			return err
+		}
+		remoteWork(t, origin, next, "third@host") // the id just minted is taken upstream
+		theirHead, _ = gitback.RemoteHeadSHA(repoDir)
+		return nil
+	}
+	head, _, _, err := ReconcileCommitPushMutate(repoDir, projDir, base, "push plan", changes, mutate)
 	if !errors.Is(err, ErrAutoWorkRaceLost) || head != "" {
 		t.Fatalf("head=%q err=%v, want ErrAutoWorkRaceLost", head, err)
 	}
@@ -148,7 +159,33 @@ func TestReconcileRemintGivesUpAfterThree(t *testing.T) {
 		t.Fatalf("mutate ran %d times, want 4 (1 + 3 re-mints)", calls)
 	}
 	if rh, _ := gitback.RemoteHeadSHA(repoDir); rh != theirHead {
-		t.Fatalf("remote head moved")
+		t.Fatalf("remote head moved: we sent something")
 	}
-	_ = origin
+}
+
+// F-0349 crit. 3: altering another session's existing work is not minting an
+// id: the conflict is listed and the mutate is not redone.
+func TestReconcileNoRemintWhenMutateAltersExistingWork(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	seedActiveWork(t, repoDir, "W-0001", "other@host", "F-0001", false)
+	base, _ := gitback.RemoteHeadSHA(repoDir)
+	remoteWork(t, origin, "W-0001", "third@host") // remote rewrites it after base
+	calls := 0
+	mutate := func() error {
+		calls++
+		ws, err := store.LoadAllWorks(repoDir)
+		if err != nil || len(ws) != 1 {
+			return fmt.Errorf("works=%v err=%v", ws, err)
+		}
+		ws[0].Title = "mine"
+		return store.SaveWork(repoDir, ws[0])
+	}
+	changes := []FileChange{{Path: remintPlan, Content: []byte("# plano novo\n")}}
+	head, conflicts, _, err := ReconcileCommitPushMutate(repoDir, projDir, base, "push plan", changes, mutate)
+	if err != nil || head != "" || calls != 1 {
+		t.Fatalf("head=%q err=%v calls=%d, want abort after one run", head, err, calls)
+	}
+	if len(conflicts) != 1 || conflicts[0].Path != "entities/works/W-0001.json" {
+		t.Fatalf("conflicts = %+v, want W-0001.json", conflicts)
+	}
 }

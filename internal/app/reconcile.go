@@ -141,8 +141,8 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			callerPaths[ch.Path] = true
 		}
 		callerChanges := changes
-		var created map[string]bool // paths the mutate CREATED (absent at base)
-		capture := func() error {
+		var created map[string]bool // paths the mutate CREATED (absent at the tree it ran on)
+		capture := func(ranOn string) error {
 			created = map[string]bool{}
 			if mutate == nil {
 				return nil
@@ -158,7 +158,7 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 				if ch.Deleted || callerPaths[ch.Path] {
 					continue
 				}
-				if _, exists, err := gitback.FileBlobAt(repoDir, base, ch.Path); err != nil {
+				if _, exists, err := gitback.FileBlobAt(repoDir, ranOn, ch.Path); err != nil {
 					return err
 				} else if !exists {
 					created[ch.Path] = true
@@ -167,7 +167,7 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			changes = append(append([]FileChange(nil), callerChanges...), extra...)
 			return nil
 		}
-		if err := capture(); err != nil {
+		if err := capture(base); err != nil {
 			return err
 		}
 		for round := 0; ; round++ {
@@ -202,7 +202,7 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			if err := resetToBase(repoDir, tip); err != nil {
 				return err
 			}
-			if err := capture(); err != nil {
+			if err := capture(tip); err != nil {
 				return err
 			}
 			noteRemints(remints, old, created)
