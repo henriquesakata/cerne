@@ -222,3 +222,45 @@ func TestNextFinishDelivery(t *testing.T) {
 	}
 	t.Errorf("no finish_delivery group in json:\n%s", js)
 }
+
+// TestNextAwaitingAccept pins F-0371 crit.3, 5: an implemented feature with cost
+// (or nothing to stamp) and delivery waits on a human, with no command for the
+// agent; the group sits after CANDIDATES and before the debts.
+func TestNextAwaitingAccept(t *testing.T) {
+	projDir := nextAfterCompleteProject(t)
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\n%s", err, out)
+	}
+	blk := nextBlock(out, "WAITING FOR HUMAN ACCEPT (1)")
+	if blk == "" {
+		t.Fatalf("missing WAITING FOR HUMAN ACCEPT (1) group:\n%s", out)
+	}
+	if !strings.Contains(blk, "ask a human to run 'cerne feature accept <id>'") || !strings.Contains(blk, "F-0012") {
+		t.Errorf("group = %s", blk)
+	}
+	if strings.Contains(blk, "F-0010") || strings.Contains(blk, "F-0013") || strings.Contains(blk, "\n    cerne ") {
+		t.Errorf("group must hold only the complete feature, with no agent command:\n%s", blk)
+	}
+	if i := strings.Index(out, "WAITING FOR HUMAN ACCEPT"); i < strings.Index(out, "FINISH DELIVERY") {
+		t.Errorf("WAITING FOR HUMAN ACCEPT must follow FINISH DELIVERY:\n%s", out)
+	}
+
+	js, err := execCerne(t, "next", "--dir", projDir, "--json")
+	if err != nil {
+		t.Fatalf("next --json: %v", err)
+	}
+	var q nextJSON
+	if err := json.Unmarshal([]byte(js), &q); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	for _, g := range q.Groups {
+		if g.Queue == "awaiting_accept" {
+			if len(g.Features) != 1 || g.Features[0].ID != "F-0012" || g.State != domain.StateImplemented {
+				t.Errorf("awaiting_accept group = %+v", g)
+			}
+			return
+		}
+	}
+	t.Errorf("no awaiting_accept group in json:\n%s", js)
+}

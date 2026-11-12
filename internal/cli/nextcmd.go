@@ -43,6 +43,8 @@ var nextGroups = []nextGroup{
 	{domain.StateApproved, true, "awaiting_reapproval", "WAITING FOR RE-APPROVAL", "start is blocked: ask a human to run 'cerne feature approve <id>' (a human act)"},
 	// F-0308: rehearse with --check; the approve itself is a human act (F-0131).
 	{domain.StateCandidate, false, "candidates", "CANDIDATES", "write the spec, run 'cerne feature approve <id> --check', then ask a human to approve (a human act)"},
+	// F-0371: nothing left for the agent — cost and delivery are in; the accept is a human act (F-0131).
+	{domain.StateImplemented, false, "awaiting_accept", "WAITING FOR HUMAN ACCEPT", "ask a human to run 'cerne feature accept <id>' (a human act)"},
 }
 
 // nextPendingCap bounds the open-pendings block of cerne next; the rest is
@@ -148,7 +150,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 				continue
 			}
 			if g.state == domain.StateImplemented {
-				if cmds, ok := missing[f.ID]; ok {
+				if cmds, owes := missing[f.ID]; owes == (g.queue == "finish_delivery") {
 					fs = append(fs, nextFeature{f, false, cmds})
 				}
 				continue
