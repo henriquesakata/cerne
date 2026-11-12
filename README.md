@@ -125,6 +125,8 @@ The idea is close to Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a
 
 cerne is young and in daily use. This repository has been built with it since day one, and the 359 features above went through the same gates you would use. Expect rough edges, and please [open an issue](https://github.com/henriquesakata/cerne/issues) when you hit one: feedback from early users shapes what comes next.
 
+Questions and ideas go to [Discussions](https://github.com/henriquesakata/cerne/discussions). To contribute code, start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
 The founding design document is [docs/process/cases/0001_founding-spec/spec.md](docs/process/cases/0001_founding-spec/spec.md).
 
 ## The name
