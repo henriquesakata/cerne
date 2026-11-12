@@ -147,7 +147,7 @@ func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) er
 				opts.BlobBase = importer.BlobBase(url, sha)
 			}
 		}
-		sum, err := importer.Apply(ctx.repoDir, cands, eventActor(), opts)
+		sum, err := importer.Apply(ctx.repoDir, cands, app.EventActor(), opts)
 		if err != nil {
 			return err
 		}
@@ -403,7 +403,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
 		return nil
 	}
 
-	sum, err := importer.ApplyPlan(ctx.repoDir, kept, eventActor())
+	sum, err := importer.ApplyPlan(ctx.repoDir, kept, app.EventActor())
 	if err != nil {
 		return err
 	}

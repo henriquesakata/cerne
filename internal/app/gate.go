@@ -18,7 +18,7 @@ var ErrHumanGate = errors.New("human gate")
 // Anything else passes — fail-open by design: the gate exists to stop the
 // *configured* agent from approving its own spec, not to authenticate humans.
 func CheckHumanGate(gate string) error {
-	if gate == project.GateHuman && os.Getenv("CERNE_ACTOR") == "agent" {
+	if gate == project.GateHuman && isAgentActor(os.Getenv("CERNE_ACTOR")) {
 		return fmt.Errorf("%w: this transition is a human act in this project — ask a human for the approval/acceptance (or configure [gates] in .cernerc for an explicit bypass)", ErrHumanGate)
 	}
 	return nil

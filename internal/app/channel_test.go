@@ -34,6 +34,7 @@ func saveChanWork(t *testing.T, repoDir, id string, refs, paths []string) {
 // directly for a W- binding, via its own auto work for an F- binding, and
 // nothing for a dead binding.
 func TestSessionWork(t *testing.T) {
+	pinMachine(t, "alice", "m1")
 	t.Setenv("CERNE_ACTOR", "agent")
 	cacheDir, repoDir := t.TempDir(), t.TempDir()
 	saveChanWork(t, repoDir, "W-0001", []string{"F-0009"}, []string{"internal/server/**"})
@@ -43,7 +44,7 @@ func TestSessionWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveWork(repoDir, store.Work{
-		ID: "W-0003", Title: "auto", State: domain.WorkActive, Actor: "agent", Auto: true,
+		ID: "W-0003", Title: "auto", State: domain.WorkActive, Actor: "agent:alice@m1", Auto: true,
 		Refs: []string{"F-0002"}, CreatedAt: chanT0, UpdatedAt: chanT0,
 	}); err != nil {
 		t.Fatal(err)
@@ -144,6 +145,7 @@ type chanFixture struct {
 
 func newChanFixture(t *testing.T) *chanFixture {
 	t.Helper()
+	pinMachine(t, "alice", "m1")
 	t.Setenv("CERNE_ACTOR", "agent")
 	f := &chanFixture{t: t, cacheDir: t.TempDir(), repoDir: t.TempDir(), at: chanT0}
 	f.ch = room.OpenChannel(filepath.Join(f.cacheDir, "rooms"))
@@ -1009,5 +1011,33 @@ func TestChannelInjectAllExpiredIsFree(t *testing.T) {
 	out, err := ChannelInject(f.cacheDir, f.repoDir, "s1", true, f.at)
 	if err != nil || out != "" {
 		t.Fatalf("all-expired injection = %q, %v; want zero bytes without touching the lock", out, err)
+	}
+}
+
+// TestSessionWorkIgnoresOtherAgents (F-0350 crit. 4): an F- binding resolves
+// only the auto work of this machine's agent identity — never one of the same
+// user on another machine (agent:alice@m2) nor a pre-F-0350 bare "agent".
+func TestSessionWorkIgnoresOtherAgents(t *testing.T) {
+	pinMachine(t, "alice", "m1")
+	t.Setenv("CERNE_ACTOR", "agent")
+	cacheDir, repoDir := t.TempDir(), t.TempDir()
+	if err := store.SaveFeature(repoDir, store.Feature{
+		ID: "F-0003", Title: "viva", State: domain.StateInDevelopment, CreatedAt: chanT0, UpdatedAt: chanT0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for id, actor := range map[string]string{"W-0001": "agent:alice@m2", "W-0002": "agent"} {
+		if err := store.SaveWork(repoDir, store.Work{
+			ID: id, Title: "auto", State: domain.WorkActive, Actor: actor, Auto: true,
+			Refs: []string{"F-0003"}, CreatedAt: chanT0, UpdatedAt: chanT0,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := BindSession(cacheDir, "s-m1", "F-0003"); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := sessionWork(cacheDir, repoDir, "s-m1"); ok {
+		t.Fatalf("resolved another agent's work: %+v", got)
 	}
 }

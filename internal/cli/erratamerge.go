@@ -58,7 +58,7 @@ func newRunbookMergeCmd(dir *string) *cobra.Command {
 				return err
 			}
 			id := strings.ToUpper(strings.TrimSpace(args[0]))
-			res, err := app.MergeErrata(ctx.repoDir, ctx.projDir, id, eventActor())
+			res, err := app.MergeErrata(ctx.repoDir, ctx.projDir, id, app.EventActor())
 			w := cmd.OutOrStdout()
 			if errors.Is(err, app.ErrNothingToMerge) {
 				fmt.Fprintf(w, "%s: nothing to merge (needs a decided item whose 'Altera:' step is in the body).\n", id)

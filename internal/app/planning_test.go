@@ -152,6 +152,7 @@ func TestPlanningWorks(t *testing.T) {
 // forced start passed — as done, in the transition's commit, and the auto work
 // still opens.
 func TestPlanningClosedOnStart(t *testing.T) {
+	pinMachine(t, "alice", "m1")
 	t.Setenv("CERNE_ACTOR", "agent")
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
@@ -172,8 +173,8 @@ func TestPlanningClosedOnStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auto work: %v", err)
 	}
-	if auto.State != domain.WorkActive || !auto.Auto || auto.Actor != "agent" {
-		t.Fatalf("auto work = %+v, want active auto by agent", auto)
+	if auto.State != domain.WorkActive || !auto.Auto || auto.Actor != "agent:alice@m1" {
+		t.Fatalf("auto work = %+v, want active auto by agent:alice@m1", auto)
 	}
 	assertOneCommit(t, repoDir, before, "entities/works/W-0001.json", "entities/works/W-0002.json", "entities/works/W-0003.json", "entities/features/F-0001.json")
 }

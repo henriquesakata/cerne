@@ -125,8 +125,8 @@ func TestRunCreatesAndReturnsID(t *testing.T) {
 		t.Fatalf("no reference.created among %+v", evs)
 	}
 	p := created.Payload
-	if p["origin"] != "chat" || p["conversation"] != "c1" || p["turn"] != "3" || created.Actor != "agent" {
-		t.Fatalf("event = %+v, want origin=chat conversation=c1 turn=3 actor=agent", created)
+	if p["origin"] != "chat" || p["conversation"] != "c1" || p["turn"] != "3" || !strings.HasPrefix(created.Actor, "agent:") {
+		t.Fatalf("event = %+v, want origin=chat conversation=c1 turn=3 actor=agent:<user>@<host>", created)
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{16}$`).MatchString(p["tool_call"]) {
 		t.Fatalf("tool_call = %q, want 16 hex", p["tool_call"])

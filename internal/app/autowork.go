@@ -32,12 +32,7 @@ func activityAutoEnabled(projDir string) bool {
 
 // autoWorkActor identifies who the auto-work belongs to: the CERNE_ACTOR env
 // marker when set (agent sessions, F-0131), else "<user>@<hostname>".
-func autoWorkActor() string {
-	if a := os.Getenv("CERNE_ACTOR"); a != "" {
-		return a
-	}
-	return defaultWorkActor()
-}
+func autoWorkActor() string { return resolveActor(defaultWorkActor()) }
 
 // openAutoWork creates the auto work for a feature entering development,
 // unless the same actor already has an active work referencing it (a manual
