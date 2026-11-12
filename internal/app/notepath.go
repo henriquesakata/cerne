@@ -18,11 +18,14 @@ import (
 type PathNote struct {
 	ID, Title string
 	Score     int
+	inTitle   bool // the cited path is in the title (round 2: prominence)
+	mentions  int  // citations of it in the body
 	updated   time.Time
 }
 
 // NotesForPath lists the active notes citing rel (slash-separated, relative to
-// the repository root), most specific first, newest first on ties. It reads
+// the repository root), most specific first; within a tier, the note citing it
+// in its title first, then by number of mentions, then newest first. It reads
 // only the local index and the clone, honors ctx, and treats a missing index, a
 // busy index or an expired ctx as "no notes" (the work-gate hook must never
 // fail an edit over them). uniqueName says whether a bare file name is tracked
@@ -79,7 +82,15 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 		if best == 0 || best == 1 && !unique() {
 			continue
 		}
-		pn := PathNote{ID: h.ID, Title: h.Title, Score: best}
+		// Prominence of the cited path within the winning tier.
+		inTitle, mentions := false, 0
+		for p, sc := range cands {
+			if sc == best {
+				inTitle = inTitle || citesPath(h.Title, p)
+				mentions = max(mentions, countCites(h.Body, p))
+			}
+		}
+		pn := PathNote{ID: h.ID, Title: h.Title, Score: best, inTitle: inTitle, mentions: mentions}
 		if n, err := store.LoadNote(repoDir, h.ID); err == nil {
 			pn.updated = n.UpdatedAt
 		}
@@ -88,6 +99,15 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 	slices.SortFunc(out, func(a, b PathNote) int {
 		if a.Score != b.Score {
 			return b.Score - a.Score
+		}
+		if a.inTitle != b.inTitle {
+			if a.inTitle {
+				return -1
+			}
+			return 1
+		}
+		if a.mentions != b.mentions {
+			return b.mentions - a.mentions
 		}
 		if c := b.updated.Compare(a.updated); c != 0 {
 			return c
@@ -100,18 +120,22 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 // citesPath reports whether text contains p as a whole path token: the FTS
 // phrase also matches tokens that co-occur by chance, and a bare name must not
 // match inside a longer one ("prerelease.sh").
-func citesPath(text, p string) bool {
+func citesPath(text, p string) bool { return countCites(text, p) > 0 }
+
+// countCites is the number of whole-token citations of p in text.
+func countCites(text, p string) int {
+	n := 0
 	for from := 0; ; {
 		i := strings.Index(text[from:], p)
 		if i < 0 {
-			return false
+			return n
 		}
 		i += from
 		end := i + len(p)
 		if leftBoundary(text, i) && (end == len(text) || !pathChar(text[end]) || text[end] == '.' && (end+1 == len(text) || !pathChar(text[end+1]))) {
-			return true
+			n++
 		}
-		from = i + 1
+		from = i + len(p)
 	}
 }
 

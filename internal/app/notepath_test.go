@@ -198,3 +198,37 @@ func TestNotesForPathUniquenessIsLazy(t *testing.T) {
 		t.Fatalf("calls = %d err=%v, want 1", n, err)
 	}
 }
+
+// Round 2: inside a tier, prominence (title, then number of mentions) comes
+// before recency.
+func TestNotesForPathProminenceBeforeRecency(t *testing.T) {
+	repo := t.TempDir()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seedPathNote(t, repo, "N-0001", "unrelated title", "once: scripts/release.sh", domain.NoteActive, base.Add(72*time.Hour))
+	seedPathNote(t, repo, "N-0002", "about scripts/release.sh", "body", domain.NoteActive, base)
+	seedPathNote(t, repo, "N-0003", "three", "scripts/release.sh, then scripts/release.sh and scripts/release.sh", domain.NoteActive, base.Add(24*time.Hour))
+	seedPathNote(t, repo, "N-0004", "two", "scripts/release.sh x scripts/release.sh", domain.NoteActive, base.Add(48*time.Hour))
+	seedPathNote(t, repo, "N-0005", "tie older", "scripts/release.sh once", domain.NoteActive, base.Add(time.Hour))
+	cache := buildIndex(t, repo)
+	got, err := NotesForPath(context.Background(), cache, repo, relRelease, func(string) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	// title wins over newer body-only; 3 mentions beat 2 and 1; equal prominence: newest first
+	if want := []string{"N-0002", "N-0003", "N-0004", "N-0001", "N-0005"}; !sameIDs(noteIDs(got), want) {
+		t.Fatalf("ids = %v, want %v", noteIDs(got), want)
+	}
+}
+
+// Specificity still outranks prominence.
+func TestNotesForPathSpecificityBeatsProminence(t *testing.T) {
+	repo := t.TempDir()
+	t0 := time.Now().UTC()
+	seedPathNote(t, repo, "N-0001", "scripts/release.sh", "scripts/release.sh scripts/release.sh", domain.NoteActive, t0)
+	seedPathNote(t, repo, "N-0002", "plain", relRelease, domain.NoteActive, t0.Add(-time.Hour))
+	cache := buildIndex(t, repo)
+	got, _ := NotesForPath(context.Background(), cache, repo, relRelease, func(string) bool { return false })
+	if !sameIDs(noteIDs(got), []string{"N-0002", "N-0001"}) {
+		t.Fatalf("ids = %v", noteIDs(got))
+	}
+}
