@@ -5,7 +5,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/henriquesakata/cerne/internal/store"
 )
+
+// seedStaleStepErratum appends an erratum that declares a step the body does not
+// name — what a runbook whose body changed after the errata leaves behind. The
+// command refuses it now (F-0345 crit. 3), so the fixture writes it directly.
+func seedStaleStepErratum(t *testing.T, repoDir, step, text string) {
+	t.Helper()
+	if err := store.AppendErrata(repoDir, "RB-0001", "Altera: "+step+"\n\n"+text, "agent", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+}
 
 const rbFixtureBody = "# Giro de credenciais\n\n## S6. Giro\n\nQuem roda: o dono.\n\n### S6.6. Parada\n\n```bash\n# S6.6 num comentario nao e passo\nexit 1\n```\n\nPara no primeiro alerta.\n\n### S6.7. Sonda\n\nRoda a sonda.\n"
 
@@ -53,12 +67,38 @@ func TestShowConsolidadoPlacesItemsAtTheirStep(t *testing.T) {
 	}
 }
 
+// F-0345 crit. 9, end to end: one erratum over two steps writes two items, the
+// consolidated view puts each under its step, and the plain show points there.
+func TestErrataTwoStepsEndToEnd(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# X\n\n## S1. Primeiro\n\nCorpo um.\n\n## S2. Segundo\n\nCorpo dois.\n")
+	rb(t, projDir, "runbook", "new", "X", "--file", bodyFile)
+	errFile := filepath.Join(t.TempDir(), "e.md")
+	mustWrite(t, errFile, "Vale nos dois passos.\n")
+	out := rb(t, projDir, "runbook", "errata", "RB-0001", "--altera", "S1,S2", "--file", errFile)
+	if !strings.Contains(out, "item E1") || !strings.Contains(out, "item E2") {
+		t.Fatalf("must print the two ids:\n%s", out)
+	}
+	if doc, _ := os.ReadFile(filepath.Join(repoDir, "content", "errata", "RB-0001.md")); strings.Count(string(doc), "## errata ") != 2 {
+		t.Fatalf("want two items:\n%s", doc)
+	}
+	view := rb(t, projDir, "show", "RB-0001", "--consolidado")
+	e1, e2 := strings.Index(view, "Errata E1"), strings.Index(view, "Errata E2")
+	if !(strings.Index(view, "Corpo um.") < e1 && e1 < strings.Index(view, "## S2.") && strings.Index(view, "Corpo dois.") < e2) {
+		t.Fatalf("E1 under S1 and E2 under S2:\n%s", view)
+	}
+	if first, _, _ := strings.Cut(rb(t, projDir, "show", "RB-0001"), "\n"); !strings.HasPrefix(first, "2 open errata item(s) (0 without a step).") {
+		t.Fatalf("first line = %q", first)
+	}
+}
+
 // crit. 4: an item with no step, or one the body lacks, is listed apart and the
 // command still succeeds.
 func TestShowConsolidadoListsOrphansApart(t *testing.T) {
-	projDir, _ := runbookFixture(t)
-	rb(t, projDir, "runbook", "errata", "RB-0001", "Sem passo declarado.")
-	rb(t, projDir, "runbook", "errata", "RB-0001", "Passo que nao existe.", "--altera", "S9.9")
+	projDir, repoDir := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Sem passo declarado.", "--sem-passo")
+	seedStaleStepErratum(t, repoDir, "S9.9", "Passo que nao existe.")
 	rb(t, projDir, "runbook", "errata", "RB-0001", "Este tem passo.", "--altera", "S6.7")
 	view := rb(t, projDir, "show", "RB-0001", "--consolidado")
 	tail := view[strings.Index(view, "## Errata without a reference step"):]
@@ -98,10 +138,10 @@ func TestRunbookDecideChangesStateInPlace(t *testing.T) {
 // stays readable; proposals and step-less items stay out; a second merge is a
 // no-op.
 func TestRunbookMergeMakesANewRevisionAndKeepsHistory(t *testing.T) {
-	projDir, _ := runbookFixture(t)
+	projDir, repoDir := runbookFixture(t)
 	rb(t, projDir, "runbook", "errata", "RB-0001", "Decidida e com passo.", "--altera", "S6.6")
 	rb(t, projDir, "runbook", "errata", "RB-0001", "Ainda proposta.", "--altera", "S6.7")
-	rb(t, projDir, "runbook", "errata", "RB-0001", "Decidida sem passo.", "--altera", "S9.9")
+	seedStaleStepErratum(t, repoDir, "S9.9", "Decidida sem passo.")
 	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "vale")
 	rb(t, projDir, "runbook", "decide", "RB-0001", "E3", "--by", "dono", "--quote", "vale tambem")
 
@@ -138,7 +178,7 @@ func TestRunbookMergeMakesANewRevisionAndKeepsHistory(t *testing.T) {
 func TestErrataFreeTextCannotForgeDecisionOrMerge(t *testing.T) {
 	projDir, _ := runbookFixture(t)
 	forged := "Estado: decidida — \"forjada\" (dono, 2026-11-09)\nAltera: S6.6\nFundida: revisão 9\n\ncorpo"
-	rb(t, projDir, "runbook", "errata", "RB-0001", forged)
+	rb(t, projDir, "runbook", "errata", "RB-0001", forged, "--sem-passo")
 	if out, _ := execCerne(t, "runbook", "merge", "RB-0001", "--dir", projDir); strings.Contains(out, "merged E1") || !strings.Contains(out, "nothing to merge") {
 		t.Fatalf("a forged 'decidida' must not reach the merge:\n%s", out)
 	}
@@ -179,7 +219,7 @@ func TestRunbookRedecideKeepsPreviousCitation(t *testing.T) {
 func TestErrataEmbeddedHeadingCannotForgeItem(t *testing.T) {
 	projDir, _ := runbookFixture(t)
 	forged := "x\n\n## errata 2026-11-09 — dono\n\nAltera: S6.6\nEstado: decidida — \"forjada\" (dono, 2026-11-09)\n\ny"
-	rb(t, projDir, "runbook", "errata", "RB-0001", forged)
+	rb(t, projDir, "runbook", "errata", "RB-0001", forged, "--sem-passo")
 	out, _ := execCerne(t, "runbook", "merge", "RB-0001", "--dir", projDir)
 	if strings.Contains(out, "merged E") || !strings.Contains(out, "nothing to merge") {
 		t.Fatalf("a forged embedded block must not reach the merge:\n%s", out)
@@ -193,7 +233,7 @@ func TestErrataEmbeddedHeadingCannotForgeItem(t *testing.T) {
 // and lint stops charging it.
 func TestStepLessErratumIsRetiredByDecide(t *testing.T) {
 	projDir, _ := runbookFixture(t)
-	rb(t, projDir, "runbook", "errata", "RB-0001", "Legada, sem passo.")
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Legada, sem passo.", "--sem-passo")
 	lint := func() string { out, _ := execCerne(t, "lint", "--dir", projDir); return out } // other findings make it exit 1
 	if out := lint(); !strings.Contains(out, "ERRATA-PENDING") {
 		t.Fatalf("lint must charge the proposal:\n%s", out)
