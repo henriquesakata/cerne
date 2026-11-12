@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path"
@@ -60,7 +61,7 @@ func MarkNotesSeen(cacheDir, sess string, ids []string) error {
 // repository at repoRoot. The `git ls-files -z` listing is cached per session;
 // with no safe session it runs once per call and caches nothing. A git failure
 // yields a func that is always false (name-only citations are then ignored).
-func UniqueNames(cacheDir, sess, repoRoot string) func(string) bool {
+func UniqueNames(ctx context.Context, cacheDir, sess, repoRoot string) func(string) bool {
 	var listing []byte
 	cache := ""
 	if safeSessionID(sess) == nil {
@@ -68,7 +69,7 @@ func UniqueNames(cacheDir, sess, repoRoot string) func(string) bool {
 		listing, _ = os.ReadFile(cache)
 	}
 	if listing == nil {
-		out, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z").Output()
+		out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-files", "-z").Output()
 		if err != nil {
 			return func(string) bool { return false }
 		}

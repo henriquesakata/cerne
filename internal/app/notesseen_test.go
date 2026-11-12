@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"os"
@@ -77,11 +78,11 @@ func calls(t *testing.T, log string) int {
 func TestUniqueNamesRunsGitOncePerSession(t *testing.T) {
 	log := fakeGit(t)
 	c := t.TempDir()
-	u := UniqueNames(c, "s1", t.TempDir())
+	u := UniqueNames(context.Background(), c, "s1", t.TempDir())
 	if u("package.json") || !u("release.sh") || u("missing.txt") {
 		t.Fatal("uniqueness wrong")
 	}
-	u2 := UniqueNames(c, "s1", t.TempDir())
+	u2 := UniqueNames(context.Background(), c, "s1", t.TempDir())
 	if !u2("release.sh") || u2("package.json") {
 		t.Fatal("cached uniqueness wrong")
 	}
@@ -93,7 +94,7 @@ func TestUniqueNamesRunsGitOncePerSession(t *testing.T) {
 func TestUniqueNamesNoSessionNoCache(t *testing.T) {
 	log := fakeGit(t)
 	c := t.TempDir()
-	if !UniqueNames(c, "", t.TempDir())("release.sh") {
+	if !UniqueNames(context.Background(), c, "", t.TempDir())("release.sh") {
 		t.Fatal("want unique")
 	}
 	if _, err := os.Stat(filepath.Join(c, "notes-seen")); err == nil {

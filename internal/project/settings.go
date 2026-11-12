@@ -118,6 +118,11 @@ var settingsRegistry = []Setting{
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.",
 	},
+	{
+		ID: "hooks.notes_on_edit", Title: "Notes on edit", Type: "bool", Default: true,
+		Scopes:      []string{ScopeProject, ScopeHost},
+		Description: "Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.",
+	},
 }
 
 // WikiEnabled is wiki.enabled for the project at (or above) projDir (F-0316):
@@ -144,6 +149,17 @@ func WikiEnabled(projDir string) (on bool, warning string) {
 		return s.Value != false, warning
 	}
 	return true, ""
+}
+
+// NotesOnEdit is hooks.notes_on_edit for the project at (or above) projDir
+// (F-0366): false only when it resolves to false.
+func NotesOnEdit(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "hooks.notes_on_edit" {
+			return s.Value != false
+		}
+	}
+	return true
 }
 
 // ResolveSettings resolves every declared setting for the project at (or
