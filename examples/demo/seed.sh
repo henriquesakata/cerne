@@ -4,6 +4,9 @@
 #
 #   sh examples/demo/seed.sh [dir]      # default dir: ./cerne-demo
 #
+# A cerne that has `cerne demo` (F-0369) builds it from the binary alone; this
+# script then just calls it. The steps below are for older binaries.
+#
 # Creates <dir>/taskflow (the project) and <dir>/taskflow-docs.git (a local
 # bare backend). Nothing leaves your machine. Uses only the public cerne CLI,
 # so this file doubles as a tour of the commands.
@@ -22,6 +25,11 @@ command -v cerne >/dev/null 2>&1 ||
   fail "cerne is not on your PATH. Install it first: curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.sh | sh"
 command -v git >/dev/null 2>&1 || fail "git is required"
 cerne --version >/dev/null 2>&1 || fail "the cerne on your PATH does not run (try: cerne --version)"
+# Since F-0369 the binary builds the demo itself, from the same content/ files
+# embedded in it: hand over, so both paths give the same project.
+if cerne demo --help 2>/dev/null | grep -q 'cerne demo'; then
+  exec cerne demo "$dest"
+fi
 # The demo is written in English, which cerne scaffolds and lints since the
 # release that added --docs-language.
 cerne init --help 2>/dev/null | grep -q -- '--docs-language' ||
