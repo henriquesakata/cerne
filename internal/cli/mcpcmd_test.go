@@ -174,6 +174,13 @@ func TestMCP_StdoutOnlyProtocol(t *testing.T) {
 	for _, c := range allCalls {
 		callTool(t, cs, c.tool, c.args)
 	}
+	// A failing command (its cobra "Error:" line goes to stderr) and a refused
+	// argument must not leak onto stdout either.
+	for _, args := range []map[string]any{{"id": "F-9999"}, {"id": "--help"}} {
+		if res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "show", Arguments: args}); err == nil && !res.IsError {
+			t.Fatalf("show %v succeeded, want a failure", args)
+		}
+	}
 	if err := stop(); err != nil {
 		t.Fatalf("cerne mcp: %v", err)
 	}
@@ -191,6 +198,31 @@ func TestMCP_StdoutOnlyProtocol(t *testing.T) {
 	}
 	if frames < len(allCalls)+1 { // initialize + one response per call
 		t.Fatalf("only %d frames on stdout:\n%s", frames, raw.String())
+	}
+}
+
+// TestMCP_CommandErrorIsToolError: a command that fails (show of a well-formed
+// id that does not exist) reaches the client as a tool result with IsError and
+// the command's own error message — not as a protocol error.
+func TestMCP_CommandErrorIsToolError(t *testing.T) {
+	projDir, _, _ := mcpFixture(t)
+	_, _, cliErr := execCerneSplit(t, "show", "F-9999", "--json", "--dir", projDir)
+	if cliErr == nil {
+		t.Fatal("cerne show F-9999 succeeded")
+	}
+	cs, _, stop := startMCP(t, projDir)
+	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "show", Arguments: map[string]any{"id": "F-9999"}})
+	if err != nil {
+		t.Fatalf("protocol error %v, want a tool error", err)
+	}
+	if !res.IsError || len(res.Content) != 1 {
+		t.Fatalf("result = %+v, want one IsError content", res)
+	}
+	if text := res.Content[0].(*sdk.TextContent).Text; text != cliErr.Error() {
+		t.Fatalf("tool error = %q, want the command's %q", text, cliErr.Error())
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
 	}
 }
 
