@@ -2,9 +2,19 @@ package project
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"testing"
 )
+
+// TestRepoDeclaresEnglishCLI (F-0353 criterion 7): this repo's own .cernerc
+// sets lint.cli_output_language = "en" — its CLI is English (F-0124).
+func TestRepoDeclaresEnglishCLI(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	if got := CLIOutputLanguage(filepath.Join("..", "..")); got != "en" {
+		t.Errorf("repo .cernerc: lint.cli_output_language = %q, want en", got)
+	}
+}
 
 // TestCLIOutputLanguageSetting (F-0353 criteria 1, 3, 7): the key is declared
 // in the registry — project scope, values "" and "en" — and CLIOutputLanguage
