@@ -9,6 +9,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -199,5 +200,24 @@ func TestLightMode_HumanGatesUnchanged(t *testing.T) {
 	}
 	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateCandidate {
 		t.Fatalf("state = %s, want candidate", f.State)
+	}
+}
+
+// TestHookGauntletRule (F-0364 critic 4): the item Claude Code's SessionStart
+// script asks for — the GAUNTLET rule with the Gauntlet on and outside a
+// project, nothing in light mode.
+func TestHookGauntletRule(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	for v, want := range map[string]string{"": hooks.GauntletRule + "\n", "off": ""} {
+		setGauntlet(t, projDir, v)
+		t.Setenv("CLAUDE_PROJECT_DIR", projDir)
+		out, err := execCerne(t, "hook", "gauntlet-rule")
+		if err != nil || out != want {
+			t.Fatalf("gauntlet %q: err = %v, out = %q, want %q", v, err, out, want)
+		}
+	}
+	t.Setenv("CLAUDE_PROJECT_DIR", t.TempDir())
+	if out, _ := execCerne(t, "hook", "gauntlet-rule"); out != hooks.GauntletRule+"\n" {
+		t.Fatalf("outside a project: out = %q, want the rule", out)
 	}
 }

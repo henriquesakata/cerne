@@ -5,7 +5,7 @@ package hooks
 // asset (cerne-register-reminder.sh) carries the same text in shell form;
 // the Go copy exists so provider-format subcommands (`cerne hook
 // session-context`) can emit it inside each provider's own envelope.
-const RegisterRules = registerHead + "\n" + gauntletRule + " " + gauntletSkip + "\n" + registerTail
+const RegisterRules = registerHead + "\n" + GauntletRule + " " + gauntletSkip + "\n" + registerTail
 
 // SessionRules is the ruleset the dynamic session-start path injects
 // (F-0364): in light mode ([gates] gauntlet = "off") the GAUNTLET item is
@@ -14,11 +14,11 @@ func SessionRules(gauntletOn bool) string {
 	if !gauntletOn {
 		return registerHead + "\n" + registerTail
 	}
-	return registerHead + "\n" + gauntletRule + "\n" + registerTail
+	return registerHead + "\n" + GauntletRule + "\n" + registerTail
 }
 
-// gauntletSkip is the light-mode escape the static copies carry: they are
-// written once, so they cannot omit the item per project.
+// gauntletSkip is the light-mode escape the static Cursor rule carries: it is
+// written once, so it cannot omit the item per project.
 const gauntletSkip = `(skip it when .cernerc sets [gates] gauntlet = "off")`
 
 const registerHead = `cerne project rules — make in-flight work visible from minute one:
@@ -27,7 +27,9 @@ const registerHead = `cerne project rules — make in-flight work visible from m
 - Picking up a NON-feature task (error investigation, review, ops)? First action: ` + "`cerne work start \"<description>\" [--ref F-...]`" + `; when finished, ` + "`cerne work done W-... [--note \"...\"]`" + `. BEFORE delegating an error investigation to another agent, run ` + "`cerne work list`" + ` — someone may already be on it.
 - HUMAN GATES (F-0131): ` + "`cerne feature approve`" + ` and ` + "`cerne feature accept`" + ` are human acts by default — write the spec, ask for approval, STOP.`
 
-// gauntletRule is the GAUNTLET item — F-0270 is the protocol's origin.
-const gauntletRule = `- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal ` + "`Barra:`" + ` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run ` + "`cerne feature approve <id> --check`" + ` before asking for it — and ` + "`result.md`" + ` carries ` + "`## Gauntlet`" + ` with the judge's quoted verdict (` + "`cerne lint`" + ` charges it). Protocol details: cerne-authoring skill.`
+// GauntletRule is the GAUNTLET item — F-0270 is the protocol's origin. The
+// Claude Code script prints it through 'cerne hook gauntlet-rule', which says
+// nothing in light mode (F-0364).
+const GauntletRule = `- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal ` + "`Barra:`" + ` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run ` + "`cerne feature approve <id> --check`" + ` before asking for it — and ` + "`result.md`" + ` carries ` + "`## Gauntlet`" + ` with the judge's quoted verdict (` + "`cerne lint`" + ` charges it). Protocol details: cerne-authoring skill.`
 
 const registerTail = `- DUPLICATE GUARD (F-0147): ` + "`feature new`/`work start`" + ` refuse a title similar to a live feature or active work — join that work instead; --force only for a genuinely distinct problem.`

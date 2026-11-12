@@ -23,6 +23,7 @@ func newHookCmd() *cobra.Command {
 	cmd.AddCommand(agentHook(newHookProvenanceCmd()))
 	cmd.AddCommand(newHookCommitTrailerCmd())
 	cmd.AddCommand(agentHook(newHookSessionContextCmd()))
+	cmd.AddCommand(agentHook(newHookGauntletRuleCmd()))
 	cmd.AddCommand(agentHook(newHookChannelCmd()))
 	cmd.AddCommand(agentHook(newHookEnvelopeCmd()))
 	return cmd

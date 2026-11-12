@@ -94,8 +94,8 @@ func TestRegisterRulesCompleteCard(t *testing.T) {
 
 // TestSessionRules_LightMode (F-0364, Ajustes 2 e 3): the dynamic session
 // text drops the GAUNTLET item in light mode and keeps it otherwise; the
-// static copies keep it with the light-mode escape; no copy cites the stray
-// F-0545 id any more.
+// static Cursor rule keeps it with the light-mode escape; no copy cites the
+// stray F-0545 id any more.
 func TestSessionRules_LightMode(t *testing.T) {
 	if s := SessionRules(false); strings.Contains(s, "GAUNTLET") || strings.Contains(s, "Barra:") || !strings.Contains(s, "HUMAN GATES") || !strings.Contains(s, "DUPLICATE GUARD") {
 		t.Fatalf("light mode session rules:\n%s", s)
@@ -107,9 +107,14 @@ func TestSessionRules_LightMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The Cursor rule is static and carries the escape; the Claude Code script
+	// asks cerne for the item instead (TestReminder_LightMode).
+	if !strings.Contains(RegisterRules, `(skip it when .cernerc sets [gates] gauntlet = "off")`) {
+		t.Error("RegisterRules: static GAUNTLET item lacks the light-mode escape")
+	}
 	for name, text := range map[string]string{"RegisterRules": RegisterRules, "cerne-register-reminder.sh": string(body)} {
-		if strings.Contains(text, "F-0545") || !strings.Contains(text, `(skip it when .cernerc sets [gates] gauntlet = "off")`) {
-			t.Errorf("%s: static GAUNTLET item lacks the light-mode escape or cites F-0545", name)
+		if strings.Contains(text, "F-0545") {
+			t.Errorf("%s cites F-0545", name)
 		}
 	}
 }

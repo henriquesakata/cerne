@@ -38,6 +38,31 @@ type sessionContext struct {
 	} `json:"hookSpecificOutput"`
 }
 
+// newHookGauntletRuleCmd prints the GAUNTLET session rule for Claude Code's
+// SessionStart script (F-0364): nothing when the project runs in light mode,
+// the rule otherwise — including outside a project or on an unreadable
+// .cernerc (fail-safe toward the Gauntlet). It never reads stdin, so the
+// script's later call still gets the hook payload.
+func newHookGauntletRuleCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "gauntlet-rule",
+		Short:  "SessionStart plumbing: the GAUNTLET rule, or nothing in light mode (F-0364)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := os.Getenv("CLAUDE_PROJECT_DIR")
+			if dir == "" {
+				dir, _ = os.Getwd()
+			}
+			if cfg, _, err := project.LoadConfig(dir); err == nil && !cfg.Gates.GauntletEnabled() {
+				return nil
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), hooks.GauntletRule)
+			return nil
+		},
+	}
+}
+
 func newHookSessionContextCmd() *cobra.Command {
 	var format string
 	cmd := &cobra.Command{

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # SessionStart hook installed by `cerne hook install` (F-0139). Its stdout is
 # injected as session context, so the agent sees the registration rules before
-# touching code. The rules are static; the one call after them (F-0325) is
+# touching code. The rules are static but for the GAUNTLET item (F-0364);
+# the one call after them (F-0325) is
 # local only (cache + backend clone, never SSH/network) and fail-open: it
 # exports CERNE_SESSION for the session's own cerne commands and prints the
 # session's pending channel messages, or nothing. The heredoc does not read
@@ -17,7 +18,16 @@ cerne project rules — make in-flight work visible from minute one:
 - Picking up an ALREADY-APPROVED feature to plan? First action, before writing the plan: `cerne work start "F-NNNN: <what> — planejamento" --ref F-NNNN` (F-0208) — registers the pickup immediately, closing the blind window before `feature start` (which needs a real plan and so lags). A `cerne push` of the plan auto-opens the same work if you forget. It closes by itself at `cerne feature start` (F-0341).
 - Picking up a NON-feature task (error investigation, review, ops)? First action: `cerne work start "<description>" [--ref F-...]`; when finished, `cerne work done W-... [--note "..."]`. BEFORE delegating an error investigation to another agent, run `cerne work list` — someone may already be on it. (Feature implementations need no manual work entry: `cerne feature start`/`complete` auto-register the activity, F-0146.)
 - HUMAN GATES (F-0131): `cerne feature approve` and `cerne feature accept` are human acts by default — write the spec, ask for approval, STOP. Never run them yourself unless the project's .cernerc [gates] explicitly sets auto.
-- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal `Barra:` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run `cerne feature approve <id> --check` before asking for it — and `result.md` carries `## Gauntlet` with the judge's quoted verdict (`cerne lint` charges it). Protocol details: cerne-authoring skill. (skip it when .cernerc sets [gates] gauntlet = "off")
+RULES
+# The GAUNTLET item comes from cerne (F-0364): nothing when the project runs in
+# light mode ([gates] gauntlet = "off"). Fail-safe toward the Gauntlet: with
+# no cerne, or a cerne that fails, the item is printed as written here.
+if ! { command -v cerne >/dev/null 2>&1 && cerne hook gauntlet-rule </dev/null 2>/dev/null; }; then
+  cat <<'GAUNTLET'
+- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal `Barra:` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run `cerne feature approve <id> --check` before asking for it — and `result.md` carries `## Gauntlet` with the judge's quoted verdict (`cerne lint` charges it). Protocol details: cerne-authoring skill.
+GAUNTLET
+fi
+cat <<'RULES'
 - DUPLICATE GUARD (F-0147): `feature new`/`work start` refuse a title similar to a live feature or active work, listing the matches — someone already registered it; join that work instead. `--force` only when it is genuinely a distinct problem.
 RULES
 
