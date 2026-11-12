@@ -12,6 +12,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/plantmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -404,5 +405,42 @@ func TestAmendDocStalesApprovalOnlyForSpec(t *testing.T) {
 		if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale != want {
 			t.Fatalf("%s: approval stale = %v, want %v", id, stale, want)
 		}
+	}
+}
+
+// TestAmendDocRefusesMissingDoc (F-0338, TL finding on slice 1): a document
+// that is absent, or still only the template stub, has nothing to amend — an
+// empty r1 would be permanent junk in an append-only history and a line in
+// `## amendments` that amended nothing. Refused without writing, pointing to
+// .docs/ + `cerne push` for the first text.
+func TestAmendDocRefusesMissingDoc(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateApproved, "spec.md")
+	stub := "---\ncerne_id: F-0002\n---\n\n" + plantmpl.Stub("Feature F-0002")
+	if err := os.WriteFile(FeatureDocPath(repoDir, "F-0002", "plan.md"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed plan stub"); err != nil {
+		t.Fatal(err)
+	}
+	head0, _ := gitback.HeadSHA(origin)
+	for _, id := range []string{"F-0001", "F-0002"} {
+		_, _, _, err := AmendFeatureDoc(repoDir, projDir, id, "plan", "# Plano\n\n1. Tarefa.\n", "primeiro plano")
+		if !errors.Is(err, ErrAmendNoDoc) || !strings.Contains(err.Error(), "cerne push") {
+			t.Fatalf("%s: err = %v, want ErrAmendNoDoc pointing to .docs/ + cerne push", id, err)
+		}
+	}
+	if _, err := os.Stat(FeatureDocPath(repoDir, "F-0001", "plan.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refused amend wrote the plan: %v", err)
+	}
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0002", "plan.md")); string(got) != stub {
+		t.Fatalf("a refused amend replaced the stub: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refusal archived a revision: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
 	}
 }

@@ -810,6 +810,11 @@ var ErrAmendDocState = errors.New("only the spec or plan of an approved or in-de
 // an amendment as a section (lint.AmendmentLines) instead of rewriting the text.
 var ErrAppendedAmendment = errors.New("the body appends an amendment as a section")
 
+// ErrAmendNoDoc is returned by AmendFeatureDoc for a spec or plan that is
+// absent or still the template stub: there is no text to amend, and archiving
+// it would leave an empty revision in an append-only history.
+var ErrAmendNoDoc = errors.New("no document to amend yet")
+
 // AmendFeatureDoc replaces the spec or plan (doc) of an APPROVED or
 // IN-DEVELOPMENT feature with a reason (F-0338): the replaced body is archived
 // byte for byte as revision rev of that document (store.ArchiveDocRevision) and
@@ -820,7 +825,9 @@ var ErrAppendedAmendment = errors.New("the body appends an amendment as a sectio
 // amendment heading are refused before the backend is touched; another state
 // is refused inside the lock (ErrAmendDocState, naming the state's path). A
 // body equal to the stored one by lint.SpecContent is a successful no-op
-// (changed false: no revision, no event, no commit), judged against origin.
+// (changed false: no revision, no event, no commit), judged against origin. A
+// document absent or still the stub is refused inside the lock (ErrAmendNoDoc):
+// its first text goes in through .docs/ + push.
 func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Feature, rev int, changed bool, err error) {
 	if doc != "spec" && doc != "plan" {
 		return store.Feature{}, 0, false, fmt.Errorf("%w: %q (amend takes spec or plan; the result has its own amend)", ErrUnknownDoc, doc)
@@ -856,6 +863,9 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		cur, err := os.ReadFile(path)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return "", err
+		}
+		if !doccheck.HasRealContent(cur) {
+			return "", fmt.Errorf("%w: %s has no %s yet — the first text goes in through .docs/ (write .docs/current/features/%s-…/%s, then 'cerne push')", ErrAmendNoDoc, id, doc, id, filename)
 		}
 		// Detected here, not by captureChanges: the event below is itself a change.
 		if string(lint.SpecContent(cur)) == string(lint.SpecContent([]byte(content))) {
