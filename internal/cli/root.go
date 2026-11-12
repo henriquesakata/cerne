@@ -113,7 +113,7 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s\n\nDid you mean: cerne help %s?", msg, strings.Join(append([]string{path}, args[1:]...), " "))
 	}
 	for _, rc := range cmd.Root().Commands() {
-		if rc.Name() == args[0] {
+		if rc.Name() == args[0] || rc.HasAlias(args[0]) {
 			return fmt.Errorf("%s\n\nDid you mean: cerne %s?", msg, strings.Join(args, " "))
 		}
 	}
