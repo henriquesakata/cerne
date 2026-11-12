@@ -483,6 +483,9 @@ func Sort(findings []Finding) {
 		if a.File != b.File {
 			return a.File < b.File
 		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
 		if a.Detail != b.Detail {
 			return a.Detail < b.Detail
 		}
