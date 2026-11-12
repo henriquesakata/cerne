@@ -154,11 +154,14 @@ func globPrefix(g string) (string, bool) {
 // guardRegistration enforces the guard for a new registration: with force it
 // passes reporting whether there were live matches (so the caller can mark the
 // override); without it, a live match refuses with the matches listed.
-func guardRegistration(repoDir, title string, force bool) (hadLive bool, err error) {
+// ignore is an id the registration takes over (work start --from, F-0339): it
+// never counts as a collision.
+func guardRegistration(repoDir, title string, force bool, ignore string) (hadLive bool, err error) {
 	matches, err := FindSimilar(repoDir, title)
 	if err != nil {
 		return false, err
 	}
+	matches.Live = slices.DeleteFunc(matches.Live, func(m SimilarMatch) bool { return ignore != "" && m.ID == ignore })
 	if len(matches.Live) == 0 {
 		return false, nil
 	}
@@ -190,9 +193,29 @@ func guardRegistration(repoDir, title string, force bool) (hadLive bool, err err
 	case workID != "":
 		tail = fmt.Sprintf("if you did not open %s yourself, another session did — stop and confirm before implementing; adopting someone else's registration is how the same feature gets built twice.\n%s", workID, tail)
 	}
+	// F-0339 crit. 7: a listed work that left a handoff says what it left.
+	var handoffs []WorkHandoff
+	for _, sm := range matches.Live {
+		if !strings.HasPrefix(sm.ID, "W-") {
+			continue
+		}
+		w, err := store.LoadWork(repoDir, sm.ID)
+		if err != nil {
+			return false, err
+		}
+		e, ok, err := lastHandoff(repoDir, w)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			handoffs = append(handoffs, WorkHandoff{ID: sm.ID, Entry: e, Hint: true})
+			lines = append(lines, fmt.Sprintf("last handoff of %s (%s, %s):\n%s", sm.ID, e.Date, e.Author, e.Text))
+		}
+	}
 	return false, &SimilarExistsError{
-		Live: matches.Live,
-		msg:  fmt.Sprintf("%s:\n%s\n%s", ErrSimilarExists, strings.Join(lines, "\n"), tail),
+		Live:     matches.Live,
+		Handoffs: handoffs,
+		msg:      fmt.Sprintf("%s:\n%s\n%s", ErrSimilarExists, strings.Join(lines, "\n"), tail),
 	}
 }
 
@@ -201,8 +224,9 @@ func guardRegistration(repoDir, title string, force bool) (hadLive bool, err err
 // offering "update F-XXXX" instead of leaving the conversation stuck. Wraps
 // ErrSimilarExists, so every existing errors.Is check keeps working.
 type SimilarExistsError struct {
-	Live []SimilarMatch
-	msg  string
+	Live     []SimilarMatch
+	Handoffs []WorkHandoff // the last handoff of each listed work that has one (F-0339)
+	msg      string
 }
 
 func (e *SimilarExistsError) Error() string { return e.msg }

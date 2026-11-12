@@ -29,6 +29,7 @@ type StartedWork struct {
 	Superseded []string
 	Kept       []string
 	Held       []string
+	Handoffs   []WorkHandoff // what to read before starting (F-0339): the --from origin's, then the crossing refs'
 }
 
 // StartWork mints a new active work (agent activity, F-0130) in the backend
@@ -38,7 +39,10 @@ type StartedWork struct {
 // agent when non-empty, else "<os user>@<hostname>" — the default identity of
 // whoever/whatever is running this activity. In the same commit, the new work
 // supersedes the same actor's planning works on its features (F-0341).
-func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string) (StartedWork, error) {
+// from (F-0339) is an active work this one takes over: its refs are inherited
+// when none are given, the duplicate guard ignores it, and it closes as done
+// ("handed off to <new>") in the same commit — F-0341 never also evaluates it.
+func StartWork(repoDir, projDir, title string, refs []string, agent string, force bool, paths []string, from string) (StartedWork, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return StartedWork{}, fmt.Errorf("the activity description cannot be empty")
@@ -57,7 +61,21 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		// Duplicate-registration guard (F-0147): someone may already be on
 		// this. The auto-registered works (F-0146) never pass through here —
 		// they are idempotent by construction.
-		forced, err := guardRegistration(repoDir, title, force)
+		var origin store.Work
+		if from != "" {
+			if origin, err = store.LoadWork(repoDir, from); errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("--from: activity %s not found in the backend", from)
+			} else if err != nil {
+				return "", err
+			}
+			if origin.State != domain.WorkActive {
+				return "", fmt.Errorf("--from: activity %s is %s, not active", from, origin.State)
+			}
+			if len(cleaned) == 0 {
+				cleaned = origin.Refs
+			}
+		}
+		forced, err := guardRegistration(repoDir, title, force, from)
 		if err != nil {
 			return "", err
 		}
@@ -65,6 +83,19 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		if err != nil {
 			return "", err
 		}
+		// The origin is closed by --from (crit. 8), never also by F-0341.
+		prior = slices.DeleteFunc(prior, func(w store.Work) bool { return from != "" && w.ID == from })
+		var handoffs []WorkHandoff
+		if e, ok, err := lastHandoff(repoDir, origin); err != nil {
+			return "", err
+		} else if ok {
+			handoffs = append(handoffs, WorkHandoff{ID: from, Entry: e})
+		}
+		crossing, err := HandoffsFor(repoDir, cleaned, from)
+		if err != nil {
+			return "", err
+		}
+		handoffs = append(handoffs, crossing...)
 		id, err := store.NextID(repoDir, "W")
 		if err != nil {
 			return "", err
@@ -91,10 +122,22 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
-		out = StartedWork{Work: w}
+		out = StartedWork{Work: w, Handoffs: handoffs}
+		if from != "" {
+			if err := closeWork(repoDir, origin, domain.ActionComplete, "handed off to "+id); err != nil {
+				return "", err
+			}
+		}
 		if activityAutoEnabled(projDir) {
 			if out.Superseded, out.Kept, out.Held, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
 				return "", err
+			}
+		}
+		// A work F-0341 closed in this very call cannot be taken over with
+		// --from (it would be refused): its handoff comes without the hint.
+		for i := range out.Handoffs {
+			if slices.Contains(out.Superseded, out.Handoffs[i].ID) {
+				out.Handoffs[i].Hint = false
 			}
 		}
 		return fmt.Sprintf("cerne: start %s (%s)", id, title), nil

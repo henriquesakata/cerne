@@ -66,7 +66,7 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths string, forc
 	if err != nil {
 		return err
 	}
-	w, err := app.StartWork(ctx.repoDir, ctx.projDir, title, splitInforms(ref), agent, force, declared)
+	w, err := app.StartWork(ctx.repoDir, ctx.projDir, title, splitInforms(ref), agent, force, declared, "")
 	if err != nil {
 		return err
 	}

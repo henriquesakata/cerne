@@ -10,7 +10,7 @@ import (
 
 func startW(t *testing.T, repoDir, projDir, title string, refs []string) store.Work {
 	t.Helper()
-	w, err := StartWork(repoDir, projDir, title, refs, "agent-x", false, nil)
+	w, err := StartWork(repoDir, projDir, title, refs, "agent-x", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}
