@@ -104,8 +104,8 @@ func newShowCmd() *cobra.Command {
 	var rev int
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
-		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea) by id",
-		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-/I-) and prints the metadata plus the entity's " +
+		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea, work, handoff) by id",
+		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-/I-/W-/HO-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
 			"already-implemented features that are not materialized in '.docs/'. A feature prints the document " +
 			"of its stage (spec; plan in development; result once implemented) and names the others: --doc " +
@@ -248,9 +248,25 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 			openErrata, steplessErrata = &open, &stepless
 		}
 	}
-	// F-0339 crit. 9: a work's session handoffs, after its fields.
+	// F-0368 crit. 9: a work's handoffs — passed on by it or taken into it —
+	// with their state; the F-0339 entries after them, as legacy.
 	var handoffs []store.HandoffEntry
+	var records []store.Handoff
 	if res.kind == "work" {
+		all, err := store.LoadAllHandoffs(ctx.repoDir)
+		if err != nil {
+			return err
+		}
+		var lines []string
+		for _, h := range all {
+			if h.FromWork == id || h.TakenWork == id {
+				records = append(records, h)
+				lines = append(lines, h.Line(res.entity.(store.Work).Title, handoffNow()))
+			}
+		}
+		if len(lines) > 0 {
+			res.content = append(res.content, showDoc{name: "handoffs", body: strings.Join(lines, "\n")})
+		}
 		if handoffs, err = store.LoadHandoffs(ctx.repoDir, id); err != nil {
 			return err
 		}
@@ -259,7 +275,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 			parts = append(parts, h.String())
 		}
 		if len(parts) > 0 {
-			res.content = append(res.content, showDoc{name: "handoff", body: strings.Join(parts, "\n\n")})
+			res.content = append(res.content, showDoc{name: "legacy handoffs", body: strings.Join(parts, "\n\n")})
 		}
 	}
 	if f, ok := res.entity.(store.Feature); ok {
@@ -335,6 +351,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		j := res.toJSON(handoffs)
+		j.Handoffs = records
 		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
 		j.MergedErrata, j.EarlierBodyRev = merged, earlier
 		return enc.Encode(j)
@@ -435,6 +452,8 @@ func kindForID(id string) (string, bool) {
 		return "idea", true
 	case "W":
 		return "work", true
+	case "HO":
+		return "handoff", true
 	}
 	return "", false
 }
@@ -510,6 +529,16 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 			content = []showDoc{{"run", renderRun(run)}}
 		}
 		return showResult{kind, wk, content, nil, nil}, nil
+	case "handoff":
+		h, err := store.LoadHandoff(repoDir, id)
+		if err != nil {
+			return showResult{}, fmt.Errorf("handoff %s: %w", id, err)
+		}
+		var content []showDoc
+		if body, err := store.LoadHandoffContent(repoDir, id); err == nil && strings.TrimSpace(body) != "" {
+			content = []showDoc{{"", strings.TrimRight(body, "\n")}}
+		}
+		return showResult{kind, h, content, nil, nil}, nil
 	case "idea":
 		if _, err := app.CanonicalIdeaID(id); err != nil {
 			return showResult{}, err
@@ -649,6 +678,33 @@ func (r showResult) renderText(w io.Writer) {
 		if e.Note != "" {
 			fmt.Fprintf(w, "note: %s\n", e.Note)
 		}
+	case store.Handoff:
+		fmt.Fprintf(w, "%s  %s  [%s]  from %s\n", e.ID, r.kind, e.State, e.FromWork)
+		fmt.Fprintf(w, "actor: %s\n", e.Actor)
+		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"))
+		if len(e.Refs) > 0 {
+			fmt.Fprintf(w, "refs: %s\n", joinRefs(e.Refs))
+		}
+		fmt.Fprintf(w, "next: %s\n", e.Next)
+		if e.TakenWork != "" {
+			at := ""
+			if e.TakenAt != nil {
+				at = " at " + e.TakenAt.UTC().Format("2006-01-02 15:04 UTC")
+			}
+			fmt.Fprintf(w, "taken by: %s%s (%s)\n", e.TakenBy, at, e.TakenWork)
+		}
+		if e.TakenNote != "" {
+			fmt.Fprintf(w, "receiver's note: %s\n", e.TakenNote)
+		}
+		if e.SupersededBy != "" {
+			fmt.Fprintf(w, "superseded by: %s\n", e.SupersededBy)
+		}
+		if e.CancelReason != "" {
+			fmt.Fprintf(w, "cancelled: %s\n", e.CancelReason)
+		}
+		if e.State == domain.HandoffPending {
+			fmt.Fprintf(w, "take it: cerne handoff take %s\n", e.ID)
+		}
 	case store.Idea:
 		fmt.Fprintf(w, "%s  %s  [%s]\n", e.ID, r.kind, e.State)
 		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
@@ -696,7 +752,8 @@ type showJSON struct {
 	Amendments     []amendmentJSON      `json:"amendments,omitempty"`       // features only (F-0338)
 	OpenErrata     *int                 `json:"open_errata,omitempty"`      // runbooks with open items only (F-0345)
 	SteplessErrata *int                 `json:"stepless_errata,omitempty"`  // idem: those with no step
-	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`         // works only (F-0339)
+	Handoffs       []store.Handoff      `json:"handoffs,omitempty"`         // works only (F-0368): from or into it
+	LegacyHandoffs []store.HandoffEntry `json:"legacy_handoffs,omitempty"`  // works only (F-0339)
 	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`    // runbooks only (F-0351)
 	EarlierBodyRev int                  `json:"earlier_body_rev,omitempty"` // idem: the revision before the first merge listed
 }
@@ -773,11 +830,11 @@ type showDocJSON struct {
 func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 	var docs []showDocJSON
 	for _, d := range r.content {
-		if d.name != "amendments" && d.name != "handoff" { // structured in Amendments / Handoffs
+		if d.name != "amendments" && d.name != "handoffs" && d.name != "legacy handoffs" { // structured in Amendments / Handoffs
 			docs = append(docs, showDocJSON{d.name, d.body})
 		}
 	}
-	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Handoffs: handoffs}
+	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, LegacyHandoffs: handoffs}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the

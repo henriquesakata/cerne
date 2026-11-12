@@ -1,15 +1,20 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // newHandoffCmd is the baton-passing area (F-0368): a handoff recorded by
@@ -22,7 +27,7 @@ func newHandoffCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
-	cmd.AddCommand(newHandoffTakeCmd(&dir), newHandoffCancelCmd(&dir))
+	cmd.AddCommand(newHandoffTakeCmd(&dir), newHandoffListCmd(&dir), newHandoffCancelCmd(&dir))
 	return cmd
 }
 
@@ -69,6 +74,87 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "description of the new work (defaults to the origin's)")
 	cmd.Flags().StringVar(&note, "note", "", "what the receiver confirms or adds, recorded on the handoff")
 	return cmd
+}
+
+// handoffNow is the clock of the relative ages ("pending 3h"); tests pin it.
+var handoffNow = time.Now
+
+// takenWindow is how far back the default list shows taken handoffs.
+const takenWindow = 14 * 24 * time.Hour
+
+func newHandoffListCmd(dir *string) *cobra.Command {
+	var state string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "list [--state pending|taken|superseded|cancelled|all] [--json]",
+		Short: "List the handoffs: pending ones first, then those taken in the last 14 days",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if state != "" && state != "all" && !slices.Contains([]domain.HandoffState{domain.HandoffPending, domain.HandoffTaken, domain.HandoffSuperseded, domain.HandoffCancelled}, domain.HandoffState(state)) {
+				return fmt.Errorf("--state %q: want pending, taken, superseded, cancelled or all", state)
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			all, err := store.LoadAllHandoffs(ctx.repoDir)
+			if err != nil {
+				return err
+			}
+			now := handoffNow()
+			var pending, rest []store.Handoff
+			for _, h := range all {
+				switch {
+				case state == "" && h.State == domain.HandoffTaken && h.TakenAt != nil && now.Sub(*h.TakenAt) > takenWindow:
+				case state == "" && h.State != domain.HandoffPending && h.State != domain.HandoffTaken:
+				case state != "" && state != "all" && string(h.State) != state:
+				case h.State == domain.HandoffPending:
+					pending = append(pending, h)
+				default:
+					rest = append(rest, h)
+				}
+			}
+			slices.SortStableFunc(pending, func(a, b store.Handoff) int { return a.CreatedAt.Compare(b.CreatedAt) })
+			list := append(pending, rest...)
+			out := cmd.OutOrStdout()
+			if asJSON {
+				if list == nil {
+					list = []store.Handoff{}
+				}
+				enc := json.NewEncoder(out)
+				enc.SetIndent("", "  ")
+				return enc.Encode(list)
+			}
+			if len(list) == 0 {
+				fmt.Fprintln(out, "no handoffs")
+				return nil
+			}
+			titles, err := workTitles(ctx.repoDir)
+			if err != nil {
+				return err
+			}
+			for _, h := range list {
+				fmt.Fprintln(out, h.Line(titles[h.FromWork], now))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&state, "state", "", "only this state: pending|taken|superseded|cancelled|all (default: pending + taken in the last 14 days)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output, every field")
+	return cmd
+}
+
+// workTitles maps each work id to its title.
+func workTitles(repoDir string) (map[string]string, error) {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]string{}
+	for _, w := range works {
+		m[w.ID] = w.Title
+	}
+	return m, nil
 }
 
 func newHandoffCancelCmd(dir *string) *cobra.Command {

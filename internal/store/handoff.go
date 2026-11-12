@@ -126,7 +126,7 @@ func LoadHandoffContent(backendDir, id string) (string, error) {
 func (h Handoff) Line(workTitle string, now time.Time) string {
 	switch h.State {
 	case domain.HandoffPending:
-		return fmt.Sprintf("%s pending %s — %s %s — from %s", h.ID, ShortAge(now.Sub(h.CreatedAt)), h.FromWork, workTitle, h.Actor)
+		return fmt.Sprintf("%s pending %s — %s — from %s", h.ID, ShortAge(now.Sub(h.CreatedAt)), strings.TrimSpace(h.FromWork+" "+workTitle), h.Actor)
 	case domain.HandoffTaken:
 		var age string
 		if h.TakenAt != nil {
