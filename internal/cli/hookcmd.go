@@ -16,16 +16,32 @@ func newHookCmd() *cobra.Command {
 		Short: "Install cerne's Claude Code hooks into a project",
 	}
 	cmd.AddCommand(newHookInstallCmd())
-	cmd.AddCommand(newHookBindWorkCmd())
-	cmd.AddCommand(newHookWorkGateCmd())
-	cmd.AddCommand(newHookLifecycleReminderCmd())
-	cmd.AddCommand(newHookStopCheckCmd())
-	cmd.AddCommand(newHookProvenanceCmd())
+	cmd.AddCommand(agentHook(newHookBindWorkCmd()))
+	cmd.AddCommand(agentHook(newHookWorkGateCmd()))
+	cmd.AddCommand(agentHook(newHookLifecycleReminderCmd()))
+	cmd.AddCommand(agentHook(newHookStopCheckCmd()))
+	cmd.AddCommand(agentHook(newHookProvenanceCmd()))
 	cmd.AddCommand(newHookCommitTrailerCmd())
-	cmd.AddCommand(newHookSessionContextCmd())
-	cmd.AddCommand(newHookChannelCmd())
-	cmd.AddCommand(newHookEnvelopeCmd())
+	cmd.AddCommand(agentHook(newHookSessionContextCmd()))
+	cmd.AddCommand(agentHook(newHookChannelCmd()))
+	cmd.AddCommand(agentHook(newHookEnvelopeCmd()))
 	return cmd
+}
+
+// agentHook makes a runtime hook subcommand a no-op while CERNE_NO_AGENT_HOOKS
+// is non-empty, so a process (eval, CI) turns cerne's agent hooks off without
+// editing the scripts `cerne hook install` rewrites — and so do hosts that call
+// the subcommand directly (Cursor, Codex, Gemini). Install and the git-hook
+// subcommands stay on (F-0360).
+func agentHook(c *cobra.Command) *cobra.Command {
+	run := c.RunE
+	c.RunE = func(cmd *cobra.Command, args []string) error {
+		if os.Getenv("CERNE_NO_AGENT_HOOKS") != "" {
+			return nil
+		}
+		return run(cmd, args)
+	}
+	return c
 }
 
 func newHookInstallCmd() *cobra.Command {
