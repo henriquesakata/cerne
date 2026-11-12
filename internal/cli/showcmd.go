@@ -214,8 +214,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 				byItem[m.Item] = m
 			}
 			errBody = store.ReplaceMerged(errBody, func(it store.ErrataItem) string {
-				m := byItem[it.ID]
-				return fmt.Sprintf("%s merged into revision %d (%s)", m.Item, m.Revision, m.Date)
+				return byItem[it.ID].line()
 			})
 		}
 	}
@@ -693,13 +692,25 @@ type showJSON struct {
 
 type mergedErrataJSON struct {
 	Item     string `json:"item"`
-	Revision int    `json:"revision"`
-	Date     string `json:"date"`
+	Revision int    `json:"revision,omitempty"` // 0: known neither from the item nor from the event
+	Date     string `json:"date,omitempty"`     // "": no errata.merged event for it
+}
+
+// line is the item's row in the errata block: what is not known is left out.
+func (m mergedErrataJSON) line() string {
+	l := m.Item + " merged"
+	if m.Revision > 0 {
+		l += fmt.Sprintf(" into revision %d", m.Revision)
+	}
+	if m.Date != "" {
+		l += " (" + m.Date + ")"
+	}
+	return l
 }
 
 // mergedErrata lists the merged items of runbook id: the revision is the one
-// the item records (`Fundida: revisão N`), the date is the `at` of the
-// errata.merged event that folded it.
+// the item records (`Fundida: revisão N`), else the errata.merged event's; the
+// date is the `at` of that event.
 func mergedErrata(repoDir, id string, items []store.ErrataItem) ([]mergedErrataJSON, error) {
 	var out []mergedErrataJSON
 	var evs []domain.Event
@@ -708,8 +719,10 @@ func mergedErrata(repoDir, id string, items []store.ErrataItem) ([]mergedErrataJ
 		if it.Merged == "" {
 			continue
 		}
-		var rev int
-		fmt.Sscanf(it.Merged, "revisão %d", &rev)
+		rev := 0
+		if _, err := fmt.Sscanf(it.Merged, "revisão %d", &rev); err != nil {
+			rev = 0
+		}
 		if !loaded {
 			var err error
 			if evs, err = store.ReadEvents(repoDir); err != nil {
@@ -717,10 +730,13 @@ func mergedErrata(repoDir, id string, items []store.ErrataItem) ([]mergedErrataJ
 			}
 			loaded = true
 		}
-		date := "date unknown"
+		date := ""
 		for _, ev := range evs {
-			if ev.EntityID == id && ev.Type == "errata.merged" && ev.Payload["revision"] == fmt.Sprint(rev) &&
+			if ev.EntityID == id && ev.Type == "errata.merged" && (rev == 0 || ev.Payload["revision"] == fmt.Sprint(rev)) &&
 				slices.Contains(strings.Split(ev.Payload["items"], ","), it.ID) {
+				if rev == 0 {
+					rev, _ = strconv.Atoi(ev.Payload["revision"])
+				}
 				date = ev.At.UTC().Format("2006-01-02")
 				break
 			}
