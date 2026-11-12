@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -259,12 +260,12 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	}
 	_ = json.Unmarshal(in.ToolInput, &ti)
 	if !cfg.Gates.WorkGateEnabled() || ti.FilePath == "" {
-		injectGateChannel(cmd, format, cacheDir, repoDir, in.SessionID)
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
 	}
 	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, ti.FilePath, cfg.Gates.WorkGateAllow)
 	if allow {
-		injectGateChannel(cmd, format, cacheDir, repoDir, in.SessionID)
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
 	}
 	// F-0170: the deny message is also a teaching moment — append the
@@ -291,21 +292,112 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	}
 }
 
-// injectGateChannel delivers the session's pending channel messages on an
-// allowed edit (F-0325): the instant a collision would happen. PreToolUse
-// additionalContext is documented for Claude Code (R-0034) and Codex shares
-// the envelope (R-0035); Cursor and Gemini document no context on an allowed
-// preToolUse, so they get none. Fail-open: any error is silence.
-func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, sess string) {
+// injectGateChannel delivers, on an allowed edit, the session's pending channel
+// messages (F-0325) and the notes citing the edited file (F-0366): the instant
+// a collision or a known gotcha matters. PreToolUse additionalContext is
+// documented for Claude Code (R-0034) and Codex shares the envelope (R-0035);
+// Cursor and Gemini document no context on an allowed preToolUse, so they get
+// none. Fail-open: any error is silence.
+func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, sess, filePath string) {
 	if format != "claude" && format != "codex" {
 		return
 	}
 	block, err := app.ChannelInject(cacheDir, repoDir, sess, true, time.Now().UTC())
-	if err != nil || block == "" {
+	if err != nil {
+		block = ""
+	}
+	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath); nb != "" {
+		if block != "" {
+			block += "\n\n"
+		}
+		block += nb
+	}
+	if block == "" {
 		return
 	}
 	var c sessionContext
 	c.HookSpecificOutput.HookEventName = "PreToolUse"
 	c.HookSpecificOutput.AdditionalContext = block
 	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(c)
+}
+
+// notesBudget is the hard deadline of the notes lookup: a busy index or a slow
+// listing must never hold an edit (F-0366).
+const notesBudget = 150 * time.Millisecond
+
+// notesOnEditBlock lists up to 3 not-yet-shown active notes citing filePath, or
+// "" (no setting, no file inside the repo, no index, no match, any failure).
+func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string {
+	if filePath == "" || !project.NotesOnEdit(projDir) {
+		return ""
+	}
+	abs := filePath
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(projDir, abs)
+	}
+	rel, err := filepath.Rel(realPath(projDir), realPath(abs))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	if _, err := os.Stat(filepath.Join(cacheDir, "index.db")); err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), notesBudget)
+	defer cancel()
+	notes, err := app.NotesForPath(ctx, cacheDir, repoDir, rel, app.UniqueNames(ctx, projDir))
+	if err != nil || ctx.Err() != nil {
+		return ""
+	}
+	seen := app.SeenNotes(cacheDir, sess)
+	var fresh []app.PathNote
+	for _, n := range notes {
+		if !seen[n.ID] {
+			fresh = append(fresh, n)
+		}
+	}
+	if len(fresh) == 0 {
+		return ""
+	}
+	shown := fresh[:min(3, len(fresh))]
+	var ids []string
+	for _, n := range shown {
+		ids = append(ids, n.ID)
+	}
+	// No usable session id: dedup is impossible, and the same notes on every
+	// edit are worse than silence.
+	if app.MarkNotesSeen(cacheDir, sess, ids) != nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "cerne notes on %s:", rel)
+	for _, n := range shown {
+		fmt.Fprintf(&b, "\n- %s — %s", n.ID, flatTitle(n.Title))
+	}
+	// Same basis as `note list --path`: every match beyond the ones listed here.
+	if rest := len(notes) - len(shown); rest > 0 {
+		hint := rel
+		if strings.ContainsAny(hint, " \t'\"") {
+			hint = "'" + strings.ReplaceAll(hint, "'", `'\''`) + "'"
+		}
+		fmt.Fprintf(&b, "\n(+%d: cerne note list --path %s)", rest, hint)
+	}
+	return b.String()
+}
+
+// flatTitle flattens a title so it cannot break the block's line structure.
+func flatTitle(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// realPath resolves symlinks (macOS /var vs /private/var) even for a path that
+// does not exist yet, by resolving its nearest existing ancestor.
+func realPath(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	if d := filepath.Dir(p); d != p {
+		return filepath.Join(realPath(d), filepath.Base(p))
+	}
+	return p
 }

@@ -773,3 +773,24 @@ func TestSettingsRegistryHasPtBRCatalog(t *testing.T) {
 		}
 	}
 }
+
+// TestNotesOnEdit (F-0366 crit. 8): hooks.notes_on_edit defaults on and the
+// project scope wins over the host.
+func TestNotesOnEdit(t *testing.T) {
+	for _, tc := range []struct {
+		name, project, host string
+		want                bool
+	}{
+		{"default", "", "", true},
+		{"project off", "[hooks]\nnotes_on_edit = false\n", "", false},
+		{"host off", "", "[hooks]\nnotes_on_edit = false\n", false},
+		{"project on over host off", "[hooks]\nnotes_on_edit = true\n", "[hooks]\nnotes_on_edit = false\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			if got := NotesOnEdit(projDir); got != tc.want {
+				t.Errorf("NotesOnEdit = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
