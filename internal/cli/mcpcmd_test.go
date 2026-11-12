@@ -165,6 +165,17 @@ func TestMCP_ToolMatchesJSONCommand(t *testing.T) {
 			t.Errorf("tool %s %v differs from cerne %v:\n--- tool\n%s\n--- cli\n%s", c.tool, c.args, c.cli, got[i], want)
 		}
 	}
+	// And as a user types it: from the project root, no --dir.
+	t.Chdir(projDir)
+	for i, c := range allCalls {
+		want, _, err := execCerneSplit(t, c.cli...)
+		if err != nil {
+			t.Fatalf("cerne %v (cwd = project): %v", c.cli, err)
+		}
+		if got[i] != want {
+			t.Errorf("tool %s %v differs from cerne %v run in the project:\n--- tool\n%s\n--- cli\n%s", c.tool, c.args, c.cli, got[i], want)
+		}
+	}
 }
 
 // TestMCP_StdoutOnlyProtocol: every byte the process writes to stdout during a
