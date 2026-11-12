@@ -15,10 +15,12 @@ import (
 // content/revisions/<id>/r<N>.md, so r1..rK are the bodies before the K merges
 // and the live body is revision K+1. The directory sits outside what lint, the
 // materializer and the index read (like content/approved/), and files are never
-// rewritten: the history stays as it was.
+// rewritten: the history stays as it was. A feature's spec and plan keep their
+// replaced bodies the same way, one level down — content/revisions/<id>/<doc>/
+// (F-0338, the amend of an approved or in-development feature).
 
-func revisionsDir(repoDir, id string) string {
-	return filepath.Join(repoDir, "content", "revisions", id)
+func revisionsDir(repoDir, id, doc string) string {
+	return filepath.Join(repoDir, "content", "revisions", id, doc)
 }
 
 // SaveErrata writes an entity's errata document back whole (the in-place
@@ -33,8 +35,22 @@ func SaveRunbookContent(repoDir, id, body string) error {
 }
 
 // CountRevisions is K, the number of archived (replaced) bodies of runbook id.
-func CountRevisions(repoDir, id string) (int, error) {
-	ents, err := os.ReadDir(revisionsDir(repoDir, id))
+func CountRevisions(repoDir, id string) (int, error) { return CountDocRevisions(repoDir, id, "") }
+
+// ArchiveRevision stores a runbook body as its next archived revision.
+func ArchiveRevision(repoDir, id, body string) (int, error) {
+	return ArchiveDocRevision(repoDir, id, "", body)
+}
+
+// LoadRevision reads revision n of runbook id.
+func LoadRevision(repoDir, id string, n int) (string, error) {
+	return LoadDocRevision(repoDir, id, "", n)
+}
+
+// CountDocRevisions is K, the number of archived (replaced) bodies of document
+// doc of entity id ("" for a runbook's body).
+func CountDocRevisions(repoDir, id, doc string) (int, error) {
+	ents, err := os.ReadDir(revisionsDir(repoDir, id, doc))
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
 	}
@@ -52,18 +68,19 @@ func CountRevisions(repoDir, id string) (int, error) {
 	return n, nil
 }
 
-// ArchiveRevision stores body as the next archived revision and returns its
-// number. It refuses to overwrite: history is append-only.
-func ArchiveRevision(repoDir, id, body string) (int, error) {
-	k, err := CountRevisions(repoDir, id)
+// ArchiveDocRevision stores body as the next archived revision of document doc
+// of entity id and returns its number. It refuses to overwrite: history is
+// append-only.
+func ArchiveDocRevision(repoDir, id, doc, body string) (int, error) {
+	k, err := CountDocRevisions(repoDir, id, doc)
 	if err != nil {
 		return 0, err
 	}
-	if err := os.MkdirAll(revisionsDir(repoDir, id), 0o755); err != nil {
+	dir := revisionsDir(repoDir, id, doc)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 0, err
 	}
-	path := filepath.Join(revisionsDir(repoDir, id), fmt.Sprintf("r%d.md", k+1))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("r%d.md", k+1)), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return 0, err
 	}
@@ -74,19 +91,23 @@ func ArchiveRevision(repoDir, id, body string) (int, error) {
 	return k + 1, nil
 }
 
-// LoadRevision reads revision n of runbook id: an archived body for n <= K, the
-// live body for n == K+1.
-func LoadRevision(repoDir, id string, n int) (string, error) {
-	k, err := CountRevisions(repoDir, id)
+// LoadDocRevision reads revision n of document doc of entity id: an archived
+// body for n <= K, the live one for n == K+1 — a runbook's body when doc is "",
+// else content/features/<id>/<doc>.md.
+func LoadDocRevision(repoDir, id, doc string, n int) (string, error) {
+	k, err := CountDocRevisions(repoDir, id, doc)
 	if err != nil {
 		return "", err
 	}
 	switch {
 	case n >= 1 && n <= k:
-		data, err := os.ReadFile(filepath.Join(revisionsDir(repoDir, id), fmt.Sprintf("r%d.md", n)))
+		data, err := os.ReadFile(filepath.Join(revisionsDir(repoDir, id, doc), fmt.Sprintf("r%d.md", n)))
 		return string(data), err
-	case n == k+1:
+	case n == k+1 && doc == "":
 		return LoadRunbookContent(repoDir, id)
+	case n == k+1:
+		data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, doc+".md"))
+		return string(data), err
 	}
-	return "", fmt.Errorf("%s has revisions 1..%d, no revision %d", id, k+1, n)
+	return "", fmt.Errorf("%s has revisions 1..%d, no revision %d", strings.TrimSpace(id+" "+doc), k+1, n)
 }
