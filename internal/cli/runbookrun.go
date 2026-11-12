@@ -38,7 +38,7 @@ func newRunbookRunCmd(dir *string) *cobra.Command {
 				}
 			}
 			id := strings.ToUpper(strings.TrimSpace(args[0]))
-			w, run, err := app.StartRun(ctx.repoDir, ctx.projDir, id, window, list, word, eventActor())
+			w, run, err := app.StartRun(ctx.repoDir, ctx.projDir, id, window, list, word, app.EventActor())
 			if err != nil {
 				return err
 			}
@@ -121,7 +121,7 @@ func newRunbookReportCmd(dir *string) *cobra.Command {
 			}
 			w := cmd.OutOrStdout()
 			if errata {
-				ids, err := app.DraftRunErrata(ctx.repoDir, ctx.projDir, runID, eventActor())
+				ids, err := app.DraftRunErrata(ctx.repoDir, ctx.projDir, runID, app.EventActor())
 				if err != nil {
 					return err
 				}

@@ -34,8 +34,9 @@ func TestPlanningWorkRealCase(t *testing.T) {
 		mustCerne(t, "feature", "start", id, "--dir", projDir)
 		wantWork(t, repoDir, "W-0001", domain.WorkDone, "planning closed: feature start")
 		auto := wantWork(t, repoDir, "W-0002", domain.WorkActive, "")
-		if !auto.Auto || auto.Actor != "agent" {
-			t.Fatalf("W-0002 = %+v, want the auto work of agent", auto)
+		host, _ := os.Hostname() // the agent identity carries user and machine (F-0350)
+		if !auto.Auto || auto.Actor != "agent:u@"+host {
+			t.Fatalf("W-0002 = %+v, want the auto work of agent:u@%s", auto, host)
 		}
 		// CONTEXT.md lists active works by id: only the auto one now.
 		if ctx := pulledContext(t, projDir); !strings.Contains(ctx, "W-0002") || strings.Contains(ctx, "W-0001") {

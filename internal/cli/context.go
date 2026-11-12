@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 )
@@ -205,9 +204,4 @@ func updateLockSnapshot(projDir, sha string) error {
 	}
 	lock.Snapshot = sha
 	return project.SaveLock(projDir, lock)
-}
-
-// eventActor returns CERNE_ACTOR when set, "local" otherwise.
-func eventActor() string {
-	return app.EventActor()
 }

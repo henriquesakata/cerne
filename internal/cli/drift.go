@@ -269,7 +269,7 @@ func newDriftAckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = app.AckDrift(ctx.repoDir, ctx.projDir, args[0], eventActor())
+			err = app.AckDrift(ctx.repoDir, ctx.projDir, args[0], app.EventActor())
 			if errors.Is(err, app.ErrNoPendingDrift) {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s has no pending automatic update.\n", args[0])
 				return nil

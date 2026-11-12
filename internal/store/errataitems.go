@@ -136,6 +136,27 @@ func ParseErrataItems(content string) []ErrataItem {
 	return out
 }
 
+// ReplaceMerged returns content with each block of an already merged item
+// replaced by line(item); everything else (the text before the first block, every
+// open block) is kept as written. A read projection: content is never rewritten
+// on disk (F-0351).
+func ReplaceMerged(content string, line func(ErrataItem) string) string {
+	lines := strings.Split(content, "\n")
+	spans := scanErrata(lines)
+	if len(spans) == 0 {
+		return content
+	}
+	out := append([]string{}, lines[:spans[0].hdr]...)
+	for _, s := range spans {
+		if s.item.Merged == "" {
+			out = append(out, lines[s.hdr:s.end]...)
+			continue
+		}
+		out = append(out, line(s.item), "")
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
 // AddErrataMeta adds one more metadata line to item itemID, keeping any line of
 // the same key (SetErrataMeta replaces it): history is appended, never overwritten.
 func AddErrataMeta(content, itemID, key, value string) (string, error) {
