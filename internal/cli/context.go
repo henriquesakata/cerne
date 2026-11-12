@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/app"
@@ -55,22 +54,22 @@ func noteWrite(w io.Writer) {
 		lastProject.id, lastProject.backend, lastProject.cernerc)
 }
 
-// urlAuthority matches the scheme and userinfo of a URL backend.
-var urlAuthority = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@`)
-
 // backendForDisplay drops the userinfo, query and fragment of a URL backend so
-// a token embedded in it never reaches stderr. It does not depend on url.Parse,
-// which rejects (and so would echo raw) a malformed escape. The scp form
-// (git@host:path) and local paths have no "://" and stay as written.
+// a token embedded in it never reaches stderr. It fails to the safe side: no
+// url.Parse (it rejects, and so would echo, a malformed escape) and no regex;
+// everything up to the LAST "@" after "://" goes, so a token holding a raw "@"
+// or "/" cannot leave a piece behind (an "@" legitimately in the path costs the
+// host: over-redaction, accepted). The scp form (git@host:path) and local paths
+// have no "://" and stay as written.
 func backendForDisplay(backend string) string {
-	if !strings.Contains(backend, "://") {
+	scheme, rest, ok := strings.Cut(backend, "://")
+	if !ok {
 		return backend
 	}
-	backend = urlAuthority.ReplaceAllString(backend, "$1")
-	if i := strings.IndexAny(backend, "?#"); i >= 0 {
-		backend = backend[:i]
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		rest = rest[:i]
 	}
-	return backend
+	return scheme + "://" + rest[strings.LastIndex(rest, "@")+1:]
 }
 
 // resolvePaths locates the cerne project from startDir (cwd when empty)

@@ -66,7 +66,9 @@ func TestBackendForDisplayDropsCredentials(t *testing.T) {
 		"git@github.com:henriquesakata/docs.git":            "git@github.com:henriquesakata/docs.git",
 		"https://root:p%zz@git.host/x.git":                  "https://git.host/x.git",
 		"https://git.host/x.git?access_token=abc#frag":      "https://git.host/x.git",
-		"/tmp/origin.git": "/tmp/origin.git",
+		"https://u:p@ss@git.host/x.git":                     "https://git.host/x.git",
+		"https://u:pa/ss@git.host/x.git":                    "https://git.host/x.git",
+		"/tmp/origin.git":                                   "/tmp/origin.git",
 	} {
 		if got := backendForDisplay(in); got != want {
 			t.Errorf("backendForDisplay(%q) = %q, want %q", in, got, want)
@@ -101,5 +103,16 @@ func TestNoteWriteOnceAfterTwoPushesAndError(t *testing.T) {
 	noteWrite(&buf) // PostRun after a success path must not repeat it
 	if n := strings.Count(buf.String(), "wrote to project"); n != 1 {
 		t.Fatalf("line count = %d, want 1:\n%s", n, buf.String())
+	}
+}
+
+// An error without a write prints nothing (the main.go path).
+func TestNoteWriteAfterErrorWithoutWrite(t *testing.T) {
+	startWriteNotice()
+	lastProject.id, lastProject.backend, lastProject.cernerc = "demo", "b", "/p/.cernerc"
+	var buf bytes.Buffer
+	NoteWriteAfterError(&buf)
+	if buf.Len() != 0 {
+		t.Fatalf("printed without a write: %q", buf.String())
 	}
 }
