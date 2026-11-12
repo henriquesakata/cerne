@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -488,4 +490,54 @@ func TestStartWorkLeavesNonPlanning(t *testing.T) {
 		}
 		assertActive(t, repoDir, "W-0001")
 	})
+}
+
+// TestWorkOutlivedFeatureAfterRealTransitions (crit. 8): the lint's cut reads
+// the events the real transitions write — complete, accept, reject and
+// supersede through the app — so a renamed event fails here instead of
+// silently muting the warning. Opted out, so no transition closes a work
+// itself: each one opened before its feature closed is flagged, the one
+// opened after is not.
+func TestWorkOutlivedFeatureAfterRealTransitions(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "") // accept is a human gate
+	repoDir, projDir, _ := newFeatureBackend(t)
+	optOutActivity(t, projDir)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateCandidate, "spec.md")
+	seedFeatureInState(t, repoDir, "F-0003", domain.StateApproved, "spec.md", "plan.md")
+	seedFeatureInState(t, repoDir, "F-0004", domain.StateImplemented, "spec.md", "plan.md", "result.md")
+	seedFeatureInState(t, repoDir, "F-0005", domain.StateCandidate, "spec.md")
+	for i, f := range []string{"F-0001", "F-0002", "F-0003", "F-0004"} {
+		seedActiveWork(t, repoDir, fmt.Sprintf("W-%04d", i+1), "outro@host", f, false)
+	}
+	for _, tr := range []struct {
+		id         string
+		action     domain.Action
+		by, reason string
+	}{
+		{"F-0001", domain.ActionComplete, "", ""},
+		{"F-0002", domain.ActionReject, "", "fora de escopo"},
+		{"F-0003", domain.ActionSupersede, "F-0005", "substituída"},
+		{"F-0004", domain.ActionAccept, "", "validado"},
+	} {
+		if _, err := TransitionFeature(repoDir, projDir, tr.id, tr.action, tr.by, tr.reason, nil); err != nil {
+			t.Fatalf("%s %s: %v", tr.action, tr.id, err)
+		}
+	}
+	seedActiveWork(t, repoDir, "W-0005", "outro@host", "F-0001", false) // errata, after the complete
+
+	findings, err := lint.RunConfig(repoDir, 14, 8)
+	if err != nil {
+		t.Fatalf("RunConfig: %v", err)
+	}
+	var flagged []string
+	for _, f := range findings {
+		if f.Rule == lint.RuleWorkOutlivedFeature {
+			flagged = append(flagged, f.Entity)
+		}
+	}
+	slices.Sort(flagged)
+	if want := []string{"W-0001", "W-0002", "W-0003", "W-0004"}; !slices.Equal(flagged, want) {
+		t.Fatalf("work-outlived-feature = %v, want %v", flagged, want)
+	}
 }
