@@ -52,6 +52,8 @@ beforeEach(() => {
   cleanup()
   payload = state()
   live.version = 0
+  localStorage.clear()
+  vi.restoreAllMocks()
 })
 
 describe('Kanban — badge de esclarecimento pendente (F-0195)', () => {
@@ -272,5 +274,121 @@ describe('Kanban — badge de aprovação vencida (F-0318)', () => {
     render(<Kanban />)
     await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
     expect(cardOf('F-0001')?.querySelector('.badge-stale')).toBeNull()
+  })
+})
+
+// F-0342: coluna Backlog recolhível à esquerda do board, com as candidatas.
+describe('Kanban — coluna Backlog recolhível (F-0342)', () => {
+  const withCandidates = (): StateResponse => ({
+    ...state(),
+    features: [
+      feature('F-0010', { state: 'candidate', priority: 'p2', components: ['ui'] }),
+      feature('F-0011', { state: 'candidate', priority: 'p0', components: ['cli'] }),
+      feature('F-0012', { state: 'approved' }),
+    ],
+  })
+  const backlog = () => document.querySelector('.backlog-column') as HTMLDetailsElement | null
+  const backlogIds = () =>
+    Array.from(backlog()?.querySelectorAll('.card-id') ?? []).map((el) => el.textContent)
+  const toggle = () => fireEvent.click(backlog()!.querySelector('summary')!)
+
+  // Critério 1: primeira coluna do board, só candidatas, por prioridade.
+  it('mostra as candidatas por prioridade na primeira coluna do board', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlogIds()).toEqual(['F-0011', 'F-0010']))
+    expect(document.querySelector('.board')?.firstElementChild).toBe(backlog())
+    expect(backlog()?.querySelector('summary .column-count')).toHaveTextContent('2')
+    expect(cardOf('F-0011')).toHaveAttribute('href', '#/f/F-0011')
+    expect(backlog()?.textContent).not.toContain('F-0012')
+  })
+
+  // Critério 2: recolher tira os cards do DOM e mantém título + contagem.
+  it('recolhe e expande pelo cabeçalho', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlogIds()).toHaveLength(2))
+
+    toggle()
+    expect(backlog()?.open).toBe(false)
+    expect(backlog()?.querySelectorAll('.card')).toHaveLength(0)
+    expect(backlog()?.querySelector('summary')).toHaveTextContent('Backlog')
+    expect(backlog()?.querySelector('summary .column-count')).toHaveTextContent('2')
+
+    toggle()
+    expect(backlog()?.open).toBe(true)
+    expect(backlogIds()).toHaveLength(2)
+  })
+
+  // Critério 3: a escolha persiste no navegador; sem escolha ou sem storage, expandida.
+  it('nasce recolhida quando a escolha salva é recolher', async () => {
+    localStorage.setItem('cerne.kanban.backlogOpen', 'false')
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlog()).toBeInTheDocument())
+    expect(backlog()?.open).toBe(false)
+    expect(backlog()?.querySelectorAll('.card')).toHaveLength(0)
+  })
+
+  it('nasce expandida sem escolha salva e grava a escolha ao alternar', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlog()?.open).toBe(true))
+    toggle()
+    expect(localStorage.getItem('cerne.kanban.backlogOpen')).toBe('false')
+    toggle()
+    expect(localStorage.getItem('cerne.kanban.backlogOpen')).toBe('true')
+  })
+
+  it('nasce expandida e não quebra quando o localStorage lança', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('SecurityError')
+    })
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlogIds()).toHaveLength(2))
+    expect(backlog()?.open).toBe(true)
+    toggle()
+    expect(backlog()?.open).toBe(false)
+  })
+
+  // Critério 4: o filtro do board vale para a coluna e para a contagem.
+  it('aplica o filtro de componente às candidatas', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlogIds()).toHaveLength(2))
+    fireEvent.click(screen.getByRole('button', { name: /^ui/ }))
+    await waitFor(() => expect(backlogIds()).toEqual(['F-0010']))
+    expect(backlog()?.querySelector('summary .column-count')).toHaveTextContent('1')
+  })
+
+  // Critério 5: sem candidatas, estado vazio apontando para o Backlog.
+  it('mostra estado vazio com link para o Backlog', async () => {
+    render(<Kanban />)
+    await waitFor(() => expect(backlog()).toBeInTheDocument())
+    expect(backlog()).toHaveTextContent('Nenhuma candidata')
+    expect(backlog()?.querySelector('.column-empty a[href="#/backlog"]')).toBeInTheDocument()
+  })
+
+  // Critério 6: atalho para o Backlog; criação não vem para o Kanban.
+  it('tem o link "Abrir no Backlog" e nenhum compositor', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    await waitFor(() => expect(backlogIds()).toHaveLength(2))
+    expect(screen.getByRole('link', { name: 'Abrir no Backlog' })).toHaveAttribute('href', '#/backlog')
+    expect(document.querySelector('textarea, form')).toBeNull()
+  })
+
+  // Critério 7: agrupado por épico, a coluna some (as raias já mostram candidatas).
+  it('não renderiza a coluna Backlog no modo agrupado por épico', async () => {
+    payload = withCandidates()
+    render(<Kanban />)
+    const group = await screen.findByLabelText(/agrupar por épico/i)
+    await waitFor(() => expect(backlog()).toBeInTheDocument())
+    fireEvent.click(group)
+    await waitFor(() => expect(backlog()).toBeNull())
   })
 })
