@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -24,6 +26,72 @@ type Exec func(args []string) ([]byte, error)
 // ErrBadArgument is a tool argument refused at the boundary, before any
 // command runs.
 var ErrBadArgument = errors.New("invalid argument")
+
+// ErrBusy refuses a call while an earlier one that timed out is still running.
+var ErrBusy = errors.New("busy: an earlier call is still running; retry later")
+
+// callTimeout bounds one tool call. 60 s is far above a normal read (the
+// slowest, a first search/ask that builds the index, takes seconds) and short
+// enough that a client is never stuck behind a hung clone lock. A var so
+// tests can shorten it.
+var callTimeout = 60 * time.Second
+
+// gate serializes the commands (cli.Root keeps package-level state) and
+// remembers when the running one outlived its caller's deadline.
+type gate struct {
+	sem   chan struct{}
+	mu    sync.Mutex
+	stuck bool
+}
+
+// run executes args under the gate, bounded by ctx and callTimeout. A command
+// cannot be interrupted (Exec takes no context), so on timeout it keeps
+// running in the background and holds the gate: later calls get ErrBusy at
+// once until it returns.
+// ponytail: an abandoned command runs to completion; pass a context through
+// Exec if commands ever learn to honour cancellation.
+func (g *gate) run(ctx context.Context, exec Exec, args []string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	g.mu.Lock()
+	stuck := g.stuck
+	g.mu.Unlock()
+	if stuck {
+		return nil, ErrBusy
+	}
+	select {
+	case g.sem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("%w (%v)", ErrBusy, ctx.Err())
+	}
+	var (
+		out      []byte
+		err      error
+		finished bool // guarded by g.mu, set together with stuck=false
+	)
+	fin := make(chan struct{})
+	go func() {
+		defer func() {
+			g.mu.Lock()
+			g.stuck, finished = false, true
+			g.mu.Unlock()
+			<-g.sem
+			close(fin)
+		}()
+		out, err = exec(args)
+	}()
+	select {
+	case <-fin:
+		return out, err
+	case <-ctx.Done():
+		g.mu.Lock()
+		if !finished {
+			g.stuck = true
+		}
+		g.mu.Unlock()
+		return nil, fmt.Errorf("%s timed out after %v: %w", args[0], callTimeout, ctx.Err())
+	}
+}
 
 // idPattern is cerne's entity id shape (prefix + at least four digits), the
 // same pattern internal/store checks; anything else never reaches `show`.
@@ -53,18 +121,19 @@ type askArgs struct {
 // NewServer registers the tools on an MCP server named cerne.
 func NewServer(version string, exec Exec) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "cerne", Version: version}, nil)
-	add(s, exec, "status", "Feature states and the epics rollup: what exists and in which lifecycle state.", nil,
+	g := &gate{sem: make(chan struct{}, 1)}
+	add(s, g, exec, "status", "Feature states and the epics rollup: what exists and in which lifecycle state.", nil,
 		func(in statusArgs) ([]string, error) {
 			if in.Active {
 				return []string{"status", "--json", "--active"}, nil
 			}
 			return []string{"status", "--json"}, nil
 		})
-	add(s, exec, "brief", "The whole project roster as id, state and title per entity (features, decisions, notes, references…), no paths. The cheapest map of the project.", nil,
+	add(s, g, exec, "brief", "The whole project roster as id, state and title per entity (features, decisions, notes, references…), no paths. The cheapest map of the project.", nil,
 		func(noArgs) ([]string, error) { return []string{"brief", "--json"}, nil })
-	add(s, exec, "next", "What to do next: active features grouped by their next action, plus the documentation debts lint finds.", nil,
+	add(s, g, exec, "next", "What to do next: active features grouped by their next action, plus the documentation debts lint finds.", nil,
 		func(noArgs) ([]string, error) { return []string{"next", "--json"}, nil })
-	add(s, exec, "search", "Find entities and documents by subject (full-text, history included).",
+	add(s, g, exec, "search", "Find entities and documents by subject (full-text, history included).",
 		func(p map[string]*jsonschema.Schema) {
 			p["query"].MinLength = jsonschema.Ptr(1)
 			p["limit"].Type, p["limit"].Types = "integer", nil
@@ -83,7 +152,7 @@ func NewServer(version string, exec Exec) *sdk.Server {
 			}
 			return args, nil
 		})
-	add(s, exec, "show", "Read one entity by id: its metadata and its documents.",
+	add(s, g, exec, "show", "Read one entity by id: its metadata and its documents.",
 		func(p map[string]*jsonschema.Schema) { p["id"].Pattern = idPattern },
 		func(in showArgs) ([]string, error) {
 			if !idRe.MatchString(in.ID) {
@@ -91,7 +160,7 @@ func NewServer(version string, exec Exec) *sdk.Server {
 			}
 			return []string{"show", in.ID, "--json"}, nil
 		})
-	add(s, exec, "ask", "Retrieve the sources that answer a question, ranked, with snippets. Makes no LLM call: you answer from the sources.",
+	add(s, g, exec, "ask", "Retrieve the sources that answer a question, ranked, with snippets. Makes no LLM call: you answer from the sources.",
 		func(p map[string]*jsonschema.Schema) { p["question"].MinLength = jsonschema.Ptr(1) },
 		func(in askArgs) ([]string, error) {
 			if err := plainText("question", in.Question); err != nil {
@@ -117,7 +186,7 @@ func plainText(field, v string) error {
 // command line and returns the command's stdout as text.
 // shape, when set, adds the boundary rules to the schema inferred from In, so
 // the client sees them; argv still enforces them.
-func add[In any](s *sdk.Server, exec Exec, name, desc string, shape func(props map[string]*jsonschema.Schema), argv func(In) ([]string, error)) {
+func add[In any](s *sdk.Server, g *gate, exec Exec, name, desc string, shape func(props map[string]*jsonschema.Schema), argv func(In) ([]string, error)) {
 	schema, err := jsonschema.For[In](nil)
 	if err != nil {
 		panic(fmt.Sprintf("tool %s: %v", name, err)) // a programming error in the In type
@@ -126,12 +195,12 @@ func add[In any](s *sdk.Server, exec Exec, name, desc string, shape func(props m
 		shape(schema.Properties)
 	}
 	tool := &sdk.Tool{Name: name, Description: desc, InputSchema: schema, Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true}}
-	sdk.AddTool(s, tool, func(_ context.Context, _ *sdk.CallToolRequest, in In) (*sdk.CallToolResult, any, error) {
+	sdk.AddTool(s, tool, func(ctx context.Context, _ *sdk.CallToolRequest, in In) (*sdk.CallToolResult, any, error) {
 		args, err := argv(in)
 		if err != nil {
 			return nil, nil, err
 		}
-		out, err := exec(args)
+		out, err := g.run(ctx, exec, args)
 		if err != nil {
 			return nil, nil, err
 		}

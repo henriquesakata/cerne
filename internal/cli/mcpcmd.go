@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"strings"
-	"sync"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -37,13 +36,11 @@ func newMCPCmd() *cobra.Command {
 
 // jsonExec runs one cerne command line in a fresh Root against projDir and
 // returns its stdout. The command never touches the process stdout (the MCP
-// channel) nor stdin. Calls are serialized: Root keeps package-level state
-// (lastProject, write notice) that concurrent runs would race on.
+// channel) nor stdin. internal/mcp serializes the calls: Root keeps
+// package-level state (lastProject, write notice) that concurrent runs would
+// race on.
 func jsonExec(projDir string) mcp.Exec {
-	var mu sync.Mutex
 	return func(args []string) ([]byte, error) {
-		mu.Lock()
-		defer mu.Unlock()
 		root := Root()
 		var out, errOut bytes.Buffer
 		root.SetIn(strings.NewReader(""))

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -174,5 +177,56 @@ func TestMCP_InputSchemasCarryLimits(t *testing.T) {
 				t.Errorf("%s.%s = %v, want %v (schema %v)", key, k, prop[key][k], v, prop[key])
 			}
 		}
+	}
+}
+
+func callText(t *testing.T, cs *sdk.ClientSession, name string) (string, bool) {
+	t.Helper()
+	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: name, Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatalf("call %s: protocol error %v, want a tool result", name, err)
+	}
+	return res.Content[0].(*sdk.TextContent).Text, res.IsError
+}
+
+// TestMCP_HungCallTimesOutThenBusy: a command that never returns costs its
+// caller one deadline (a tool error), the next call is refused as busy at
+// once instead of queueing behind it, and service resumes when it finishes.
+func TestMCP_HungCallTimesOutThenBusy(t *testing.T) {
+	old := callTimeout
+	callTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { callTimeout = old })
+	release := make(chan struct{})
+	var n atomic.Int32
+	cs := connect(t, func([]string) ([]byte, error) {
+		if n.Add(1) == 1 {
+			<-release
+		}
+		return []byte("{}\n"), nil
+	})
+
+	if text, isErr := callText(t, cs, "brief"); !isErr || !strings.Contains(text, "timed out") {
+		t.Fatalf("hung call: isError=%v text=%q, want a timeout tool error", isErr, text)
+	}
+	start := time.Now()
+	if text, isErr := callText(t, cs, "next"); !isErr || !strings.Contains(text, "busy") {
+		t.Fatalf("call behind a hung one: isError=%v text=%q, want busy", isErr, text)
+	}
+	if d := time.Since(start); d > callTimeout/2 {
+		t.Fatalf("busy refusal took %v: it blocked", d)
+	}
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, isErr := callText(t, cs, "status"); !isErr {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("service did not resume after the hung command returned")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := n.Load(); got != 2 {
+		t.Fatalf("exec ran %d times, want 2 (the busy call never runs)", got)
 	}
 }
