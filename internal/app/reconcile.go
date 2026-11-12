@@ -215,6 +215,21 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 				}
 			}
 			recBase = tip
+			// The caller's docs were authored against base: one byte-equal to
+			// its base blob is a no-op, and against the tip it would revert a
+			// remote edit made between base and tip.
+			kept := callerChanges[:0:0]
+			for _, ch := range callerChanges {
+				if !ch.Deleted {
+					if blob, ok, err := gitback.FileBlobAt(repoDir, base, ch.Path); err != nil {
+						return err
+					} else if ok && bytes.Equal(blob, ch.Content) {
+						continue
+					}
+				}
+				kept = append(kept, ch)
+			}
+			callerChanges = kept
 			if err := resetToBase(repoDir, tip); err != nil {
 				return err
 			}
