@@ -1226,7 +1226,10 @@ func linkFindings(repoDir string, d scannedDoc, text string, names func() map[st
 		}
 		hint := ""
 		if c := names()[path.Base(clean)]; len(c) == 1 {
-			hint = "did you mean " + c[0] + "?"
+			// Relative to the document's folder, the way the link resolves.
+			if rel, err := filepath.Rel(path.Dir(d.rel), c[0]); err == nil {
+				hint = "did you mean " + filepath.ToSlash(rel) + "?"
+			}
 		}
 		findings = append(findings, brokenLinkFinding(d, r, "link", r.Target, hint))
 	}
