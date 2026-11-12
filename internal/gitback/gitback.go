@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
@@ -195,6 +196,14 @@ func CommitPaths(workdir string, paths []string, msg string) (string, error) {
 	return hash.String(), nil
 }
 
+// pushes counts successful Push/PushBranch calls in this process: every backend
+// write ends in one, so the CLI can tell a writing command from a reading one
+// (F-0347). The project's docs.lock autocommit never pushes, so it never counts.
+var pushes atomic.Int64
+
+// Pushes returns how many pushes to the backend succeeded in this process.
+func Pushes() int64 { return pushes.Load() }
+
 // Push pushes main to origin. NoErrAlreadyUpToDate is not an error. A
 // non-fast-forward rejection (the remote advanced) is returned as-is so callers
 // can classify it with IsNonFastForward and retry.
@@ -221,11 +230,15 @@ func Push(workdir string) error {
 			Auth:       auth,
 		})
 	})
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+	upToDate := errors.Is(err, git.NoErrAlreadyUpToDate)
+	if upToDate {
 		err = nil
 	}
 	if err == nil {
 		markSynced(workdir) // F-0156: the elision predicate
+		if !upToDate {
+			pushes.Add(1)
+		}
 	}
 	return wrapAuthHint(err, url)
 }
@@ -259,11 +272,15 @@ func PushBranch(workdir, branch string) error {
 			Auth:       auth,
 		})
 	})
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+	upToDate := errors.Is(err, git.NoErrAlreadyUpToDate)
+	if upToDate {
 		err = nil
 	}
 	if err == nil {
 		markSynced(workdir)
+		if !upToDate {
+			pushes.Add(1)
+		}
 	}
 	return wrapAuthHint(err, url)
 }

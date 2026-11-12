@@ -389,3 +389,37 @@ func TestOriginURL(t *testing.T) {
 		t.Fatalf("OriginURL = %q, want %q", got, origin)
 	}
 }
+
+// F-0347: Pushes counts successful pushes (the funnel every backend write
+// ends in) and ignores failed ones.
+func TestPushesCountsSuccessOnly(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	before := Pushes()
+	writeFile(t, clone1, "n.txt", "n")
+	if _, err := CommitAndPush(clone1, "second"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	if got := Pushes() - before; got != 1 {
+		t.Fatalf("pushes after one write = %d, want 1", got)
+	}
+	if err := Push(filepath.Join(t.TempDir(), "not-a-repo")); err == nil {
+		t.Fatal("Push on a non-repo succeeded")
+	}
+	if got := Pushes() - before; got != 1 {
+		t.Fatalf("pushes after a failed push = %d, want 1", got)
+	}
+}
+
+// F-0347: an already-up-to-date push writes nothing, so it does not count
+// (go-git path; the git-binary path keeps the limit, see execPushRefspec).
+func TestPushesIgnoresAlreadyUpToDate(t *testing.T) {
+	_, clone1, _ := fixture(t)
+	t.Setenv("CERNE_SSH_DIR", t.TempDir()) // forces the go-git path
+	before := Pushes()
+	if err := Push(clone1); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if got := Pushes() - before; got != 0 {
+		t.Fatalf("no-op push counted %d, want 0", got)
+	}
+}
