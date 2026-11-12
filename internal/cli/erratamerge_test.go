@@ -67,6 +67,32 @@ func TestShowConsolidadoPlacesItemsAtTheirStep(t *testing.T) {
 	}
 }
 
+// F-0345 crit. 9, end to end: one erratum over two steps writes two items, the
+// consolidated view puts each under its step, and the plain show points there.
+func TestErrataTwoStepsEndToEnd(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	bodyFile := filepath.Join(t.TempDir(), "rb.md")
+	mustWrite(t, bodyFile, "# X\n\n## S1. Primeiro\n\nCorpo um.\n\n## S2. Segundo\n\nCorpo dois.\n")
+	rb(t, projDir, "runbook", "new", "X", "--file", bodyFile)
+	errFile := filepath.Join(t.TempDir(), "e.md")
+	mustWrite(t, errFile, "Vale nos dois passos.\n")
+	out := rb(t, projDir, "runbook", "errata", "RB-0001", "--altera", "S1,S2", "--file", errFile)
+	if !strings.Contains(out, "item E1") || !strings.Contains(out, "item E2") {
+		t.Fatalf("must print the two ids:\n%s", out)
+	}
+	if doc, _ := os.ReadFile(filepath.Join(repoDir, "content", "errata", "RB-0001.md")); strings.Count(string(doc), "## errata ") != 2 {
+		t.Fatalf("want two items:\n%s", doc)
+	}
+	view := rb(t, projDir, "show", "RB-0001", "--consolidado")
+	e1, e2 := strings.Index(view, "Errata E1"), strings.Index(view, "Errata E2")
+	if !(strings.Index(view, "Corpo um.") < e1 && e1 < strings.Index(view, "## S2.") && strings.Index(view, "Corpo dois.") < e2) {
+		t.Fatalf("E1 under S1 and E2 under S2:\n%s", view)
+	}
+	if first, _, _ := strings.Cut(rb(t, projDir, "show", "RB-0001"), "\n"); !strings.HasPrefix(first, "2 open errata item(s) (0 without a step).") {
+		t.Fatalf("first line = %q", first)
+	}
+}
+
 // crit. 4: an item with no step, or one the body lacks, is listed apart and the
 // command still succeeds.
 func TestShowConsolidadoListsOrphansApart(t *testing.T) {
