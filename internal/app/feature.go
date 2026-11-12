@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/henriquesakata/cerne/internal/materialize"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -798,6 +800,94 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		return store.Feature{}, false, err
 	}
 	return f, true, nil
+}
+
+// ErrAmendDocState is returned by AmendFeatureDoc for a feature that is neither
+// approved nor in development; the message names the path of its state.
+var ErrAmendDocState = errors.New("only the spec or plan of an approved or in-development feature can be amended")
+
+// ErrAppendedAmendment is returned by AmendFeatureDoc for a body that appends
+// an amendment as a section (lint.AmendmentLines) instead of rewriting the text.
+var ErrAppendedAmendment = errors.New("the body appends an amendment as a section")
+
+// AmendFeatureDoc replaces the spec or plan (doc) of an APPROVED or
+// IN-DEVELOPMENT feature with a reason (F-0338): the replaced body is archived
+// byte for byte as revision rev of that document (store.ArchiveDocRevision) and
+// the feature.doc_edited event carries reason and rev — one commit, the state
+// untouched. On an approved feature a new spec stales the approval like any
+// edit (lint.SpecChangedAfterApproval); the plan has no approved copy. A blank
+// reason or body, a doc other than spec|plan and a body with an appended
+// amendment heading are refused before the backend is touched; another state
+// is refused inside the lock (ErrAmendDocState, naming the state's path). A
+// body equal to the stored one by lint.SpecContent is a successful no-op
+// (changed false: no revision, no event, no commit), judged against origin.
+func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Feature, rev int, changed bool, err error) {
+	if doc != "spec" && doc != "plan" {
+		return store.Feature{}, 0, false, fmt.Errorf("%w: %q (amend takes spec or plan; the result has its own amend)", ErrUnknownDoc, doc)
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return store.Feature{}, 0, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
+	}
+	if strings.TrimSpace(body) == "" {
+		return store.Feature{}, 0, false, fmt.Errorf("empty %s body: pass the full %s via --file <%s.md> or on stdin", doc, doc, doc)
+	}
+	if lines := lint.AmendmentLines(strings.ReplaceAll(body, "\r\n", "\n")); len(lines) > 0 {
+		return store.Feature{}, 0, false, fmt.Errorf("%w (line %d): write the amendment into the criterion or task it changes, then amend the whole %s", ErrAppendedAmendment, lines[0], doc)
+	}
+	content, err := stampedDoc(id, doc, body, false)
+	if err != nil {
+		return store.Feature{}, 0, false, err
+	}
+	filename := doc + ".md"
+	err = mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
+		var err error
+		if f, err = store.LoadFeature(repoDir, id); err != nil {
+			return "", err
+		}
+		switch f.State {
+		case domain.StateApproved, domain.StateInDevelopment:
+		case domain.StateCandidate:
+			return "", fmt.Errorf("%w: %s is candidate — before the approve the spec is a draft: edit it under .docs/ ('cerne pull' + 'cerne push') or with 'cerne feature spec %s'; there is no plan yet", ErrAmendDocState, id, id)
+		default:
+			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendDocState, id, f.State, DocFixPhrase(id, doc, f.State))
+		}
+		path := FeatureDocPath(repoDir, id, filename)
+		cur, err := os.ReadFile(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		// Detected here, not by captureChanges: the event below is itself a change.
+		if string(lint.SpecContent(cur)) == string(lint.SpecContent([]byte(content))) {
+			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
+		}
+		if rev, err = store.ArchiveDocRevision(repoDir, id, doc, string(cur)); err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
+			"doc":    doc,
+			"state":  string(f.State),
+			"reason": reason,
+			"rev":    strconv.Itoa(rev),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: amend %s/%s", id, filename), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return f, 0, false, nil // the stored document already says this
+	}
+	if err != nil {
+		return store.Feature{}, 0, false, err
+	}
+	return f, rev, true, nil
 }
 
 // ErrBodyFrontmatter is returned by stampedDoc for a body whose opening '---'
