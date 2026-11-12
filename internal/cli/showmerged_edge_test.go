@@ -63,6 +63,29 @@ func TestShowMergedErrataWithoutEventOrRevision(t *testing.T) {
 	}
 }
 
+// A3: two items folded by one merge share revision and date; an event whose item
+// list has spaces ("E1, E2") still matches both.
+func TestShowMergedErrataTwoItemsOneMerge(t *testing.T) {
+	projDir, _ := runbookFixture(t)
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Um.", "--altera", "S6.6")
+	rb(t, projDir, "runbook", "errata", "RB-0001", "Dois.", "--altera", "S6.7")
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "vale")
+	rb(t, projDir, "runbook", "decide", "RB-0001", "E2", "--by", "dono", "--quote", "vale")
+	rb(t, projDir, "runbook", "merge", "RB-0001")
+	_, js := showMerged(t, projDir)
+	if len(js.Merged) != 2 || js.Merged[0]["revision"] != js.Merged[1]["revision"] || js.Merged[0]["date"] != js.Merged[1]["date"] || js.Merged[0]["date"] == nil {
+		t.Fatalf("one merge, one revision and date: %v", js.Merged)
+	}
+
+	projDir, repoDir := runbookFixture(t)
+	at := time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)
+	seedMergedItem(t, repoDir, "Fundida: sim", at, "5", "E1, E2", at)
+	seedMergedItem(t, repoDir, "Fundida: sim", at, "", "", time.Time{})
+	if _, js = showMerged(t, projDir); len(js.Merged) != 2 || js.Merged[1]["date"] != "2026-03-04" || js.Merged[1]["revision"] != float64(5) {
+		t.Fatalf("spaces in the event's items: %v", js.Merged)
+	}
+}
+
 // A1(a)+A2: a revision the item does not carry comes from the event, and the
 // date is the event's `at`, not today nor the erratum's header date.
 func TestShowMergedErrataTakesRevisionAndDateFromEvent(t *testing.T) {

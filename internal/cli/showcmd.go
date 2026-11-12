@@ -733,7 +733,7 @@ func mergedErrata(repoDir, id string, items []store.ErrataItem) ([]mergedErrataJ
 		date := ""
 		for _, ev := range evs {
 			if ev.EntityID == id && ev.Type == "errata.merged" && (rev == 0 || ev.Payload["revision"] == fmt.Sprint(rev)) &&
-				slices.Contains(strings.Split(ev.Payload["items"], ","), it.ID) {
+				slices.ContainsFunc(strings.Split(ev.Payload["items"], ","), func(s string) bool { return strings.TrimSpace(s) == it.ID }) {
 				if rev == 0 {
 					rev, _ = strconv.Atoi(ev.Payload["revision"])
 				}
