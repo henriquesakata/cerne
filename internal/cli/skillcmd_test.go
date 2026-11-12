@@ -139,3 +139,74 @@ func TestLoadGoldenPathsIncludesRunbooks(t *testing.T) {
 		t.Fatalf("body kept entity frontmatter: %q", items[0].Body)
 	}
 }
+
+// F-0362 crit. 3: a project with .cursor/, .codex/ and .gemini/ gets the guide
+// where each agent reads skills, and the managed pointers.
+func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
+	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{".cursor", ".codex", ".gemini"} {
+		if err := os.Mkdir(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := execCerne(t, "skill", "install", "--dir", dir)
+	if err != nil {
+		t.Fatalf("skill install: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"cerne-authoring: created in .cursor/skills/cerne-authoring",
+		"cerne-authoring: created in .agents/skills/cerne-authoring",
+		"cerne-authoring: created in .gemini/skills/cerne-authoring",
+		"cerne-authoring pointer: created in AGENTS.md",
+		"cerne-authoring pointer: created in GEMINI.md",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	out, err = execCerne(t, "skill", "install", "--dir", dir)
+	if err != nil {
+		t.Fatalf("rerun: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 11 { // 7 asset lines + 4 per-agent lines
+		t.Fatalf("want 11 lines, got %d:\n%s", len(lines), out)
+	}
+	for _, l := range lines[:7] {
+		if !strings.Contains(l, ": up to date in ") {
+			t.Errorf("rerun line not unchanged: %q", l)
+		}
+	}
+}
+
+// F-0362 round 2: every agent gets a line, detected or not; nothing claims
+// "loaded".
+func TestSkillInstallPrintsOneLinePerAgent(t *testing.T) {
+	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "skill", "install", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"claude: guide delivered to .claude/skills/cerne-authoring/SKILL.md",
+		"cursor: guide delivered to .cursor/skills/cerne-authoring/SKILL.md — Cursor documents project skills as loaded automatically",
+		"codex: not detected (no .codex/) — run 'cerne hook install --provider codex' first",
+		"gemini: not detected (no .gemini/) — run 'cerne hook install --provider gemini' first",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(strings.ToLower(out), "is loaded") || strings.Contains(out, "guide loaded") {
+		t.Errorf("output claims loaded:\n%s", out)
+	}
+}

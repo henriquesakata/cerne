@@ -7,13 +7,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/skills"
 )
 
 func newSkillCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skill",
-		Short: "Install cerne's Claude Code skills into a project",
+		Short: "Install cerne's skills into a project (Claude Code, plus Cursor/Codex/Gemini when detected)",
 	}
 	cmd.AddCommand(newSkillInstallCmd())
 	cmd.AddCommand(newSkillSyncCmd())
@@ -85,22 +86,41 @@ func runSkillInstall(cmd *cobra.Command, dir string) error {
 		}
 		dir = wd
 	}
-	results, err := skills.Install(dir)
+	det := hooks.DetectProviders(dir)
+	results, err := skills.Install(dir, det...)
 	if err != nil {
 		return err
 	}
 	printSkillResults(cmd.OutOrStdout(), results)
+	printAgentLines(cmd.OutOrStdout(), results, det)
 	return nil
 }
 
-// printSkillResults writes one status line per installed skill. Shared by
-// `cerne skill install` and `cerne init`.
+// printSkillResults writes one status line per installed asset. Shared by
+// `cerne skill install` and `cerne init`. A skipped asset prints its manual
+// step instead of a location.
 func printSkillResults(out io.Writer, results []skills.Result) {
 	for _, r := range results {
 		label := skillStatusLabel[r.Status]
 		if label == "" {
 			label = string(r.Status)
 		}
-		fmt.Fprintf(out, "%s: %s in .claude/skills/%s\n", r.Skill, label, r.Skill)
+		path := r.Path
+		if path == "" {
+			path = ".claude/skills/" + r.Skill
+		}
+		if r.Status == skills.StatusSkipped {
+			fmt.Fprintf(out, "%s: skipped (%s) — %s\n", r.Skill, path, r.Note)
+			continue
+		}
+		fmt.Fprintf(out, "%s: %s in %s\n", r.Skill, label, path)
+	}
+}
+
+// printAgentLines writes the per-agent guide summary (every agent, detected or
+// not). Shared by `cerne skill install` and `cerne init`.
+func printAgentLines(out io.Writer, results []skills.Result, detected []hooks.Provider) {
+	for _, l := range skills.AgentLines(results, detected) {
+		fmt.Fprintln(out, l)
 	}
 }

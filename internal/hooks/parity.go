@@ -45,6 +45,24 @@ func (r ParityRow) Degraded(p Provider) (bool, string) {
 	return false, ""
 }
 
+// GuideCondition is what the provider's official docs say about loading the
+// delivered authoring guide (R-0064 Codex, R-0065 Gemini, R-0066 Cursor). It is
+// a documented condition, never a claim that the agent loaded it: cerne cannot
+// verify that. One source for the install output, the matrix and the docs.
+func GuideCondition(p Provider) string {
+	switch p {
+	case ProviderClaude:
+		return "Claude Code loads project skills automatically"
+	case ProviderCursor:
+		return "Cursor documents project skills as loaded automatically; no setting documented"
+	case ProviderCodex:
+		return "Codex documents automatic detection of .agents/skills; no setting documented, restart Codex if the skill does not appear"
+	case ProviderGemini:
+		return "Gemini CLI discovers it at session start only while the skill is enabled (check /skills list, /skills enable cerne-authoring) and asks your consent when the agent activates it"
+	}
+	return ""
+}
+
 // ParityRows returns the full F-0174 matrix, in table order.
 func ParityRows() []ParityRow {
 	out := make([]ParityRow, len(parityTable))
@@ -114,6 +132,13 @@ var parityTable = []ParityRow{
 		Gemini:     degraded + ": subagents are a preview feature",
 	},
 	{
+		Capability: "Authoring guide",
+		Claude:     "delivered to .claude/skills/cerne-authoring/ — " + GuideCondition(ProviderClaude),
+		Cursor:     "delivered to .cursor/skills/cerne-authoring/ — " + GuideCondition(ProviderCursor),
+		Codex:      "delivered to .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md — " + GuideCondition(ProviderCodex),
+		Gemini:     "delivered to .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md — " + GuideCondition(ProviderGemini),
+	},
+	{
 		Capability: "Trust prerequisite",
 		Claude:     "none",
 		Cursor:     "trusted workspaces",
@@ -131,11 +156,11 @@ func ParityMatrix() string {
 <!-- GENERATED from internal/hooks/parity.go (F-0174) — do not edit by hand.
      A golden test pins this file to the table the installer actually uses. -->
 
-What ` + "`cerne hook install`" + ` delivers per provider. Capabilities marked
+What ` + "`cerne hook install`" + ` (and, for the authoring guide, ` + "`cerne skill install`" + `) delivers per provider. Capabilities marked
 **degraded** are limitations of the provider's extension surface (or await
 live validation) and are reported as ` + "`skipped`" + ` lines, with the manual
 step, in the install output. Research provenance: R-0035 (Codex), R-0036
-(Gemini), R-0037 (Cursor) in the cerne backend.
+(Gemini), R-0037 (Cursor); the authoring-guide paths: R-0064 (Codex), R-0065 (Gemini), R-0066 (Cursor), in the cerne backend.
 
 | Capability | Claude Code | Cursor | Codex CLI | Gemini CLI |
 |---|---|---|---|---|
@@ -144,6 +169,11 @@ step, in the install output. Research provenance: R-0035 (Codex), R-0036
 		b.WriteString("| " + r.Capability + " | " + r.Claude + " | " + r.Cursor + " | " + r.Codex + " | " + r.Gemini + " |\n")
 	}
 	b.WriteString(`
+"Delivered" means the file is in place; cerne cannot verify that the agent loads it,
+so the row states the load condition from the agent's own docs. An agent whose config
+folder is absent gets a ` + "`not detected`" + ` line from ` + "`cerne skill install`" + `, with the
+step to run first.
+
 Install: ` + "`cerne hook install`" + ` (claude + auto-detected providers by
 config dir) or ` + "`cerne hook install --provider cursor,codex,gemini`" + `.
 `)

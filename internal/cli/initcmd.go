@@ -218,10 +218,12 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	// Install cerne's canonical Claude Code skills so a new project ships with
 	// the agent guide. The project is already provisioned at this point, so a
 	// skills failure must not fail init — warn and continue.
-	if results, err := skills.Install(targetDir); err != nil {
+	det := hooks.DetectProviders(targetDir)
+	if results, err := skills.Install(targetDir, det...); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's skills: %v\n", err)
 	} else {
 		printSkillResults(out, results)
+		printAgentLines(out, results, det)
 	}
 
 	// Install cerne's Claude Code hooks too (F-0139): the provenance gate and
