@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -182,6 +183,9 @@ type Finding struct {
 	Entity string // entity ID the finding is about ("" for orphan files)
 	File   string // rel slash path of the offending file ("" when entity-level)
 	Detail string // human-readable pt-BR detail
+	// Line: 1-based line of the offending text in File, counted from the start
+	// of the file (frontmatter included); 0 when the rule has no line (F-0352).
+	Line int
 	// Fix: the command that clears the finding when File cannot be edited — an
 	// errata is append-only (F-0329) — so tools need not parse it from Detail.
 	Fix string
@@ -307,6 +311,13 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		ids[mdlink.CanonicalID(i.ID)] = true
 	}
 	var findings []Finding
+	var fileNames map[string][]string
+	names := func() map[string][]string {
+		if fileNames == nil {
+			fileNames = backendFileNames(repoDir)
+		}
+		return fileNames
+	}
 	for _, d := range docs {
 		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(d.rel)))
 		if err != nil {
@@ -314,7 +325,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		}
 		text := string(data)
 		findings = append(findings, refFindings(d, text, needles)...)
-		findings = append(findings, linkFindings(repoDir, d, text)...)
+		findings = append(findings, linkFindings(repoDir, d, text, names)...)
 		findings = append(findings, wikiLinkFindings(d, text, ids)...)
 		findings = append(findings, clarificationFindings(d, text)...)
 		// unregistered-source is provenance of a decision — scoped to decisions and
@@ -471,6 +482,9 @@ func Sort(findings []Finding) {
 		}
 		if a.File != b.File {
 			return a.File < b.File
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
 		}
 		if a.Detail != b.Detail {
 			return a.Detail < b.Detail
@@ -1109,13 +1123,24 @@ var ackRx = regexp.MustCompile(`(?i)<!--\s*lint:ok-superseded\s+([a-z]+-\d+(?:\s
 // that names id (case-insensitive, space-tolerant). It declares a mention of a
 // superseded entity on that line as intentional history, not a debt (F-0089).
 func acknowledgedOnLine(line, id string) bool {
-	m := ackRx.FindStringSubmatch(line)
+	return markedOnLine(line, ackRx, id)
+}
+
+// brokenAckRx is the broken-link counterpart (F-0352): the list holds link
+// targets — ids or paths — without wiki brackets: <!-- lint:ok-broken-link X[, Y] -->.
+var brokenAckRx = regexp.MustCompile(`(?i)<!--\s*lint:ok-broken-link\s+([^\s,]+?(?:\s*,\s*[^\s,]+?)*)\s*-->`)
+
+// markedOnLine reports whether line carries an acknowledgment marker (rx)
+// naming id, case-insensitive and space-tolerant.
+func markedOnLine(line string, rx *regexp.Regexp, id string) bool {
+	m := rx.FindStringSubmatch(line)
 	if m == nil {
 		return false
 	}
-	want := strings.ToUpper(strings.TrimSpace(id))
+	norm := func(s string) string { s, _, _ = strings.Cut(strings.TrimSpace(s), "#"); return strings.ToUpper(s) }
+	want := norm(id)
 	for _, part := range strings.Split(m[1], ",") {
-		if strings.ToUpper(strings.TrimSpace(part)) == want {
+		if norm(part) == want {
 			return true
 		}
 	}
@@ -1182,13 +1207,18 @@ var errataEntryRe = regexp.MustCompile(`^## errata \d{4}-\d{2}-\d{2} — `)
 // backward only: in the marker's own entry and after it, the same-line rule
 // still holds.
 func errataAckFrom(text, id string) int {
+	return errataAckFromRx(text, ackRx, id)
+}
+
+// errataAckFromRx is errataAckFrom for any acknowledgment marker rx.
+func errataAckFromRx(text string, rx *regexp.Regexp, id string) int {
 	entry, from := 0, 0
 	for off := 0; off < len(text); {
 		line, _, _ := strings.Cut(text[off:], "\n")
 		if errataEntryRe.MatchString(line) {
 			entry = off
 		}
-		if acknowledgedOnLine(line, id) {
+		if markedOnLine(line, rx, id) {
 			from = entry
 		}
 		off += len(line) + 1
@@ -1200,22 +1230,122 @@ func errataAckFrom(text, id string) int {
 // when resolved from the document's directory inside the backend tree.
 // External (http/https/mailto), pure-anchor and absolute targets are skipped;
 // a fragment suffix is stripped before resolving.
-func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
+//
+// names lists the backend files by base name (built lazily, once per run) to
+// suggest the path of a moved file.
+func linkFindings(repoDir string, d scannedDoc, text string, names func() map[string][]string) []Finding {
 	docDir := filepath.FromSlash(path.Dir(d.rel))
-	_, broken := mdlink.ContentLinks(text, func(clean string) (string, bool) {
-		full := filepath.Join(repoDir, docDir, filepath.FromSlash(clean))
+	var findings []Finding
+	for _, r := range mdlink.Refs(text, false) {
+		clean, _, _ := strings.Cut(r.Target, "#")
 		// Any stat failure (not just fs.ErrNotExist) means the target is
 		// unreachable from the doc, e.g. characters invalid on the OS.
-		if _, err := os.Stat(full); err != nil {
-			return "", false
+		if _, err := os.Stat(filepath.Join(repoDir, docDir, filepath.FromSlash(clean))); err == nil {
+			continue
 		}
-		return full, true
-	})
-	findings := make([]Finding, 0, len(broken))
-	for _, target := range broken {
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken link: " + target})
+		if brokenAcked(d, text, r) {
+			continue
+		}
+		hint, action := "no such file", ": fix the path or remove the link"
+		if c := names()[path.Base(clean)]; len(c) == 1 {
+			// Relative to the document's folder, the way the link resolves.
+			if rel, err := filepath.Rel(path.Dir(d.rel), c[0]); err == nil {
+				hint, action = "did you mean "+filepath.ToSlash(rel)+"?", " update the link to it"
+			}
+		}
+		findings = append(findings, brokenLinkFinding(d, r, "link", r.Target, hint, action))
 	}
 	return findings
+}
+
+// brokenAcked reports whether a lint:ok-broken-link marker clears the
+// occurrence r: on its own line anywhere, and — in an append-only errata —
+// also when a later entry carries the marker (errataAckFromRx, as the
+// ref-to-superseded of F-0329).
+func brokenAcked(d scannedDoc, text string, r mdlink.Ref) bool {
+	lines := strings.Split(text, "\n")
+	if markedOnLine(lines[r.Line-1], brokenAckRx, r.Target) {
+		return true
+	}
+	if !strings.HasPrefix(d.rel, "content/errata/") {
+		return false
+	}
+	from := errataAckFromRx(text, brokenAckRx, r.Target)
+	return from > 0 && r.Line <= strings.Count(text[:from], "\n")
+}
+
+// brokenLinkFinding builds one broken-link finding (F-0352): the line, the
+// suggestion after " — ", and — in an append-only errata — the errata command
+// that adds the correction (F-0329).
+func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint, action string) Finding {
+	detail := fmt.Sprintf("broken %s %s — %s", kind, token, hint)
+	var fix string
+	if strings.HasPrefix(d.rel, "content/errata/") {
+		// Diagnosis only: the errata cannot be edited, the Fix is the action.
+		fix = fmt.Sprintf("cerne %s errata %s '<!-- lint:ok-broken-link %s --> <the right target, or why the link is history>'", errataKind(d.entity), d.entity, r.Target)
+		detail += "; append-only errata: append the correction with " + fix
+	} else {
+		// Same decision as ref-to-superseded: only an errata is not editable
+		// (the scan reads concluded entities through their errata alone).
+		detail += action + ", then 'cerne push'"
+	}
+	return Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line, Detail: detail, Fix: fix}
+}
+
+// backendFileNames maps every file base name under repoDir (.git excluded) to
+// its backend-relative slash paths.
+func backendFileNames(repoDir string) map[string][]string {
+	out := map[string][]string{}
+	_ = filepath.WalkDir(repoDir, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if e.IsDir() {
+			if e.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel, err := filepath.Rel(repoDir, p); err == nil {
+			rel = filepath.ToSlash(rel)
+			out[path.Base(rel)] = append(out[path.Base(rel)], rel)
+		}
+		return nil
+	})
+	return out
+}
+
+// idHint explains an unknown id-form wiki-link target: the same id with
+// another zero padding, else the last id of a known prefix.
+func idHint(target string, ids map[string]bool) (hint, action string) {
+	split := func(id string) (string, int, bool) {
+		p, n, ok := strings.Cut(id, "-")
+		v, err := strconv.Atoi(n)
+		return p, v, ok && err == nil
+	}
+	prefix, num, _ := split(mdlink.CanonicalID(target))
+	var same []string
+	last, lastNum := "", -1
+	for id := range ids {
+		p, n, ok := split(id)
+		if !ok || p != prefix {
+			continue
+		}
+		if n == num {
+			same = append(same, id)
+		}
+		if n > lastNum {
+			last, lastNum = id, n
+		}
+	}
+	const pick = ": point the link to an existing id ('cerne brief' lists them) or remove it"
+	if len(same) == 1 {
+		return "did you mean [[" + same[0] + "]]?", " replace the link with it"
+	}
+	if last != "" {
+		return "no such id; the last " + prefix + "- id is " + last, pick
+	}
+	return "no such id", pick
 }
 
 // knownEntityIDs collects every entity id, canonicalized, as the id-form
@@ -1250,13 +1380,16 @@ func knownEntityIDs(features []store.Feature, decisions []store.Decision, refere
 // never extracted by mdlink, so this rule cannot false-positive on TOML
 // tables or bracketed prose.
 func wikiLinkFindings(d scannedDoc, text string, ids map[string]bool) []Finding {
-	_, broken := mdlink.WikiLinks(text, func(target string) (string, bool) {
-		id := mdlink.CanonicalID(target)
-		return id, ids[id]
-	})
-	findings := make([]Finding, 0, len(broken))
-	for _, target := range broken {
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken wiki-link: [[" + target + "]]"})
+	var findings []Finding
+	for _, r := range mdlink.Refs(text, true) {
+		if ids[mdlink.CanonicalID(r.Target)] {
+			continue
+		}
+		if brokenAcked(d, text, r) {
+			continue
+		}
+		hint, action := idHint(r.Target, ids)
+		findings = append(findings, brokenLinkFinding(d, r, "wiki-link", "[["+r.Target+"]]", hint, action))
 	}
 	return findings
 }

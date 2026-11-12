@@ -30,7 +30,7 @@ func TestIdeaLinksResolveAndIdeasFeedNoRule(t *testing.T) {
 	}
 	broken99 := false
 	for _, fnd := range got {
-		if fnd.Rule == RuleBrokenLink && strings.Contains(fnd.Detail, "I-0001") {
+		if fnd.Rule == RuleBrokenLink && strings.Contains(fnd.Detail, "wiki-link [[I-0001]]") {
 			t.Fatalf("[[I-0001]] must resolve as a wiki-link: %+v", fnd)
 		}
 		if fnd.Rule == RuleBrokenLink && strings.Contains(fnd.Detail, "I-0099") {
