@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
+
+	"github.com/henriquesakata/cerne/internal/slug"
 )
 
 // titleWeight is the bm25 weight of the title column against 1 for the body
@@ -26,19 +29,21 @@ const (
 
 // EntityResult is one entity of a search: its best-ranked document (Result),
 // every document of it that matched, and how many distinct query terms its
-// documents cover (set on the broadened path only).
+// documents cover (set on the coverage path only).
 type EntityResult struct {
 	Result
 	Docs     []string
 	Coverage int
+	best     int64 // rowid of the best document, for its snippet
 }
 
-// SearchEntities is SearchBroad with one line per entity (F-0367). It first
-// tries every term in one document (exact); when that finds nothing it ORs the
-// keywords with their stems (Keywords) and orders entities by the number of
-// distinct terms their documents cover, bm25 of the best document (title
-// weighted) breaking ties, and reports broadened=true. Explicit FTS5 syntax
-// and single-keyword queries are not broadened (F-0343).
+// SearchEntities is SearchBroad with one line per entity (F-0367). Entities
+// with every term in one document (exact, bm25 order) come first. When they
+// are fewer than limit, the list is filled by coverage: the keywords ORed with
+// their stems, entities ordered by the distinct terms their documents cover
+// plus those in their title, then bm25 of the best document (title weighted).
+// broadened is true when nothing was exact. Explicit FTS5 syntax and
+// single-keyword queries stay exact (F-0343).
 func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -50,19 +55,34 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 	if err != nil {
 		return nil, false, err
 	}
-	terms := keywordTerms(query)
-	if len(hits) > 0 || ftsSyntax.MatchString(query) || len(terms) < 2 {
-		res, err := topEntities(db, match, hits, nil, limit)
-		return res, false, err
+	res := truncate(groupRows(hits), limit)
+	if err := fillSnippets(db, match, res); err != nil {
+		return nil, false, err
 	}
-	res, err := coverageEntities(db, terms, limit)
-	return res, len(res) > 0, err
+	terms := keywordTerms(query)
+	if len(res) >= limit || ftsSyntax.MatchString(query) || len(terms) < 2 {
+		return res, false, nil
+	}
+	more, err := coverageEntities(db, terms, limit+len(res))
+	if err != nil {
+		return nil, false, err
+	}
+	exact := len(res) > 0
+	seen := map[string]bool{}
+	for _, r := range res {
+		seen[r.EntityID] = true
+	}
+	for _, r := range more {
+		if len(res) < limit && !seen[r.EntityID] {
+			res = append(res, r)
+		}
+	}
+	return res, !exact && len(res) > 0, nil
 }
 
-// RankEntities is the broadened path of SearchEntities on its own, for a
-// natural-language question (cerne ask): the keywords' coverage ranking,
-// whatever punctuation the question carries. A question with no keyword left
-// falls back to the exact search of the whole string.
+// RankEntities is the coverage ranking of SearchEntities on its own, for a
+// natural-language question (cerne ask), whatever punctuation it carries. A
+// question with no keyword left falls back to the exact search of the string.
 func RankEntities(dbPath, query string, limit int) ([]EntityResult, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -77,7 +97,8 @@ func RankEntities(dbPath, query string, limit int) ([]EntityResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return topEntities(db, match, hits, nil, limit)
+	res := truncate(groupRows(hits), limit)
+	return res, fillSnippets(db, match, res)
 }
 
 // exactRows matches query as given, retried as one quoted phrase when FTS5
@@ -92,7 +113,8 @@ func exactRows(db *sql.DB, query string) ([]rankedRow, string, error) {
 }
 
 // coverageEntities ORs terms (each with its stem prefix) and orders the
-// entities by how many distinct terms their documents cover.
+// entities by how many distinct terms their documents cover plus how many
+// are in their title, bm25 order breaking ties.
 func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, error) {
 	if len(terms) > maxCoverageTerms {
 		terms = terms[:maxCoverageTerms]
@@ -110,7 +132,44 @@ func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, er
 	if err != nil {
 		return nil, err
 	}
-	return topEntities(db, match, hits, coverage, limit)
+	res := groupRows(hits)
+	score := make(map[string]int, len(res))
+	for i := range res {
+		res[i].Coverage = coverage[res[i].EntityID]
+		score[res[i].EntityID] = res[i].Coverage + titleHits(res[i].Title, terms)
+	}
+	sort.SliceStable(res, func(i, j int) bool { return score[res[i].EntityID] > score[res[j].EntityID] })
+	res = truncate(res, limit)
+	return res, fillSnippets(db, match, res)
+}
+
+// titleHits counts the terms whose word, or stem as a prefix, is in title
+// (camelCase parts included).
+func titleHits(title string, terms []string) int {
+	var words []string
+	for _, tok := range identifier.FindAllString(title, -1) {
+		words = append(words, slug.Fold(tok))
+		if parts := splitCamel(tok); len(parts) > 1 {
+			for _, p := range parts {
+				words = append(words, slug.Fold(p))
+			}
+		}
+	}
+	for _, tok := range strings.FieldsFunc(slug.Fold(title), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		words = append(words, tok)
+	}
+	n := 0
+	for _, t := range terms {
+		f := slug.Fold(t)
+		s := stem(f)
+		for _, w := range words {
+			if w == f || (s != f && strings.HasPrefix(w, s)) {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }
 
 // rankedRow is a matching document in bm25 order, without its snippet.
@@ -155,37 +214,47 @@ func countCoverage(db *sql.DB, match string, coverage map[string]int) error {
 // docOrder is the display order of a feature's documents in Docs.
 var docOrder = map[string]int{"spec": 0, "plan": 1, "result": 2, "errata": 3}
 
-// topEntities groups hits (bm25 order) by entity — the first row of an entity
-// is its best document — orders the entities by coverage (stable, so bm25
-// order survives ties), keeps limit of them and fetches their snippets.
-func topEntities(db *sql.DB, match string, hits []rankedRow, coverage map[string]int, limit int) ([]EntityResult, error) {
-	out := []EntityResult{}
-	best := map[string]int64{}
+// groupRows groups hits (bm25 order) by entity: the first row of an entity is
+// its best document, the others only add to Docs (in docOrder).
+func groupRows(hits []rankedRow) []EntityResult {
+	var out []EntityResult
 	at := map[string]int{}
 	for _, h := range hits {
 		i, ok := at[h.EntityID]
 		if !ok {
 			i = len(out)
 			at[h.EntityID] = i
-			best[h.EntityID] = h.rowid
-			out = append(out, EntityResult{Result: h.Result, Coverage: coverage[h.EntityID]})
+			out = append(out, EntityResult{Result: h.Result, best: h.rowid})
 		}
 		if h.Doc != "" {
 			out[i].Docs = append(out[i].Docs, h.Doc)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Coverage > out[j].Coverage })
-	if limit >= 0 && len(out) > limit {
-		out = out[:limit]
-	}
 	for i := range out {
 		docs := out[i].Docs
 		sort.SliceStable(docs, func(a, b int) bool { return rankDoc(docs[a]) < rankDoc(docs[b]) })
-		if err := db.QueryRow(entitySnipSQL, match, best[out[i].EntityID]).Scan(&out[i].Snippet); err != nil {
-			return nil, err
+	}
+	if out == nil {
+		out = []EntityResult{}
+	}
+	return out
+}
+
+func truncate(res []EntityResult, limit int) []EntityResult {
+	if limit >= 0 && len(res) > limit {
+		return res[:limit]
+	}
+	return res
+}
+
+// fillSnippets sets each result's snippet from its best document for match.
+func fillSnippets(db *sql.DB, match string, res []EntityResult) error {
+	for i := range res {
+		if err := db.QueryRow(entitySnipSQL, match, res[i].best).Scan(&res[i].Snippet); err != nil {
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 func rankDoc(doc string) int {

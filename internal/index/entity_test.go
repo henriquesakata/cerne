@@ -132,3 +132,41 @@ func TestSearchEntitiesKeepsExplicitSyntax(t *testing.T) {
 		t.Fatalf("syntax query = %v broadened=%v err=%v; want nothing, not broadened", entityIDs(rs), broadened, err)
 	}
 }
+
+// When fewer entities than the limit have every term in one document, the
+// rest of the list is filled by coverage, after the exact ones and without
+// the broadened notice (a real query lost its note to two exact hits).
+func TestSearchEntitiesFillsAfterExactHits(t *testing.T) {
+	db := seedEntities(t,
+		fixtureFeature{"F-0001", "Sala", map[string]string{"spec": "resume session route rooms"}},
+		fixtureFeature{"F-0002", "Rota", map[string]string{"spec": "resume sessions rooms"}},
+		fixtureFeature{"F-0003", "Agenda", map[string]string{"spec": "consultas da semana"}},
+	)
+	rs, broadened, err := SearchEntities(db, "resume session route rooms", 10)
+	if err != nil || broadened {
+		t.Fatalf("SearchEntities: %v broadened=%v", err, broadened)
+	}
+	if got := entityIDs(rs); !reflect.DeepEqual(got, []string{"F-0001", "F-0002"}) {
+		t.Fatalf("order = %v, want the exact F-0001, then F-0002 by coverage", got)
+	}
+	if rs[1].Snippet == "" {
+		t.Fatalf("filled entity has no snippet: %+v", rs[1])
+	}
+}
+
+// A query term in the title counts once more in the coverage order: two terms
+// in the title beat three in a long body (a note lost to big plans).
+func TestSearchEntitiesTitleTermsCountInCoverage(t *testing.T) {
+	db := seedEntities(t,
+		fixtureFeature{"F-0001", "InjectMock não mocka RestClient", map[string]string{"spec": "nota curta"}},
+		fixtureFeature{"F-0002", "Plano grande", map[string]string{"spec": "injectmock restclient resolve e muito mais texto"}},
+		fixtureFeature{"F-0003", "Agenda", map[string]string{"spec": "consultas da semana"}},
+	)
+	rs, _, err := SearchEntities(db, "InjectMock RestClient qualifier resolve", 10)
+	if err != nil {
+		t.Fatalf("SearchEntities: %v", err)
+	}
+	if got := entityIDs(rs); !reflect.DeepEqual(got, []string{"F-0001", "F-0002"}) {
+		t.Fatalf("order = %v, want the title match F-0001 first", got)
+	}
+}
