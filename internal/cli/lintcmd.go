@@ -275,7 +275,7 @@ func printFixTasks(w io.Writer, findings []lint.Finding) {
 	for _, f := range findings {
 		// An advisory finding is reported, never queued as work (F-0316).
 		if lint.Blocking(f) {
-			fmt.Fprintf(w, "- [ ] %s: %s\n", findingLoc(f), taskAction(f))
+			fmt.Fprintf(w, "- [ ] %s: %s\n", findingPos(f), taskAction(f))
 		}
 	}
 }
