@@ -14,7 +14,7 @@ import (
 // first. Works that are not active never appear.
 func WorkSessions(works []store.Work, signals []SessionSignal) map[string][]SessionSignal {
 	active := map[string]bool{}
-	autoByFeature := map[string]string{}
+	autoByFeature := map[string][]string{}
 	for _, w := range works {
 		if w.State != domain.WorkActive {
 			continue
@@ -22,18 +22,20 @@ func WorkSessions(works []store.Work, signals []SessionSignal) map[string][]Sess
 		active[w.ID] = true
 		if w.Auto {
 			for _, r := range w.Refs {
-				autoByFeature[r] = w.ID
+				autoByFeature[r] = append(autoByFeature[r], w.ID)
 			}
 		}
 	}
 	out := map[string][]SessionSignal{}
 	for _, s := range signals {
-		id := s.Entity
-		if !strings.HasPrefix(id, "W-") {
-			id = autoByFeature[id]
+		ids := autoByFeature[s.Entity]
+		if strings.HasPrefix(s.Entity, "W-") {
+			ids = []string{s.Entity}
 		}
-		if active[id] {
-			out[id] = append(out[id], s)
+		for _, id := range ids {
+			if active[id] {
+				out[id] = append(out[id], s)
+			}
 		}
 	}
 	for _, l := range out {

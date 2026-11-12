@@ -293,7 +293,10 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	}
 
 	now := time.Now().UTC()
-	localHost, _ := os.Hostname()
+	localHost, err := os.Hostname()
+	if err != nil {
+		localHost = "" // unknown host: never claim "another machine"
+	}
 	for _, wk := range shown {
 		line := fmt.Sprintf("%s  [%s]  %s  actor: %s  age: %s", wk.ID, wk.State, wk.Title, wk.Actor, formatAge(now.Sub(wk.UpdatedAt)))
 		if len(wk.Refs) > 0 {
@@ -327,7 +330,7 @@ func sessionText(sigs []app.SessionSignal, actor, localHost string, now time.Tim
 		}
 		return "session: " + strings.Join(parts, ", ")
 	}
-	if h := app.ActorHost(actor); h != "" && h != localHost {
+	if h := app.ActorHost(actor); h != "" && localHost != "" && !strings.EqualFold(h, localHost) {
 		return "session: on another machine (" + h + ")"
 	}
 	return "session: none on this machine"

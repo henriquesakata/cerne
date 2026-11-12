@@ -43,3 +43,16 @@ func TestActorHost(t *testing.T) {
 		}
 	}
 }
+
+// A feature binding belongs to every active auto work referencing the feature.
+func TestWorkSessionsFeatureBindingToEveryAutoWork(t *testing.T) {
+	t0 := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	works := []store.Work{
+		{ID: "W-0001", State: domain.WorkActive, Auto: true, Refs: []string{"F-0010"}},
+		{ID: "W-0002", State: domain.WorkActive, Auto: true, Refs: []string{"F-0010"}},
+	}
+	got := WorkSessions(works, []SessionSignal{{Session: "s", Entity: "F-0010", LastSignal: t0}})
+	if len(got["W-0001"]) != 1 || len(got["W-0002"]) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+}

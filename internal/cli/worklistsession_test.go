@@ -201,3 +201,37 @@ func TestWorkListSessionJSON(t *testing.T) {
 		t.Fatalf("sessions must be omitted when empty:\n%s", out)
 	}
 }
+
+// TestWorkListSessionHostFromRealActor (crit. 4): an actor built by `work
+// start` is local; a case-folded host still is; so is an actor with no host.
+func TestWorkListSessionHostFromRealActor(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Real actor", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\n%s", err, out)
+	}
+	w, err := store.LoadWork(repoDir, "W-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(w.Actor, "@") {
+		t.Skipf("actor %q carries no host on this machine", w.Actor)
+	}
+	check := func(actor string) {
+		t.Helper()
+		w.Actor = actor
+		if err := store.SaveWork(repoDir, w); err != nil {
+			t.Fatal(err)
+		}
+		out, err := execCerne(t, "work", "list", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "session: none on this machine") {
+			t.Fatalf("actor %q: want local, got:\n%s", actor, out)
+		}
+	}
+	check(w.Actor)
+	i := strings.LastIndex(w.Actor, "@")
+	check(w.Actor[:i+1] + strings.ToUpper(w.Actor[i+1:]))
+	check("agent")
+}
