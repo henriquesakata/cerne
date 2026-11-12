@@ -235,6 +235,15 @@ func TestGitSlotsFollowHooksPath(t *testing.T) {
 			},
 		},
 		{
+			name:   "invocation only in a comment",
+			config: func(string) string { return "[core]\n\thooksPath = githooks\n" },
+			files:  map[string]string{"githooks/commit-msg": "# " + guardInv, "githooks/prepare-commit-msg": "  #" + trailerInv},
+			want: map[string]want{
+				"commit-msg":         {StateMissing, filepath.Join("githooks", "commit-msg"), "core.hooksPath=githooks — add to your hook manager: " + strings.TrimSpace(guardInv), ""},
+				"prepare-commit-msg": {StateMissing, filepath.Join("githooks", "prepare-commit-msg"), "core.hooksPath=githooks — add to your hook manager: " + strings.TrimSpace(trailerInv), ""},
+			},
+		},
+		{
 			name:   "hooksPath only in a comment",
 			config: func(string) string { return "[core]\n\tbare = false\n# hooksPath = .husky/_\n" },
 			files:  map[string]string{".husky/commit-msg": guardInv},

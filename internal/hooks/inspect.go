@@ -124,7 +124,7 @@ func managedSlot(projDir, hooksPath, slot, snippet string) GitHookState {
 		if found == "" {
 			found = c
 		}
-		if strings.Contains(string(raw), invocation) {
+		if callsCerne(string(raw), invocation) {
 			found, st.State, st.Detail = c, FileOK, ""
 			break
 		}
@@ -137,4 +137,15 @@ func managedSlot(projDir, hooksPath, slot, snippet string) GitHookState {
 		st.Path = rel
 	}
 	return st
+}
+
+// callsCerne reports whether a hook body runs the invocation on a line that is
+// not a shell comment.
+func callsCerne(body, invocation string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		if t := strings.TrimSpace(line); !strings.HasPrefix(t, "#") && strings.Contains(t, invocation) {
+			return true
+		}
+	}
+	return false
 }
