@@ -156,6 +156,27 @@ func TestHasStepTokenRefusesProseAndAcceptsRealForms(t *testing.T) {
 }
 
 // Gauntlet r2 (N10): the replaced decision is read back and shown.
+// F-0345: StepExists is the matching InsertAtSteps uses, asked on its own.
+func TestStepExistsMatchesLikeInsertAtSteps(t *testing.T) {
+	for step, want := range map[string]bool{"S6.6": true, "S6.7": true, "S6.1": false, "S9.9": false, "Regra": false} {
+		if got := StepExists(bodyFixture, step); got != want {
+			t.Errorf("StepExists(%q) = %v, want %v", step, got, want)
+		}
+	}
+}
+
+// F-0345: `Sem passo: sim` marks a step-less erratum as deliberate.
+func TestParseErrataItemsReadsSemPasso(t *testing.T) {
+	doc := "---\ncerne_id: RB-0001\n---\n\n## errata 2026-11-11 — agent\n\nAltera: -\nSem passo: sim\n\nNota geral.\n\n## errata 2026-11-11 — agent\n\nAltera: -\n\nEsquecida.\n"
+	items := ParseErrataItems(doc)
+	if len(items) != 2 || !items[0].Stepless || items[1].Stepless {
+		t.Fatalf("items = %+v, want E1 stepless and E2 not", items)
+	}
+	if items[0].Text != "Nota geral." {
+		t.Fatalf("marker must not leak into the text: %q", items[0].Text)
+	}
+}
+
 func TestStateLabelShowsPreviousDecisions(t *testing.T) {
 	doc := "## errata 2026-11-07 — a\n\nAltera: S6.6\nAnterior: decidida — \"primeira\" (dono, 2026-11-08)\nEstado: decidida — \"segunda\" (chefe, 2026-11-09)\n\nt\n"
 	it := ParseErrataItems(doc)[0]
