@@ -102,13 +102,13 @@ cerne search facebook   # history stays searchable
 
 ### See it with data
 
-An empty project does not show what cerne is for. This builds a fictional one with a realistic history (features in every state, a rejected proposal, a superseded decision, an epic) on your machine, in a few seconds:
+An empty project does not show what cerne is for. This builds a fictional one with a realistic history (features in every state, a rejected proposal, a superseded decision, an epic) on your machine, in a few seconds, from the binary alone (no clone, no network; macOS, Linux and Windows):
 
 ```bash
-git clone https://github.com/henriquesakata/cerne && sh cerne/examples/demo/seed.sh
+cerne demo
 ```
 
-Then `cd cerne-demo/taskflow && cerne ui` and click around. What is in it and what to try: [examples/demo](examples/demo/README.md).
+Then `cd cerne-demo/taskflow && cerne ui` and click around. On a cerne older than the release that added `cerne demo`, the clone still works: `git clone https://github.com/henriquesakata/cerne && sh cerne/examples/demo/seed.sh`. What is in it and what to try: [examples/demo](examples/demo/README.md).
 
 ### Agents without a shell: MCP
 

@@ -13,9 +13,11 @@ import (
 	"testing"
 )
 
-// Black-box tests of examples/demo/seed.sh (F-0358): the script runs for real,
-// against a cerne binary built from this tree, and the project it generates
-// is inspected through the public CLI.
+// Black-box tests of `cerne demo` (F-0369, ported from examples/demo/seed.sh,
+// F-0358): the command runs for real, from a cerne binary built from this
+// tree, and the project it generates is inspected through the public CLI.
+// seed.sh keeps two tests of its own: it refuses without cerne, and it
+// delegates to `cerne demo` when the binary has it.
 
 var demo struct {
 	once sync.Once
@@ -40,7 +42,7 @@ func demoBin(t *testing.T) string {
 			return
 		}
 		demo.dir = filepath.Join(root, "demo")
-		demo.out, demo.err = runSeed(demo.bin, root, demo.dir)
+		demo.out, demo.err = runDemo(demo.bin, root, demo.dir)
 	})
 	if demo.err != nil {
 		t.Fatalf("building cerne or seeding the demo failed: %v\n%s", demo.err, demo.out)
@@ -48,15 +50,33 @@ func demoBin(t *testing.T) string {
 	return demo.bin
 }
 
-// runSeed runs the seed script as an agent session would: CERNE_ACTOR=agent
-// is what `cerne hook install` stamps, and the script must still finish.
-func runSeed(bin, home, dest string, extraEnv ...string) (string, error) {
+// isolatedEnv is the environment of every demo run: PATH plus a HOME and
+// cerne dirs of the test's own, so nothing reaches the user's real backend or
+// caches. CERNE_ACTOR=agent is what `cerne hook install` stamps, and the demo
+// must still finish under it.
+func isolatedEnv(path, home string) []string {
+	return []string{"PATH=" + path, "HOME=" + home, "CERNE_ACTOR=agent",
+		"CERNE_CACHE_DIR=" + filepath.Join(home, "cache"),
+		"CERNE_DATA_DIR=" + filepath.Join(home, "data"),
+		"CERNE_CONFIG_DIR=" + filepath.Join(home, "config")}
+}
+
+// runDemo runs `cerne demo <dest>` as an agent session would.
+func runDemo(bin, home, dest string) (string, error) {
+	cmd := exec.Command(filepath.Join(bin, "cerne"), "demo", dest)
+	cmd.Env = isolatedEnv(bin+string(os.PathListSeparator)+os.Getenv("PATH"), home)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// runSeed runs the seed script, with bin first on PATH.
+func runSeed(bin, home, dest string) (string, error) {
 	script, err := filepath.Abs("../examples/demo/seed.sh")
 	if err != nil {
 		return "", err
 	}
 	cmd := exec.Command("sh", script, dest)
-	cmd.Env = append([]string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + home, "CERNE_ACTOR=agent"}, extraEnv...)
+	cmd.Env = isolatedEnv(bin+string(os.PathListSeparator)+os.Getenv("PATH"), home)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -67,7 +87,7 @@ func demoCerne(t *testing.T, args ...string) (string, error) {
 	bin := demoBin(t)
 	cmd := exec.Command(filepath.Join(bin, "cerne"), args...)
 	cmd.Dir = filepath.Join(demo.dir, "taskflow")
-	cmd.Env = []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + filepath.Dir(bin), "CERNE_CACHE_DIR=" + filepath.Join(demo.dir, ".cache")}
+	cmd.Env = append(isolatedEnv(bin+string(os.PathListSeparator)+os.Getenv("PATH"), filepath.Dir(bin)), "CERNE_CACHE_DIR="+filepath.Join(demo.dir, ".cache"))
 	out, err := cmd.Output()
 	return string(out), err
 }
@@ -98,6 +118,13 @@ func TestDemoSeed_BuildsProject(t *testing.T) {
 	// init's own [gates] table (light mode, F-0364) stays; the seeding keys go.
 	if strings.Contains(string(rc), "approve =") || strings.Contains(string(rc), "accept =") {
 		t.Errorf("the generated .cernerc still opens the gates:\n%s", rc)
+	}
+	// Criterion 5, stated: both gates are human and lint finds no debt.
+	if regexp.MustCompile(`(?m)^\s*(approve|accept)\s*=\s*"auto"`).Match(rc) {
+		t.Errorf("a gate is still auto:\n%s", rc)
+	}
+	if out, err := demoCerne(t, "lint"); err != nil {
+		t.Errorf("cerne lint on the demo: %v\n%s", err, out)
 	}
 }
 
@@ -213,9 +240,12 @@ func TestDemoSeed_RefusesExistingDir(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("mine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runSeed(bin, t.TempDir(), dest)
+	out, err := runDemo(bin, t.TempDir(), dest)
 	if err == nil {
-		t.Fatalf("the seed ran over an existing directory:\n%s", out)
+		t.Fatalf("cerne demo ran over an existing directory:\n%s", out)
+	}
+	if !strings.Contains(out, "already exists") {
+		t.Errorf("the refusal does not name the reason:\n%s", out)
 	}
 	entries, _ := os.ReadDir(dest)
 	if data, _ := os.ReadFile(keep); string(data) != "mine" || len(entries) != 1 {
@@ -262,9 +292,9 @@ func TestDemoSeed_RefusesInsideAnotherProject(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(outer, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runSeed(bin, t.TempDir(), dest)
+	out, err := runDemo(bin, t.TempDir(), dest)
 	if err == nil {
-		t.Fatalf("the seed ran inside another cerne project:\n%s", out)
+		t.Fatalf("cerne demo ran inside another cerne project:\n%s", out)
 	}
 	if !strings.Contains(out, outer) {
 		t.Errorf("the refusal does not name the enclosing project:\n%s", out)
@@ -274,22 +304,24 @@ func TestDemoSeed_RefusesInsideAnotherProject(t *testing.T) {
 	}
 }
 
-// A failure midway must not leave a half-built demo with its gates open.
+// A failure midway must not leave a half-built demo behind. Without git on
+// PATH, `cerne demo` gets past its refusals, creates the destination and the
+// backend, and then `init` fails: everything it created must go.
 func TestDemoSeed_FailureRemovesTheDemo(t *testing.T) {
 	bin := demoBin(t)
-	// A cerne that works until asked to reject a feature.
-	shim := t.TempDir()
-	wrapper := "#!/bin/sh\nif [ \"$1 $2\" = \"feature reject\" ]; then echo 'boom' >&2; exit 1; fi\nexec " + filepath.Join(bin, "cerne") + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(shim, "cerne"), []byte(wrapper), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	dest := filepath.Join(t.TempDir(), "my demo") // a space in the path, too
-	out, err := runSeed(shim, t.TempDir(), dest)
+	cmd := exec.Command(filepath.Join(bin, "cerne"), "demo", dest)
+	cmd.Env = isolatedEnv(bin, t.TempDir()) // cerne only: no git, no sh
+	b, err := cmd.CombinedOutput()
+	out := string(b)
 	if err == nil {
-		t.Fatalf("the seed reported success although a command failed:\n%s", out)
+		t.Fatalf("cerne demo reported success although a step failed:\n%s", out)
 	}
-	if !strings.Contains(out, "feature reject") || !strings.Contains(out, "boom") {
-		t.Errorf("the failure does not name the command and its output:\n%s", out)
+	if !strings.Contains(out, "cerne init") || !strings.Contains(out, "git") {
+		t.Errorf("the failure does not name the step and its cause:\n%s", out)
+	}
+	if !strings.Contains(out, "removed") {
+		t.Errorf("the failure does not say the demo was removed:\n%s", out)
 	}
 	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
 		t.Error("a half-built demo was left behind")
@@ -299,11 +331,55 @@ func TestDemoSeed_FailureRemovesTheDemo(t *testing.T) {
 func TestDemoSeed_PathWithSpaces(t *testing.T) {
 	bin := demoBin(t)
 	dest := filepath.Join(t.TempDir(), "my demo")
+	out, err := runDemo(bin, t.TempDir(), dest)
+	if err != nil {
+		t.Fatalf("cerne demo into a path with a space failed: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if want := `cd "` + filepath.Join(dest, "taskflow") + `" && cerne ui`; lines[len(lines)-1] != want {
+		t.Errorf("last line = %q, want %q\n%s", lines[len(lines)-1], want, out)
+	}
+}
+
+// Whoever has the old README link still gets the demo: seed.sh hands over to
+// `cerne demo` when the binary has it.
+func TestDemoSeed_ScriptDelegatesToCerneDemo(t *testing.T) {
+	bin := demoBin(t)
+	dest := filepath.Join(t.TempDir(), "demo")
 	out, err := runSeed(bin, t.TempDir(), dest)
 	if err != nil {
-		t.Fatalf("seeding into a path with a space failed: %v\n%s", err, out)
+		t.Fatalf("seed.sh failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, `cd "`+dest) {
-		t.Errorf("the closing instructions do not quote the path:\n%s", out)
+	if !strings.HasSuffix(strings.TrimRight(out, "\n"), `cd "`+filepath.Join(dest, "taskflow")+`" && cerne ui`) {
+		t.Errorf("seed.sh did not hand over to cerne demo:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "seed.log")); !os.IsNotExist(err) {
+		t.Errorf("seed.sh seeded by itself (seed.log present) instead of calling cerne demo")
+	}
+}
+
+// An older cerne, without `demo`, still gets the demo from the script: the
+// probe is the exit status of `cerne demo --help`, which such a binary fails
+// (and `cerne help demo`, which it passes, is not used).
+func TestDemoSeed_ScriptSeedsItselfOnAnOldBinary(t *testing.T) {
+	bin := demoBin(t)
+	old := t.TempDir()
+	fake := "#!/bin/sh\n" +
+		"if [ \"$1\" = demo ]; then echo 'Error: unknown command \"demo\" for \"cerne\"' >&2; exit 1; fi\n" +
+		"if [ \"$1 $2\" = 'help demo' ]; then echo 'Unknown help topic [`demo`]'; exit 0; fi\n" +
+		"exec " + filepath.Join(bin, "cerne") + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(old, "cerne"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "demo")
+	out, err := runSeed(old, t.TempDir(), dest)
+	if err != nil {
+		t.Fatalf("seed.sh on an old binary failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "seed.log")); err != nil {
+		t.Errorf("seed.sh did not seed by itself (no seed.log):\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "taskflow", ".docs", "CONTEXT.md")); err != nil {
+		t.Errorf("the demo was not built: %v", err)
 	}
 }
