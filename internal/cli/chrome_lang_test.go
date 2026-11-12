@@ -11,6 +11,7 @@ import (
 	"testing"
 	"unicode"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/spf13/cobra"
 )
 
@@ -106,33 +107,6 @@ func f(cmd C, w io.Writer, b *strings.Builder, id string) error {
 	}
 }
 
-// ptWords are Portuguese function words and verbs that an English message
-// never carries as a whole token — the diacritic check alone misses
-// unaccented pt-BR like "aceita(s)" or "informe um <id>". English homographs
-// ("no", "do", "com" of ".com") are left out on purpose.
-var ptWords = map[string]bool{
-	"um": true, "uma": true, "ou": true, "para": true, "sem": true, "nenhum": true, "nenhuma": true,
-	"de": true, "da": true, "das": true, "dos": true, "na": true, "em": true, "que": true,
-	"pelo": true, "pela": true, "seu": true, "sua": true, "deve": true, "pode": true, "ainda": true,
-	"foi": true, "ser": true, "informe": true, "erro": true, "falha": true, "arquivo": true,
-	"aceita": true, "aceitando": true,
-}
-
-// ptReason says why s reads as pt-BR, or "" when it does not.
-func ptReason(s string) string {
-	for _, r := range s {
-		if unicode.Is(unicode.Latin, r) && r > 127 {
-			return "diacritic " + strconv.QuoteRune(r)
-		}
-	}
-	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) }) {
-		if ptWords[w] {
-			return "pt-BR word " + strconv.Quote(w)
-		}
-	}
-	return ""
-}
-
 // ptOutputHits lists, as "file:line:col: call: reason: literal", every
 // pt-BR literal f passes to an output or error call.
 func ptOutputHits(fset *token.FileSet, f *ast.File) []string {
@@ -169,7 +143,7 @@ func ptOutputHits(fset *token.FileSet, f *ast.File) []string {
 				if err != nil {
 					continue
 				}
-				if why := ptReason(s); why != "" {
+				if why := doccheck.PTReason(s); why != "" {
 					hits = append(hits, fset.Position(lit.Pos()).String()+": "+name+": "+why+": "+strconv.Quote(s))
 				}
 			}
