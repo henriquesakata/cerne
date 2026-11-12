@@ -129,27 +129,85 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 			continue
 		}
 		workAction := domain.ActionComplete
-		eventType := "work.done"
 		if action != domain.ActionComplete {
 			workAction = domain.ActionAbandon
-			eventType = "work.abandoned"
 		}
-		newState, err := domain.TransitionWork(w.State, workAction)
-		if err != nil {
-			return err
-		}
-		w.State = newState
 		note := "feature " + string(action)
 		if isAdoptedManual {
 			note += " (adotado)"
 		}
-		w.Note = note
-		w.UpdatedAt = time.Now().UTC()
-		if err := store.SaveWork(repoDir, w); err != nil {
+		if err := closeWork(repoDir, w, workAction, note); err != nil {
 			return err
 		}
-		ev := domain.NewEvent(w.ID, eventType, map[string]string{"note": w.Note, "via": "auto"}, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
+	}
+	return nil
+}
+
+// closeWork ends work w on the cerne's own initiative: done on
+// ActionComplete, abandoned on ActionAbandon, with note on the entity and
+// on the work.done/work.abandoned event, marked via=auto.
+func closeWork(repoDir string, w store.Work, workAction domain.Action, note string) error {
+	newState, err := domain.TransitionWork(w.State, workAction)
+	if err != nil {
+		return err
+	}
+	eventType := "work.done"
+	if newState == domain.WorkAbandoned {
+		eventType = "work.abandoned"
+	}
+	w.State = newState
+	w.Note = note
+	w.UpdatedAt = time.Now().UTC()
+	if err := store.SaveWork(repoDir, w); err != nil {
+		return err
+	}
+	ev := domain.NewEvent(w.ID, eventType, map[string]string{"note": note, "via": "auto"}, EventActor())
+	return store.AppendEvent(repoDir, ev)
+}
+
+// planningWorks (F-0341) picks the planning works of featureID out of works:
+// active, manual, refs exactly [featureID], and created before the feature's
+// last feature.started — or at any time if it never entered development. The
+// shape, never the title, makes a planning work; `feature start`, the exit
+// from the live cycle and `work start` all ask this one function.
+func planningWorks(repoDir string, works []store.Work, featureID string) ([]store.Work, error) {
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var lastStart time.Time
+	for _, ev := range events {
+		if ev.EntityID == featureID && ev.Type == eventTypes[domain.ActionStart] && ev.At.After(lastStart) {
+			lastStart = ev.At
+		}
+	}
+	var out []store.Work
+	for _, w := range works {
+		if w.State != domain.WorkActive || w.Auto || len(w.Refs) != 1 || w.Refs[0] != featureID {
+			continue
+		}
+		if !lastStart.IsZero() && !w.CreatedAt.Before(lastStart) {
+			continue // opened during development: not planning
+		}
+		out = append(out, w)
+	}
+	return out, nil
+}
+
+// closePlanningWorks (F-0341) closes every planning work of featureID, of any
+// actor, with workAction and note — the same transition and event as
+// closeAutoWorks, so it lands in the caller's transition commit.
+func closePlanningWorks(repoDir, featureID string, workAction domain.Action, note string) error {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return err
+	}
+	planning, err := planningWorks(repoDir, works, featureID)
+	if err != nil {
+		return err
+	}
+	for _, w := range planning {
+		if err := closeWork(repoDir, w, workAction, note); err != nil {
 			return err
 		}
 	}

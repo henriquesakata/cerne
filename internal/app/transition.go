@@ -346,7 +346,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			// Auto-registered activity (F-0146): entering development records who
 			// is on it. Only the leaf feature the agent actually picked up — the
 			// epic propagation below never opens works of its own (crit. 4).
+			// Planning ends where development begins (F-0341 crit. 1): every
+			// planning work, of any actor, closes before the auto work opens.
 			if activityAutoEnabled(projDir) {
+				if err := closePlanningWorks(repoDir, id, domain.ActionComplete, "planning closed: feature start"); err != nil {
+					return "", err
+				}
 				if err := openAutoWork(repoDir, f); err != nil {
 					return "", err
 				}
