@@ -1013,3 +1013,31 @@ func TestChannelInjectAllExpiredIsFree(t *testing.T) {
 		t.Fatalf("all-expired injection = %q, %v; want zero bytes without touching the lock", out, err)
 	}
 }
+
+// TestSessionWorkIgnoresOtherAgents (F-0350 crit. 4): an F- binding resolves
+// only the auto work of this machine's agent identity — never one of the same
+// user on another machine (agent:alice@m2) nor a pre-F-0350 bare "agent".
+func TestSessionWorkIgnoresOtherAgents(t *testing.T) {
+	pinMachine(t, "alice", "m1")
+	t.Setenv("CERNE_ACTOR", "agent")
+	cacheDir, repoDir := t.TempDir(), t.TempDir()
+	if err := store.SaveFeature(repoDir, store.Feature{
+		ID: "F-0003", Title: "viva", State: domain.StateInDevelopment, CreatedAt: chanT0, UpdatedAt: chanT0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for id, actor := range map[string]string{"W-0001": "agent:alice@m2", "W-0002": "agent"} {
+		if err := store.SaveWork(repoDir, store.Work{
+			ID: id, Title: "auto", State: domain.WorkActive, Actor: actor, Auto: true,
+			Refs: []string{"F-0003"}, CreatedAt: chanT0, UpdatedAt: chanT0,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := BindSession(cacheDir, "s-m1", "F-0003"); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := sessionWork(cacheDir, repoDir, "s-m1"); ok {
+		t.Fatalf("resolved another agent's work: %+v", got)
+	}
+}
