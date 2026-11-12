@@ -706,6 +706,34 @@ func TestSearchEndpoint(t *testing.T) {
 	}
 }
 
+// F-0343 criterion 6: same broadening rule and "broadened" field as the CLI.
+func TestSearchEndpointBroadened(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	now := time.Now().UTC()
+	for id, body := range map[string]string{"F-0001": "troca de conta e chave", "F-0002": "criptografia do switcher dual"} {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: id, State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveFeature: %v", err)
+		}
+		writeDoc(t, repoDir, id, "spec.md", realDoc(id, body))
+	}
+	var got struct {
+		Results []struct {
+			EntityID string `json:"entity_id"`
+		} `json:"results"`
+		Broadened bool `json:"broadened"`
+	}
+	srv := New(repoDir, projDir, "proj-search")
+	rec := doJSON(t, srv, http.MethodGet, "/api/search?q=troca+conta+chave+criptografia+switcher+dual", "", &got)
+	if rec.Code != http.StatusOK || !got.Broadened || len(got.Results) != 2 {
+		t.Fatalf("code=%d broadened=%v results=%d, want 200/true/2: %s", rec.Code, got.Broadened, len(got.Results), rec.Body.String())
+	}
+	rec = doJSON(t, srv, http.MethodGet, "/api/search?q=troca+conta+chave", "", &struct{}{})
+	if strings.Contains(rec.Body.String(), "broadened") {
+		t.Fatalf("exact hit must not carry broadened: %s", rec.Body.String())
+	}
+}
+
 func TestSearchEndpointEmptyQuery(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())

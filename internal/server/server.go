@@ -634,7 +634,8 @@ type searchHit struct {
 
 // searchResponse is the GET /api/search payload.
 type searchResponse struct {
-	Results []searchHit `json:"results"`
+	Results   []searchHit `json:"results"`
+	Broadened bool        `json:"broadened,omitempty"` // F-0343: no document had every term
 }
 
 // ensureIndex resolves the project's FTS index path and builds it on first
@@ -673,7 +674,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	results, err := index.Search(dbPath, query, limit)
+	results, broadened, err := index.SearchBroad(dbPath, query, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -690,7 +691,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, repoDir, projectID str
 			SupersededBy: res.SupersededBy,
 		}
 	}
-	writeJSON(w, http.StatusOK, searchResponse{Results: hits})
+	writeJSON(w, http.StatusOK, searchResponse{Results: hits, Broadened: broadened})
 }
 
 // askRequest is the POST /api/ask body: a natural-language question and
