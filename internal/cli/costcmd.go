@@ -74,17 +74,10 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	if f.State != domain.StateImplemented {
-		return fmt.Errorf("%w: %s is %s — run 'cerne feature complete %s' first; the stamp records the closed cost, before the human accept",
-			cost.ErrStampNeedsImplemented, id, f.State, id)
-	}
 	cacheDir := filepath.Dir(ctx.repoDir)
-	r, err := cost.Compute(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, id)
+	r, err := cost.PrecheckStamp(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, f.State, id)
 	if err != nil {
 		return err
-	}
-	if r.Sessions == 0 && (r.Children == nil || len(r.Children.Stamped) == 0) {
-		return fmt.Errorf("%w for %s", cost.ErrNothingToStamp, id)
 	}
 	// The anchor already holds more than the transcripts: keep it, and drop the
 	// snapshot — it can only hold less (C12).
