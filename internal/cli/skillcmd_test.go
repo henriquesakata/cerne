@@ -139,3 +139,36 @@ func TestLoadGoldenPathsIncludesRunbooks(t *testing.T) {
 		t.Fatalf("body kept entity frontmatter: %q", items[0].Body)
 	}
 }
+
+// F-0362 crit. 3: a project with .cursor/, .codex/ and .gemini/ gets the guide
+// where each agent reads skills, and the managed pointers.
+func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
+	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{".cursor", ".codex", ".gemini"} {
+		if err := os.Mkdir(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := execCerne(t, "skill", "install", "--dir", dir)
+	if err != nil {
+		t.Fatalf("skill install: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"cerne-authoring: created in .cursor/skills/cerne-authoring",
+		"cerne-authoring: created in .agents/skills/cerne-authoring",
+		"cerne-authoring: created in .gemini/skills/cerne-authoring",
+		"cerne-authoring pointer: created in AGENTS.md",
+		"cerne-authoring pointer: created in GEMINI.md",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	out, _ = execCerne(t, "skill", "install", "--dir", dir)
+	if strings.Contains(out, "created") || strings.Contains(out, "updated") {
+		t.Errorf("rerun not idempotent:\n%s", out)
+	}
+}

@@ -8,6 +8,8 @@ import (
 	"embed"
 	"os"
 	"path/filepath"
+
+	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
 //go:embed cerne-authoring/SKILL.md cerne-self-learning/SKILL.md
@@ -46,18 +48,29 @@ const (
 	StatusCreated   Status = "created"
 	StatusUpdated   Status = "updated"
 	StatusUnchanged Status = "unchanged"
+	// StatusSkipped marks an asset cerne could not deliver to another agent;
+	// Result.Note carries the manual step. Never an error (F-0362).
+	StatusSkipped Status = "skipped"
 )
 
 // Result pairs a skill with what Install did to it.
 type Result struct {
 	Skill  string
 	Status Status
+	Path   string // project-relative location, slash-separated, for display
+	Note   string // manual step when Status is StatusSkipped
 }
 
 // Install writes every canonical skill into <projDir>/.claude/skills/<RelPath>,
 // overwriting to the canonical content (these are managed artifacts). It reports
 // per skill whether the file was created, updated, or already current.
-func Install(projDir string) ([]Result, error) {
+//
+// For each requested non-Claude provider (the set hooks.DetectProviders
+// returns) it also delivers the authoring guide — the same SKILL.md, one
+// source — to that agent's own skills directory (Agent Skills standard; paths
+// per R-0064/R-0065/R-0066), and Codex/Gemini get a one-line managed pointer in
+// AGENTS.md/GEMINI.md. A failure there degrades to a skipped result (F-0362).
+func Install(projDir string, providers ...hooks.Provider) ([]Result, error) {
 	all := All()
 	results := make([]Result, 0, len(all))
 	for _, s := range all {
@@ -66,7 +79,10 @@ func Install(projDir string) ([]Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, Result{Skill: s.Name, Status: status})
+		results = append(results, Result{Skill: s.Name, Status: status, Path: ".claude/skills/" + s.Name})
+	}
+	for _, p := range providers {
+		results = append(results, installProvider(projDir, p)...)
 	}
 	return results, nil
 }
