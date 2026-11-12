@@ -13,6 +13,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/telemetry"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 // This is the multi-project variant of `cerne ui`: one process serves N local
@@ -349,7 +350,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	// Project set: list, register (by dir), deregister (by pid).
 	mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		infos, def := reg.list()
-		writeJSON(w, http.StatusOK, map[string]any{"projects": infos, "default": def})
+		writeJSON(w, http.StatusOK, map[string]any{"projects": infos, "default": def, "version": version.Short()})
 	})
 	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
