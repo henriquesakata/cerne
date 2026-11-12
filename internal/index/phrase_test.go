@@ -100,7 +100,9 @@ func TestPhraseNotesMedianLatency(t *testing.T) {
 		ds = append(ds, time.Since(s))
 	}
 	slices.Sort(ds)
-	if med := ds[len(ds)/2]; med > 20*time.Millisecond {
+	med := ds[len(ds)/2]
+	t.Logf("median %v over 50 runs", med)
+	if med > 20*time.Millisecond {
 		t.Fatalf("median %v > 20ms", med)
 	}
 }
