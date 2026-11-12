@@ -21,34 +21,8 @@ var (
 // spelling, mirroring the lint-side mention matching. An exemption's
 // parenthesized text runs to ")" or to the end of the line: hard-wrapped
 // markdown closes it on a later line.
-// lineMarkers is the markdown a protocol line may open with: list, quote,
-// heading and table markers, emphasis, "N." — in any layout.
-const lineMarkers = `(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*`
-
 var (
 	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
-	// A "Barra:" line in any layout both readers take (F-0327): list, quote,
-	// heading or table markers, emphasis around the label, a short qualifier
-	// before the colon ("Barra (da spec):"). Matched per line: across lines,
-	// RE2's \s let an empty "Barra:" take the next line as its value.
-	// The words come from doclang; only the layout around them lives here.
-	// Portuguese keeps the loose layout documents already rely on: any case,
-	// and a short free qualifier before the colon.
-	barLineRe = regexp.MustCompile(`(?i)^` + lineMarkers + doclang.In(doclang.BarLabel, doclang.PT) + `[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
-	// The other languages are strict (doclang.Strict): the label as written,
-	// capital included, and only a parenthesized qualifier. "Bar (from the
-	// spec):" is a bar line; "Bar chart: …" and a YAML "bar: 42" are not.
-	barLineStrictRes = func() map[doclang.Lang]*regexp.Regexp {
-		m := map[doclang.Lang]*regexp.Regexp{}
-		for _, l := range doclang.Strict() {
-			m[l] = regexp.MustCompile(`^` + lineMarkers + doclang.In(doclang.BarLabel, l) + `[*_]*(?:[ \t]*\([^:\n)]{0,39}\))?:[*_]*(.*)$`)
-		}
-		return m
-	}()
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.NotApplicable) + `\s*\(([^)]*)`)
-	dispensadaRe         = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.Waived) + `\s*\(([^)]*)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.NotApplicable))
-	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^` + doclang.Alt(doclang.WaivedOpen))
 	// Template slots left unfilled, with only separators between them:
 	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
 	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
@@ -90,24 +64,24 @@ func BarValue(value string) (exempt bool, err error) {
 		return false, fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
 	case slots(t):
 		return false, fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
-	case naoAplicavelPrefixRe.MatchString(plain):
-		name := doclang.Display(doclang.NotApplicable, doclang.LangAt(doclang.NotApplicable, plain))
-		return true, exemptionError(naoAplicavelRe, plain, `"`+name+`" needs its one-line justification in parentheses`)
-	case dispensadaPrefixRe.MatchString(plain):
-		name := doclang.Display(doclang.Waived, doclang.LangAt(doclang.WaivedOpen, plain))
-		return true, exemptionError(dispensadaRe, plain, `"`+name+`" needs the quoted words in parentheses`)
+	}
+	if t, l, inner, complete, ok := doclang.Exemption(plain); ok {
+		need := "needs its one-line justification in parentheses"
+		if t == doclang.Waived {
+			need = "needs the quoted words in parentheses"
+		}
+		return true, exemptionError(inner, complete, `"`+doclang.Display(t, l)+`" `+need)
 	}
 	return false, nil
 }
 
 // exemptionError checks an exemption form's parenthesized text: missing or
 // blank gets need, a template slot is named as such.
-func exemptionError(form *regexp.Regexp, plain, need string) error {
-	m := form.FindStringSubmatch(plain)
-	if m == nil || bare(m[1]) == "" {
+func exemptionError(inner string, complete bool, need string) error {
+	if !complete || bare(inner) == "" {
 		return fmt.Errorf("%w: %s", ErrBarMalformed, need)
 	}
-	if slots(bare(m[1])) {
+	if slots(bare(inner)) {
 		return fmt.Errorf("%w: %s, not a <…> template placeholder", ErrBarMalformed, need)
 	}
 	return nil
@@ -124,7 +98,7 @@ func exemptionError(form *regexp.Regexp, plain, need string) error {
 func SpecBar(body []byte) (string, error) {
 	firstInvalid := ErrBarMissing
 	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
-		value, l, ok := barLine(line)
+		value, l, ok := doclang.BarLine(line)
 		if !ok {
 			continue
 		}
@@ -143,19 +117,6 @@ func SpecBar(body []byte) (string, error) {
 // and the result reader take: ok, and the text after the colon (past the
 // label's closing emphasis), trimmed.
 func BarLine(line string) (value string, ok bool) {
-	value, _, ok = barLine(line)
+	value, _, ok = doclang.BarLine(line)
 	return value, ok
-}
-
-// barLine is BarLine plus the language the label was written in.
-func barLine(line string) (value string, l doclang.Lang, ok bool) {
-	if m := barLineRe.FindStringSubmatch(line); m != nil {
-		return strings.TrimSpace(m[1]), doclang.PT, true
-	}
-	for _, l := range doclang.Strict() {
-		if m := barLineStrictRes[l].FindStringSubmatch(line); m != nil {
-			return strings.TrimSpace(m[1]), l, true
-		}
-	}
-	return "", "", false
 }

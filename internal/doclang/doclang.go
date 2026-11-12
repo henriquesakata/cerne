@@ -1,15 +1,26 @@
-// Package doclang is the single catalog of the document vocabulary cerne
-// writes and reads, per language (F-0359): the template section headings and
-// the words of the bar/Gauntlet protocol. The templates scaffold from it and
-// the readers (lint, gates) build their matchers from it, so no reader carries
-// a word of its own and the languages cannot drift apart across packages.
+// Package doclang is the catalog of the document vocabulary cerne writes and
+// reads, per language (F-0359): the template section headings (this file) and
+// the bar/Gauntlet protocol with its recognizers (protocol.go). The templates
+// scaffold from it; the readers (lint, gates) call its recognizers and carry
+// no word, no pattern and no language branch of their own.
 //
 // The split mirrors internal/clarify: a project has ONE language for what
-// cerne writes, while the readers always accept the whole catalog — a document
-// authored in another language is never refused.
+// cerne writes, while reading always takes the whole catalog — a document
+// authored in another language, or mixing two, is never refused.
 //
-// A new language is one entry in langs plus one column in sections and in
-// terms; the tests refuse a catalog with a hole in it.
+// Adding a language: one entry in langs, one layout in layouts, one column
+// in sections and in terms. TestCatalog_Complete refuses a hole. No reader
+// changes. Adding a term: one row in terms, used by a recognizer here.
+//
+// Declared limits:
+//   - Languages are not symmetric. Portuguese is "loose" (layouts): its forms
+//     predate the catalog and documents rely on their looseness, so nothing
+//     they accepted may be refused. Every later language is "strict".
+//   - A list line that opens with the bar label and a colon is a bar line even
+//     when it is prose ("- Bar: the progress bar shows…"), in every language.
+//   - Words cerne itself writes into documents elsewhere are not here yet: the
+//     cost and delivery stamps, an epic's execution map, the origin line of a
+//     promoted pending or idea.
 package doclang
 
 import (
@@ -34,13 +45,23 @@ var langs = []Lang{PT, EN}
 // Langs returns the languages of the catalog.
 func Langs() []Lang { return append([]Lang(nil), langs...) }
 
-// Strict returns the languages whose protocol words readers match strictly:
-// every language but PT. The Portuguese forms predate the catalog and keep
-// the loose layout documents already rely on; their words (Barra, Rodada,
-// vitória) rarely open a line by accident. A language added later shares
-// everyday words with prose (Bar, Round, win), so its forms must look like
-// protocol lines to count.
-func Strict() []Lang { return append([]Lang(nil), langs[1:]...) }
+// layout is how forgiving the recognizers are with a language's forms.
+type layout int
+
+const (
+	// loose is Portuguese: the forms as they matched before the catalog —
+	// any case, a free qualifier before the bar's colon, an outcome word
+	// anywhere in a round. Its words (Barra, Rodada, vitória) rarely open a
+	// line by accident, and documents already rely on the looseness.
+	loose layout = iota
+	// strict is every later language: its words are everyday prose (Bar,
+	// Round, win, tie), so a form must look like a protocol line to count.
+	strict
+)
+
+// layouts declares each language's layout; a language missing here fails
+// TestCatalog_Complete.
+var layouts = map[Lang]layout{PT: loose, EN: strict}
 
 // ErrUnknownLang reports a language outside the catalog.
 var ErrUnknownLang = errors.New("unknown documentation language")
@@ -79,10 +100,13 @@ const (
 	Runbook
 )
 
-// SpecCriteria is the position, in the spec template, of the section whose
-// numbered items are the acceptance contract (result-missing-evidence reads
-// it). Named here so no reader carries the index as a bare number.
-const SpecCriteria = 1
+// specCriteria is the position, in the spec template, of the section whose
+// numbered items are the acceptance contract.
+const specCriteria = 1
+
+// IsCriteriaSection reports whether heading opens the spec section whose
+// numbered items are the acceptance contract, in any language.
+func IsCriteriaSection(heading string) bool { return IsSection(Spec, specCriteria, heading) }
 
 // sections holds, per kind and language, the canonical level-2 headings in
 // template order. Every language lists the same sections in the same order.
@@ -198,44 +222,46 @@ const (
 	numTerms
 )
 
-// terms holds each term as a regular-expression fragment per language. The
-// Portuguese fragments tolerate precomposed and decomposed accents (a paste
-// from macOS arrives decomposed) and the unaccented spelling.
-var terms = map[Term]map[Lang]string{
-	BarLabel:       {PT: `Barra`, EN: `Bar`},
-	NotApplicable:  {PT: `n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`, EN: `not[\s-]+applicable`},
-	Waived:         {PT: `dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana`, EN: `waived\s+by\s+human\s+decision`},
-	WaivedOpen:     {PT: `dispensada`, EN: `waived\s+by\b`},
-	MethodLabel:    {PT: `M(?:é|e\x{0301}|e)todo`, EN: `Method`},
-	ExitLabel:      {PT: `Sa(?:í|i\x{0301}|i)da`, EN: `Exit`},
-	Round:          {PT: `Rodada`, EN: `Round`},
-	CriticFindings: {PT: `Achados? do cr(?:í|i\x{0301}|i)tico`, EN: `Critic(?:['’]s)? findings?`},
-	Win:            {PT: `vit(?:ó|o\x{0301}|o)ria`, EN: `win`},
-	Loss:           {PT: `derrota`, EN: `loss`},
-	Tie:            {PT: `empate`, EN: `tie`},
-	VerdictLabel:   {PT: `veredito`, EN: `verdict`},
-	TieLetter:      {PT: `EMPATE`, EN: `TIE`},
-	OutcomeLabel:   {PT: `veredito|resultado`, EN: `verdict|result|outcome`},
-	Criterion:      {PT: `crit(?:é|e\x{0301}|e)rio`, EN: `criterion`},
-	Criteria:       {PT: `crit(?:é|e\x{0301}|e)rios`, EN: `criteria`},
-	RangeTo:        {PT: `a`, EN: `to`},
-	ListAnd:        {PT: `e`, EN: `and`},
-	ListOr:         {PT: `ou`, EN: `or`},
+// form is one term in one language: re, the regular-expression fragment the
+// recognizers compile, and text, the literal words shown to an author in a
+// message (only the terms a message names carry one).
+type form struct{ re, text string }
+
+// terms is the vocabulary. The Portuguese fragments tolerate precomposed and
+// decomposed accents (a paste from macOS arrives decomposed) and the
+// unaccented spelling.
+var terms = map[Term]map[Lang]form{
+	BarLabel:       {PT: {`Barra`, "Barra"}, EN: {`Bar`, "Bar"}},
+	NotApplicable:  {PT: {`n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`, "não aplicável"}, EN: {`not[\s-]+applicable`, "not applicable"}},
+	Waived:         {PT: {`dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana`, "dispensada por decisão humana"}, EN: {`waived\s+by\s+human\s+decision`, "waived by human decision"}},
+	WaivedOpen:     {PT: {re: `dispensada`}, EN: {re: `waived\s+by\b`}},
+	MethodLabel:    {PT: {re: `M(?:é|e\x{0301}|e)todo`}, EN: {re: `Method`}},
+	ExitLabel:      {PT: {re: `Sa(?:í|i\x{0301}|i)da`}, EN: {re: `Exit`}},
+	Round:          {PT: {re: `Rodada`}, EN: {re: `Round`}},
+	CriticFindings: {PT: {re: `Achados? do cr(?:í|i\x{0301}|i)tico`}, EN: {re: `Critic(?:['’]s)? findings?`}},
+	Win:            {PT: {re: `vit(?:ó|o\x{0301}|o)ria`}, EN: {re: `win`}},
+	Loss:           {PT: {re: `derrota`}, EN: {re: `loss`}},
+	Tie:            {PT: {re: `empate`}, EN: {re: `tie`}},
+	VerdictLabel:   {PT: {re: `veredito`}, EN: {re: `verdict`}},
+	TieLetter:      {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
+	OutcomeLabel:   {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},
+	Criterion:      {PT: {re: `crit(?:é|e\x{0301}|e)rio`}, EN: {re: `criterion`}},
+	Criteria:       {PT: {re: `crit(?:é|e\x{0301}|e)rios`}, EN: {re: `criteria`}},
+	RangeTo:        {PT: {re: `a`}, EN: {re: `to`}},
+	ListAnd:        {PT: {re: `e`}, EN: {re: `and`}},
+	ListOr:         {PT: {re: `ou`}, EN: {re: `or`}},
 }
 
-// In returns term t as a regular-expression fragment in language l alone.
-// Readers that must tell the languages apart (a form whose layout differs
-// between them) use it; everything else uses Alt.
-func In(t Term, l Lang) string {
-	return `(?:` + terms[t][l] + `)`
+// in is term t as a regular-expression fragment in language l.
+func in(t Term, l Lang) string {
+	return `(?:` + terms[t][l].re + `)`
 }
 
-// Alt returns term t as a non-capturing alternation over every language of
-// the catalog: the fragment a bilingual reader compiles into its matcher.
-func Alt(t Term) string {
+// alt is term t as an alternation over every language of the catalog.
+func alt(t Term) string {
 	parts := make([]string, len(langs))
 	for i, l := range langs {
-		parts[i] = terms[t][l]
+		parts[i] = terms[t][l].re
 	}
 	return `(?:` + strings.Join(parts, `|`) + `)`
 }
@@ -243,35 +269,16 @@ func Alt(t Term) string {
 var termRes = func() map[Term]*regexp.Regexp {
 	m := make(map[Term]*regexp.Regexp, numTerms)
 	for t := Term(0); t < numTerms; t++ {
-		m[t] = regexp.MustCompile(`(?i)^` + Alt(t) + `$`)
+		m[t] = regexp.MustCompile(`(?i)^` + alt(t) + `$`)
 	}
 	return m
 }()
 
 // Is reports whether word is term t in any language, ignoring case and
-// surrounding space: how a reader classifies a word it captured.
+// surrounding space: how a reader classifies a word a recognizer returned.
 func Is(t Term, word string) bool {
 	return termRes[t].MatchString(strings.TrimSpace(word))
 }
 
-// LangAt returns the language whose form of term t opens s, ignoring case;
-// PT when none does. Readers use it to answer in the author's language.
-func LangAt(t Term, s string) Lang {
-	for _, l := range langs {
-		if regexp.MustCompile(`(?i)^` + In(t, l)).MatchString(s) {
-			return l
-		}
-	}
-	return PT
-}
-
-// display is how a term is written in prose addressed to the author (an
-// error message, a hint): the literal words, not a pattern.
-var display = map[Term]map[Lang]string{
-	BarLabel:      {PT: "Barra", EN: "Bar"},
-	NotApplicable: {PT: "não aplicável", EN: "not applicable"},
-	Waived:        {PT: "dispensada por decisão humana", EN: "waived by human decision"},
-}
-
-// Display returns term t as written for a reader in language l.
-func Display(t Term, l Lang) string { return display[t][l] }
+// Display returns term t as written for an author in language l.
+func Display(t Term, l Lang) string { return terms[t][l].text }

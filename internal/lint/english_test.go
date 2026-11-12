@@ -138,35 +138,35 @@ func TestResultGauntlet_EnglishIsStrict(t *testing.T) {
 			"Win for A on clarity.",
 			"Result: winning is not the point",
 		} {
-			if w := outcomeLine(line); w != "" {
-				t.Errorf("outcomeLine(%q) = %q, want none", line, w)
+			if w := doclang.OutcomeLine(line); w != "" {
+				t.Errorf("OutcomeLine(%q) = %q, want none", line, w)
 			}
 		}
 		for line, want := range map[string]string{"Loss.": "Loss", "Verdict: tie": "tie", "Outcome: **win**": "win", "win — after the fix": "win", "Veredito: derrota": "derrota", "Derrota técnica": "Derrota"} {
-			if w := outcomeLine(line); w != want {
-				t.Errorf("outcomeLine(%q) = %q, want %q", line, w, want)
+			if w := doclang.OutcomeLine(line); w != want {
+				t.Errorf("OutcomeLine(%q) = %q, want %q", line, w, want)
 			}
 		}
 	})
 	t.Run("prose does not open a round", func(t *testing.T) {
 		for _, line := range []string{"Round 2 of benchmarking was skipped", "Round 10 times and average", "Rounding 2 digits"} {
-			if _, ok := roundAnchor(line); ok {
-				t.Errorf("roundAnchor(%q) opened a round", line)
+			if _, ok := doclang.RoundAnchor(line); ok {
+				t.Errorf("RoundAnchor(%q) opened a round", line)
 			}
 		}
 		for line, want := range map[string]int{"Round 2 — win: \"x\"": 2, "Round 3": 3, "Round 4: tie": 4, "Round 5 (new judge) — loss": 5, "Rodada 6 de novo": 6} {
-			if n, ok := roundAnchor(line); !ok || n != want {
-				t.Errorf("roundAnchor(%q) = %d, %v; want %d", line, n, ok, want)
+			if n, ok := doclang.RoundAnchor(line); !ok || n != want {
+				t.Errorf("RoundAnchor(%q) = %d, %v; want %d", line, n, ok, want)
 			}
 		}
 	})
 	t.Run("an article is not the judge's letter", func(t *testing.T) {
-		if gauntletVerdict("Verdict: A clear improvement over the bar") {
+		if doclang.VerdictIn("Verdict: A clear improvement over the bar") {
 			t.Error("\"Verdict: A clear improvement\" read as the literal verdict A")
 		}
 		for _, text := range []string{"VERDICT: A", "the judge ended with \"VERDICT: B\".", "Verdict: TIE", "VEREDITO: EMPATE"} {
-			if !gauntletVerdict(text) {
-				t.Errorf("gauntletVerdict(%q) = false", text)
+			if !doclang.VerdictIn(text) {
+				t.Errorf("doclang.VerdictIn(%q) = false", text)
 			}
 		}
 	})

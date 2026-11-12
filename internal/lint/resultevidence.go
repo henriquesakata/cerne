@@ -24,24 +24,6 @@ var resultEvidenceSince = time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 // spectmpl.Sections so a template rename cannot silently detach the rule.
 const criteriaSection = "Objetivo e critérios de aceitação"
 
-// mentionMatchers builds the citation matcher of each language: the plural
-// keyword captured in group 1 (empty for the singular), the numbers in group 2
-// with that language's range and list words between them. Portuguese keeps
-// its loose start (no word boundary before the keyword, as it always
-// matched); the strict languages need one.
-func mentionMatchers() []*regexp.Regexp {
-	var out []*regexp.Regexp
-	for _, l := range doclang.Langs() {
-		lead := `\b`
-		if l == doclang.PT {
-			lead = ``
-		}
-		joiners := `[-–—]|\b` + doclang.In(doclang.RangeTo, l) + `\b|,|\b` + doclang.In(doclang.ListAnd, l) + `\b|\b` + doclang.In(doclang.ListOr, l) + `\b`
-		out = append(out, regexp.MustCompile(`(?i)`+lead+`(?:(`+doclang.In(doclang.Criteria, l)+`)|`+doclang.In(doclang.Criterion, l)+`)\s*(?:[:#]|n[ºo°]\.?)?\s*(\d+(?:\s*(?:`+joiners+`)\s*\d+)*)`))
-	}
-	return out
-}
-
 // maxCriteriaRange caps how wide a cited "critérios N-M" range may expand.
 const maxCriteriaRange = 100
 
@@ -49,15 +31,6 @@ var (
 	// Top-of-line only: indented numbered lines are sub-items of a criterion,
 	// not criteria themselves.
 	numberedItemRe = regexp.MustCompile(`^(\d+)[.)]\s`)
-	// "critério 2", "critérios 1-3", "critérios 2 a 4", "critérios: 1, 3 e 5";
-	// "criterion 2", "criteria 1 to 3" — one matcher per language, built from
-	// the catalog (F-0359). Case-insensitive, tolerating NFC/NFD accents (darwin
-	// paste) and a colon/nº after the keyword. A bare digit never matches.
-	// Ranges and lists only expand for the plural keyword (group 1), so prose
-	// like "critério 2 a 3 horas" cannot vouch for criterion 3.
-	mentionRes     = mentionMatchers()
-	mentionNumsRe  = regexp.MustCompile(`\d+`)
-	mentionRangeRe = regexp.MustCompile(`(\d+)\s*(?:[-–—]|\b` + doclang.Alt(doclang.RangeTo) + `\b)\s*(\d+)`)
 )
 
 // criterionLine is one line of the acceptance-criteria section: N is its
@@ -75,7 +48,7 @@ func criteriaLines(spec []byte) []criterionLine {
 	inSection := false
 	for i, line := range strings.Split(string(spec), "\n") {
 		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
-			inSection = doclang.IsSection(doclang.Spec, doclang.SpecCriteria, h)
+			inSection = doclang.IsCriteriaSection(h)
 			continue
 		}
 		if inSection {
@@ -107,33 +80,25 @@ func specCriteria(spec []byte) []int {
 // "critério N" (single, range "N-M"/"N a M", or list "N, M e K").
 func resultMentions(result []byte) map[int]bool {
 	out := map[int]bool{}
-	var matches [][]string
-	for _, re := range mentionRes {
-		matches = append(matches, re.FindAllStringSubmatch(string(result), -1)...)
-	}
-	for _, m := range matches {
-		plural, nums := m[1] != "", m[2]
-		if !plural {
-			// singular vouches for exactly one criterion — the first number;
-			// whatever follows ("2 a 3 horas") is prose, not a range
-			if d := mentionNumsRe.FindString(nums); d != "" {
-				n, _ := strconv.Atoi(d)
-				out[n] = true
-			}
+	for _, c := range doclang.Citations(string(result)) {
+		if len(c.Numbers) == 0 {
 			continue
 		}
-		for _, r := range mentionRangeRe.FindAllStringSubmatch(nums, -1) {
-			lo, _ := strconv.Atoi(r[1])
-			hi, _ := strconv.Atoi(r[2])
-			if hi-lo > maxCriteriaRange { // prose like "critérios 1 a 999999" must not flood the map
+		if !c.Plural {
+			// singular vouches for exactly one criterion — the first number;
+			// whatever follows ("2 a 3 horas") is prose, not a range
+			out[c.Numbers[0]] = true
+			continue
+		}
+		for _, r := range c.Ranges {
+			if r[1]-r[0] > maxCriteriaRange { // prose like "critérios 1 a 999999" must not flood the map
 				continue
 			}
-			for n := lo; n <= hi; n++ {
+			for n := r[0]; n <= r[1]; n++ {
 				out[n] = true
 			}
 		}
-		for _, d := range mentionNumsRe.FindAllString(nums, -1) {
-			n, _ := strconv.Atoi(d)
+		for _, n := range c.Numbers {
 			out[n] = true
 		}
 	}

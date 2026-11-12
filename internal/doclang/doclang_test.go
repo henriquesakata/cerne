@@ -92,8 +92,8 @@ func TestCatalog_Complete(t *testing.T) {
 	}
 	for term := Term(0); term < numTerms; term++ {
 		for _, l := range Langs() {
-			frag, ok := terms[term][l]
-			if !ok || frag == "" {
+			frag := terms[term][l].re
+			if frag == "" {
 				t.Errorf("term %d has no %s form", term, l)
 				continue
 			}
@@ -102,15 +102,25 @@ func TestCatalog_Complete(t *testing.T) {
 			}
 		}
 	}
-	for term, byLang := range display {
+	// A term a message names in one language is named in all of them.
+	for term, byLang := range terms {
+		named := 0
 		for _, l := range Langs() {
-			if byLang[l] == "" {
-				t.Errorf("term %d has no %s display form", term, l)
+			if byLang[l].text != "" {
+				named++
 			}
 		}
+		if named != 0 && named != len(Langs()) {
+			t.Errorf("term %d has a display form in %d of %d languages", term, named, len(Langs()))
+		}
 	}
-	if got := Sections(Spec, PT)[SpecCriteria]; got != "Objetivo e critérios de aceitação" {
-		t.Errorf("SpecCriteria points at %q", got)
+	for _, l := range Langs() {
+		if _, ok := layouts[l]; !ok {
+			t.Errorf("%s has no layout", l)
+		}
+	}
+	if !IsCriteriaSection("Objetivo e critérios de aceitação") || !IsCriteriaSection("goal and acceptance criteria") || IsCriteriaSection("Problem") {
+		t.Error("IsCriteriaSection points at the wrong section")
 	}
 }
 
@@ -131,13 +141,10 @@ func TestTerms(t *testing.T) {
 	if !Is(Win, "vito\u0301ria") { // decomposed accent, as pasted from macOS
 		t.Error("Is(Win) refuses the decomposed accent")
 	}
-	if LangAt(NotApplicable, "Not applicable (x)") != EN || LangAt(NotApplicable, "não aplicável (x)") != PT || LangAt(Waived, "something else") != PT {
-		t.Error("LangAt picks the wrong language")
+	if layouts[PT] != loose || layouts[EN] != strict {
+		t.Error("PT is the loose language; EN is strict")
 	}
-	if Strict()[0] != EN || Langs()[0] != PT {
-		t.Error("PT must be the first language and the only loose one")
-	}
-	if got := Alt(Round); got != "(?:Rodada|Round)" {
-		t.Errorf("Alt(Round) = %q", got)
+	if got := alt(Round); got != "(?:Rodada|Round)" {
+		t.Errorf("alt(Round) = %q", got)
 	}
 }
