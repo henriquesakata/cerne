@@ -100,7 +100,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		}
 		// With a [delivery] forge, ask it for the PR (F-0355); a failure only
 		// prints how to link it by hand.
-		if line := app.DiscoverPR(ctx.cfg, id, &d); line != "" {
+		if line := app.DiscoverPR(ctx.cfg, ctx.projDir, id, &d); line != "" {
 			fmt.Fprintln(cmd.ErrOrStderr(), line)
 		}
 		delivery = &d

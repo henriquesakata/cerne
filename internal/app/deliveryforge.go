@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os/exec"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/forge"
@@ -15,23 +17,62 @@ import (
 // tests (and other forges) replace it, like MRState.
 var NewDeliveryForge = forge.New
 
-// deliveryForge returns the configured forge for sha's commit URL, or nil when
-// no forge is configured, the URL is not a commit of the configured repository,
-// or its tail is not a SHA. ok is false for every nil.
-func deliveryForge(cfg project.Config, commitURL string) (f forge.DeliveryForge, sha string, ok bool) {
+// originRemote returns the URL of the checkout's "origin" remote ("" when
+// there is none). A variable so tests replace it. It reads local, uncommitted
+// git config: the one thing a pull request cannot rewrite.
+var originRemote = func(projDir string) string {
+	out, err := exec.Command("git", "-C", projDir, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// remoteHost extracts the hostname from an https/ssh remote URL or the scp form
+// ("git@host:path"); "" when it cannot.
+func remoteHost(remote string) string {
+	if strings.Contains(remote, "://") {
+		u, err := url.Parse(remote)
+		if err != nil {
+			return ""
+		}
+		return strings.ToLower(u.Hostname())
+	}
+	rest := remote
+	if i := strings.LastIndex(rest, "@"); i >= 0 {
+		rest = rest[i+1:]
+	}
+	host, _, ok := strings.Cut(rest, ":")
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(host)
+}
+
+// deliveryForge returns the configured forge for the commit URL's repository,
+// its SHA, and "" — or the reason it must not be asked: a URL that is not a
+// commit of the configured repository, or a host that is not the checkout's
+// origin remote (the credential guard: the committed .cernerc alone never
+// decides which host receives a credential). Empty forge and empty reason: no
+// forge configured, nothing to say.
+func deliveryForge(cfg project.Config, projDir, commitURL string) (f forge.DeliveryForge, sha, reason string) {
 	if cfg.Delivery.Forge == "" || commitURL == "" {
-		return nil, "", false
+		return nil, "", ""
 	}
 	want, _, okT := forge.ParseCommitURL(cfg.Delivery.CommitURL)
 	got, tail, okC := forge.ParseCommitURL(commitURL)
 	if !okT || !okC || want != got || !shaRe.MatchString(tail) {
-		return nil, "", false
+		return nil, "", "the commit is not in the [delivery] commit_url repository"
+	}
+	host := strings.ToLower(strings.SplitN(want.Host, ":", 2)[0])
+	if remoteHost(originRemote(projDir)) != host {
+		return nil, "", fmt.Sprintf("host %s is not the origin remote", host)
 	}
 	f, err := NewDeliveryForge(cfg.Delivery.Forge, cfg.Delivery.CommitURL)
 	if err != nil {
-		return nil, "", false
+		return nil, "", err.Error()
 	}
-	return f, tail, true
+	return f, tail, ""
 }
 
 // DiscoverPR fills d.MRURL with the single PR/MR the forge says contains the
@@ -39,27 +80,27 @@ func deliveryForge(cfg project.Config, commitURL string) (f forge.DeliveryForge,
 // commit and no --mr, and never fails the caller: on any trouble it returns the
 // stderr line that tells the author to link the PR by hand (crit. 3), and ""
 // when there was nothing to ask.
-func DiscoverPR(cfg project.Config, id string, d *Delivery) string {
+func DiscoverPR(cfg project.Config, projDir, id string, d *Delivery) string {
 	if d.MRURL != "" || d.CommitURL == "" || cfg.Delivery.Forge == "" {
 		return ""
 	}
-	f, sha, ok := deliveryForge(cfg, d.CommitURL)
-	if !ok {
-		if _, tail, okC := forge.ParseCommitURL(d.CommitURL); okC {
+	f, sha, reason := deliveryForge(cfg, projDir, d.CommitURL)
+	if f == nil {
+		if _, tail, ok := forge.ParseCommitURL(d.CommitURL); ok {
 			sha = tail
 		} else {
 			sha = d.CommitURL
 		}
-		return noPRLine(id, sha, "the commit is not in the [delivery] commit_url repository")
+		return noPRLine(id, sha, reason)
 	}
-	url, _, err := f.PRForCommit(context.Background(), sha)
-	if err == nil && !isHTTPURL(url) {
+	prURL, _, err := f.PRForCommit(context.Background(), sha)
+	if err == nil && !isHTTPURL(prURL) {
 		err = errors.New("the forge returned no PR URL")
 	}
 	if err != nil {
 		return noPRLine(id, sha, reasonOf(err))
 	}
-	d.MRURL = url
+	d.MRURL = prURL
 	return ""
 }
 
@@ -79,9 +120,9 @@ func reasonOf(err error) string {
 // repository's default branch (F-0355 crit. 7). It returns the stderr line to
 // print when it is not, and "" when it is, when the check does not apply (no
 // forge, no commit) or when the forge cannot answer: a warning never blocks.
-func DeliveryBranchWarning(cfg project.Config, f store.Feature) string {
-	fg, sha, ok := deliveryForge(cfg, f.DeliveryCommitURL)
-	if !ok {
+func DeliveryBranchWarning(cfg project.Config, projDir string, f store.Feature) string {
+	fg, sha, _ := deliveryForge(cfg, projDir, f.DeliveryCommitURL)
+	if fg == nil {
 		return ""
 	}
 	on, branch, err := fg.OnDefaultBranch(context.Background(), sha)

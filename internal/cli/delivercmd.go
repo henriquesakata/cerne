@@ -33,7 +33,7 @@ func newFeatureDeliverCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if line := app.DiscoverPR(ctx.cfg, args[0], &d); line != "" {
+			if line := app.DiscoverPR(ctx.cfg, ctx.projDir, args[0], &d); line != "" {
 				fmt.Fprintln(cmd.ErrOrStderr(), line)
 			}
 			if err := app.SetFeatureDelivery(ctx.repoDir, ctx.projDir, args[0], d); err != nil {

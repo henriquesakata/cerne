@@ -36,6 +36,15 @@ func useFakeForge(t *testing.T, f *fakeForge) {
 	old := NewDeliveryForge
 	t.Cleanup(func() { NewDeliveryForge = old })
 	NewDeliveryForge = func(string, string) (forge.DeliveryForge, error) { return f, nil }
+	useOrigin(t, "git@github.com:o/r.git")
+}
+
+// useOrigin replaces the checkout's origin remote for one test.
+func useOrigin(t *testing.T, remote string) {
+	t.Helper()
+	old := originRemote
+	t.Cleanup(func() { originRemote = old })
+	originRemote = func(string) string { return remote }
 }
 
 func forgeCfg(name string) project.Config {
@@ -72,7 +81,7 @@ func TestDiscoverPRFillsMR(t *testing.T) {
 	f := &fakeForge{url: "https://github.com/o/r/pull/12"}
 	useFakeForge(t, f)
 	d := Delivery{CommitURL: "https://github.com/o/r/commit/abc1234"}
-	if line := DiscoverPR(forgeCfg("github"), "F-1", &d); line != "" || d.MRURL != f.url {
+	if line := DiscoverPR(forgeCfg("github"), "p", "F-1", &d); line != "" || d.MRURL != f.url {
 		t.Fatalf("line %q, d %+v", line, d)
 	}
 }
@@ -94,7 +103,7 @@ func TestDiscoverPRFailureLine(t *testing.T) {
 			useFakeForge(t, &fakeForge{err: tc.err})
 			d := Delivery{CommitURL: "https://github.com/o/r/commit/abc1234"}
 			want := "cerne: no single PR found for abc1234 (" + tc.reason + "); link it with 'cerne feature deliver F-1 --mr <url>'"
-			if got := DiscoverPR(forgeCfg("github"), "F-1", &d); got != want || d.MRURL != "" {
+			if got := DiscoverPR(forgeCfg("github"), "p", "F-1", &d); got != want || d.MRURL != "" {
 				t.Fatalf("got %q (d %+v), want %q", got, d, want)
 			}
 		})
@@ -122,7 +131,7 @@ func TestDiscoverPRSkips(t *testing.T) {
 		"no commit": {forgeCfg("github"), Delivery{}},
 	} {
 		d := tc.d
-		if line := DiscoverPR(tc.cfg, "F-1", &d); line != "" || d != tc.d {
+		if line := DiscoverPR(tc.cfg, "p", "F-1", &d); line != "" || d != tc.d {
 			t.Fatalf("%s: line %q, d %+v", name, line, d)
 		}
 	}
@@ -136,22 +145,22 @@ func TestDeliveryBranchWarning(t *testing.T) {
 	feat := store.Feature{ID: "F-1", DeliveryCommitURL: "https://github.com/o/r/commit/abc1234"}
 	useFakeForge(t, &fakeForge{on: false, branch: "main"})
 	want := "cerne: delivery commit abc1234 is not on main; the PR may have merged into another branch"
-	if got := DeliveryBranchWarning(forgeCfg("github"), feat); got != want {
+	if got := DeliveryBranchWarning(forgeCfg("github"), "p", feat); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 	useFakeForge(t, &fakeForge{on: true, branch: "main"})
-	if got := DeliveryBranchWarning(forgeCfg("github"), feat); got != "" {
+	if got := DeliveryBranchWarning(forgeCfg("github"), "p", feat); got != "" {
 		t.Fatalf("inside the default branch: got %q", got)
 	}
 	// A forge that cannot answer, no forge and no commit stay silent.
 	useFakeForge(t, &fakeForge{err: errors.New("boom")})
-	if got := DeliveryBranchWarning(forgeCfg("github"), feat); got != "" {
+	if got := DeliveryBranchWarning(forgeCfg("github"), "p", feat); got != "" {
 		t.Fatalf("forge error: got %q", got)
 	}
-	if got := DeliveryBranchWarning(forgeCfg(""), feat); got != "" {
+	if got := DeliveryBranchWarning(forgeCfg(""), "p", feat); got != "" {
 		t.Fatalf("no forge: got %q", got)
 	}
-	if got := DeliveryBranchWarning(forgeCfg("github"), store.Feature{ID: "F-1"}); got != "" {
+	if got := DeliveryBranchWarning(forgeCfg("github"), "p", store.Feature{ID: "F-1"}); got != "" {
 		t.Fatalf("no commit: got %q", got)
 	}
 }

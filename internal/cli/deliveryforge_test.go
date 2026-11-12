@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,13 @@ func forgeProject(t *testing.T, forgeName string, f *cliFakeForge) (projDir, rep
 	}
 	if err := os.WriteFile(path, append(data, rc...), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	// The forge is asked only for the host of the checkout's origin remote
+	// (F-0355 A2): local git config, not the committed .cernerc.
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://github.com/o/r.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", projDir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 	old := app.NewDeliveryForge
 	t.Cleanup(func() { app.NewDeliveryForge = old })

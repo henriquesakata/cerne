@@ -69,7 +69,7 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 	// The delivery commit should be on the default branch (F-0355): say so
 	// before accepting, never block on it.
 	if f, err := store.LoadFeature(ctx.repoDir, id); err == nil {
-		if w := app.DeliveryBranchWarning(ctx.cfg, f); w != "" {
+		if w := app.DeliveryBranchWarning(ctx.cfg, ctx.projDir, f); w != "" {
 			fmt.Fprintln(cmd.ErrOrStderr(), w)
 		}
 	}
