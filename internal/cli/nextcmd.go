@@ -34,10 +34,15 @@ type nextGroup struct {
 var nextGroups = []nextGroup{
 	{domain.StateInDevelopment, false, "in_progress", "IN PROGRESS", "finish and run 'cerne feature complete'"},
 	{domain.StateApproved, false, "ready_to_start", "READY TO START", "run 'cerne feature start'"},
+	// F-0371: complete is not the end — the cost stamp and the delivery link are
+	// the agent's last steps; each line carries the exact command still missing.
+	{domain.StateImplemented, false, "finish_delivery", "FINISH DELIVERY", "run the command on each line"},
 	// F-0318: the spec changed since approval; start is refused until a human re-approves.
 	{domain.StateApproved, true, "awaiting_reapproval", "WAITING FOR RE-APPROVAL", "start is blocked: ask a human to run 'cerne feature approve <id>' (a human act)"},
 	// F-0308: rehearse with --check; the approve itself is a human act (F-0131).
 	{domain.StateCandidate, false, "candidates", "CANDIDATES", "write the spec, run 'cerne feature approve <id> --check', then ask a human to approve (a human act)"},
+	// F-0371: nothing left for the agent — cost and delivery are in; the accept is a human act (F-0131).
+	{domain.StateImplemented, false, "awaiting_accept", "WAITING FOR HUMAN ACCEPT", "ask a human to run 'cerne feature accept <id>' (a human act)"},
 }
 
 // nextPendingCap bounds the open-pendings block of cerne next; the rest is
@@ -57,10 +62,13 @@ func newNextCmd() *cobra.Command {
 	var dir string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "next",
-		Short: "Work queue: active features (by action) plus lint debts",
-		Args:  cobra.NoArgs,
+		Use:   "next [id]",
+		Short: "Work queue: active features (by action) plus lint debts; with an id, that feature's next step",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				return runNextByID(cmd, dir, args[0], asJSON)
+			}
 			return runNext(cmd, dir, asJSON)
 		},
 	}
@@ -75,6 +83,8 @@ func newNextCmd() *cobra.Command {
 type nextFeature struct {
 	store.Feature
 	ApprovalStale bool `json:"approval_stale"`
+	// Commands (F-0371): the exact commands still missing, finish_delivery only.
+	Commands []string `json:"commands,omitempty"`
 }
 
 type nextGroupJSON struct {
@@ -128,6 +138,11 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	}
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
+	missing, err := implementedMissing(ctx.repoDir, ctx.projDir, features)
+	if err != nil {
+		return err
+	}
+
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {
 		var fs []nextFeature
@@ -135,8 +150,14 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 			if f.State != g.state {
 				continue
 			}
+			if g.state == domain.StateImplemented {
+				if cmds, owes := missing[f.ID]; owes == (g.queue == "finish_delivery") {
+					fs = append(fs, nextFeature{f, false, cmds})
+				}
+				continue
+			}
 			if stale, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f); stale == g.stale {
-				fs = append(fs, nextFeature{f, stale})
+				fs = append(fs, nextFeature{f, stale, nil})
 			}
 		}
 		if len(fs) > 0 {
@@ -227,6 +248,9 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 			if f.ApprovalStale {
 				fmt.Fprintln(out, "    "+approvalStaleLine(f.ID))
 			}
+			for _, c := range f.Commands {
+				fmt.Fprintln(out, "    "+c)
+			}
 		}
 		fmt.Fprintln(out)
 	}
@@ -276,6 +300,60 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 
 	if !printed {
 		fmt.Fprintln(out, "Nothing pending. ✓")
+	}
+	return nil
+}
+
+// implementedMissing maps each implemented feature whose next step is the
+// agent's to the lines under it (F-0371): the exact commands still owed, or the
+// failed check. The decision is app.NextStep's, per feature — the queue and
+// `next <id>` share one rule.
+func implementedMissing(repoDir, projDir string, features []store.Feature) (map[string][]string, error) {
+	missing := map[string][]string{}
+	for _, f := range features {
+		if f.State != domain.StateImplemented {
+			continue
+		}
+		st, err := app.NextStep(repoDir, projDir, f.ID)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case st.Actor != app.ActorAgent:
+		case len(st.Commands) > 0:
+			missing[f.ID] = st.Commands
+		case st.Command != "":
+			missing[f.ID] = []string{st.Command}
+		default:
+			missing[f.ID] = []string{st.Step}
+		}
+	}
+	return missing, nil
+}
+
+// runNextByID prints the one next step of feature id (F-0371): who acts, what,
+// and the exact command when there is one. Read-only.
+func runNextByID(cmd *cobra.Command, dir, id string, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	st, err := app.NextStep(ctx.repoDir, ctx.projDir, id)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(st)
+	}
+	fmt.Fprintf(out, "%s [%s] — next: %s\n", domain.CanonicalID(id), st.State, st.Step)
+	switch {
+	case st.Command != "":
+		fmt.Fprintf(out, "run: %s\n", st.Command)
+	case st.Actor == app.ActorHuman:
+		fmt.Fprintln(out, "waiting on a human: no command for the agent")
 	}
 	return nil
 }

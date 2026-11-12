@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 var (
@@ -208,4 +210,30 @@ func Unstamped(cacheDir, repoDir, id string) bool {
 	}
 	_, stamped := readAnchor(repoDir, id)
 	return !stamped
+}
+
+// PrecheckStamp is the precheck of `cerne cost <id> --stamp` (F-0371): the
+// stamp needs an implemented feature and something to stamp — a bound session
+// whose transcripts still hold messages, or a stamped child. It returns the
+// report the stamp writes. `--stamp` and `cerne next <id>` both call it, so the
+// next step never names a stamp the command refuses.
+func PrecheckStamp(in Inputs, state domain.FeatureState, id string) (Report, error) {
+	if state != domain.StateImplemented {
+		return Report{}, fmt.Errorf("%w: %s is %s — run 'cerne feature complete %s' first; the stamp records the closed cost, before the human accept",
+			ErrStampNeedsImplemented, id, state, id)
+	}
+	r, err := Compute(in, id)
+	if err != nil {
+		return Report{}, err
+	}
+	if r.Sessions == 0 && (r.Children == nil || len(r.Children.Stamped) == 0) {
+		return Report{}, fmt.Errorf("%w for %s", ErrNothingToStamp, id)
+	}
+	return r, nil
+}
+
+// Stamped reports whether id's result already carries a cost anchor.
+func Stamped(repoDir, id string) bool {
+	_, ok := readAnchor(repoDir, id)
+	return ok
 }
