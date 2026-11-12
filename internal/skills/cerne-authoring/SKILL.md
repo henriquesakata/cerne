@@ -429,7 +429,7 @@ An `implemented` feature's docs are frozen history — but the code under them k
 - **Review duty (D-0005):** every automatic update waits for acknowledgment. `cerne drift pending` lists them (`cerne next` shows the count) — treat a pending entry as a work item: read the applied errata (`cerne show <id>`), then `cerne drift ack <id>` to accept, or append a correcting errata / supersede if the agent got it wrong. Never leave pendings to rot.
 - **Invariant:** drift never rewrites history. All three paths end in an **additive errata**; the reading surface (`cerne show`, wiki, lint) folds erratas in, so the reader sees current truth over an intact record.
 
-Adjacent freshness knob: with `compile_on_push = true` in `.cernerc` (and a callable `[llm]` mode), every successful `cerne push` incrementally resynthesizes only the **dirty** wiki pages (F-0117) — a failed compile never fails the push. No config → recompile stays manual (`cerne compile`).
+Adjacent freshness knob: with `compile_on_push = true` in `.cernerc` (a top-level key: write it above the first `[table]` — `cerne init` ends the file with `[gates]`, and a key below it is read as a gates key; `cerne` warns when that happens) (and a callable `[llm]` mode), every successful `cerne push` incrementally resynthesizes only the **dirty** wiki pages (F-0117) — a failed compile never fails the push. No config → recompile stays manual (`cerne compile`).
 
 ## Knowledge routing: cerne note vs. local memory
 
