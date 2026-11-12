@@ -127,6 +127,25 @@ func DowngradeWikiDebt(findings []Finding, wikiOn bool) {
 	}
 }
 
+// gauntletRules are the Gauntlet's own rules: dropped in light mode (F-0364).
+var gauntletRules = map[string]bool{RuleSpecMissingBar: true, RuleResultMissingGauntlet: true}
+
+// DropGauntletRules removes the Gauntlet's rules from findings when the
+// project runs without the Gauntlet ([gates] gauntlet = "off", F-0364). Like
+// DowngradeWikiDebt the package reads no settings: the caller passes the mode.
+func DropGauntletRules(findings []Finding, gauntletOn bool) []Finding {
+	if gauntletOn {
+		return findings
+	}
+	out := findings[:0:0]
+	for _, f := range findings {
+		if !gauntletRules[f.Rule] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // Blocking reports whether f fails a lint gate: neither an advisory rule
 // (F-0322) nor wiki debt downgraded by a disabled wiki (F-0316).
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }

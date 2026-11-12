@@ -18,9 +18,11 @@ var ErrResultIncomplete = errors.New("result incompleto")
 
 // CheckResultRecord refuses when the feature's result would be flagged by the
 // lint's result rules (evidence per criterion, Gauntlet record) right after
-// completion. Both call lint.CheckResult, so they cannot drift apart.
-func CheckResultRecord(repoDir string, f store.Feature) error {
-	findings := lint.CheckResult(repoDir, f)
+// completion. Both call lint.CheckResult, so they cannot drift apart. With
+// gauntletOn false (light mode, F-0364) only the evidence per criterion is
+// charged.
+func CheckResultRecord(repoDir string, f store.Feature, gauntletOn bool) error {
+	findings := lint.DropGauntletRules(lint.CheckResult(repoDir, f), gauntletOn)
 	if len(findings) == 0 {
 		return nil
 	}

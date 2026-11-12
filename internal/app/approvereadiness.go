@@ -46,6 +46,10 @@ type ApproveImpediment struct {
 // past approval or an approved one with nothing to renew is an error, the
 // approve's own refusal.
 func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
+	return approveReadiness(repoDir, id, true)
+}
+
+func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment, error) {
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("feature %s not found in backend", id)
@@ -70,7 +74,7 @@ func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
 	var out []ApproveImpediment
 	if domain.CheckGate(id, domain.ActionApprove, docs) != nil {
 		out = append(out, ApproveImpediment{ImpedimentSpecMissing, "the spec is missing or still the template stub", true})
-	} else if _, err := doccheck.SpecBar(spec); err != nil {
+	} else if _, err := doccheck.SpecBar(spec); gauntletOn && err != nil {
 		code := ImpedimentBarMissing
 		if errors.Is(err, doccheck.ErrBarMalformed) {
 			code = ImpedimentBarMalformed
@@ -172,4 +176,11 @@ func CheckIncompleteCard(repoDir, id string) error {
 	fmt.Fprintf(&b, "\nthen run 'cerne feature approve %s' again.", id)
 	fmt.Fprintf(&b, "\n--force skips this check only: it approves the card %s; the spec gates still apply.", strings.Join(lacks, " and "))
 	return fmt.Errorf("%w — %s is not registered complete (the registering agent's to complete: fix it with the commands below, or hand it back):%s", ErrIncompleteCard, id, b.String())
+}
+
+// ApproveReadinessAt is ApproveReadiness under the project's [gates] (F-0364):
+// in light mode (gauntlet = "off") the bar is not charged, so neither the
+// check nor the UI button lists it — the core gate skips it the same way.
+func ApproveReadinessAt(repoDir, projDir, id string) ([]ApproveImpediment, error) {
+	return approveReadiness(repoDir, id, projectGates(projDir).GauntletEnabled())
 }

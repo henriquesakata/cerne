@@ -780,7 +780,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
-		if err := CheckResultRecord(repoDir, f); err != nil {
+		if err := CheckResultRecord(repoDir, f, projectGates(projDir).GauntletEnabled()); err != nil {
 			return "", err // an amend does not trade one debt for another
 		}
 		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
