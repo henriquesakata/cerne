@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/henriquesakata/cerne/discussions
+    about: Ask how to do something, or float an idea before it is a concrete request.
+  - name: Security problem
+    url: https://github.com/henriquesakata/cerne/security/advisories/new
+    about: Report a vulnerability privately instead of opening a public issue.

@@ -1,0 +1,42 @@
+name: Bug report
+description: Something broke, or behaved in a way you did not expect.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The exact command you ran and its full output. Add --verbose if the command was slow or hung.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: cerne version
+      description: Output of `cerne --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Linux, Windows]
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options: [install.sh, Release binary by hand, go install, Built from source]
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Backend host (GitHub, GitLab, local bare repo), SSH or HTTPS, whether an AI agent ran the command.
