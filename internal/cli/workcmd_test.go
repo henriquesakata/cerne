@@ -382,8 +382,15 @@ func TestWorkStartReportsPlanning(t *testing.T) {
 				t.Fatalf("LoadWork: %v", err)
 			}
 			want, state := "closed W-0001 (superseded by W-0002)", domain.WorkDone
-			if tc.boundSession != "sess-me" {
+			switch tc.boundSession {
+			case "":
 				want, state = "W-0001 left active (not bound to this session); if it is finished: cerne work done W-0001", domain.WorkActive
+			case "sess-other":
+				// Possibly live work: no closing command offered.
+				want, state = "W-0001 left active: another session holds it", domain.WorkActive
+				if strings.Contains(out, "cerne work done") {
+					t.Fatalf("output offers to close a work another session holds:\n%s", out)
+				}
 			}
 			if !strings.Contains(out, want+"\n") || w.State != state {
 				t.Fatalf("W-0001 = %s, output:\n%s\nwant line %q and state %s", w.State, out, want, state)

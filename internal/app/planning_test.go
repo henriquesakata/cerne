@@ -404,15 +404,15 @@ func TestStartWorkSupersedesPlanning(t *testing.T) {
 // actor is the same on every machine, and "unbound" does not prove the
 // session ended.
 func TestStartWorkPlanningBindings(t *testing.T) {
-	cases := []struct {
-		name, mySession, boundSession string
-		held                          bool
-	}{
-		{"bound to this session", "sess-me", "sess-me", false},
-		{"unbound", "sess-me", "", true},
-		{"bound to another session", "sess-me", "sess-other", true},
-		{"no CERNE_SESSION", "", "", true},
-		{"no CERNE_SESSION, bound to some session", "", "sess-other", true},
+	// want: which list W-0001 lands in — closed (Superseded), kept unbound
+	// (Kept, warned with the closing command) or held by another session
+	// (Held, warned without it: that may be live work).
+	cases := []struct{ name, mySession, boundSession, want string }{
+		{"bound to this session", "sess-me", "sess-me", "closed"},
+		{"unbound", "sess-me", "", "kept"},
+		{"bound to another session", "sess-me", "sess-other", "held"},
+		{"no CERNE_SESSION", "", "", "kept"},
+		{"no CERNE_SESSION, bound to some session", "", "sess-other", "held"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -430,17 +430,17 @@ func TestStartWorkPlanningBindings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("StartWork: %v", err)
 			}
-			if tc.held {
-				assertActive(t, repoDir, "W-0001")
-				if !slices.Equal(w.Kept, []string{"W-0001"}) || len(w.Superseded) != 0 {
-					t.Fatalf("kept %v superseded %v, want kept [W-0001]", w.Kept, w.Superseded)
+			lists := map[string][]string{"closed": w.Superseded, "kept": w.Kept, "held": w.Held}
+			for name, ids := range lists {
+				if want := name == tc.want; want != slices.Equal(ids, []string{"W-0001"}) || (!want && len(ids) != 0) {
+					t.Fatalf("superseded %v kept %v held %v, want W-0001 %s only", w.Superseded, w.Kept, w.Held, tc.want)
 				}
+			}
+			if tc.want != "closed" {
+				assertActive(t, repoDir, "W-0001")
 				return
 			}
 			assertClosedAuto(t, repoDir, "W-0001", domain.WorkDone, "superseded by W-0002")
-			if !slices.Equal(w.Superseded, []string{"W-0001"}) || len(w.Kept) != 0 {
-				t.Fatalf("superseded %v kept %v, want superseded [W-0001]", w.Superseded, w.Kept)
-			}
 		})
 	}
 }
