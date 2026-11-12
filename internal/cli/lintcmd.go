@@ -81,6 +81,16 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		findings = append(findings, cites...)
 		lint.Sort(findings)
 	}
+	// Spec CLI literals in pt-BR (F-0353): only a project that declares its CLI
+	// output English asks for them.
+	if project.CLIOutputLanguage(dir) == "en" {
+		lits, err := lint.SpecCLILiteralFindings(repoDir)
+		if err != nil {
+			return err
+		}
+		findings = append(findings, lits...)
+		lint.Sort(findings)
+	}
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, dir))
 	out := cmd.OutOrStdout()
 	var label string
