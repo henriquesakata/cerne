@@ -34,6 +34,7 @@ func saveChanWork(t *testing.T, repoDir, id string, refs, paths []string) {
 // directly for a W- binding, via its own auto work for an F- binding, and
 // nothing for a dead binding.
 func TestSessionWork(t *testing.T) {
+	pinMachine(t, "alice", "m1")
 	t.Setenv("CERNE_ACTOR", "agent")
 	cacheDir, repoDir := t.TempDir(), t.TempDir()
 	saveChanWork(t, repoDir, "W-0001", []string{"F-0009"}, []string{"internal/server/**"})
@@ -43,7 +44,7 @@ func TestSessionWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveWork(repoDir, store.Work{
-		ID: "W-0003", Title: "auto", State: domain.WorkActive, Actor: "agent", Auto: true,
+		ID: "W-0003", Title: "auto", State: domain.WorkActive, Actor: "agent:alice@m1", Auto: true,
 		Refs: []string{"F-0002"}, CreatedAt: chanT0, UpdatedAt: chanT0,
 	}); err != nil {
 		t.Fatal(err)
@@ -144,6 +145,7 @@ type chanFixture struct {
 
 func newChanFixture(t *testing.T) *chanFixture {
 	t.Helper()
+	pinMachine(t, "alice", "m1")
 	t.Setenv("CERNE_ACTOR", "agent")
 	f := &chanFixture{t: t, cacheDir: t.TempDir(), repoDir: t.TempDir(), at: chanT0}
 	f.ch = room.OpenChannel(filepath.Join(f.cacheDir, "rooms"))

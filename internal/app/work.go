@@ -261,11 +261,39 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 	return out, nil
 }
 
+// hostname is os.Hostname, replaceable so tests pin the machine.
+var hostname = os.Hostname
+
+// resolveActor is the one actor function (F-0350): CERNE_ACTOR="agent" becomes
+// "agent:<user>@<host>" (the agent says whose and which machine it is; the
+// host is derived at run time, never written to the committed settings.json),
+// any other explicit value is kept as is, and unset yields fallback.
+func resolveActor(fallback string) string {
+	switch a := os.Getenv("CERNE_ACTOR"); a {
+	case "":
+		return fallback
+	case legacyAgentActor:
+		return agentActorPrefix + defaultWorkActor()
+	default:
+		return a
+	}
+}
+
+const (
+	legacyAgentActor = "agent"
+	agentActorPrefix = "agent:"
+)
+
+// isAgentActor reports an agent identity: the F-0350 form or the legacy bare "agent".
+func isAgentActor(a string) bool {
+	return a == legacyAgentActor || strings.HasPrefix(a, agentActorPrefix)
+}
+
 // defaultWorkActor returns "<user>@<hostname>" for the current process, best
 // effort: an empty/unavailable piece is simply omitted rather than failing
 // StartWork over an identity nicety.
 func defaultWorkActor() string {
-	host, _ := os.Hostname()
+	host, _ := hostname()
 	user := os.Getenv("USER")
 	if user == "" {
 		user = os.Getenv("USERNAME")

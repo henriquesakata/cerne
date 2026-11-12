@@ -82,7 +82,9 @@ func classifyParallelWorks(works []store.Work, featureID string, mine []string, 
 			}
 		}
 		pw := toParallelWork(w, now)
-		if !slices.Contains(mine, w.Actor) {
+		// A pre-F-0350 work carries the bare "agent", shared by every agent on
+		// every machine: it proves nothing either way, so it only warns.
+		if !slices.Contains(mine, w.Actor) && w.Actor != legacyAgentActor {
 			foreign = append(foreign, pw)
 		} else {
 			ambiguous = append(ambiguous, pw)

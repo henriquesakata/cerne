@@ -147,6 +147,16 @@ func TestClassifyParallelWorks(t *testing.T) {
 			// `work start` stamps <user>@<host> even under CERNE_ACTOR: my own
 			// pickup work must not read as another agent's.
 			name:          "my other identity is still mine",
+			works:         []store.Work{work("W-0001", "agent:eu@maquina")},
+			wantAmbiguous: []string{"W-0001"},
+		},
+		{
+			name:        "the same agent user on another machine is foreign (F-0350 crit. 4)",
+			works:       []store.Work{work("W-0001", "agent:eu@outra")},
+			wantForeign: []string{"W-0001"},
+		},
+		{
+			name:          "a legacy bare agent work is ambiguous, never foreign (F-0350)",
 			works:         []store.Work{work("W-0001", "agent")},
 			wantAmbiguous: []string{"W-0001"},
 		},
@@ -160,7 +170,7 @@ func TestClassifyParallelWorks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			foreign, ambiguous := classifyParallelWorks(tc.works, "F-0001", []string{"eu@maquina", "agent"}, tc.session, tc.bindings, now)
+			foreign, ambiguous := classifyParallelWorks(tc.works, "F-0001", []string{"eu@maquina", "agent:eu@maquina"}, tc.session, tc.bindings, now)
 			if got := ids(foreign); !equal(got, tc.wantForeign) {
 				t.Fatalf("foreign = %v, want %v", got, tc.wantForeign)
 			}

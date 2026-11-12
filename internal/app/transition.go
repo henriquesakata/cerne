@@ -598,13 +598,9 @@ func isRealDoc(path string) (bool, error) {
 	return doccheck.HasRealContent(data), nil
 }
 
-// EventActor returns CERNE_ACTOR when set, "local" otherwise.
-func EventActor() string {
-	if a := os.Getenv("CERNE_ACTOR"); a != "" {
-		return a
-	}
-	return "local"
-}
+// EventActor returns the actor for events: CERNE_ACTOR resolved by
+// resolveActor, "local" when unset.
+func EventActor() string { return resolveActor("local") }
 
 // gateDocFilename maps a gate error to the document the hint should name.
 func gateDocFilename(gateErr error) string {
