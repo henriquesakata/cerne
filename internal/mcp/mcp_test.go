@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -48,7 +49,7 @@ func TestMCP_ListsTools(t *testing.T) {
 			t.Errorf("tool %s is not annotated read-only", tool.Name)
 		}
 	}
-	for _, want := range []string{"brief"} {
+	for _, want := range []string{"status", "brief", "next", "search", "show", "ask"} {
 		if !got[want] {
 			t.Errorf("tools/list lacks %q; got %v", want, got)
 		}
@@ -69,5 +70,73 @@ func TestMCP_BriefRunsBriefJSON(t *testing.T) {
 	}
 	if text := res.Content[0].(*sdk.TextContent).Text; text != "{\"ok\": true}\n" {
 		t.Fatalf("content = %q, want the executor's bytes", text)
+	}
+}
+
+// TestMCP_ToolArgv: every tool maps its typed fields, and only those, onto the
+// matching command with --json.
+func TestMCP_ToolArgv(t *testing.T) {
+	cases := []struct {
+		tool string
+		args map[string]any
+		want []string
+	}{
+		{"status", map[string]any{}, []string{"status", "--json"}},
+		{"status", map[string]any{"active": true}, []string{"status", "--json", "--active"}},
+		{"next", map[string]any{}, []string{"next", "--json"}},
+		{"search", map[string]any{"query": "login google"}, []string{"search", "login google", "--json"}},
+		{"search", map[string]any{"query": "x", "limit": 5}, []string{"search", "x", "--json", "--limit", "5"}},
+		{"show", map[string]any{"id": "F-0363"}, []string{"show", "F-0363", "--json"}},
+		{"show", map[string]any{"id": "RB-0001"}, []string{"show", "RB-0001", "--json"}},
+		{"ask", map[string]any{"question": "why sqlite?"}, []string{"ask", "why sqlite?", "--json"}},
+	}
+	for _, c := range cases {
+		fe := &fakeExec{}
+		cs := connect(t, fe.run)
+		res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: c.tool, Arguments: c.args})
+		if err != nil || res.IsError {
+			t.Errorf("%s %v: err=%v res=%+v", c.tool, c.args, err, res)
+			continue
+		}
+		if len(fe.calls) != 1 || !reflect.DeepEqual(fe.calls[0], c.want) {
+			t.Errorf("%s %v: executor calls = %q, want [%q]", c.tool, c.args, fe.calls, c.want)
+		}
+	}
+}
+
+// TestMCP_RejectsFlagLikeArgs: a client value never becomes a flag or a path —
+// a value starting with "-", an id off cerne's pattern, an out-of-range limit
+// or an unknown field is refused before any command runs.
+func TestMCP_RejectsFlagLikeArgs(t *testing.T) {
+	cases := []struct {
+		tool string
+		args map[string]any
+	}{
+		{"show", map[string]any{"id": "--help"}},
+		{"show", map[string]any{"id": "F-1"}},
+		{"show", map[string]any{"id": "f-0001"}},
+		{"show", map[string]any{"id": "../F-0001"}},
+		{"show", map[string]any{"id": "F-0001 --all"}},
+		{"show", map[string]any{}},
+		{"show", map[string]any{"id": "F-0001", "dir": "/etc"}},
+		{"search", map[string]any{"query": "-x"}},
+		{"search", map[string]any{"query": "--dir=/etc"}},
+		{"search", map[string]any{"query": ""}},
+		{"search", map[string]any{"query": "x", "limit": 0}},
+		{"search", map[string]any{"query": "x", "limit": 51}},
+		{"ask", map[string]any{"question": "-h"}},
+		{"ask", map[string]any{"question": "   "}},
+		{"status", map[string]any{"all": true}},
+	}
+	for _, c := range cases {
+		fe := &fakeExec{}
+		cs := connect(t, fe.run)
+		res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: c.tool, Arguments: c.args})
+		if err == nil && !res.IsError {
+			t.Errorf("%s %v: accepted, want refusal", c.tool, c.args)
+		}
+		if len(fe.calls) != 0 {
+			t.Errorf("%s %v: executor ran %q, want no command", c.tool, c.args, fe.calls)
+		}
 	}
 }

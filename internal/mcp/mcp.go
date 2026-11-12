@@ -6,6 +6,11 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -15,14 +20,87 @@ import (
 // importing internal/cli and lets tests inject a fake.
 type Exec func(args []string) ([]byte, error)
 
+// ErrBadArgument is a tool argument refused at the boundary, before any
+// command runs.
+var ErrBadArgument = errors.New("invalid argument")
+
+// idRe is cerne's entity id shape (prefix + at least four digits), the same
+// pattern internal/store checks; anything else never reaches `show`.
+var idRe = regexp.MustCompile(`^[A-Z]+-\d{4,}$`)
+
 type noArgs struct{}
+
+type statusArgs struct {
+	Active bool `json:"active,omitempty" jsonschema:"only active work: hides implemented, superseded and rejected features"`
+}
+
+type searchArgs struct {
+	Query string `json:"query" jsonschema:"full-text query over every document, history included"`
+	Limit *int   `json:"limit,omitempty" jsonschema:"maximum number of results, 1 to 50 (default 10)"`
+}
+
+type showArgs struct {
+	ID string `json:"id" jsonschema:"entity id, e.g. F-0363, D-0001, N-0028, R-0061, RB-0001"`
+}
+
+type askArgs struct {
+	Question string `json:"question" jsonschema:"natural-language question; returns the retrieved sources, no LLM call"`
+}
 
 // NewServer registers the tools on an MCP server named cerne.
 func NewServer(version string, exec Exec) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "cerne", Version: version}, nil)
+	add(s, exec, "status", "Feature states and the epics rollup: what exists and in which lifecycle state.",
+		func(in statusArgs) ([]string, error) {
+			if in.Active {
+				return []string{"status", "--json", "--active"}, nil
+			}
+			return []string{"status", "--json"}, nil
+		})
 	add(s, exec, "brief", "The whole project roster as id, state and title per entity (features, decisions, notes, references…), no paths. The cheapest map of the project.",
 		func(noArgs) ([]string, error) { return []string{"brief", "--json"}, nil })
+	add(s, exec, "next", "What to do next: active features grouped by their next action, plus the documentation debts lint finds.",
+		func(noArgs) ([]string, error) { return []string{"next", "--json"}, nil })
+	add(s, exec, "search", "Find entities and documents by subject (full-text, history included).",
+		func(in searchArgs) ([]string, error) {
+			if err := plainText("query", in.Query); err != nil {
+				return nil, err
+			}
+			args := []string{"search", in.Query, "--json"}
+			if in.Limit != nil {
+				if *in.Limit < 1 || *in.Limit > 50 {
+					return nil, fmt.Errorf("limit %d is outside 1..50: %w", *in.Limit, ErrBadArgument)
+				}
+				args = append(args, "--limit", strconv.Itoa(*in.Limit))
+			}
+			return args, nil
+		})
+	add(s, exec, "show", "Read one entity by id: its metadata and its documents.",
+		func(in showArgs) ([]string, error) {
+			if !idRe.MatchString(in.ID) {
+				return nil, fmt.Errorf("id %q is not a cerne id (e.g. F-0363): %w", in.ID, ErrBadArgument)
+			}
+			return []string{"show", in.ID, "--json"}, nil
+		})
+	add(s, exec, "ask", "Retrieve the sources that answer a question, ranked, with snippets. Makes no LLM call: you answer from the sources.",
+		func(in askArgs) ([]string, error) {
+			if err := plainText("question", in.Question); err != nil {
+				return nil, err
+			}
+			return []string{"ask", in.Question, "--json"}, nil
+		})
 	return s
+}
+
+// plainText refuses a blank value or one that cobra would parse as a flag.
+func plainText(field, v string) error {
+	if strings.TrimSpace(v) == "" {
+		return fmt.Errorf("%s is empty: %w", field, ErrBadArgument)
+	}
+	if strings.HasPrefix(v, "-") {
+		return fmt.Errorf("%s %q starts with \"-\": %w", field, v, ErrBadArgument)
+	}
+	return nil
 }
 
 // add registers one read-only tool whose handler turns the typed input into a
