@@ -60,8 +60,8 @@ func dataRoutes() []dataRoute {
 		{"GET", "/harness", false, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {
 			handleHarness(w, repoDir, projDir)
 		}},
-		{"GET", "/features/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
-			handleFeatureDetail(w, repoDir, r.PathValue("id"))
+		{"GET", "/features/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleFeatureDetail(w, repoDir, projDir, r.PathValue("id"))
 		}},
 		{"POST", "/features", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleCreateFeature(w, r, repoDir, projDir)

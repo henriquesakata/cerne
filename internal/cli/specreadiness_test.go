@@ -104,7 +104,7 @@ func TestPrintApproveReadinessSilentPastCandidacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	printApproveReadiness(&b, repoDir, "T-0001")
+	printApproveReadiness(&b, repoDir, t.TempDir(), "T-0001")
 	if b.Len() != 0 {
 		t.Fatalf("readiness printed past candidacy: %q", b.String())
 	}

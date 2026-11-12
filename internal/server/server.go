@@ -340,7 +340,7 @@ type artifact struct {
 	Path string `json:"path"`
 }
 
-func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
+func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
@@ -431,7 +431,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, id string) {
 	var readiness []app.ApproveImpediment
 	var bar string
 	if f.State == domain.StateCandidate || specChanged {
-		if readiness, err = app.ApproveReadiness(repoDir, id); err == nil {
+		if readiness, err = app.ApproveReadinessAt(repoDir, projDir, id); err == nil {
 			bar, err = app.AcceptedBar(repoDir, id)
 		}
 		if err != nil {

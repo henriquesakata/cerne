@@ -198,7 +198,7 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", i.ID, domain.IdeaActive, i.State, f.ID)
 			// The candidate is a stub (N-0028): same nudge as feature new.
 			fmt.Fprintf(cmd.OutOrStdout(), "Next step: complete the spec and tags of %s ('cerne pull' materializes the draft; 'cerne feature retag %s' sets the tags).\n", f.ID, f.ID)
-			printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, f.ID)
+			printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, ctx.projDir, f.ID)
 			return nil
 		},
 	}
