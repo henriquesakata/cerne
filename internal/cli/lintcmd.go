@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/harness"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -18,6 +20,7 @@ func newLintCmd() *cobra.Command {
 	var fixTasks bool
 	var staged bool
 	var feature, parent string
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Detect stale documentation in the backend",
@@ -39,6 +42,7 @@ func newLintCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&staged, "staged", false, "validate local .docs/ edits before push, without touching the backend")
 	cmd.Flags().StringVar(&feature, "feature", "", "only the findings about this feature")
 	cmd.Flags().StringVar(&parent, "parent", "", "only the findings about this epic and its descendants")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the findings as a JSON array")
 	cmd.MarkFlagsMutuallyExclusive("feature", "parent")
 	return cmd
 }
@@ -64,6 +68,17 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 			return err
 		}
 		findings = append(findings, drift...)
+		// Hook citations (F-0340) read the project's hooks, so they share the
+		// drift branch: default mode only.
+		hooks, err := harness.ProjectHookTexts(driftCtx.projDir)
+		if err != nil {
+			return err
+		}
+		cites, err := lint.CheckHookCitations(repoDir, hooks)
+		if err != nil {
+			return err
+		}
+		findings = append(findings, cites...)
 		lint.Sort(findings)
 	}
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, dir))
@@ -77,6 +92,18 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		}
 		label = l
 		findings, outside = lint.Scope(findings, ids)
+	}
+	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+		rows := make([]nextFinding, 0, len(findings))
+		for _, f := range findings {
+			rows = append(rows, nextFinding{f.Rule, f.Entity, f.File, f.Detail})
+		}
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(rows); err != nil {
+			return err
+		}
+		return lintFailure(findings)
 	}
 	if len(findings) == 0 {
 		if !scoped {
