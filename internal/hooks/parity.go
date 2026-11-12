@@ -114,6 +114,13 @@ var parityTable = []ParityRow{
 		Gemini:     degraded + ": subagents are a preview feature",
 	},
 	{
+		Capability: "Authoring guide",
+		Claude:     ".claude/skills/cerne-authoring/ (cerne skill install)",
+		Cursor:     ".cursor/skills/cerne-authoring/ (cerne skill install)",
+		Codex:      ".agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md (cerne skill install)",
+		Gemini:     ".gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md (cerne skill install)",
+	},
+	{
 		Capability: "Trust prerequisite",
 		Claude:     "none",
 		Cursor:     "trusted workspaces",
@@ -131,11 +138,11 @@ func ParityMatrix() string {
 <!-- GENERATED from internal/hooks/parity.go (F-0174) — do not edit by hand.
      A golden test pins this file to the table the installer actually uses. -->
 
-What ` + "`cerne hook install`" + ` delivers per provider. Capabilities marked
+What ` + "`cerne hook install`" + ` (and, for the authoring guide, ` + "`cerne skill install`" + `) delivers per provider. Capabilities marked
 **degraded** are limitations of the provider's extension surface (or await
 live validation) and are reported as ` + "`skipped`" + ` lines, with the manual
 step, in the install output. Research provenance: R-0035 (Codex), R-0036
-(Gemini), R-0037 (Cursor) in the cerne backend.
+(Gemini), R-0037 (Cursor); the authoring-guide paths: R-0064 (Codex), R-0065 (Gemini), R-0066 (Cursor), in the cerne backend.
 
 | Capability | Claude Code | Cursor | Codex CLI | Gemini CLI |
 |---|---|---|---|---|
