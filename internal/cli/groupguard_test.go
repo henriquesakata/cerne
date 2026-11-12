@@ -49,6 +49,16 @@ func TestGroupHelpArgSuggestsRootHelpWithPath(t *testing.T) { // review: `featur
 	}
 }
 
+func TestCompletionGroupRejectsUnknownSubcommand(t *testing.T) { // review A: cobra adds it only at Execute
+	_, err := execCerne(t, "completion", "bogus")
+	if err == nil || !strings.Contains(err.Error(), `unknown command "bogus" for "cerne completion"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := execCerne(t, "completion", "zsh"); err != nil { // script goes to os.Stdout
+		t.Fatalf("completion zsh: %v", err)
+	}
+}
+
 func TestEveryGroupRejectsUnknownSubcommand(t *testing.T) { // criterion 5
 	n := 0
 	var walk func(c *cobra.Command)
