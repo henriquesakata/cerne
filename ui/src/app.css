@@ -231,6 +231,53 @@ h2 {
 .filter-disclosure > summary > .column-count { margin-left: 0.4rem; }
 .column-empty { margin: 0.5rem 0 0; text-align: center; color: var(--dim); }
 
+/* Coluna Backlog (F-0342): candidatas à esquerda, fora do ciclo. Tracejada e
+   sem o fundo das colunas de estado, para não ler como etapa da esteira
+   (F-0202). Recolhida, vira uma tira estreita com o rótulo na vertical. */
+.backlog-column {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.backlog-column > summary { cursor: pointer; width: fit-content; list-style: none; }
+.backlog-column > summary::-webkit-details-marker { display: none; }
+.backlog-column > summary > h2 { display: inline; margin: 0; }
+
+/* Marcador próprio: o nativo gira junto com writing-mode e, na tira vertical,
+   o "fechado" aponta para baixo — igual ao "aberto". Em horizontal-tb ele fica
+   de pé nos dois estados; o "/ ''" o tira do leitor de tela, que já ouve o
+   estado expandido do <summary>. */
+.backlog-column > summary::before {
+  content: '▼';
+  content: '▼' / '';
+  display: inline-block;
+  writing-mode: horizontal-tb;
+  margin: 0 0.4rem 0 0;
+  font-size: 0.7em;
+  color: var(--muted);
+}
+
+.backlog-column:not([open]) > summary::before {
+  content: '▶';
+  content: '▶' / '';
+  margin: 0 0 0.4rem;
+}
+.backlog-column > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+
+.backlog-column[open] > summary { margin-bottom: 0.5rem; }
+
+.backlog-column:not([open]) {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0.75rem 0.4rem;
+}
+
+.backlog-column:not([open]) > summary { writing-mode: vertical-rl; }
+
+.backlog-column-open { font-size: 0.8rem; color: var(--link); }
+.backlog-column-open:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+
 /* ---- backlog (F-0202) + chat com o agente de domínio (F-0210) ---- */
 
 /* O grid preenche a altura restante depois da nav (#root já é flex column com
