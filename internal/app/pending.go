@@ -317,7 +317,7 @@ func PromotePendings(repoDir, projDir string, ids []string, as, title, module st
 	if title == "" {
 		title = ps[0].Title
 	}
-	f, err := create(repoDir, projDir, title, module, parent, facets, components, spectmpl.StubWithContext(title, promotedContext(ps)), force, "", "")
+	f, err := create(repoDir, projDir, title, module, parent, facets, components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, promotedContext(ps)), force, "", "")
 	if err != nil {
 		return nil, store.Feature{}, err
 	}

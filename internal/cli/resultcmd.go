@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/restmpl"
@@ -58,7 +59,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	spec := readFeatureDoc(ctx.repoDir, id, "spec.md")
 	plan := readFeatureDoc(ctx.repoDir, id, "plan.md")
 	current := readFeatureDoc(ctx.repoDir, id, "result.md")
-	prompt := BuildResultDraftPrompt(f, spec, plan, current)
+	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Result, BuildResultDraftPrompt(f, spec, plan, current))
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.

@@ -87,7 +87,7 @@ func TestDriftSuspectGoldenPath(t *testing.T) {
 	commitInRepo(t, proj, map[string]string{"internal/core/core.go": "package core\n"})
 
 	// cerne init, then declare module_paths for the drift rule.
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
 	appendToFile(t, filepath.Join(proj, ".cernerc"), "\n[module_paths]\ncore = [\"internal/core/**\"]\n")
 
 	// Drive F-0001 all the way to implemented.

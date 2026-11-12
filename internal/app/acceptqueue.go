@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -132,7 +133,7 @@ func summarizeResult(result []byte) AcceptRow {
 			if inSection && level <= secLevel { // only a heading of the same or higher level ends the section
 				inSection = false
 			}
-			if !inSection && level >= 2 && pendingHead.MatchString(m[2]) {
+			if !inSection && level >= 2 && (pendingHead.MatchString(m[2]) || doclang.IsDebtsSection(m[2])) {
 				inSection, secLevel, base = true, level, -1
 			}
 			prodSect = prodHeadRe.MatchString(strings.TrimSpace(m[2]))
@@ -151,7 +152,7 @@ func summarizeResult(result []byte) AcceptRow {
 				row.Production = clip(line)
 			}
 		}
-		if pendingWord.MatchString(line) {
+		if pendingWord.MatchString(line) || doclang.UnmetCriterion(line) {
 			row.PendingReported = true
 			row.Pending = append(row.Pending, clip(line))
 		} else if m := bulletRe.FindStringSubmatch(line); inSection && m != nil {

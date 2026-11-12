@@ -27,7 +27,7 @@ func TestRunbookGoldenPath(t *testing.T) {
 	ctxPath := filepath.Join(docsDir, "CONTEXT.md")
 	rbPath := filepath.Join(docsDir, "current", "runbooks", "RB-0001-runbook-a.md")
 
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 
 	out := mustCerne(t, "runbook", "new", "Runbook A", "--dir", proj)
 	if !strings.Contains(out, "RB-0001 created (active)") {

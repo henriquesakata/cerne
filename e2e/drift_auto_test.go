@@ -38,7 +38,7 @@ func TestDriftAutoGoldenPath(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("CERNE_TEST_KEY", "test-key")
 
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
 	appendToFile(t, filepath.Join(proj, ".cernerc"), fmt.Sprintf(
 		"\n[module_paths]\ncore = [\"internal/core/**\"]\n\n[llm]\nmode = \"byo-key\"\nbase_url = %q\nkey_env = \"CERNE_TEST_KEY\"\n", srv.URL))
 
@@ -109,7 +109,7 @@ func TestDriftAutoDelegationFails(t *testing.T) {
 		t.Fatalf("PlainInit proj: %v", err)
 	}
 	commitInRepo(t, proj, map[string]string{"internal/core/core.go": "package core\n"})
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "core", "--dir", proj)
 	appendToFile(t, filepath.Join(proj, ".cernerc"), "\n[module_paths]\ncore = [\"internal/core/**\"]\n")
 
 	mustCerne(t, "feature", "new", "Motor", "--context", "ctx de teste", "--facet", "code", "--module", "core", "--dir", proj)

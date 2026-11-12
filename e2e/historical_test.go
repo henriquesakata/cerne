@@ -22,7 +22,7 @@ func TestRetireThenLintFlagsAlias(t *testing.T) {
 	proj := t.TempDir()
 	docsDir := filepath.Join(proj, ".docs")
 
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--dir", proj)
 	mustCerne(t, "feature", "new", "Relatórios financeiros", "--context", "ctx de teste", "--dir", proj)
 	mustCerne(t, "pull", "--dir", proj)
 

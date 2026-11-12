@@ -36,7 +36,9 @@ func setupProject(t *testing.T, modules ...string) (projDir, origin, repoDir str
 	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
 	origin = newOrigin(t)
 	projDir = t.TempDir()
-	args := []string{"--name", "demo", "--backend", origin, "--dir", projDir}
+	// pt-BR: the suite predates docs.language (F-0359) and asserts the
+	// Portuguese scaffold; English has its own tests.
+	args := []string{"--docs-language", "pt-BR", "--name", "demo", "--backend", origin, "--dir", projDir}
 	for _, m := range modules {
 		args = append(args, "--module", m)
 	}

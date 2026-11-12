@@ -17,7 +17,7 @@ func TestNoteRetagGoldenPath(t *testing.T) {
 		t.Fatalf("InitBare: %v", err)
 	}
 	proj := t.TempDir()
-	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", "Demo", "--backend", origin, "--module", "arch", "--dir", proj)
 
 	mustCerne(t, "note", "new", "Procedimento de setup", "--dir", proj) // N-0001, no tags
 	if list := mustCerne(t, "note", "list", "--facet", "infra", "--dir", proj); strings.Contains(list, "N-0001") {

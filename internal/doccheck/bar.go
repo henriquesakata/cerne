@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // The two ways a spec fails the Gauntlet bar (F-0545). SpecBar wraps
@@ -21,15 +23,6 @@ var (
 // markdown closes it on a later line.
 var (
 	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
-	// A "Barra:" line in any layout both readers take (F-0327): list, quote,
-	// heading or table markers, emphasis around the label, a short qualifier
-	// before the colon ("Barra (da spec):"). Matched per line: across lines,
-	// RE2's \s let an empty "Barra:" take the next line as its value.
-	barLineRe            = regexp.MustCompile(`(?i)^(?:[\s\x{00A0}#>*_|+-]|\d+[.)]\s)*Barra[*_]*(?:[ \t(][^:\n]{0,39})?:[*_]*(.*)$`)
-	naoAplicavelRe       = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel\s*\(([^)]*)`)
-	dispensadaRe         = regexp.MustCompile(`(?i)^dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana\s*\(([^)]*)`)
-	naoAplicavelPrefixRe = regexp.MustCompile(`(?i)^n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`)
-	dispensadaPrefixRe   = regexp.MustCompile(`(?i)^dispensada`)
 	// Template slots left unfilled, with only separators between them:
 	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
 	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
@@ -71,22 +64,24 @@ func BarValue(value string) (exempt bool, err error) {
 		return false, fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
 	case slots(t):
 		return false, fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
-	case naoAplicavelPrefixRe.MatchString(plain):
-		return true, exemptionError(naoAplicavelRe, plain, `"não aplicável" needs its one-line justification in parentheses`)
-	case dispensadaPrefixRe.MatchString(plain):
-		return true, exemptionError(dispensadaRe, plain, `"dispensada por decisão humana" needs the quoted words in parentheses`)
+	}
+	if t, l, inner, complete, ok := doclang.Exemption(plain); ok {
+		need := "needs its one-line justification in parentheses"
+		if t == doclang.Waived {
+			need = "needs the quoted words in parentheses"
+		}
+		return true, exemptionError(inner, complete, `"`+doclang.Display(t, l)+`" `+need)
 	}
 	return false, nil
 }
 
 // exemptionError checks an exemption form's parenthesized text: missing or
 // blank gets need, a template slot is named as such.
-func exemptionError(form *regexp.Regexp, plain, need string) error {
-	m := form.FindStringSubmatch(plain)
-	if m == nil || bare(m[1]) == "" {
+func exemptionError(inner string, complete bool, need string) error {
+	if !complete || bare(inner) == "" {
 		return fmt.Errorf("%w: %s", ErrBarMalformed, need)
 	}
-	if slots(bare(m[1])) {
+	if slots(bare(inner)) {
 		return fmt.Errorf("%w: %s, not a <…> template placeholder", ErrBarMalformed, need)
 	}
 	return nil
@@ -102,14 +97,19 @@ func exemptionError(form *regexp.Regexp, plain, need string) error {
 // value, nor an exemption's justification or quote.
 func SpecBar(body []byte) (string, error) {
 	firstInvalid := ErrBarMissing
+	inCode := false
 	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
-		value, ok := BarLine(line)
+		if doclang.Fence(line) {
+			inCode = !inCode
+			continue
+		}
+		value, l, ok := doclang.BarLine(line, inCode)
 		if !ok {
 			continue
 		}
 		_, err := BarValue(value)
 		if err == nil {
-			return "Barra: " + value, nil
+			return doclang.Display(doclang.BarLabel, l) + ": " + value, nil
 		}
 		if firstInvalid == ErrBarMissing {
 			firstInvalid = err
@@ -122,9 +122,6 @@ func SpecBar(body []byte) (string, error) {
 // and the result reader take: ok, and the text after the colon (past the
 // label's closing emphasis), trimmed.
 func BarLine(line string) (value string, ok bool) {
-	m := barLineRe.FindStringSubmatch(line)
-	if m == nil {
-		return "", false
-	}
-	return strings.TrimSpace(m[1]), true
+	value, _, ok = doclang.BarLine(line, false)
+	return value, ok
 }

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 )
 
@@ -68,6 +69,27 @@ var idSubdirs = map[string]string{
 type Project struct {
 	Name    string   `json:"name"`
 	Modules []string `json:"modules"`
+	// DocsLanguage is the language cerne scaffolds this project's documents
+	// in (F-0359): "en" or "pt-BR". Empty is pt-BR, what every backend was
+	// before the field existed. It lives here, not in .cernerc, because it is
+	// a property of the documents: every checkout and every host that serves
+	// this backend must scaffold in the same language.
+	DocsLanguage string `json:"docs_language,omitempty"`
+}
+
+// DocsLanguage returns the language to scaffold documents in for the backend
+// at backendDir. A missing project.json, an empty field or a value outside
+// the catalog all read as Portuguese: scaffolding never fails on it.
+func DocsLanguage(backendDir string) doclang.Lang {
+	p, err := LoadProject(backendDir)
+	if err != nil {
+		return doclang.PT
+	}
+	l, err := doclang.Parse(p.DocsLanguage)
+	if err != nil {
+		return doclang.PT
+	}
+	return l
 }
 
 // InitLayout creates the backend directory tree (each dir with an empty

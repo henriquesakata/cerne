@@ -23,14 +23,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/henriquesakata/cerne/internal/dectmpl"
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/mdlink"
-	"github.com/henriquesakata/cerne/internal/plantmpl"
-	"github.com/henriquesakata/cerne/internal/restmpl"
-	"github.com/henriquesakata/cerne/internal/runtmpl"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/wiki"
 )
@@ -504,7 +500,10 @@ func Sort(findings []Finding) {
 // it compares the doc's level-2 headings against the canonical *tmpl.Sections.
 func incompleteDocFindings(repoDir string, features []store.Feature, decisions []store.Decision, runbooks []store.Runbook) ([]Finding, error) {
 	var findings []Finding
-	check := func(rel string, sections []string) error {
+	// Sections are matched under either language (F-0359); a missing one is
+	// named in the language the project scaffolds in.
+	docsLang := store.DocsLanguage(repoDir)
+	check := func(rel string, kind doclang.Kind) error {
 		data, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(rel)))
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
@@ -518,7 +517,7 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		if !doccheck.HasRealContent(data) {
 			return nil // still a stub — enforced by the lifecycle gates
 		}
-		if missing := missingSections(data, sections); len(missing) > 0 {
+		if missing := missingSections(data, kind, docsLang); len(missing) > 0 {
 			findings = append(findings, Finding{
 				Rule:   RuleIncompleteDoc,
 				File:   rel,
@@ -531,13 +530,13 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		if !liveFeatureStates[f.State] {
 			continue // only live work; implemented/terminal docs are settled history
 		}
-		if err := check("content/features/"+f.ID+"/spec.md", spectmpl.Sections); err != nil {
+		if err := check("content/features/"+f.ID+"/spec.md", doclang.Spec); err != nil {
 			return nil, err
 		}
-		if err := check("content/features/"+f.ID+"/plan.md", plantmpl.Sections); err != nil {
+		if err := check("content/features/"+f.ID+"/plan.md", doclang.Plan); err != nil {
 			return nil, err
 		}
-		if err := check("content/features/"+f.ID+"/result.md", restmpl.Sections); err != nil {
+		if err := check("content/features/"+f.ID+"/result.md", doclang.Result); err != nil {
 			return nil, err
 		}
 	}
@@ -545,7 +544,7 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		if d.State != domain.DecisionActive {
 			continue
 		}
-		if err := check("content/decisions/"+d.ID+".md", dectmpl.Sections); err != nil {
+		if err := check("content/decisions/"+d.ID+".md", doclang.Decision); err != nil {
 			return nil, err
 		}
 	}
@@ -553,7 +552,7 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		if rb.State != domain.RunbookActive {
 			continue
 		}
-		if err := check("content/runbooks/"+rb.ID+".md", runtmpl.Sections); err != nil {
+		if err := check("content/runbooks/"+rb.ID+".md", doclang.Runbook); err != nil {
 			return nil, err
 		}
 	}
@@ -563,20 +562,14 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 // missingSections returns the canonical sections absent from data as level-2
 // (## ) headings, in canonical order. A heading present with "N/A" content still
 // counts as present (right-sizing): only the heading is checked, not its body.
-func missingSections(data []byte, sections []string) []string {
+func missingSections(data []byte, kind doclang.Kind, l doclang.Lang) []string {
 	present := map[string]bool{}
 	for _, line := range strings.Split(string(data), "\n") {
 		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
 			present[strings.TrimSpace(h)] = true
 		}
 	}
-	var missing []string
-	for _, s := range sections {
-		if !present[s] {
-			missing = append(missing, s)
-		}
-	}
-	return missing
+	return doclang.Missing(kind, present, l)
 }
 
 // parentFindings checks the epic (parent/child) invariants over the features,

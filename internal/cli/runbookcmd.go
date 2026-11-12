@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/llm"
@@ -283,7 +284,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	current := readRunbookCurrent(ctx.repoDir, id)
-	prompt := BuildRunbookDraftPrompt(rb, current)
+	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Runbook, BuildRunbookDraftPrompt(rb, current))
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.

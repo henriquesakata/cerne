@@ -16,6 +16,7 @@ package restmpl
 import (
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/models"
 )
 
@@ -24,14 +25,7 @@ import (
 var exampleModel = models.Baseline().DefaultModel
 
 // Sections are the canonical result sections, in template order.
-var Sections = []string{
-	"Resultado",
-	"Aceitação",
-	"O que mudou",
-	"Débitos e follow-ups",
-	"Aprendizados e desvios",
-	"Gauntlet",
-}
+var Sections = doclang.Sections(doclang.Result, doclang.PT)
 
 // Body is the result template skeleton: the canonical section headings in order,
 // each with inline authoring guidance as HTML comments. It carries no
@@ -85,6 +79,67 @@ Dispensa pelo humano: Barra: dispensada por decisão humana (<citação>)
 Uma passada só do crítico, sem juiz, vai em "Achados do crítico", nunca numa linha "Rodada N": a linha
 "Rodada N" leva o veredito citado do juiz. -->
 `
+
+// BodyEN is Body in English (F-0359). The literal forms it shows are the ones
+// the result reader accepts (internal/lint/resultgauntlet.go).
+var BodyEN = `<!-- HOW TO USE: this is the record of what the feature DELIVERED (not what it planned). Show EVIDENCE —
+number of tests, file:line, command output — not assertion ("done" without proof does not count). Acceptance
+is binary and 1:1 with the spec criteria. Fill in every section and remove these guide lines. Mark any
+uncertainty with [CLARIFY: specific question]. Size it by the work: a small delivery has short sections
+— do not inflate. It is the gate of cerne feature complete. -->
+
+<!-- METADATA (fill in as lines **Spec:** / **Date:** / **Agent:**):
+Spec: link to the spec this delivery closes (../<id>/spec.md) — the source of the criteria.
+Date: YYYY-MM-DD — when it was delivered.
+Agent: who implemented it, self-declared — "<model id> · effort <level on your harness's scale,
+e.g. low/medium/high>"; e.g. "` + exampleModel + ` · effort high". No agent: "human". Do not know one of the
+two? mark only that one ("` + exampleModel + ` · effort unknown") — never guess. It is a historical record:
+the concrete id of the model that ran, not a generic category. -->
+
+## Result
+<!-- In 1-2 sentences: what was delivered and its state (delivered / partial). The bottom line, before the detail. -->
+
+## Acceptance
+<!-- Each acceptance criterion of the spec → MET/UNMET, with EVIDENCE (test name, file:line,
+numbers). Binary and 1:1 with the spec — no "looks done". Cite "criterion N" (literal form) for every
+numbered criterion: it is what cerne feature complete checks. -->
+
+## What changed
+<!-- The concrete changes that went in, from the reader's point of view: files/modules created and edited,
+new commands, observable behaviour. Anchor it in what is real. -->
+
+## Debts and follow-ups
+<!-- What was left out or incomplete, known debts and deferred items — as concrete work (it becomes a new
+feature/case), not an orphan TODO. "None" when there is nothing. -->
+
+## Learnings and deviations
+<!-- What you learned, what you would do differently, and intentional deviations from the plan/spec (what changed and why).
+Concise; "N/A" if nothing notable. -->
+
+## Gauntlet
+<!-- Record of the comparison loop; cerne feature complete refuses the result without it. Write outside this
+comment, one line per item (the literal forms below, without the label before the colon):
+Bar line: Bar: <named reference + access (URL, command or file)>
+Line of each round: Round N — <win|loss|tie>: "<short quote of the judge's verdict>"
+Findings line: Critic findings: <n> — fixed <…>; refuted <… with file:line>; accepted as a limit <…>
+No applicable bar: Bar: not applicable (<justification>)
+Waived by the human: Bar: waived by human decision (<quote>)
+A critic-only pass, with no judge, goes in "Critic findings", never on a "Round N" line: the
+"Round N" line carries the judge's quoted verdict. -->
+`
+
+// BodyIn returns the template body in language l.
+func BodyIn(l doclang.Lang) string {
+	if l == doclang.EN {
+		return BodyEN
+	}
+	return Body
+}
+
+// StubIn is Stub in language l.
+func StubIn(l doclang.Lang, title string) string {
+	return "# " + strings.TrimSpace(title) + "\n\n" + BodyIn(l)
+}
 
 // Stub returns the result body cerne scaffolds when a feature enters
 // development: the title heading followed by the template Body. Callers prepend

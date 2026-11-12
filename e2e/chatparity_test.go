@@ -121,7 +121,7 @@ func newParityProject(t *testing.T, name string) parityProject {
 		t.Fatal(err)
 	}
 	proj := t.TempDir()
-	mustCerne(t, "init", "--name", name, "--backend", origin, "--module", "core", "--module", "ui", "--dir", proj)
+	mustCerne(t, "init", "--docs-language", "pt-BR", "--name", name, "--backend", origin, "--module", "core", "--module", "ui", "--dir", proj)
 	cfg, _, err := project.LoadConfig(proj)
 	if err != nil {
 		t.Fatal(err)

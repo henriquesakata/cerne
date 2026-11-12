@@ -16,6 +16,8 @@ package plantmpl
 import (
 	"fmt"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // EpicChild is the minimal shape StubForEpic needs from a child feature/task:
@@ -27,14 +29,7 @@ type EpicChild struct {
 }
 
 // Sections are the canonical plan sections, in template order.
-var Sections = []string{
-	"Estratégia",
-	"Sequência de tarefas",
-	"Dependências e ordem",
-	"Riscos e rollback",
-	"Restrições para o agente",
-	"Definição de pronto",
-}
+var Sections = doclang.Sections(doclang.Plan, doclang.PT)
 
 // Body is the plan template skeleton: the canonical section headings in order,
 // each with inline authoring guidance as HTML comments. It carries no
@@ -92,6 +87,68 @@ cada critério de aceitação da spec tem (a) implementação e (b) um teste que
 suíte completa verde; todas as tarefas concluídas; result.md escrito. É o portão de cerne feature complete. -->
 `
 
+// BodyEN is Body in English (F-0359).
+const BodyEN = `<!-- HOW TO USE: this is the execution plan of a feature whose spec is already APPROVED. Do not repeat the spec —
+reference it and describe HOW to build. Fill in every section and remove these guide lines. Mark any
+uncertainty with [CLARIFY: specific question] and do not proceed by guessing. Size it by the work:
+a trivial change (≤3 files) fits in a single task, and sections that do not apply become one line ("N/A")
+— do not inflate a small plan with ceremony. Before cerne feature start: no [CLARIFY] left;
+every task small, with a test and a verification tied to a spec criterion. -->
+
+<!-- METADATA (fill in as lines **Spec:** / **Branch:** / **Exit (Gauntlet):**):
+Spec: link to the approved spec (../<id>/spec.md) — the source of the acceptance criteria.
+Branch: the branch/worktree where the work happens.
+Exit (Gauntlet): inherit the bar from the spec (repeat the reference + access and the exit condition — win/tie,
+a loss opens a new round, stopping while losing only by a recorded human decision), OR state in 1 line why the loop
+does not apply to this delivery. Without this line, implementation starts without knowing what it will be compared against. -->
+
+## Strategy
+<!-- In 2-3 sentences: the approach and how the work is sliced (single MR or N phases) and why. Do not repeat
+the spec; point to it. The reader understands the "how", at a high level, before the details.
+BEFORE planning: look for conventions registered for this scope — run 'cerne note tags' (the topic
+menu) and pull the relevant notes with 'cerne note list --component <topic>'. Cite here the ids (N-NNNN)
+of the applicable conventions — they govern the tasks below. -->
+
+## Task sequence
+<!-- Small, ORDERED tasks; each leaves the repository green (build/tests passing). Per task:
+- Files: create/edit/remove (real paths).
+- Test first: the failing test (TDD); then the minimal implementation that makes it pass.
+- Verification: the command that proves success (→ expected output), citing the number of the spec criterion it satisfies.
+- Commit: the exact Conventional message.
+Mark [parallel] when the task does not depend on the previous ones. -->
+
+## Dependencies and order
+<!-- What unblocks what (the real order, not just the list); tasks that can run in parallel; external dependencies
+(other cases, services, migrations). If everything is sequential and simple, say so in one line. -->
+
+## Risks and rollback
+<!-- Per risk: how to detect + how to mitigate. Rollback: every committed task is a return point;
+describe how to revert (git revert / undo a migration / etc.) and flag destructive or irreversible steps. -->
+
+## Constraints for the agent
+<!-- Execution guardrails: what NOT to touch; decisions already settled in the spec to respect; where to PAUSE for
+human review before going on. Literal instructions — the agent follows them to the letter. Include the
+conventions (notes N-NNNN cited in the Strategy) the agent must obey while executing. -->
+
+## Definition of done
+<!-- Binary checklist (each item MET/UNMET with file.go:line evidence — not "looks done"):
+every acceptance criterion of the spec has (a) an implementation and (b) a test that proves it, tracked by number;
+full suite green; all tasks finished; result.md written. It is the gate of cerne feature complete. -->
+`
+
+// BodyIn returns the template body in language l.
+func BodyIn(l doclang.Lang) string {
+	if l == doclang.EN {
+		return BodyEN
+	}
+	return Body
+}
+
+// StubIn is Stub in language l.
+func StubIn(l doclang.Lang, title string) string {
+	return "# " + strings.TrimSpace(title) + "\n\n" + BodyIn(l)
+}
+
 // Stub returns the plan body cerne scaffolds when a feature enters the plan
 // phase: the title heading followed by the template Body. Callers prepend the
 // cerne_id frontmatter.
@@ -112,7 +169,14 @@ const executionMapGuide = "TODO: agrupe em etapas — mesma etapa = paralelas"
 // the start gate stays closed until the author fills a real section (spec
 // criterion 4). With no children it is byte-identical to Stub (criterion 2).
 func StubForEpic(title string, children []EpicChild) string {
-	s := Stub(title)
+	return StubForEpicIn(doclang.PT, title, children)
+}
+
+// StubForEpicIn is StubForEpic in language l. The execution map keeps its
+// canonical "Etapa N: ID (title)" lines in every language: it is a parsed
+// format, not prose.
+func StubForEpicIn(l doclang.Lang, title string, children []EpicChild) string {
+	s := StubIn(l, title)
 	if len(children) == 0 {
 		return s
 	}
@@ -122,6 +186,6 @@ func StubForEpic(title string, children []EpicChild) string {
 		fmt.Fprintf(&m, "Etapa %d: %s (%s)\n", i+1, c.ID, c.Title)
 	}
 	m.WriteString(executionMapGuide + " -->")
-	heading := "## Dependências e ordem\n"
+	heading := "## " + doclang.Sections(doclang.Plan, l)[2] + "\n"
 	return strings.Replace(s, heading, heading+"\n"+m.String()+"\n", 1)
 }

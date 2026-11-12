@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/plantmpl"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
@@ -63,7 +64,7 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	children := store.ChildrenByParent(feats)[id]
-	prompt := BuildPlanDraftPrompt(f, spec, current, children)
+	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Plan, BuildPlanDraftPrompt(f, spec, current, children))
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.

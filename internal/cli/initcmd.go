@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -20,6 +21,10 @@ import (
 // different backend — another project with the same name, or a leftover from
 // a failed init. init refuses rather than deleting it (it may be a live
 // project's clone with unpublished state) (F-0335).
+// ErrDocsLanguageMismatch reports an init that joins an existing backend
+// while asking for a documentation language other than the backend's.
+var ErrDocsLanguageMismatch = errors.New("documentation language differs from the backend's")
+
 var ErrCacheBackendMismatch = errors.New("cached backend clone points at a different backend")
 
 func newInitCmd() *cobra.Command {
@@ -28,6 +33,7 @@ func newInitCmd() *cobra.Command {
 		backend string
 		modules []string
 		dir     string
+		docs    string
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -42,12 +48,13 @@ func newInitCmd() *cobra.Command {
 				}
 				targetDir = wd
 			}
-			return runInit(cmd, targetDir, name, backend, modules)
+			return runInit(cmd, targetDir, name, backend, modules, docs)
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "project name")
 	cmd.Flags().StringVar(&backend, "backend", "", "backend git URL or local path")
 	cmd.Flags().StringArrayVar(&modules, "module", nil, "module to register (repeatable)")
+	cmd.Flags().StringVar(&docs, "docs-language", "", "language cerne scaffolds documents in, for a new backend: en (default) or pt-BR")
 	cmd.Flags().StringVar(&dir, "dir", "", "target project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	_ = cmd.MarkFlagRequired("name")
@@ -55,7 +62,14 @@ func newInitCmd() *cobra.Command {
 	return cmd
 }
 
-func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []string) (err error) {
+func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []string, docs string) (err error) {
+	// Validated before anything is cloned or written.
+	docsLang := doclang.EN
+	if docs != "" {
+		if docsLang, err = doclang.Parse(docs); err != nil {
+			return err
+		}
+	}
 	if gitback.IsLocalPath(backend) {
 		// Absolute before anything records it: the URL is stored verbatim as
 		// the clone's origin, and later git runs inside the cache, where a
@@ -125,7 +139,8 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	joined := true
 	if _, err := store.LoadProject(repoDir); errors.Is(err, store.ErrNotFound) {
 		joined = false
-		if err := store.InitLayout(repoDir, store.Project{Name: name, Modules: modules}); err != nil {
+		// A new backend is born English unless told otherwise (F-0359).
+		if err := store.InitLayout(repoDir, store.Project{Name: name, Modules: modules, DocsLanguage: string(docsLang)}); err != nil {
 			return err
 		}
 		if _, err := gitback.CommitAndPush(repoDir, "cerne: initialize backend layout"); err != nil {
@@ -133,6 +148,10 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		}
 	} else if err != nil {
 		return err
+	} else if have := store.DocsLanguage(repoDir); docs != "" && have != docsLang {
+		// The language belongs to the backend: a second checkout joins it, it
+		// does not pick its own.
+		return fmt.Errorf("%w: this backend's documents are in %s; drop --docs-language to join it", ErrDocsLanguageMismatch, have)
 	}
 
 	head, err := gitback.HeadSHA(repoDir)

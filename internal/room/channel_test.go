@@ -28,8 +28,20 @@ func TestChannelAppendAssignsUniqueSeqs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: "oi", Time: time.Now().UTC()}); err != nil {
-				errs <- err
+			// A writer that waits past channelLockWait is refused with
+			// ErrChannelBusy — the contract under contention, and what a
+			// loaded CI runner produces with 20 writers on one lock. The
+			// property here is that the lock serializes, so a refused
+			// writer does what a caller does: it tries again.
+			for {
+				_, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: "oi", Time: time.Now().UTC()})
+				if errors.Is(err, ErrChannelBusy) {
+					continue
+				}
+				if err != nil {
+					errs <- err
+				}
+				return
 			}
 		}()
 	}
