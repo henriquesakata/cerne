@@ -108,6 +108,10 @@ var providerDir = map[Provider]string{
 	ProviderGemini: ".gemini",
 }
 
+// ConfigDir is the project directory whose presence detects a non-Claude
+// provider ("" for Claude Code or an unknown name).
+func ConfigDir(p Provider) string { return providerDir[p] }
+
 // DetectProviders reports the non-Claude providers whose config directory
 // exists under projDir, in stable order.
 func DetectProviders(projDir string) []Provider {

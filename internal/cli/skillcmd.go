@@ -86,11 +86,13 @@ func runSkillInstall(cmd *cobra.Command, dir string) error {
 		}
 		dir = wd
 	}
-	results, err := skills.Install(dir, hooks.DetectProviders(dir)...)
+	det := hooks.DetectProviders(dir)
+	results, err := skills.Install(dir, det...)
 	if err != nil {
 		return err
 	}
 	printSkillResults(cmd.OutOrStdout(), results)
+	printAgentLines(cmd.OutOrStdout(), results, det)
 	return nil
 }
 
@@ -112,5 +114,13 @@ func printSkillResults(out io.Writer, results []skills.Result) {
 			continue
 		}
 		fmt.Fprintf(out, "%s: %s in %s\n", r.Skill, label, path)
+	}
+}
+
+// printAgentLines writes the per-agent guide summary (every agent, detected or
+// not). Shared by `cerne skill install` and `cerne init`.
+func printAgentLines(out io.Writer, results []skills.Result, detected []hooks.Provider) {
+	for _, l := range skills.AgentLines(results, detected) {
+		fmt.Fprintln(out, l)
 	}
 }

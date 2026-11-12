@@ -38,7 +38,7 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 		return nil
 	}
 	rel := t.skillsDir + "/" + guideName
-	res := Result{Skill: guideName, Path: rel}
+	res := Result{Skill: guideName, Path: rel, Agent: p}
 	dst := filepath.Join(projDir, filepath.FromSlash(rel), "SKILL.md")
 	if link := symlinkOnPath(projDir, rel+"/SKILL.md"); link != "" {
 		res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; copy .claude/skills/"+guideName+"/SKILL.md to "+rel+"/SKILL.md by hand"
@@ -52,7 +52,9 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 	}
 	out := []Result{res}
 	if t.pointer != "" {
-		out = append(out, writePointer(projDir, t.pointer, rel+"/SKILL.md"))
+		pr := writePointer(projDir, t.pointer, rel+"/SKILL.md")
+		pr.Agent = p
+		out = append(out, pr)
 	}
 	return out
 }
@@ -217,4 +219,33 @@ func firstErr(errs ...error) error {
 		}
 	}
 	return nil
+}
+
+// AgentLines is the per-agent summary `cerne skill install` prints: one line for
+// every agent, detected or not. It says "delivered" plus the documented load
+// condition — never "loaded", which cerne cannot verify — and keeps the reason
+// and manual step of anything skipped.
+func AgentLines(results []Result, detected []hooks.Provider) []string {
+	has := map[hooks.Provider]bool{}
+	for _, p := range detected {
+		has[p] = true
+	}
+	lines := []string{"claude: guide delivered to .claude/skills/" + guideName + "/SKILL.md — " + hooks.GuideCondition(hooks.ProviderClaude)}
+	for _, p := range []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini} {
+		t := targets[p]
+		dir := hooks.ConfigDir(p)
+		if !has[p] {
+			lines = append(lines, string(p)+": not detected (no "+dir+"/) — run 'cerne hook install --provider "+string(p)+"' first, then 'cerne skill install'")
+			continue
+		}
+		line := string(p) + ": guide delivered to " + t.skillsDir + "/" + guideName + "/SKILL.md — " + hooks.GuideCondition(p) + "; cerne cannot verify the agent loads it"
+		for _, r := range results {
+			if r.Agent == p && r.Status == StatusSkipped {
+				line = string(p) + ": skipped (" + r.Path + ") — " + r.Note
+				break
+			}
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }

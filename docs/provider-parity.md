@@ -19,8 +19,13 @@ step, in the install output. Research provenance: R-0035 (Codex), R-0036
 | Stop closeout | Stop hook (cerne-stop-closeout.sh) | degraded: stop followup_message auto-submits — deferred | Stop hook | degraded: AfterAgent forces a retry — deferred |
 | CERNE_ACTOR=agent (human gates) | settings.json env block | degraded: no per-project session env surface | shell_environment_policy.set in .codex/config.toml | .gemini/.env |
 | Subagents with live board | SubagentStart hook (cerne-subagent-context.sh) | degraded: subagentStart has no additional_context | degraded: SubagentStart envelope pending live validation | degraded: subagents are a preview feature |
-| Authoring guide | .claude/skills/cerne-authoring/ (cerne skill install) | .cursor/skills/cerne-authoring/ (cerne skill install) | .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md (cerne skill install) | .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md (cerne skill install) |
+| Authoring guide | delivered to .claude/skills/cerne-authoring/ — Claude Code loads project skills automatically | delivered to .cursor/skills/cerne-authoring/ — Cursor documents project skills as loaded automatically; no setting documented | delivered to .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md — Codex documents automatic detection of .agents/skills; no setting documented, restart Codex if the skill does not appear | delivered to .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md — Gemini CLI discovers it at session start only while the skill is enabled (check /skills list, /skills enable cerne-authoring) and asks your consent when the agent activates it |
 | Trust prerequisite | none | trusted workspaces | projects.<path>.trust_level + per-hook trust review | trusted folders |
+
+"Delivered" means the file is in place; cerne cannot verify that the agent loads it,
+so the row states the load condition from the agent's own docs. An agent whose config
+folder is absent gets a `not detected` line from `cerne skill install`, with the
+step to run first.
 
 Install: `cerne hook install` (claude + auto-detected providers by
 config dir) or `cerne hook install --provider cursor,codex,gemini`.

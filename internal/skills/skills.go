@@ -57,8 +57,9 @@ const (
 type Result struct {
 	Skill  string
 	Status Status
-	Path   string // project-relative location, slash-separated, for display
-	Note   string // manual step when Status is StatusSkipped
+	Agent  hooks.Provider // set for non-Claude deliveries
+	Path   string         // project-relative location, slash-separated, for display
+	Note   string         // manual step when Status is StatusSkipped
 }
 
 // Install writes every canonical skill into <projDir>/.claude/skills/<RelPath>,

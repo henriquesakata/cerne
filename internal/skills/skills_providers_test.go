@@ -420,3 +420,54 @@ func TestParityRowMatchesTargets(t *testing.T) {
 		}
 	}
 }
+
+// F-0362 round 2: one case per agent for the condition text, and the
+// not-detected line; a skipped delivery keeps its reason.
+func TestAgentLines(t *testing.T) {
+	dir := t.TempDir()
+	all := []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini}
+	rs, _ := Install(dir, all...)
+	lines := strings.Join(AgentLines(rs, all), "\n")
+	for p, want := range map[hooks.Provider]string{
+		hooks.ProviderCursor: "cursor: guide delivered to .cursor/skills/cerne-authoring/SKILL.md — Cursor documents project skills as loaded automatically",
+		hooks.ProviderCodex:  "codex: guide delivered to .agents/skills/cerne-authoring/SKILL.md — Codex documents automatic detection of .agents/skills; no setting documented, restart Codex",
+		hooks.ProviderGemini: "gemini: guide delivered to .gemini/skills/cerne-authoring/SKILL.md — Gemini CLI discovers it at session start only while the skill is enabled (check /skills list, /skills enable cerne-authoring) and asks your consent",
+	} {
+		if !strings.Contains(lines, want) {
+			t.Errorf("%s: missing %q in:\n%s", p, want, lines)
+		}
+		if hooks.GuideCondition(p) == "" || !strings.Contains(lines, "cerne cannot verify") {
+			t.Errorf("%s: no condition / verify disclaimer", p)
+		}
+	}
+	for _, p := range all {
+		none := strings.Join(AgentLines(nil, nil), "\n")
+		want := string(p) + ": not detected (no " + hooks.ConfigDir(p) + "/) — run 'cerne hook install --provider " + string(p) + "' first, then 'cerne skill install'"
+		if !strings.Contains(none, want) {
+			t.Errorf("not-detected line for %s missing:\n%s", p, none)
+		}
+	}
+}
+
+func TestAgentLinesKeepSkipReason(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".cursor"), []byte("x"), 0o644)
+	rs, _ := Install(dir, hooks.ProviderCursor)
+	l := strings.Join(AgentLines(rs, []hooks.Provider{hooks.ProviderCursor}), "\n")
+	if !strings.Contains(l, "cursor: skipped (.cursor/skills/cerne-authoring) — could not write") || strings.Contains(l, "guide delivered to .cursor") {
+		t.Fatalf("%s", l)
+	}
+}
+
+func TestParityCellsCarryTheCondition(t *testing.T) {
+	for _, r := range hooks.ParityRows() {
+		if r.Capability != "Authoring guide" {
+			continue
+		}
+		for _, p := range []hooks.Provider{hooks.ProviderClaude, hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini} {
+			if !strings.Contains(r.For(p), "delivered") || !strings.Contains(r.For(p), hooks.GuideCondition(p)) {
+				t.Errorf("%s cell %q lacks delivered/condition", p, r.For(p))
+			}
+		}
+	}
+}
