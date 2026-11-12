@@ -17,7 +17,9 @@ bin=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
 [ -r "$md" ] || { echo "quickstart: cannot read $md" >&2; exit 2; }
 [ -x "$bin" ] || { echo "quickstart: $bin is not executable" >&2; exit 2; }
 
-version=$("$bin" --version 2>&1 | head -n 1 | sed 's/^cerne //')
+version=$("$bin" --version 2>&1 </dev/null | head -n 1 | sed 's/^cerne //')
+[ -n "$version" ] || version=unknown
+tag=${QUICKSTART_TAG:+ (release $QUICKSTART_TAG)}
 work=$(mktemp -d)
 ui_pid=
 cleanup() {
@@ -38,48 +40,80 @@ GIT_COMMITTER_NAME=quickstart GIT_COMMITTER_EMAIL=quickstart@example.invalid
 export PATH HOME CERNE_CACHE_DIR CERNE_DATA_DIR CERNE_CONFIG_DIR \
   GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
-# Marked blocks, one command per line; blank and comment lines dropped.
-awk '
+# Marked blocks, one file per block (block.N), one command per line; blank and
+# comment lines dropped. CRLF is normalized first.
+tr -d '\r' <"$md" | awk -v dir="$work" '
   /^<!-- quickstart -->[ \t]*$/ { marked = 1; next }
-  marked && /^```bash[ \t]*$/   { inblock = 1; marked = 0; next }
+  marked && /^```bash[ \t]*$/   { inblock = 1; marked = 0; n++; next }
   inblock && /^```/             { inblock = 0; next }
-  inblock && $0 !~ /^[ \t]*(#|$)/ { print }
+  inblock && $0 !~ /^[ \t]*(#|$)/ { print >(dir "/block." n) }
   { marked = 0 }
-' "$md" >"$work/lines"
+'
 
-[ -s "$work/lines" ] || { echo "quickstart: no <!-- quickstart --> block in $md" >&2; exit 2; }
+set -- "$work"/block.*
+[ -e "$1" ] || { echo "quickstart: no <!-- quickstart --> block in $md" >&2; exit 2; }
 
 fail() {
-  echo "quickstart: '$1' failed with cerne $version" >&2
+  [ -n "$ui_pid" ] && kill "$ui_pid" 2>/dev/null
+  echo "quickstart: '$1' failed with cerne $version$tag" >&2
   exit 1
 }
 
-cd "$work/repo" && git init -q || exit 2
+# True when nothing accepts connections on the port (curl exit 7).
+port_free() {
+  curl -s --max-time 1 -o /dev/null "http://127.0.0.1:$1/" 2>/dev/null
+  [ $? -eq 7 ]
+}
 
-while IFS= read -r line; do
-  case $line in
-    "cerne ui"*)
-      # ponytail: random port, a clash shows up as a failed readiness check; retry if it ever flakes
-      port=$(awk 'BEGIN { srand(); print 20000 + int(rand() * 20000) }')
-      cmd=$(printf '%s' "$line" | sed 's/[ \t]*#.*$//')
-      eval "$cmd --no-browser --port $port" >"$work/ui.log" 2>&1 &
-      ui_pid=$!
-      i=0
-      until curl -fs "http://127.0.0.1:$port/api/projects" >/dev/null 2>&1; do
-        i=$((i + 1))
-        if [ "$i" -gt "$(( ${QUICKSTART_UI_TIMEOUT:-30} * 2 ))" ] || ! kill -0 "$ui_pid" 2>/dev/null; then
-          cat "$work/ui.log" >&2
-          fail "$line"
-        fi
-        sleep 0.5
-      done
-      kill "$ui_pid" 2>/dev/null
-      wait "$ui_pid" 2>/dev/null
-      ui_pid=
-      ;;
-    *)
-      eval "$line" || fail "$line"
-      ;;
-  esac
-  echo "quickstart: ok: $line"
-done <"$work/lines"
+start_ui() {
+  cmd=$(printf '%s' "$1" | sed 's/[ \t]*#.*$//')
+  port=
+  if [ -n "${QUICKSTART_UI_PORT:-}" ]; then
+    port_free "$QUICKSTART_UI_PORT" && port=$QUICKSTART_UI_PORT
+  else
+    for _ in 1 2 3 4 5; do
+      p=$(awk 'BEGIN { srand(); print 20000 + int(rand() * 20000) }')
+      port_free "$p" && { port=$p; break; }
+      sleep 1
+    done
+  fi
+  [ -n "$port" ] || { echo "quickstart: no free port for cerne ui" >&2; fail "$1"; }
+  # exec: $! is the binary itself, so kill stops the server and not a wrapper.
+  eval "exec $cmd --no-browser --port $port" </dev/null >"$work/ui.log" 2>&1 &
+  ui_pid=$!
+  i=0
+  until curl -fs --max-time 2 "http://127.0.0.1:$port/api/projects" >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -gt "$(( ${QUICKSTART_UI_TIMEOUT:-30} * 2 ))" ] || ! kill -0 "$ui_pid" 2>/dev/null; then
+      cat "$work/ui.log" >&2
+      fail "$1"
+    fi
+    sleep 0.5
+  done
+  # A foreign listener answering is not our server: ours must still be alive.
+  kill -0 "$ui_pid" 2>/dev/null || fail "$1"
+  kill "$ui_pid" 2>/dev/null
+  wait "$ui_pid" 2>/dev/null
+  ui_pid=
+}
+
+git -C "$work/repo" init -q || exit 2
+
+# Each block in its own subshell: a cd or export does not leak to the next.
+for block in "$@"; do
+  (
+    cd "$work/repo" || exit 2
+    ui_pid=
+    while IFS= read -r line; do
+      if printf '%s' "$line" | grep -Eq '(^|[^[:alnum:]_])sudo([[:space:]]|$)|\|[[:space:]]*(sh|bash)([[:space:]]|$)'; then
+        echo "quickstart: refusing '$line': a marked line must not use sudo or pipe into a shell" >&2
+        exit 1
+      fi
+      case $line in
+        "cerne ui"*) start_ui "$line" ;;
+        *) eval "$line" </dev/null || fail "$line" ;;
+      esac
+      echo "quickstart: ok: $line"
+    done <"$block"
+  ) || exit $?
+done
