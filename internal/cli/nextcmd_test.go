@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -123,7 +124,7 @@ func TestNextEmpty(t *testing.T) {
 
 // nextAfterCompleteProject seeds the implemented features the queue follows
 // past complete (F-0371): which command is still missing for each.
-func nextAfterCompleteProject(t *testing.T) string {
+func nextAfterCompleteProject(t *testing.T) (string, string) {
 	t.Helper()
 	projDir, _, repoDir := setupProject(t)
 	now := time.Now().UTC()
@@ -156,7 +157,7 @@ func nextAfterCompleteProject(t *testing.T) string {
 	if _, err := gitback.CommitAndPush(repoDir, "seed next after complete"); err != nil {
 		t.Fatalf("CommitAndPush: %v", err)
 	}
-	return projDir
+	return projDir, repoDir
 }
 
 // nextBlock is the text block that starts at header, up to the blank line.
@@ -176,7 +177,7 @@ func nextBlock(out, header string) string {
 // missing its cost stamp (only with a session bound) or its delivery gets the
 // exact missing command; a complete or done one is not in the group.
 func TestNextFinishDelivery(t *testing.T) {
-	projDir := nextAfterCompleteProject(t)
+	projDir, _ := nextAfterCompleteProject(t)
 	out, err := execCerne(t, "next", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("next: %v\n%s", err, out)
@@ -227,7 +228,7 @@ func TestNextFinishDelivery(t *testing.T) {
 // (or nothing to stamp) and delivery waits on a human, with no command for the
 // agent; the group sits after CANDIDATES and before the debts.
 func TestNextAwaitingAccept(t *testing.T) {
-	projDir := nextAfterCompleteProject(t)
+	projDir, _ := nextAfterCompleteProject(t)
 	out, err := execCerne(t, "next", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("next: %v\n%s", err, out)
@@ -263,4 +264,54 @@ func TestNextAwaitingAccept(t *testing.T) {
 		}
 	}
 	t.Errorf("no awaiting_accept group in json:\n%s", js)
+}
+
+func backendHead(t *testing.T, repoDir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestNextByID pins F-0371 crit.1, 10-13: `cerne next <id>` prints the state and
+// one step (text and --json), errors naming an unknown id, and never writes.
+func TestNextByID(t *testing.T) {
+	projDir, repoDir := nextAfterCompleteProject(t)
+	cases := []struct{ id, want string }{
+		{"F-0010", "F-0010 [implemented] — next: finish the delivery"},
+		{"F-0012", "waiting on a human: no command for the agent"},
+		{"F-0013", "F-0013 [done] — next: no next step"},
+	}
+	for _, tc := range cases {
+		out, err := execCerne(t, "next", tc.id, "--dir", projDir)
+		if err != nil || !strings.Contains(out, tc.want) {
+			t.Errorf("next %s = %q, %v; want %q", tc.id, out, err, tc.want)
+		}
+	}
+	out, _ := execCerne(t, "next", "F-0010", "--dir", projDir)
+	if !strings.Contains(out, "run: cerne cost F-0010 --stamp") {
+		t.Errorf("text must carry the run line:\n%s", out)
+	}
+	js, err := execCerne(t, "next", "F-0010", "--dir", projDir, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]string
+	if err := json.Unmarshal([]byte(js), &st); err != nil || st["state"] != "implemented" || st["actor"] != "agent" || st["command"] != "cerne cost F-0010 --stamp" || st["step"] == "" {
+		t.Errorf("json = %s (%v)", js, err)
+	}
+	head := backendHead(t, repoDir)
+	for _, id := range []string{"F-0010", "F-0011", "F-0012", "F-0013", "F-0014"} {
+		if _, err := execCerne(t, "next", id, "--dir", projDir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if backendHead(t, repoDir) != head {
+		t.Error("next <id> moved the backend HEAD")
+	}
+	if _, err := execCerne(t, "next", "F-9999", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "F-9999") {
+		t.Errorf("unknown id error = %v", err)
+	}
 }

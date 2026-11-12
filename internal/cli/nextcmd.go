@@ -64,10 +64,13 @@ func newNextCmd() *cobra.Command {
 	var dir string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "next",
-		Short: "Work queue: active features (by action) plus lint debts",
-		Args:  cobra.NoArgs,
+		Use:   "next [id]",
+		Short: "Work queue: active features (by action) plus lint debts; with an id, that feature's next step",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				return runNextByID(cmd, dir, args[0], asJSON)
+			}
 			return runNext(cmd, dir, asJSON)
 		},
 	}
@@ -330,4 +333,31 @@ func implementedMissing(repoDir string, features []store.Feature) (map[string][]
 		}
 	}
 	return missing, nil
+}
+
+// runNextByID prints the one next step of feature id (F-0371): who acts, what,
+// and the exact command when there is one. Read-only.
+func runNextByID(cmd *cobra.Command, dir, id string, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	st, err := app.NextStep(ctx.repoDir, ctx.projDir, id)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(st)
+	}
+	fmt.Fprintf(out, "%s [%s] — next: %s\n", domain.CanonicalID(id), st.State, st.Step)
+	switch {
+	case st.Command != "":
+		fmt.Fprintf(out, "run: %s\n", st.Command)
+	case st.Actor == app.ActorHuman:
+		fmt.Fprintln(out, "waiting on a human: no command for the agent")
+	}
+	return nil
 }
