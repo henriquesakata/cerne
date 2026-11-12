@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -249,5 +250,68 @@ func TestCostLedgerSurvivesClearAndSelfHeal(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(cacheDir, "sessions"))
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("sessions/ = %v (%v), want empty", entries, err)
+	}
+}
+
+func oldBinding(t *testing.T, cacheDir, sess, id string) (string, time.Time) {
+	t.Helper()
+	if err := BindSession(cacheDir, sess, id); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cacheDir, sessionsSubdir, sess)
+	old := time.Now().Add(-72 * time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	return path, old
+}
+
+// TestTouchBindingRefreshesMtimeKeepsContent (F-0361 crit. 1).
+func TestTouchBindingRefreshesMtimeKeepsContent(t *testing.T) {
+	cacheDir := t.TempDir()
+	path, _ := oldBinding(t, cacheDir, "sess-1", "W-0001")
+	before := time.Now().Add(-2 * time.Second)
+	if err := TouchBinding(cacheDir, "sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt := fi.ModTime(); mt.Before(before) || mt.After(time.Now()) {
+		t.Fatalf("mtime %v not in [%v, now]", mt, before)
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != "W-0001\n" {
+		t.Fatalf("content changed: %q", raw)
+	}
+}
+
+// TestTouchBindingNoFileCreatesNothing (F-0361 crit. 2) and unsafe id errors.
+func TestTouchBindingNoFileCreatesNothing(t *testing.T) {
+	cacheDir := t.TempDir()
+	if err := TouchBinding(cacheDir, "sess-none"); err != nil {
+		t.Fatalf("missing binding must be a no-op: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, sessionsSubdir)); !os.IsNotExist(err) {
+		t.Fatalf("sessions dir created: %v", err)
+	}
+	if err := TouchBinding(cacheDir, "../x"); !errors.Is(err, ErrUnsafeSessionID) {
+		t.Fatalf("err = %v, want ErrUnsafeSessionID", err)
+	}
+}
+
+// TestSessionSignalsReadsMtimeSkipsDirs (F-0361 crit. 6): read-only listing.
+func TestSessionSignalsReadsMtimeSkipsDirs(t *testing.T) {
+	cacheDir := t.TempDir()
+	_, old := oldBinding(t, cacheDir, "sess-1", "W-0001")
+	if err := os.Mkdir(filepath.Join(cacheDir, sessionsSubdir, "subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := SessionSignals(cacheDir)
+	if len(got) != 1 || got[0].Session != "sess-1" || got[0].Entity != "W-0001" || !got[0].LastSignal.Equal(old) {
+		t.Fatalf("got %+v", got)
+	}
+	if SessionSignals(t.TempDir()) != nil {
+		t.Fatal("missing dir must give nil")
 	}
 }

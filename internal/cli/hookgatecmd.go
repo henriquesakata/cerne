@@ -135,6 +135,16 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if in.SessionID == "" {
 		return
 	}
+	cfg, _, err := project.LoadConfig(in.CWD)
+	if err != nil {
+		return
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return
+	}
+	// F-0361: every Bash call is a sign of life for the session's binding.
+	_ = app.TouchBinding(cacheDir, in.SessionID)
 	var ti struct {
 		Command string `json:"command"`
 	}
@@ -165,14 +175,6 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		}
 	}
 	if id == "" {
-		return
-	}
-	cfg, _, err := project.LoadConfig(in.CWD)
-	if err != nil {
-		return
-	}
-	cacheDir, err := project.CacheDir(cfg.ProjectID)
-	if err != nil {
 		return
 	}
 	// The cost ledger trusts the delivering contract first: only a Claude Code
@@ -251,6 +253,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
+	_ = app.TouchBinding(cacheDir, in.SessionID) // F-0361: sign of life
 	var ti struct {
 		FilePath string `json:"file_path"`
 	}

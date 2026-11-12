@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -74,6 +75,12 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	cfg, _, err := project.LoadConfig(dir)
 	if err != nil {
 		return // not a cerne project: never inject
+	}
+
+	if in.SessionID != "" {
+		if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
+			_ = app.TouchBinding(cacheDir, in.SessionID) // F-0361: sign of life
+		}
 	}
 
 	text := hooks.RegisterRules + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + activeWorkLines(cfg.ProjectID)
