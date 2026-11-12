@@ -1,0 +1,63 @@
+F-0001  feature  [in_development]  Feature F-0001
+
+## spec
+---
+cerne_id: F-0001
+---
+
+# Título
+
+A spec da feature.
+
+## Verificação
+
+Barra: fixture de teste — referência nomeada
+
+## Gauntlet
+
+Barra: fixture de teste — referência nomeada
+Rodada 1 — vitória: "fixture"
+
+## plan
+---
+cerne_id: F-0001
+---
+
+# Título
+
+O plano da feature.
+
+## Verificação
+
+Barra: fixture de teste — referência nomeada
+
+## Gauntlet
+
+Barra: fixture de teste — referência nomeada
+Rodada 1 — vitória: "fixture"
+
+## result
+---
+cerne_id: F-0001
+---
+
+# Título
+
+O result da feature.
+
+## Verificação
+
+Barra: fixture de teste — referência nomeada
+
+## Gauntlet
+
+Barra: fixture de teste — referência nomeada
+Rodada 1 — vitória: "fixture"
+
+## errata
+## errata 2026-11-11 — x
+
+Uma errata.
+
+## pending
+P-0001  Débito aberto

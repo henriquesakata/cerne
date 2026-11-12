@@ -149,7 +149,7 @@ func newPendingShowCmd(dir *string) *cobra.Command {
 			if !strings.HasPrefix(args[0], "P-") {
 				return fmt.Errorf("%q is not a pending id (P-NNNN): use 'cerne show'", args[0])
 			}
-			return runShow(cmd, *dir, args[0], "", asJSON)
+			return runShow(cmd, *dir, args[0], "", asJSON, false)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")

@@ -119,7 +119,7 @@ func stripCode(content string) string {
 	out := make([]string, 0, len(lines))
 	inFence := false
 	for _, line := range lines {
-		if isFenceDelim(line) {
+		if IsFenceDelim(line) {
 			inFence = !inFence
 			continue
 		}
@@ -131,9 +131,9 @@ func stripCode(content string) string {
 	return strings.Join(out, "\n")
 }
 
-// isFenceDelim reports whether the line opens or closes a fenced code block:
+// IsFenceDelim reports whether the line opens or closes a fenced code block:
 // its first non-space content is a run of three or more backticks or tildes.
-func isFenceDelim(line string) bool {
+func IsFenceDelim(line string) bool {
 	t := strings.TrimLeft(line, " \t")
 	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
 }

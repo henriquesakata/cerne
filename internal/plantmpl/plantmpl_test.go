@@ -148,6 +148,19 @@ func TestStubForEpicWithChildrenReadsAsStub(t *testing.T) {
 	}
 }
 
+// TestBodyDropsStatusField pins F-0338 criterion 12: like the spec template
+// (spectmpl), the plan METADADOS no longer ask for a **Status:** line — the
+// state is data on the card, and a copy in prose goes stale. The other
+// metadata fields stay.
+func TestBodyDropsStatusField(t *testing.T) {
+	if strings.Contains(plantmpl.Body, "Status:") {
+		t.Fatalf("Body must not ask for a Status: metadata line:\n%s", plantmpl.Body)
+	}
+	if !strings.Contains(plantmpl.Body, "**Spec:** / **Branch:** / **Saída (Gauntlet):**") {
+		t.Fatalf("Body must keep the Spec / Branch / Saída (Gauntlet) metadata fields:\n%s", plantmpl.Body)
+	}
+}
+
 // TestBodyCarriesGauntletExit pins F-0275 criterion 6: the plan scaffold asks
 // for the Gauntlet exit — inherit the spec's bar, or say in one line why the
 // loop does not apply — as METADATA guidance, never as a canonical section.

@@ -2,13 +2,18 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/plantmpl"
+	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -239,4 +244,235 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v", args, err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// amendedSpec is a spec body the doc amend stores behind cerne's stamp.
+const amendedSpec = "# Doc\n\n## Objetivo\n\n1. O critério reescrito com o prefixo novo.\n" + testBarTail
+
+// TestAmendDocArchivesRevisionWithEvent (F-0338 crit. 1): the spec of an
+// approved feature and the plan of one in development are replaced in one
+// commit, the replaced body kept byte for byte as revision N of that document,
+// with a feature.doc_edited event carrying doc, state, reason, rev and actor;
+// the state does not move, and each document counts its own revisions.
+func TestAmendDocArchivesRevisionWithEvent(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateInDevelopment, "spec.md", "plan.md")
+	before, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
+	head0, _ := gitback.HeadSHA(origin)
+
+	f, rev, changed, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec, "prefixo mudou")
+	if err != nil || !changed || rev != 1 || f.State != domain.StateApproved {
+		t.Fatalf("AmendFeatureDoc = %s, rev %d, changed %v, err %v", f.State, rev, changed, err)
+	}
+	if r1, _ := os.ReadFile(filepath.Join(repoDir, "content", "revisions", "F-0001", "spec", "r1.md")); string(r1) != string(before) {
+		t.Fatalf("r1 = %q, want the replaced spec byte for byte %q", r1, before)
+	}
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md")); string(got) != "---\ncerne_id: F-0001\n---\n\n"+strings.TrimSpace(amendedSpec)+"\n" {
+		t.Fatalf("spec.md = %q, want the new body behind cerne's stamp", got)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	last := evs[len(evs)-1]
+	if last.Type != "feature.doc_edited" || last.EntityID != "F-0001" || last.Payload["doc"] != "spec" ||
+		last.Payload["state"] != string(domain.StateApproved) || last.Payload["reason"] != "prefixo mudou" ||
+		last.Payload["rev"] != "1" || last.Actor != EventActor() {
+		t.Fatalf("last event = %+v, want feature.doc_edited{doc:spec,state:approved,reason,rev:1}", last)
+	}
+	if log := gitOut(t, origin, "log", "--format=%s", head0+"..HEAD"); log != "cerne: amend F-0001/spec.md" {
+		t.Fatalf("origin commits = %q, want the single amend commit", log)
+	}
+	if loaded, _ := store.LoadFeature(repoDir, "F-0001"); loaded.State != domain.StateApproved {
+		t.Fatalf("persisted state = %s", loaded.State)
+	}
+
+	if _, rev, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec+"\nMais.\n", "segunda"); err != nil || rev != 2 {
+		t.Fatalf("second spec amend: rev %d, err %v — want 2", rev, err)
+	}
+	f, rev, changed, err = AmendFeatureDoc(repoDir, projDir, "F-0002", "plan", "# Plano\n\n1. Tarefa reescrita.\n", "auditoria")
+	if err != nil || !changed || rev != 1 || f.State != domain.StateInDevelopment {
+		t.Fatalf("plan amend = %s, rev %d, changed %v, err %v", f.State, rev, changed, err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions", "F-0002", "plan", "r1.md")); err != nil {
+		t.Fatalf("plan revision: %v", err)
+	}
+}
+
+// TestAmendDocRefusesStates (F-0338 crit. 2, 3): a candidate is refused with
+// the path of a draft (pull/push or `cerne feature spec`, no plan yet); the
+// closed states with DocFixPhrase for the document asked. Nothing is written.
+func TestAmendDocRefusesStates(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	states := []domain.FeatureState{domain.StateCandidate, domain.StateImplemented, domain.StateDone, domain.StateRejected, domain.StateSuperseded}
+	for i, s := range states {
+		seedFeatureInState(t, repoDir, fmt.Sprintf("F-%04d", i+1), s, "spec.md", "plan.md")
+	}
+	head0, _ := gitback.HeadSHA(origin)
+	for i, s := range states {
+		id := fmt.Sprintf("F-%04d", i+1)
+		for _, doc := range []string{"spec", "plan"} {
+			before, _ := os.ReadFile(FeatureDocPath(repoDir, id, doc+".md"))
+			_, _, _, err := AmendFeatureDoc(repoDir, projDir, id, doc, amendedSpec, "corrigir")
+			want := DocFixPhrase(id, doc, s)
+			if s == domain.StateCandidate {
+				want = "'cerne feature spec " + id + "'"
+			}
+			if !errors.Is(err, ErrAmendDocState) || !strings.Contains(err.Error(), want) {
+				t.Fatalf("%s %s %s: err = %v, want ErrAmendDocState naming %q", id, s, doc, err, want)
+			}
+			if s == domain.StateCandidate && !strings.Contains(err.Error(), "no plan yet") {
+				t.Fatalf("candidate refusal %q does not say the plan does not exist", err)
+			}
+			if after, _ := os.ReadFile(FeatureDocPath(repoDir, id, doc+".md")); string(after) != string(before) {
+				t.Fatalf("%s %s changed", id, doc)
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refusal archived a revision: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
+// TestAmendDocInputAndNoOp (F-0338 crit. 4, 5): no reason, an empty body, an
+// unknown document or an appended amendment heading is refused before the
+// backend; a body equal to the stored one by specContent's normalization
+// (frontmatter, CRLF, trailing blanks) is a no-op — no revision, no event, no
+// commit.
+func TestAmendDocInputAndNoOp(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	head0, _ := gitback.HeadSHA(origin)
+	for _, tc := range []struct {
+		name, doc, body, reason string
+		want                    error
+		text                    string
+	}{
+		{"no reason", "spec", amendedSpec, " ", nil, "needs a reason"},
+		{"empty body", "spec", " \n", "r", nil, "empty spec body"},
+		{"result", "result", amendedSpec, "r", ErrUnknownDoc, ""},
+		{"appended amendment", "spec", amendedSpec + "\n## Emenda (2026-11-10)\n\nTroca o prefixo.\n", "r", ErrAppendedAmendment, "line 11"},
+	} {
+		_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", tc.doc, tc.body, tc.reason)
+		if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) || !strings.Contains(err.Error(), tc.text) {
+			t.Fatalf("%s: err = %v, want %v containing %q", tc.name, err, tc.want, tc.text)
+		}
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a refused amend: %s -> %s", head0, h)
+	}
+
+	stored, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
+	same := strings.ReplaceAll(strings.TrimPrefix(string(stored), "---\ncerne_id: F-0001\n---\n"), "\n", "  \r\n") + "\n\n"
+	evsBefore, _ := store.ReadEvents(repoDir)
+	_, rev, changed, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", same, "igual")
+	if err != nil || changed || rev != 0 {
+		t.Fatalf("same body: rev %d, changed %v, err %v — want a no-op", rev, changed, err)
+	}
+	if evs, _ := store.ReadEvents(repoDir); len(evs) != len(evsBefore) {
+		t.Fatalf("events = %d, want %d", len(evs), len(evsBefore))
+	}
+	if k, _ := store.CountDocRevisions(repoDir, "F-0001", "spec"); k != 0 {
+		t.Fatalf("revisions = %d, want 0", k)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved on a no-op: %s -> %s", head0, h)
+	}
+}
+
+// TestAmendDocStalesApprovalOnlyForSpec (F-0338 crit. 6): amending the spec of
+// an approved feature stales its approval like any edit; amending the plan
+// leaves it as it was — the approve keeps no copy of the plan.
+func TestAmendDocStalesApprovalOnlyForSpec(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	for _, id := range []string{"F-0001", "F-0002"} {
+		seedFeatureInState(t, repoDir, id, domain.StateApproved, "spec.md", "plan.md")
+		if err := keepApprovedSpec(repoDir, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed approved copies"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec, "spec"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0002", "plan", "# Plano\n\n1. Outra tarefa.\n", "plano"); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{"F-0001": true, "F-0002": false} {
+		f, _ := store.LoadFeature(repoDir, id)
+		if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale != want {
+			t.Fatalf("%s: approval stale = %v, want %v", id, stale, want)
+		}
+	}
+}
+
+// TestAmendDocRefusesMissingDoc (F-0338, TL finding on slice 1): a document
+// that is absent, or still only the template stub, has nothing to amend — an
+// empty r1 would be permanent junk in an append-only history and a line in
+// `## amendments` that amended nothing. Refused without writing, pointing to
+// .docs/ + `cerne push` for the first text.
+func TestAmendDocRefusesMissingDoc(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateApproved, "spec.md")
+	stub := "---\ncerne_id: F-0002\n---\n\n" + plantmpl.Stub("Feature F-0002")
+	if err := os.WriteFile(FeatureDocPath(repoDir, "F-0002", "plan.md"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed plan stub"); err != nil {
+		t.Fatal(err)
+	}
+	head0, _ := gitback.HeadSHA(origin)
+	for _, id := range []string{"F-0001", "F-0002"} {
+		_, _, _, err := AmendFeatureDoc(repoDir, projDir, id, "plan", "# Plano\n\n1. Tarefa.\n", "primeiro plano")
+		if !errors.Is(err, ErrAmendNoDoc) || !strings.Contains(err.Error(), "cerne push") {
+			t.Fatalf("%s: err = %v, want ErrAmendNoDoc pointing to .docs/ + cerne push", id, err)
+		}
+	}
+	if _, err := os.Stat(FeatureDocPath(repoDir, "F-0001", "plan.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refused amend wrote the plan: %v", err)
+	}
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0002", "plan.md")); string(got) != stub {
+		t.Fatalf("a refused amend replaced the stub: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refusal archived a revision: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
+}
+
+// TestAmendDocRefusesBodyWithoutRealContent (F-0338 crit. 4, round 2): a new
+// body that is only frontmatter or a template stub, and a reason with a line
+// break, are refused before the backend: nothing written, no revision.
+func TestAmendDocRefusesBodyWithoutRealContent(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	head0, _ := gitback.HeadSHA(origin)
+	before, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
+	for _, tc := range []struct{ name, body, reason, text string }{
+		{"frontmatter only", "---\ncerne_id: F-0001\n---\n", "r", "empty"},
+		{"spec stub", spectmpl.Stub("Feature F-0001"), "r", "empty"},
+		{"plan stub as spec", "---\ncerne_id: F-0001\n---\n\n" + plantmpl.Stub("Feature F-0001"), "r", "empty"},
+		{"reason with LF", amendedSpec, "a\n## x", "one line"},
+		{"reason with CR", amendedSpec, "a\rb", "one line"},
+	} {
+		_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", tc.body, tc.reason)
+		if err == nil || !strings.Contains(err.Error(), tc.text) {
+			t.Fatalf("%s: err = %v, want %q", tc.name, err, tc.text)
+		}
+	}
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md")); string(got) != string(before) {
+		t.Fatalf("a refused amend replaced the spec: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "revisions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a refusal archived a revision: %v", err)
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin moved: %s -> %s", head0, h)
+	}
 }
