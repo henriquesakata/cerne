@@ -538,6 +538,16 @@ type noProjectAtError struct{ msg string }
 func (e *noProjectAtError) Error() string        { return e.msg }
 func (e *noProjectAtError) Is(target error) bool { return target == ErrNoProject }
 
+// crossedGitRootError is ErrNoProject for a walk that found a .cernerc only
+// above the first git root it crossed (F-0372): a clone, fixture or submodule
+// living inside a cerne project is not that project unless the user says so.
+type crossedGitRootError struct{ GitRoot, ProjectDir string }
+
+func (e *crossedGitRootError) Error() string {
+	return fmt.Sprintf("no cerne project in this git repository (%s); the nearest %s is at %s, outside it — use --dir \"%s\" (or set CERNE_ROOT=\"%s\") to work on that project on purpose", e.GitRoot, configFilename, e.ProjectDir, e.ProjectDir, e.ProjectDir)
+}
+func (e *crossedGitRootError) Is(target error) bool { return target == ErrNoProject }
+
 // RequireConfigAt checks that <dir> holds a .cernerc, without walking up and
 // without parsing it (F-0354): a directory the user named explicitly (--dir) is
 // the project, never a place to start a search from. CERNE_ROOT does not apply
@@ -557,46 +567,91 @@ func RequireConfigAt(dir string) error {
 	}
 	msg := fmt.Sprintf("no %s in %s (--dir names the project directory; it does not search parent directories)", configFilename, abs)
 	if parent := filepath.Dir(abs); parent != abs {
-		if above, ok := walkUpToConfigDir(parent); ok {
+		if above := nearestProjectAbove(parent); above != "" {
 			msg += fmt.Sprintf("\nnearest project above: %s — pass --dir %s to use it", above, above)
 		}
 	}
 	return &noProjectAtError{msg}
 }
 
-// walkUpToConfigDir returns the nearest directory at or above dir (absolute)
-// holding a .cernerc.
-func walkUpToConfigDir(dir string) (string, bool) {
-	for {
-		if _, err := os.Stat(filepath.Join(dir, configFilename)); err == nil {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
+// nearestProjectAbove is the project the single walk (walkToConfigDir) finds
+// from dir, across a git boundary too: it only words a hint for a --dir the
+// user named, never resolves a project to read or write. "" when none.
+func nearestProjectAbove(dir string) string {
+	found, err := walkToConfigDir(dir)
+	var crossed *crossedGitRootError
+	if errors.As(err, &crossed) {
+		return crossed.ProjectDir
 	}
+	return found
 }
 
 // findConfigDir walks up from startDir to the directory holding a .cernerc,
-// without decoding it. ErrNoProject when none exists up to the root.
+// without decoding it, falling back to CERNE_ROOT when the walk finds none.
+// The walk refuses a .cernerc above the first git root it crossed (F-0372);
+// CERNE_ROOT, an explicit request, still wins there.
 func findConfigDir(startDir string) (string, error) {
+	dir, err := walkToConfigDir(startDir)
+	if !errors.Is(err, ErrNoProject) {
+		return dir, err
+	}
+	var crossed *crossedGitRootError
+	if !errors.As(err, &crossed) {
+		return rootFromEnv(startDir)
+	}
+	if os.Getenv("CERNE_ROOT") == "" {
+		return "", err
+	}
+	// A CERNE_ROOT without .cernerc keeps the boundary refusal, which names
+	// the git root and the project above.
+	root, envErr := rootFromEnv(startDir)
+	if errors.Is(envErr, ErrNoProject) {
+		return "", err
+	}
+	return root, envErr
+}
+
+// FoundByWalk reports whether the upward walk from startDir alone, without
+// CERNE_ROOT, resolves a project — so the CLI announces every adoption of
+// CERNE_ROOT, including one at a git boundary inside the project (F-0372).
+func FoundByWalk(startDir string) bool {
+	_, err := walkToConfigDir(startDir)
+	return err == nil
+}
+
+// walkToConfigDir walks up from startDir to the nearest .cernerc. It records
+// the first git root it crosses (a .git directory or file, so worktrees and
+// submodules are roots too) and a .cernerc above it is crossedGitRootError
+// (F-0372). Plain ErrNoProject when none exists up to the filesystem root.
+func walkToConfigDir(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", err
 	}
+	gitRoot := ""
 	for {
 		_, err := os.Stat(filepath.Join(dir, configFilename))
 		if err == nil {
+			if gitRoot != "" {
+				return "", &crossedGitRootError{GitRoot: gitRoot, ProjectDir: dir}
+			}
 			return dir, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
+		if gitRoot == "" {
+			// Any .git entry marks a root, as git's own discovery treats it.
+			_, err := os.Lstat(filepath.Join(dir, ".git"))
+			if err == nil {
+				gitRoot = dir
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return "", err
+			}
+		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return rootFromEnv(startDir)
+			return "", ErrNoProject
 		}
 		dir = parent
 	}
