@@ -336,7 +336,7 @@ describe('Nav: nome do projeto em exibição', () => {
         <Nav hash="#/kanban" />
       </I18nProvider>,
     )
-    expect(screen.getByText('Meu Projeto')).toBeInTheDocument()
+    expect(document.querySelector('.nav .nav-project-name')).toHaveTextContent('Meu Projeto')
   })
 
   it('com vários, o seletor tem o projeto ativo selecionado', () => {
@@ -349,6 +349,6 @@ describe('Nav: nome do projeto em exibição', () => {
         <Nav hash="#/kanban" />
       </I18nProvider>,
     )
-    expect(screen.getByRole('combobox')).toHaveDisplayValue('Meu Projeto')
+    expect(document.querySelector('.nav select.nav-project-select')).toHaveDisplayValue('Meu Projeto')
   })
 })
