@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -47,7 +46,7 @@ func (e *ConflictError) Error() string {
 	for i, c := range e.Conflicts {
 		paths[i] = c.Path
 	}
-	return fmt.Sprintf("conflito em %d documento(s): %s", len(e.Conflicts), strings.Join(paths, ", "))
+	return fmt.Sprintf("conflict in %d document(s): %s", len(e.Conflicts), strings.Join(paths, ", "))
 }
 
 func (e *ConflictError) Is(target error) bool { return target == ErrConflict }
@@ -131,113 +130,20 @@ func ReconcileCommitPush(repoDir, projDir, base, msg string, changes []FileChang
 func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []FileChange, mutate func() error) (string, []Conflict, map[string]string, error) {
 	var head string
 	var conflicts []Conflict
-	remints := map[string]string{}
+	var remints map[string]string
 	lockErr := gitback.WithLock(gitback.LockPath(repoDir), func() error {
 		// Start from a clean base tree: discards any uncommitted caller writes
 		// (already captured in `changes`) so the merge is fully deterministic.
 		if err := resetToBase(repoDir, base); err != nil {
 			return err
 		}
-		callerPaths := map[string]bool{}
-		for _, ch := range changes {
-			callerPaths[ch.Path] = true
+		var run func() (string, error)
+		if mutate != nil {
+			run = func() (string, error) { return msg, mutate() }
 		}
-		callerChanges := changes
-		var minted map[string]string // work id -> feature refs, for the works the mutate minted
-		var created map[string]bool  // paths the mutate CREATED (absent at the tree it ran on)
-		capture := func(ranOn string) error {
-			created = map[string]bool{}
-			minted = map[string]string{}
-			if mutate == nil {
-				return nil
-			}
-			if err := mutate(); err != nil {
-				return err
-			}
-			extra, err := captureChanges(repoDir)
-			if err != nil {
-				return err
-			}
-			for _, ch := range extra {
-				if ch.Deleted || callerPaths[ch.Path] {
-					continue
-				}
-				if _, exists, err := gitback.FileBlobAt(repoDir, ranOn, ch.Path); err != nil {
-					return err
-				} else if !exists {
-					created[ch.Path] = true
-					if strings.HasPrefix(ch.Path, "entities/works/") {
-						var w struct{ Refs []string }
-						if json.Unmarshal(ch.Content, &w) == nil {
-							minted[workIDOf(ch.Path)] = strings.Join(w.Refs, ",")
-						}
-					}
-				}
-			}
-			changes = append(append([]FileChange(nil), callerChanges...), extra...)
-			return nil
-		}
-		if err := capture(base); err != nil {
-			return err
-		}
-		// recBase is the tree the captured changes were authored against: base
-		// on round 0, the remote tip on a re-mint round (the caller's docs
-		// already merged cleanly on round 0, so only the redone mutate's
-		// writes, made on the tip, remain to reconcile).
-		recBase := base
-		for round := 0; ; round++ {
-			var err error
-			head, conflicts, err = reconcileLocked(nil, repoDir, recBase, msg, changes)
-			if err != nil || len(conflicts) == 0 || !onlyCreated(conflicts, created) {
-				if round > 0 && err == nil && len(conflicts) > 0 {
-					// the conflict exit leaves the tree as the caller found it:
-					// the redone mutate wrote on the tip, so hand it back at base.
-					// (A success keeps the tree at head, where the snapshot points.)
-					err = resetToBase(repoDir, base)
-				}
-				return err
-			}
-			// Every conflict is a path this mutate created (a minted id taken
-			// upstream, P-0020): redo it on the new tip instead of failing.
-			// ponytail: retry loop is per-lock; a faster race than 3 rounds is aborted.
-			if round == autoWorkRemintRounds {
-				conflicts = nil
-				return errors.Join(ErrAutoWorkRaceLost, resetToBase(repoDir, base))
-			}
-			tip, err := gitback.TrackingHeadSHA(repoDir)
-			if err != nil {
-				return err
-			}
-			lost := map[string]string{} // ids that collided -> feature refs
-			for _, c := range conflicts {
-				if id := workIDOf(c.Path); id != "" {
-					lost[id] = minted[id]
-				}
-			}
-			recBase = tip
-			// The caller's docs were authored against base: one byte-equal to
-			// its base blob is a no-op, and against the tip it would revert a
-			// remote edit made between base and tip.
-			kept := callerChanges[:0:0]
-			for _, ch := range callerChanges {
-				if !ch.Deleted {
-					if blob, ok, err := gitback.FileBlobAt(repoDir, base, ch.Path); err != nil {
-						return err
-					} else if ok && bytes.Equal(blob, ch.Content) {
-						continue
-					}
-				}
-				kept = append(kept, ch)
-			}
-			callerChanges = kept
-			if err := resetToBase(repoDir, tip); err != nil {
-				return err
-			}
-			if err := capture(tip); err != nil {
-				return err
-			}
-			noteRemints(remints, lost, minted)
-		}
+		var err error
+		head, conflicts, remints, err = remintLocked(nil, repoDir, base, msg, changes, run, false, ErrAutoWorkRaceLost)
+		return err
 	})
 	if lockErr != nil {
 		return "", nil, nil, lockErr
@@ -270,40 +176,177 @@ func onlyCreated(conflicts []Conflict, created map[string]bool) bool {
 	return len(created) > 0
 }
 
-// workIDOf returns the W- id a backend work path belongs to ("" otherwise).
-func workIDOf(p string) string {
-	for _, pre := range []string{"entities/works/", "content/works/"} {
-		if rest, ok := strings.CutPrefix(p, pre); ok {
-			id, _, _ := strings.Cut(rest, "/")
-			return strings.TrimSuffix(id, ".json")
-		}
+// entityIDOf returns the (type dir, id) an entities/<type>/<ID>.json path
+// names ("", "" for any other path).
+func entityIDOf(p string) (typ, id string) {
+	rest, ok := strings.CutPrefix(p, "entities/")
+	if !ok {
+		return "", ""
 	}
-	return ""
+	typ, file, ok := strings.Cut(rest, "/")
+	if !ok || strings.Contains(file, "/") || !strings.HasSuffix(file, ".json") {
+		return "", ""
+	}
+	return typ, strings.TrimSuffix(file, ".json")
 }
 
-// noteRemints pairs each work id that lost the race (lost: id -> feature refs)
-// with the id the redone mutate minted for the SAME feature refs, chaining
-// through an earlier round's new id. A lost id with no new work (dedup on the
-// new tip) is not reported.
-func noteRemints(remints, lost, minted map[string]string) {
-	for _, o := range slices.Sorted(maps.Keys(lost)) {
-		var fresh string
-		for _, f := range slices.Sorted(maps.Keys(minted)) {
-			if f != o && minted[f] == lost[o] {
-				fresh = f
-				break
+// idsOf groups the entity ids among paths by type dir, sorted.
+func idsOf(paths []string) map[string][]string {
+	out := map[string][]string{}
+	for _, p := range paths {
+		if t, id := entityIDOf(p); t != "" {
+			out[t] = append(out[t], id)
+		}
+	}
+	for _, ids := range out {
+		slices.Sort(ids)
+	}
+	return out
+}
+
+// noteRemints pairs, per entity type, each id that lost the race with the id at
+// the same position among the ids the redone mutate created (prev: the round
+// that lost, now: the redo; both sorted: a deterministic mutate re-creates in
+// the same order), chaining through an earlier round's new id. A lost id with
+// no counterpart (the redo created fewer: dedup on the new tip) is not reported.
+func noteRemints(remints map[string]string, lost, prev, now map[string][]string) {
+	for _, typ := range slices.Sorted(maps.Keys(lost)) {
+		for _, o := range lost[typ] {
+			i := slices.Index(prev[typ], o)
+			if i < 0 || i >= len(now[typ]) || now[typ][i] == o {
+				continue
 			}
-		}
-		if fresh == "" {
-			continue
-		}
-		orig := o
-		for k, v := range remints {
-			if v == o {
-				orig = k
+			orig := o
+			for k, v := range remints {
+				if v == o {
+					orig = k
+				}
 			}
+			remints[orig] = now[typ][i]
 		}
-		remints[orig] = fresh
+	}
+}
+
+// remintLocked reconciles the mutation a mutate wrote on the tree at base,
+// plus callerChanges (authored against base), and redoes the mutate on the
+// remote tip when every conflict is a path the mutate CREATED (a minted id
+// taken upstream; F-0349/F-0356): reset to the tip, run mutate again (its
+// guards and its commit message are recomputed) and reconcile against that tip.
+// The caller holds the backend lock and has the tree at base. mutate may be nil
+// (callerChanges only); it returns the commit message. It returns the pushed
+// head, the remaining conflicts (nothing committed) and old id -> new id for
+// every re-minted entity. raceErr is returned after autoWorkRemintRounds. On any
+// error or conflict the tree is handed back at base.
+func remintLocked(op *telemetry.Op, repoDir, base, msg string, callerChanges []FileChange, mutate func() (string, error), needChanges bool, raceErr error) (head string, conflicts []Conflict, remints map[string]string, err error) {
+	remints = map[string]string{}
+	callerPaths := map[string]bool{}
+	for _, ch := range callerChanges {
+		callerPaths[ch.Path] = true
+	}
+	var changes []FileChange
+	var created map[string]bool        // paths the mutate CREATED (absent at the tree it ran on)
+	var createdIDs map[string][]string // entity ids by type among them
+	capture := func(ranOn string) error {
+		created = map[string]bool{}
+		changes = callerChanges
+		if mutate != nil {
+			stop := op.Phase("mutate")
+			m, err := mutate()
+			stop()
+			if err != nil {
+				return err
+			}
+			msg = m
+			extra, err := captureChanges(repoDir)
+			if err != nil {
+				return err
+			}
+			for _, ch := range extra {
+				if ch.Deleted || callerPaths[ch.Path] {
+					continue
+				}
+				exists := false
+				if ranOn != "" {
+					if _, exists, err = gitback.FileBlobAt(repoDir, ranOn, ch.Path); err != nil {
+						return err
+					}
+				}
+				if !exists {
+					created[ch.Path] = true
+				}
+			}
+			changes = append(append([]FileChange(nil), callerChanges...), extra...)
+		}
+		createdIDs = idsOf(slices.Collect(maps.Keys(created)))
+		if needChanges && len(changes) == 0 {
+			return fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, repoDir)
+		}
+		return nil
+	}
+	fail := func(err error) (string, []Conflict, map[string]string, error) {
+		return "", nil, nil, errors.Join(err, resetToBase(repoDir, base))
+	}
+	if err := capture(base); err != nil {
+		return fail(err)
+	}
+	// recBase is the tree the captured changes were authored against: base on
+	// round 0, the remote tip on a re-mint round (the caller's docs already
+	// merged cleanly on round 0, so only the redone mutate's writes, made on the
+	// tip, remain to reconcile).
+	recBase := base
+	for round := 0; ; round++ {
+		head, conflicts, err = reconcileLocked(op, repoDir, recBase, msg, changes)
+		if err != nil {
+			return fail(err)
+		}
+		if len(conflicts) == 0 {
+			return head, nil, remints, nil
+		}
+		if !onlyCreated(conflicts, created) {
+			// the conflict exit leaves the tree as the caller found it: a redone
+			// mutate wrote on the tip, so hand it back at base.
+			if round > 0 {
+				err = resetToBase(repoDir, base)
+			}
+			return "", conflicts, nil, err
+		}
+		// ponytail: retry loop is per-lock; a faster race than 3 rounds is aborted.
+		if round == autoWorkRemintRounds {
+			return fail(raceErr)
+		}
+		tip, err := gitback.TrackingHeadSHA(repoDir)
+		if err != nil {
+			return fail(err)
+		}
+		conflictPaths := make([]string, len(conflicts))
+		for i, c := range conflicts {
+			conflictPaths[i] = c.Path
+		}
+		lost := idsOf(conflictPaths)
+		prev := createdIDs
+		recBase = tip
+		// The caller's docs were authored against base: one byte-equal to its
+		// base blob is a no-op, and against the tip it would revert a remote
+		// edit made between base and tip.
+		kept := callerChanges[:0:0]
+		for _, ch := range callerChanges {
+			if !ch.Deleted {
+				if blob, ok, err := gitback.FileBlobAt(repoDir, base, ch.Path); err != nil {
+					return fail(err)
+				} else if ok && bytes.Equal(blob, ch.Content) {
+					continue
+				}
+			}
+			kept = append(kept, ch)
+		}
+		callerChanges = kept
+		if err := resetToBase(repoDir, tip); err != nil {
+			return fail(err)
+		}
+		if err := capture(tip); err != nil {
+			return fail(err)
+		}
+		noteRemints(remints, lost, prev, createdIDs)
 	}
 }
 

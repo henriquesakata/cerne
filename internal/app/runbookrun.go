@@ -334,6 +334,7 @@ func RunDeviations(r store.Run) []RunDeviation {
 func DraftRunErrata(repoDir, projDir, runID, author string) ([]string, error) {
 	var written []string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		written = nil // the mutate may run again (F-0356)
 		run, err := store.LoadRun(repoDir, runID)
 		if errors.Is(err, store.ErrNotFound) {
 			return "", fmt.Errorf("%s is not a runbook run (no execution record)", runID)
