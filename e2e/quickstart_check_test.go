@@ -76,7 +76,7 @@ func TestQuickstartCheckNamesFailingCommandAndVersion(t *testing.T) {
 	if err == nil {
 		t.Fatalf("want failure\n%s", out)
 	}
-	if !strings.Contains(out, "quickstart: 'cerne boom' failed with cerne cerne v9.9.9") {
+	if !strings.Contains(out, "quickstart: 'cerne boom' failed with cerne v9.9.9") {
 		t.Errorf("failure does not name command and version:\n%s", out)
 	}
 	if strings.Contains(calls, "never-reached") {

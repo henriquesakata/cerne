@@ -17,7 +17,7 @@ bin=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
 [ -r "$md" ] || { echo "quickstart: cannot read $md" >&2; exit 2; }
 [ -x "$bin" ] || { echo "quickstart: $bin is not executable" >&2; exit 2; }
 
-version=$("$bin" --version 2>&1 | head -n 1)
+version=$("$bin" --version 2>&1 | head -n 1 | sed 's/^cerne //')
 work=$(mktemp -d)
 ui_pid=
 cleanup() {
