@@ -128,7 +128,7 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 	return nil
 }
 
-// resultHeader renders one hit header:
+// resultHeader renders one --per-doc hit header:
 // "F-0007 [feature/spec] superseded → F-0009 — Bills (boletos)". Only
 // feature rows show the lifecycle doc suffix; the arrow appears only on
 // superseded entities.
