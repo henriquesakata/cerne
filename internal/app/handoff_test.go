@@ -1,10 +1,12 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -32,40 +34,77 @@ func countEvents(t *testing.T, repoDir, id, typ string) int {
 	return n
 }
 
-// F-0339 crit. 1 and 5: one handoff entry with brief, evidence and next step;
-// the work stays active; a second one appends.
-func TestHandoffWorkAppends(t *testing.T) {
+// F-0368 crit. 1: a handoff is an HO- entity with its own code — the JSON
+// (pending, from_work, refs, actor, from_session, next, created_at), the brief
+// with evidence and next step, handoff.created and the work's handoff_at, in
+// one commit. The work stays active.
+func TestHandoffWorkCreatesHO(t *testing.T) {
+	t.Setenv("CERNE_SESSION", "sess-from")
 	repoDir, projDir, _ := newFeatureBackend(t)
-	w := startW(t, repoDir, projDir, "Operação longa", nil)
-	if err := HandoffWork(repoDir, projDir, w.ID, "brief um", "rodar a suíte", []string{"docs/x.md", "F-0001"}); err != nil {
-		t.Fatalf("HandoffWork: %v", err)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
+	w := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
+	before, _ := gitback.HeadSHA(repoDir)
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "rodar a suíte", []string{"docs/x.md", "F-0001"})
+	if err != nil || id != "HO-0001" {
+		t.Fatalf("HandoffWork = %q, %v; want HO-0001", id, err)
+	}
+	assertOneCommit(t, repoDir, before, "entities/handoffs/HO-0001.json", "content/handoffs/HO-0001.md", "entities/works/"+w.ID+".json")
+	h, err := store.LoadHandoff(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.State != domain.HandoffPending || h.FromWork != w.ID || !slices.Equal(h.Refs, []string{"F-0001"}) || h.Actor == "" ||
+		h.FromSession != "sess-from" || h.Next != "rodar a suíte" || h.CreatedAt.IsZero() {
+		t.Fatalf("handoff = %+v", h)
+	}
+	body, _ := store.LoadHandoffContent(repoDir, id)
+	for _, want := range []string{"brief um", "Evidência:\n- docs/x.md\n- F-0001", "Próximo passo: rodar a suíte"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("brief missing %q:\n%s", want, body)
+		}
 	}
 	got, _ := store.LoadWork(repoDir, w.ID)
 	if got.State != domain.WorkActive || got.HandoffAt == nil {
 		t.Fatalf("work = %+v, want active with handoff_at", got)
 	}
-	hs, _ := store.LoadHandoffs(repoDir, w.ID)
-	if len(hs) != 1 || hs[0].Author == "" {
-		t.Fatalf("handoffs = %+v", hs)
+	if n := countEvents(t, repoDir, id, "handoff.created"); n != 1 {
+		t.Fatalf("handoff.created events = %d, want 1", n)
 	}
-	for _, want := range []string{"brief um", "Evidência:\n- docs/x.md\n- F-0001", "Próximo passo: rodar a suíte"} {
-		if !strings.Contains(hs[0].Text, want) {
-			t.Fatalf("entry missing %q:\n%s", want, hs[0].Text)
-		}
-	}
-	if n := countEvents(t, repoDir, w.ID, "work.handoff"); n != 1 {
-		t.Fatalf("work.handoff events = %d, want 1", n)
-	}
-	if err := HandoffWork(repoDir, projDir, w.ID, "brief dois", "outra coisa", nil); err != nil {
-		t.Fatal(err)
-	}
-	hs, _ = store.LoadHandoffs(repoDir, w.ID)
-	if len(hs) != 2 || hs[0].Text == hs[1].Text || !strings.Contains(hs[0].Text, "brief um") {
-		t.Fatalf("second handoff must append, got %+v", hs)
+	if hs, _ := store.LoadHandoffs(repoDir, w.ID); len(hs) != 0 {
+		t.Fatalf("the F-0339 file must not grow: %+v", hs)
 	}
 }
 
-// F-0339 crit. 2, 3 and 4: each refusal leaves the backend untouched.
+// F-0368 crit. 2: a second handoff of the same work supersedes the pending one,
+// pointing to the new, in the same commit — at most one pending per work.
+func TestHandoffWorkSupersedesPending(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	w := startW(t, repoDir, projDir, "Operação longa", nil)
+	other := startW(t, repoDir, projDir, "Outra frente bem distinta", nil)
+	if _, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "n1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := HandoffWork(repoDir, projDir, other.ID, "brief alheio", "n", nil); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := gitback.HeadSHA(repoDir)
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief dois", "n2", nil)
+	if err != nil || id != "HO-0003" {
+		t.Fatalf("second handoff = %q, %v", id, err)
+	}
+	assertOneCommit(t, repoDir, before, "entities/handoffs/HO-0001.json", "entities/handoffs/HO-0003.json")
+	if h, _ := store.LoadHandoff(repoDir, "HO-0001"); h.State != domain.HandoffSuperseded || h.SupersededBy != "HO-0003" {
+		t.Fatalf("HO-0001 = %+v, want superseded by HO-0003", h)
+	}
+	if h, _ := store.LoadHandoff(repoDir, "HO-0002"); h.State != domain.HandoffPending {
+		t.Fatalf("another work's HO-0002 = %s, want pending", h.State)
+	}
+	if n := countEvents(t, repoDir, "HO-0001", "handoff.superseded"); n != 1 {
+		t.Fatalf("handoff.superseded events = %d, want 1", n)
+	}
+}
+
+// F-0339 crit. 2, 3 and 4 (unchanged by F-0368 crit. 1): each refusal leaves the backend untouched.
 func TestHandoffWorkRefusals(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	t.Setenv("TMPDIR", "/custom/tmpdir/") // after the fixtures: TempDir needs the real one
@@ -89,15 +128,16 @@ func TestHandoffWorkRefusals(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := HandoffWork(repoDir, projDir, tc.id, tc.brief, tc.next, tc.ev)
+			before, _ := gitback.HeadSHA(repoDir)
+			_, err := HandoffWork(repoDir, projDir, tc.id, tc.brief, tc.next, tc.ev)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tc.want)
 			}
-			if hs, _ := store.LoadHandoffs(repoDir, tc.id); len(hs) != 0 {
+			if hs, _ := store.LoadAllHandoffs(repoDir); len(hs) != 0 {
 				t.Fatalf("refused handoff wrote %+v", hs)
 			}
-			if n := countEvents(t, repoDir, tc.id, "work.handoff"); n != 0 {
-				t.Fatalf("refused handoff appended %d events", n)
+			if after, _ := gitback.HeadSHA(repoDir); after != before {
+				t.Fatalf("refused handoff committed")
 			}
 		})
 	}

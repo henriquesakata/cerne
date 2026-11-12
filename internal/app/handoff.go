@@ -19,6 +19,7 @@ type WorkHandoff struct {
 	ID    string
 	Entry store.HandoffEntry
 	Hint  bool
+	HO    string // the pending HO- the entry comes from (F-0368); "" for a legacy entry
 }
 
 // tempDirs are the folders a cleaner may wipe: evidence living there is lost.
@@ -110,17 +111,20 @@ func tempEvidence(evidence []string) string {
 	return ""
 }
 
-// HandoffWork records a session handoff on active work id (F-0339): appends
-// the entry (brief, evidence, next step) to content/works/<id>/handoff.md,
-// stamps handoff_at and appends the work.handoff event, in one commit. The
-// work stays active. Inputs are validated before the backend is touched.
-func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) error {
+// HandoffWork records a session handoff on active work id (F-0339) as an HO-
+// entity with its own code (F-0368): entities/handoffs/<HO>.json (pending),
+// the brief with evidence and next step in content/handoffs/<HO>.md, the
+// handoff.created event and the work's handoff_at — one commit. The work's
+// previous pending handoff is superseded by the new one in the same commit.
+// The work stays active. Inputs are validated before the backend is touched.
+// Returns the new HO- id.
+func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) (string, error) {
 	brief, next = strings.TrimSpace(brief), strings.TrimSpace(next)
 	if next == "" {
-		return fmt.Errorf("--next is required: the next step is what the new session needs first")
+		return "", fmt.Errorf("--next is required: the next step is what the new session needs first")
 	}
 	if brief == "" {
-		return fmt.Errorf("the brief is empty: pass --file <brief.md> or pipe it on stdin")
+		return "", fmt.Errorf("the brief is empty: pass --file <brief.md> or pipe it on stdin")
 	}
 	var ev []string
 	for _, e := range evidence {
@@ -129,14 +133,15 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) er
 		}
 	}
 	if bad := tempEvidence(ev); bad != "" {
-		return fmt.Errorf("--evidence %s is in a temporary folder that gets wiped: put the content in the brief or use a durable path", bad)
+		return "", fmt.Errorf("--evidence %s is in a temporary folder that gets wiped: put the content in the brief or use a durable path", bad)
 	}
 	text := brief
 	if len(ev) > 0 {
 		text += "\n\nEvidência:\n- " + strings.Join(ev, "\n- ")
 	}
 	text += "\n\nPróximo passo: " + next
-	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	var hoID string
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		w, err := store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(id)))
 		if errors.Is(err, store.ErrNotFound) {
 			return "", fmt.Errorf("activity %s not found in the backend", id)
@@ -147,35 +152,98 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) er
 		if w.State != domain.WorkActive {
 			return "", fmt.Errorf("activity %s is %s, not active: a handoff goes on an active work", id, w.State)
 		}
-		now := time.Now().UTC()
-		author := w.Actor
-		if author == "" {
-			author = EventActor()
+		if hoID, err = store.NextID(repoDir, "HO"); err != nil {
+			return "", err
 		}
-		if err := store.AppendHandoff(repoDir, w.ID, text, author, now); err != nil {
+		now := time.Now().UTC()
+		prior, ok, err := pendingHandoffOf(repoDir, w.ID)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			if prior.State, err = domain.TransitionHandoff(prior.State, domain.ActionSupersede); err != nil {
+				return "", err
+			}
+			prior.SupersededBy, prior.UpdatedAt = hoID, now
+			if err := store.SaveHandoff(repoDir, prior); err != nil {
+				return "", err
+			}
+			if err := store.AppendEvent(repoDir, domain.NewEvent(prior.ID, "handoff.superseded", map[string]string{"by": hoID}, EventActor())); err != nil {
+				return "", err
+			}
+		}
+		h := store.Handoff{
+			ID:          hoID,
+			State:       domain.HandoffPending,
+			FromWork:    w.ID,
+			Refs:        w.Refs,
+			Actor:       resolveActor(defaultWorkActor()),
+			FromSession: os.Getenv("CERNE_SESSION"),
+			Next:        next,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := store.SaveHandoff(repoDir, h); err != nil {
+			return "", err
+		}
+		if err := store.SaveHandoffContent(repoDir, hoID, text+"\n"); err != nil {
 			return "", err
 		}
 		w.HandoffAt, w.UpdatedAt = &now, now
 		if err := store.SaveWork(repoDir, w); err != nil {
 			return "", err
 		}
-		if err := store.AppendEvent(repoDir, domain.NewEvent(w.ID, "work.handoff", map[string]string{"next": next}, EventActor())); err != nil {
+		if err := store.AppendEvent(repoDir, domain.NewEvent(hoID, "handoff.created", map[string]string{"from_work": w.ID, "next": next}, EventActor())); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("cerne: handoff %s", w.ID), nil
+		if err := store.AppendEvent(repoDir, domain.NewEvent(w.ID, "work.handoff", map[string]string{"handoff": hoID, "next": next}, EventActor())); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: handoff %s (%s)", hoID, w.ID), nil
 	})
+	if err != nil {
+		return "", err
+	}
+	return hoID, nil
 }
 
-// lastHandoff is work w's newest handoff entry; ok is false when it has none.
-func lastHandoff(repoDir string, w store.Work) (e store.HandoffEntry, ok bool, err error) {
+// pendingHandoffOf is work's pending handoff (at most one, F-0368 crit. 2).
+func pendingHandoffOf(repoDir, work string) (store.Handoff, bool, error) {
+	all, err := store.LoadAllHandoffs(repoDir)
+	if err != nil {
+		return store.Handoff{}, false, err
+	}
+	for i := len(all) - 1; i >= 0; i-- {
+		if all[i].FromWork == work && all[i].State == domain.HandoffPending {
+			return all[i], true, nil
+		}
+	}
+	return store.Handoff{}, false, nil
+}
+
+// lastHandoff is what a session reads of work w before taking over (F-0339):
+// its pending HO- (F-0368) as an entry, else its newest legacy entry; ok is
+// false when it has neither. ho names the pending HO- ("" for a legacy entry).
+func lastHandoff(repoDir string, w store.Work) (e store.HandoffEntry, ho string, ok bool, err error) {
 	if w.HandoffAt == nil {
-		return e, false, nil
+		return e, "", false, nil
+	}
+	h, ok, err := pendingHandoffOf(repoDir, w.ID)
+	if err != nil {
+		return e, "", false, err
+	}
+	if ok {
+		body, err := store.LoadHandoffContent(repoDir, h.ID)
+		if err != nil {
+			return e, "", false, err
+		}
+		return store.HandoffEntry{Date: h.CreatedAt.Format("2006-01-02"), Author: h.Actor, Text: strings.TrimSpace(body)}, h.ID, true, nil
 	}
 	hs, err := store.LoadHandoffs(repoDir, w.ID)
 	if err != nil || len(hs) == 0 {
-		return e, false, err
+		return e, "", false, err
 	}
-	return hs[len(hs)-1], true, nil
+	return hs[len(hs)-1], "", true, nil
 }
 
 // HandoffsFor (F-0339 crit. 6) returns, for each active work with a handoff
@@ -190,12 +258,12 @@ func HandoffsFor(repoDir string, refs []string, exclude string) ([]WorkHandoff, 
 		if w.State != domain.WorkActive || w.ID == exclude || !slices.ContainsFunc(w.Refs, func(r string) bool { return slices.Contains(refs, r) }) {
 			continue
 		}
-		e, ok, err := lastHandoff(repoDir, w)
+		e, ho, ok, err := lastHandoff(repoDir, w)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			out = append(out, WorkHandoff{ID: w.ID, Entry: e, Hint: true})
+			out = append(out, WorkHandoff{ID: w.ID, Entry: e, Hint: true, HO: ho})
 		}
 	}
 	return out, nil

@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func writeBrief(t *testing.T, text string) string {
@@ -29,7 +31,7 @@ func handoffProject(t *testing.T) (projDir, repoDir string) {
 	mustCerne(t, "work", "start", "Operação longa de migração", "--ref", "F-0001", "--dir", projDir)
 	out := mustCerne(t, "work", "handoff", "W-0001", "--file", writeBrief(t, "Brief da sessão anterior."),
 		"--next", "rodar a suíte", "--evidence", "docs/roteiro.md,F-0001", "--dir", projDir)
-	if !strings.Contains(out, "W-0001: handoff recorded") {
+	if want := "cerne: handoff HO-0001 (W-0001) — pass the code; the receiver runs: cerne handoff take HO-0001\n"; !strings.HasPrefix(out, want) {
 		t.Fatalf("handoff output:\n%s", out)
 	}
 	return projDir, repoDir
@@ -75,10 +77,14 @@ func TestWorkStartShowsHandoff(t *testing.T) {
 	}
 }
 
-// F-0339 crit. 9: show prints the entries after the work's fields; --json has
-// them in `handoffs`.
+// F-0339 crit. 9: show prints the legacy entries after the work's fields;
+// --json has them in `handoffs`.
 func TestShowWorkHandoffs(t *testing.T) {
-	projDir, _ := handoffProject(t)
+	projDir, _, repoDir := setupProject(t)
+	mustCerne(t, "work", "start", "Operação longa de migração", "--dir", projDir)
+	if err := store.AppendHandoff(repoDir, "W-0001", "Brief da sessão anterior.\n\nPróximo passo: rodar a suíte", "u", time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	out := mustCerne(t, "show", "W-0001", "--dir", projDir)
 	if !strings.Contains(out, "## handoff") || !strings.Contains(out, "Brief da sessão anterior.") {
 		t.Fatalf("show W-0001:\n%s", out)

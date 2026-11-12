@@ -97,10 +97,10 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		// The origin is closed by --from (crit. 8), never also by F-0341.
 		prior = slices.DeleteFunc(prior, func(w store.Work) bool { return from != "" && w.ID == from })
 		var handoffs []WorkHandoff
-		if e, ok, err := lastHandoff(repoDir, origin); err != nil {
+		if e, ho, ok, err := lastHandoff(repoDir, origin); err != nil {
 			return "", err
 		} else if ok {
-			handoffs = append(handoffs, WorkHandoff{ID: from, Entry: e})
+			handoffs = append(handoffs, WorkHandoff{ID: from, Entry: e, HO: ho})
 		}
 		crossing, err := HandoffsFor(repoDir, cleaned, from)
 		if err != nil {
