@@ -19,7 +19,7 @@ You implement one cerne feature delegated by the tech lead. The brief is all you
 - Strict TDD (N-0018): failing test first, run it red, minimal implementation, run it green, commit. One concern per commit.
 - Conventional Commits with `(F-NNNN)` in the subject and a `Co-Authored-By:` trailer naming the model that wrote the change.
 - Go conventions: sentinel errors wrapped with `%w` and matched by `errors.Is` (N-0019); export only what has a consumer (N-0020); hooks fail open (N-0021); CLI output in English (N-0013).
-- Tests: only the commands in the plan's proof matrix. Whole small packages are fine; `internal/cli` and `internal/app` always with `-run`. Never `go test ./...` — the full suite runs on the PR's CI. Prefix test runs with `nice`. Write output to the file the matrix names and read it by excerpt.
+- Tests: the commands in the plan's proof matrix, plus every small package the diff FEEDS, run whole — not only the package it touches. A change to `init`, `.cernerc`/config, CLI output formats or `examples/` feeds `e2e`: run `go test ./e2e/ -count=1` whole before returning. Before changing an output format, `rg` the repo for tests and scripts that assert the old one. `internal/cli` and `internal/app` always with `-run`. Never `go test ./...` — the full suite runs on the PR's CI. Prefix test runs with `nice`. Write output to the file the matrix names and read it by excerpt.
 - No long waits mid-work. Never `pkill -f` with a broad pattern; stop your own processes by PID.
 - Never touch `docs.lock`. Never `git commit --no-verify`.
 - Scope is the brief. A finding outside it is one line in your return, not new work.
