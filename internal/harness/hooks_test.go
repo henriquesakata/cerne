@@ -186,3 +186,93 @@ func TestUserOriginHookOutsideRepo(t *testing.T) {
 		t.Errorf("user hook origin=%s outside=%v, want user/true", it.Origin, it.OutsideRepo)
 	}
 }
+
+// TestGitSlotsFollowHooksPath (F-0360 crit. 9/10/11): with core.hooksPath in
+// [core], each git slot is read from the hook manager's directory (and, for
+// husky 9's `.husky/_`, from `.husky/<slot>`), ok when the cerne invocation is
+// there, missing with the snippet and no Fix otherwise. Without it, or with it
+// only in a comment, the slots stay in .git/hooks.
+func TestGitSlotsFollowHooksPath(t *testing.T) {
+	const (
+		guardInv   = "cerne guard commit-msg \"$1\"\n"
+		trailerInv = "cerne hook commit-trailer \"$1\"\n"
+	)
+	type want struct{ state, path, detail, fix string }
+	cases := []struct {
+		name   string
+		config func(proj string) string
+		files  map[string]string
+		want   map[string]want
+	}{
+		{
+			name:   "relative dir with invocations",
+			config: func(string) string { return "[core]\n\thooksPath = githooks\n" },
+			files:  map[string]string{"githooks/commit-msg": guardInv, "githooks/prepare-commit-msg": trailerInv},
+			want: map[string]want{
+				"commit-msg":         {StateOK, filepath.Join("githooks", "commit-msg"), "", ""},
+				"prepare-commit-msg": {StateOK, filepath.Join("githooks", "prepare-commit-msg"), "", ""},
+			},
+		},
+		{
+			name:   "husky layout, absolute path",
+			config: func(proj string) string { return "[Core]\n\tHooksPath = " + filepath.Join(proj, ".husky", "_") + "\n" },
+			files: map[string]string{
+				".husky/_/commit-msg": ". \"$(dirname \"$0\")/h\"\n", ".husky/_/prepare-commit-msg": ". \"$(dirname \"$0\")/h\"\n",
+				".husky/commit-msg": "npx commitlint --edit \"$1\"\n" + guardInv, ".husky/prepare-commit-msg": trailerInv,
+			},
+			want: map[string]want{
+				"commit-msg":         {StateOK, filepath.Join(".husky", "commit-msg"), "", ""},
+				"prepare-commit-msg": {StateOK, filepath.Join(".husky", "prepare-commit-msg"), "", ""},
+			},
+		},
+		{
+			name:   "husky layout without the invocation, or absent",
+			config: func(string) string { return "[core]\n\thooksPath = .husky/_\n" },
+			files:  map[string]string{".husky/commit-msg": "npx commitlint --edit \"$1\"\n"},
+			want: map[string]want{
+				"commit-msg":         {StateMissing, filepath.Join(".husky", "commit-msg"), "core.hooksPath=.husky/_ — add to your hook manager: " + strings.TrimSpace(guardInv), ""},
+				"prepare-commit-msg": {StateMissing, filepath.Join(".husky", "_", "prepare-commit-msg"), "core.hooksPath=.husky/_ — add to your hook manager: " + strings.TrimSpace(trailerInv), ""},
+			},
+		},
+		{
+			name:   "hooksPath only in a comment",
+			config: func(string) string { return "[core]\n\tbare = false\n# hooksPath = .husky/_\n" },
+			files:  map[string]string{".husky/commit-msg": guardInv},
+			want: map[string]want{
+				"commit-msg":         {StateMissing, filepath.Join(".git", "hooks", "commit-msg"), "", "cerne hook install"},
+				"prepare-commit-msg": {StateMissing, filepath.Join(".git", "hooks", "prepare-commit-msg"), "", "cerne hook install"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			proj := t.TempDir()
+			t.Setenv("HOME", t.TempDir())
+			if err := os.MkdirAll(filepath.Join(proj, ".git", "hooks"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(proj, ".git", "config"), []byte(tc.config(proj)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for rel, body := range tc.files {
+				p := filepath.Join(proj, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			inv := Inspect(Options{ProjDir: proj})
+			for slot, w := range tc.want {
+				it, ok := findItem(inv, "hooks", slot)
+				if !ok {
+					t.Fatalf("%s absent from inventory", slot)
+				}
+				if it.State != w.state || it.Path != w.path || it.Detail != w.detail || it.Fix != w.fix {
+					t.Errorf("%s = {state %q path %q detail %q fix %q}, want %+v", slot, it.State, it.Path, it.Detail, it.Fix, w)
+				}
+			}
+		})
+	}
+}

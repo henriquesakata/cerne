@@ -85,12 +85,17 @@ func hookItems(opts Options, ls layerSet) []Item {
 			it := Item{
 				Class:  "hooks",
 				Name:   s.Name,
-				Path:   filepath.Join(".git", "hooks", s.Name),
+				Path:   s.Path,
 				Origin: OriginLocal,
 				State:  s.State,
 				Detail: s.Detail,
 			}
-			if s.State != StateOK && s.Detail == "" {
+			switch {
+			case s.External && filepath.IsAbs(s.Path):
+				it.OutsideRepo = true
+			case s.External: // the hook manager's file is versioned (F-0360)
+				it.Origin = OriginProject
+			case s.State != StateOK && s.Detail == "":
 				it.Fix = fixHookInstall
 			}
 			items = append(items, it)
