@@ -1045,6 +1045,9 @@ const ptBR = {
         'O nome que assina as mensagens que você envia pela UI no canal permanente de um projeto. Vale para todos os projetos desta máquina. Não é o nome do projeto, que se define no campo “Nome do projeto” da tela de Configurações. Vazio usa o seu usuário do sistema.',
       'Graph': 'Grafo',
       'Shows the Graph tab in the UI. Off hides it.': 'Mostra a aba Grafo na UI. Desligado a esconde.',
+      'CLI output language': 'Idioma da saída da CLI',
+      "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.":
+        "Defina como en quando a CLI do projeto imprime inglês: o lint passa a avisar quando um critério da spec cita uma mensagem da CLI que está em português. Vazio desliga a verificação.",
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
       'Wiki': 'Wiki',
