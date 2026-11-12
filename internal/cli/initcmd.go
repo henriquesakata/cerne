@@ -241,9 +241,10 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 
 	// Keep the generated projection out of version control (F-0370). Same
 	// non-fatal stance as the merge driver above.
-	if changed, err := ensureDocsIgnored(targetDir); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not add .docs/ to .gitignore: %v\n", err)
-	} else if changed {
+	docsIgnored, err := ensureDocsIgnored(targetDir)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
+	} else if docsIgnored {
 		fmt.Fprintln(out, "Added .docs/ to .gitignore (the generated projection; never commit it).")
 	}
 
@@ -251,51 +252,70 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		fmt.Fprintln(out, `Gauntlet is off (light mode). Turn it on any time: set gauntlet = "on" under [gates] in .cernerc.`)
 	}
 	fmt.Fprintln(out, "Next steps:")
-	fmt.Fprintln(out, "  - commit .cernerc, docs.lock, .gitattributes and .gitignore to your project repository")
+	toCommit := ".cernerc, docs.lock and .gitattributes"
+	if docsIgnored {
+		toCommit = ".cernerc, docs.lock, .gitattributes and .gitignore"
+	}
+	fmt.Fprintf(out, "  - commit %s to your project repository\n", toCommit)
 	fmt.Fprintln(out, "Open the dashboard: cerne ui  (http://localhost:7717)")
 	return nil
 }
 
+// ErrGitignoreSymlink: .gitignore is a symlink, so init will not write through it.
+var ErrGitignoreSymlink = errors.New(`.gitignore is a symlink; add ".docs/" to it yourself`)
+
 // ensureDocsIgnored appends ".docs/" to dir's .gitignore unless git already
-// ignores it by any rule (F-0370). Append-only; never creates a .gitignore
-// outside a git repository. Without the git binary it falls back to a literal
-// ".docs"/".docs/" line in the .gitignore.
+// ignores it by any rule (F-0370). Append-only, mirrors the file's line ending,
+// never creates a .gitignore outside a git work tree and never writes through a
+// symlink. init requires the git binary, so there is no git-less fallback.
 func ensureDocsIgnored(dir string) (changed bool, err error) {
-	path := filepath.Join(dir, ".gitignore")
-	if _, lookErr := exec.LookPath("git"); lookErr == nil {
-		c := exec.Command("git", "check-ignore", "-q", ".docs/")
-		c.Dir = dir
-		switch runErr := c.Run(); {
-		case runErr == nil:
-			return false, nil // already ignored
-		case isExit(runErr, 1):
-			// not ignored: fall through to append
-		default:
-			return false, nil // exit 128 et al.: not a git repository
-		}
-	} else {
-		if _, statErr := os.Stat(filepath.Join(dir, ".git")); statErr != nil {
+	git := func(args ...string) (string, string, error) {
+		var o, e strings.Builder
+		c := exec.Command("git", args...)
+		c.Dir, c.Stdout, c.Stderr = dir, &o, &e
+		c.Env = append(os.Environ(), "LC_ALL=C")
+		err := c.Run()
+		return strings.TrimSpace(o.String()), e.String(), err
+	}
+	out, stderr, err := git("rev-parse", "--is-inside-work-tree")
+	if err != nil {
+		if strings.Contains(stderr, "not a git repository") {
 			return false, nil
 		}
-		if b, readErr := os.ReadFile(path); readErr == nil {
-			for _, l := range strings.Split(string(b), "\n") {
-				if l = strings.TrimSpace(l); l == ".docs/" || l == ".docs" {
-					return false, nil
-				}
-			}
-		}
+		return false, fmt.Errorf("could not check .gitignore: %w: %s", err, strings.TrimSpace(stderr))
 	}
-	prefix := ""
-	if b, readErr := os.ReadFile(path); readErr == nil && len(b) > 0 && b[len(b)-1] != '\n' {
-		prefix = "\n"
+	if out != "true" {
+		return false, nil // bare repository or inside .git: no work tree
+	}
+	switch _, stderr, err := git("check-ignore", "-q", ".docs/"); {
+	case err == nil:
+		return false, nil // already ignored
+	case isExit(err, 1):
+		// not ignored: append below
+	default:
+		return false, fmt.Errorf("could not check .gitignore: %w: %s", err, strings.TrimSpace(stderr))
+	}
+
+	path := filepath.Join(dir, ".gitignore")
+	if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return false, ErrGitignoreSymlink
+	}
+	eol, prefix := "\n", ""
+	if b, rerr := os.ReadFile(path); rerr == nil {
+		if strings.Contains(string(b), "\r\n") {
+			eol = "\r\n"
+		}
+		if len(b) > 0 && b[len(b)-1] != '\n' {
+			prefix = eol
+		}
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("could not update .gitignore: %w", err)
 	}
-	if _, err := f.WriteString(prefix + ".docs/\n"); err != nil {
+	if _, err := f.WriteString(prefix + ".docs/" + eol); err != nil {
 		f.Close()
-		return false, err
+		return false, fmt.Errorf("could not update .gitignore: %w", err)
 	}
 	return true, f.Close()
 }
