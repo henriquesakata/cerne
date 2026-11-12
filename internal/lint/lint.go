@@ -1278,7 +1278,7 @@ func brokenAcked(d scannedDoc, text string, r mdlink.Ref) bool {
 // suggestion after " — ", and — in an append-only errata — the errata command
 // that adds the correction (F-0329).
 func brokenLinkFinding(d scannedDoc, r mdlink.Ref, kind, token, hint string) Finding {
-	detail := fmt.Sprintf("line %d: broken %s %s", r.Line, kind, token)
+	detail := fmt.Sprintf("broken %s %s", kind, token)
 	if hint != "" {
 		detail += " — " + hint
 	}

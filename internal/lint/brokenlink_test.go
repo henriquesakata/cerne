@@ -53,9 +53,9 @@ func TestBrokenLinkOneFindingPerOccurrence(t *testing.T) {
 		line   int
 		detail string
 	}{
-		{7, "line 7: broken wiki-link [[N-9999]]"},
-		{13, "line 13: broken wiki-link [[N-9999]]"},
-		{13, "line 13: broken link ./nada.md"},
+		{7, "broken wiki-link [[N-9999]]"},
+		{13, "broken wiki-link [[N-9999]]"},
+		{13, "broken link ./nada.md"},
 	}
 	for _, w := range want {
 		ok := false
