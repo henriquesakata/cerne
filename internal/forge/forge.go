@@ -41,7 +41,9 @@ type Repo struct {
 	Path string
 }
 
-var commitURLRe = regexp.MustCompile(`^https?://([^/]+)/(.+?)(?:/-)?/commit/([^/?#]*)$`)
+// The host is a bare hostname with an optional port — no userinfo, no "@", no
+// space: the credential is looked up for exactly the host the request reaches.
+var commitURLRe = regexp.MustCompile(`^https?://([A-Za-z0-9.-]+(?::[0-9]{1,5})?)/([A-Za-z0-9._/-]+?)(?:/-)?/commit/([^/?#]*)$`)
 
 // ParseCommitURL splits a commit URL (or the [delivery] commit_url template,
 // with its {sha} placeholder) into the repository and the trailing commit.
@@ -66,6 +68,10 @@ func New(name, commitURL string) (DeliveryForge, error) {
 	case "gitlab":
 		return gitlab{repo}, nil
 	case "gitea":
+		// The token travels in a header: https only.
+		if !strings.HasPrefix(commitURL, "https://") {
+			return nil, fmt.Errorf("gitea needs an https [delivery] commit_url, got %q", commitURL)
+		}
 		return gitea{repo}, nil
 	}
 	return nil, fmt.Errorf("%w %q", ErrUnknownForge, name)

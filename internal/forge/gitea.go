@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 	"time"
@@ -18,10 +19,16 @@ import (
 // Authorization header: it is never printed, logged, stored, or put in an error.
 
 // apiBase is the API root of host; a variable so tests point it at a server.
-var apiBase = func(host string) string { return "https://" + host + "/api/v1" }
+var apiBase = func(host string) string {
+	return (&url.URL{Scheme: "https", Host: host, Path: "/api/v1"}).String()
+}
+
+// noRedirect never follows a redirect: the credential header must not travel
+// to a host the commit_url did not name.
+var noRedirect = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
 // httpDo sends the request; a variable so tests replace the transport.
-var httpDo = func(req *http.Request) (*http.Response, error) { return http.DefaultClient.Do(req) }
+var httpDo = func(req *http.Request) (*http.Response, error) { return noRedirect.Do(req) }
 
 // credentialFill asks `git credential fill` for the host's login: the secret is
 // the password= line, which on a Gitea host is an access token or the account

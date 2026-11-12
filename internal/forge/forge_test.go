@@ -241,10 +241,11 @@ func TestGiteaTokenNeverInErrors(t *testing.T) {
 		t.Fatalf("err = %v: want an error without the token", err)
 	}
 	// An unreachable server: the transport error must not leak either.
+	origDo := httpDo
 	httpDo = func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("dial: Authorization: token " + token)
 	}
-	t.Cleanup(func() { httpDo = func(req *http.Request) (*http.Response, error) { return http.DefaultClient.Do(req) } })
+	t.Cleanup(func() { httpDo = origDo })
 	_, _, err = g.PRForCommit(context.Background(), "abc1234")
 	if err == nil || strings.Contains(err.Error(), token) {
 		t.Fatalf("transport err = %v: want an error without the token", err)
