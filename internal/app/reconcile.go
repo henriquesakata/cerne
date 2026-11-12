@@ -2,8 +2,10 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -141,9 +143,11 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			callerPaths[ch.Path] = true
 		}
 		callerChanges := changes
-		var created map[string]bool // paths the mutate CREATED (absent at the tree it ran on)
+		var minted map[string]string // work id -> feature refs, for the works the mutate minted
+		var created map[string]bool  // paths the mutate CREATED (absent at the tree it ran on)
 		capture := func(ranOn string) error {
 			created = map[string]bool{}
+			minted = map[string]string{}
 			if mutate == nil {
 				return nil
 			}
@@ -162,6 +166,12 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 					return err
 				} else if !exists {
 					created[ch.Path] = true
+					if strings.HasPrefix(ch.Path, "entities/works/") {
+						var w struct{ Refs []string }
+						if json.Unmarshal(ch.Content, &w) == nil {
+							minted[workIDOf(ch.Path)] = strings.Join(w.Refs, ",")
+						}
+					}
 				}
 			}
 			changes = append(append([]FileChange(nil), callerChanges...), extra...)
@@ -198,10 +208,10 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			if err != nil {
 				return err
 			}
-			old := make([]string, 0, len(conflicts))
+			lost := map[string]string{} // ids that collided -> feature refs
 			for _, c := range conflicts {
 				if id := workIDOf(c.Path); id != "" {
-					old = append(old, id)
+					lost[id] = minted[id]
 				}
 			}
 			recBase = tip
@@ -211,7 +221,7 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 			if err := capture(tip); err != nil {
 				return err
 			}
-			noteRemints(remints, old, created)
+			noteRemints(remints, lost, minted)
 		}
 	})
 	if lockErr != nil {
@@ -256,28 +266,29 @@ func workIDOf(p string) string {
 	return ""
 }
 
-// noteRemints pairs, sorted, the work ids that lost the race with the ids the
-// redone mutate minted instead, chaining through an earlier round's new id.
-func noteRemints(remints map[string]string, old []string, created map[string]bool) {
-	var fresh []string
-	for p := range created {
-		if id := workIDOf(p); id != "" && strings.HasPrefix(p, "entities/") {
-			fresh = append(fresh, id)
+// noteRemints pairs each work id that lost the race (lost: id -> feature refs)
+// with the id the redone mutate minted for the SAME feature refs, chaining
+// through an earlier round's new id. A lost id with no new work (dedup on the
+// new tip) is not reported.
+func noteRemints(remints, lost, minted map[string]string) {
+	for _, o := range slices.Sorted(maps.Keys(lost)) {
+		var fresh string
+		for _, f := range slices.Sorted(maps.Keys(minted)) {
+			if f != o && minted[f] == lost[o] {
+				fresh = f
+				break
+			}
 		}
-	}
-	slices.Sort(old)
-	slices.Sort(fresh)
-	if len(old) != len(fresh) {
-		return
-	}
-	for i, o := range old {
+		if fresh == "" {
+			continue
+		}
 		orig := o
 		for k, v := range remints {
 			if v == o {
 				orig = k
 			}
 		}
-		remints[orig] = fresh[i]
+		remints[orig] = fresh
 	}
 }
 

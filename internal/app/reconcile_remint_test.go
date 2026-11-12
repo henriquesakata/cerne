@@ -250,3 +250,42 @@ func appendFile(repoDir, rel, text string) error {
 	_, err = f.WriteString(text)
 	return err
 }
+
+// F-0349 crit. 2: a push that opens two works (two approved features) loses
+// only one id, whose entity AND content both collide upstream; the report
+// pairs the old id with the new one of the SAME feature, once.
+func TestReconcileRemintReportsPairByFeature(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateApproved, "plan.md")
+	base, _ := gitback.RemoteHeadSHA(repoDir)
+	remoteWork(t, origin, "W-0001", "other@host") // refs F-0001
+	advanceRemote(t, origin, "content/works/W-0001/note.md", "theirs\n")
+
+	plan2 := "content/features/F-0002/plan.md"
+	changes := []FileChange{
+		{Path: remintPlan, Content: []byte("# plano 1\n")},
+		{Path: plan2, Content: []byte("# plano 2\n")},
+	}
+	mutate := func() error {
+		if err := OpenAutoWorkForPush(repoDir, projDir, changes); err != nil {
+			return err
+		}
+		ws, err := store.LoadAllWorks(repoDir)
+		if err != nil {
+			return err
+		}
+		for _, w := range ws {
+			if w.Auto {
+				writeBackendFile(t, repoDir, "content/works/"+w.ID+"/note.md", "mine "+w.ID+"\n")
+			}
+		}
+		return nil
+	}
+	head, conflicts, remints, err := ReconcileCommitPushMutate(repoDir, projDir, base, "push plans", changes, mutate)
+	if err != nil || len(conflicts) != 0 || head == "" {
+		t.Fatalf("head=%q conflicts=%+v err=%v, want clean push", head, conflicts, err)
+	}
+	if len(remints) != 1 || remints["W-0001"] != "W-0002" {
+		t.Fatalf("remints = %v, want only W-0001 -> W-0002 (F-0001's new work)", remints)
+	}
+}
