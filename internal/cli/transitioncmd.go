@@ -126,13 +126,13 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		// not prose (F-0175 crit. 7). Same CLI-side placement as the human gate:
 		// the UI path renders the markers as chips the human answers directly.
 		if !force {
-			if err := app.CheckOpenClarifications(ctx.repoDir, id); err != nil {
+			if err := app.CheckOpenClarifications(ctx.repoDir, ctx.projDir, id); err != nil {
 				return err
 			}
 			// A card with no tag, or no capability while the project curates a
 			// taxonomy, is the agent's half-registration (F-0336, N-0028): same
 			// CLI-side placement, same --force escape, the core never refuses it.
-			if err := app.CheckIncompleteCard(ctx.repoDir, id); err != nil {
+			if err := app.CheckIncompleteCard(ctx.repoDir, ctx.projDir, id); err != nil {
 				return err
 			}
 		}
@@ -228,7 +228,7 @@ const lightModeApprove = `light mode: no Gauntlet bar is charged ([gates] gauntl
 // says there is no hard impediment and shows the bar the approve would accept.
 // It only reads the backend clone.
 func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
-	imps, err := app.ApproveReadinessAt(ctx.repoDir, ctx.projDir, id)
+	imps, err := app.ApproveReadiness(ctx.repoDir, ctx.projDir, id)
 	if err != nil {
 		return err
 	}
@@ -331,7 +331,7 @@ func printApproveReadiness(w io.Writer, repoDir, projDir, id string) {
 	if f, err := store.LoadFeature(repoDir, id); err == nil && app.ApprovalBaselineMissing(repoDir, f) {
 		return
 	}
-	imps, err := app.ApproveReadinessAt(repoDir, projDir, id)
+	imps, err := app.ApproveReadiness(repoDir, projDir, id)
 	if errors.Is(err, domain.ErrInvalidTransition) {
 		return
 	}

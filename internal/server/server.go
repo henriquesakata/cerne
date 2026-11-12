@@ -444,7 +444,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	var readiness []app.ApproveImpediment
 	var bar string
 	if f.State == domain.StateCandidate || specChanged {
-		if readiness, err = app.ApproveReadinessAt(repoDir, projDir, id); err == nil {
+		if readiness, err = app.ApproveReadiness(repoDir, projDir, id); err == nil {
 			bar, err = app.AcceptedBar(repoDir, id)
 		}
 		if err != nil {

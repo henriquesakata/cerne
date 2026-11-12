@@ -221,7 +221,7 @@ func TestReapproveRefusedWhenNotStale(t *testing.T) {
 	if !errors.Is(err, ErrNothingToReapprove) || !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("re-approve err = %v, want ErrNothingToReapprove (an invalid transition)", err)
 	}
-	if _, err := ApproveReadiness(repoDir, "F-0001"); !errors.Is(err, ErrNothingToReapprove) {
+	if _, err := approveReadiness(repoDir, "F-0001", true); !errors.Is(err, ErrNothingToReapprove) {
 		t.Fatalf("readiness err = %v, want ErrNothingToReapprove", err)
 	}
 }
@@ -239,7 +239,7 @@ func TestApproveRecordsLegacyBaseline(t *testing.T) {
 	if !ApprovalBaselineMissing(repoDir, store.Feature{ID: "F-0001", State: domain.StateApproved}) {
 		t.Fatal("legacy approval not reported as missing its baseline")
 	}
-	if imps, err := ApproveReadiness(repoDir, "F-0001"); err != nil || len(imps) != 0 {
+	if imps, err := approveReadiness(repoDir, "F-0001", true); err != nil || len(imps) != 0 {
 		t.Fatalf("readiness = %v, %v, want approvable", imps, err)
 	}
 

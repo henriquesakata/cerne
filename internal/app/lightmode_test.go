@@ -34,7 +34,7 @@ func TestApprove_LightMode(t *testing.T) {
 			saveGauntlet(t, projDir, v)
 			seedCandidateSpec(t, repoDir, "F-0001", specNoBar)
 
-			imps, err := ApproveReadinessAt(repoDir, projDir, "F-0001")
+			imps, err := ApproveReadiness(repoDir, projDir, "F-0001")
 			if err != nil {
 				t.Fatal(err)
 			}

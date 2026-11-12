@@ -63,7 +63,7 @@ func TestApproveReadinessCodes(t *testing.T) {
 				t.Fatal(err)
 			}
 			writeSpecFixture(t, repoDir, "F-0001", tc.spec)
-			got, err := ApproveReadiness(repoDir, "F-0001")
+			got, err := approveReadiness(repoDir, "F-0001", true)
 			if err != nil {
 				t.Fatalf("ApproveReadiness: %v", err)
 			}
@@ -90,7 +90,7 @@ func TestApproveReadinessClarificationMessageIsTheQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nReal. [ESCLARECER: qual o limite?]\n\nBarra: x — y\n")
-	got, err := ApproveReadiness(repoDir, "F-0001")
+	got, err := approveReadiness(repoDir, "F-0001", true)
 	if err != nil || len(got) != 1 || got[0].Message != "qual o limite?" {
 		t.Fatalf("got %+v, %v; want one impediment whose message is the question", got, err)
 	}
@@ -103,13 +103,13 @@ func TestApproveReadinessClarificationMessageIsTheQuestion(t *testing.T) {
 // again (re-approve, baseline) — see approvedspec_test.go.
 func TestApproveReadinessRefusesNonCandidate(t *testing.T) {
 	repoDir := t.TempDir()
-	if _, err := ApproveReadiness(repoDir, "F-0009"); err == nil || !strings.Contains(err.Error(), "F-0009") {
+	if _, err := approveReadiness(repoDir, "F-0009", true); err == nil || !strings.Contains(err.Error(), "F-0009") {
 		t.Fatalf("missing feature err = %v, want one naming F-0009", err)
 	}
 	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateInDevelopment}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApproveReadiness(repoDir, "F-0001"); !errors.Is(err, domain.ErrInvalidTransition) {
+	if _, err := approveReadiness(repoDir, "F-0001", true); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("in_development feature err = %v, want ErrInvalidTransition", err)
 	}
 	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0002", Title: "t", State: domain.StateApproved}); err != nil {
@@ -123,7 +123,7 @@ func TestApproveReadinessRefusesNonCandidate(t *testing.T) {
 	if err := os.WriteFile(copyPath, []byte("# t\n\nProblema real.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApproveReadiness(repoDir, "F-0002"); !errors.Is(err, domain.ErrInvalidTransition) {
+	if _, err := approveReadiness(repoDir, "F-0002", true); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("approved feature with nothing to renew err = %v, want ErrInvalidTransition", err)
 	}
 }
@@ -136,7 +136,7 @@ func TestApproveReadinessParity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir, projDir, _ := newFeatureBackend(t)
 			seedCandidateSpec(t, repoDir, "F-0001", tc.spec)
-			imps, err := ApproveReadiness(repoDir, "F-0001")
+			imps, err := approveReadiness(repoDir, "F-0001", true)
 			if err != nil {
 				t.Fatalf("ApproveReadiness: %v", err)
 			}
@@ -263,7 +263,7 @@ func TestApproveReadinessCardImpediments(t *testing.T) {
 	for _, tc := range cardCases {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir := seedCard(t, tc.facets, tc.components, tc.caps, tc.taxonomy)
-			got, err := ApproveReadiness(repoDir, "F-0001")
+			got, err := approveReadiness(repoDir, "F-0001", true)
 			if err != nil {
 				t.Fatalf("ApproveReadiness: %v", err)
 			}
@@ -294,7 +294,7 @@ func TestCardImpedimentsMatchLint(t *testing.T) {
 	for _, tc := range cardCases {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir := seedCard(t, tc.facets, tc.components, tc.caps, tc.taxonomy)
-			imps, err := ApproveReadiness(repoDir, "F-0001")
+			imps, err := approveReadiness(repoDir, "F-0001", true)
 			if err != nil {
 				t.Fatalf("ApproveReadiness: %v", err)
 			}

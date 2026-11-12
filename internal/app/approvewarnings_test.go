@@ -38,7 +38,7 @@ func TestApproveWarnings(t *testing.T) {
 	}
 
 	// Never an impediment (criterion 6): ApproveReadiness does not carry it.
-	imps, err := ApproveReadiness(repoDir, "F-0001")
+	imps, err := approveReadiness(repoDir, "F-0001", true)
 	if err != nil {
 		t.Fatal(err)
 	}

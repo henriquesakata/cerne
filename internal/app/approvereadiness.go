@@ -35,7 +35,7 @@ type ApproveImpediment struct {
 	Hard    bool   `json:"hard"`
 }
 
-// ApproveReadiness returns every impediment to approving candidate id — or
+// approveReadiness returns every impediment to approving candidate id — or
 // re-approving an approved one whose approval went stale (F-0318): the
 // document gate, then the bar gate (both hard: the shared core refuses them on
 // every surface), then one per open clarification, then the card's own (all
@@ -45,10 +45,6 @@ type ApproveImpediment struct {
 // so an empty hard list is exactly an approve the core accepts. A missing feature, one
 // past approval or an approved one with nothing to renew is an error, the
 // approve's own refusal.
-func ApproveReadiness(repoDir, id string) ([]ApproveImpediment, error) {
-	return approveReadiness(repoDir, id, true)
-}
-
 func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment, error) {
 	f, err := store.LoadFeature(repoDir, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -145,12 +141,12 @@ var ErrIncompleteCard = errors.New("card missing tags or capability")
 // itself refuses (missing feature, invalid state, nothing to re-approve)
 // passes and the core names it; any other error fails closed. The id is
 // canonicalized first, as the core accepts a lowercase one.
-func CheckIncompleteCard(repoDir, id string) error {
+func CheckIncompleteCard(repoDir, projDir, id string) error {
 	id = domain.CanonicalID(id)
 	if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
 		return nil
 	}
-	imps, err := ApproveReadiness(repoDir, id)
+	imps, err := ApproveReadiness(repoDir, projDir, id)
 	if errors.Is(err, domain.ErrInvalidTransition) {
 		return nil
 	}
@@ -178,9 +174,9 @@ func CheckIncompleteCard(repoDir, id string) error {
 	return fmt.Errorf("%w — %s is not registered complete (the registering agent's to complete: fix it with the commands below, or hand it back):%s", ErrIncompleteCard, id, b.String())
 }
 
-// ApproveReadinessAt is ApproveReadiness under the project's [gates] (F-0364):
-// in light mode (gauntlet = "off") the bar is not charged, so neither the
-// check nor the UI button lists it — the core gate skips it the same way.
-func ApproveReadinessAt(repoDir, projDir, id string) ([]ApproveImpediment, error) {
+// ApproveReadiness is the readiness under the project's [gates] (F-0364): in
+// light mode (gauntlet = "off") the bar is not charged, so neither the check
+// nor the UI button lists it — the core gate skips it the same way.
+func ApproveReadiness(repoDir, projDir, id string) ([]ApproveImpediment, error) {
 	return approveReadiness(repoDir, id, projectGates(projDir).GauntletEnabled())
 }
