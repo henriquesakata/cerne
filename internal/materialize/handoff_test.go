@@ -85,3 +85,27 @@ func TestContextPendingHandoffs(t *testing.T) {
 		t.Fatalf("block without pending handoffs:\n%s", ctx)
 	}
 }
+
+// F-0368 critic round 1, item 3: after a cancel the W- line carries no handoff
+// suffix — the F-0339 fallback is only for a work with no HO- at all.
+func TestContextCancelledHandoffNoSuffix(t *testing.T) {
+	backend := seedBackend(t)
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	addWork(t, backend, "W-0001", "Cancelada", "ator", domain.WorkActive, now.Add(-5*time.Hour))
+	w, _ := store.LoadWork(backend, "W-0001")
+	at := now.Add(-time.Hour)
+	w.HandoffAt = &at
+	if err := store.SaveWork(backend, w); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveHandoff(backend, store.Handoff{ID: "HO-0001", State: domain.HandoffCancelled, FromWork: "W-0001", CancelReason: "x", CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := MaterializeAt(backend, docsDir, "", false, 14, now); err != nil {
+		t.Fatal(err)
+	}
+	if want := "- W-0001 — Cancelada (ator, since 2026-11-12)\n"; !strings.Contains(readContext(t, docsDir), want) {
+		t.Fatalf("missing %q:\n%s", want, readContext(t, docsDir))
+	}
+}

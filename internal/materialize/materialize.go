@@ -260,12 +260,14 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		}
 	}
 	pendingHO := map[string]string{} // work -> its pending HO-
+	hasHO := map[string]bool{}       // works that passed any HO-: no F-0339 fallback for them
 	titles := map[string]string{}
 	for _, w := range works {
 		titles[w.ID] = w.Title
 	}
 	var pending []store.Handoff
 	for _, h := range handoffs {
+		hasHO[h.FromWork] = true
 		if h.State == domain.HandoffPending {
 			pending = append(pending, h)
 			pendingHO[h.FromWork] = h.ID
@@ -306,7 +308,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			Actor: w.Actor,
 			Since: w.CreatedAt.Format("2006-01-02"),
 		}
-		if w.HandoffAt != nil {
+		if w.HandoffAt != nil && !hasHO[w.ID] {
 			row.HandoffAt = w.HandoffAt.UTC().Format("2006-01-02")
 		}
 		row.PendingHO = pendingHO[w.ID]
