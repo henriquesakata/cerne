@@ -104,7 +104,6 @@ Inside your project's repository:
 cerne init --name my-project   # no --backend: creates a local backend in your user data dir
 # or, for a team, an existing empty remote:
 # cerne init --backend git@github.com:you/my-project-docs.git --name my-project
-echo ".docs/" >> .gitignore
 git add .cernerc docs.lock .gitattributes .gitignore
 git commit -m "chore: adopt cerne"
 ```

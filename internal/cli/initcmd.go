@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -237,11 +239,68 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not register the docs.lock merge driver: %v\n", err)
 	}
 
+	// Keep the generated projection out of version control (F-0370). Same
+	// non-fatal stance as the merge driver above.
+	if changed, err := ensureDocsIgnored(targetDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not add .docs/ to .gitignore: %v\n", err)
+	} else if changed {
+		fmt.Fprintln(out, "Added .docs/ to .gitignore (the generated projection; never commit it).")
+	}
+
 	if !joined {
 		fmt.Fprintln(out, `Gauntlet is off (light mode). Turn it on any time: set gauntlet = "on" under [gates] in .cernerc.`)
 	}
 	fmt.Fprintln(out, "Next steps:")
-	fmt.Fprintln(out, "  - add .docs/ to your project's .gitignore (cerne never edits it for you)")
-	fmt.Fprintln(out, "  - commit .cernerc, docs.lock and .gitattributes to your project repository")
+	fmt.Fprintln(out, "  - commit .cernerc, docs.lock, .gitattributes and .gitignore to your project repository")
+	fmt.Fprintln(out, "Open the dashboard: cerne ui  (http://localhost:7717)")
 	return nil
+}
+
+// ensureDocsIgnored appends ".docs/" to dir's .gitignore unless git already
+// ignores it by any rule (F-0370). Append-only; never creates a .gitignore
+// outside a git repository. Without the git binary it falls back to a literal
+// ".docs"/".docs/" line in the .gitignore.
+func ensureDocsIgnored(dir string) (changed bool, err error) {
+	path := filepath.Join(dir, ".gitignore")
+	if _, lookErr := exec.LookPath("git"); lookErr == nil {
+		c := exec.Command("git", "check-ignore", "-q", ".docs/")
+		c.Dir = dir
+		switch runErr := c.Run(); {
+		case runErr == nil:
+			return false, nil // already ignored
+		case isExit(runErr, 1):
+			// not ignored: fall through to append
+		default:
+			return false, nil // exit 128 et al.: not a git repository
+		}
+	} else {
+		if _, statErr := os.Stat(filepath.Join(dir, ".git")); statErr != nil {
+			return false, nil
+		}
+		if b, readErr := os.ReadFile(path); readErr == nil {
+			for _, l := range strings.Split(string(b), "\n") {
+				if l = strings.TrimSpace(l); l == ".docs/" || l == ".docs" {
+					return false, nil
+				}
+			}
+		}
+	}
+	prefix := ""
+	if b, readErr := os.ReadFile(path); readErr == nil && len(b) > 0 && b[len(b)-1] != '\n' {
+		prefix = "\n"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, err
+	}
+	if _, err := f.WriteString(prefix + ".docs/\n"); err != nil {
+		f.Close()
+		return false, err
+	}
+	return true, f.Close()
+}
+
+func isExit(err error, code int) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee) && ee.ExitCode() == code
 }

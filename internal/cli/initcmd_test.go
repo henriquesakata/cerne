@@ -506,3 +506,188 @@ func TestInit_JoinLeavesGauntletAbsent(t *testing.T) {
 		t.Fatalf("join wrote gauntlet = %q / printed the invitation:\n%s", cfg.Gates.Gauntlet, out)
 	}
 }
+
+// gitignoreEnv isolates everything init and git read: cerne dirs plus HOME
+// (git reads the global config and excludesFile from it).
+func gitignoreEnv(t *testing.T) (home string) {
+	t.Helper()
+	localBackendEnv(t)
+	home = t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CERNE_CONFIG_DIR", filepath.Join(home, "cerne-config"))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	return home
+}
+
+func gitRepoDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return dir
+}
+
+const gitignoreAdded = "Added .docs/ to .gitignore (the generated projection; never commit it)."
+
+func TestInit_IgnoresDocs(t *testing.T) {
+	gitignoreEnv(t)
+	dir := gitRepoDir(t)
+	out, err := execInit(t, "--name", "g1", "--dir", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil || string(b) != ".docs/\n" {
+		t.Fatalf(".gitignore = %q, %v", b, err)
+	}
+	if !strings.Contains(out, gitignoreAdded) {
+		t.Fatalf("output lacks %q:\n%s", gitignoreAdded, out)
+	}
+	if strings.Contains(out, "cerne never edits it") {
+		t.Fatalf("old warning still printed:\n%s", out)
+	}
+}
+
+func TestInit_DocsAlreadyIgnored(t *testing.T) {
+	cases := map[string]func(t *testing.T, home, dir string) (path, content string){
+		"local rule": func(t *testing.T, home, dir string) (string, string) {
+			return filepath.Join(dir, ".gitignore"), "node_modules/\n.docs\n"
+		},
+		"info/exclude": func(t *testing.T, home, dir string) (string, string) {
+			p := filepath.Join(dir, ".git", "info", "exclude")
+			os.MkdirAll(filepath.Dir(p), 0o755)
+			return p, ".docs/\n"
+		},
+		"global excludesFile": func(t *testing.T, home, dir string) (string, string) {
+			p := filepath.Join(home, "global_ignore")
+			cfg := "[core]\n\texcludesFile = " + p + "\n"
+			if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(cfg), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return p, ".docs/\n"
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			home := gitignoreEnv(t)
+			dir := gitRepoDir(t)
+			p, content := setup(t, home, dir)
+			if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := execInit(t, "--name", "g2", "--dir", dir)
+			if err != nil {
+				t.Fatalf("init: %v\n%s", err, out)
+			}
+			if strings.Contains(out, gitignoreAdded) {
+				t.Fatalf("claims to have edited:\n%s", out)
+			}
+			if name != "local rule" {
+				if _, err := os.Stat(filepath.Join(dir, ".gitignore")); err == nil {
+					t.Fatal(".gitignore created although .docs/ was already ignored")
+				}
+				return
+			}
+			if b, _ := os.ReadFile(p); string(b) != content {
+				t.Fatalf(".gitignore changed: %q", b)
+			}
+		})
+	}
+}
+
+func TestInit_GitignoreNoTrailingNewline(t *testing.T) {
+	gitignoreEnv(t)
+	dir := gitRepoDir(t)
+	path := filepath.Join(dir, ".gitignore")
+	const old = "node_modules/\ndist"
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execInit(t, "--name", "g3", "--dir", dir); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != old+"\n.docs/\n" || !strings.HasPrefix(string(b), old) {
+		t.Fatalf(".gitignore = %q", b)
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v, want 0600", st.Mode().Perm())
+	}
+}
+
+func TestInit_NotAGitRepoNoGitignore(t *testing.T) {
+	gitignoreEnv(t)
+	dir := t.TempDir()
+	out, err := execInit(t, "--name", "g4", "--dir", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); err == nil {
+		t.Fatal(".gitignore created outside a git repository")
+	}
+	if strings.Contains(out, gitignoreAdded) {
+		t.Fatalf("claims to have edited:\n%s", out)
+	}
+}
+
+// Without the git binary (init itself needs it elsewhere, so the helper is
+// called directly) the check falls back to a literal ".docs" line.
+func TestInit_NoGitBinaryLiteralCheck(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	dir := gitRepoDir0(t)
+	path := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(path, []byte("x\n  .docs  \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := ensureDocsIgnored(dir); err != nil || changed {
+		t.Fatalf("changed=%v err=%v, want untouched", changed, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "x\n  .docs  \n" {
+		t.Fatalf(".gitignore = %q", b)
+	}
+	dir2 := gitRepoDir0(t)
+	if changed, err := ensureDocsIgnored(dir2); err != nil || !changed {
+		t.Fatalf("changed=%v err=%v, want appended", changed, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir2, ".gitignore")); string(b) != ".docs/\n" {
+		t.Fatalf(".gitignore = %q", b)
+	}
+	plain := t.TempDir()
+	if changed, _ := ensureDocsIgnored(plain); changed {
+		t.Fatal("touched a non-repo")
+	}
+	if _, err := os.Stat(filepath.Join(plain, ".gitignore")); err == nil {
+		t.Fatal(".gitignore created outside a repo")
+	}
+}
+
+// gitRepoDir0 makes a git repo without needing git on PATH (a bare .git dir
+// marks it for the literal fallback).
+func gitRepoDir0(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestInit_LastLinePointsToUI (F-0370, critério 5): the human's next step is
+// the final line, after the local-backend hint and the light-mode invitation.
+func TestInit_LastLinePointsToUI(t *testing.T) {
+	gitignoreEnv(t)
+	for name, extra := range map[string][]string{"local": nil, "with --backend": {"--backend", newOrigin(t)}} {
+		t.Run(name, func(t *testing.T) {
+			out, err := execInit(t, append([]string{"--name", "ui " + name, "--dir", gitRepoDir(t)}, extra...)...)
+			if err != nil {
+				t.Fatalf("init: %v\n%s", err, out)
+			}
+			lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+			if got, want := lines[len(lines)-1], "Open the dashboard: cerne ui  (http://localhost:7717)"; got != want {
+				t.Fatalf("last line = %q, want %q", got, want)
+			}
+		})
+	}
+}

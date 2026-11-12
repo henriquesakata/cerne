@@ -78,7 +78,6 @@ Then, inside your project's git repository (with no `--backend`, `init` creates 
 
 ```bash
 cerne init --name my-project
-echo ".docs/" >> .gitignore
 cerne ui        # your dashboard, at http://localhost:7717
 ```
 
