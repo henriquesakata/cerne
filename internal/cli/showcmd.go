@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -112,7 +113,11 @@ func newShowCmd() *cobra.Command {
 			"machine output with every document.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if kind, _ := kindForID(strings.ToUpper(strings.TrimSpace(args[0]))); rev != 0 && kind == "feature" {
+			revSet := cmd.Flags().Changed("rev")
+			if kind, _ := kindForID(strings.ToUpper(strings.TrimSpace(args[0]))); revSet && kind == "feature" {
+				if all {
+					return errors.New("--rev prints one document revision: --all does not apply")
+				}
 				if consolidated || asJSON {
 					return errors.New("--rev prints a feature document revision as text: --consolidado and --json do not apply")
 				}
@@ -153,6 +158,16 @@ func runShowDocRevision(cmd *cobra.Command, dir, id, doc string, rev int) error 
 	id = strings.ToUpper(strings.TrimSpace(id))
 	if _, err := store.LoadFeature(ctx.repoDir, id); err != nil {
 		return fmt.Errorf("feature %s: %w", id, err)
+	}
+	k, err := store.CountDocRevisions(ctx.repoDir, id, doc)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(ctx.repoDir, "content", "features", id, doc+".md")); k == 0 && errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%s has no %s and no revisions of it", id, doc)
+	}
+	if rev < 1 {
+		return fmt.Errorf("%s %s has revisions 1..%d, no revision %d", id, doc, k+1, rev)
 	}
 	body, err := store.LoadDocRevision(ctx.repoDir, id, doc, rev)
 	if err != nil {

@@ -436,6 +436,29 @@ func TestShowFeatureDocRev(t *testing.T) {
 	}
 }
 
+// TestShowFeatureDocRevEdges (F-0338 crit. 9, round 2): --rev 0 or negative is
+// refused with the valid range, --rev with --all is incompatible, and a plan
+// that does not exist says so instead of a raw os error.
+func TestShowFeatureDocRevEdges(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateApproved, realDoc("F-0001", "Spec."), "")
+	_ = os.Remove(filepath.Join(repoDir, "content", "features", "F-0001", "plan.md"))
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--doc", "spec", "--rev", "0"}, "revisions 1..1"},
+		{[]string{"--doc", "spec", "--rev", "-1"}, "revisions 1..1"},
+		{[]string{"--doc", "spec", "--rev", "1", "--all"}, "--all"},
+		{[]string{"--doc", "plan", "--rev", "1"}, "has no plan"},
+	} {
+		out, err := execCerne(t, append([]string{"show", "F-0001", "--dir", projDir}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "no such file") {
+			t.Fatalf("%v: err %v, want %q\n%s", tc.args, err, tc.want, out)
+		}
+	}
+}
+
 // seedShowGolden seeds the feature of the show golden: in development, with a
 // spec, a plan and a result, an erratum and an open pending — the documents
 // and the blocks a feature show prints, and no revision.
