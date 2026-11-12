@@ -57,11 +57,10 @@ curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.s
 
 The script downloads the latest release for your machine, verifies its SHA-256 and installs it without `sudo`. On Windows, or to install by hand or with Go, see [INSTALL.md](INSTALL.md).
 
-Then, inside any git repository. A local bare repo is enough to try it out:
+Then, inside any git repository (with no `--backend`, `init` creates a local backend for you):
 
 ```bash
-git init --bare ~/my-project-docs.git
-cerne init --backend ~/my-project-docs.git --name my-project
+cerne init --name my-project
 echo ".docs/" >> .gitignore
 
 cerne feature new "Sign in with Google" --context "Users asked for social login."
@@ -70,7 +69,7 @@ cerne status    # features grouped by state
 cerne ui        # dashboard and kanban at http://localhost:7717
 ```
 
-For a team, point `--backend` at an empty private repository on GitHub or GitLab instead.
+For a team, pass `--backend` an empty private repository on GitHub or GitLab instead. `init` prints how to move a local backend to a remote later.
 
 ## How it works
 

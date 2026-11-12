@@ -121,7 +121,7 @@ main() {
     echo "Remove that copy, or put $dir earlier on your PATH, to run the one just installed."
   fi
   echo
-  echo "Next: run 'cerne init' inside your project. Guide: https://github.com/henriquesakata/cerne#try-it-in-two-minutes"
+  echo "Next: run 'cerne init --name <project>' inside your project. Guide: https://github.com/henriquesakata/cerne#try-it-in-two-minutes"
 }
 
 main "$@"
