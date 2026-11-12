@@ -119,7 +119,7 @@ func orphanPushMessage(cwd string) string {
 			continue
 		}
 		entity := string(m[1])
-		if urls := lint.OrphanSourceURLs(entity, string(raw), refs, cfg.UnregisteredSourceIgnore); len(urls) > 0 {
+		if urls := lint.OrphanSourceURLs(entity, string(raw), refs, cfg.SourceIgnore()); len(urls) > 0 {
 			orphans[entity] = append(orphans[entity], urls...)
 		}
 	}

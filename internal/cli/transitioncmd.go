@@ -67,7 +67,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
-		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR URL (complete only)")
+		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
 		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
 		if ts.action == domain.ActionApprove {
 			cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
@@ -97,6 +97,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		d, err := app.ResolveDelivery(ctx.cfg, commit, mr)
 		if err != nil {
 			return err
+		}
+		// With a [delivery] forge, ask it for the PR (F-0355); a failure only
+		// prints how to link it by hand.
+		if line := app.DiscoverPR(ctx.cfg, ctx.projDir, id, &d); line != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), line)
 		}
 		delivery = &d
 	}
@@ -148,6 +153,14 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
+	// Say what the complete recorded and where it shows (F-0355).
+	if delivery != nil && *delivery != (app.Delivery{}) {
+		if f, err := store.LoadFeature(ctx.repoDir, id); err == nil {
+			if line := app.DeliveryLine(f, true); line != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), line)
+			}
+		}
+	}
 	// Approving is accepting the proposed bar (F-0308 crit. 9): say which.
 	if out.Bar != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Accepted bar: %s\n", out.Bar)

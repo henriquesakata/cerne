@@ -247,6 +247,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				f.DeliveryMRURL = d.MRURL
 			}
 		}
+		// The delivery shows in the result too (F-0355), in the same commit.
+		if action == domain.ActionComplete {
+			if err := stampDeliveryInResult(repoDir, f); err != nil {
+				return "", err
+			}
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
