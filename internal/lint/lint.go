@@ -361,8 +361,6 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 
 	findings = append(findings, staleWorkFindings(works, staleWorkHours, time.Now())...)
 
-	findings = append(findings, workOutlivedFeatureFindings(works, features)...)
-
 	findings = append(findings, stalePendingFindings(pendings, time.Now())...)
 
 	incomplete, err := incompleteDocFindings(repoDir, features, decisions, runbooks)
@@ -400,6 +398,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
 	findings = append(findings, errataPendingFindings(repoDir, runbooks)...)
 	findings = append(findings, duplicateLiveFindings(notes, decisions, references, events)...)
+	findings = append(findings, workOutlivedFeatureFindings(works, features, events)...)
 
 	specBar, err := specBarFindings(repoDir, features)
 	if err != nil {

@@ -34,7 +34,15 @@ func TestWorkOutlivedFeatureFindings(t *testing.T) {
 		work("W-0007", domain.WorkDone, "F-0002"),             // already closed
 	}
 
-	got := workOutlivedFeatureFindings(works, features)
+	closed := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC) // after every work's (zero) CreatedAt
+	events := []domain.Event{
+		{EntityID: "F-0001", Type: "feature.completed", At: closed},
+		{EntityID: "F-0002", Type: "feature.accepted", At: closed},
+		{EntityID: "F-0003", Type: "feature.rejected", At: closed},
+		{EntityID: "F-0004", Type: "feature.superseded", At: closed},
+	}
+
+	got := workOutlivedFeatureFindings(works, features, events)
 	if len(got) != 2 {
 		t.Fatalf("findings = %+v, want W-0001 and W-0002", got)
 	}
@@ -66,8 +74,11 @@ func TestWorkOutlivedFeatureIsAdvisoryAndWired(t *testing.T) {
 	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Feita", State: domain.StateImplemented}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
-	now := time.Now().UTC()
-	if err := store.SaveWork(dir, store.Work{ID: "W-0001", Title: "Planejamento", State: domain.WorkActive, Actor: "a@b", Refs: []string{"F-0001"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.AppendEvent(dir, domain.NewEvent("F-0001", "feature.completed", nil, "test")); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	opened := time.Now().UTC().Add(-time.Hour)
+	if err := store.SaveWork(dir, store.Work{ID: "W-0001", Title: "Planejamento", State: domain.WorkActive, Actor: "a@b", Refs: []string{"F-0001"}, CreatedAt: opened, UpdatedAt: opened}); err != nil {
 		t.Fatalf("SaveWork: %v", err)
 	}
 	got, err := RunConfig(dir, 14, 8)
@@ -82,5 +93,44 @@ func TestWorkOutlivedFeatureIsAdvisoryAndWired(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("work-outlived-feature findings for W-0001 = %d, want 1: %+v", n, got)
+	}
+}
+
+// TestWorkOutlivedFeatureOpenedAfterClose: a work opened after the feature
+// reached its current closed state (an errata, the QA of an accept) is live
+// work on a closed feature, not a leftover — only a work created before the
+// last transition into that state is flagged, since its Fix closes it.
+func TestWorkOutlivedFeatureOpenedAfterClose(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Feita", State: domain.StateImplemented}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	completed := time.Now().UTC().Add(-time.Hour)
+	ev := domain.NewEvent("F-0001", "feature.completed", nil, "test")
+	ev.At = completed
+	if err := store.AppendEvent(dir, ev); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	for id, created := range map[string]time.Time{
+		"W-0001": completed.Add(-time.Hour),  // planning left over: flagged
+		"W-0002": completed.Add(time.Minute), // errata opened after the complete
+	} {
+		w := store.Work{ID: id, Title: "Trabalho " + id, State: domain.WorkActive, Actor: "a@b", Refs: []string{"F-0001"}, CreatedAt: created, UpdatedAt: created}
+		if err := store.SaveWork(dir, w); err != nil {
+			t.Fatalf("SaveWork: %v", err)
+		}
+	}
+	got, err := RunConfig(dir, 14, 8)
+	if err != nil {
+		t.Fatalf("RunConfig: %v", err)
+	}
+	var flagged []string
+	for _, f := range got {
+		if f.Rule == RuleWorkOutlivedFeature {
+			flagged = append(flagged, f.Entity)
+		}
+	}
+	if !slices.Equal(flagged, []string{"W-0001"}) {
+		t.Fatalf("work-outlived-feature = %v, want [W-0001]", flagged)
 	}
 }
