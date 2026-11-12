@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"sort"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
-	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -140,7 +138,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	}
 	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, ctx.projDir))
 
-	missing, err := implementedMissing(ctx.repoDir, features)
+	missing, err := implementedMissing(ctx.repoDir, ctx.projDir)
 	if err != nil {
 		return err
 	}
@@ -306,30 +304,27 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	return nil
 }
 
-// implementedMissing maps each implemented feature that still owes the agent a
-// step to its exact commands (F-0371). The list is app.AcceptQueue's, the
-// UI's. The cost stamp is owed only with a session bound; the delivery when
-// neither the commit nor the MR link is recorded.
-func implementedMissing(repoDir string, features []store.Feature) (map[string][]string, error) {
+// implementedMissing maps each implemented feature whose next step is the
+// agent's to its exact commands (F-0371). The list is app.AcceptQueue's, the
+// UI's, and the decision is app.NextStep's: the queue and `next <id>` share one
+// rule.
+func implementedMissing(repoDir, projDir string) (map[string][]string, error) {
 	rows, err := app.AcceptQueue(repoDir)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]store.Feature, len(features))
-	for _, f := range features {
-		byID[f.ID] = f
-	}
 	missing := map[string][]string{}
 	for _, r := range rows {
-		var cmds []string
-		if cost.NeedsStamp(filepath.Dir(repoDir), repoDir, r.ID) {
-			cmds = append(cmds, "cerne cost "+r.ID+" --stamp")
+		st, err := app.NextStep(repoDir, projDir, r.ID)
+		if err != nil {
+			return nil, err
 		}
-		if f := byID[r.ID]; f.DeliveryCommitURL == "" && f.DeliveryMRURL == "" {
-			cmds = append(cmds, "cerne feature deliver "+r.ID+" --mr <url>")
-		}
-		if len(cmds) > 0 {
-			missing[r.ID] = cmds
+		if st.Actor == app.ActorAgent {
+			f, err := store.LoadFeature(repoDir, r.ID)
+			if err != nil {
+				return nil, err
+			}
+			missing[r.ID] = app.ImplementedOwes(repoDir, f)
 		}
 	}
 	return missing, nil
