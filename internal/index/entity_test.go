@@ -186,3 +186,22 @@ func TestRankEntitiesQuotesTerms(t *testing.T) {
 		t.Fatalf("got %v, want [F-0001]", got)
 	}
 }
+
+// Criterion 3: with coverage and title terms equal, bm25 with the title
+// weighted 4 against the body decides (weight 1 flips the order).
+func TestSearchEntitiesTitleWeightBreaksTies(t *testing.T) {
+	db := seedEntities(t,
+		fixtureFeature{"F-0001", "Rateio, rateio e rateio", map[string]string{"spec": "o extrato"}},
+		fixtureFeature{"F-0002", "Rateio", map[string]string{"spec": "rateio rateio rateio rateio o extrato"}},
+		fixtureFeature{"F-0003", "Agenda", map[string]string{"spec": "consultas da semana"}},
+		fixtureFeature{"F-0004", "Estoque", map[string]string{"spec": "itens do depósito"}},
+		fixtureFeature{"F-0005", "Folha", map[string]string{"spec": "salários e férias"}},
+	)
+	rs, _, err := SearchEntities(db, "rateio extrato tributo", 10)
+	if err != nil {
+		t.Fatalf("SearchEntities: %v", err)
+	}
+	if got := entityIDs(rs); !reflect.DeepEqual(got, []string{"F-0001", "F-0002"}) {
+		t.Fatalf("order = %v, want F-0001 (title-heavy) first", got)
+	}
+}
