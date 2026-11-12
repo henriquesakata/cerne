@@ -99,15 +99,17 @@ type showDoc struct {
 
 func newShowCmd() *cobra.Command {
 	var dir, doc string
-	var asJSON, consolidated bool
+	var asJSON, consolidated, all bool
 	var rev int
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
 		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea) by id",
 		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-/I-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
-			"already-implemented features that are not materialized in '.docs/'. Use --doc to print a single " +
-			"feature document raw (spec|plan|result), and --json for machine output.",
+			"already-implemented features that are not materialized in '.docs/'. A feature prints the document " +
+			"of its stage (spec; plan in development; result once implemented) and names the others: --doc " +
+			"prints a single feature document raw (spec|plan|result), --all prints every one, and --json is " +
+			"machine output with every document.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if kind, _ := kindForID(strings.ToUpper(strings.TrimSpace(args[0]))); rev != 0 && kind == "feature" {
@@ -125,9 +127,10 @@ func newShowCmd() *cobra.Command {
 				}
 				return runShowRunbookView(cmd, dir, args[0], consolidated, rev)
 			}
-			return runShow(cmd, dir, args[0], doc, asJSON)
+			return runShow(cmd, dir, args[0], doc, asJSON, all)
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "feature only: print every document (spec, plan, result), not just the one of its stage")
 	cmd.Flags().BoolVar(&consolidated, "consolidado", false, "runbook only: the body with each erratum placed at the step it changes (read-only)")
 	cmd.Flags().IntVar(&rev, "rev", 0, "print revision N: of a runbook's body (the one before each errata merge stays readable), or with --doc spec|plan of a feature document (the one before each amend)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -159,7 +162,9 @@ func runShowDocRevision(cmd *cobra.Command, dir, id, doc string, rev int) error 
 	return nil
 }
 
-func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
+// runShow prints id. Without all, a feature's text is narrowed to the document
+// of its stage (stageView); --doc and --json are never narrowed.
+func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -257,8 +262,45 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(res.toJSON())
 	}
+	if f, ok := res.entity.(store.Feature); ok && !all {
+		res.stageView(f.State, id)
+	}
 	res.renderText(w)
 	return nil
+}
+
+// stageView narrows a feature's documents to the one of its stage (F-0338):
+// the most advanced real document up to the state's — the plan in
+// development, the result once implemented or done, the spec otherwise. The
+// blocks stay; the documents left out close the show as one line, with their
+// sizes and how to read them.
+func (r *showResult) stageView(state domain.FeatureState, id string) {
+	upTo := 0 // spec
+	switch state {
+	case domain.StateInDevelopment:
+		upTo = 1
+	case domain.StateImplemented, domain.StateDone:
+		upTo = 2
+	}
+	pick := ""
+	for _, d := range r.content { // the documents come in featureDocNames order
+		if i := slices.Index(featureDocNames, d.name); i >= 0 && i <= upTo {
+			pick = d.name
+		}
+	}
+	var kept []showDoc
+	var others []string
+	for _, d := range r.content {
+		if d.name != pick && slices.Contains(featureDocNames, d.name) {
+			others = append(others, fmt.Sprintf("%s (%d lines)", d.name, strings.Count(d.body, "\n")+1))
+			continue
+		}
+		kept = append(kept, d)
+	}
+	if len(others) > 0 {
+		kept = append(kept, showDoc{"", "other documents: " + strings.Join(others, " · ") + " — cerne show " + id + " --doc <doc> | --all"})
+	}
+	r.content = kept
 }
 
 // selectDoc narrows the result to the single named feature document, failing

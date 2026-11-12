@@ -146,7 +146,7 @@ func newIdeaShowCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runShow(cmd, *dir, id, "", asJSON)
+			return runShow(cmd, *dir, id, "", asJSON, false)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
