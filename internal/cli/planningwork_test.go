@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -14,7 +15,8 @@ import (
 // a temporary backend. The TL (<user>@<host>) opens the planning work, an
 // agent process (CERNE_ACTOR=agent) starts the feature: the planning closes,
 // the auto work opens and closes on complete, and CONTEXT.md lists neither.
-// Then a second work start on the same feature supersedes the first.
+// Then a second work start on the same feature supersedes the first when the
+// same session re-registers, and only warns when it is not bound to it.
 func TestPlanningWorkRealCase(t *testing.T) {
 	t.Run("start closes the TL's planning", func(t *testing.T) {
 		projDir, _, repoDir := setupProject(t)
@@ -53,18 +55,37 @@ func TestPlanningWorkRealCase(t *testing.T) {
 		}
 	})
 
-	t.Run("a second work start supersedes the first", func(t *testing.T) {
+	t.Run("the same session's second work start supersedes the first", func(t *testing.T) {
 		projDir, _, repoDir := setupProject(t)
 		t.Setenv("USER", "u")
-		t.Setenv("CERNE_SESSION", "")
+		t.Setenv("CERNE_SESSION", "sess-1")
 		id := newFeature(t, projDir, "Feature A", 1)
 		mustCerne(t, "work", "start", "F-0001: plano — planejamento", "--ref", id, "--dir", projDir)
+		// What the PostToolUse hook does after the work start (F-0151).
+		if err := app.BindSession(filepath.Dir(repoDir), "sess-1", "W-0001"); err != nil {
+			t.Fatalf("BindSession: %v", err)
+		}
 
-		out := mustCerne(t, "work", "start", "Retomada do plano noutra sessão", "--ref", id, "--dir", projDir)
+		out := mustCerne(t, "work", "start", "Retomada do plano", "--ref", id, "--dir", projDir)
 		if !strings.Contains(out, "closed W-0001 (superseded by W-0002)\n") {
 			t.Fatalf("second work start output misses the closed line:\n%s", out)
 		}
 		wantWork(t, repoDir, "W-0001", domain.WorkDone, "superseded by W-0002")
+		wantWork(t, repoDir, "W-0002", domain.WorkActive, "")
+	})
+
+	t.Run("an unbound planning work is only warned about", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		t.Setenv("USER", "u")
+		t.Setenv("CERNE_SESSION", "sess-1")
+		id := newFeature(t, projDir, "Feature A", 1)
+		mustCerne(t, "work", "start", "F-0001: plano — planejamento", "--ref", id, "--dir", projDir)
+
+		out := mustCerne(t, "work", "start", "Retomada do plano noutra sessão", "--ref", id, "--dir", projDir)
+		if !strings.Contains(out, "W-0001 left active (not bound to this session); if it is finished: cerne work done W-0001\n") {
+			t.Fatalf("second work start output misses the warning:\n%s", out)
+		}
+		wantWork(t, repoDir, "W-0001", domain.WorkActive, "")
 		wantWork(t, repoDir, "W-0002", domain.WorkActive, "")
 	})
 }

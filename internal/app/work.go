@@ -22,11 +22,11 @@ type WorkOutcome struct {
 
 // StartedWork is what StartWork did: the new work, plus the planning works of
 // this process's actors it closed as superseded (F-0341 crit. 4) and the ones
-// it left active because another session is bound to them (crit. 5).
+// it kept active because this session is not bound to them (crit. 5).
 type StartedWork struct {
 	store.Work
 	Superseded []string
-	Bound      []string
+	Kept       []string
 }
 
 // StartWork mints a new active work (agent activity, F-0130) in the backend
@@ -91,7 +91,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 		}
 		out = StartedWork{Work: w}
 		if activityAutoEnabled(projDir) {
-			if out.Superseded, out.Bound, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
+			if out.Superseded, out.Kept, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
 				return "", err
 			}
 		}
@@ -104,16 +104,17 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	return out, nil
 }
 
-// supersedePlanning (F-0341 crit. 4/5) closes, as superseded by newID, the
-// planning works this process's actors hold on each feature in refs; works
-// lists the board before newID existed. A work bound to another session
-// (F-0151) stays and comes back in bound — binding files outlive their
-// session, so a dead session's leftover holds the work too, and the
-// work-outlived-feature lint is the net once the feature closes.
-func supersedePlanning(repoDir string, works []store.Work, refs []string, newID string) (closed, bound []string, err error) {
+// supersedePlanning (F-0341 crit. 4/5, owner's decision of 2026-11-11)
+// closes, as superseded by newID, the planning work of this process's actors
+// on each feature in refs that this very session is bound to (F-0151): the
+// session re-registering. Every other one of theirs — unbound, bound to
+// another session, or met with no CERNE_SESSION — comes back in kept, to be
+// warned about: the agent actor is the same on every machine, another
+// machine's binding is not visible here, and "unbound" does not prove the
+// session ended. works lists the board before newID existed.
+func supersedePlanning(repoDir string, works []store.Work, refs []string, newID string) (closed, kept []string, err error) {
 	mine := myActors()
-	bindings := sessionBindingsIn(filepath.Dir(repoDir))
-	sess := os.Getenv("CERNE_SESSION")
+	here := sessionBindingsIn(filepath.Dir(repoDir))[os.Getenv("CERNE_SESSION")]
 	for _, ref := range refs {
 		if !domain.IsFeatureID(ref) {
 			continue
@@ -130,8 +131,8 @@ func supersedePlanning(repoDir string, works []store.Work, refs []string, newID 
 			if !slices.Contains(mine, w.Actor) {
 				continue
 			}
-			if boundElsewhere(bindings, w.ID, sess) {
-				bound = append(bound, w.ID)
+			if w.ID != here {
+				kept = append(kept, w.ID)
 				continue
 			}
 			if err := closeWork(repoDir, w, domain.ActionComplete, "superseded by "+newID); err != nil {
@@ -140,7 +141,7 @@ func supersedePlanning(repoDir string, works []store.Work, refs []string, newID 
 			closed = append(closed, w.ID)
 		}
 	}
-	return closed, bound, nil
+	return closed, kept, nil
 }
 
 // FinishWork ends work id in the backend clone at repoDir: active -> done
