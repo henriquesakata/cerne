@@ -16,16 +16,14 @@
 // cerne backend as references.
 package dectmpl
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
+)
 
 // Sections are the canonical ADR sections, in template order.
-var Sections = []string{
-	"Contexto",
-	"Decisão",
-	"Consequências",
-	"Alternativas consideradas",
-	"Implementação e relações",
-}
+var Sections = doclang.Sections(doclang.Decision, doclang.PT)
 
 // Body is the ADR template skeleton: the canonical section headings in order,
 // each with inline authoring guidance as HTML comments. It carries no
@@ -67,6 +65,53 @@ Não dispense em uma linha algo que pesou de verdade na decisão. -->
 <!-- Onde a decisão aparece no código (arquivos/módulos reais) e os vínculos: features e ADRs que ela afeta,
 supersede ou que a motivaram — use os ids (F-/D-). -->
 `
+
+// BodyEN is Body in English (F-0359).
+const BodyEN = `<!-- HOW TO USE: this is the record of an architecture decision ALREADY MADE (ADR), not an open proposal.
+Capture the decision and its forces and consequences in a DURABLE and CONCISE way — not the step-by-step of
+the implementation (that is the plan). The title records the DECISION, not the question (e.g. "Use Postgres as the
+primary store", not "Which database?"). Fill in every section and remove these guide lines. Mark any uncertainty
+with [CLARIFY: specific question] and resolve it before treating the decision as accepted. Size it by the decision:
+a small choice can have Alternatives and Implementation in one line ("N/A") — do not inflate. An accepted ADR is a
+historical record: to change course, supersede it (cerne decision substituir), do not rewrite it. The status
+(active/superseded) is data managed by cerne, not prose. -->
+
+<!-- METADATA (fill in as a line **Date:**):
+Date: YYYY-MM-DD — when the decision was made. -->
+
+## Context
+<!-- The forces and constraints in tension and the trigger (why decide now). Anchor it in what is real (code, case,
+requirement). Name the forces — do not leave the reader to infer them. The context only — the choice comes later. -->
+
+## Decision
+<!-- The choice, in the imperative ("We will X" / "We will use X"), with the 2-3 reasons that made it win.
+Unambiguous: the agent follows it to the letter. -->
+
+## Consequences
+<!-- What follows from the decision: positive, NEGATIVE/trade-offs (always list them) and constraints/invariants
+(what must NOT change without revisiting this ADR). The future reader needs to know what to watch. -->
+
+## Alternatives considered
+<!-- The options weighed (2+ when there is a real trade-off), each with pros/cons and WHY it was rejected.
+Do not dismiss in one line something that truly weighed on the decision. -->
+
+## Implementation and relations
+<!-- Where the decision shows up in the code (real files/modules) and the links: features and ADRs it affects,
+supersedes or that motivated it — use the ids (F-/D-). -->
+`
+
+// BodyIn returns the template body in language l.
+func BodyIn(l doclang.Lang) string {
+	if l == doclang.EN {
+		return BodyEN
+	}
+	return Body
+}
+
+// StubIn is Stub in language l.
+func StubIn(l doclang.Lang, title string) string {
+	return "# " + strings.TrimSpace(title) + "\n\n" + BodyIn(l)
+}
 
 // Stub returns the ADR body cerne scaffolds for a new decision: the title
 // heading followed by the template Body. Callers prepend the cerne_id

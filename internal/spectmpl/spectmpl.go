@@ -13,19 +13,12 @@ package spectmpl
 import (
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/lang"
 )
 
 // Sections are the canonical spec sections, in template order.
-var Sections = []string{
-	"Problema",
-	"Objetivo e critérios de aceitação",
-	"Decisões do design",
-	"Desenho",
-	"Verificação",
-	"Execução recomendada (agente)",
-	"Fora de escopo",
-}
+var Sections = doclang.Sections(doclang.Spec, doclang.PT)
 
 // AmbiguityMarker is the token an author (or the LLM) leaves in place of a
 // guess when something is unresolved, so it surfaces instead of becoming a
@@ -106,6 +99,83 @@ Tarefas a manter no mesmo agente (contexto compartilhado) e por quê; tarefas se
 ## Fora de escopo
 <!-- O que NÃO será feito agora e por quê (ou o que vira follow-up). -->
 `
+
+// BodyEN is Body in English (F-0359): same sections in the same order, same
+// guidance, with the English vocabulary of the protocol (CLARIFY, Bar, the
+// metadata labels). What the readers accept is doclang's and doccheck's job.
+const BodyEN = `<!-- HOW TO USE: fill in every section and remove these guide lines. Mark any
+uncertainty with [CLARIFY: specific question] and do not proceed by guessing. Before
+cerne feature approve: no [CLARIFY] left; testable criteria; nothing ambiguous. -->
+
+<!-- METADATA (fill in as lines **Type:** / **Origin:** / **Level:**):
+Type: New feature | Fix | Refactor — the nature of the change in one line.
+Origin: what triggered it (agent report, recurring pain, user decision), with who/where and
+the date; e.g. "Agent report: cerne push fails in a parallel worktree (session 2026-05-14)".
+Level: light | standard | advanced — suggested model capability to implement it + 1 sentence
+of why (light = mechanical, existing pattern, 1 package; standard = multi-file with tests;
+advanced = new design / cross-cutting). Generic — never a model or vendor name.
+A field you do not know: write "unknown" in it — never guess; if you know only part, write that part
+and "unknown" for the rest (e.g. "Agent report: … (session unknown)"). Type and Level are closed
+— pick one of the values. Lifecycle state does not go here: it is card data (cerne status). -->
+
+## Problem
+<!-- What is missing or broken TODAY, anchored in real code (file.go:line). Why now;
+the cost of not fixing it. The problem only — the solution comes later. -->
+
+## Goal and acceptance criteria
+<!-- One sentence of goal; then NUMBERED, testable criteria (1 criterion : 1 test).
+EARS for behaviour: WHEN <condition> THE SYSTEM SHALL <observable behaviour>.
+Structural invariants go in as a direct, measurable assertion. -->
+
+## Design decisions
+<!-- Table | Fork (the question) | Decision | Reason |; record the rejected alternatives too. -->
+
+## Design
+<!-- By module/package, anchored in real files, with explicit contracts (signatures,
+schemas, endpoints, events). Include the HOW — do not leave it out. -->
+
+## Verification
+<!-- Test plan (TDD), 1:1 with the acceptance criteria. Stopping standard (Gauntlet),
+one of three forms: Bar (named reference + access) + Method (blind comparison, fresh
+critic) + Exit (win/tie; stopping while losing only by a recorded human decision); "Bar: not
+applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>";
+or "Bar: waived by human decision". -->
+
+
+## Recommended execution (agent)
+<!-- Suggested model capability (generic vocabulary, consistent with the **Level:** line) and effort.
+Tasks to keep in the same agent (shared context) and why; tasks that can be split. -->
+
+## Out of scope
+<!-- What will NOT be done now and why (or what becomes a follow-up). -->
+`
+
+// BodyIn returns the template body in language l.
+func BodyIn(l doclang.Lang) string {
+	if l == doclang.EN {
+		return BodyEN
+	}
+	return Body
+}
+
+// StubIn is Stub in language l.
+func StubIn(l doclang.Lang, title string) string {
+	return "# " + strings.TrimSpace(title) + "\n\n" + BodyIn(l)
+}
+
+// StubWithContextIn is StubWithContext in language l. The English body
+// already cites the English markers, so no detection is involved.
+func StubWithContextIn(l doclang.Lang, title, context string) string {
+	if l != doclang.EN {
+		return StubWithContext(title, context)
+	}
+	context = strings.TrimSpace(context)
+	if context == "" {
+		return StubIn(l, title)
+	}
+	next := "\n## " + doclang.Sections(doclang.Spec, l)[1] + "\n"
+	return strings.Replace(StubIn(l, title), next, "\n"+context+"\n"+next, 1)
+}
 
 // Stub returns the spec body cerne scaffolds for a new feature: the title
 // heading followed by the template Body. Callers prepend the cerne_id
