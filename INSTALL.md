@@ -1,6 +1,23 @@
 # Installing cerne
 
-cerne is a single executable with no dependencies. Download the file for your system, put it on your `PATH`, and you are done.
+cerne is a single executable with no dependencies. Put it on your `PATH` and you are done.
+
+## Quick install (macOS and Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.sh | sh
+```
+
+The script picks the release file for your machine, verifies it against the release's `SHA256SUMS` and installs it as `cerne` in `/usr/local/bin` when you can write there, otherwise in `~/.local/bin`. It never calls `sudo` and never edits your shell profile; if the directory is not on your `PATH`, it prints the line to add. Run it again to update.
+
+| Variable | Effect |
+|---|---|
+| `CERNE_VERSION` | Install a specific release, e.g. `CERNE_VERSION=v0.5.0` |
+| `CERNE_INSTALL_DIR` | Install into this directory instead |
+
+To set one, put it before `sh`: `curl -fsSL … | CERNE_VERSION=v0.5.0 sh`.
+
+Then skip to [What you need](#3-what-you-need). On Windows, or to install by hand, follow sections 1 and 2.
 
 ## 1. Which file to download
 
