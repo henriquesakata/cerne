@@ -159,7 +159,7 @@ func TestWorkRefAcceptsTask(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "T-0001", domain.StateApproved)
 	seedFeatureInState(t, repoDir, "E-0001", domain.StateApproved)
-	w, err := StartWork(repoDir, projDir, "Investigação", []string{"T-0001", "E-0001"}, "", false, nil)
+	w, err := StartWork(repoDir, projDir, "Investigação", []string{"T-0001", "E-0001"}, "", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
 	}

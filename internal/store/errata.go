@@ -41,7 +41,18 @@ func LoadErrata(repoDir, id string) (string, error) {
 // or rewrites earlier entries or any other document — so concluded entities stay
 // immutable while still being correctable through the cerne flow.
 func AppendErrata(repoDir, id, text, author string, at time.Time) error {
-	path := errataPath(repoDir, id)
+	return appendEntry(errataPath(repoDir, id), id, "errata", text, author, at)
+}
+
+// handoffPath is the backend path of a work's session handoffs (F-0339).
+func handoffPath(repoDir, id string) string {
+	return filepath.Join(repoDir, "content", "works", id, "handoff.md")
+}
+
+// appendEntry appends one `## <kind> <date> — <author>` block to path,
+// creating the file (with cerne_id frontmatter) on first write. The text's
+// forgeable headings are neutralized (defangHeadings).
+func appendEntry(path, id, kind, text, author string, at time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -51,7 +62,7 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 	} else if err != nil {
 		return err
 	}
-	entry += fmt.Sprintf("\n## errata %s — %s\n\n%s\n", at.Format("2006-01-02"), author, defangHeadings(text))
+	entry += fmt.Sprintf("\n## %s %s — %s\n\n%s\n", kind, at.Format("2006-01-02"), author, defangHeadings(text))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -68,7 +79,7 @@ func AppendErrata(repoDir, id, text, author string, at time.Time) error {
 func defangHeadings(text string) string {
 	lines := strings.Split(text, "\n")
 	for i, l := range lines {
-		if errataHeaderRe.MatchString(strings.TrimRight(l, "\r")) {
+		if t := strings.TrimRight(l, "\r"); errataHeaderRe.MatchString(t) || handoffHeaderRe.MatchString(t) {
 			lines[i] = "\\" + l
 		}
 	}

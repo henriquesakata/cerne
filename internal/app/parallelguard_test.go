@@ -198,7 +198,7 @@ func TestWorkStartRefuseTellsToStop(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
 	seedActiveWork(t, repoDir, "W-0001", "outro-agente", "F-0001", false)
 
-	_, err := StartWork(repoDir, projDir, "Atividade W-0001", []string{"F-0001"}, "", false, nil)
+	_, err := StartWork(repoDir, projDir, "Atividade W-0001", []string{"F-0001"}, "", false, nil, "")
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("work start error = %v, want ErrSimilarExists", err)
 	}
