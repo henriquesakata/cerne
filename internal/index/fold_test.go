@@ -28,3 +28,18 @@ func TestFoldIdentifiersMakesPartsSearchable(t *testing.T) {
 		t.Fatalf("Search(switcher) = %+v, %v; want F-0001", rs, err)
 	}
 }
+
+// A digit followed by an upper-case letter is a boundary too: getV2Client
+// yields client; OAuth2 splits at the upper run; F0396 stays whole.
+func TestSplitCamelDigits(t *testing.T) {
+	cases := map[string][]string{
+		"getV2Client": {"get", "V2", "Client"},
+		"OAuth2":      {"O", "Auth2"},
+		"F0396":       {"F0396"},
+	}
+	for in, want := range cases {
+		if got := splitCamel(in); strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("splitCamel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

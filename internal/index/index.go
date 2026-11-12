@@ -323,16 +323,18 @@ func foldIdentifiers(body string) string {
 }
 
 // splitCamel splits tok before an upper-case letter that follows a lower-case
-// one, and before the last upper of an upper run followed by a lower
-// ("HTTPRequest" -> "HTTP", "Request").
+// letter or a digit ("getV2Client" -> "get", "V2", "Client"), and before the
+// last upper of an upper run followed by a lower ("HTTPRequest" -> "HTTP",
+// "Request").
 func splitCamel(tok string) []string {
 	r := []rune(tok)
 	isUp := func(c rune) bool { return c >= 'A' && c <= 'Z' }
 	isLow := func(c rune) bool { return c >= 'a' && c <= 'z' }
+	isDigit := func(c rune) bool { return c >= '0' && c <= '9' }
 	var out []string
 	start := 0
 	for i := 1; i < len(r); i++ {
-		if isUp(r[i]) && (isLow(r[i-1]) || (isUp(r[i-1]) && i+1 < len(r) && isLow(r[i+1]))) {
+		if isUp(r[i]) && (isLow(r[i-1]) || isDigit(r[i-1]) || (isUp(r[i-1]) && i+1 < len(r) && isLow(r[i+1]))) {
 			out = append(out, string(r[start:i]))
 			start = i
 		}
