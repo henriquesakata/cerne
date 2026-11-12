@@ -195,8 +195,10 @@ func TestHandoffCmdList(t *testing.T) {
 	want := "HO-0006 pending 5h — W-1235 — from x@y\n" +
 		"HO-0001 pending 3h — W-1234 Migração — from agent:a@b\n" +
 		"HO-0002 taken 1d ago by u@h (W-1240) — from W-1230\n"
-	if !strings.HasPrefix(got, want) {
-		t.Fatalf("list =\n%s\nwant\n%s", got, want)
+	// Exact: the 20-day-old taken HO-0003, the superseded HO-0004 and the
+	// cancelled HO-0005 are absent from the default view.
+	if got != want {
+		t.Fatalf("list =\n%s\nwant exactly\n%s", got, want)
 	}
 	for state, want := range map[string][]string{
 		"taken":      {"HO-0002 taken 1d ago", "HO-0003 taken 20d ago"},
