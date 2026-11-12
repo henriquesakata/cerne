@@ -53,7 +53,7 @@ func TestWikiLinkFindings(t *testing.T) {
 		t.Fatalf("wiki findings = %+v, want exactly one for [[N-9999]]", wiki)
 	}
 	want := Finding{Rule: RuleBrokenLink, Entity: "F-0001", File: "content/features/F-0001/spec.md",
-		Detail: "broken wiki-link: [[N-9999]]"}
+		Line: 8, Detail: "line 8: broken wiki-link [[N-9999]]"}
 	if wiki[0] != want {
 		t.Fatalf("finding = %+v, want %+v", wiki[0], want)
 	}
@@ -86,7 +86,7 @@ func TestWikiLinkFindingsEpicTask(t *testing.T) {
 			details = append(details, fd.Detail)
 		}
 	}
-	want := []string{"broken wiki-link: [[E-9999]]", "broken wiki-link: [[T-9999]]"}
+	want := []string{"line 7: broken wiki-link [[E-9999]]", "line 7: broken wiki-link [[T-9999]]"}
 	if len(details) != 2 || details[0] != want[0] || details[1] != want[1] {
 		t.Fatalf("wiki findings = %v, want %v", details, want)
 	}

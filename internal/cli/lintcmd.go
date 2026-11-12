@@ -96,7 +96,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 		rows := make([]nextFinding, 0, len(findings))
 		for _, f := range findings {
-			rows = append(rows, nextFinding{f.Rule, f.Entity, f.File, f.Detail})
+			rows = append(rows, nextFinding{f.Rule, f.Entity, f.File, f.Detail, f.Line})
 		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
@@ -231,7 +231,7 @@ func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string
 		}
 		fmt.Fprintf(w, "%s (%d)%s\n", strings.ToUpper(rule), len(group), warning)
 		for _, f := range group {
-			fmt.Fprintf(w, "  %s — %s\n", findingLoc(f), f.Detail)
+			fmt.Fprintf(w, "  %s — %s\n", findingPos(f), f.Detail)
 		}
 		fmt.Fprintln(w)
 	}
@@ -257,6 +257,14 @@ func findingLoc(f lint.Finding) string {
 		return f.File
 	}
 	return f.Entity
+}
+
+// findingPos is findingLoc as `file:line` when the finding has a line (F-0352).
+func findingPos(f lint.Finding) string {
+	if f.File != "" && f.Line > 0 {
+		return fmt.Sprintf("%s:%d", f.File, f.Line)
+	}
+	return findingLoc(f)
 }
 
 // printFixTasks renders a markdown task list ready to paste into an AI

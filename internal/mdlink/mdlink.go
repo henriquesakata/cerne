@@ -138,6 +138,48 @@ func IsFenceDelim(line string) bool {
 	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
 }
 
+// Ref is one link occurrence: its raw target and the 1-based line of the
+// content it was written on.
+type Ref struct {
+	Target string
+	Line   int
+}
+
+// Refs lists every occurrence (no de-duplication) of the inline markdown links
+// (wiki false; external, anchor and absolute targets skipped, fragment kept) or
+// the id-form wiki-links (wiki true) of content, in document order. Code is
+// excluded as in ContentLinks/WikiLinks, but Line counts from the start of
+// content, fenced blocks included, so it matches the file in an editor.
+func Refs(content string, wiki bool) []Ref {
+	var out []Ref
+	inFence := false
+	for i, line := range strings.Split(content, "\n") {
+		if IsFenceDelim(line) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		line = inlineCodeRx.ReplaceAllString(line, "")
+		if wiki {
+			for _, m := range wikiRx.FindAllStringSubmatch(line, -1) {
+				out = append(out, Ref{m[1], i + 1})
+			}
+			continue
+		}
+		for _, m := range linkRx.FindAllStringSubmatch(line, -1) {
+			if skipTarget(m[1]) {
+				continue
+			}
+			if clean, _, _ := strings.Cut(m[1], "#"); clean != "" {
+				out = append(out, Ref{m[1], i + 1})
+			}
+		}
+	}
+	return out
+}
+
 // skipTarget reports whether the link target is outside link resolution:
 // external schemes, pure anchors and absolute paths.
 func skipTarget(target string) bool {

@@ -182,6 +182,9 @@ type Finding struct {
 	Entity string // entity ID the finding is about ("" for orphan files)
 	File   string // rel slash path of the offending file ("" when entity-level)
 	Detail string // human-readable pt-BR detail
+	// Line: 1-based line of the offending text in File, counted from the start
+	// of the file (frontmatter included); 0 when the rule has no line (F-0352).
+	Line int
 	// Fix: the command that clears the finding when File cannot be edited — an
 	// errata is append-only (F-0329) — so tools need not parse it from Detail.
 	Fix string
@@ -1202,18 +1205,16 @@ func errataAckFrom(text, id string) int {
 // a fragment suffix is stripped before resolving.
 func linkFindings(repoDir string, d scannedDoc, text string) []Finding {
 	docDir := filepath.FromSlash(path.Dir(d.rel))
-	_, broken := mdlink.ContentLinks(text, func(clean string) (string, bool) {
-		full := filepath.Join(repoDir, docDir, filepath.FromSlash(clean))
+	var findings []Finding
+	for _, r := range mdlink.Refs(text, false) {
+		clean, _, _ := strings.Cut(r.Target, "#")
 		// Any stat failure (not just fs.ErrNotExist) means the target is
 		// unreachable from the doc, e.g. characters invalid on the OS.
-		if _, err := os.Stat(full); err != nil {
-			return "", false
+		if _, err := os.Stat(filepath.Join(repoDir, docDir, filepath.FromSlash(clean))); err == nil {
+			continue
 		}
-		return full, true
-	})
-	findings := make([]Finding, 0, len(broken))
-	for _, target := range broken {
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken link: " + target})
+		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line,
+			Detail: fmt.Sprintf("line %d: broken link %s", r.Line, r.Target)})
 	}
 	return findings
 }
@@ -1250,13 +1251,13 @@ func knownEntityIDs(features []store.Feature, decisions []store.Decision, refere
 // never extracted by mdlink, so this rule cannot false-positive on TOML
 // tables or bracketed prose.
 func wikiLinkFindings(d scannedDoc, text string, ids map[string]bool) []Finding {
-	_, broken := mdlink.WikiLinks(text, func(target string) (string, bool) {
-		id := mdlink.CanonicalID(target)
-		return id, ids[id]
-	})
-	findings := make([]Finding, 0, len(broken))
-	for _, target := range broken {
-		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Detail: "broken wiki-link: [[" + target + "]]"})
+	var findings []Finding
+	for _, r := range mdlink.Refs(text, true) {
+		if ids[mdlink.CanonicalID(r.Target)] {
+			continue
+		}
+		findings = append(findings, Finding{Rule: RuleBrokenLink, Entity: d.entity, File: d.rel, Line: r.Line,
+			Detail: fmt.Sprintf("line %d: broken wiki-link [[%s]]", r.Line, r.Target)})
 	}
 	return findings
 }

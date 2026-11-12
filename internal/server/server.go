@@ -1158,6 +1158,7 @@ type lintFinding struct {
 	Entity   string `json:"entity,omitempty"`
 	File     string `json:"file,omitempty"`
 	Detail   string `json:"detail"`
+	Line     int    `json:"line,omitempty"`
 	Advisory bool   `json:"advisory,omitempty"`
 }
 
@@ -1194,7 +1195,7 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	lint.DowngradeWikiDebt(findings, wikiOn)
 	out := make([]lintFinding, len(findings))
 	for i, f := range findings {
-		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail, Advisory: !lint.Blocking(f)}
+		out[i] = lintFinding{Rule: f.Rule, Entity: f.Entity, File: f.File, Detail: f.Detail, Line: f.Line, Advisory: !lint.Blocking(f)}
 	}
 	writeJSON(w, http.StatusOK, lintResponse{Findings: out, Stale: stale})
 }
