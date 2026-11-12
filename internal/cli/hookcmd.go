@@ -90,6 +90,16 @@ func runHookInstall(cmd *cobra.Command, dir string, providerNames []string) erro
 		return err
 	}
 	printHookResults(cmd.OutOrStdout(), results)
+	scripts := map[string]bool{}
+	for _, a := range hooks.Assets() {
+		scripts[a.Script] = true
+	}
+	for _, r := range results {
+		if r.Status == hooks.StatusUpdated && scripts[r.Asset] {
+			fmt.Fprintln(cmd.OutOrStdout(), "cerne hook scripts replaced: local edits are not kept — to turn the hooks off for a process, set CERNE_NO_AGENT_HOOKS=1")
+			break
+		}
+	}
 	return nil
 }
 

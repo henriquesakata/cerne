@@ -61,3 +61,37 @@ func TestHookInstallProviderFlag(t *testing.T) {
 		t.Fatal("unknown provider must fail")
 	}
 }
+
+// TestHookInstallWarnsWhenScriptsReplaced (F-0360 crit. 6): one trailing line
+// says local edits are not kept, only when an existing script was rewritten.
+func TestHookInstallWarnsWhenScriptsReplaced(t *testing.T) {
+	const warn = "cerne hook scripts replaced: local edits are not kept — to turn the hooks off for a process, set CERNE_NO_AGENT_HOOKS=1"
+	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	install := func() string {
+		t.Helper()
+		out, err := execCerne(t, "hook", "install", "--dir", dir, "--provider", "claude")
+		if err != nil {
+			t.Fatalf("hook install: %v\noutput: %s", err, out)
+		}
+		return out
+	}
+	if out := install(); strings.Contains(out, warn) {
+		t.Fatalf("warned on a fresh install:\n%s", out)
+	}
+	script := filepath.Join(dir, ".claude", "hooks", "cerne-work-gate.sh")
+	body, _ := os.ReadFile(script)
+	if err := os.WriteFile(script, append([]byte("[ -n \"${ROCKT_EVAL:-}\" ] && exit 0\n"), body...), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := install()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if lines[len(lines)-1] != warn || strings.Count(out, warn) != 1 {
+		t.Fatalf("want the warning once, as the last line:\n%s", out)
+	}
+	if out := install(); strings.Contains(out, warn) {
+		t.Fatalf("warned with nothing rewritten:\n%s", out)
+	}
+}
