@@ -49,11 +49,13 @@ This repository documents itself with cerne. After 359 features:
 
 ## Try it in two minutes
 
-Install the binary from the [Releases page](https://github.com/henriquesakata/cerne/releases/latest) (see [INSTALL.md](INSTALL.md)), or with Go:
+Install on macOS or Linux:
 
 ```bash
-go install github.com/henriquesakata/cerne/cmd/cerne@latest
+curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.sh | sh
 ```
+
+The script downloads the latest release for your machine, verifies its SHA-256 and installs it without `sudo`. On Windows, or to install by hand or with Go, see [INSTALL.md](INSTALL.md).
 
 Then, inside any git repository. A local bare repo is enough to try it out:
 
