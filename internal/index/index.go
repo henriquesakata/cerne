@@ -19,7 +19,8 @@ import (
 )
 
 // featureDocFilenames are the per-feature lifecycle documents indexed as
-// individual rows, mirroring the materialize order.
+// individual rows, mirroring the materialize order. The errata (F-0367) is one
+// more row (doc = "errata"), read from content/errata/<id>.md.
 var featureDocFilenames = []string{"spec.md", "plan.md", "result.md"}
 
 const (
@@ -90,7 +91,7 @@ func Rebuild(repoDir, dbPath string) error {
 	}
 	defer stmt.Close()
 	for _, r := range rows {
-		if _, err := stmt.Exec(r.entityID, r.kind, r.doc, r.state, r.title, r.body, r.supersededBy); err != nil {
+		if _, err := stmt.Exec(r.entityID, r.kind, r.doc, r.state, r.title, foldIdentifiers(r.body), r.supersededBy); err != nil {
 			return err
 		}
 	}
@@ -198,8 +199,13 @@ func collectRows(repoDir string) ([]row, error) {
 			base.body = tags // carried when the feature has no content doc yet
 		}
 		found := false
+		paths := make([]string, 0, len(featureDocFilenames)+1)
 		for _, filename := range featureDocFilenames {
-			body, exists, err := readDoc(filepath.Join(repoDir, "content", "features", f.ID, filename))
+			paths = append(paths, filepath.Join(repoDir, "content", "features", f.ID, filename))
+		}
+		paths = append(paths, filepath.Join(repoDir, "content", "errata", f.ID+".md"))
+		for _, path := range paths {
+			body, exists, err := readDoc(path)
 			if err != nil {
 				return nil, err
 			}
@@ -207,7 +213,10 @@ func collectRows(repoDir string) ([]row, error) {
 				continue
 			}
 			r := base
-			r.doc = strings.TrimSuffix(filename, ".md")
+			r.doc = strings.TrimSuffix(filepath.Base(path), ".md")
+			if r.doc == f.ID {
+				r.doc = "errata"
+			}
 			r.body = strings.TrimSpace(body + " " + tags)
 			rows = append(rows, r)
 			found = true
@@ -286,6 +295,49 @@ func collectRows(repoDir string) ([]row, error) {
 			title: h.Name, body: body, supersededBy: h.SupersededBy})
 	}
 	return rows, nil
+}
+
+// identifier matches a run of letters/digits that starts with a letter.
+var identifier = regexp.MustCompile(`[A-Za-z][A-Za-z0-9]*`)
+
+// foldIdentifiers appends, once per distinct identifier, the parts of every
+// camelCase/PascalCase identifier in body ("WorkspaceSwitcher" -> "Workspace
+// Switcher", "parseHTTPRequest" -> "parse HTTP Request"), so a search for one
+// part finds the document (F-0367). The unicode61 tokenizer keeps such an
+// identifier as one token. Letter-digit runs ("F0396") are not split.
+func foldIdentifiers(body string) string {
+	var parts []string
+	seen := map[string]bool{}
+	for _, tok := range identifier.FindAllString(body, -1) {
+		split := splitCamel(tok)
+		if len(split) < 2 || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		parts = append(parts, strings.Join(split, " "))
+	}
+	if len(parts) == 0 {
+		return body
+	}
+	return body + "\n" + strings.Join(parts, "\n")
+}
+
+// splitCamel splits tok before an upper-case letter that follows a lower-case
+// one, and before the last upper of an upper run followed by a lower
+// ("HTTPRequest" -> "HTTP", "Request").
+func splitCamel(tok string) []string {
+	r := []rune(tok)
+	isUp := func(c rune) bool { return c >= 'A' && c <= 'Z' }
+	isLow := func(c rune) bool { return c >= 'a' && c <= 'z' }
+	var out []string
+	start := 0
+	for i := 1; i < len(r); i++ {
+		if isUp(r[i]) && (isLow(r[i-1]) || (isUp(r[i-1]) && i+1 < len(r) && isLow(r[i+1]))) {
+			out = append(out, string(r[start:i]))
+			start = i
+		}
+	}
+	return append(out, string(r[start:]))
 }
 
 // readDoc returns the file content and whether the file exists.
