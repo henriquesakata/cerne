@@ -21,7 +21,10 @@ func TestShowRunbookMergedErrataIsOneLine(t *testing.T) {
 	rb(t, projDir, "runbook", "decide", "RB-0001", "E1", "--by", "dono", "--quote", "vale")
 	rb(t, projDir, "runbook", "merge", "RB-0001")
 	errFile := filepath.Join(repoDir, "content", "errata", "RB-0001.md")
-	before, _ := os.ReadFile(errFile)
+	before, err := os.ReadFile(errFile)
+	if err != nil || len(before) == 0 {
+		t.Fatalf("errata file unreadable or empty: %v", err)
+	}
 
 	day := time.Now().UTC().Format("2006-01-02")
 	line := "E1 merged into revision 2 (" + day + ")"
@@ -41,13 +44,25 @@ func TestShowRunbookMergedErrataIsOneLine(t *testing.T) {
 		js.Merged[0].Item != "E1" || js.Merged[0].Revision != 2 || js.Merged[0].Date != day {
 		t.Fatalf("crit 4 merged_errata = %+v (err %v)", js.Merged, err)
 	}
+	found := false
 	for _, d := range js.Content {
-		if d.Name == "errata" && (strings.Contains(d.Body, "Decidida e com passo.") || !strings.Contains(d.Body, line) || !strings.Contains(d.Body, "Ainda proposta.")) {
+		if d.Name != "errata" {
+			continue
+		}
+		found = true
+		if strings.Contains(d.Body, "Decidida e com passo.") || !strings.Contains(d.Body, line) || !strings.Contains(d.Body, "Ainda proposta.") {
 			t.Fatalf("crit 4 content errata:\n%s", d.Body)
 		}
 	}
+	if !found {
+		t.Fatalf("crit 4: json content has no errata doc: %+v", js.Content)
+	}
 	// crit 5: show never writes.
-	if after, _ := os.ReadFile(errFile); string(before) != string(after) {
+	after, err := os.ReadFile(errFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
 		t.Fatal("crit 5: show rewrote the errata file")
 	}
 
