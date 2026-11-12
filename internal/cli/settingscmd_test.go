@@ -75,8 +75,12 @@ func TestSettingsList(t *testing.T) {
 func TestSettingsListJSON(t *testing.T) {
 	projDir, _ := settingsProject(t, "[mindmap]\nenabled = false\n")
 	byID := settingsJSON(t, projDir)
-	if len(byID) != 5 {
-		t.Fatalf("settings = %v, want the 5 declared keys", byID)
+	if want := len(project.ResolveSettings(projDir).Settings); len(byID) != want {
+		t.Fatalf("settings = %v, want the %d declared keys", byID, want)
+	}
+	if n := byID["hooks.notes_on_edit"]; n.Value != true || n.Origin != project.OriginDefault || n.Type != "bool" ||
+		!slices.Equal(n.Scopes, []string{project.ScopeProject, project.ScopeHost}) {
+		t.Errorf("hooks.notes_on_edit = %+v, want default true, bool, scopes [project host]", n)
 	}
 	if m := byID["mindmap.enabled"]; m.Value != false || m.Origin != project.ScopeProject || m.Title == "" || m.Description == "" {
 		t.Errorf("mindmap.enabled = %+v", m)
