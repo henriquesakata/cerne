@@ -72,6 +72,16 @@ cerne ui        # dashboard and kanban at http://localhost:7717
 
 For a team, point `--backend` at an empty private repository on GitHub or GitLab instead.
 
+### See it with data
+
+An empty project does not show what cerne is for. This builds a fictional one with a realistic history (features in every state, a rejected proposal, a superseded decision, an epic) on your machine, in a few seconds:
+
+```bash
+git clone https://github.com/henriquesakata/cerne && sh cerne/examples/demo/seed.sh
+```
+
+Then `cd cerne-demo/taskflow && cerne ui`. What is in it and what to try: [examples/demo](examples/demo/README.md).
+
 ## How it works
 
 ```mermaid
