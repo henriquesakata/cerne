@@ -140,7 +140,7 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 			return Step{}, err
 		}
 		if err := checkActionDocs(id, domain.ActionStart, docs); err != nil {
-			return edit("the start would refuse: "+err.Error(), "plan.md")
+			return edit("the start would refuse: "+errors.Unwrap(err).Error(), "plan.md")
 		}
 		if _, _, err := guardParallelStart(repoDir, projDir, id, false); err != nil {
 			s.Step = "the start would refuse: " + err.Error()
@@ -153,7 +153,7 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 			return Step{}, err
 		}
 		if err := checkActionDocs(id, domain.ActionComplete, docs); err != nil {
-			return edit("the complete would refuse: "+err.Error(), "result.md")
+			return edit("the complete would refuse: "+errors.Unwrap(err).Error(), "result.md")
 		}
 		if err := CheckCompleteResult(repoDir, f, gates); err != nil {
 			return edit("the complete would refuse: "+err.Error(), "result.md")
