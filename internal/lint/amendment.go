@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -23,7 +24,10 @@ var amendmentHeading = regexp.MustCompile(`(?i)^#{2,4}\s+(emendas?|amendments?)\
 // AmendmentLines returns the 1-based lines of text holding an appended
 // amendment heading, outside fenced code. The one matcher of the
 // appended-amendment rule and of the amend's refusal of such a body.
-func AmendmentLines(text string) []int {
+func AmendmentLines(text string) []int { return matchLines(amendmentHeading, text) }
+
+// matchLines returns the 1-based lines of text matching re, outside fenced code.
+func matchLines(re *regexp.Regexp, text string) []int {
 	var lines []int
 	inFence := false
 	for i, l := range strings.Split(text, "\n") {
@@ -31,7 +35,7 @@ func AmendmentLines(text string) []int {
 			inFence = !inFence
 			continue
 		}
-		if !inFence && amendmentHeading.MatchString(l) {
+		if !inFence && re.MatchString(l) {
 			lines = append(lines, i+1)
 		}
 	}
@@ -43,9 +47,18 @@ func AmendmentLines(text string) []int {
 // `cerne feature amend --doc` rewrites the document instead. Advisory: live
 // documents with such sections exist, and an error would block their push.
 func appendedAmendmentFindings(repoDir string, features []store.Feature) ([]Finding, error) {
+	return docLineFindings(repoDir, features, []domain.FeatureState{domain.StateApproved, domain.StateInDevelopment}, amendmentHeading, RuleAppendedAmendment,
+		func(id, doc string, n int) string {
+			return fmt.Sprintf(`%s line %d: amendment appended as a section — write it into the criterion or task with 'cerne feature amend %s --doc %s --file <%s.md> --reason "<why>"'`, doc, n, id, doc, doc)
+		})
+}
+
+// docLineFindings is one rule finding per line matching re (matchLines) in the
+// spec or plan of each feature in states, its detail written by detail.
+func docLineFindings(repoDir string, features []store.Feature, states []domain.FeatureState, re *regexp.Regexp, rule string, detail func(id, doc string, line int) string) ([]Finding, error) {
 	var out []Finding
 	for _, f := range features {
-		if f.State != domain.StateApproved && f.State != domain.StateInDevelopment {
+		if !slices.Contains(states, f.State) {
 			continue
 		}
 		for _, doc := range []string{"spec", "plan"} {
@@ -57,13 +70,8 @@ func appendedAmendmentFindings(repoDir string, features []store.Feature) ([]Find
 			if err != nil {
 				return nil, err
 			}
-			for _, n := range AmendmentLines(string(data)) {
-				out = append(out, Finding{
-					Rule:   RuleAppendedAmendment,
-					Entity: f.ID,
-					File:   rel,
-					Detail: fmt.Sprintf(`%s line %d: amendment appended as a section — write it into the criterion or task with 'cerne feature amend %s --doc %s --file <%s.md> --reason "<why>"'`, doc, n, f.ID, doc, doc),
-				})
+			for _, n := range matchLines(re, string(data)) {
+				out = append(out, Finding{Rule: rule, Entity: f.ID, File: rel, Detail: detail(f.ID, doc, n)})
 			}
 		}
 	}
