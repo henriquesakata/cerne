@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -266,19 +267,40 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 		shown = append(shown, wk)
 	}
 
+	// F-0361: read-only view of the per-machine session bindings.
+	sessionsByWork := app.WorkSessions(shown, app.SessionSignals(filepath.Dir(ctx.repoDir)))
+
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
+		type sessionJSON struct {
+			Session    string    `json:"session"`
+			LastSignal time.Time `json:"last_signal"`
+		}
+		var sessions map[string][]sessionJSON
+		for id, l := range sessionsByWork {
+			if sessions == nil {
+				sessions = map[string][]sessionJSON{}
+			}
+			for _, s := range l {
+				sessions[id] = append(sessions[id], sessionJSON{s.Session, s.LastSignal})
+			}
+		}
 		return enc.Encode(struct {
-			Works []store.Work `json:"works"`
-		}{shown})
+			Works    []store.Work             `json:"works"`
+			Sessions map[string][]sessionJSON `json:"sessions,omitempty"`
+		}{shown, sessions})
 	}
 
 	now := time.Now().UTC()
+	localHost, _ := os.Hostname()
 	for _, wk := range shown {
 		line := fmt.Sprintf("%s  [%s]  %s  actor: %s  age: %s", wk.ID, wk.State, wk.Title, wk.Actor, formatAge(now.Sub(wk.UpdatedAt)))
 		if len(wk.Refs) > 0 {
 			line += "  refs: " + joinRefs(wk.Refs)
+		}
+		if wk.State == domain.WorkActive {
+			line += "  " + sessionText(sessionsByWork[wk.ID], wk.Actor, localHost, now)
 		}
 		fmt.Fprintln(w, line)
 	}
@@ -290,6 +312,25 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 		}
 	}
 	return nil
+}
+
+// sessionText is the "session:" column of a work list line (F-0361).
+func sessionText(sigs []app.SessionSignal, actor, localHost string, now time.Time) string {
+	if len(sigs) > 0 {
+		parts := make([]string, len(sigs))
+		for i, s := range sigs {
+			id := s.Session
+			if len(id) > 8 {
+				id = id[:8]
+			}
+			parts[i] = fmt.Sprintf("%s signal %s ago", id, formatAge(now.Sub(s.LastSignal)))
+		}
+		return "session: " + strings.Join(parts, ", ")
+	}
+	if h := app.ActorHost(actor); h != "" && h != localHost {
+		return "session: on another machine (" + h + ")"
+	}
+	return "session: none on this machine"
 }
 
 // formatAge renders a duration compactly (e.g. "3h", "2d") for the list table.
