@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -137,6 +138,41 @@ func TestMCP_RejectsFlagLikeArgs(t *testing.T) {
 		}
 		if len(fe.calls) != 0 {
 			t.Errorf("%s %v: executor ran %q, want no command", c.tool, c.args, fe.calls)
+		}
+	}
+}
+
+// TestMCP_InputSchemasCarryLimits: the published schemas state the boundary
+// rules, so a client sees them before calling (the handler still checks).
+func TestMCP_InputSchemasCarryLimits(t *testing.T) {
+	cs := connect(t, (&fakeExec{}).run)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	prop := map[string]map[string]any{}
+	for _, tool := range res.Tools {
+		b, _ := json.Marshal(tool.InputSchema)
+		var s struct {
+			Properties map[string]map[string]any `json:"properties"`
+		}
+		if err := json.Unmarshal(b, &s); err != nil {
+			t.Fatal(err)
+		}
+		for name, p := range s.Properties {
+			prop[tool.Name+"."+name] = p
+		}
+	}
+	for key, want := range map[string]map[string]any{
+		"search.limit": {"minimum": 1.0, "maximum": 50.0},
+		"search.query": {"minLength": 1.0},
+		"show.id":      {"pattern": `^[A-Z]+-\d{4,}$`},
+		"ask.question": {"minLength": 1.0},
+	} {
+		for k, v := range want {
+			if prop[key][k] != v {
+				t.Errorf("%s.%s = %v, want %v (schema %v)", key, k, prop[key][k], v, prop[key])
+			}
 		}
 	}
 }
