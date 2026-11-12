@@ -83,7 +83,7 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 		}
 	}
 
-	text := hooks.RegisterRules + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + activeWorkLines(cfg.ProjectID)
+	text := hooks.SessionRules(cfg.Gates.GauntletEnabled()) + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + activeWorkLines(cfg.ProjectID)
 	if block := channelBlock(cfg.ProjectID, in.SessionID, true); block != "" {
 		text += "\n\n" + block
 	}

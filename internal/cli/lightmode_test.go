@@ -91,3 +91,20 @@ func TestStatus_ShowsLightMode(t *testing.T) {
 		}
 	}
 }
+
+// TestHookSessionContext_LightMode (F-0364, Ajuste 2): the session-start text
+// leaves the GAUNTLET item out in light mode and keeps it with it on.
+func TestHookSessionContext_LightMode(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	payload := hookJSON(t, "s", projDir, "", nil, nil)
+	for v, want := range map[string]bool{"": true, "off": false} {
+		setGauntlet(t, projDir, v)
+		out, err := execCerneStdin(t, payload, "hook", "session-context")
+		if err != nil {
+			t.Fatalf("session-context: %v\n%s", err, out)
+		}
+		if got := strings.Contains(out, "GAUNTLET"); got != want {
+			t.Fatalf("gauntlet %q: GAUNTLET item present = %v, want %v\n%s", v, got, want, out)
+		}
+	}
+}

@@ -5,10 +5,29 @@ package hooks
 // asset (cerne-register-reminder.sh) carries the same text in shell form;
 // the Go copy exists so provider-format subcommands (`cerne hook
 // session-context`) can emit it inside each provider's own envelope.
-const RegisterRules = `cerne project rules — make in-flight work visible from minute one:
+const RegisterRules = registerHead + "\n" + gauntletRule + " " + gauntletSkip + "\n" + registerTail
+
+// SessionRules is the ruleset the dynamic session-start path injects
+// (F-0364): in light mode ([gates] gauntlet = "off") the GAUNTLET item is
+// left out, so a new project is not told to write a bar it is not charged.
+func SessionRules(gauntletOn bool) string {
+	if !gauntletOn {
+		return registerHead + "\n" + registerTail
+	}
+	return registerHead + "\n" + gauntletRule + "\n" + registerTail
+}
+
+// gauntletSkip is the light-mode escape the static copies carry: they are
+// written once, so they cannot omit the item per project.
+const gauntletSkip = `(skip it when .cernerc sets [gates] gauntlet = "off")`
+
+const registerHead = `cerne project rules — make in-flight work visible from minute one:
 - Picking up a FEATURE? First action: ` + "`cerne feature new \"<title>\" --context \"<1-3 sentences of why>\"`" + ` (lands as a candidate on the kanban; --file spec.md for a one-shot spec). Register it complete in that same act: spec (` + "`--file`" + `), tags (` + "`--facet`/`--component`" + `) and, once the project has a capability taxonomy, capability (` + "`cerne feature capability <id> C-…`" + `) — ` + "`cerne feature approve <id> --check`" + ` flags a card without them and the approve refuses it. Advance it as you go: spec -> approve (HUMAN gate), plan -> ` + "`cerne feature start`" + `, result -> ` + "`cerne feature complete`" + `. Abandoned? ` + "`cerne feature reject <id> --reason \"...\"`" + `.
 - Picking up an ALREADY-APPROVED feature to plan? First action, before writing the plan: ` + "`cerne work start \"F-NNNN: <what> — planejamento\" --ref F-NNNN`" + ` (F-0208) — registers the pickup immediately, closing the blind window before ` + "`feature start`" + ` (which needs a real plan and so lags). A ` + "`cerne push`" + ` of the plan auto-opens the same work if you forget. It closes by itself at ` + "`cerne feature start`" + ` (F-0341).
 - Picking up a NON-feature task (error investigation, review, ops)? First action: ` + "`cerne work start \"<description>\" [--ref F-...]`" + `; when finished, ` + "`cerne work done W-... [--note \"...\"]`" + `. BEFORE delegating an error investigation to another agent, run ` + "`cerne work list`" + ` — someone may already be on it.
-- HUMAN GATES (F-0131): ` + "`cerne feature approve`" + ` and ` + "`cerne feature accept`" + ` are human acts by default — write the spec, ask for approval, STOP.
-- GAUNTLET (F-0545): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal ` + "`Barra:`" + ` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run ` + "`cerne feature approve <id> --check`" + ` before asking for it — and ` + "`result.md`" + ` carries ` + "`## Gauntlet`" + ` with the judge's quoted verdict (` + "`cerne lint`" + ` charges it). Protocol details: cerne-authoring skill.
-- DUPLICATE GUARD (F-0147): ` + "`feature new`/`work start`" + ` refuse a title similar to a live feature or active work — join that work instead; --force only for a genuinely distinct problem.`
+- HUMAN GATES (F-0131): ` + "`cerne feature approve`" + ` and ` + "`cerne feature accept`" + ` are human acts by default — write the spec, ask for approval, STOP.`
+
+// gauntletRule is the GAUNTLET item — F-0270 is the protocol's origin.
+const gauntletRule = `- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal ` + "`Barra:`" + ` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run ` + "`cerne feature approve <id> --check`" + ` before asking for it — and ` + "`result.md`" + ` carries ` + "`## Gauntlet`" + ` with the judge's quoted verdict (` + "`cerne lint`" + ` charges it). Protocol details: cerne-authoring skill.`
+
+const registerTail = `- DUPLICATE GUARD (F-0147): ` + "`feature new`/`work start`" + ` refuse a title similar to a live feature or active work — join that work instead; --force only for a genuinely distinct problem.`
