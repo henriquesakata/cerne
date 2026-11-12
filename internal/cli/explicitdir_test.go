@@ -271,7 +271,7 @@ func TestNestedGitRefusesWithoutDir(t *testing.T) {
 	before := originHead(t, origin)
 
 	want := "no cerne project in this git repository (" + clone + "); the nearest .cernerc is at " + projDir +
-		", outside it — use --dir " + projDir + " to work on that project on purpose"
+		", outside it — use --dir \"" + projDir + "\" (or set CERNE_ROOT=\"" + projDir + "\") to work on that project on purpose"
 	for _, args := range [][]string{
 		{"feature", "new", "Boletos", "--context", "x"},
 		{"status"},

@@ -544,7 +544,7 @@ func (e *noProjectAtError) Is(target error) bool { return target == ErrNoProject
 type crossedGitRootError struct{ GitRoot, ProjectDir string }
 
 func (e *crossedGitRootError) Error() string {
-	return fmt.Sprintf("no cerne project in this git repository (%s); the nearest %s is at %s, outside it — use --dir %s to work on that project on purpose", e.GitRoot, configFilename, e.ProjectDir, e.ProjectDir)
+	return fmt.Sprintf("no cerne project in this git repository (%s); the nearest %s is at %s, outside it — use --dir \"%s\" (or set CERNE_ROOT=\"%s\") to work on that project on purpose", e.GitRoot, configFilename, e.ProjectDir, e.ProjectDir, e.ProjectDir)
 }
 func (e *crossedGitRootError) Is(target error) bool { return target == ErrNoProject }
 

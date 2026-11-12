@@ -77,7 +77,7 @@ func TestFindConfig_StopsAtNestedGitRoot(t *testing.T) {
 				t.Fatalf("want crossedGitRootError{%s, %s}, got %#v", clone, proj, err)
 			}
 			want := "no cerne project in this git repository (" + clone + "); the nearest .cernerc is at " + proj +
-				", outside it — use --dir " + proj + " to work on that project on purpose"
+				", outside it — use --dir \"" + proj + "\" (or set CERNE_ROOT=\"" + proj + "\") to work on that project on purpose"
 			if err.Error() != want {
 				t.Fatalf("message:\n got %s\nwant %s", err, want)
 			}
