@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,44 @@ type showResult struct {
 	// approvalStale is set for features only (F-0318): whether the approval
 	// went stale (lint.SpecChangedAfterApproval).
 	approvalStale *bool
+	// amendments are a feature's spec/plan amends, newest first (F-0338).
+	amendments []amendmentJSON
+}
+
+// amendmentJSON is one amend of a feature's spec or plan: the revision that
+// keeps the replaced text, when, by whom and why (the feature.doc_edited event).
+type amendmentJSON struct {
+	Doc    string    `json:"doc"`
+	Rev    int       `json:"rev"`
+	At     time.Time `json:"at"`
+	Actor  string    `json:"actor"`
+	Reason string    `json:"reason"`
+}
+
+// addAmendments reads the amend events of feature id (feature.doc_edited with
+// a rev) newest first and, when there is any, adds them with the
+// `## amendments` block and the hint to read a revision.
+func (r *showResult) addAmendments(repoDir, id string) error {
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return err
+	}
+	var lines []string
+	for i := len(evs) - 1; i >= 0; i-- {
+		ev := evs[i]
+		rev, err := strconv.Atoi(ev.Payload["rev"])
+		if ev.EntityID != id || ev.Type != "feature.doc_edited" || err != nil {
+			continue
+		}
+		a := amendmentJSON{ev.Payload["doc"], rev, ev.At, ev.Actor, ev.Payload["reason"]}
+		r.amendments = append(r.amendments, a)
+		lines = append(lines, fmt.Sprintf("%s r%d · %s · %s · %s", a.Doc, a.Rev, a.At.Format(time.DateOnly), a.Actor, a.Reason))
+	}
+	if len(lines) > 0 {
+		lines = append(lines, "read one: cerne show "+id+" --doc <doc> --rev N")
+		r.content = append(r.content, showDoc{name: "amendments", body: strings.Join(lines, "\n")})
+	}
+	return nil
 }
 
 type showDoc struct {
@@ -101,6 +140,13 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON bool) error {
 	res, err := resolveEntity(ctx.repoDir, id)
 	if err != nil {
 		return err
+	}
+	if res.kind == "feature" {
+		// F-0338: the amends of the spec and plan, after the documents and before
+		// the errata — the lines, never the replaced bodies (read with --rev).
+		if err := res.addAmendments(ctx.repoDir, id); err != nil {
+			return err
+		}
 	}
 	er, err := store.LoadErrata(ctx.repoDir, id)
 	if err != nil {
@@ -256,43 +302,43 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if err != nil {
 			return showResult{}, fmt.Errorf("feature %s: %w", id, err)
 		}
-		return showResult{kind, f, featureContent(repoDir, id), nil}, nil
+		return showResult{kind, f, featureContent(repoDir, id), nil, nil}, nil
 	case "decision":
 		d, err := store.LoadDecision(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("decision %s: %w", id, err)
 		}
-		return showResult{kind, d, singleContent(repoDir, "decisions", id), nil}, nil
+		return showResult{kind, d, singleContent(repoDir, "decisions", id), nil, nil}, nil
 	case "reference":
 		r, err := store.LoadReference(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("reference %s: %w", id, err)
 		}
-		return showResult{kind, r, singleContent(repoDir, "references", id), nil}, nil
+		return showResult{kind, r, singleContent(repoDir, "references", id), nil, nil}, nil
 	case "note":
 		n, err := store.LoadNote(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("note %s: %w", id, err)
 		}
-		return showResult{kind, n, singleContent(repoDir, "notes", id), nil}, nil
+		return showResult{kind, n, singleContent(repoDir, "notes", id), nil, nil}, nil
 	case "runbook":
 		rb, err := store.LoadRunbook(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("runbook %s: %w", id, err)
 		}
-		return showResult{kind, rb, singleContent(repoDir, "runbooks", id), nil}, nil
+		return showResult{kind, rb, singleContent(repoDir, "runbooks", id), nil, nil}, nil
 	case "historical":
 		h, err := store.LoadHistorical(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("historical %s: %w", id, err)
 		}
-		return showResult{kind, h, nil, nil}, nil
+		return showResult{kind, h, nil, nil, nil}, nil
 	case "capability":
 		c, err := store.LoadCapability(repoDir, id)
 		if err != nil {
 			return showResult{}, fmt.Errorf("capability %s: %w", id, err)
 		}
-		return showResult{kind, c, nil, nil}, nil
+		return showResult{kind, c, nil, nil, nil}, nil
 	case "pending":
 		p, err := store.LoadPending(repoDir, id)
 		if err != nil {
@@ -302,7 +348,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if p.Body != "" {
 			content = []showDoc{{"", p.Body}}
 		}
-		return showResult{kind, p, content, nil}, nil
+		return showResult{kind, p, content, nil, nil}, nil
 	case "work":
 		wk, err := store.LoadWork(repoDir, id)
 		if err != nil {
@@ -313,7 +359,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if run, err := store.LoadRun(repoDir, id); err == nil {
 			content = []showDoc{{"run", renderRun(run)}}
 		}
-		return showResult{kind, wk, content, nil}, nil
+		return showResult{kind, wk, content, nil, nil}, nil
 	case "idea":
 		if _, err := app.CanonicalIdeaID(id); err != nil {
 			return showResult{}, err
@@ -322,7 +368,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if err != nil {
 			return showResult{}, fmt.Errorf("idea %s: %w", id, err)
 		}
-		return showResult{kind, i, []showDoc{{"", i.Text}}, nil}, nil
+		return showResult{kind, i, []showDoc{{"", i.Text}}, nil, nil}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }
@@ -493,10 +539,11 @@ func writeSuccession(w io.Writer, supersededBy, reason string) {
 }
 
 type showJSON struct {
-	Kind          string        `json:"kind"`
-	Entity        any           `json:"entity"`
-	Content       []showDocJSON `json:"content,omitempty"`
-	ApprovalStale *bool         `json:"approval_stale,omitempty"` // features only (F-0318)
+	Kind          string          `json:"kind"`
+	Entity        any             `json:"entity"`
+	Content       []showDocJSON   `json:"content,omitempty"`
+	ApprovalStale *bool           `json:"approval_stale,omitempty"` // features only (F-0318)
+	Amendments    []amendmentJSON `json:"amendments,omitempty"`     // features only (F-0338)
 }
 
 type showDocJSON struct {
@@ -507,9 +554,11 @@ type showDocJSON struct {
 func (r showResult) toJSON() showJSON {
 	var docs []showDocJSON
 	for _, d := range r.content {
-		docs = append(docs, showDocJSON{d.name, d.body})
+		if d.name != "amendments" { // structured in Amendments
+			docs = append(docs, showDocJSON{d.name, d.body})
+		}
 	}
-	return showJSON{r.kind, r.entity, docs, r.approvalStale}
+	return showJSON{r.kind, r.entity, docs, r.approvalStale, r.amendments}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -315,5 +316,87 @@ func TestShowPendingNamesTargetState(t *testing.T) {
 	out, err = execCerne(t, "show", "P-0001", "--dir", projDir)
 	if err != nil || !strings.Contains(out, "[open]") || strings.Contains(out, "promoted to:") {
 		t.Fatalf("show after unlink: %v\n%s", err, out)
+	}
+}
+
+// amendDoc runs `cerne feature amend id --doc doc` with body and reason.
+func amendDoc(t *testing.T, projDir, id, doc, body, reason string) {
+	t.Helper()
+	if out, err := execCerne(t, "feature", "amend", id, "--doc", doc, "--file", bodyFile(t, body), "--reason", reason, "--dir", projDir); err != nil {
+		t.Fatalf("amend %s %s: %v\n%s", id, doc, err, out)
+	}
+}
+
+// TestShowAmendments (F-0338 crit. 8): with no revision there is no
+// `## amendments` block nor JSON field; after a spec and a plan amend the
+// current documents print once, followed — before the errata — by one line per
+// revision, newest first, and the hint to read one; no replaced body prints,
+// and --json carries the same lines under amendments.
+func TestShowAmendments(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateApproved, realDoc("F-0001", "Spec original."), realDoc("F-0001", "Plano original."))
+	if err := store.AppendErrata(repoDir, "F-0001", "Uma errata.", "x", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil || strings.Contains(out, "## amendments") {
+		t.Fatalf("no revision: err %v, want no amendments block:\n%s", err, out)
+	}
+	if js, _ := execCerne(t, "show", "F-0001", "--json", "--dir", projDir); strings.Contains(js, `"amendments"`) {
+		t.Fatalf("no revision: JSON carries amendments:\n%s", js)
+	}
+
+	amendDoc(t, projDir, "F-0001", "spec", realDoc("F-0001", "Spec vigente."), "prefixo mudou")
+	amendDoc(t, projDir, "F-0001", "plan", realDoc("F-0001", "Plano vigente."), "auditoria")
+	var lines []string
+	evs, _ := store.ReadEvents(repoDir)
+	for i := len(evs) - 1; i >= 0; i-- {
+		if ev := evs[i]; ev.Type == "feature.doc_edited" && ev.Payload["rev"] != "" {
+			lines = append(lines, ev.Payload["doc"]+" r"+ev.Payload["rev"]+" · "+ev.At.Format(time.DateOnly)+" · "+ev.Actor+" · "+ev.Payload["reason"])
+		}
+	}
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "plan r1 · ") || !strings.HasPrefix(lines[1], "spec r1 · ") {
+		t.Fatalf("events = %v, want the plan amend then the spec amend", lines)
+	}
+
+	out, err = execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := "\n## amendments\n" + lines[0] + "\n" + lines[1] + "\nread one: cerne show F-0001 --doc <doc> --rev N\n"
+	plan, amend, errata := strings.Index(out, "Plano vigente."), strings.Index(out, block), strings.Index(out, "\n## errata\n")
+	if amend < 0 || plan < 0 || errata < 0 || !(plan < amend && amend < errata) {
+		t.Fatalf("want the documents, then\n%s\nthen the errata; got:\n%s", block, out)
+	}
+	if strings.Contains(out, "Spec original.") || strings.Contains(out, "Plano original.") || strings.Count(out, "Spec vigente.") != 1 {
+		t.Fatalf("show must print the current documents once and no replaced body:\n%s", out)
+	}
+
+	js, err := execCerne(t, "show", "F-0001", "--json", "--dir", projDir)
+	var doc struct {
+		Content []struct {
+			Name string `json:"name"`
+		} `json:"content"`
+		Amendments []struct {
+			Doc    string    `json:"doc"`
+			Rev    int       `json:"rev"`
+			At     time.Time `json:"at"`
+			Actor  string    `json:"actor"`
+			Reason string    `json:"reason"`
+		} `json:"amendments"`
+	}
+	if err != nil || json.Unmarshal([]byte(js), &doc) != nil {
+		t.Fatalf("show --json: %v\n%s", err, js)
+	}
+	if len(doc.Amendments) != 2 || doc.Amendments[0].Doc != "plan" || doc.Amendments[0].Rev != 1 || doc.Amendments[0].Reason != "auditoria" ||
+		doc.Amendments[1].Doc != "spec" || doc.Amendments[1].Actor == "" || doc.Amendments[1].At.IsZero() {
+		t.Fatalf("amendments = %+v, want plan r1 then spec r1", doc.Amendments)
+	}
+	for _, c := range doc.Content {
+		if c.Name == "amendments" {
+			t.Fatalf("content repeats the amendments block: %s", js)
+		}
 	}
 }
