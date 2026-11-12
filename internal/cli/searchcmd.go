@@ -37,14 +37,20 @@ func newSearchCmd() *cobra.Command {
 // payload (internal/server's searchHit) so an agent gets the same JSON whether
 // it queries via the CLI or the server.
 type searchHitJSON struct {
-	EntityID     string   `json:"entity_id"`
-	Kind         string   `json:"kind"`
-	Doc          string   `json:"doc"`
-	State        string   `json:"state"`
-	Title        string   `json:"title"`
-	Snippet      string   `json:"snippet"`
-	SupersededBy string   `json:"superseded_by,omitempty"`
-	Docs         []string `json:"docs,omitempty"` // matching documents of the entity (F-0367)
+	EntityID     string `json:"entity_id"`
+	Kind         string `json:"kind"`
+	Doc          string `json:"doc"`
+	State        string `json:"state"`
+	Title        string `json:"title"`
+	Snippet      string `json:"snippet"`
+	SupersededBy string `json:"superseded_by,omitempty"`
+}
+
+// entityHitJSON is the --json shape of an entity line (F-0367): a search hit
+// plus the entity's matching documents, always present ([] when none).
+type entityHitJSON struct {
+	searchHitJSON
+	Docs []string `json:"docs"`
 }
 
 func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc bool) error {
@@ -88,6 +94,7 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 
 	if asJSON {
 		hits := make([]searchHitJSON, len(results))
+		entities := make([]entityHitJSON, len(results))
 		for i, r := range results {
 			hits[i] = searchHitJSON{
 				EntityID:     r.EntityID,
@@ -97,15 +104,19 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 				Title:        r.Title,
 				Snippet:      r.Snippet,
 				SupersededBy: r.SupersededBy,
-				Docs:         r.Docs,
 			}
+			entities[i] = entityHitJSON{hits[i], r.Docs}
+		}
+		var payload any = entities
+		if perDoc {
+			payload = hits
 		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Results   []searchHitJSON `json:"results"`
-			Broadened bool            `json:"broadened,omitempty"`
-		}{hits, broadened})
+			Results   any  `json:"results"`
+			Broadened bool `json:"broadened,omitempty"`
+		}{payload, broadened})
 	}
 
 	if len(results) == 0 {

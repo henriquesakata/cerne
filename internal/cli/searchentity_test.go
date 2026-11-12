@@ -7,6 +7,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // perDocFixture: one feature with spec, plan and result matching "parcelas",
@@ -81,5 +85,29 @@ func TestSearchJSONCarriesDocs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(r["docs"], []any{"spec", "plan", "result"}) {
 		t.Fatalf("docs = %v, want [spec plan result]", r["docs"])
+	}
+}
+
+// F-0367 criterion 1: docs is always present in the entity view — [] for an
+// entity matched only by its title — and absent from the --per-doc JSON.
+func TestSearchJSONDocsAlwaysPresent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Parcelamento sem documento", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	out, err := execCerne(t, "search", "parcelamento", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("search --json: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `"docs": []`) {
+		t.Fatalf("title-only entity must carry docs []:\n%s", out)
+	}
+	out, err = execCerne(t, "search", "parcelamento", "--json", "--per-doc", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("search --json --per-doc: %v\n%s", err, out)
+	}
+	if strings.Contains(out, `"docs"`) {
+		t.Fatalf("--per-doc JSON must keep today's shape (no docs):\n%s", out)
 	}
 }

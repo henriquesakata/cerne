@@ -1257,3 +1257,17 @@ func TestSearchEndpointOneHitPerEntity(t *testing.T) {
 		t.Fatalf("hit = %+v, want F-0001 with docs [spec plan]", r)
 	}
 }
+
+// F-0367 criterion 1: /api/search always carries docs ([] when empty).
+func TestSearchEndpointDocsAlwaysPresent(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Boletos sem documento", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-search"), http.MethodGet, "/api/search?q=boletos", "", &struct{}{})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"docs": []`) {
+		t.Fatalf("code=%d, want docs [] on the title-only hit: %s", rec.Code, rec.Body.String())
+	}
+}

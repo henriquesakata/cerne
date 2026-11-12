@@ -630,7 +630,7 @@ type searchHit struct {
 	Title        string   `json:"title"`
 	Snippet      string   `json:"snippet"`
 	SupersededBy string   `json:"superseded_by,omitempty"`
-	Docs         []string `json:"docs,omitempty"` // the entity's matching documents (F-0367)
+	Docs         []string `json:"docs"` // the entity's matching documents, [] when none (F-0367)
 }
 
 // searchResponse is the GET /api/search payload.

@@ -240,7 +240,7 @@ func groupRows(hits []rankedRow) []EntityResult {
 		if !ok {
 			i = len(out)
 			at[h.EntityID] = i
-			out = append(out, EntityResult{Result: h.Result, best: h.rowid})
+			out = append(out, EntityResult{Result: h.Result, Docs: []string{}, best: h.rowid})
 		}
 		if h.Doc != "" {
 			out[i].Docs = append(out[i].Docs, h.Doc)
