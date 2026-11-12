@@ -12,6 +12,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -244,5 +245,92 @@ func TestFeatureAmendDocCommand(t *testing.T) {
 	}
 	if _, err := execCerne(t, "feature", "amend", "F-0001", "--doc", "xyz", "--file", bodyFile(t, "x"), "--reason", "r", "--dir", projDir); !errors.Is(err, app.ErrUnknownDoc) {
 		t.Fatalf("--doc xyz: err = %v, want app.ErrUnknownDoc", err)
+	}
+}
+
+// realCaseSpec is a synthetic spec with the shape of the case that motivated
+// F-0338: criteria pinning a prefix, and three appended amendment sections that
+// swap it — two inside the criteria section, one before the out-of-scope one.
+// crit lists the criteria already rewritten into the new prefix; sections says
+// whether the appended sections are still there.
+func realCaseSpec(crit map[int]bool, sections bool) string {
+	prefix := func(n int) string {
+		if crit[n] {
+			return "registry.example.com/acme-apps/"
+		}
+		return "registry.example.com/acme/"
+	}
+	var b strings.Builder
+	b.WriteString("# Publicar imagens\n\n## Problema\n\nAs imagens saem com o prefixo errado.\n\n## Objetivo e critérios de aceitação\n\n")
+	for n := 1; n <= 4; n++ {
+		fmt.Fprintf(&b, "%d. A imagem %d é publicada em `%simg%d`.\n", n, n, prefix(n), n)
+	}
+	if sections {
+		b.WriteString("\n## Emenda (2026-11-01) — prefixo\n\nNos critérios 1 e 2, o prefixo passa a ser `acme-apps/`.\n")
+		b.WriteString("\n### Emenda de 2026-11-03\n\nNo critério 3, o mesmo.\n")
+	}
+	b.WriteString("\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	if sections {
+		b.WriteString("\n## Emendas da revisão (2026-11-05)\n\nNo critério 4, o mesmo.\n")
+	}
+	b.WriteString("\n## Fora de escopo\n\n- Outros registries.\n")
+	return b.String()
+}
+
+// TestAmendRealCase (F-0338 crit. 11): the spec with three appended amendments
+// goes through three amends, each rewriting the criteria it changes — the
+// first one also drops the appended sections, since an amend refuses a body
+// that still has one (crit. 5). Then show lists three amendments, the current
+// body has no amendment heading, --rev 1 is the original and the lint no longer
+// flags it; a plan with "## Emendas da auditoria (…)" is flagged as the plan.
+func TestAmendRealCase(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	original := "---\ncerne_id: F-0001\n---\n\n" + realCaseSpec(nil, true)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateApproved, original, realDoc("F-0001", "Plano."))
+	seedDocFeature(t, repoDir, "F-0002", domain.StateInDevelopment, realDoc("F-0002", "Spec."),
+		realDoc("F-0002", "## Tarefas\n\n1. Fazer.\n\n## Emendas da auditoria (W-1)\n\nA tarefa 1 mudou."))
+
+	const specFinding = "content/features/F-0001/spec.md — spec line "
+	lintOut, _ := execCerne(t, "lint", "--dir", projDir)
+	if got := strings.Count(lintOut, specFinding); got != 3 || !strings.Contains(lintOut, "APPENDED-AMENDMENT") {
+		t.Fatalf("before: want three appended-amendment findings on the spec, got %d:\n%s", got, lintOut)
+	}
+	// The plan-shaped fixture fires with doc=plan.
+	if !strings.Contains(lintOut, "content/features/F-0002/plan.md") || !strings.Contains(lintOut, "plan line ") ||
+		!strings.Contains(lintOut, "cerne feature amend F-0002 --doc plan") {
+		t.Fatalf("plan with an appended amendment not flagged as the plan:\n%s", lintOut)
+	}
+
+	for i, step := range []struct {
+		crit   map[int]bool
+		reason string
+	}{
+		{map[int]bool{1: true, 2: true}, "emenda 1: prefixo nos critérios 1 e 2"},
+		{map[int]bool{1: true, 2: true, 3: true}, "emenda 2: prefixo no critério 3"},
+		{map[int]bool{1: true, 2: true, 3: true, 4: true}, "emenda 3: prefixo no critério 4"},
+	} {
+		out, err := execCerne(t, "feature", "amend", "F-0001", "--doc", "spec", "--file", bodyFile(t, realCaseSpec(step.crit, false)), "--reason", step.reason, "--dir", projDir)
+		if err != nil || !strings.Contains(out, fmt.Sprintf("revision %d keeps the previous text", i+1)) {
+			t.Fatalf("amend %d: %v\n%s", i+1, err, out)
+		}
+	}
+
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, block, ok := strings.Cut(out, "\n## amendments\n")
+	if !ok || strings.Count(block, "spec r") != 3 || !strings.Contains(block, "spec r3 · ") || !strings.Contains(block, "emenda 3: prefixo no critério 4") {
+		t.Fatalf("show: want three spec lines under ## amendments, newest first:\n%s", out)
+	}
+	current, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if lines := lint.AmendmentLines(string(current)); len(lines) != 0 || strings.Contains(string(current), "registry.example.com/acme/") {
+		t.Fatalf("current spec still has amendment headings %v or the old prefix:\n%s", lines, current)
+	}
+	if rev1, err := execCerne(t, "show", "F-0001", "--doc", "spec", "--rev", "1", "--dir", projDir); err != nil || rev1 != original {
+		t.Fatalf("--rev 1 = %q, %v — want the original spec", rev1, err)
+	}
+	if lintOut, _ = execCerne(t, "lint", "--dir", projDir); strings.Contains(lintOut, specFinding) {
+		t.Fatalf("after the amends the spec is still flagged:\n%s", lintOut)
 	}
 }
