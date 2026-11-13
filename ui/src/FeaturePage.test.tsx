@@ -281,6 +281,16 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     expect(screen.getByRole('button', { name: 'Rejeitar' })).toBeEnabled()
   })
 
+  it('impedimento judge-question-missing: o rótulo pt-BR aparece e bloqueia Aprovar (F-0381)', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'judge-question-missing', message: 'x', hard: true }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText(/Spec com barra mas sem linha "Pergunta ao juiz:"/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+  })
+
   it('impedimento de barra: mostra as três formas literais aceitas', async () => {
     payload = {
       ...detail('candidate'),

@@ -203,7 +203,7 @@ export type DocWrite = {
 // Impedimento ao approve (F-0308): duro = o núcleo recusa em qualquer
 // superfície; não duro = só o CLI recusa (--force atravessa).
 export type ApproveImpediment = {
-  code: 'spec-missing' | 'bar-missing' | 'bar-malformed' | 'open-clarification'
+  code: 'spec-missing' | 'bar-missing' | 'bar-malformed' | 'judge-question-missing' | 'open-clarification'
   message: string
   hard: boolean
 }
