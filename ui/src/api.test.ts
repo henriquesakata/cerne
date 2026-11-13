@@ -6,6 +6,7 @@ import {
   HTTPError,
   putSetting,
   recompileWiki,
+  registerChatCandidate,
   renameProject,
   setApiProject,
   streamChat,
@@ -212,5 +213,16 @@ describe('fetchPendings (F-0334)', () => {
     const msg = 'invalid pending state "x": want one of open, resolved, dropped, promoted, all'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: msg }), { status: 400 })))
     await expect(fetchPendings({ state: 'x' })).rejects.toThrow(msg)
+  })
+})
+
+describe('registerChatCandidate (F-0375 crit. 6)', () => {
+  it('envia o modelo da conversa: a spec fica gravada como escrita por ele', async () => {
+    setApiProject('proj-x')
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"feature":{"id":"F-0001"}}', { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await registerChatCandidate('T', '# T\n\n## Problema\nx', [], [], '', '', '', '', 'claude-opus-5-5')
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.model).toBe('claude-opus-5-5')
   })
 })

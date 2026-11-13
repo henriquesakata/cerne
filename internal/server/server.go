@@ -315,6 +315,9 @@ type featureDetailResponse struct {
 	// click; both omitted when empty.
 	ApproveReadiness []app.ApproveImpediment `json:"approve_readiness,omitempty"`
 	Bar              string                  `json:"bar,omitempty"`
+	// Writes are the recorded writes of the feature's documents, oldest first
+	// (F-0375): the page footers name the first writer and the last edit.
+	Writes []app.DocWrite `json:"writes"`
 }
 
 type approvalDelta struct {
@@ -452,7 +455,15 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar})
+	writes, err := app.DocWrites(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	if writes == nil {
+		writes = []app.DocWrite{}
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, Writes: writes})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -1318,7 +1329,8 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	switch err := app.SaveFeatureDoc(repoDir, projDir, id, doc, string(body)); {
+	// F-0375: the page's editor is a human's, whoever started the server.
+	switch err := app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), app.HumanAuthor()); {
 	case errors.Is(err, app.ErrUnknownDoc):
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
 	case errors.Is(err, store.ErrNotFound):

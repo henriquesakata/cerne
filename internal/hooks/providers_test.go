@@ -40,6 +40,11 @@ func TestInstallCodex(t *testing.T) {
 	if err != nil || !strings.Contains(string(env), `CERNE_ACTOR = "agent"`) {
 		t.Fatalf("config.toml env fragment missing: %v\n%s", err, env)
 	}
+	// F-0375: the provider of documents written from Codex, declared; no
+	// model — Codex does not expose it to the shell.
+	if !strings.Contains(string(env), `CERNE_PROVIDER = "openai"`) || strings.Contains(string(env), "CERNE_MODEL") {
+		t.Fatalf("config.toml must declare CERNE_PROVIDER and no CERNE_MODEL:\n%s", env)
+	}
 	if st := statuses(results)["codex: subagent-context"]; st != StatusSkipped {
 		t.Fatalf("subagent degradation not reported: %v", results)
 	}
@@ -90,6 +95,9 @@ func TestInstallGemini(t *testing.T) {
 		}
 	}
 	env, _ := os.ReadFile(filepath.Join(gdir, ".env"))
+	if !strings.Contains(string(env), "CERNE_PROVIDER=google\n") || strings.Contains(string(env), "CERNE_MODEL") {
+		t.Fatalf(".env must declare CERNE_PROVIDER (F-0375) and no CERNE_MODEL:\n%s", env)
+	}
 	if !strings.HasPrefix(string(env), "FOO=bar\n") || !strings.Contains(string(env), "CERNE_ACTOR=agent") {
 		t.Fatalf(".env not appended safely:\n%s", env)
 	}
@@ -129,7 +137,7 @@ func TestInstallCursor(t *testing.T) {
 		t.Fatalf("hooks.json missing sessionStart wiring:\n%s", raw)
 	}
 	st := statuses(results)
-	for _, degraded := range []string{"cursor: work-gate", "cursor: CERNE_ACTOR", "cursor: subagent-context"} {
+	for _, degraded := range []string{"cursor: work-gate", "cursor: CERNE_ACTOR", "cursor: CERNE_PROVIDER", "cursor: subagent-context"} {
 		if st[degraded] != StatusSkipped {
 			t.Fatalf("%s not reported as degraded: %v", degraded, results)
 		}

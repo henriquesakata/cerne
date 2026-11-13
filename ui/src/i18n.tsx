@@ -547,6 +547,11 @@ const ptBR = {
       `Não foi possível converter o diagrama para Excalidraw: ${e}`,
     edit: 'Editar',
     updatedAgo: (when: string) => `Atualizado ${when}`,
+    // F-0375: o rodapé do documento — quem o escreveu e a última alteração.
+    writtenBy: (who: string, date: string) => `Escrito por ${who} em ${date}`,
+    lastEdit: (who: string, date: string) => `última alteração: ${who} em ${date}`,
+    writerHuman: 'humano',
+    writerUnknown: 'desconhecido',
     emptyDoc: 'Vazio — clique em Editar para escrever.',
     diagrams: 'Diagramas',
     generateNeedsMode:
@@ -1579,6 +1584,10 @@ const en: Messages = {
       `Could not convert the diagram to Excalidraw: ${e}`,
     edit: 'Edit',
     updatedAgo: (when: string) => `Updated ${when}`,
+    writtenBy: (who: string, date: string) => `Written by ${who} on ${date}`,
+    lastEdit: (who: string, date: string) => `last edit: ${who} on ${date}`,
+    writerHuman: 'human',
+    writerUnknown: 'unknown',
     emptyDoc: 'Empty — click Edit to write.',
     diagrams: 'Diagrams',
     generateNeedsMode:

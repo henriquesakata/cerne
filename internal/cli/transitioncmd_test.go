@@ -145,7 +145,8 @@ func TestTransitionFullLifecycle(t *testing.T) {
 	}
 	// The start/complete pair also auto-registers the activity (F-0146):
 	// work.started rides the start commit, work.done the complete commit.
-	want := []string{"feature.created", "feature.approved", "feature.started", "work.started", "feature.completed", "work.done"}
+	// F-0375: the spec seeded by --context is a recorded write.
+	want := []string{"feature.created", "feature.doc_edited", "feature.approved", "feature.started", "work.started", "feature.completed", "work.done"}
 	if strings.Join(types, ",") != strings.Join(want, ",") {
 		t.Fatalf("event types = %v, want %v", types, want)
 	}

@@ -290,3 +290,30 @@ func TestRunHelpOnlyAfterFullValidation(t *testing.T) {
 		t.Fatalf("notes = %+v (%v), want none created", notes, err)
 	}
 }
+
+// TestRunRecordsTheCallsModel (F-0375 crit. 6): a spec a chat tool call
+// writes is the chat's [llm] call — its model reaches the child, which records
+// it as llm-config, not as the server's environment.
+func TestRunRecordsTheCallsModel(t *testing.T) {
+	env := newProject(t)
+	t.Setenv("CERNE_PROVIDER", "openai")
+	t.Setenv("CERNE_MODEL", "gpt-server")
+	env.Model = "claude-chosen"
+	res := run(t, env, "epic new", "# Épico\n\n## Problema\n\nO chat escreveu esta spec.\n", "Épico do chat")
+	if !res.OK {
+		t.Fatalf("Run = %+v", res)
+	}
+	evs, err := store.ReadEvents(env.RepoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p map[string]string
+	for _, ev := range evs {
+		if ev.Type == "feature.doc_edited" {
+			p = ev.Payload
+		}
+	}
+	if p["source"] != "llm-config" || p["model"] != "claude-chosen" || p["doc"] != "spec" {
+		t.Fatalf("doc_edited = %v, want llm-config with the call's model claude-chosen", p)
+	}
+}

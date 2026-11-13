@@ -306,9 +306,9 @@ func listClarifications(repoDir, id string, resolved bool) ([]OpenClarification,
 // SaveFeatureDoc for feature lifecycle docs (the same path as the UI's PUT),
 // MutateAndSnapshot for the other entity kinds. ErrClarificationGone when the
 // anchor no longer matches an open marker; ErrEntityNotLive for terminal
-// entities.
+// entities. It is the page's form: the answer is a human's (F-0375).
 func AnswerClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string) (Answered, error) {
-	return mutateClarificationAt(repoDir, projDir, id, doc, offset, raw, answer, false)
+	return mutateClarificationAt(repoDir, projDir, id, doc, offset, raw, answer, false, HumanAuthor())
 }
 
 // CorrectClarificationAt rewrites the RESOLVED marker anchored at (doc, offset,
@@ -316,14 +316,16 @@ func AnswerClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 // document keeps the old answer next to the new one. Same eligibility checks
 // and same persistence pipeline as AnswerClarificationAt — ErrClarificationGone
 // when the anchor no longer matches a resolved marker (an open one is answered,
-// not corrected), ErrEntityNotLive for terminal entities.
+// not corrected), ErrEntityNotLive for terminal entities. The page's form: a
+// human's correction.
 func CorrectClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string) (Answered, error) {
-	return mutateClarificationAt(repoDir, projDir, id, doc, offset, raw, answer, true)
+	return mutateClarificationAt(repoDir, projDir, id, doc, offset, raw, answer, true, HumanAuthor())
 }
 
 // mutateClarificationAt is the shared body of answering and correcting: the two
 // differ only in which marker state they target and which rewriter they call.
-func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string, correcting bool) (Answered, error) {
+// by is the writer a feature document's event records (F-0375).
+func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, answer string, correcting bool, by DocAuthor) (Answered, error) {
 	docs, err := clarifyDocs(repoDir, id)
 	if err != nil {
 		return Answered{}, err
@@ -372,7 +374,7 @@ func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 	if domain.IsFeatureID(id) {
 		name := strings.TrimSuffix(filepath.Base(doc), ".md")
 		if _, ok := featureDocFilenames[name]; ok {
-			if err := SaveFeatureDoc(repoDir, projDir, id, name, next); err != nil {
+			if err := SaveFeatureDocBy(repoDir, projDir, id, name, next, by); err != nil {
 				return Answered{}, err
 			}
 			return Answered{Entity: id, Doc: doc, Question: target.Question, Answer: answer}, nil
@@ -425,7 +427,7 @@ func AnswerClarification(repoDir, projDir, id string, n int, expect, answer stri
 			if err := ExpectedClarification(id, n, c, expect); err != nil {
 				return Answered{}, err
 			}
-			return AnswerClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer)
+			return mutateClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer, false, docAuthor(projDir))
 		}
 	}
 	return Answered{}, fmt.Errorf("%w: %s has no open clarification #%d", ErrClarificationGone, id, n)
@@ -442,7 +444,7 @@ func CorrectClarification(repoDir, projDir, id string, n int, answer string) (An
 	}
 	for _, c := range items {
 		if c.Index == n {
-			return CorrectClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer)
+			return mutateClarificationAt(repoDir, projDir, id, c.Doc, c.Offset, c.Raw, answer, true, docAuthor(projDir))
 		}
 	}
 	return Answered{}, fmt.Errorf("%w: %s has no answered clarification #%d", ErrClarificationGone, id, n)

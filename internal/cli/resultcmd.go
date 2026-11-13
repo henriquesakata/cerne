@@ -87,6 +87,9 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "result.md"), id, "result", body); err != nil {
 			return "", err
 		}
+		if err := app.RecordDocWrite(ctx.repoDir, id, "result", app.LLMAuthor(ctx.cfg.LLM)); err != nil {
+			return "", err
+		}
 		return "cerne: draft result " + id, nil
 	})
 	if err != nil {

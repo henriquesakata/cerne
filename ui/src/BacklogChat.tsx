@@ -856,6 +856,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered }: Pr
       proposal.capability,
       proposal.parent,
       linkTo || refineId,
+      model,
     )
       .then((res) => {
         setRegistering(false)
