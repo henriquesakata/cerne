@@ -2,6 +2,8 @@ package lint
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,6 +65,14 @@ func SpecContent(data []byte) []byte {
 		lines = lines[end+2:]
 	}
 	return []byte(strings.TrimRight(strings.Join(lines, "\n"), "\n"))
+}
+
+// SpecDigest is the version of a spec a plan is written against (F-0377): the
+// sha256, in hex, of its SpecContent — the wrapping F-0318 ignores is ignored
+// here too.
+func SpecDigest(spec []byte) string {
+	sum := sha256.Sum256(SpecContent(spec))
+	return hex.EncodeToString(sum[:])
 }
 
 // specChangedFindings flags the debt for features that are approved *right now*.

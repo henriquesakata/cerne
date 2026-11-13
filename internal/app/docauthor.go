@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -91,6 +93,24 @@ func (a DocAuthor) docEdited(id, doc string, state domain.FeatureState, extra ma
 	return domain.NewEvent(id, "feature.doc_edited", p, EventActor())
 }
 
+// planSpecDigest is what a write of feature id's doc adds to its
+// feature.doc_edited payload (F-0377): for a plan (body) with real content,
+// spec_digest — lint.SpecDigest of the spec it was written against: spec when
+// the same write carries one, else the backend's. No spec, no field; nil for
+// any other doc or a stub plan.
+func planSpecDigest(repoDir, id, doc string, body, spec []byte) map[string]string {
+	if doc != "plan" || !doccheck.HasRealContent(body) {
+		return nil
+	}
+	if spec == nil {
+		var err error
+		if spec, err = os.ReadFile(FeatureDocPath(repoDir, id, "spec.md")); err != nil {
+			return nil
+		}
+	}
+	return map[string]string{"spec_digest": lint.SpecDigest(spec)}
+}
+
 // RecordDocWrite appends the feature.doc_edited event of a write of feature
 // id's doc (spec|plan|result) by a, inside the caller's critical section: the
 // record of a write that does not go through SaveFeatureDoc (a draft).
@@ -99,7 +119,8 @@ func RecordDocWrite(repoDir, id, doc string, a DocAuthor) error {
 	if err != nil {
 		return err
 	}
-	return store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, nil))
+	body, _ := os.ReadFile(FeatureDocPath(repoDir, id, featureDocFilenames[doc]))
+	return store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, planSpecDigest(repoDir, id, doc, body, nil)))
 }
 
 // pushedFeatureDoc maps a pushed path to its feature and lifecycle document
@@ -145,8 +166,19 @@ func RecordPushedDocs(repoDir string, changes []FileChange, by DocAuthor) error 
 		if err != nil {
 			continue
 		}
-		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, nil)); err != nil {
+		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, planSpecDigest(repoDir, id, doc, ch.Content, pushedSpec(changes, id)))); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// pushedSpec is the spec of feature id among a push's changes, nil when the
+// push does not carry it.
+func pushedSpec(changes []FileChange, id string) []byte {
+	for _, ch := range changes {
+		if fid, doc, ok := pushedFeatureDoc(ch); ok && fid == id && doc == "spec" {
+			return ch.Content
 		}
 	}
 	return nil
