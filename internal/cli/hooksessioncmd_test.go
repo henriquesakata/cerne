@@ -101,3 +101,18 @@ func TestHookSessionOtherSourcesGolden(t *testing.T) {
 		}
 	}
 }
+
+// TestHookSessionCompactFlattensNext (crit. 12, critic round 1): a multi-line
+// or overlong next step reaches additionalContext as one capped line.
+func TestHookSessionCompactFlattensNext(t *testing.T) {
+	projDir, _, repoDir := boundWork(t, "sess-n")
+	next := "linha um\n\n  linha dois\t" + strings.Repeat("x", 400)
+	saveHO(t, repoDir, "HO-0004", "W-0001", next, time.Now().UTC())
+	out, err := execCerneStdin(t, sessionPayload("sess-n", projDir, "compact"), "hook", "session-context")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "next: linha um linha dois x") || strings.Contains(out, strings.Repeat("x", 300)) || !strings.Contains(out, "…") {
+		t.Fatalf("next not flattened and capped:\n%s", out)
+	}
+}

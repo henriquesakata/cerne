@@ -159,6 +159,10 @@ func activeWorkLines(projectID string) string {
 	return strings.Join(lines, "\n")
 }
 
+// handoffNextRunes caps the next step in the compact block, like a channel
+// message body.
+const handoffNextRunes = 280
+
 // compactBlock is the post-compaction handoff pointer (F-0368 crit. 12) for a
 // session bound to an active W-: its latest HO and how to read it, or the one
 // line telling how to record one. "" when unbound.
@@ -167,10 +171,13 @@ func compactBlock(dir, sess string) string {
 	if !ok {
 		return ""
 	}
-	h, ok := latestHandoff(repoDir, workID)
+	h, ok, err := latestHandoff(repoDir, workID)
+	if err != nil { // unreadable store: the W- only, no guess about its HO
+		return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s.", workID)
+	}
 	if !ok {
 		return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s, with no handoff yet: `cerne work handoff %s --next \"…\"` lets the next stretch, or another session, resume by the code.", workID, workID)
 	}
 	return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s.\nLatest handoff: %s %s %s — next: %s\nRead it first: cerne show %s",
-		workID, h.ID, h.State, store.ShortAge(time.Since(h.CreatedAt)), h.Next, h.ID)
+		workID, h.ID, h.State, store.ShortAge(time.Since(h.CreatedAt)), app.TruncateBody(h.Next, handoffNextRunes, 4*handoffNextRunes), h.ID)
 }

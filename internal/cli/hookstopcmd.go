@@ -114,13 +114,13 @@ func stopCloseout(cacheDir, repoDir, sess string) (string, func()) {
 	}
 
 	var msg string
-	key := id // the once-per marker: the binding, plus the compaction count once there is one (F-0368)
+	key := id // the once-per marker: the binding, plus the compaction count when the handoff line goes out (F-0368)
 	switch {
 	case strings.HasPrefix(id, "W-"):
 		msg = fmt.Sprintf("cerne: work %s is still active as this turn ends. Close it — `cerne work done %s --note \"<outcome>\"` (or `cerne work abandon %s --reason \"...\"`) — or leave it open deliberately if the work continues next turn.", id, id, id)
-		if n, last := sessionCompactions(cacheDir, sess); n > 0 {
-			key = fmt.Sprintf("%s %d", id, n)
-			if h, ok := latestHandoff(repoDir, id); !ok || !h.CreatedAt.After(last) {
+		if n, last := sessionCompactions(cacheDir, sess, id); n > 0 {
+			if h, ok, err := latestHandoff(repoDir, id); err == nil && (!ok || !h.CreatedAt.After(last)) {
+				key = fmt.Sprintf("%s %d", id, n)
 				msg += fmt.Sprintf("\nThis session compacted and %s has no handoff since: `cerne work handoff %s --next \"…\"` lets the next stretch, or another session, resume by the code.", id, id)
 			}
 		}
@@ -133,8 +133,11 @@ func stopCloseout(cacheDir, repoDir, sess string) (string, func()) {
 	// CurrentBinding already rejected an unsafe session id, so it is a safe
 	// file name. A marker read/write failure never suppresses the reminder.
 	marker := filepath.Join(cacheDir, stopRemindedSubdir, sess)
-	if prev, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(prev)) == key {
-		return "", nil
+	// A counted marker of the same binding already covers its plain closeout.
+	if prev, err := os.ReadFile(marker); err == nil {
+		if p := strings.TrimSpace(string(prev)); p == key || key == id && strings.HasPrefix(p, id+" ") {
+			return "", nil
+		}
 	}
 	return msg, func() {
 		if err := os.MkdirAll(filepath.Dir(marker), 0o755); err == nil {

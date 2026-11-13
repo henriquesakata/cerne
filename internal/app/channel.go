@@ -174,7 +174,7 @@ func (it injItem) prefix() string {
 	if it.m.Human {
 		// channel.human_name may be 64 wide runes: cut, so a long name can't
 		// starve the inline set (critic C6).
-		who = truncateBody(who, channelNameRunes, 1<<10) + " (human)"
+		who = TruncateBody(who, channelNameRunes, 1<<10) + " (human)"
 	}
 	if it.directed {
 		who += " → you"
@@ -362,7 +362,7 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 	inline := make([]room.Message, 0, len(shown))
 	for _, it := range shown {
 		b.WriteString(it.prefix())
-		b.WriteString(truncateBody(it.m.Body, channelBodyRunes, per))
+		b.WriteString(TruncateBody(it.m.Body, channelBodyRunes, per))
 		b.WriteByte('\n')
 		inline = append(inline, it.m)
 	}
@@ -395,9 +395,9 @@ func injectionTail(sel []injItem, more int, anyDirected bool) string {
 	return b.String()
 }
 
-// truncateBody flattens body to one line and cuts it to maxRunes runes and
+// TruncateBody flattens body to one line and cuts it to maxRunes runes and
 // maxBytes bytes (the ellipsis included), marking any cut with "…".
-func truncateBody(body string, maxRunes, maxBytes int) string {
+func TruncateBody(body string, maxRunes, maxBytes int) string {
 	body = strings.Join(strings.Fields(body), " ")
 	if utf8.RuneCountInString(body) <= maxRunes && len(body) <= maxBytes {
 		return body

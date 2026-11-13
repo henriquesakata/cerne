@@ -49,12 +49,14 @@ func runHookPrecompact(cmd *cobra.Command) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "cerne: this session is bound to work %s. The compaction summary MUST keep these lines verbatim:\n", workID)
 	fmt.Fprintf(out, "- work: %s\n", workID)
-	if h, ok := latestHandoff(repoDir, workID); ok {
+	switch h, ok, err := latestHandoff(repoDir, workID); {
+	case err != nil: // unreadable store: say nothing rather than guess "no handoff"
+	case ok:
 		fmt.Fprintf(out, "- latest handoff: %s (%s)\n- resume with: cerne show %s\n", h.ID, h.State, h.ID)
-	} else {
+	default:
 		fmt.Fprintf(out, "- latest handoff: no handoff yet — record one with `cerne work handoff %s --next \"…\"`\n", workID)
 	}
-	recordCompaction(cacheDir, in.SessionID, time.Now().UTC())
+	recordCompaction(cacheDir, in.SessionID, workID, time.Now().UTC())
 }
 
 // boundActiveWork resolves the session's live binding when it is an active
@@ -76,11 +78,12 @@ func boundActiveWork(dir, sess string) (cacheDir, repoDir, workID string, ok boo
 	return cacheDir, repoDir, id, true
 }
 
-// latestHandoff is the most recently created HO- of work id in the local clone.
-func latestHandoff(repoDir, workID string) (store.Handoff, bool) {
+// latestHandoff is the most recently created HO- of work id in the local
+// clone; err when the store cannot be read (then "none" is unknown).
+func latestHandoff(repoDir, workID string) (store.Handoff, bool, error) {
 	all, err := store.LoadAllHandoffs(repoDir)
 	if err != nil {
-		return store.Handoff{}, false
+		return store.Handoff{}, false, err
 	}
 	var best store.Handoff
 	found := false
@@ -89,12 +92,12 @@ func latestHandoff(repoDir, workID string) (store.Handoff, bool) {
 			best, found = h, true
 		}
 	}
-	return best, found
+	return best, found, nil
 }
 
-// recordCompaction appends at to the session's compaction file; best effort.
-// sess was already validated by CurrentBinding.
-func recordCompaction(cacheDir, sess string, at time.Time) {
+// recordCompaction appends "<workID> <instant>" to the session's compaction
+// file; best effort. sess was already validated by CurrentBinding.
+func recordCompaction(cacheDir, sess, workID string, at time.Time) {
 	dir := filepath.Join(cacheDir, compactionsSubdir)
 	if os.MkdirAll(dir, 0o755) != nil {
 		return
@@ -104,19 +107,24 @@ func recordCompaction(cacheDir, sess string, at time.Time) {
 		return
 	}
 	defer f.Close()
-	_, _ = f.WriteString(at.Format(time.RFC3339Nano) + "\n")
+	_, _ = f.WriteString(workID + " " + at.Format(time.RFC3339Nano) + "\n")
 }
 
-// sessionCompactions counts the session's recorded compactions and returns
-// the last instant; unreadable lines are skipped.
-func sessionCompactions(cacheDir, sess string) (int, time.Time) {
+// sessionCompactions counts the session's compactions recorded under workID
+// and returns the last instant. A bare-instant line (the first format) counts
+// for any binding; unreadable lines are skipped.
+func sessionCompactions(cacheDir, sess, workID string) (int, time.Time) {
 	b, err := os.ReadFile(filepath.Join(cacheDir, compactionsSubdir, sess))
 	if err != nil {
 		return 0, time.Time{}
 	}
 	n, last := 0, time.Time{}
-	for _, l := range strings.Fields(string(b)) {
-		if ts, err := time.Parse(time.RFC3339Nano, l); err == nil {
+	for _, l := range strings.Split(string(b), "\n") {
+		f := strings.Fields(l)
+		if len(f) == 2 && f[0] != workID || len(f) == 0 || len(f) > 2 {
+			continue
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, f[len(f)-1]); err == nil {
 			n++
 			if ts.After(last) {
 				last = ts

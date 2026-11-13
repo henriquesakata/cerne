@@ -62,7 +62,7 @@ func compactionLines(t *testing.T, cacheDir, sess string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.Fields(string(b))
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
 }
 
 func jsonString(s string) string {
@@ -101,7 +101,8 @@ func TestHookPrecompactKeepsHandoffCode(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("compactions = %v, want one instant", lines)
 	}
-	if ts, err := time.Parse(time.RFC3339Nano, lines[0]); err != nil || time.Since(ts) > time.Minute {
+	id, instant, _ := strings.Cut(lines[0], " ")
+	if ts, err := time.Parse(time.RFC3339Nano, instant); id != "W-0001" || err != nil || time.Since(ts) > time.Minute {
 		t.Fatalf("compaction instant %q: %v", lines[0], err)
 	}
 	if _, err := execCerneStdin(t, payload, "hook", "precompact"); err != nil {
@@ -155,5 +156,31 @@ func TestHookPrecompactSilentAndFailOpen(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cacheDir, "compactions")); !os.IsNotExist(err) {
 		t.Fatalf("compactions dir created without a binding: %v", err)
+	}
+}
+
+// TestHookPrecompactCorruptStore (crit. 11, critic round 1): an unreadable
+// handoff store still exits 0, writes nothing to the backend, keeps the W-
+// line and says nothing about the HO it cannot read — "no handoff yet" would
+// be a guess.
+func TestHookPrecompactCorruptStore(t *testing.T) {
+	projDir, _, repoDir := boundWork(t, "sess-bad")
+	dir := filepath.Join(repoDir, "entities", "handoffs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "HO-0001.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := treeSnapshot(t, repoDir)
+	out, err := execCerneStdin(t, stopPayload(t, "sess-bad", projDir), "hook", "precompact")
+	if err != nil {
+		t.Fatalf("hook precompact: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "- work: W-0001") || strings.Contains(out, "handoff") {
+		t.Fatalf("want the W- line and no HO guess:\n%s", out)
+	}
+	if !reflect.DeepEqual(before, treeSnapshot(t, repoDir)) {
+		t.Fatal("precompact wrote to the backend clone")
 	}
 }
