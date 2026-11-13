@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -107,5 +109,68 @@ func TestDraftsRecordLLMConfig(t *testing.T) {
 				t.Fatalf("last event = %s %v, want feature.doc_edited{doc:%s, llm-config anthropic/claude-draft-model}", last.Type, p, doc)
 			}
 		})
+	}
+}
+
+// TestShowDocWrites (F-0375 crit. 9, 11): show prints, per document, who wrote
+// it and when — the first writer and, when written again, the last edit — and
+// --json carries every recorded write. An event from before F-0375 (no source)
+// is no writer: its document gets no line, and nothing is invented for it.
+func TestShowDocWrites(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedDocFeature(t, repoDir, "F-0001", domain.StateInDevelopment, realDoc("F-0001", "Spec."), realDoc("F-0001", "Plano."))
+	day := func(d int) time.Time { return time.Date(2026, 11, d, 12, 0, 0, 0, time.UTC) }
+	for _, ev := range []domain.Event{
+		{ID: "w0", At: day(1), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "result", "state": "candidate"}},
+		{ID: "w1", At: day(2), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "state": "candidate", "provider": "anthropic", "model": "claude-opus-5-5", "source": "transcript"}},
+		{ID: "w2", At: day(3), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "plan", "state": "approved", "provider": "", "model": "", "source": "human"}},
+		{ID: "w3", At: day(4), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "state": "approved", "provider": "openai", "model": "gpt-x", "source": "declared"}},
+		{ID: "x1", At: day(5), EntityID: "F-0002", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "source": "unknown"}},
+	} {
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitBackend(t, repoDir)
+
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"spec: written by anthropic/claude-opus-5-5 on 2026-11-02; last edit openai/gpt-x on 2026-11-04\n",
+		"plan: written by human on 2026-11-03\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("show missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "result: written by") {
+		t.Fatalf("a pre-F-0375 event gave the result a writer:\n%s", out)
+	}
+
+	js, err := execCerne(t, "show", "F-0001", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Writes []struct {
+			Doc, Provider, Model, Source string
+			At                           time.Time
+		} `json:"writes"`
+	}
+	if err := json.Unmarshal([]byte(js), &got); err != nil {
+		t.Fatalf("json: %v\n%s", err, js)
+	}
+	var rows []string
+	for _, w := range got.Writes {
+		rows = append(rows, w.Doc+" "+w.Provider+"/"+w.Model+" "+w.Source+" "+w.At.Format(time.DateOnly))
+	}
+	want := []string{"spec anthropic/claude-opus-5-5 transcript 2026-11-02", "plan / human 2026-11-03", "spec openai/gpt-x declared 2026-11-04"}
+	if !slices.Equal(rows, want) {
+		t.Fatalf("writes = %q, want %q", rows, want)
+	}
+	if !strings.Contains(js, `"provider": ""`) || !strings.Contains(js, `"model": ""`) {
+		t.Fatalf("a write keeps provider and model keys even when empty:\n%s", js)
 	}
 }
