@@ -201,3 +201,19 @@ func SpecJudgeQuestion(body []byte) (string, error) {
 	}
 	return "", ErrJudgeQuestionMissing
 }
+
+// BarNotApplicable returns the parenthesized justification of a spec whose
+// bar is "não aplicável (…)" (F-0390) — the one the approve check shows a
+// standard or advanced spec's human; false for a named or waived bar, or none.
+func BarNotApplicable(body []byte) (string, bool) {
+	bar, err := SpecBar(body)
+	if err != nil {
+		return "", false
+	}
+	_, value, _ := strings.Cut(bar, ":")
+	t, _, inner, _, ok := doclang.Exemption(strings.TrimSpace(emphasis.Replace(value)))
+	if !ok || t != doclang.NotApplicable {
+		return "", false
+	}
+	return strings.TrimSpace(inner), true
+}

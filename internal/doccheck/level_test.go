@@ -36,3 +36,26 @@ func TestSpecLevel(t *testing.T) {
 		})
 	}
 }
+
+// TestBarNotApplicable (F-0390 crit. 3): the justification of a "não
+// aplicável" bar, in either language; a named or waived bar, or none, is not.
+func TestBarNotApplicable(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+		ok               bool
+	}{
+		{"pt", "## Verificação\n\nBarra: não aplicável (efeito local, coberto por teste) — padrão alternativo: TestX\n", "efeito local, coberto por teste", true},
+		{"en", "## Verification\n\nBar: not applicable (a regression test covers it) — alternative standard: TestY\n", "a regression test covers it", true},
+		{"emphasized", "**Barra:** **não aplicável** (só testes)\n", "só testes", true},
+		{"named", "Barra: o jeito de hoje — docs/x.md\n", "", false},
+		{"waived", "Barra: dispensada por decisão humana (\"pode pular\")\n", "", false},
+		{"none", "## Verificação\n\nTestes.\n", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := BarNotApplicable([]byte(tc.body))
+			if got != tc.want || ok != tc.ok {
+				t.Fatalf("BarNotApplicable = (%q, %v), want (%q, %v)", got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
