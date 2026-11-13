@@ -332,3 +332,62 @@ func TestGauntletArtifactEvidenceMissing(t *testing.T) {
 		t.Error("--out written despite the missing evidence")
 	}
 }
+
+func TestGauntletArtifactCommits(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	gitIn(t, projDir, "checkout", "-q", "main")
+	os.WriteFile(filepath.Join(projDir, "m1.go"), []byte("package m\n"), 0o644)
+	gitIn(t, projDir, "add", "m1.go")
+	gitIn(t, projDir, "commit", "-q", "-m", "feat: m1 (F-0001)")
+	os.WriteFile(filepath.Join(projDir, "m2.go"), []byte("package m\n"), 0o644)
+	gitIn(t, projDir, "add", "m2.go")
+	gitIn(t, projDir, "commit", "-q", "-m", "feat: m2 F-00010")
+	gitIn(t, projDir, "checkout", "-q", "feature/x")
+	ev := filepath.Join(t.TempDir(), "run.txt")
+	os.WriteFile(ev, []byte("ok"), 0o644)
+	dest := filepath.Join(t.TempDir(), "a.txt")
+
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--commits", "--evidence", ev, "--out", dest, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("artifact: %v\n%s", err, stderr)
+	}
+	data, _ := os.ReadFile(dest)
+	if !strings.Contains(string(data), "m1.go") || strings.Contains(string(data), "m2.go") || strings.Contains(string(data), "code.go") {
+		t.Errorf("wrong diff for --commits:\n%s", data)
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], " feat: m1 (F-0001)") || len(strings.Fields(lines[0])[0]) < 7 {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	if !strings.Contains(lines[1], "(") || !strings.Contains(lines[1], "; 1 commits citing F-0001 on main, excluded: ui/dist, docs.lock; evidence: run.txt 2 bytes)") {
+		t.Errorf("final line: %s", lines[1])
+	}
+
+	// no commit cites it: refuses, writes nothing.
+	dest2 := filepath.Join(t.TempDir(), "b.txt")
+	out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--commits", "--base", "HEAD", "--out", dest2, "--dir", projDir)
+	if !errors.Is(err, gauntlet.ErrNoFeatureCommits) {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest2); err == nil {
+		t.Error("--out written despite no commits")
+	}
+}
+
+func TestGauntletArtifactEmptyDiffWarns(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	gitIn(t, projDir, "checkout", "-q", "main")
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "warning: empty diff against main; for a feature already merged pass --commits, and add runtime output with --evidence"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q", stderr)
+	}
+	// a non-empty diff stays silent.
+	gitIn(t, projDir, "checkout", "-q", "feature/x")
+	if _, stderr, _ := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--dir", projDir); strings.Contains(stderr, "warning") {
+		t.Errorf("unexpected warning: %q", stderr)
+	}
+}
