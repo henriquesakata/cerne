@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,6 +19,7 @@ func newGauntletCmd() *cobra.Command {
 		Short: "Tools for the Gauntlet protocol",
 	}
 	cmd.AddCommand(newGauntletArtifactCmd())
+	cmd.AddCommand(newGauntletRecordCmd())
 	return cmd
 }
 
@@ -88,5 +90,80 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "cerne: gauntlet artifact for %s → %s (%d bytes; diff %s..HEAD, excluded: %s)\n",
 		id, outPath, len(text), usedBase, strings.Join(append([]string{"ui/dist", "docs.lock"}, excludes...), ", "))
+	return nil
+}
+
+var (
+	errGauntletRecordMode      = errors.New("pass either --verdict <file> --ours A|B, or --critic \"<line>\" (not both)")
+	errGauntletNotMaterialized = errors.New("the feature's result is not in .docs/ (only active features are materialized)")
+)
+
+func newGauntletRecordCmd() *cobra.Command {
+	var dir, verdict, ours, quote, critic string
+	cmd := &cobra.Command{
+		Use:   "record <id>",
+		Short: "Record a Gauntlet round, or the critic's findings, in the result",
+		Long: "Writes one line into the '## Gauntlet' of the feature's result in .docs/ (run 'cerne push' to send it). " +
+			"--verdict <file> --ours A|B reads the judge's reply: its last non-empty line must be VEREDITO: A|B|EMPATE " +
+			"(or VERDICT: A|B|TIE); the line recorded is the next round, as win, loss or tie for our side. " +
+			"The quote defaults to the last fully quoted line before the verdict, else the reply's first sentence; --quote overrides it. " +
+			"--critic \"<line>\" appends the critic's findings line instead. Words follow the project's documentation language.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGauntletRecord(cmd, dir, args[0], verdict, ours, quote, critic)
+		},
+	}
+	cmd.Flags().StringVar(&verdict, "verdict", "", "file with the judge's reply, ending in the verdict line")
+	cmd.Flags().StringVar(&ours, "ours", "", "which side is ours: A or B")
+	cmd.Flags().StringVar(&quote, "quote", "", "citation to record (default: from the verdict file)")
+	cmd.Flags().StringVar(&critic, "critic", "", "record the critic's findings line instead of a round")
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	return cmd
+}
+
+func runGauntletRecord(cmd *cobra.Command, dir, id, verdictPath, ours, quote, critic string) error {
+	round := verdictPath != ""
+	if round == (critic != "") || (round && ours == "") || (!round && (ours != "" || quote != "")) {
+		return errGauntletRecordMode
+	}
+	var verdict []byte
+	if round {
+		var err error
+		if verdict, err = os.ReadFile(verdictPath); err != nil {
+			return fmt.Errorf("reading --verdict: %w", err)
+		}
+	}
+	ctx, err := resolvePaths(dir) // local edit: the clone is not refreshed, push does the sending
+	if err != nil {
+		return err
+	}
+	slots, _ := filepath.Glob(filepath.Join(ctx.projDir, ".docs", "current", "features", id+"-*", "result.md"))
+	if len(slots) != 1 {
+		return fmt.Errorf("%s: %w — run 'cerne pull' (and 'cerne result draft %s' if there is no result yet)", id, errGauntletNotMaterialized, id)
+	}
+	cur, err := os.ReadFile(slots[0])
+	if err != nil {
+		return err
+	}
+	lang := store.DocsLanguage(ctx.repoDir)
+	var out, what string
+	if round {
+		var n int
+		var outcome string
+		if out, n, outcome, err = gauntlet.AddRound(string(cur), lang, string(verdict), ours, quote); err != nil {
+			return fmt.Errorf("%s: %w", id, err)
+		}
+		what = fmt.Sprintf("round %d — %s", n, outcome)
+	} else {
+		if out, err = gauntlet.AddCritic(string(cur), lang, critic); err != nil {
+			return fmt.Errorf("%s: %w", id, err)
+		}
+		what = "critic findings"
+	}
+	if err := os.WriteFile(slots[0], []byte(out), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "cerne: recorded %s in %s result; run 'cerne push' to send it\n", what, id)
 	return nil
 }
