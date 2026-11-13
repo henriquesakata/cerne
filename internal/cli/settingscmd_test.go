@@ -199,7 +199,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, graph.enabled, lint.cli_output_language, lint.stale_decision_days, mindmap.enabled, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, gates.gauntlet, graph.enabled, lint.cli_output_language, lint.stale_decision_days, mindmap.enabled, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
