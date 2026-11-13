@@ -319,20 +319,9 @@ function WeeklyChart({ r, onMarker }: { r: CostsReport; onMarker: (id: string) =
       {r.markers.map((m) => {
         const mx = x(Date.parse(m.at))
         return (
-          <g
-            key={m.id}
-            className="costs-marker"
-            role="button"
-            tabIndex={0}
-            aria-label={t.costs.markerOpen(m.id)}
-            onClick={() => onMarker(m.id)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                onMarker(m.id)
-              }
-            }}
-          >
+          // A mouse shortcut only: the Changes section's buttons are the
+          // accessible path to the same panel.
+          <g key={m.id} className="costs-marker" aria-hidden="true" onClick={() => onMarker(m.id)}>
             <line x1={mx} x2={mx} y1={TOP} y2={TOP + PLOT} strokeDasharray="4 3" />
             <rect x={mx - 6} y={TOP} width={12} height={PLOT} fill="transparent" />
             <text x={mx + 3} y={TOP - 8}>

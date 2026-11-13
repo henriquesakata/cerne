@@ -233,7 +233,13 @@ describe('Custos — mudanças (crit. 6)', () => {
   it('o marcador no gráfico abre o antes × depois, e a tela diz como registrar uma mudança', async () => {
     render(<Costs hash="#/costs" />)
     const chart = await screen.findByRole('img', { name: /Mediana semanal/ })
-    fireEvent.click(within(chart).getByRole('button', { name: 'Abrir o antes × depois de D-0001' }))
+    // The line in the chart is a mouse shortcut, hidden from assistive tech;
+    // the Changes buttons are the accessible path (critic, PR #68).
+    const line = chart.querySelector('g.costs-marker') as SVGGElement
+    expect(line).toHaveAttribute('aria-hidden', 'true')
+    expect(line).not.toHaveAttribute('tabindex')
+    expect(within(chart).queryByRole('button')).toBeNull()
+    fireEvent.click(line)
     const panel = screen.getByRole('region', { name: /D-0001/ })
     expect(within(panel).getByText('inconclusivo')).toBeInTheDocument()
     expect(within(panel).getByText(/amostra pequena \(n=3 antes, n=1 depois; 8 por lado necessárias\)/)).toBeInTheDocument()
@@ -241,6 +247,8 @@ describe('Custos — mudanças (crit. 6)', () => {
     expect(screen.getByText('cerne decision new "…" --facet process --component metric')).toBeInTheDocument()
     fireEvent.click(within(panel).getByRole('button', { name: 'Fechar' }))
     expect(screen.queryByRole('region', { name: /D-0001/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^D-0001 · .* · Modelo novo do dev$/ }))
+    expect(screen.getByRole('region', { name: /D-0001/ })).toBeInTheDocument()
   })
 })
 
