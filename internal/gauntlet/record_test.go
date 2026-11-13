@@ -1,0 +1,163 @@
+package gauntlet
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
+	"github.com/henriquesakata/cerne/internal/lint"
+)
+
+const quotedVerdict = "A abordagem B grava sem prosa.\n\nAnálise longa. Mais uma frase.\n\n\"B grava o resultado sem prosa à mão e o gate o reconhece.\"\n\nVEREDITO: B\n"
+
+const resultBarOnly = "# R\n\n## Resultado\n\nok\n\n## Gauntlet\n\nBarra: o carimbo da F-0309\nMétodo: comparação cega\n\n## Outra\n\nfim\n"
+
+func TestAddRoundOutcomes(t *testing.T) {
+	for _, c := range []struct {
+		verdict, ours, want string
+	}{
+		{"VEREDITO: A", "A", "vitória"},
+		{"VEREDITO: A", "B", "derrota"},
+		{"VEREDITO: B", "B", "vitória"},
+		{"VEREDITO: B", "A", "derrota"},
+		{"VEREDITO: EMPATE", "A", "empate"},
+		{"VEREDITO: EMPATE", "b", "empate"},
+		{"verdict: tie", "A", "empate"},
+	} {
+		out, n, outcome, err := AddRound(resultBarOnly, doclang.PT, "Frase.\n"+c.verdict+"\n", c.ours, "")
+		if err != nil || n != 1 || outcome != c.want {
+			t.Fatalf("%v %v: n=%d outcome=%q err=%v", c.verdict, c.ours, n, outcome, err)
+		}
+		if !strings.Contains(out, "Rodada 1 — "+c.want+": \"Frase.\"\n") {
+			t.Errorf("line missing:\n%s", out)
+		}
+	}
+}
+
+func TestAddRoundEnglish(t *testing.T) {
+	out, _, outcome, err := AddRound("## Gauntlet\n\nBar: x\n", doclang.EN, "Fine.\nVERDICT: A\n", "B", "")
+	if err != nil || outcome != "loss" || !strings.Contains(out, "Round 1 — loss: \"Fine.\"") {
+		t.Fatalf("%q %v\n%s", outcome, err, out)
+	}
+}
+
+func TestAddRoundRefusals(t *testing.T) {
+	for name, c := range map[string]struct {
+		verdict, ours string
+		want          error
+	}{
+		"no verdict line":  {"Análise.\n\"Citação.\"\n", "A", ErrNoVerdict},
+		"verdict not last": {"VEREDITO: A\nmais texto\n", "A", ErrNoVerdict},
+		"prose verdict":    {"Frase.\nVEREDITO: A é melhor\n", "A", ErrNoVerdict},
+		"empty file":       {"\n\n", "A", ErrNoVerdict},
+		"bad ours":         {"Frase.\nVEREDITO: A\n", "C", ErrBadOurs},
+		"no quote at all":  {"VEREDITO: A\n", "A", ErrNoQuote},
+	} {
+		out, _, _, err := AddRound(resultBarOnly, doclang.PT, c.verdict, c.ours, "")
+		if !errors.Is(err, c.want) || out != "" {
+			t.Errorf("%s: err=%v out=%q", name, err, out)
+		}
+	}
+}
+
+func TestQuoteChoice(t *testing.T) {
+	for name, c := range map[string]struct{ verdict, flag, want string }{
+		"flag wins":          {quotedVerdict, "citação própria", "citação própria"},
+		"last quoted line":   {quotedVerdict, "", "B grava o resultado sem prosa à mão e o gate o reconhece."},
+		"curly quotes":       {"Primeira.\n“Dito pelo juiz.”\nVEREDITO: A\n", "", "Dito pelo juiz."},
+		"last of two quoted": {"\"Um.\"\n\"Dois.\"\nVEREDITO: A\n", "", "Dois."},
+		"first sentence":     {"A resposta B é melhor. Porque sim.\nVEREDITO: A\n", "", "A resposta B é melhor."},
+		"inner quotes":       {"Disse \"x\" e “y”. Fim.\nVEREDITO: A\n", "", "Disse 'x' e 'y'."},
+		"multiline sentence": {"Uma frase\nem duas linhas. Outra.\nVEREDITO: A\n", "", "Uma frase em duas linhas."},
+		"flag inner quotes":  {"Z.\nVEREDITO: A\n", "diz \"a\"", "diz 'a'"},
+	} {
+		out, _, _, err := AddRound(resultBarOnly, doclang.PT, c.verdict, "A", c.flag)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(out, ": \""+c.want+"\"\n") {
+			t.Errorf("%s: want quote %q in\n%s", name, c.want, out)
+		}
+	}
+}
+
+func TestNumbering(t *testing.T) {
+	r := "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\n"
+	out, n, _, err := AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if err != nil || n != 2 {
+		t.Fatalf("n=%d %v", n, err)
+	}
+	out, n, _, _ = AddRound(out, doclang.PT, "G.\nVEREDITO: A\n", "A", "")
+	if n != 3 || !strings.Contains(out, "Rodada 3 — vitória") {
+		t.Fatalf("n=%d\n%s", n, out)
+	}
+	// a Round written in the other language still counts
+	_, n, _, _ = AddRound("## Gauntlet\n\nRound 4 — win: \"a\"\n", doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if n != 5 {
+		t.Errorf("n=%d", n)
+	}
+}
+
+func TestInsertionPoint(t *testing.T) {
+	// after the bar and its header lines, inside the section
+	out, _, _, _ := AddRound(resultBarOnly, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.Contains(out, "Método: comparação cega\nRodada 1 — vitória: \"F.\"\n\n## Outra") {
+		t.Errorf("after bar:\n%s", out)
+	}
+	// after the last round / critic line
+	r := "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\nAchados do crítico: um\n\n## Z\n"
+	out, _, _, _ = AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.Contains(out, "Achados do crítico: um\nRodada 2 — vitória: \"F.\"\n\n## Z") {
+		t.Errorf("after last:\n%s", out)
+	}
+	// section absent: created at the end
+	out, _, _, _ = AddRound("# R\n\n## Resultado\n\nok\n", doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.HasSuffix(out, "ok\n\n## Gauntlet\n\nRodada 1 — vitória: \"F.\"\n") {
+		t.Errorf("created:\n%s", out)
+	}
+	out, _, _, _ = AddRound("# R\n", doclang.EN, "F.\nVERDICT: A\n", "A", "")
+	if !strings.Contains(out, "\n## Gauntlet\n") {
+		t.Errorf("EN heading:\n%s", out)
+	}
+	// a fenced "## Gauntlet" example is not the section
+	r = "## Gauntlet\n\nBarra: x\n\n```\n## Gauntlet\n```\n"
+	out, _, _, _ = AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.Contains(out, "Barra: x\nRodada 1") {
+		t.Errorf("fence:\n%s", out)
+	}
+}
+
+func TestAddCritic(t *testing.T) {
+	out, err := AddCritic(resultBarOnly, doclang.PT, "2 — corrigidos 1; refutados 1")
+	if err != nil || !strings.Contains(out, "Método: comparação cega\nAchados do crítico: 2 — corrigidos 1; refutados 1\n") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	out, _ = AddCritic(out, doclang.PT, "(b) 1 aceito")
+	if strings.Count(out, "Achados do crítico:") != 2 || !strings.Contains(out, "refutados 1\nAchados do crítico: (b) 1 aceito\n") {
+		t.Errorf("appended:\n%s", out)
+	}
+	out, _ = AddCritic("## Gauntlet\n\nBar: x\n", doclang.EN, "none")
+	if !strings.Contains(out, "Critic findings: none\n") {
+		t.Errorf("EN:\n%s", out)
+	}
+	if _, err := AddCritic(resultBarOnly, doclang.PT, "  "); !errors.Is(err, ErrEmptyCritic) {
+		t.Errorf("empty: %v", err)
+	}
+}
+
+// The recorded lines are the lint's own: GauntletRounds reads them.
+func TestRecordedLinesAreReadByTheLint(t *testing.T) {
+	r := resultBarOnly
+	r, _, _, _ = AddRound(r, doclang.PT, quotedVerdict, "A", "") // B wins: derrota
+	r, _ = AddCritic(r, doclang.PT, "1 — corrigido")
+	has, derrotas := lint.GauntletRounds([]byte(r))
+	if !has || derrotas != 1 {
+		t.Fatalf("after loss: has=%v derrotas=%d\n%s", has, derrotas, r)
+	}
+	r, _, _, _ = AddRound(r, doclang.PT, quotedVerdict, "B", "")
+	has, derrotas = lint.GauntletRounds([]byte(r))
+	if !has || derrotas != 1 {
+		t.Fatalf("after win: has=%v derrotas=%d\n%s", has, derrotas, r)
+	}
+}
