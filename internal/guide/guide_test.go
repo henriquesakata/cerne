@@ -13,6 +13,8 @@ func testTree() *cobra.Command {
 	root := &cobra.Command{Use: "cerne"}
 	grp := &cobra.Command{Use: "widget", Short: "widget group"}
 	leaf := &cobra.Command{Use: "frob <x>", Short: "frobnicate a widget", Long: "Frobs the widget thoroughly.", Run: func(*cobra.Command, []string) {}}
+	leaf.Aliases = []string{"fr"}
+	leaf.Deprecated = "use widget zap"
 	leaf.Flags().String("scope", "", "where to write")
 	hidden := &cobra.Command{Use: "secret", Short: "internal", Hidden: true, Run: func(*cobra.Command, []string) {}}
 	grp.AddCommand(leaf)
@@ -58,7 +60,7 @@ func TestCorpusCommandSections(t *testing.T) {
 	if frob == nil {
 		t.Fatal("no section for cerne widget frob")
 	}
-	for _, want := range []string{"frob <x>", "frobnicate a widget", "Frobs the widget", "--scope"} {
+	for _, want := range []string{"frob <x>", "frobnicate a widget", "Frobs the widget", "--scope", "Aliases: fr", "Deprecated: use widget zap"} {
 		if !strings.Contains(frob.Text, want) {
 			t.Errorf("frob text lacks %q: %q", want, frob.Text)
 		}

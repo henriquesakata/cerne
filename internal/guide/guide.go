@@ -113,6 +113,12 @@ func commandSections(root *cobra.Command) []Section {
 			if sub.Long != "" {
 				text += "\n\n" + sub.Long
 			}
+			if len(sub.Aliases) > 0 {
+				text += "\n\nAliases: " + strings.Join(sub.Aliases, ", ")
+			}
+			if sub.Deprecated != "" {
+				text += "\n\nDeprecated: " + sub.Deprecated
+			}
 			if fl := sub.LocalFlags().FlagUsages(); fl != "" {
 				text += "\n\nFlags:\n" + fl
 			}
