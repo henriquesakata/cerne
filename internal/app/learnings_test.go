@@ -231,3 +231,13 @@ func TestLearningsRelatedNotes(t *testing.T) {
 		t.Errorf("item 2 related = %s", got)
 	}
 }
+
+// An item with no related note serializes related_notes as [], not null.
+func TestLearningsRelatedNotesNeverNil(t *testing.T) {
+	repoDir, _, _ := newFeatureBackend(t)
+	seedLearnFeature(t, repoDir, "F-0001", domain.StateImplemented, withLearnings, t0, "")
+	r, _ := Learnings(repoDir, LearningsOpts{All: true})
+	if r.Features[0].Items[0].RelatedNotes == nil {
+		t.Error("RelatedNotes is nil: JSON would say null")
+	}
+}

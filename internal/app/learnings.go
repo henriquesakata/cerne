@@ -237,7 +237,7 @@ func (r *relator) text(n store.Note) string {
 // related returns up to maxRelated active notes: first those citing a file path
 // the item cites, then those sharing a component with the feature, newest first.
 func (r *relator) related(item string, comps []string) []RelatedNote {
-	var out []RelatedNote
+	out := []RelatedNote{}
 	add := func(n store.Note, via string) {
 		if len(out) < maxRelated && !slices.ContainsFunc(out, func(o RelatedNote) bool { return o.ID == n.ID }) {
 			out = append(out, RelatedNote{ID: n.ID, Title: n.Title, Via: via})
