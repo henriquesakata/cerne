@@ -36,8 +36,9 @@ func newCostCmd() *cobra.Command {
 			"per 'cerne work start' / 'cerne feature start'). Messages of those sessions outside any binding " +
 			"are reported as unattributed, never dropped; subagent (sidechain) tokens are included and shown " +
 			"apart; a subagent message follows the subagent's own binding when it has one, otherwise the " +
-			"main thread's binding in force at the subagent's first message. A binding ends when its work " +
-			"or feature closes. Without <id>, the project view per entity. Tokens only — no monetary value. Not " +
+			"main thread's binding in force at the subagent's first message, unless 'cerne cost attribute' " +
+			"moved it. A binding ends when its work or feature closes. With a role other than the main " +
+			"thread's, a By role block (builder, critic, judge, other, main) follows the per-model one. Without <id>, the project view per entity. Tokens only — no monetary value. Not " +
 			"'cerne savings', which measures the reading an agent is spared. An id with children (an epic) also " +
 			"sums their stamped anchors and names the children without one. --json for structured output. " +
 			"--stamp, after 'cerne feature complete' and before the human accept, writes the cost into the " +
@@ -238,6 +239,12 @@ func renderCost(out io.Writer, r cost.Report) {
 	fmt.Fprintln(out, "By model:")
 	for _, m := range sortedKeys(r.ByModel) {
 		fmt.Fprintf(out, "  %s  %s\n", m, fmtCounters(r.ByModel[m]))
+	}
+	if roles := r.Roles(); roles != nil {
+		fmt.Fprintln(out, "By role:")
+		for _, role := range roles {
+			fmt.Fprintf(out, "  %s  %s\n", role, fmtCounters(r.ByRole[role]))
+		}
 	}
 	if r.ID == "" {
 		fmt.Fprintln(out, "By entity:")

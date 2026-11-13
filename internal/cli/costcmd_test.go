@@ -498,6 +498,20 @@ func TestCostAttributeMovesSubagent(t *testing.T) {
 	}
 }
 
+// TestCostCommandPrintsRoles (F-0384 crit. 4): the text report has a By role
+// block when a role other than main is in it, and none for a main-only cost.
+func TestCostCommandPrintsRoles(t *testing.T) {
+	projDir, _ := attributeX(t)
+	out, err := execCerne(t, "cost", "F-0002", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "By role:\n  critic  input 2 · cache_creation 20 · cache_read 200 · output 2000\n") {
+		t.Fatalf("cost F-0002: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "cost", "F-0001", "--dir", projDir)
+	if err != nil || strings.Contains(out, "By role:") {
+		t.Fatalf("cost F-0001 (main thread only) shows a role block: %v\n%s", err, out)
+	}
+}
+
 // TestCostAttributeRefusals (F-0384 crit. 2): an agent with no transcript in
 // the session (naming where it looked), a role outside the vocabulary, no
 // session and a non-feature id are refused, and the ledger is untouched.
