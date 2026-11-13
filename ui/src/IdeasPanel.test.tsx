@@ -231,4 +231,24 @@ describe('IdeasPanel (F-0312)', () => {
     expect(row('com fonte').getByText('Fontes:')).toBeInTheDocument()
     expect(row('sem fonte').queryByText('Fontes:')).toBeNull()
   })
+
+  it('marca a fonte aposentada e aceita fonte sem URL (F-0389)', async () => {
+    ideas = [
+      {
+        ...idea('I-0001', 'com fontes'),
+        informed_by: [
+          { id: 'R-0001', title: 'Velha', url: 'https://example.com/v', state: 'obsolete' },
+          { id: 'R-0002', title: 'Sem URL', state: 'current' },
+        ],
+      },
+    ]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('com fontes')
+    const r = row('com fontes')
+    expect(r.getByRole('link', { name: 'Velha' })).toBeInTheDocument()
+    expect(r.getByText('(aposentada)')).toBeInTheDocument()
+    expect(r.getByText('Sem URL')).toBeInTheDocument()
+    expect(r.queryByRole('link', { name: 'Sem URL' })).toBeNull()
+    expect(r.getAllByText(/aposentada/)).toHaveLength(1)
+  })
 })

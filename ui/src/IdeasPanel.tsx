@@ -173,6 +173,7 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
                         ) : (
                           r.title
                         )}
+                        {r.state === 'obsolete' && <span> {t.ideas.sources.retired}</span>}
                       </span>
                     ))}
                   </span>

@@ -1660,7 +1660,7 @@ export type Idea = {
   reason?: string
   promoted_to?: string
   // F-0389: fontes externas que informam a ideia (GET /api/ideas).
-  informed_by?: { id: string; title: string; url?: string }[]
+  informed_by?: { id: string; title: string; url?: string; state?: string }[]
 }
 
 // fetchIdeas lista as ideias ativas, mais novas primeiro.
