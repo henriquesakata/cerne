@@ -462,7 +462,7 @@ func TestInit_NoBackendPrintsHint(t *testing.T) {
 // the Gauntlet — [gates] gauntlet = "off" in .cernerc — and init invites the
 // user to turn it on, with --backend or without.
 func TestInit_WritesLightMode(t *testing.T) {
-	const invite = `Gauntlet is off (light mode). Turn it on any time: set gauntlet = "on" under [gates] in .cernerc.`
+	const invite = `Gauntlet is off (light mode). Turn it on in the Settings screen of cerne ui, or run: cerne settings set gates.gauntlet on --scope project`
 	localBackendEnv(t)
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	for name, extra := range map[string][]string{"local": nil, "with --backend": {"--backend", newOrigin(t)}} {

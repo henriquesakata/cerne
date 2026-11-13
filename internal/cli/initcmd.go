@@ -251,7 +251,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	}
 
 	if !joined {
-		fmt.Fprintln(out, `Gauntlet is off (light mode). Turn it on any time: set gauntlet = "on" under [gates] in .cernerc.`)
+		fmt.Fprintln(out, `Gauntlet is off (light mode). Turn it on in the Settings screen of cerne ui, or run: cerne settings set gates.gauntlet on --scope project`)
 	}
 	fmt.Fprintln(out, "Next steps:")
 	toCommit := ".cernerc, docs.lock and .gitattributes"
