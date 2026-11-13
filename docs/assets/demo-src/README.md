@@ -1,6 +1,6 @@
 # Source of `docs/assets/demo.gif`
 
-The README demo is rendered, not screen-recorded: `demo.html` draws a terminal and replays a script of commands with their real output (cerne v0.5.0, trimmed where marked with `…`); `frames.mjs` screenshots each frame through headless Chrome; ffmpeg assembles the GIF.
+The README demo shows the agent's shell (the `agent $` prompt and the notes say who is acting), and is rendered, not screen-recorded: `demo.html` draws a terminal and replays a script of commands with their real output (cerne v0.5.0, trimmed where marked with `…`); `frames.mjs` screenshots each frame through headless Chrome; ffmpeg assembles the GIF.
 
 When the CLI output changes, re-run the commands, update the `scenes` array in `demo.html`, and regenerate:
 
