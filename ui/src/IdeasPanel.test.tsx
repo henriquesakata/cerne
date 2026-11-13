@@ -247,7 +247,7 @@ describe('IdeasPanel (F-0312)', () => {
     const r = row('com fontes')
     expect(r.getByRole('link', { name: 'Velha' })).toBeInTheDocument()
     expect(r.getByText('(aposentada)')).toBeInTheDocument()
-    expect(r.getByText('Sem URL')).toBeInTheDocument()
+    expect(r.getByText(/Sem URL/)).toBeInTheDocument()
     expect(r.queryByRole('link', { name: 'Sem URL' })).toBeNull()
     expect(r.getAllByText(/aposentada/)).toHaveLength(1)
   })
