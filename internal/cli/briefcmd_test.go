@@ -83,10 +83,32 @@ func TestBriefJSON(t *testing.T) {
 	}
 }
 
-// TestIsHistoryStateRetired (F-0385): a retired decision is history, so the
-// default brief leaves it out like a superseded one.
-func TestIsHistoryStateRetired(t *testing.T) {
-	if !isHistoryState("retired") || isHistoryState("active") {
-		t.Fatalf("isHistoryState(retired)=%v isHistoryState(active)=%v, want true/false", isHistoryState("retired"), isHistoryState("active"))
+// TestBriefHidesRetiredDecision (F-0385): through 'cerne brief', not the
+// helper alone — the default map leaves a retired decision out like a
+// superseded one, and --all brings it back with its state.
+func TestBriefHidesRetiredDecision(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "decision", "new", "Usar fila", "--dir", projDir); err != nil {
+		t.Fatalf("decision new: %v", err)
+	}
+	if _, err := execCerne(t, "decision", "new", "Usar Postgres", "--dir", projDir); err != nil {
+		t.Fatalf("decision new: %v", err)
+	}
+	if _, err := execCerne(t, "decision", "retire", "D-0001", "--reason", "the queue is gone", "--dir", projDir); err != nil {
+		t.Fatalf("decision retire: %v", err)
+	}
+	out, err := execCerne(t, "brief", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("brief: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "D-0001") || !strings.Contains(out, "D-0002") {
+		t.Fatalf("brief should hide retired D-0001 and keep active D-0002:\n%s", out)
+	}
+	all, err := execCerne(t, "brief", "--all", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("brief --all: %v\n%s", err, all)
+	}
+	if !strings.Contains(all, "D-0001") || !strings.Contains(all, "retired") {
+		t.Fatalf("brief --all lacks retired D-0001:\n%s", all)
 	}
 }

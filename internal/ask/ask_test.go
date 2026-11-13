@@ -113,6 +113,43 @@ func TestRetrieveMarksImplementedHistorical(t *testing.T) {
 	}
 }
 
+// TestRetrieveRetiredDecisionIsHistory (F-0385): through Retrieve, not the
+// helper alone — a retired decision is left out of the default retrieval and,
+// with history on, comes back flagged historical.
+func TestRetrieveRetiredDecisionIsHistory(t *testing.T) {
+	repoDir, dbPath := seed(t)
+	now := time.Unix(0, 0).UTC()
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Boletos via fila", State: domain.DecisionRetired, Reason: "gone", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	p := filepath.Join(repoDir, "content", "decisions", "D-0001.md")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, []byte("# Boletos via fila\n\nOs boletos passavam pela fila.\n"), 0o644); err != nil {
+		t.Fatalf("write decision: %v", err)
+	}
+	if err := index.Rebuild(repoDir, dbPath); err != nil {
+		t.Fatalf("index.Rebuild: %v", err)
+	}
+	find := func(history bool) (Snippet, bool) {
+		snips, err := Retrieve(repoDir, dbPath, "boletos", history, 10)
+		if err != nil {
+			t.Fatalf("Retrieve: %v", err)
+		}
+		for _, s := range snips {
+			if s.Source == "D-0001" {
+				return s, true
+			}
+		}
+		return Snippet{}, false
+	}
+	if s, ok := find(false); ok {
+		t.Fatalf("default retrieval returned the retired decision: %+v", s)
+	}
+	if s, ok := find(true); !ok || !s.Historical {
+		t.Fatalf("history retrieval = %+v (found %v), want D-0001 flagged historical", s, ok)
+	}
+}
+
 func TestRetrieveCurrentFirstExcludesTerminal(t *testing.T) {
 	repoDir, dbPath := seed(t)
 	snips, err := Retrieve(repoDir, dbPath, "boletos", false, 10)
