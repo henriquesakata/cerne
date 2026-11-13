@@ -386,7 +386,9 @@ function SettingRow({
   // The key's other scopes that store a value: above ws they override it.
   const others = s.scopes.filter((sc) => sc !== ws && s.stored?.[sc] !== undefined)
   const above = (sc: SettingScope) => ORDER.indexOf(sc) < ORDER.indexOf(ws)
-  const fmt = (v: unknown) => formatValue(v, ts)
+  // A declared value shows through the same label as its select option.
+  const fmt = (v: unknown) =>
+    s.enum?.length && typeof v === 'string' && v !== '' ? (ts.options[v] ?? v) : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? `${ts.scopes.host} (${ts.global})` : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
@@ -435,7 +437,7 @@ function SettingRow({
           >
             {(s.enum.includes(String(s.default)) ? s.enum : [String(s.default), ...s.enum]).map((v) => (
               <option key={v} value={v}>
-                {v === '' ? fmt(v) : (ts.options[v] ?? v)}
+                {fmt(v)}
               </option>
             ))}
           </select>

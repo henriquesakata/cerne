@@ -972,6 +972,39 @@ describe('Settings: chave de texto com valores declarados', () => {
     expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['on', 'off'])
   })
 
+  it('a linha Efetivo/Padrão traduz o valor como o select: ligado/desligado em pt-BR, on/off em en', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet())
+    const { unmount } = render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(within(r).getByText('Efetivo: desligado, de Projeto')).toBeInTheDocument()
+    expect(within(r).getByText('Padrão: ligado')).toBeInTheDocument()
+    unmount()
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const en = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(within(en).getByText('Effective: off, from Project')).toBeInTheDocument()
+    expect(within(en).getByText('Default: on')).toBeInTheDocument()
+  })
+
+  it('durante a escrita o select fica aria-disabled e mudar de novo não grava', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet())
+    let release = () => {}
+    putSetting.mockImplementationOnce(() => new Promise<SettingsView>((r) => (release = () => r(withGauntlet()))))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const select = within(r).getByRole('combobox', { name: 'Gauntlet' })
+    fireEvent.change(select, { target: { value: 'on' } })
+    await waitFor(() => expect(row('Gauntlet')).toHaveAttribute('aria-busy', 'true'))
+    expect(select).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.change(select, { target: { value: 'off' } })
+    expect(putSetting).toHaveBeenCalledTimes(1)
+    release()
+    await waitFor(() => expect(row('Gauntlet')).not.toHaveAttribute('aria-busy'))
+  })
+
   it('lint.cli_output_language também é um select: o padrão vazio e en', async () => {
     const lang = key({
       id: 'lint.cli_output_language',
