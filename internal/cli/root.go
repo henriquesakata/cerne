@@ -22,6 +22,8 @@ func Root() *cobra.Command {
 		Version:       version.Short(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
+		Args:          cobra.ArbitraryArgs, // non-nil: cobra's own legacy check would answer first, without the guide hint
+		RunE:          rootRunE,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			startWriteNotice()
 			app.RemintNotice = func(oldID, newID string) { // F-0356
@@ -132,6 +134,19 @@ func guardGroups(c *cobra.Command) {
 
 // guideHint is the last line of every unknown-command refusal (F-0398).
 const guideHint = "\n" + `or ask: cerne guide "<what you want to do>"`
+
+// rootRunE keeps bare `cerne` printing help and gives an unknown first word
+// cobra's own message and suggestions, plus the guide hint (F-0398).
+func rootRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if sug := cmd.SuggestionsFor(args[0]); len(sug) > 0 {
+		msg += "\n\nDid you mean this?\n\t" + strings.Join(sug, "\n\t")
+	}
+	return fmt.Errorf("%s%s", msg, guideHint)
+}
 
 func groupRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
