@@ -212,13 +212,21 @@ uma das três formas: Barra (referência nomeada + acesso) + Método (comparaç�
 fresco) + Saída (vencer/empatar; parar perdendo só por encerramento humano); "Barra: não
 aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>";
 ou "Barra: dispensada por decisão humana". Com barra nomeada, logo abaixo de Saída: vai
-"Pergunta ao juiz: <a pergunta que o juiz cego responde>".`
+"Pergunta ao juiz: <a pergunta que o juiz cego responde>".
+Quando vale o Gauntlet: mudança de comportamento, de contrato, de formato persistido ou de UI
+com escolha de desenho. Quando os testes bastam (efeito único e local, ou correção com teste de
+regressão): "Barra: não aplicável (<por que os testes bastam>)" — o approve --check mostra o
+custo medido do Gauntlet no projeto.`
 	gauntletGuideEN = ` Stopping standard (Gauntlet),
 one of three forms: Bar (named reference + access) + Method (blind comparison, fresh
 critic) + Exit (win/tie; stopping while losing only by a recorded human decision); "Bar: not
 applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>";
 or "Bar: waived by human decision (<quote of the words that waived it>)". With a named bar,
-right below Exit: goes "Question for the judge: <the question the blind judge answers>".`
+right below Exit: goes "Question for the judge: <the question the blind judge answers>".
+When the Gauntlet pays: a change of behaviour, of contract, of persisted format, or of UI with a
+design choice. When the tests suffice (a single, local effect, or a fix with a regression test):
+"Bar: not applicable (<why the tests suffice>)" — approve --check shows the Gauntlet cost
+measured in the project.`
 )
 
 var gauntletGuides = strings.NewReplacer(gauntletGuidePT, "", gauntletGuideEN, "")
