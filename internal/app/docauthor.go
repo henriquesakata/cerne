@@ -57,11 +57,12 @@ func docAuthor(projDir string) DocAuthor {
 		if err != nil {
 			return unknown
 		}
-		a := LLMAuthor(cfg.LLM)
+		// The call's model replaces the config's, as chatAuthor does; LLMAuthor
+		// still drops it for claude-cli, which is never passed --model.
 		if m := strings.TrimSpace(os.Getenv("CERNE_MODEL")); m != "" {
-			a.Model = m
+			cfg.LLM.Model = m
 		}
-		return a
+		return LLMAuthor(cfg.LLM)
 	}
 	if !isAgentActor(EventActor()) {
 		return HumanAuthor()

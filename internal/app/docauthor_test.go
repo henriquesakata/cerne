@@ -71,6 +71,11 @@ func TestDocAuthor(t *testing.T) {
 		{"chat child: claude-cli names no model", map[string]string{"CERNE_ACTOR": "agent", "CERNE_ORIGIN": "chat"},
 			"[llm]\nmode = \"claude-cli\"\nmodel = \"claude-opus-5-5\"\n", "",
 			DocAuthor{Provider: "claude-cli", Source: "llm-config"}},
+		// The chat's model selection is never passed to claude-cli either:
+		// recording it would invent the model (critic round 1, I1).
+		{"chat child: claude-cli ignores the call's model", map[string]string{"CERNE_ACTOR": "agent", "CERNE_ORIGIN": "chat", "CERNE_MODEL": "claude-sonnet-5"},
+			"[llm]\nmode = \"claude-cli\"\n", "",
+			DocAuthor{Provider: "claude-cli", Source: "llm-config"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
