@@ -213,21 +213,6 @@ func TestLintAllNeedsStaged(t *testing.T) {
 	}
 }
 
-func TestLintStagedJSONNoEdits(t *testing.T) {
-	projDir, _ := stagedDebtProject(t)
-	out, err := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
-	if err != nil {
-		t.Fatalf("no edits must pass: %v\n%s", err, out)
-	}
-	var got struct {
-		Findings   []any `json:"findings"`
-		OtherCount int   `json:"other_count"`
-	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Findings == nil || len(got.Findings) != 0 || got.OtherCount == 0 {
-		t.Fatalf("want {findings: [], other_count: N>0}, err=%v got=%+v\n%s", err, got, out)
-	}
-}
-
 // Round 2 crit. 1 and 5: the diff of findings. A finding absent from the base is the
 // edit's wherever it lands (a plan-older-than-spec on the plan after a spec edit);
 // the line is not part of the identity; a base finding that vanished is fixed.

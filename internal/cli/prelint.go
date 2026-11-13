@@ -22,7 +22,20 @@ var copyTree = copyTreeFiles
 // The returned cleanup removes the temp tree. No .git, no git calls, no writes to
 // the cache clone — the validation never mutates the backend.
 func stagedLintRoot(repoDir, projDir string, skipEmpty bool) (string, stagedEdits, func(), error) {
-	_ = skipEmpty
+	docsDir := filepath.Join(projDir, ".docs")
+	manifest, err := project.LoadManifest(projDir)
+	if err != nil {
+		return "", stagedEdits{}, nil, err
+	}
+	docs, err := collectChangedDocs(repoDir, docsDir, manifest)
+	if err != nil {
+		return "", stagedEdits{}, nil, err
+	}
+	// Nothing edited: no tree to build (F-0393). Frozen documents already
+	// refused inside collectChangedDocs.
+	if skipEmpty && len(docs) == 0 {
+		return "", stagedEdits{base: repoDir}, func() {}, nil
+	}
 	root, err := os.MkdirTemp("", "cerne-stagedlint-")
 	if err != nil {
 		return "", stagedEdits{}, nil, err
@@ -33,17 +46,6 @@ func stagedLintRoot(repoDir, projDir string, skipEmpty bool) (string, stagedEdit
 			cleanup()
 			return "", stagedEdits{}, nil, err
 		}
-	}
-	docsDir := filepath.Join(projDir, ".docs")
-	manifest, err := project.LoadManifest(projDir)
-	if err != nil {
-		cleanup()
-		return "", stagedEdits{}, nil, err
-	}
-	docs, err := collectChangedDocs(repoDir, docsDir, manifest)
-	if err != nil {
-		cleanup()
-		return "", stagedEdits{}, nil, err
 	}
 	// project.json carries the docs language: without it the staged tree reads
 	// as pt-BR whatever the project is.
