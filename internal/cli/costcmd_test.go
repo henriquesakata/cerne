@@ -538,3 +538,28 @@ func TestCostAttributeRefusals(t *testing.T) {
 		t.Fatalf("ledger went from %d to %d lines on refusals", before, after)
 	}
 }
+
+// TestCostStampBreaksDownByRole (F-0384 crit. 5): after `cost attribute`, the
+// stamp of the implemented feature carries the role line and by_role in its
+// anchor.
+func TestCostStampBreaksDownByRole(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	costSessions(t, repoDir)
+	t.Setenv("CERNE_SESSION", "sess-1")
+	if out, err := execCerne(t, "cost", "attribute", "x", "F-0001", "--role", "critic", "--dir", projDir); err != nil {
+		t.Fatalf("attribute: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	result := readResult(t, repoDir, "F-0001")
+	for _, want := range []string{
+		"Por papel: critic (input 2 · cache_creation 20 · cache_read 200 · output 2000); main (input 1 · cache_creation 10 · cache_read 100 · output 1000).",
+		`"by_role":{"critic":{"input":2,"cache_creation":20,"cache_read":200,"output":2000},"main":{"input":1,`,
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result lacks %q:\n%s", want, result)
+		}
+	}
+}
