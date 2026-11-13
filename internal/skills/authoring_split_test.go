@@ -14,6 +14,9 @@ const maxSkillBytes = 30 * 1024
 
 // referenceDir is where the detail that left SKILL.md lives, read from disk so
 // these tests do not depend on the embed.
+// minSentence is the shortest unit the sentence check trusts.
+const minSentence = 25
+
 const referenceDir = "cerne-authoring/reference"
 
 // references returns the reference files' contents by file name.
@@ -140,7 +143,7 @@ func TestNoSentenceOfTheOldSkillIsLost(t *testing.T) {
 		if line == "" || strings.HasPrefix(line, "---") {
 			continue
 		}
-		for _, s := range sentenceEnd.Split(line, -1) {
+		for _, s := range sentences(line) {
 			if s = strings.TrimSpace(s); len(s) > 3 && !strings.Contains(now, s) && !isRewritten(s) {
 				lost++
 				if lost <= 5 {
@@ -161,4 +164,40 @@ func isRewritten(s string) bool {
 		}
 	}
 	return false
+}
+
+// sentences splits a line at sentence boundaries; a fragment shorter than
+// minSentence ("e.g", "Ok") is kept together with what follows it, so the
+// original text is always a substring of the unit.
+func sentences(line string) []string {
+	var out []string
+	start := 0
+	for _, m := range sentenceEnd.FindAllStringIndex(line, -1) {
+		if m[0]+1-start >= minSentence {
+			out = append(out, line[start:m[0]+1])
+			start = m[1]
+		}
+	}
+	if rest := line[start:]; rest != "" {
+		if len(out) > 0 && len(rest) < minSentence {
+			out[len(out)-1] += " " + rest
+		} else {
+			out = append(out, rest)
+		}
+	}
+	return out
+}
+
+// TestSentencesDoNotSplitOnAbbreviationsOrFragments: a fragment such as
+// "e.g" must never be a unit of the check, or it would match anywhere.
+func TestSentencesDoNotSplitOnAbbreviationsOrFragments(t *testing.T) {
+	got := sentences("Use a flag, e.g. the first one, to start. Then do the next thing in the list. Ok. Stop here and think about it.")
+	for _, s := range got {
+		if len(strings.TrimSpace(s)) < minSentence {
+			t.Errorf("fragment %q is too short to be a sentence", s)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("sentences = %q, want 3", got)
+	}
 }
