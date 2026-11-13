@@ -56,7 +56,7 @@ type share struct {
 }
 
 func shareOf(r Report) share {
-	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, Messages: r.Messages,
+	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, Messages: r.Messages,
 		Sessions: r.Sessions, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
 }
 
@@ -166,6 +166,12 @@ func block(r Report) (string, error) {
 		models = []string{"—"}
 	}
 	fmt.Fprintf(&b, "Por modelo: %s.\n", strings.Join(models, "; "))
+	if roles := r.Roles(); roles != nil {
+		for i, role := range roles {
+			roles[i] = role + " (" + countersLine(r.ByRole[role]) + ")"
+		}
+		fmt.Fprintf(&b, "Por papel: %s.\n", strings.Join(roles, "; "))
+	}
 	window := "—"
 	if r.First != "" {
 		window = r.First + " → " + r.Last

@@ -292,3 +292,33 @@ func TestAnchorCountersReadsStampedResult(t *testing.T) {
 		t.Fatalf("AnchorCounters read an anchor from an empty body")
 	}
 }
+
+// TestStampBreaksDownByRole (F-0384 crit. 5): with a role other than main the
+// "## Custo" block has one line per role and the v1 anchor carries by_role, an
+// additive field read back by the next stamp; a main-only cost prints no role
+// line; an anchor from before by_role still reads.
+func TestStampBreaksDownByRole(t *testing.T) {
+	r := stampReport("F-0001", cc(7, 0, 0, 7), 3)
+	r.ByRole = map[string]Counters{"main": cc(1, 0, 0, 1), "builder": cc(2, 0, 0, 2), "critic": cc(4, 0, 0, 4)}
+	got := mustStamp(t, resultDoc("F-0001"), r)
+	const line = "Por papel: builder (input 2 · cache_creation 0 · cache_read 0 · output 2); " +
+		"critic (input 4 · cache_creation 0 · cache_read 0 · output 4); main (input 1 · cache_creation 0 · cache_read 0 · output 1).\n"
+	if !strings.Contains(got, line) {
+		t.Errorf("block lacks the role line %q:\n%s", line, got)
+	}
+	if a, ok := anchor(got); !ok || !reflect.DeepEqual(a.ByRole, r.ByRole) {
+		t.Errorf("anchor by_role = %+v (ok %v), want %+v", a.ByRole, ok, r.ByRole)
+	}
+
+	r.ByRole = map[string]Counters{"main": cc(7, 0, 0, 7)}
+	if got := mustStamp(t, resultDoc("F-0001"), r); strings.Contains(got, "Por papel") {
+		t.Errorf("a main-only cost prints a role line:\n%s", got)
+	}
+
+	old := resultDoc("F-0001") + "\n## Custo\n\n<!-- cerne:cost v1 " +
+		`{"id":"F-0001","counters":{"input":1,"cache_creation":0,"cache_read":0,"output":0},"sidechain":{"input":0,"cache_creation":0,"cache_read":0,"output":0},"by_model":{},"messages":1,"sessions":1,"first":"","last":"","unattributed":{"input":0,"cache_creation":0,"cache_read":0,"output":0}}` +
+		" -->\n"
+	if a, ok := anchor(old); !ok || a.Messages != 1 || a.ByRole != nil {
+		t.Errorf("pre-F-0384 anchor = %+v (ok %v), want it read, without by_role", a, ok)
+	}
+}
