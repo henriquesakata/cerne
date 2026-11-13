@@ -30,3 +30,6 @@ A `cerne ui` process started before `go install` keeps serving the embedded UI a
 
 ## Q: How do I read the project state without loading everything?
 `cerne brief` is the cheapest map (id, state, title). `cerne status --active` shows only active work, `cerne next` the next action per feature plus documentation debts. Read one entity with `cerne show <id>`, search by subject with `cerne search "<query>"`.
+
+## Q: Where do the learnings from a result go? How do I reuse what a past agent learned?
+A result's learnings are history and do not reach the next agent by themselves. `cerne feature complete` lists them and the notes they may complement or replace. A durable one becomes a note with `cerne note new "<title>" --informs <F-id> --component <topic>`; one that contradicts a note replaces it with `cerne note substituir <N-old> --by <N-new> --reason "..."`; none durable: `cerne feature learnings --skip <F-id>`. `cerne feature learnings` lists, read-only, the past features nobody triaged yet.

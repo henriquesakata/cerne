@@ -88,6 +88,10 @@ existing entity (`F-…`, `D-…`, `RB-…`, `N-…`).
    line, what it captured. If a `docs.lock` pin applies on the current branch,
    cerne handles it — don't hand-edit the lock.
 
+## Learnings already written in past results
+
+A result's "Aprendizados e desvios" is history: it never reaches the next agent by itself. `cerne feature learnings` lists, read-only, the concluded features whose learnings were never triaged, each item with the active notes it may complement or replace. Apply the triage above to what it lists: a durable item becomes a note (`cerne note new ... --informs F-NNNN`), one that contradicts a note replaces it (`cerne note substituir`), the rest gets `cerne feature learnings --skip F-NNNN`.
+
 ## What NOT to capture
 
 - Secrets, credentials, tokens — never, anywhere.
