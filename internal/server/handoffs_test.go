@@ -137,3 +137,36 @@ func TestHandoffDetailNotFound(t *testing.T) {
 		}
 	}
 }
+
+// TestHandoffsEndpointOrderTies: equal timestamps keep id order — two pending
+// created at the same instant, two closed at the same instant (one by
+// taken_at, one by updated_at) — so the list never reshuffles between polls.
+func TestHandoffsEndpointOrderTies(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	same := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	closed := same.Add(30 * time.Minute)
+	for _, h := range []store.Handoff{
+		{ID: "HO-0009", State: domain.HandoffCancelled, FromWork: "W-1", CancelReason: "x", CreatedAt: same, UpdatedAt: closed},
+		{ID: "HO-0010", State: domain.HandoffPending, FromWork: "W-1", CreatedAt: same, UpdatedAt: same},
+		{ID: "HO-0011", State: domain.HandoffTaken, FromWork: "W-2", TakenAt: &closed, CreatedAt: same, UpdatedAt: closed.Add(time.Minute)},
+		{ID: "HO-0012", State: domain.HandoffPending, FromWork: "W-2", CreatedAt: same, UpdatedAt: same},
+	} {
+		if err := store.SaveHandoff(repoDir, h); err != nil {
+			t.Fatalf("SaveHandoff %s: %v", h.ID, err)
+		}
+	}
+	for range 3 {
+		rec := getHandoffs(t, repoDir, projDir, "/api/handoffs")
+		var rows []handoffRow
+		if err := json.NewDecoder(rec.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		var ids []string
+		for _, r := range rows {
+			ids = append(ids, r.ID)
+		}
+		if got, want := strings.Join(ids, ","), "HO-0010,HO-0012,HO-0009,HO-0011"; got != want {
+			t.Fatalf("order = %s, want %s (ties keep id order)", got, want)
+		}
+	}
+}
