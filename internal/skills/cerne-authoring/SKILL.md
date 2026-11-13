@@ -58,7 +58,7 @@ Both gates read the project's `.cernerc` `[gates]` block (`approve`/`accept`, ea
 
 Catch documentation debts **before** they churn the backend — same lint engine, no commit, no backend write:
 
-- `cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits (assembled over the pulled snapshot), without a pull. A partial `.docs/` (implemented features not materialized) yields no false positive.
+- `cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits (assembled over the pulled snapshot), without a pull, and fails only on what your edits broke; the rest of the project's debt is one count line (`--all` lists and fails on everything). A partial `.docs/` (implemented features not materialized) yields no false positive.
 - `cerne push --dry-run` — shows exactly which documents **would** go to the backend and lints them, then stops before any commit/push. Exits non-zero if they would lint dirty, so it doubles as a pre-push gate.
 
 Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
