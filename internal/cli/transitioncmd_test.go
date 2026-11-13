@@ -626,3 +626,31 @@ func TestApproveRecordsBaselineCLI(t *testing.T) {
 		t.Fatalf("no baseline copy: %v", err)
 	}
 }
+
+// TestApproveFollowsGauntletSettingWrittenThroughRegistry (F-0392 crit. 2):
+// the bar gate reads the line the settings registry writes — off makes the
+// approve accept a spec without a bar, on charges it again.
+func TestApproveFollowsGauntletSettingWrittenThroughRegistry(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	noBar := func(id string) {
+		spec := "---\ncerne_id: " + id + "\n---\n\n# Título\n\n## Problema\n\nProblema real descrito aqui.\n\n## Verificação\n\nSó testes unitários.\n"
+		writeDoc(t, repoDir, id, "spec.md", spec)
+		commitBackend(t, repoDir)
+	}
+	a := newFeature(t, projDir, "Feature a", 1)
+	noBar(a)
+	if err := project.SetSetting(projDir, "gates.gauntlet", project.ScopeProject, "off"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "feature", "approve", a, "--dir", projDir); err != nil {
+		t.Fatalf("approve with gates.gauntlet=off: %v\n%s", err, out)
+	}
+	b := newFeature(t, projDir, "Feature b", 2)
+	noBar(b)
+	if err := project.SetSetting(projDir, "gates.gauntlet", project.ScopeProject, "on"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execCerne(t, "feature", "approve", b, "--dir", projDir); !errors.Is(err, app.ErrSpecMissingBar) {
+		t.Fatalf("approve with gates.gauntlet=on: %v, want ErrSpecMissingBar", err)
+	}
+}
