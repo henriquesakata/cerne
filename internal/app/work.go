@@ -242,7 +242,7 @@ func supersedePlanning(repoDir string, works []store.Work, refs []string, newID 
 			if !slices.Contains(mine, w.Actor) {
 				continue
 			}
-			if bindings[sess] != w.ID {
+			if !boundHere(bindings, w.ID, sess) {
 				if boundElsewhere(bindings, w.ID, sess) {
 					held = append(held, w.ID)
 				} else {

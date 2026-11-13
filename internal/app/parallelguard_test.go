@@ -134,6 +134,27 @@ func TestClassifyParallelWorks(t *testing.T) {
 			wantForeign: []string{"W-0001"},
 		},
 		{
+			// F-0376: <session>.<agent> is a subagent of that session, not another session.
+			name:     "bound to a subagent of my session is mine",
+			works:    []store.Work{work("W-0001", "outro@maquina")},
+			session:  "sess-a",
+			bindings: map[string]string{"sess-a.dev1": "W-0001"},
+		},
+		{
+			name:        "bound to a subagent of another session is foreign",
+			works:       []store.Work{work("W-0001", "eu@maquina")},
+			session:     "sess-a",
+			bindings:    map[string]string{"sess-b.dev1": "W-0001"},
+			wantForeign: []string{"W-0001"},
+		},
+		{
+			name:        "a session sharing my prefix is still another session",
+			works:       []store.Work{work("W-0001", "eu@maquina")},
+			session:     "sess-a",
+			bindings:    map[string]string{"sess-ab": "W-0001"},
+			wantForeign: []string{"W-0001"},
+		},
+		{
 			name:        "different actor is foreign even without bindings",
 			works:       []store.Work{work("W-0001", "outro@maquina")},
 			wantForeign: []string{"W-0001"},
@@ -244,5 +265,32 @@ func TestStartSameActorOtherSessionWarnsOnly(t *testing.T) {
 	}
 	if out.To != domain.StateInDevelopment || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "W-0001") {
 		t.Fatalf("start = %+v, want in_development with one warning naming W-0001", out)
+	}
+}
+
+// TestBoundElsewhereOwnSubagent (F-0376; F-0151/F-0208): a binding held by a
+// subagent of my session is mine, one held by a subagent of another session is
+// elsewhere — the point where the per-agent key breaks the guard silently.
+func TestBoundElsewhereOwnSubagent(t *testing.T) {
+	for _, tc := range []struct {
+		bindings  map[string]string
+		elsewhere bool
+		here      bool
+	}{
+		{map[string]string{"s1.dev": "W-1"}, false, true},
+		{map[string]string{"s1": "W-1"}, false, true},
+		{map[string]string{"s2.dev": "W-1"}, true, false},
+		{map[string]string{"s1.dev": "W-1", "s2": "W-1"}, true, true},
+		{map[string]string{"s1.dev": "W-2"}, false, false},
+	} {
+		if got := boundElsewhere(tc.bindings, "W-1", "s1"); got != tc.elsewhere {
+			t.Errorf("boundElsewhere(%v) = %v, want %v", tc.bindings, got, tc.elsewhere)
+		}
+		if got := boundHere(tc.bindings, "W-1", "s1"); got != tc.here {
+			t.Errorf("boundHere(%v) = %v, want %v", tc.bindings, got, tc.here)
+		}
+	}
+	if boundHere(map[string]string{"s1": "W-1"}, "W-1", "") {
+		t.Error("no session is never bound here")
 	}
 }

@@ -486,7 +486,8 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	seen := map[string]bool{}
 	var to []string
 	for s := range sessionBindingsIn(cacheDir) {
-		if s == sess {
+		// A subagent answers on the channel as its session's main thread (F-0376).
+		if owner, agent := splitBindingName(s); owner == sess || agent != "" {
 			continue
 		}
 		if other, ok := sessionWork(cacheDir, repoDir, s); ok && !seen[other.Work] {

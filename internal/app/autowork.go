@@ -52,15 +52,16 @@ func openAutoWorkUnless(repoDir string, f store.Feature, bound bool) error {
 		return err
 	}
 	mine := myActors()
-	boundID := ""
-	if sess := os.Getenv("CERNE_SESSION"); bound && sess != "" {
-		boundID = sessionBindingsIn(filepath.Dir(repoDir))[sess]
+	var bindings map[string]string
+	sess := os.Getenv("CERNE_SESSION")
+	if bound {
+		bindings = sessionBindingsIn(filepath.Dir(repoDir))
 	}
 	for _, w := range works {
 		if w.State != domain.WorkActive || !slices.Contains(w.Refs, f.ID) {
 			continue
 		}
-		if slices.Contains(mine, w.Actor) || (boundID != "" && w.ID == boundID) {
+		if slices.Contains(mine, w.Actor) || boundHere(bindings, w.ID, sess) {
 			return nil
 		}
 	}
@@ -144,7 +145,7 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 		// this very session: unbound proves nothing — a human's terminal
 		// carries the same <user>@<host>.
 		isAuto := w.Auto
-		ownIdentity := w.Actor == autoWorkActor() || (slices.Contains(mine, w.Actor) && bindings[sess] == w.ID)
+		ownIdentity := w.Actor == autoWorkActor() || (slices.Contains(mine, w.Actor) && boundHere(bindings, w.ID, sess))
 		isAdoptedManual := !w.Auto && ownIdentity && len(w.Refs) == 1 && w.Refs[0] == featureID &&
 			!boundElsewhere(bindings, w.ID, sess)
 		if (!isAuto && !isAdoptedManual) || !slices.Contains(w.Refs, featureID) {
