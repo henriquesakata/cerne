@@ -269,7 +269,7 @@ func realCaseSpec(crit map[int]bool, sections bool) string {
 		b.WriteString("\n## Emenda (2026-11-01) — prefixo\n\nNos critérios 1 e 2, o prefixo passa a ser `acme-apps/`.\n")
 		b.WriteString("\n### Emenda de 2026-11-03\n\nNo critério 3, o mesmo.\n")
 	}
-	b.WriteString("\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	b.WriteString("\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 	if sections {
 		b.WriteString("\n## Emendas da revisão (2026-11-05)\n\nNo critério 4, o mesmo.\n")
 	}

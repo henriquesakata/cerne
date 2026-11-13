@@ -15,7 +15,7 @@ func clarifySpecBody() string {
 	return "# Feature\n\n## Problema\n\nContexto real.\n\n" +
 		"[ESCLARECER: sincrona ou assincrona? | sincrona | assincrona]\n\n" +
 		"[CLARIFY: which format?]\n\n" +
-		"## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+		"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n"
 }
 
 func readBackendSpec(t *testing.T, repoDir string) string {

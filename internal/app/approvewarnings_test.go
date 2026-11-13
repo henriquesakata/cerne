@@ -14,7 +14,7 @@ func TestApproveWarnings(t *testing.T) {
 	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
 	repoDir, _, _ := newFeatureBackend(t)
 	seedCandidateSpec(t, repoDir, "F-0001",
-		"---\ncerne_id: F-0001\n---\n\n# t\n\n## Objetivo e critérios de aceitação\n\n1. O sistema imprime `nenhuma feature encontrada`.\n\nBarra: referência nomeada — acesso\n")
+		"---\ncerne_id: F-0001\n---\n\n# t\n\n## Objetivo e critérios de aceitação\n\n1. O sistema imprime `nenhuma feature encontrada`.\n\n## Verificação\n\nBarra: referência nomeada — acesso\nPergunta ao juiz: qual é mais claro?\n")
 
 	projDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte("project_id = \"p\"\nbackend = \"b\"\ndefault_scope = \"\"\n"), 0o644); err != nil {

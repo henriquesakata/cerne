@@ -185,6 +185,8 @@ export type FeatureDetail = {
   // approve aceita.
   approve_readiness?: ApproveImpediment[]
   bar?: string
+  // F-0381: a pergunta ao juiz que o approve aceita junto da barra.
+  judge_question?: string
   // F-0375: as escritas gravadas dos documentos, da mais antiga à mais nova;
   // ausente em servidor antigo. Escrita anterior à F-0375 nunca aparece.
   writes?: DocWrite[]
@@ -203,7 +205,7 @@ export type DocWrite = {
 // Impedimento ao approve (F-0308): duro = o núcleo recusa em qualquer
 // superfície; não duro = só o CLI recusa (--force atravessa).
 export type ApproveImpediment = {
-  code: 'spec-missing' | 'bar-missing' | 'bar-malformed' | 'open-clarification'
+  code: 'spec-missing' | 'bar-missing' | 'bar-malformed' | 'judge-question-missing' | 'judge-question-misplaced' | 'open-clarification'
   message: string
   hard: boolean
 }

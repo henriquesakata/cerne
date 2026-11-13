@@ -3,10 +3,10 @@ package app
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"

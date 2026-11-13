@@ -213,3 +213,17 @@ func TestClarificationRefusalNamesHardImpediments(t *testing.T) {
 		t.Fatalf("with no hard impediment the refusal must stay the clarification one: %v", err)
 	}
 }
+
+// TestApproveCheckListsJudgeQuestionMissing (F-0381 crit. 1): a spec that
+// names a bar but no judge question is not approvable, and --check says why.
+func TestApproveCheckListsJudgeQuestionMissing(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature sem pergunta", 1)
+	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\nProblema real descrito aqui.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	commitBackend(t, repoDir)
+	t.Setenv("CERNE_ACTOR", "agent")
+	out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+	if !errors.Is(err, errCheckImpediments) || !strings.Contains(out, "judge-question-missing") {
+		t.Fatalf("check err = %v, output:\n%s\nwant errCheckImpediments listing judge-question-missing", err, out)
+	}
+}

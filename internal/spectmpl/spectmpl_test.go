@@ -237,3 +237,21 @@ func TestWithoutGauntlet(t *testing.T) {
 		t.Fatalf("author text changed: %q", got)
 	}
 }
+
+// TestStubAsksForJudgeQuestion (F-0381 crit. 4): the Gauntlet guide places the
+// question line under the bar's Saída/Exit line, in both languages, and light
+// mode drops it with the rest of the guide.
+func TestStubAsksForJudgeQuestion(t *testing.T) {
+	for name, tc := range map[string]struct{ stub, line string }{
+		"pt": {spectmpl.Stub("t"), "Pergunta ao juiz: <a pergunta que o juiz cego responde>"},
+		"en": {spectmpl.StubIn(doclang.EN, "t"), "Question for the judge: <the question the blind judge answers>"},
+	} {
+		if !strings.Contains(tc.stub, tc.line) {
+			t.Errorf("%s: stub lacks %q", name, tc.line)
+		}
+		light := spectmpl.WithoutGauntlet(tc.stub)
+		if strings.Contains(light, "juiz") || strings.Contains(light, "judge") {
+			t.Errorf("%s: light scaffold still asks for the question", name)
+		}
+	}
+}

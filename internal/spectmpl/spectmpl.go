@@ -211,12 +211,14 @@ const (
 uma das três formas: Barra (referência nomeada + acesso) + Método (comparação cega, crítico
 fresco) + Saída (vencer/empatar; parar perdendo só por encerramento humano); "Barra: não
 aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>";
-ou "Barra: dispensada por decisão humana".`
+ou "Barra: dispensada por decisão humana". Com barra nomeada, logo abaixo de Saída: vai
+"Pergunta ao juiz: <a pergunta que o juiz cego responde>".`
 	gauntletGuideEN = ` Stopping standard (Gauntlet),
 one of three forms: Bar (named reference + access) + Method (blind comparison, fresh
 critic) + Exit (win/tie; stopping while losing only by a recorded human decision); "Bar: not
 applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>";
-or "Bar: waived by human decision (<quote of the words that waived it>)".`
+or "Bar: waived by human decision (<quote of the words that waived it>)". With a named bar,
+right below Exit: goes "Question for the judge: <the question the blind judge answers>".`
 )
 
 var gauntletGuides = strings.NewReplacer(gauntletGuidePT, "", gauntletGuideEN, "")

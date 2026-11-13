@@ -22,8 +22,8 @@ func TestBuildSequenceDiagramPrompt(t *testing.T) {
 	prompt := BuildSequenceDiagramPrompt(f, "## Problema\n\nFalta conciliar.", structure)
 	for _, want := range []string{
 		"F-0007", "Conciliação bancária", "finance", "sequenceDiagram",
-		"internal/finance/recon.go", // the structure is embedded
-		"real components",           // anchoring instruction
+		"internal/finance/recon.go",    // the structure is embedded
+		"real components",              // anchoring instruction
 		"Brazilian Portuguese (pt-BR)", // interim label language (F-0135)
 	} {
 		if !strings.Contains(prompt, want) {

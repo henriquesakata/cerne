@@ -17,7 +17,7 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 	seedFeature(t, repoDir, "F-0001", "Sem barra", domain.StateCandidate)
 	writeDoc(t, repoDir, "F-0001", "spec.md", "# t\n\nProblema real. [ESCLARECER: qual o limite?]\n")
 	seedFeature(t, repoDir, "F-0002", "Com barra", domain.StateCandidate)
-	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\nBarra: cerne push --dry-run — ensaio com gate\n")
+	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
 	// Complete cards (F-0336): only the spec impediments show.
 	for _, id := range []string{"F-0001", "F-0002"} {
 		f, err := store.LoadFeature(repoDir, id)
@@ -64,11 +64,30 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 	// F-0336: an untagged card with a valid spec carries the soft untagged
 	// impediment the UI lists (it does not block the UI approve).
 	seedFeature(t, repoDir, "F-0004", "Sem tag", domain.StateCandidate)
-	writeDoc(t, repoDir, "F-0004", "spec.md", "# t\n\nProblema real.\n\nBarra: cerne push --dry-run — ensaio com gate\n")
+	writeDoc(t, repoDir, "F-0004", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
 	if imps, _, _ := get("F-0004"); len(imps) != 1 || imps[0].Code != "untagged" || imps[0].Hard {
 		t.Fatalf("F-0004 readiness = %+v, want one soft untagged", imps)
 	}
 	if imps, bar, present := get("F-0003"); present || bar != "" {
 		t.Fatalf("F-0003 (approved) readiness = %+v bar %q, want neither field", imps, bar)
+	}
+}
+
+// F-0381 round 2: the detail carries the judge question the approve would
+// accept beside the bar, and none for an exempt bar.
+func TestFeatureDetailJudgeQuestion(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Com pergunta", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
+	seedFeature(t, repoDir, "F-0002", "Barra n/a", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: não aplicável (texto puro) — padrão alternativo: teste\n")
+	for id, want := range map[string]string{"F-0001": "qual é mais claro?", "F-0002": ""} {
+		var got struct {
+			JudgeQuestion string `json:"judge_question"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/"+id, "", &got)
+		if rec.Code != http.StatusOK || got.JudgeQuestion != want {
+			t.Fatalf("%s: status %d judge_question %q, want %q", id, rec.Code, got.JudgeQuestion, want)
+		}
 	}
 }

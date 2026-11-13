@@ -54,7 +54,7 @@ func realDoc(id, body string) string {
 	// The Verificação/Barra tail satisfies the approve bar gate and the
 	// Gauntlet tail the result-missing-gauntlet lint rule (F-0545), for every
 	// fixture doc; sections a doc kind does not need are carried harmlessly.
-	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
 }
 
 func TestTransitionFullLifecycle(t *testing.T) {

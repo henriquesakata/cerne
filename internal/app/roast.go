@@ -50,9 +50,9 @@ var RoastPersonas = []RoastPersona{
 // conformity lens, so the risk critic never re-reports it as its own finding.
 var PlanRoastPersonas = []RoastPersona{
 	{
-		Key:   "conformidade",
-		Title: "Conformidade spec→plano",
-		Lens:  "CONFORMIDADE SPEC→PLANO: cobertura de cada critério de aceitação numerado da spec pelo plano. Ataque: critério sem tarefa que o cubra, tarefa que não serve critério nenhum (escopo que o plano inventou), verificação declarada que não prova o critério que diz provar, e critério cuja cobertura depende de trabalho que o plano deixa implícito.",
+		Key:    "conformidade",
+		Title:  "Conformidade spec→plano",
+		Lens:   "CONFORMIDADE SPEC→PLANO: cobertura de cada critério de aceitação numerado da spec pelo plano. Ataque: critério sem tarefa que o cubra, tarefa que não serve critério nenhum (escopo que o plano inventou), verificação declarada que não prova o critério que diz provar, e critério cuja cobertura depende de trabalho que o plano deixa implícito.",
 		Matrix: "Antes dos achados, emita a MATRIZ DE COBERTURA: uma linha por critério numerado da spec, no formato exato \"critério N: coberto pela tarefa X\" ou \"critério N: descoberto\". A matriz é obrigatória, cobre TODOS os critérios (não tem teto e não conta como achado) e sai mesmo quando você não tiver nenhum achado.",
 	},
 	{

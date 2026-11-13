@@ -165,6 +165,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if out.Bar != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Accepted bar: %s\n", out.Bar)
 	}
+	if action == domain.ActionApprove {
+		if err := printJudgeQuestionAccepted(cmd.OutOrStdout(), ctx, id, out); err != nil {
+			return err
+		}
+	}
 	// Starting a child pulls its ready ancestor epics into development too:
 	// report them so the author sees the board moved without a second command.
 	for _, epic := range out.Propagated {
@@ -219,7 +224,36 @@ const barForms = `The spec's Verificação section needs one of the three litera
 
 // lightModeApprove replaces the accepted-bar line when the project runs
 // without the Gauntlet (F-0364): a ready spec then has no bar to accept.
-const lightModeApprove = `light mode: no Gauntlet bar is charged ([gates] gauntlet = "off" in .cernerc)`
+const lightModeApprove = `light mode: no Gauntlet bar or judge question is charged ([gates] gauntlet = "off" in .cernerc)`
+
+// barExemptApprove says why a bar that is "não aplicável" or waived owes no
+// judge question (F-0381).
+const barExemptApprove = "bar not applicable/waived: no judge question is charged"
+
+// judgeQuestionForms are the accepted forms of the question line, taught by
+// the check like the bar's three (F-0381). They stay as written in the spec.
+const judgeQuestionForms = `Under the bar, in the spec's Verificação section, one line:
+  Pergunta ao juiz: <a pergunta que o juiz cego responde>
+  Question for the judge: <the question the blind judge answers>
+`
+
+// printJudgeQuestionAccepted ends an approve's confirmation with what the
+// approve accepted beside the bar, or why no question was charged (F-0381).
+func printJudgeQuestionAccepted(w io.Writer, ctx projCtx, id string, out app.TransitionOutcome) error {
+	switch {
+	case !ctx.cfg.Gates.GauntletEnabled():
+		fmt.Fprintln(w, lightModeApprove)
+	case out.JudgeQuestion != "":
+		fmt.Fprintf(w, "Accepted judge question: %s\n", out.JudgeQuestion)
+	case out.Bar != "":
+		if _, exempt, err := app.AcceptedJudgeQuestion(ctx.repoDir, id); err != nil {
+			return err
+		} else if exempt {
+			fmt.Fprintln(w, barExemptApprove)
+		}
+	}
+	return nil
+}
 
 // runApproveCheck prints every impediment to approving id and returns
 // errCheckImpediments while the list is not empty (crit. 3). Hard impediments
@@ -248,7 +282,7 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 	}
 	if len(agent) > 0 {
 		fmt.Fprintf(w, "Check: %s is not approvable yet — %d impediment(s) (nothing approved, nothing written):\n", id, len(imps))
-		barProblem := false
+		barProblem, questionProblem := false, false
 		for _, im := range imps {
 			suffix := ""
 			switch {
@@ -259,9 +293,13 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 			}
 			fmt.Fprintf(w, "  - %s: %s%s\n", im.Code, im.Message, suffix)
 			barProblem = barProblem || im.Code == app.ImpedimentBarMissing || im.Code == app.ImpedimentBarMalformed
+			questionProblem = questionProblem || im.Code == app.ImpedimentJudgeQuestionMissing || im.Code == app.ImpedimentJudgeQuestionMisplaced
 		}
 		if barProblem {
 			fmt.Fprint(w, "\n"+barForms)
+		}
+		if questionProblem {
+			fmt.Fprint(w, "\n"+judgeQuestionForms)
 		}
 		if hard > 0 {
 			fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)
@@ -289,10 +327,20 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		if err != nil {
 			return err
 		}
-		if bar == "" { // light mode (F-0364): no bar is charged
+		if bar == "" || !ctx.cfg.Gates.GauntletEnabled() { // light mode (F-0364): no bar is charged
 			fmt.Fprintln(w, lightModeApprove)
 		} else {
 			fmt.Fprintf(w, "Approving accepts its bar:\n  %s\n", bar)
+			question, exempt, err := app.AcceptedJudgeQuestion(ctx.repoDir, id)
+			if err != nil {
+				return err
+			}
+			switch {
+			case exempt:
+				fmt.Fprintln(w, barExemptApprove)
+			case question != "":
+				fmt.Fprintf(w, "Approving accepts its judge question:\n  %s\n", question)
+			}
 		}
 	}
 	// Warnings never count as impediments (F-0353): the exit code ignores them.

@@ -425,6 +425,7 @@ export default function FeaturePage({ id }: { id: string }) {
               baselineMissing={detail.approval_baseline_missing === true}
               readiness={detail.approve_readiness}
               bar={detail.bar}
+              judgeQuestion={detail.judge_question}
               onRefresh={load}
               onDone={(r: TransitionResult) => {
                 // F-0318: approve numa aprovada diz o que fez — "Aprovada →
@@ -981,6 +982,8 @@ function RoastModal({
 // As três formas literais da barra (F-0308), o mesmo texto que o
 // 'cerne feature approve --check' imprime: são texto de spec, por isso ficam em
 // pt-BR nos dois idiomas da UI.
+const JUDGE_FORMS = `Pergunta ao juiz: <a pergunta que o juiz cego responde>
+Question for the judge: <the question the blind judge answers>`
 const BAR_FORMS = `Barra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>
 Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>
 Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`
@@ -1029,6 +1032,7 @@ function ActionsPanel({
   baselineMissing = false,
   readiness = [],
   bar,
+  judgeQuestion,
   onDone,
   onRefresh,
 }: {
@@ -1039,6 +1043,7 @@ function ActionsPanel({
   baselineMissing?: boolean
   readiness?: ApproveImpediment[]
   bar?: string
+  judgeQuestion?: string
   onDone: (r: TransitionResult) => void
   onRefresh: () => void
 }) {
@@ -1122,6 +1127,11 @@ function ActionsPanel({
               {t.feature.approveBar} <code>{bar}</code>
             </p>
           )}
+          {bar && judgeQuestion && (
+            <p className="approve-bar">
+              {t.feature.approveJudgeQuestion} <code>{judgeQuestion}</code>
+            </p>
+          )}
           {readiness.length > 0 && (
             <>
               <p className="approve-readiness-title">
@@ -1138,6 +1148,12 @@ function ActionsPanel({
                 <>
                   <p className="muted">{t.feature.barFormsIntro}</p>
                   <pre className="bar-forms">{BAR_FORMS}</pre>
+                </>
+              )}
+              {readiness.some((r) => r.code === 'judge-question-missing' || r.code === 'judge-question-misplaced') && (
+                <>
+                  <p className="muted">{t.feature.judgeFormsIntro}</p>
+                  <pre className="bar-forms">{JUDGE_FORMS}</pre>
                 </>
               )}
               {blocked && <p className="muted">{t.feature.approveBlocked}</p>}

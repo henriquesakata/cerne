@@ -352,7 +352,7 @@ func TestAmendDocInputAndNoOp(t *testing.T) {
 		{"no reason", "spec", amendedSpec, " ", nil, "needs a reason"},
 		{"empty body", "spec", " \n", "r", nil, "empty spec body"},
 		{"result", "result", amendedSpec, "r", ErrUnknownDoc, ""},
-		{"appended amendment", "spec", amendedSpec + "\n## Emenda (2026-11-10)\n\nTroca o prefixo.\n", "r", ErrAppendedAmendment, "line 11"},
+		{"appended amendment", "spec", amendedSpec + "\n## Emenda (2026-11-10)\n\nTroca o prefixo.\n", "r", ErrAppendedAmendment, "line 12"},
 	} {
 		_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", tc.doc, tc.body, tc.reason)
 		if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) || !strings.Contains(err.Error(), tc.text) {

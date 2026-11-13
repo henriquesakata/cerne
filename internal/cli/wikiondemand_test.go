@@ -78,7 +78,7 @@ func TestWikiOnDemand(t *testing.T) {
 	for _, s := range spectmpl.Sections {
 		fmt.Fprintf(&b, "## %s\n\nConteúdo real de %s para a fixture do motor.\n\n", s, s)
 		if s == "Verificação" {
-			b.WriteString("Barra: fixture de teste — referência nomeada\n\n")
+			b.WriteString("Barra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n")
 		}
 	}
 	mustWrite(t, spec, b.String())

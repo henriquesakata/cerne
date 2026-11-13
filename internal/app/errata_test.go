@@ -1,11 +1,11 @@
 package app
 
 import (
-	"strings"
 	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"

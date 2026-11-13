@@ -281,6 +281,40 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     expect(screen.getByRole('button', { name: 'Rejeitar' })).toBeEnabled()
   })
 
+  it('mostra a pergunta ao juiz junto à barra e ao Aprovar (F-0381)', async () => {
+    payload = {
+      ...detail('candidate'),
+      bar: 'Barra: cerne push --dry-run — ensaio com gate',
+      judge_question: 'qual ensaio é mais claro?',
+    }
+    render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    const q = screen.getByText('qual ensaio é mais claro?')
+    expect(q.closest('section')).toBe(approve.closest('section'))
+    expect(screen.getByText(/e esta pergunta ao juiz/)).toBeInTheDocument()
+  })
+
+  it('impedimento judge-question-misplaced: rótulo pt-BR, bloqueia Aprovar e mostra a forma literal (F-0381)', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'judge-question-misplaced', message: 'judge question found outside ## Verificação (line 5) — move it under the bar', hard: true }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText(/Pergunta ao juiz fora da seção Verificação \(linha 5\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Question for the judge: <the question the blind judge answers>/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+  })
+
+  it('impedimento judge-question-missing: o rótulo pt-BR aparece e bloqueia Aprovar (F-0381)', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [{ code: 'judge-question-missing', message: 'x', hard: true }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText(/Spec com barra mas sem linha "Pergunta ao juiz:"/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+  })
+
   it('impedimento de barra: mostra as três formas literais aceitas', async () => {
     payload = {
       ...detail('candidate'),

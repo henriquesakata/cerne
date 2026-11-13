@@ -16,7 +16,7 @@ const realDocBody = "---\ncerne_id: %s\n---\n\n# Doc real\n\nConteúdo real o ba
 
 // testBarTail satisfies the approve bar gate (F-0295: enforced in the
 // transition core) for fixtures that approve a real spec.
-const testBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+const testBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual versão é mais clara?\n"
 
 // testGauntletTail satisfies the complete result gate (F-0303) for fixtures
 // whose result.md is completed; fixtures with numbered spec criteria also cite

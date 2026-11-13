@@ -345,3 +345,20 @@ func JudgeVerdict(line string) (string, bool) {
 	}
 	return strings.ToUpper(m[1]), true
 }
+
+// judgeQuestion reads the line that holds the judge's question (F-0381), in
+// the same layout as a strict bar line: the label as written, optional
+// markdown markers before it, at most three spaces in.
+var judgeQuestion = regexp.MustCompile(`^ {0,3}(?:(?:[#>*_|+-]+|\d+[.)])[ \t\x{00A0}]+)*[*_]*` + alt(JudgeQuestionLabel) + `[*_]*:[*_]*(.*)$`)
+
+// JudgeQuestionLine reads line as the judge-question line: the text after the
+// label, trimmed. Code samples are not read (inCode).
+func JudgeQuestionLine(line string, inCode bool) (value string, ok bool) {
+	if inCode {
+		return "", false
+	}
+	if sub := judgeQuestion.FindStringSubmatch(line); sub != nil {
+		return strings.TrimSpace(sub[1]), true
+	}
+	return "", false
+}

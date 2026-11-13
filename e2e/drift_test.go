@@ -63,7 +63,7 @@ func featureDir(t *testing.T, proj string) string {
 
 func writeReal(t *testing.T, dir, name, heading string) {
 	t.Helper()
-	body := "---\ncerne_id: F-0001\n---\n\n# " + heading + "\n\nConteúdo real desta seção, suficiente para o gate.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	body := "---\ncerne_id: F-0001\n---\n\n# " + heading + "\n\nConteúdo real desta seção, suficiente para o gate.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
