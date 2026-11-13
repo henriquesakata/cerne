@@ -42,7 +42,7 @@ func newFeatureAcceptCmd(dir *string) *cobra.Command {
 func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason string, allImplemented bool) error {
 	id := ""
 	if len(args) == 1 {
-		id = args[0]
+		id = domain.CanonicalID(args[0])
 	}
 	if allImplemented && id != "" {
 		return fmt.Errorf("--all-implemented and an <id> are mutually exclusive")

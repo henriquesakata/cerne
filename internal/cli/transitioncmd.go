@@ -83,6 +83,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if err := app.ValidateTransitionFlags(action, by, reason); err != nil {
 		return err
 	}
+	id = domain.CanonicalID(id) // before anything loads the entity: Linux file names are case-sensitive
 	if (commit != "" || mr != "") && action != domain.ActionComplete {
 		return fmt.Errorf("--commit/--mr are only allowed for complete, not %s", action)
 	}
@@ -195,6 +196,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	}
 	if action == domain.ActionComplete {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: record its token cost with 'cerne cost %s --stamp' before the human accept (F-0309).\n", id)
+		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
 	if action == domain.ActionStart {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: when done, fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'.\n", id, id)

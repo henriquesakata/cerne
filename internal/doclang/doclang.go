@@ -110,6 +110,7 @@ const (
 	specProblem      = 0 // where feature new seeds the context
 	specCriteria     = 1 // its numbered items are the acceptance contract
 	resultDebts      = 3 // what the delivery left open
+	resultLearnings  = 4 // what the delivery taught
 	specVerification = 4 // where the bar and the judge's question live
 	resultGauntlet   = 5 // the loop's record
 )
@@ -127,6 +128,10 @@ func ProblemHeadings() []string {
 // IsDebtsSection reports whether heading opens the result section that lists
 // what the delivery left open, in any language.
 func IsDebtsSection(heading string) bool { return IsSection(Result, resultDebts, heading) }
+
+// IsLearningsSection reports whether heading opens the result section that
+// records what the delivery taught, in any language.
+func IsLearningsSection(heading string) bool { return IsSection(Result, resultLearnings, heading) }
 
 // IsGauntletSection reports whether heading opens the result's Gauntlet
 // section, in any language.
