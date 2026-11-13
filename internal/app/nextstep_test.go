@@ -52,7 +52,7 @@ func treeDigest(t *testing.T, dir string) string {
 }
 
 const (
-	nextStepGoodSpec = "# t\n\nProblema real.\n\nBarra: referência nomeada — acesso\n"
+	nextStepGoodSpec = "# t\n\nProblema real.\n\n## Verificação\n\nBarra: referência nomeada — acesso\nPergunta ao juiz: qual é mais claro?\n"
 	nextStepGoodRes  = "# r\n\n## Resultado\n\nok\n\n## Aceitação\n\nSem critérios.\n\n## O que mudou\n\nx\n\n## Débitos e follow-ups\n\nNenhum.\n\n## Aprendizados e desvios\n\nN/A.\n\n## Gauntlet\n\nBarra: não aplicável (teste)\n"
 )
 
@@ -85,7 +85,7 @@ func TestNextStep(t *testing.T) {
 		{name: "approved stub plan", state: domain.StateApproved, docs: map[string]string{"spec.md": nextStepGoodSpec}, actor: ActorAgent, stepHas: []string{"edit content/features/F-0001/plan.md", "cerne push"}},
 		{name: "approved real plan", state: domain.StateApproved, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan}, actor: ActorAgent, command: "cerne feature start F-0001"},
 		{name: "in development no result", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan}, actor: ActorAgent, stepHas: []string{"complete would refuse", "edit content/features/F-0001/result.md"}},
-		{name: "in development result missing evidence", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": "# t\n\n## Objetivo e critérios de aceitação\n\n1. QUANDO a O SISTEMA DEVE b.\n2. QUANDO c O SISTEMA DEVE d.\n\nBarra: ref — acesso\n", "plan.md": plan, "result.md": strings.Replace(nextStepGoodRes, "Sem critérios.", "critério 1 — ATENDIDO: teste", 1)}, actor: ActorAgent, stepHas: []string{"critério(s) 2", "edit content/features/F-0001/result.md"}},
+		{name: "in development result missing evidence", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": "# t\n\n## Objetivo e critérios de aceitação\n\n1. QUANDO a O SISTEMA DEVE b.\n2. QUANDO c O SISTEMA DEVE d.\n\n## Verificação\n\nBarra: ref — acesso\nPergunta ao juiz: qual é mais claro?\n", "plan.md": plan, "result.md": strings.Replace(nextStepGoodRes, "Sem critérios.", "critério 1 — ATENDIDO: teste", 1)}, actor: ActorAgent, stepHas: []string{"critério(s) 2", "edit content/features/F-0001/result.md"}},
 		{name: "in development pending uncited", state: domain.StateInDevelopment, pending: true, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan, "result.md": nextStepGoodRes}, actor: ActorAgent, stepHas: []string{"P-0001", "edit content/features/F-0001/result.md"}},
 		{name: "in development valid result", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan, "result.md": nextStepGoodRes}, actor: ActorAgent, command: "cerne feature complete F-0001"},
 		{name: "implemented no delivery", state: domain.StateImplemented, actor: ActorAgent, stepHas: []string{"cerne feature deliver F-0001 --mr <url>"}, command: "cerne feature deliver F-0001 --mr <url>"},
