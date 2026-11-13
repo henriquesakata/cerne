@@ -87,6 +87,47 @@ func TestBackfillRolesReports(t *testing.T) {
 	bindAt(t, in.CacheDir, "s7", "", "F-0006", at(1))
 	subagent(t, in, "s7", "j", judgeAsk, verdict, 5, cc(5, 0, 0, 5))
 
+	// The real criterion-10 case: the parent's main bind moves F-0008 -> F-0009
+	// while the subagent runs; its own binds never change.
+	mainMsg(t, in, "s8")
+	bindAt(t, in.CacheDir, "s8", "", "F-0008", at(1))
+	bindAt(t, in.CacheDir, "s8", "", "F-0009", at(6))
+	writeLines(t, in.Roots[0], "-tmp-p/s8/subagents/agent-a.jsonl", ask("s8", "a", at(2), "Leia /tmp/a.md"),
+		tmsg{ts: at(3), id: "b1", req: "r", agent: "a", c: cc(1, 0, 0, 1)}.line("s8"),
+		reply("s8", "a", at(8), verdict),
+		tmsg{ts: at(9), id: "b2", req: "r", agent: "a", c: cc(1, 0, 0, 1)}.line("s8"))
+
+	// A subagent on one feature and an epic, or an unresolved work: ambiguous too.
+	mainMsg(t, in, "s9")
+	bindAt(t, in.CacheDir, "s9", "", "F-0010", at(1))
+	bindAt(t, in.CacheDir, "s9", "a", "E-0001", at(6))
+	bindAt(t, in.CacheDir, "s9", "b", "F-0010", at(1))
+	bindAt(t, in.CacheDir, "s9", "b", "W-0001", at(6))
+	for _, ag := range []string{"a", "b"} {
+		writeLines(t, in.Roots[0], "-tmp-p/s9/subagents/agent-"+ag+".jsonl", ask("s9", ag, at(2), "Ataque:\n"+diffFence),
+			tmsg{ts: at(3), id: "c1" + ag, req: "r", agent: ag, c: cc(1, 0, 0, 1)}.line("s9"),
+			tmsg{ts: at(7), id: "c2" + ag, req: "r", agent: ag, c: cc(1, 0, 0, 1)}.line("s9"))
+	}
+
+	// Roles already in the anchor and the judge already bound: nothing to do.
+	anchored(t, in, "F-0007", domain.StateImplemented, big, map[string]Counters{"critic": cc(1, 0, 0, 1)})
+	mainMsg(t, in, "s10")
+	bindAt(t, in.CacheDir, "s10", "", "F-0007", at(1))
+	subagent(t, in, "s10", "j", "Leia", "", 5, cc(1, 0, 0, 1))
+	writeLines(t, in.Roots[0], "-tmp-p/s10/subagents/agent-j.jsonl", ask("s10", "j", at(4), judgeAsk), reply("s10", "j", at(6), verdict),
+		tmsg{ts: at(5), id: "s10j", req: "r", agent: "j", c: cc(1, 0, 0, 1)}.line("s10"))
+	if err := AppendBind(in.CacheDir, Bind{Session: "s10", Agent: "j", Entity: "F-0007", Harness: HarnessClaudeCode, Role: "judge", Retro: true, TS: at(20)}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Half of a subagent's messages are before any bind of its own: partial.
+	anchored(t, in, "F-0011", domain.StateImplemented, big, nil)
+	mainMsg(t, in, "s11")
+	bindAt(t, in.CacheDir, "s11", "a", "F-0011", at(5))
+	writeLines(t, in.Roots[0], "-tmp-p/s11/subagents/agent-a.jsonl", ask("s11", "a", at(2), "Ataque:\n"+diffFence),
+		tmsg{ts: at(3), id: "d1", req: "r", agent: "a", c: cc(1, 0, 0, 1)}.line("s11"),
+		tmsg{ts: at(7), id: "d2", req: "r", agent: "a", c: cc(10, 0, 0, 10)}.line("s11"))
+
 	before := snapshotTree(t, in)
 	r, err := BackfillRoles(in, time.Time{})
 	if err != nil {
@@ -95,26 +136,45 @@ func TestBackfillRolesReports(t *testing.T) {
 	if !reflect.DeepEqual(snapshotTree(t, in), before) {
 		t.Fatal("the report wrote into the cache or the backend")
 	}
-	want := []FeatureRoles{
-		{ID: "F-0001", State: domain.StateImplemented, Critic: cc(2, 0, 0, 2), Judge: cc(4, 0, 0, 4), Agents: []AgentRole{
-			{Session: "s1", Agent: "c", Role: "critic"}, {Session: "s1", Agent: "j", Role: "judge"}}},
-		{ID: "F-0002", State: domain.StateDone, Judge: cc(8, 0, 0, 8), Agents: []AgentRole{{Session: "s2", Agent: "j", Role: "judge"}}},
+	byID := map[string]FeatureRoles{}
+	for _, f := range r.Features {
+		byID[f.ID] = f
 	}
-	if !reflect.DeepEqual(r.Features, want) {
-		t.Errorf("Features = %+v\nwant %+v", r.Features, want)
+	for _, want := range []FeatureRoles{
+		{ID: "F-0001", State: domain.StateImplemented, NeedsAnchor: true, Critic: cc(2, 0, 0, 2), Judge: cc(4, 0, 0, 4), Agents: []AgentRole{
+			{Session: "s1", Agent: "c", Role: "critic"}, {Session: "s1", Agent: "j", Role: "judge"}}},
+		{ID: "F-0002", State: domain.StateDone, NeedsAnchor: true, Judge: cc(8, 0, 0, 8), Agents: []AgentRole{{Session: "s2", Agent: "j", Role: "judge"}}},
+		// anchor already has roles, the judge is not bound yet: only the bind
+		{ID: "F-0004", State: domain.StateImplemented, Judge: cc(1, 0, 0, 1), Agents: []AgentRole{{Session: "s5", Agent: "j", Role: "judge"}}},
+		{ID: "F-0011", State: domain.StateImplemented, NeedsAnchor: true, Critic: cc(10, 0, 0, 10), Agents: []AgentRole{{Session: "s11", Agent: "a", Role: "critic"}}},
+	} {
+		if !reflect.DeepEqual(byID[want.ID], want) {
+			t.Errorf("%s = %+v\nwant %+v", want.ID, byID[want.ID], want)
+		}
+	}
+	if len(r.Features) != 4 {
+		t.Errorf("Features = %d, want 4: %+v", len(r.Features), r.Features)
+	}
+	if want := []AgentRole{{Session: "s11", Agent: "a", Role: "critic"}}; !reflect.DeepEqual(r.Partial, want) {
+		t.Errorf("Partial = %+v, want %+v", r.Partial, want)
 	}
 	if r.Unattributed != 1 {
 		t.Errorf("Unattributed = %d, want 1", r.Unattributed)
 	}
-	if want := []Ambiguity{{Session: "s4", Agent: "a", Role: "critic", Entities: []string{"F-0002", "F-0003"}}}; !reflect.DeepEqual(r.Ambiguous, want) {
+	if want := []Ambiguity{
+		{Session: "s4", Agent: "a", Role: "critic", Entities: []string{"F-0002", "F-0003"}},
+		{Session: "s8", Agent: "a", Role: "judge", Entities: []string{"F-0008", "F-0009"}},
+		{Session: "s9", Agent: "a", Role: "critic", Entities: []string{"E-0001", "F-0010"}},
+		{Session: "s9", Agent: "b", Role: "critic", Entities: []string{"F-0010", "W-0001"}},
+	}; !reflect.DeepEqual(r.Ambiguous, want) {
 		t.Errorf("Ambiguous = %+v, want %+v", r.Ambiguous, want)
 	}
-	if !reflect.DeepEqual(r.HasRoles, []string{"F-0004"}) || !reflect.DeepEqual(r.NoAnchor, []string{"F-0005"}) || !reflect.DeepEqual(r.Inconsistent, []string{"F-0006"}) {
+	if !reflect.DeepEqual(r.HasRoles, []string{"F-0007"}) || !reflect.DeepEqual(r.NoAnchor, []string{"F-0005"}) || !reflect.DeepEqual(r.Inconsistent, []string{"F-0006"}) {
 		t.Errorf("HasRoles %v, NoAnchor %v, Inconsistent %v", r.HasRoles, r.NoAnchor, r.Inconsistent)
 	}
 
 	// --since drops the subagents whose messages start before it: F-0001 loses its critic.
-	if r, err := BackfillRoles(in, at(4)); err != nil || len(r.Features) != 2 || r.Features[0].Critic != (Counters{}) || r.Features[0].Judge != cc(4, 0, 0, 4) {
+	if r, err := BackfillRoles(in, at(4)); err != nil || len(r.Features) != 3 || r.Features[0].Critic != (Counters{}) || r.Features[0].Judge != cc(4, 0, 0, 4) {
 		t.Errorf("--since at(4): %+v, %v", r.Features, err)
 	}
 }
@@ -180,5 +240,33 @@ func TestRolesEdit(t *testing.T) {
 	saveFeature(t, repo, "F-0009", domain.StateImplemented)
 	if _, _, err := RolesEdit(repo, "F-0009", false, critic, judge); !errors.Is(err, ErrBackfillNoAnchor) {
 		t.Errorf("no anchor: %v, want ErrBackfillNoAnchor", err)
+	}
+}
+
+// TestAttributeOtherUndoesABackfilledRole (F-0396): a wrong retro role is
+// undone by a later `cost attribute --role other`: the later bind wins in the
+// cost, and the backfill leaves the subagent alone.
+func TestAttributeOtherUndoesABackfilledRole(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	mainMsg(t, in, "s1")
+	bindAt(t, in.CacheDir, "s1", "", "F-0001", at(1))
+	subagent(t, in, "s1", "j", "Leia", "ok\nVEREDITO: A", 5, cc(4, 0, 0, 4))
+	retro := func(role string, n int) {
+		if err := AppendBind(in.CacheDir, Bind{Session: "s1", Agent: "j", Entity: "F-0001", Harness: HarnessClaudeCode, Role: role, Retro: true, TS: at(n)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retro("judge", 20)
+	if r := compute(t, in, "F-0001"); r.ByRole["judge"] != cc(4, 0, 0, 4) {
+		t.Fatalf("ByRole = %+v, want the judge", r.ByRole)
+	}
+	retro("other", 21)
+	r := compute(t, in, "F-0001")
+	if r.ByRole["judge"] != (Counters{}) || r.ByRole["other"] != cc(4, 0, 0, 4) {
+		t.Errorf("ByRole = %+v, want the later bind (other) to win", r.ByRole)
+	}
+	if b, err := BackfillRoles(in, time.Time{}); err != nil || len(b.Features)+len(b.NoAnchor) != 0 {
+		t.Errorf("backfill after the undo: %+v, %v; want nothing", b, err)
 	}
 }

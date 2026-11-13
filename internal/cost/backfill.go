@@ -22,6 +22,7 @@ type AgentRole struct {
 	Session string `json:"session"`
 	Agent   string `json:"agent"`
 	Role    string `json:"role"`
+	Bound   bool   `json:"bound"` // a retro bind already records the role
 }
 
 // FeatureRoles is what the backfill would add to one feature's anchor.
@@ -31,6 +32,8 @@ type FeatureRoles struct {
 	Critic Counters            `json:"critic"`
 	Judge  Counters            `json:"judge"`
 	Agents []AgentRole         `json:"agents"`
+	// NeedsAnchor: the anchor lacks the roles (else only binds are missing).
+	NeedsAnchor bool `json:"needs_anchor"`
 }
 
 // Ambiguity is a classified subagent whose messages fall on more than one
@@ -47,6 +50,7 @@ type Backfill struct {
 	Features     []FeatureRoles `json:"features"`
 	Unattributed int            `json:"unattributed"`
 	Ambiguous    []Ambiguity    `json:"ambiguous"`
+	Partial      []AgentRole    `json:"partial"` // counted, but only the share some binding governs
 	HasRoles     []string       `json:"has_roles"`
 	NoAnchor     []string       `json:"no_anchor"`
 	Inconsistent []string       `json:"inconsistent"`
@@ -60,7 +64,9 @@ type agentGroup struct {
 	entities map[string]bool
 	c        Counters // the messages some binding governs
 	first    time.Time
-	hasRole  bool // a bind already gave it a role
+	bound    bool // a bind already gives it its critic or judge role
+	skip     bool // a bind gives it another role: never touched
+	partial  bool // some messages are ungoverned or after the entity closed
 }
 
 // BackfillRoles classifies the subagents of the ledger's Claude Code sessions
@@ -119,12 +125,22 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 			b, ok := governing(bySess[sess], m, spawn[m.agent])
 			switch {
 			case !ok || att.closed(b, m.ts):
+				g.partial = true
+				continue
+			case b.Role != "" && b.Role != "critic" && b.Role != "judge":
+				g.skip = true
+				continue
 			case b.Role != "":
-				g.hasRole = true
-			default:
-				g.entities[att.res.resolve(b.Entity)] = true
-				g.c = g.c.add(m.c)
+				g.class, g.bound = b.Role, true
+			case !b.Retro:
+				// The parent's main bind moving while the subagent runs (a
+				// TL rebinding with a judge in flight) puts it on two entities.
+				if e, ok := mainAt(bySess[sess], m.ts); ok {
+					g.entities[att.res.resolve(e)] = true
+				}
 			}
+			g.entities[att.res.resolve(b.Entity)] = true
+			g.c = g.c.add(m.c)
 		}
 	}
 	keys := make([]agentKey, 0, len(groups))
@@ -137,33 +153,31 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 	byFeature := map[string]*FeatureRoles{}
 	for _, k := range keys {
 		g := groups[k]
-		if g.hasRole || (!since.IsZero() && g.first.Before(since)) {
+		if g.skip || (!since.IsZero() && g.first.Before(since)) {
 			continue
 		}
-		var ents []string
-		for e := range g.entities {
-			if domain.IsFeatureID(e) {
-				ents = append(ents, e)
-			}
-		}
-		sort.Strings(ents)
-		switch len(ents) {
-		case 0:
+		ents := slices.Sorted(maps.Keys(g.entities))
+		ar := AgentRole{Session: k.sess, Agent: k.agent, Role: g.class, Bound: g.bound}
+		switch {
+		case len(ents) > 1:
+			out.Ambiguous = append(out.Ambiguous, Ambiguity{Session: k.sess, Agent: k.agent, Role: g.class, Entities: ents})
+		case len(ents) == 0 || !domain.IsFeatureID(ents[0]):
 			out.Unattributed++
-		case 1:
+		default:
 			f := byFeature[ents[0]]
 			if f == nil {
 				f = &FeatureRoles{ID: ents[0]}
 				byFeature[ents[0]] = f
 			}
-			f.Agents = append(f.Agents, AgentRole{Session: k.sess, Agent: k.agent, Role: g.class})
+			f.Agents = append(f.Agents, ar)
 			if g.class == "critic" {
 				f.Critic = f.Critic.add(g.c)
 			} else {
 				f.Judge = f.Judge.add(g.c)
 			}
-		default:
-			out.Ambiguous = append(out.Ambiguous, Ambiguity{Session: k.sess, Agent: k.agent, Role: g.class, Entities: ents})
+			if g.partial {
+				out.Partial = append(out.Partial, ar)
+			}
 		}
 	}
 	for _, id := range slices.Sorted(maps.Keys(byFeature)) {
@@ -174,17 +188,33 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 		case err != nil || !ok || (feat.State != domain.StateImplemented && feat.State != domain.StateDone):
 			out.NoAnchor = append(out.NoAnchor, id)
 		case a.ByRole["critic"] != (Counters{}) || a.ByRole["judge"] != (Counters{}):
-			out.HasRoles = append(out.HasRoles, id)
+			if slices.ContainsFunc(f.Agents, func(a AgentRole) bool { return !a.Bound }) {
+				f.State = feat.State // only the binds are missing
+				out.Features = append(out.Features, *f)
+			} else {
+				out.HasRoles = append(out.HasRoles, id)
+			}
 		default:
 			if _, ok := mergeRoles(a, f.Critic, f.Judge); !ok {
 				out.Inconsistent = append(out.Inconsistent, id)
 				continue
 			}
-			f.State = feat.State
+			f.State, f.NeedsAnchor = feat.State, true
 			out.Features = append(out.Features, *f)
 		}
 	}
 	return out, nil
+}
+
+// mainAt is the entity of the last main-thread bind at or before ts.
+func mainAt(binds []Bind, ts time.Time) (string, bool) {
+	id := ""
+	for _, b := range binds {
+		if b.Agent == "" && !b.Retro && !b.TS.After(ts) {
+			id = b.Entity
+		}
+	}
+	return id, id != ""
 }
 
 // mergeRoles is the anchor's by_role with the critic and judge counters added,
