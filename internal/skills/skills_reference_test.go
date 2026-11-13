@@ -91,3 +91,38 @@ func TestSkillPointsToEveryReferenceFile(t *testing.T) {
 		}
 	}
 }
+
+// TestInstallPrunesStaleReferenceFiles: a reference file the embed no longer
+// has (renamed or dropped) is removed on install, in every destination, so it
+// cannot contradict the guide; other files are left alone.
+func TestInstallPrunesStaleReferenceFiles(t *testing.T) {
+	dir := t.TempDir()
+	provs := []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini}
+	if _, err := Install(dir, provs...); err != nil {
+		t.Fatal(err)
+	}
+	bases := []string{".claude/skills", ".cursor/skills", ".agents/skills", ".gemini/skills"}
+	for _, b := range bases {
+		rd := filepath.Join(dir, filepath.FromSlash(b), "cerne-authoring", "reference")
+		os.WriteFile(filepath.Join(rd, "old-name.md"), []byte("stale\n"), 0o644)
+		os.WriteFile(filepath.Join(rd, "notes.txt"), []byte("mine\n"), 0o644)
+	}
+	rs, err := Install(dir, provs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range bases {
+		rd := filepath.Join(dir, filepath.FromSlash(b), "cerne-authoring", "reference")
+		if _, err := os.Stat(filepath.Join(rd, "old-name.md")); err == nil {
+			t.Errorf("%s: stale reference survived", b)
+		}
+		if _, err := os.Stat(filepath.Join(rd, "notes.txt")); err != nil {
+			t.Errorf("%s: a non-markdown file was removed", b)
+		}
+	}
+	for _, r := range rs {
+		if r.Skill == "cerne-authoring" && r.Status != StatusUpdated {
+			t.Errorf("%s: status = %s, want updated", r.Path, r.Status)
+		}
+	}
+}

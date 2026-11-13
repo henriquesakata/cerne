@@ -124,6 +124,9 @@ func writeSkillFiles(dst string, s Skill) (Status, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(s.References) > 0 && pruneStale(filepath.Join(filepath.Dir(dst), "reference"), s.References) && status == StatusUnchanged {
+		status = StatusUpdated
+	}
 	for _, r := range s.References {
 		st, err := writeSkill(filepath.Join(filepath.Dir(dst), filepath.FromSlash(r.RelPath)), r.Content)
 		if err != nil {
@@ -134,6 +137,30 @@ func writeSkillFiles(dst string, s Skill) (Status, error) {
 		}
 	}
 	return status, nil
+}
+
+// pruneStale removes the *.md files of dir the skill no longer ships, so a
+// renamed or dropped reference cannot contradict the guide. It reports whether
+// it removed any; files of other kinds are left alone.
+func pruneStale(dir string, keep []Reference) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	shipped := map[string]bool{}
+	for _, r := range keep {
+		shipped["reference/"+filepath.Base(r.RelPath)] = true
+	}
+	pruned := false
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" || shipped["reference/"+e.Name()] {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, e.Name())) == nil {
+			pruned = true
+		}
+	}
+	return pruned
 }
 
 // writeSkill writes content to dst (creating parent dirs), reporting whether the
