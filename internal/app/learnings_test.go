@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -120,5 +121,53 @@ func TestLearningsWritesNothing(t *testing.T) {
 	}
 	if after := treeDigest(t, repoDir); after != before {
 		t.Error("Learnings changed the backend clone")
+	}
+}
+
+func eventsOf(t *testing.T, repoDir, typ string) []domain.Event {
+	t.Helper()
+	all, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []domain.Event
+	for _, e := range all {
+		if e.Type == typ {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestSkipLearnings(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "tester")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedLearnFeature(t, repoDir, "F-0001", domain.StateImplemented, withLearnings, t0, "")
+	seedLearnFeature(t, repoDir, "F-0002", domain.StateImplemented, "## Aprendizados e desvios\nN/A\n", t0, "")
+	commitBackend(t, repoDir)
+	at := t0.Add(48 * time.Hour)
+
+	if err := SkipLearnings(repoDir, projDir, "F-0001", "all provenance", at); err != nil {
+		t.Fatal(err)
+	}
+	evs := eventsOf(t, repoDir, "feature.learnings_triaged")
+	if len(evs) != 1 || evs[0].EntityID != "F-0001" || evs[0].Payload["reason"] != "all provenance" || evs[0].Actor != "tester" || !evs[0].At.Equal(at) {
+		t.Fatalf("event = %+v", evs)
+	}
+	if r, _ := Learnings(repoDir, LearningsOpts{All: true}); len(r.Features) != 0 {
+		t.Errorf("skipped feature still listed: %v", listedIDs(r))
+	}
+
+	for _, tt := range []struct {
+		id  string
+		err error
+	}{{"F-0099", ErrNoSuchFeature}, {"F-0002", ErrNoLearnings}, {"F-0001", ErrAlreadyTriaged}} {
+		before := treeDigest(t, filepath.Join(repoDir, "events"))
+		if err := SkipLearnings(repoDir, projDir, tt.id, "", at); !errors.Is(err, tt.err) {
+			t.Errorf("%s: err = %v, want %v", tt.id, err, tt.err)
+		}
+		if treeDigest(t, filepath.Join(repoDir, "events")) != before {
+			t.Errorf("%s: a refused skip wrote to the backend", tt.id)
+		}
 	}
 }

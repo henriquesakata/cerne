@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -122,4 +124,44 @@ func noteAfter(notes []store.Note, id string, at time.Time) bool {
 		}
 	}
 	return false
+}
+
+var (
+	// ErrNoSuchFeature is returned when --skip names a feature the backend lacks.
+	ErrNoSuchFeature = errors.New("no such feature")
+	// ErrNoLearnings is returned when --skip names a feature whose result has no learnings items.
+	ErrNoLearnings = errors.New("the feature's result has no learnings items")
+	// ErrAlreadyTriaged is returned when the feature already carries a --skip record.
+	ErrAlreadyTriaged = errors.New("the feature's learnings were already skipped")
+)
+
+// SkipLearnings records that nothing in a feature's learnings is durable: the
+// feature.learnings_triaged event takes it off Learnings' list (F-0401).
+func SkipLearnings(repoDir, projDir, id, reason string, now time.Time) error {
+	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("%w: %s", ErrNoSuchFeature, id)
+		} else if err != nil {
+			return "", err
+		}
+		raw, _ := os.ReadFile(FeatureDocPath(repoDir, id, "result.md"))
+		if len(restmpl.LearningItems(string(raw))) == 0 {
+			return "", fmt.Errorf("%w: %s", ErrNoLearnings, id)
+		}
+		events, err := store.ReadEvents(repoDir)
+		if err != nil {
+			return "", err
+		}
+		for _, ev := range events {
+			if ev.EntityID == id && ev.Type == eventLearningsTriaged {
+				return "", fmt.Errorf("%w: %s", ErrAlreadyTriaged, id)
+			}
+		}
+		ev := domain.NewEvent(id, eventLearningsTriaged, map[string]string{"reason": reason}, EventActor())
+		ev.At = now.UTC()
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return "cerne: learnings of " + id + " triaged", nil
+	})
 }
