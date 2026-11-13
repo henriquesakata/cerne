@@ -21,7 +21,7 @@ vi.mock('./live', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./live')>()),
   LiveProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useLiveVersion: () => 0,
-  useProjects: () => ({ projects: mockProjects, activePid: mockPid }),
+  useProjects: () => ({ projects: mockProjects, activePid: mockPid, changed: new Set<string>(), setActivePid: () => {} }),
 }))
 vi.mock('./notifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./notifications')>()),
