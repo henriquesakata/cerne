@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/telemetry"
 )
@@ -163,9 +165,21 @@ func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool,
 		stop := op.Phase("snapshot")
 		err := updateSnapshot(projDir, head)
 		stop()
+		if err == nil {
+			refreshIndex(repoDir)
+		}
 		return err
 	}
 	return nil
+}
+
+// refreshIndex rebuilds the local search index from the clone, which a
+// successful write has just left equal to the backend. It runs outside the
+// lock, after the write: a failure only reaches IndexNotice, never the caller.
+func refreshIndex(repoDir string) {
+	if err := index.Rebuild(repoDir, project.IndexPathForRepo(repoDir), time.Now()); err != nil {
+		IndexNotice(err)
+	}
 }
 
 // ErrIDRaceLost is returned when a re-minted id kept colliding with another
@@ -178,6 +192,11 @@ var ErrIDRaceLost = errors.New("id race lost 3 times; run 'cerne pull' and retry
 // reaches it too: the `ui` process logs the line on its own stderr, never in
 // the HTTP response.
 var RemintNotice func(oldID, newID string)
+
+// IndexNotice is told why the local search index could not be refreshed after
+// a write that already reached the backend. The write stands: the index is
+// derived and `cerne pull` rebuilds it (F-0394). The CLI root wires it to stderr.
+var IndexNotice = func(error) {}
 
 // fastForwardToOrigin fetches and, when origin is ahead of base, moves the
 // clone onto it, returning the new base. A clone that diverged from origin

@@ -47,6 +47,12 @@ func IndexPath(projectID string) (string, error) {
 	return filepath.Join(dir, "index.db"), nil
 }
 
+// IndexPathForRepo is the index.db sibling of the repo/ clone, for callers
+// that only know the clone's directory (the same file IndexPath names).
+func IndexPathForRepo(repoDir string) string {
+	return filepath.Join(filepath.Dir(repoDir), "index.db")
+}
+
 // BackendDataDir returns where `cerne init` creates a project's local backend
 // when no --backend is given: <data root>/cerne/backends/<projectID>.git. It
 // lives outside CacheDir on purpose — the cache is derived and deletable, the
