@@ -563,3 +563,125 @@ func TestCostStampBreaksDownByRole(t *testing.T) {
 		}
 	}
 }
+
+// judgeSubagent adds a judge-shaped subagent y to sess-1: it is asked to read
+// a file and ends with the verdict line, and spends 1/1/1/1 tokens.
+func judgeSubagent(t *testing.T) {
+	t.Helper()
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	writeTranscript(t, root, "sess-1/subagents/agent-y.jsonl",
+		`{"type":"user","timestamp":"2026-11-01T10:03:30Z","sessionId":"sess-1","isSidechain":true,"agentId":"y","message":{"role":"user","content":"Leia /tmp/a.md"}}`,
+		costLine("2026-11-01T10:04:00Z", "m3", "claude-opus-5-5", "y", 1, 1, 1, 1),
+		`{"type":"assistant","timestamp":"2026-11-01T10:04:01Z","sessionId":"sess-1","isSidechain":true,"agentId":"y","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Porque sim.\n\nVEREDITO: A"}]}}`)
+}
+
+// backfillProject is F-0001 stamped before the judge subagent existed, then
+// the judge's transcript.
+func backfillProject(t *testing.T, state domain.FeatureState) (projDir, repoDir string) {
+	t.Helper()
+	projDir, _, repoDir = setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	costSessions(t, repoDir)
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	judgeSubagent(t)
+	if state != domain.StateImplemented {
+		now := time.Now().UTC()
+		if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Feature F-0001", State: state, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		commitBackend(t, repoDir)
+	}
+	return projDir, repoDir
+}
+
+func ledgerBytes(t *testing.T, repoDir string) string {
+	t.Helper()
+	raw, _ := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "costbind.ndjson"))
+	return string(raw)
+}
+
+// TestCostBackfillRolesReportsWithoutWriting (F-0396 crit. 3): without --apply
+// one line per feature (agents and weighted tokens per role), then the counts
+// left out — and no write: not the ledger, not the result.
+func TestCostBackfillRolesReportsWithoutWriting(t *testing.T) {
+	projDir, repoDir := backfillProject(t, domain.StateImplemented)
+	ledger, result := ledgerBytes(t, repoDir), readResult(t, repoDir, "F-0001")
+	out, err := execCerne(t, "cost", "backfill-roles", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("backfill-roles: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"F-0001  implemented  critic 0 agents, 0 tokens · judge 1 agent, 7 tokens",
+		"Left out: unattributed 0 · ambiguous 0 · already with roles 0 · no anchor 0 · inconsistent 0",
+		"--apply",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if ledgerBytes(t, repoDir) != ledger || readResult(t, repoDir, "F-0001") != result {
+		t.Error("the report wrote")
+	}
+	js, err := execCerne(t, "cost", "backfill-roles", "--json", "--dir", projDir)
+	var rep struct {
+		Features []struct{ ID string } `json:"features"`
+	}
+	if err != nil || json.Unmarshal([]byte(js), &rep) != nil || len(rep.Features) != 1 || rep.Features[0].ID != "F-0001" {
+		t.Errorf("--json: %v\n%s", err, js)
+	}
+}
+
+// TestCostBackfillRolesApplyImplemented (F-0396 crit. 4, 6): --apply binds the
+// subagent under its role (a retro bind) and completes the result's anchor
+// without lowering it; a second run writes nothing and says so.
+func TestCostBackfillRolesApplyImplemented(t *testing.T) {
+	projDir, repoDir := backfillProject(t, domain.StateImplemented)
+	before := readResult(t, repoDir, "F-0001")
+	out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001") {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	result := readResult(t, repoDir, "F-0001")
+	if !strings.Contains(result, `"judge":{"input":1,"cache_creation":1,"cache_read":1,"output":1}`) || strings.Count(result, "## Custo") != 1 ||
+		!strings.Contains(result, "| input | 3 |") || before == result {
+		t.Errorf("result not completed:\n%s", result)
+	}
+	if l := ledgerBytes(t, repoDir); !strings.Contains(l, `"agent_id":"y","entity_id":"F-0001","harness":"claude-code","role":"judge","retro":true`) {
+		t.Errorf("ledger lacks the retro bind:\n%s", l)
+	}
+	ledger, events := ledgerBytes(t, repoDir), stampEvents(t, repoDir)
+	out, err = execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "nothing to backfill") {
+		t.Fatalf("second apply: %v\n%s", err, out)
+	}
+	if ledgerBytes(t, repoDir) != ledger || readResult(t, repoDir, "F-0001") != result || stampEvents(t, repoDir) != events {
+		t.Error("the second apply wrote")
+	}
+}
+
+// TestCostBackfillRolesApplyDone (F-0396 crit. 4, 6): a done feature keeps its
+// result byte for byte; the anchor with the roles goes into an erratum, which
+// the next run reads as the newest anchor.
+func TestCostBackfillRolesApplyDone(t *testing.T) {
+	projDir, repoDir := backfillProject(t, domain.StateDone)
+	before := readResult(t, repoDir, "F-0001")
+	if out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir); err != nil {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	if readResult(t, repoDir, "F-0001") != before {
+		t.Error("the result of a done feature changed")
+	}
+	errata, err := store.LoadErrata(repoDir, "F-0001")
+	if err != nil || strings.Count(errata, "## Custo") != 1 || !strings.Contains(errata, `"judge":{"input":1,"cache_creation":1,"cache_read":1,"output":1}`) {
+		t.Fatalf("errata (%v):\n%s", err, errata)
+	}
+	out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "nothing to backfill") {
+		t.Fatalf("second apply: %v\n%s", err, out)
+	}
+	if again, _ := store.LoadErrata(repoDir, "F-0001"); again != errata {
+		t.Error("the second apply wrote an erratum")
+	}
+}

@@ -60,6 +60,7 @@ func newCostCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().BoolVar(&stamp, "stamp", false, "write the cost into the implemented feature's result (## Custo)")
 	cmd.AddCommand(newCostAttributeCmd())
+	cmd.AddCommand(newCostBackfillCmd())
 	return cmd
 }
 
@@ -290,4 +291,115 @@ func renderRollup(out io.Writer, r cost.Report) {
 	fmt.Fprintf(out, "  stamped: %s\n", list(r.Children.Stamped))
 	fmt.Fprintf(out, "  without anchor: %s\n", list(r.Children.Missing))
 	fmt.Fprintf(out, "Total (own + children): %s\n", fmtCounters(*r.Total))
+}
+
+func newCostBackfillCmd() *cobra.Command {
+	var dir, since string
+	var apply, asJSON bool
+	cmd := &cobra.Command{
+		Use:   "backfill-roles",
+		Short: "Recover the critic and judge cost of past Gauntlets from the transcripts (F-0396)",
+		Long: "Classifies every subagent of the project's ledger sessions by its transcript (a judge ends in the " +
+			"verdict line or was asked for it; a critic is a code-reviewer or read the diff fence) and counts it on " +
+			"the feature its parent session was bound to — never by what its prompt says. Without --apply it only " +
+			"reports: one line per feature with the agents and weighted tokens per role, then what was left out " +
+			"(unattributed, ambiguous, already with roles, no anchor, inconsistent). --apply records a retro bind " +
+			"with the role per subagent and completes the anchor: an implemented feature's '## Custo' in its " +
+			"result, a done feature's as an erratum carrying the same block. The anchor's totals never go down; " +
+			"critic plus judge above them skips the feature as inconsistent. A second run writes nothing. " +
+			"--since limits it to subagents that started on or after the date (YYYY-MM-DD).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var from time.Time
+			if since != "" {
+				var err error
+				if from, err = time.Parse("2006-01-02", since); err != nil {
+					return fmt.Errorf("--since takes a date as YYYY-MM-DD, got %q", since)
+				}
+			}
+			return runCostBackfill(cmd, dir, from, apply, asJSON)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().StringVar(&since, "since", "", "only subagents that started on or after this date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&apply, "apply", false, "record the roles (retro binds) and complete the anchors; without it, only report")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	return cmd
+}
+
+func runCostBackfill(cmd *cobra.Command, dir string, since time.Time, apply, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	cacheDir := filepath.Dir(ctx.repoDir)
+	r, err := cost.BackfillRoles(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, since)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if asJSON && !apply {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+	for _, f := range r.Features {
+		var critics, judges int
+		for _, a := range f.Agents {
+			if a.Role == "critic" {
+				critics++
+			} else {
+				judges++
+			}
+		}
+		fmt.Fprintf(out, "%s  %s  critic %s, %.0f tokens · judge %s, %.0f tokens\n", f.ID, f.State,
+			plural(critics, "agent"), cost.Weighted(f.Critic), plural(judges, "agent"), cost.Weighted(f.Judge))
+	}
+	for _, a := range r.Ambiguous {
+		fmt.Fprintf(out, "ambiguous: %s/%s (%s) falls on %s\n", a.Session, a.Agent, a.Role, strings.Join(a.Entities, ", "))
+	}
+	fmt.Fprintf(out, "Left out: unattributed %d · ambiguous %d · already with roles %d · no anchor %d · inconsistent %d\n",
+		r.Unattributed, len(r.Ambiguous), len(r.HasRoles), len(r.NoAnchor), len(r.Inconsistent))
+	if len(r.Features) == 0 {
+		fmt.Fprintln(out, "nothing to backfill")
+		return nil
+	}
+	if !apply {
+		fmt.Fprintln(out, "Nothing written. Run with --apply to record these roles and complete the anchors.")
+		return nil
+	}
+	for _, f := range r.Features {
+		text, asResult, err := cost.RolesEdit(ctx.repoDir, f.ID, f.State == domain.StateDone, f.Critic, f.Judge)
+		if err != nil {
+			return err
+		}
+		// The document first: if a bind fails afterwards, a re-run finds the
+		// roles in the anchor and leaves the feature alone.
+		where := "erratum"
+		if asResult {
+			where = "result"
+			_, _, err = app.AmendFeatureResult(ctx.repoDir, ctx.projDir, f.ID, text, "cost roles backfill (F-0396)")
+		} else {
+			_, err = app.AddErrata(ctx.repoDir, ctx.projDir, f.ID, text, app.EventActor())
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", f.ID, err)
+		}
+		now := time.Now().UTC()
+		for _, a := range f.Agents {
+			if err := cost.AppendBind(cacheDir, cost.Bind{Session: a.Session, Agent: a.Agent, Entity: f.ID, Harness: cost.HarnessClaudeCode, Role: a.Role, Retro: true, TS: now}); err != nil {
+				return err
+			}
+		}
+		fmt.Fprintf(out, "✓ %s: %s bound, anchor completed in the %s\n", f.ID, plural(len(f.Agents), "agent"), where)
+	}
+	return nil
+}
+
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
