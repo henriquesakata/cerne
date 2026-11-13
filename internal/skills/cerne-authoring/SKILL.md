@@ -204,6 +204,8 @@ Achados do crítico: <n> — corrigidos <…>; refutados <… com file:line>; ac
 
 The quoted verdict is what makes the record checkable at the human `accept` gate: a Gauntlet section with no quoted verdict per round and no disposition per finding cannot be told apart from a loop that never ran.
 
+The critic's bundle: `cerne gauntlet artifact F-NNNN --out <file>` writes one file with the spec criteria, the plan contracts and the branch diff without noise (`ui/dist` and `docs.lock` are left out; `--base`, `--exclude` and `--notes` adjust it).
+
 `cerne feature complete` itself refuses a result whose record the lint would flag (a numbered criterion never cited, or no valid `## Gauntlet`), and `--force` does not cross it. Fix the result while the doc is still editable: once the feature is `implemented` the result is frozen out of `.docs/` — until the `accept` it changes only through `cerne feature amend` (see **Errata** below).
 
 A critic-only pass (no judge) goes on the `Achados do crítico` line, never on a `Rodada N` line — a `Rodada N` line must carry the judge's quoted verdict.
