@@ -153,3 +153,17 @@ func TestAssembleGoldenWithoutEvidence(t *testing.T) {
 		}
 	}
 }
+
+// the evidence body is kept whole: only a missing final newline is added.
+func TestAssembleEvidenceKeptWhole(t *testing.T) {
+	got, err := Assemble(Input{Lang: doclang.EN, Spec: specPT, Diff: "d",
+		Evidence: []Evidence{{Name: "a", Body: "x\n\n\n"}, {Name: "b", Body: "y"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"=== EVIDENCE: a (start) ===\nx\n\n\n=== EVIDENCE: a (end) ===", "=== EVIDENCE: b (start) ===\ny\n=== EVIDENCE: b (end) ==="} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}

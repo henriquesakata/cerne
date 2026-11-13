@@ -108,7 +108,11 @@ func Assemble(in Input) (string, error) {
 	var b strings.Builder
 	b.WriteString(f.critStart + "\n" + strings.Join(parts, "\n\n") + "\n" + f.critEnd + "\n\n")
 	for _, e := range in.Evidence {
-		b.WriteString(f.evPre + e.Name + f.evStart + "\n" + strings.TrimRight(e.Body, "\n") + "\n" + f.evPre + e.Name + f.evEnd + "\n\n")
+		body := e.Body
+		if !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		b.WriteString(f.evPre + e.Name + f.evStart + "\n" + body + f.evPre + e.Name + f.evEnd + "\n\n")
 	}
 	b.WriteString(f.diffStart + "\n" + strings.TrimRight(in.Diff, "\n") + "\n" + f.diffEnd + "\n")
 	return b.String(), nil
