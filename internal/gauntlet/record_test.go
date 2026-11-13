@@ -234,3 +234,24 @@ func TestCRLFKept(t *testing.T) {
 		t.Errorf("created section: %q", out)
 	}
 }
+
+func TestVerdictLine(t *testing.T) {
+	for _, c := range []struct {
+		name, text, want string
+		ok               bool
+	}{
+		{"pt", "Razão.\n\nVEREDITO: B\n", "B", true},
+		{"en tie", "Reason.\nVERDICT: TIE", "TIE", true},
+		{"emphasis and trailing blanks", "x\n**VEREDITO: A**\n\n  \n", "A", true},
+		{"verdict not last", "VEREDITO: A\nmas depois, mais texto", "", false},
+		{"none", "só texto", "", false},
+		{"empty", "", "", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := VerdictLine(c.text)
+			if got != c.want || ok != c.ok {
+				t.Fatalf("VerdictLine = %q, %v; want %q, %v", got, ok, c.want, c.ok)
+			}
+		})
+	}
+}
