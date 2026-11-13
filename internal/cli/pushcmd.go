@@ -112,7 +112,13 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	head, conflicts, remints, err := app.ReconcileCommitPushMutate(
 		ctx.repoDir, ctx.projDir, base,
 		fmt.Sprintf("cerne: push %d document(s)", len(docs)), changes,
-		func() error { return app.OpenAutoWorkForPush(ctx.repoDir, ctx.projDir, changes) })
+		func() error {
+			if err := app.OpenAutoWorkForPush(ctx.repoDir, ctx.projDir, changes); err != nil {
+				return err
+			}
+			// F-0375: who wrote each feature document, in the same commit.
+			return app.RecordPushedDocs(ctx.repoDir, ctx.projDir, changes)
+		})
 	endReconcile(err == nil && len(conflicts) == 0)
 	if err != nil {
 		return err
