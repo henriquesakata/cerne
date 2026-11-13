@@ -10,6 +10,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/cli"
 	"github.com/henriquesakata/cerne/internal/guide"
+	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
 var codeSpan = regexp.MustCompile("`([^`\n]+)`")
@@ -35,6 +36,10 @@ func faqProblems(root *cobra.Command, text string) []string {
 			out = append(out, "no such command: "+m[1])
 			continue
 		}
+		if len(rest) > 0 && staleSubcommand(cmd, rest[0]) {
+			out = append(out, "no such subcommand "+rest[0]+" of "+cmd.CommandPath()+": "+m[1])
+			continue
+		}
 		for _, w := range rest {
 			if !strings.HasPrefix(w, "--") {
 				continue
@@ -47,6 +52,19 @@ func faqProblems(root *cobra.Command, text string) []string {
 	}
 	return out
 }
+
+// staleSubcommand: word follows a command that has subcommands but names none
+// of them. After a pure group any plain word is a stale subcommand; after a
+// runnable command that takes arguments (cerne cost <id>) only a lowercase
+// word that reads like a subcommand is.
+func staleSubcommand(cmd *cobra.Command, word string) bool {
+	if !cmd.HasSubCommands() || strings.HasPrefix(word, "-") || strings.HasPrefix(word, "<") {
+		return false
+	}
+	return !verbs.IsVerb(cmd) || lowerWord.MatchString(word)
+}
+
+var lowerWord = regexp.MustCompile(`^[a-z][a-z-]*$`)
 
 func childNamed(c *cobra.Command, name string) *cobra.Command {
 	for _, sub := range c.Commands() {
@@ -67,10 +85,10 @@ func hasFlag(c *cobra.Command, name string) bool {
 
 func TestFAQProblemsDetector(t *testing.T) {
 	root := cli.Root()
-	bad := "Run `cerne settings set a b --scope project` then `cerne settings set a b --scoop project`, `cerne nonesuch x` and `cerne feature approve F-1 --nope`."
+	bad := "Run `cerne settings set a b --scope project` then `cerne settings set a b --scoop project`, `cerne nonesuch x`, `cerne feature approve F-1 --nope`, `cerne feature aprove F-1` and `cerne cost nonesuch F-1`; `cerne feature approve <F-id>` is fine."
 	got := faqProblems(root, bad)
-	if len(got) != 3 {
-		t.Fatalf("problems = %q, want 3 (flag --scoop, verb nonesuch, flag --nope)", got)
+	if len(got) != 5 {
+		t.Fatalf("problems = %q, want 5 (flag --scoop, verb nonesuch, flag --nope, subcommand aprove, subcommand nonesuch)", got)
 	}
 }
 
