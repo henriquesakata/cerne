@@ -91,17 +91,17 @@ func TestArtifactPutCreateAndUpdate(t *testing.T) {
 	var got struct {
 		OK bool `json:"ok"`
 	}
-	rec := doJSON(t, h, http.MethodPut, "/api/artifacts/F-0001/seq.excalidraw", sceneA, &got)
+	rec := doJSON(t, h, http.MethodPut, "/api/artifacts/F-0001/seq.mmd", mermaidA, &got)
 	if rec.Code != http.StatusOK || !got.OK {
 		t.Fatalf("create status = %d body = %s, want 200 {\"ok\":true}", rec.Code, rec.Body.String())
 	}
-	path := filepath.Join(repoDir, "content", "artifacts", "F-0001", "seq.excalidraw")
+	path := filepath.Join(repoDir, "content", "artifacts", "F-0001", "seq.mmd")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("artifact not written to backend: %v", err)
 	}
-	if string(data) != sceneA {
-		t.Fatalf("backend file = %q, want %q", data, sceneA)
+	if string(data) != mermaidA {
+		t.Fatalf("backend file = %q, want %q", data, mermaidA)
 	}
 	head1, err := gitback.HeadSHA(origin)
 	if err != nil {
@@ -119,12 +119,12 @@ func TestArtifactPutCreateAndUpdate(t *testing.T) {
 	}
 
 	// Update: PUT on the existing name with new content advances origin again.
-	rec = doJSON(t, h, http.MethodPut, "/api/artifacts/F-0001/seq.excalidraw", sceneB, &got)
+	rec = doJSON(t, h, http.MethodPut, "/api/artifacts/F-0001/seq.mmd", mermaidB, &got)
 	if rec.Code != http.StatusOK || !got.OK {
 		t.Fatalf("update status = %d body = %s, want 200 {\"ok\":true}", rec.Code, rec.Body.String())
 	}
-	if data, _ = os.ReadFile(path); string(data) != sceneB {
-		t.Fatalf("backend file after update = %q, want %q", data, sceneB)
+	if data, _ = os.ReadFile(path); string(data) != mermaidB {
+		t.Fatalf("backend file after update = %q, want %q", data, mermaidB)
 	}
 	head2, err := gitback.HeadSHA(origin)
 	if err != nil {
@@ -138,25 +138,12 @@ func TestArtifactPutCreateAndUpdate(t *testing.T) {
 	}
 
 	// Idempotent PUT: byte-identical content is a no-op, still 200.
-	rec = doJSON(t, h, http.MethodPut, "/api/artifacts/F-0001/seq.excalidraw", sceneB, &got)
+	rec = doJSON(t, h, http.MethodPut, "/api/artifacts/F-0001/seq.mmd", mermaidB, &got)
 	if rec.Code != http.StatusOK || !got.OK {
 		t.Fatalf("idempotent status = %d body = %s, want 200 {\"ok\":true}", rec.Code, rec.Body.String())
 	}
 	if head3, _ := gitback.HeadSHA(origin); head3 != head2 {
 		t.Fatalf("origin HEAD moved on a no-op PUT: %s -> %s", head2, head3)
-	}
-}
-
-func TestArtifactPutInvalidJSON(t *testing.T) {
-	repoDir, projDir := newBackend(t)
-	seedFeatureForArtifacts(t, repoDir)
-	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/seq.excalidraw", `{not json`, &got)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
-	}
-	if got["error"] == "" {
-		t.Fatalf("body = %v, want pt-BR JSON error message", got)
 	}
 }
 
@@ -168,15 +155,15 @@ func TestArtifactPutBadExtension(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(got["error"], ".excalidraw") {
-		t.Fatalf("error = %q, want message naming the .excalidraw extension", got["error"])
+	if !strings.Contains(got["error"], ".mmd") {
+		t.Fatalf("error = %q, want message naming the .mmd extension", got["error"])
 	}
 }
 
 func TestArtifactPutUnknownFeature(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-9999/seq.excalidraw", `{}`, &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-9999/seq.mmd", `graph TD`, &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -189,16 +176,17 @@ func TestArtifactPutTraversalRejected(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeatureForArtifacts(t, repoDir)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/..%2Fevil.excalidraw", `{}`, &got)
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/artifacts/F-0001/..%2Fevil.mmd", `{}`, &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(repoDir, "content", "artifacts", "evil.excalidraw")); err == nil {
+	if _, err := os.Stat(filepath.Join(repoDir, "content", "artifacts", "evil.mmd")); err == nil {
 		t.Fatalf("traversal PUT escaped the feature artifact dir")
 	}
 }
 
 const mermaidA = "sequenceDiagram\n  A->>B: olá\n"
+const mermaidB = "sequenceDiagram\n  A->>B: olá\n  B-->>A: ok\n"
 
 // TestArtifactGetMmd serves a .mmd artifact as text/plain with its raw body.
 func TestArtifactGetMmd(t *testing.T) {
@@ -265,7 +253,7 @@ func TestArtifactPutMmdEmpty(t *testing.T) {
 }
 
 // TestArtifactPutUnknownExtension rejects extensions other than
-// .excalidraw / .mmd with 400 naming both accepted extensions.
+// .mmd with 400 naming the accepted extension.
 func TestArtifactPutUnknownExtension(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedFeatureForArtifacts(t, repoDir)
@@ -274,8 +262,8 @@ func TestArtifactPutUnknownExtension(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(got["error"], ".excalidraw") || !strings.Contains(got["error"], ".mmd") {
-		t.Fatalf("error = %q, want message naming .excalidraw and .mmd", got["error"])
+	if !strings.Contains(got["error"], ".mmd") {
+		t.Fatalf("error = %q, want message naming .mmd", got["error"])
 	}
 }
 
