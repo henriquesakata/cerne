@@ -140,6 +140,10 @@ func TestStaleDecisionFindings(t *testing.T) {
 			want:      map[string][]string{"D-0001": {"(cli, ui)", "newer active D-0002", "--by D-0002"}},
 		},
 		{
+			name:      "equal creation timestamps: neither is newer",
+			decisions: []store.Decision{dec("D-0001", 100, "k"), dec("D-0002", 100, "k")},
+		},
+		{
 			name:      "an untagged decision never matches signal 2",
 			decisions: []store.Decision{dec("D-0001", 300), dec("D-0002", 10, "x")},
 		},
@@ -290,5 +294,31 @@ func TestStaleDecisionWindowFromRunConfig(t *testing.T) {
 		if flagged != c.want {
 			t.Errorf("staleDecisionDays=%d: flagged %v, want %v", c.days, flagged, c.want)
 		}
+	}
+}
+
+// TestStaleDecisionIgnoresReferences pins the TL decision on F-0385
+// criterion 1: a current reference's --informs (and its body) is the source
+// that motivated a decision, no proof of use — it is no live citation.
+func TestStaleDecisionIgnoresReferences(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().UTC().Add(-400 * 24 * time.Hour)
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0001", Title: "Antiga", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	if err := store.SaveReference(dir, store.Reference{ID: "R-0001", Title: "Artigo", State: domain.ReferenceCurrent, External: true, URL: "https://example.com/a", Informs: []string{"D-0001"}, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveReference: %v", err)
+	}
+	writeDoc(t, dir, "content/features/F-0001/spec.md", cites("D-0001"))
+	writeDoc(t, dir, "content/references/R-0001.md", cites("D-0001"))
+	got, err := RunConfig(dir, 14, 8, 0)
+	if err != nil {
+		t.Fatalf("RunConfig: %v", err)
+	}
+	if !slices.ContainsFunc(got, func(f Finding) bool { return f.Rule == RuleStaleDecision && f.Entity == "D-0001" }) {
+		t.Fatalf("a reference informing D-0001 silenced signal 1: %+v", got)
 	}
 }
