@@ -150,6 +150,14 @@ func TestHandoffCmdTakeAndCancel(t *testing.T) {
 	if strings.Contains(out, "no read-back recorded") {
 		t.Fatalf("read-back warning with --note given:\n%s", out)
 	}
+	// F-0368 crit. 18: the read-back is echoed right after the taken-by line,
+	// and show HO- carries it under the same label.
+	if !regexp.MustCompile(`(?m)^HO-0001 taken by .* UTC — W-0002 created.*\nread-back: li tudo\n`).MatchString(out) {
+		t.Fatalf("read-back not echoed after the taken line:\n%s", out)
+	}
+	if show := mustCerne(t, "show", "HO-0001", "--dir", projDir); !strings.Contains(show, "read-back: li tudo\n") {
+		t.Fatalf("show HO-0001 without the read-back:\n%s", show)
+	}
 	wantWork(t, repoDir, "W-0001", domain.WorkDone, "handed off to W-0002 via HO-0001")
 	if _, err := execCerne(t, "handoff", "take", "HO-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "was taken by") {
 		t.Fatalf("second take err = %v", err)
@@ -306,8 +314,8 @@ func TestHandoffCmdTakeActorAndReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("take without --note must succeed: %v\n%s", err, out)
 	}
-	want := `no read-back recorded — confirm with: cerne handoff take … --note "<what you understood + first action>"`
-	if !strings.Contains(out, want) || !strings.HasPrefix(out, "HO-0001 taken by agent:receiver at ") {
+	want := `warning: no read-back recorded — next time pass --note "<what you understood + first action>"` + "\n"
+	if !strings.Contains(out, want) || strings.Contains(out, "cerne handoff take") || strings.Contains(out, "read-back: ") || !strings.HasPrefix(out, "HO-0001 taken by agent:receiver at ") {
 		t.Fatalf("take output:\n%s", out)
 	}
 	w, err := store.LoadWork(repoDir, "W-0002")

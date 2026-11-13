@@ -53,6 +53,9 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "%s taken by %s at %s — %s created (active) — %s\n", r.Taken.ID, r.Taken.TakenBy, store.UTCMinute(*r.Taken.TakenAt), r.ID, r.Title)
+			if r.Taken.TakenNote != "" { // F-0368 crit. 18: the receiver's read-back, echoed
+				fmt.Fprintf(out, "read-back: %s\n", r.Taken.TakenNote)
+			}
 			switch {
 			case r.OriginClosed:
 				fmt.Fprintf(out, "closed %s (handed off to %s via %s)\n", r.From, r.ID, r.Taken.ID)
@@ -69,8 +72,8 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 			}
 			// The brief carries the next step (and the contingencies) in its own sections: printed once.
 			fmt.Fprintf(out, "brief of %s:\n%s\n", r.Taken.ID, r.Brief)
-			if strings.TrimSpace(note) == "" { // F-0368 crit. 18: a warning only, the take is done
-				fmt.Fprintln(cmd.ErrOrStderr(), `warning: no read-back recorded — confirm with: cerne handoff take … --note "<what you understood + first action>"`)
+			if r.Taken.TakenNote == "" { // F-0368 crit. 18: a warning only; the take is done and is not repeated
+				fmt.Fprintln(cmd.ErrOrStderr(), `warning: no read-back recorded — next time pass --note "<what you understood + first action>"`)
 			}
 			// The origin's entry is the brief just printed; the crossing refs' follow.
 			for _, h := range r.Handoffs {
