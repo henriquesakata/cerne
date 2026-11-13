@@ -152,10 +152,11 @@ func ReconcileCommitPushMutate(repoDir, projDir, base, msg string, changes []Fil
 		return "", conflicts, nil, nil
 	}
 	if head != "" {
+		old, _ := project.LoadSessionSnapshot(projDir)
 		if err := updateSnapshot(projDir, head); err != nil {
 			return "", nil, nil, err
 		}
-		refreshIndex(repoDir)
+		refreshIndex(repoDir, old, head)
 	}
 	return head, nil, remints, nil
 }

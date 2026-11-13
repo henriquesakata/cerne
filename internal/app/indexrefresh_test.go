@@ -1,7 +1,10 @@
 package app
 
 import (
+	"database/sql"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -112,5 +115,80 @@ func TestConcurrentWritesLeaveWholeIndex(t *testing.T) {
 		if !indexHas(t, repoDir, id) {
 			t.Fatalf("%s missing from the index", id)
 		}
+	}
+}
+
+// plantSentinel adds a row no rebuild would produce: it survives only when the
+// refresh is incremental.
+func plantSentinel(t *testing.T, repoDir string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", project.IndexPathForRepo(repoDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO docs (entity_id, kind, doc, state, title, body, superseded_by) VALUES ('ZZ-0001', 'note', '', 'active', 'sentinela', 'sentinela', '')`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// F-0394 (owner's adjustment): only the changed entities are re-indexed.
+func TestWriteRefreshIsIncremental(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	plantSentinel(t, repoDir)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "ZZ-0001") {
+		t.Fatal("the whole index was rebuilt for a one-entity write")
+	}
+	if !indexHas(t, repoDir, "N-0002") {
+		t.Fatal("N-0002 missing")
+	}
+}
+
+// Another machine's commit folded in by the push rebase lands in the index.
+func TestWriteRefreshPicksUpOtherMachineEntity(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	if err := gitback.Clone(origin, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saveNote(other, "N-0030", "da outra maquina")(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(other, "theirs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "N-0030") {
+		t.Fatal("the other machine's note is missing from the index")
+	}
+}
+
+// No index yet (or no old snapshot): the refresh falls back to a full rebuild.
+func TestWriteRefreshFallsBackToFullRebuild(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	_ = os.Remove(project.IndexPathForRepo(repoDir))
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "N-0001") || !indexHas(t, repoDir, "F-0001") {
+		t.Fatal("full rebuild did not index the whole clone")
+	}
+	_ = os.Remove(filepath.Join(projDir, ".docs", ".snapshot"))
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "N-0002") || !indexHas(t, repoDir, "F-0001") {
+		t.Fatal("no old snapshot: full rebuild expected")
 	}
 }

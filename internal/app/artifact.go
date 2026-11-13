@@ -163,21 +163,31 @@ func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool,
 	}
 	if head != "" {
 		stop := op.Phase("snapshot")
+		old, _ := project.LoadSessionSnapshot(projDir)
 		err := updateSnapshot(projDir, head)
 		stop()
 		if err == nil {
-			refreshIndex(repoDir)
+			refreshIndex(repoDir, old, head)
 		}
 		return err
 	}
 	return nil
 }
 
-// refreshIndex rebuilds the local search index from the clone, which a
-// successful write has just left equal to the backend. It runs outside the
-// lock, after the write: a failure only reaches IndexNotice, never the caller.
-func refreshIndex(repoDir string) {
-	if err := index.Rebuild(repoDir, project.IndexPathForRepo(repoDir), time.Now()); err != nil {
+// refreshIndex brings the local search index up to head, which a successful
+// write has just left equal to the backend: it re-indexes the entities that
+// changed since the snapshot before the write (the write itself plus whatever
+// the push rebase folded in). With no usable old snapshot, a failing diff or
+// no index yet, it rebuilds whole. It runs outside the lock, after the write:
+// a failure only reaches IndexNotice, never the caller.
+func refreshIndex(repoDir, oldSnap, head string) {
+	dbPath := project.IndexPathForRepo(repoDir)
+	if paths, err := gitback.ChangedPaths(repoDir, oldSnap, head); err == nil {
+		if index.Update(repoDir, dbPath, index.IDsFromPaths(paths), time.Now()) == nil {
+			return
+		}
+	}
+	if err := index.Rebuild(repoDir, dbPath, time.Now()); err != nil {
 		IndexNotice(err)
 	}
 }
