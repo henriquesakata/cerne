@@ -31,9 +31,13 @@ var decisionMentionRx = regexp.MustCompile(`(?i)\bD-\d+\b`)
 // staleDecisionFindings flags an active decision on one of two signals of the
 // entity graph, never on age alone (a founding decision is the most durable):
 //
-//  1. it is cited only by closed features — at least one, and by no live
-//     feature, active note (body or --informs), active runbook or other
-//     active decision — and has not been reviewed for more than windowDays;
+//  1. it is cited only by abandoned features (rejected/superseded) — at
+//     least one — and by no live feature, delivered feature
+//     (implemented/done: the decision is in force in what shipped), active
+//     note (body or --informs), active runbook or other active decision, and
+//     has not been reviewed for more than windowDays. A reference's
+//     --informs is the source that motivated it, no proof of use: it never
+//     counts;
 //  2. every one of its components is on a newer active decision created
 //     after its last review (D-0002 axis) — a possible successor.
 //
@@ -55,8 +59,8 @@ func staleDecisionFindings(repoDir string, features []store.Feature, decisions [
 		return nil, nil
 	}
 
-	liveCited := map[string]bool{}
-	closedBy := map[string][]string{} // decision → "F-0001 implemented", in feature order
+	inForce := map[string]bool{}         // cited by a live or delivered entity
+	abandonedBy := map[string][]string{} // decision → "F-0001 rejected", in feature order
 	// mentions returns the active decisions the docs at rels cite, minus self.
 	mentions := func(self string, rels ...string) ([]string, error) {
 		var ids []string
@@ -96,17 +100,17 @@ func staleDecisionFindings(repoDir string, features []store.Feature, decisions [
 			return nil, err
 		}
 		for _, id := range ids {
-			if liveFeatureStates[f.State] {
-				liveCited[id] = true
+			if f.State == domain.StateRejected || f.State == domain.StateSuperseded {
+				abandonedBy[id] = append(abandonedBy[id], f.ID+" "+string(f.State))
 			} else {
-				closedBy[id] = append(closedBy[id], f.ID+" "+string(f.State))
+				inForce[id] = true
 			}
 		}
 	}
 	markLive := func(self, rel string) error {
 		ids, err := mentions(self, rel)
 		for _, id := range ids {
-			liveCited[id] = true
+			inForce[id] = true
 		}
 		return err
 	}
@@ -115,7 +119,7 @@ func staleDecisionFindings(repoDir string, features []store.Feature, decisions [
 			continue
 		}
 		for _, id := range n.Informs {
-			liveCited[id] = true
+			inForce[id] = true
 		}
 		if err := markLive("", "content/notes/"+n.ID+".md"); err != nil {
 			return nil, err
@@ -147,8 +151,8 @@ func staleDecisionFindings(repoDir string, features []store.Feature, decisions [
 			base = *d.ReviewedAt
 		}
 		var reasons []string
-		if age := now.Sub(base); !liveCited[d.ID] && len(closedBy[d.ID]) > 0 && age > window {
-			reasons = append(reasons, fmt.Sprintf("cited only by closed features (%s) and by no live entity, unreviewed for %d days", strings.Join(closedBy[d.ID], ", "), int(age.Hours()/24)))
+		if age := now.Sub(base); !inForce[d.ID] && len(abandonedBy[d.ID]) > 0 && age > window {
+			reasons = append(reasons, fmt.Sprintf("cited only by abandoned features (%s) and by no live or delivered entity, unreviewed for %d days", strings.Join(abandonedBy[d.ID], ", "), int(age.Hours()/24)))
 		}
 		var newer []string
 		if len(d.Components) > 0 {

@@ -29,14 +29,16 @@ func reviewed(d store.Decision, days int) store.Decision {
 func cites(ids string) string { return "---\ncerne_id: x\n---\n\n# Doc\n\nSegue a " + ids + ".\n" }
 
 // TestStaleDecisionFindings pins F-0385 criteria 1–4 and 10 on fixture
-// backends: signal 1 (only closed features cite it, nothing live does, no
+// backends: signal 1 (only abandoned features cite it, nothing live does, no
 // review within N days), signal 2 (every component on a newer active
 // decision created after the last review), the live citations that silence
 // signal 1, keep valid until a new signal, and the Detail naming the
 // citations or the successor and ending with the three exit commands.
 func TestStaleDecisionFindings(t *testing.T) {
-	closed := store.Feature{ID: "F-0001", Title: "Entregue", State: domain.StateImplemented}
+	closed := store.Feature{ID: "F-0001", Title: "Substituída", State: domain.StateSuperseded}
 	rejected := store.Feature{ID: "F-0003", Title: "Rejeitada", State: domain.StateRejected}
+	implemented := store.Feature{ID: "F-0004", Title: "Entregue", State: domain.StateImplemented}
+	done := store.Feature{ID: "F-0005", Title: "Aceita", State: domain.StateDone}
 	live := store.Feature{ID: "F-0002", Title: "Em curso", State: domain.StateInDevelopment}
 	retired := dec("D-0003", 10, "k")
 	retired.State = domain.DecisionRetired
@@ -51,11 +53,23 @@ func TestStaleDecisionFindings(t *testing.T) {
 		deny      []string            // substrings no Detail may carry
 	}{
 		{
-			name:      "signal 1: only closed features cite it, past N days",
+			name:      "signal 1: only abandoned features cite it, past N days",
 			decisions: []store.Decision{dec("D-0001", 200)},
 			features:  []store.Feature{closed, rejected},
 			docs:      map[string]string{"content/features/F-0001/spec.md": cites("D-0001"), "content/features/F-0003/plan.md": cites("d-0001")},
-			want:      map[string][]string{"D-0001": {"(F-0001 implemented, F-0003 rejected)", "200 days"}},
+			want:      map[string][]string{"D-0001": {"cited only by abandoned features (F-0001 superseded, F-0003 rejected)", "200 days"}},
+		},
+		{
+			name:      "delivered features never count toward signal 1, at any age",
+			decisions: []store.Decision{dec("D-0001", 900)},
+			features:  []store.Feature{implemented, done},
+			docs:      map[string]string{"content/features/F-0004/spec.md": cites("D-0001"), "content/features/F-0005/result.md": cites("D-0001")},
+		},
+		{
+			name:      "a delivered citer keeps it in force beside abandoned ones",
+			decisions: []store.Decision{dec("D-0001", 200)},
+			features:  []store.Feature{closed, rejected, done},
+			docs:      map[string]string{"content/features/F-0001/spec.md": cites("D-0001"), "content/features/F-0003/spec.md": cites("D-0001"), "content/features/F-0005/spec.md": cites("D-0001")},
 		},
 		{
 			name:      "a live feature citing it silences signal 1",
@@ -83,7 +97,7 @@ func TestStaleDecisionFindings(t *testing.T) {
 			features:  []store.Feature{closed},
 			notes:     []store.Note{{ID: "N-0001", Title: "Nota", State: domain.NoteSuperseded, Informs: []string{"D-0001"}}},
 			docs:      map[string]string{"content/features/F-0001/spec.md": cites("D-0001"), "content/notes/N-0001.md": cites("D-0001")},
-			want:      map[string][]string{"D-0001": {"(F-0001 implemented)"}},
+			want:      map[string][]string{"D-0001": {"(F-0001 superseded)"}},
 		},
 		{
 			name:      "an active runbook silences signal 1",
@@ -100,7 +114,7 @@ func TestStaleDecisionFindings(t *testing.T) {
 				"content/features/F-0001/spec.md": cites("D-0001 e D-0002"),
 				"content/decisions/D-0002.md":     cites("D-0001 e D-0002"),
 			},
-			want: map[string][]string{"D-0002": {"(F-0001 implemented)"}},
+			want: map[string][]string{"D-0002": {"(F-0001 superseded)"}},
 		},
 		{
 			name:      "inside the N-day window",
@@ -150,7 +164,7 @@ func TestStaleDecisionFindings(t *testing.T) {
 			decisions: []store.Decision{dec("D-0001", 200, "k"), dec("D-0002", 10, "k")},
 			features:  []store.Feature{closed},
 			docs:      map[string]string{"content/features/F-0001/spec.md": cites("D-0001")},
-			want:      map[string][]string{"D-0001": {"(F-0001 implemented)", "newer active D-0002", "--by D-0002"}},
+			want:      map[string][]string{"D-0001": {"(F-0001 superseded)", "newer active D-0002", "--by D-0002"}},
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -222,7 +236,7 @@ func TestStaleDecisionIsAdvisoryAndWired(t *testing.T) {
 
 	dir := t.TempDir()
 	old := time.Now().UTC().Add(-400 * 24 * time.Hour)
-	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Entregue", State: domain.StateImplemented, CreatedAt: old, UpdatedAt: old}); err != nil {
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: old, UpdatedAt: old}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
 	d := store.Decision{ID: "D-0001", Title: "Antiga", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: old, UpdatedAt: old}

@@ -386,7 +386,7 @@ func TestNextLedgerUnreadable(t *testing.T) {
 func TestNextListsStaleDecision(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	old := time.Now().UTC().Add(-200 * 24 * time.Hour)
-	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Entregue", State: domain.StateImplemented, CreatedAt: old, UpdatedAt: old}); err != nil {
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: old, UpdatedAt: old}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
 	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Antiga", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: old, UpdatedAt: old}); err != nil {
