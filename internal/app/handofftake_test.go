@@ -245,3 +245,26 @@ func TestTakeHandoffMissingOriginAndRefs(t *testing.T) {
 		t.Fatalf("handoff = %+v", h)
 	}
 }
+
+// F-0368 critic round 1, item 8: the superseded refusal follows the chain to
+// the pending successor, or says where it ended.
+func TestTakeSupersededFollowsChain(t *testing.T) {
+	repoDir, projDir := passBaton(t) // HO-0001 on W-0001
+	for _, n := range []string{"b2", "b3"} {
+		if _, err := HandoffWork(repoDir, projDir, "W-0001", n, "n", nil); err != nil { // HO-0002, HO-0003
+			t.Fatal(err)
+		}
+	}
+	cache := filepath.Dir(repoDir)
+	_, err := TakeHandoff(repoDir, projDir, cache, "", "HO-0001", "", "")
+	if !errors.Is(err, ErrHandoffNotPending) || !strings.Contains(err.Error(), "cerne handoff take HO-0003") {
+		t.Fatalf("err = %v, want the pending HO-0003 at the end of the chain", err)
+	}
+	if err := CancelHandoff(repoDir, projDir, "HO-0003", "parei"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = TakeHandoff(repoDir, projDir, cache, "", "HO-0001", "", "")
+	if !errors.Is(err, ErrHandoffNotPending) || !strings.Contains(err.Error(), "the chain ended in HO-0003, which is cancelled") || strings.Contains(err.Error(), "take that one") {
+		t.Fatalf("err = %v", err)
+	}
+}

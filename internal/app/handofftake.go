@@ -162,7 +162,20 @@ func loadPendingHandoff(repoDir, id string) (store.Handoff, error) {
 		}
 		return h, fmt.Errorf("%w: %s was taken by %s%s (%s)", ErrHandoffNotPending, id, h.TakenBy, at, h.TakenWork)
 	case domain.HandoffSuperseded:
-		return h, fmt.Errorf("%w: %s is superseded by %s — take that one: cerne handoff take %s", ErrHandoffNotPending, id, h.SupersededBy, h.SupersededBy)
+		// Follow the chain to the current successor (a cycle or a missing link ends it).
+		last := h
+		for seen := map[string]bool{h.ID: true}; last.State == domain.HandoffSuperseded && !seen[last.SupersededBy]; {
+			seen[last.SupersededBy] = true
+			next, err := store.LoadHandoff(repoDir, last.SupersededBy)
+			if err != nil {
+				break
+			}
+			last = next
+		}
+		if last.State == domain.HandoffPending {
+			return h, fmt.Errorf("%w: %s is superseded by %s — the current one is %s; take that one: cerne handoff take %s", ErrHandoffNotPending, id, h.SupersededBy, last.ID, last.ID)
+		}
+		return h, fmt.Errorf("%w: %s is superseded by %s — the chain ended in %s, which is %s: nothing to take", ErrHandoffNotPending, id, h.SupersededBy, last.ID, last.State)
 	case domain.HandoffCancelled:
 		return h, fmt.Errorf("%w: %s was cancelled: %s", ErrHandoffNotPending, id, h.CancelReason)
 	}
