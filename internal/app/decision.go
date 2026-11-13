@@ -137,6 +137,80 @@ func TransitionDecision(repoDir, projDir, id, by, reason string) (DecisionOutcom
 	return out, nil
 }
 
+// KeepDecision records that a human reviewed active decision id and it still
+// holds (F-0385): ReviewedAt is stamped now and decision.kept carries the
+// actor. Unlike a note's keep it is not a permanent flag — lint's
+// stale-decision counts from ReviewedAt, so a new signal flags it again.
+func KeepDecision(repoDir, projDir, id string) (store.Decision, error) {
+	var d store.Decision
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		d, err = store.LoadDecision(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("decision %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if d.State != domain.DecisionActive {
+			return "", fmt.Errorf("decision %s is not active (it is %s) — keep only applies to an active decision", id, d.State)
+		}
+		now := time.Now().UTC()
+		d.ReviewedAt, d.UpdatedAt = &now, now
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", err
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, "decision.kept", map[string]string{}, EventActor())); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: keep %s (reviewed)", id), nil
+	})
+	if err != nil {
+		return store.Decision{}, err
+	}
+	return d, nil
+}
+
+// RetireDecision moves decision id to retired with no successor (F-0385): a
+// decision that stopped applying has no --by to point at. A blank reason is
+// domain.ErrRetireReasonRequired and nothing is written; decision.retired
+// carries the reason and the state it left.
+func RetireDecision(repoDir, projDir, id, reason string) (DecisionOutcome, error) {
+	var out DecisionOutcome
+	var title string
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		d, err := store.LoadDecision(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("decision %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		newState, err := domain.RetireDecision(d.State, reason)
+		if err != nil {
+			return "", err
+		}
+		oldState := d.State
+		d.State, d.SupersededBy, d.Reason = newState, "", reason
+		d.UpdatedAt = time.Now().UTC()
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "decision.retired", map[string]string{"reason": reason, "from": string(oldState)}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		title = d.Title
+		out = DecisionOutcome{ID: id, From: oldState, To: newState}
+		return fmt.Sprintf("cerne: retire %s", id), nil
+	})
+	if err != nil {
+		return DecisionOutcome{}, err
+	}
+	dispatchWebhook(projDir, id, "decision", string(domain.ActionRetire), string(out.From), string(out.To), title)
+	return out, nil
+}
+
 // RetagDecision sets the tag axes of an active decision in the backend clone at
 // repoDir. Each axis is replaced only when its set flag is true, so a caller can
 // update facets without touching components (or clear an axis by passing an empty
