@@ -57,8 +57,8 @@ func AppendWorkLog(repoDir, projDir, work, actor, text string, corrects int, now
 		if err != nil {
 			return "", err
 		}
-		if corrects > 0 {
-			if corrects >= seq {
+		if corrects != 0 {
+			if corrects < 0 || corrects >= seq {
 				return "", fmt.Errorf("%w: %s has no #%d", ErrLogNoSuchEntry, work, corrects)
 			}
 		}

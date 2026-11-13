@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -171,6 +172,35 @@ func TestAppendWorkLogConcurrent(t *testing.T) {
 	for i, e := range got {
 		if e.Seq != i+1 {
 			t.Fatalf("seqs not distinct/contiguous: %+v", got)
+		}
+	}
+}
+
+// A negative --corrects is no entry number.
+func TestAppendWorkLogRefusesNegativeCorrects(t *testing.T) {
+	repoDir, projDir, _ := logWork(t)
+	if _, err := AppendWorkLog(repoDir, projDir, "W-0001", "owner", "x", -1, logNow); !errors.Is(err, ErrLogNoSuchEntry) {
+		t.Fatalf("err = %v, want ErrLogNoSuchEntry", err)
+	}
+	if es, _ := store.LoadLog(repoDir, "W-0001"); len(es) != 0 {
+		t.Fatalf("wrote %+v", es)
+	}
+}
+
+// A correction can itself be corrected: #3 corrects #2, which corrects #1.
+func TestAppendWorkLogCorrectionChain(t *testing.T) {
+	pinZone(t, "UTC")
+	repoDir, projDir, _ := logWork(t)
+	for i, c := range []int{0, 1, 2} {
+		if _, err := AppendWorkLog(repoDir, projDir, "W-0001", "owner", []string{"a", "b", "c"}[i], c, logNow); err != nil {
+			t.Fatalf("entry %d: %v", i+1, err)
+		}
+	}
+	es, _ := store.LoadLog(repoDir, "W-0001")
+	out := RenderWorkLog(es)
+	for _, want := range []string{"b (corrects #1)", "c (corrects #2)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("render lacks %q:\n%s", want, out)
 		}
 	}
 }
