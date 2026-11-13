@@ -39,6 +39,10 @@ cerne is a single binary that keeps the lifecycle of your features and decisions
 
 ## You use the dashboard, your agent uses the CLI
 
+cerne is built for a person working with an agent, not for an agent left alone. The agent does the volume: the specs, the plans, the code, the evidence. You keep the two decisions that matter, what gets built and whether it is good enough, and cerne makes sure they stay yours: by default the agent cannot approve its own spec or accept its own work.
+
+That is the point of the structure. An agent on its own drifts, and nobody notices until the code is written. With a page to approve before the build and evidence to read after it, your judgment lands where it is cheapest and counts most.
+
 cerne has two faces, and you only need to learn one of them.
 
 | | You, in the browser (`cerne ui`) | Your agent, in the terminal |
@@ -55,14 +59,30 @@ The CLI has many commands because the agent needs them. `cerne init` installs th
 
 ### The number
 
-This repository documents itself with cerne. After 359 features:
+This repository documents itself with cerne. After 375 features:
 
 | | Documents | ~Tokens |
 |---|---:|---:|
-| Full documentation corpus | 475 | 1,618,000 |
-| What the agent actually reads (`.docs/`) | 115 | 33,000 |
+| Full documentation corpus | 517 | 1,754,000 |
+| What the agent actually reads (`.docs/`) | 139 | 66,000 |
 
-**98% of the corpus stays out of the agent's context**, and none of it is lost. Run `cerne savings` on your own project to get your number.
+**96% of the corpus stays out of the agent's context**, and none of it is lost. Run `cerne savings` on your own project to get your number.
+
+### Does writing all these documents cost more tokens?
+
+Less than you would guess. Measured with `cerne cost` on nine recent features of this repository:
+
+| | |
+|---|---|
+| Writing the spec, the plan and the result | 3% to 18% of the tokens the model generates on a feature (median about 9%) |
+| What dominates the bill | the agent re-reading context: 3.6 to 68 million tokens per feature |
+
+The documents are the cheap part, and they pay back in two places:
+
+- **Reading.** Every session starts from 66,000 tokens of current state instead of 1.75 million tokens of everything ever written. That saving repeats on every session, for every agent.
+- **Rework.** You approve one page of spec before the agent spends tens or hundreds of thousands of tokens building it. A feature built on an ambiguous request, or on a design you abandoned months ago, costs the whole feature again.
+
+What is not measured: there is no side-by-side run of the same work with and without cerne, so the rework argument is reasoning, not a number. The two numbers above are, and `cerne savings` and `cerne cost` give you yours.
 
 ## Try it in two minutes
 
@@ -189,7 +209,7 @@ The idea is close to Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a
 
 ## Status
 
-cerne is young and in daily use. This repository has been built with it since day one, and the 359 features above went through the same gates you would use. Expect rough edges, and please [open an issue](https://github.com/henriquesakata/cerne/issues) when you hit one: feedback from early users shapes what comes next.
+cerne is young and in daily use. This repository has been built with it since day one, and the 375 features above went through the same gates you would use. Expect rough edges, and please [open an issue](https://github.com/henriquesakata/cerne/issues) when you hit one: feedback from early users shapes what comes next.
 
 Questions and ideas go to [Discussions](https://github.com/henriquesakata/cerne/discussions). To contribute code, start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
