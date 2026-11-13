@@ -585,6 +585,12 @@ export type TransitionOutcome =
   | { ok: true; data: TransitionResult }
   | { ok: false; error: string }
 
+// transitionBody monta o corpo do POST de transição; a página da feature e o
+// kanban (F-0388) passam por aqui para que os dois pedidos nunca divirjam.
+export function transitionBody(action: TransitionAction, by?: string, reason?: string) {
+  return { action, by, reason }
+}
+
 export async function postTransition(
   id: string,
   body: { action: TransitionAction; by?: string; reason?: string },

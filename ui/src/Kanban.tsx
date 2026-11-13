@@ -12,6 +12,7 @@ import {
   fetchLint,
   fetchState,
   postTransition,
+  transitionBody,
   type Feature,
   type FeatureState,
 } from './api'
@@ -346,9 +347,16 @@ function Columns({
   const dragging = useRef<Feature | null>(null)
   const [blocked, setBlocked] = useState<FeatureState | null>(null)
   const [notice, setNotice] = useState<{ id: string; text: string; refused: boolean } | null>(null)
+  const endGesture = () => {
+    dragging.current = null
+    setBlocked(null)
+  }
   const dropProps = (target: FeatureState) => {
     const rule = DROPS[target]
-    if (!rule) return {}
+    if (!rule) {
+      // Coluna sem gesto (fechadas, em desenvolvimento, Prontas): cursor "não permitido".
+      return { onDragOver: (e: DragEvent) => void (e.dataTransfer.dropEffect = 'none') }
+    }
     const okPair = () => dragging.current?.state === rule.from
     return {
       onDragOver: (e: DragEvent) => {
@@ -358,27 +366,42 @@ function Columns({
         }
         e.preventDefault() // sem isto o browser não dispara o drop
         e.dataTransfer.dropEffect = 'move'
-        setBlocked(pendingClarify(dragging.current!.id) > 0 ? target : null)
+        // Esclarecimento aberto só barra o approve; accept segue (critério 2).
+        setBlocked(rule.action === 'approve' && pendingClarify(dragging.current!.id) > 0 ? target : null)
       },
-      onDragLeave: () => setBlocked(null),
+      onDragLeave: (e: DragEvent) => {
+        // Entrar num filho dispara dragleave no pai; só limpa ao sair de verdade.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setBlocked(null)
+      },
       onDrop: (e: DragEvent) => {
         e.preventDefault()
         const f = dragging.current
-        dragging.current = null
-        setBlocked(null)
-        if (!f || f.state !== rule.from) return
+        // O payload do dragstart deste gesto tem de bater com o card em voo:
+        // arraste externo ou resto de um gesto cancelado não aprova ninguém.
+        let payload: { id?: string } = {}
+        try {
+          payload = JSON.parse(e.dataTransfer.getData('text/plain'))
+        } catch {
+          // payload ausente ou de outra origem
+        }
+        endGesture()
+        if (!f || f.state !== rule.from || payload.id !== f.id) return
         const n = pendingClarify(f.id)
-        if (n > 0) {
+        if (rule.action === 'approve' && n > 0) {
           setNotice({ id: f.id, text: t.kanban.drag.pending(n), refused: true })
           return
         }
-        void postTransition(f.id, { action: rule.action, by: undefined, reason: undefined }).then((res) =>
-          setNotice(
-            res.ok
-              ? { id: f.id, text: `${t.state[res.data.from]} → ${t.state[res.data.to]}`, refused: false }
-              : { id: f.id, text: res.error, refused: true },
-          ),
-        )
+        void postTransition(f.id, transitionBody(rule.action))
+          .then((res) =>
+            setNotice(
+              res.ok
+                ? { id: f.id, text: `${t.state[res.data.from]} → ${t.state[res.data.to]}`, refused: false }
+                : { id: f.id, text: res.error, refused: true },
+            ),
+          )
+          .catch((err: unknown) =>
+            setNotice({ id: f.id, text: err instanceof Error ? err.message : String(err), refused: true }),
+          )
       },
     }
   }
@@ -390,13 +413,24 @@ function Columns({
   }
   return (
     <>
-    {notice && (
-      <p className="drag-notice" role={notice.refused ? 'alert' : 'status'}>
-        <span>{notice.text}</span>{' '}
-        <a href={`#/f/${notice.id}`}>{notice.id}</a>
-      </p>
-    )}
-    <div className="board">
+    {/* Uma região viva sempre montada: leitores de tela só anunciam o que muda dentro dela. */}
+    <div className={`drag-notice${notice?.refused ? ' drag-notice-refused' : ''}`} aria-live="polite" aria-atomic="true">
+      {notice && (
+        <>
+          <span>{notice.text}</span> <a href={`#/f/${notice.id}`}>{notice.id}</a>
+        </>
+      )}
+    </div>
+    <div
+      className="board"
+      // Todo dragstart (inclusive de card não arrastável, cujo <a> é arrastável
+      // por padrão) zera o gesto anterior; o card arrastável o reabre logo depois.
+      onDragStartCapture={() => {
+        dragging.current = null
+        setNotice(null)
+      }}
+      onDragEnd={endGesture}
+    >
       <BacklogColumn
         onDragStart={(f) => (dragging.current = f)}
         candidates={byState.get('candidate') ?? []}
@@ -512,7 +546,11 @@ function BacklogColumn({
     writeBacklogOpen(next)
   }
   return (
-    <details className="column backlog-column" open={open}>
+    <details
+      className="column backlog-column"
+      open={open}
+      onDragOver={(e) => (e.dataTransfer.dropEffect = 'none')}
+    >
       <summary onClick={toggle}>
         <h2>
           {t.kanban.backlogColumn}{' '}
