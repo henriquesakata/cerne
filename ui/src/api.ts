@@ -185,6 +185,19 @@ export type FeatureDetail = {
   // approve aceita.
   approve_readiness?: ApproveImpediment[]
   bar?: string
+  // F-0375: as escritas gravadas dos documentos, da mais antiga à mais nova;
+  // ausente em servidor antigo. Escrita anterior à F-0375 nunca aparece.
+  writes?: DocWrite[]
+}
+
+// DocWrite (F-0375): uma escrita de spec, plano ou result — provedor e modelo
+// (vazios para humano e desconhecido) e a origem do valor.
+export type DocWrite = {
+  doc: 'spec' | 'plan' | 'result'
+  provider: string
+  model: string
+  source: 'transcript' | 'declared' | 'llm-config' | 'human' | 'unknown'
+  at: string
 }
 
 // Impedimento ao approve (F-0308): duro = o núcleo recusa em qualquer
@@ -961,6 +974,7 @@ export async function registerChatCandidate(
   capability = '',
   parent = '',
   featureId = '',
+  model = '',
 ): Promise<CreateOutcome & { warning?: string; unchanged?: boolean; matches?: DupMatch[] }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
@@ -974,6 +988,8 @@ export async function registerChatCandidate(
       capability,
       parent,
       feature_id: featureId,
+      // F-0375: o modelo da conversa — quem escreveu a spec fica gravado.
+      model,
     }),
   })
   if (!r.ok) {
