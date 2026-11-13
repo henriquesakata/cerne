@@ -8,10 +8,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,6 +102,13 @@ func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
 			return err
 		}
 	}
+	if err := insertRows(tx, rows); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertRows(tx *sql.Tx, rows []row) error {
 	stmt, err := tx.Prepare(insertSQL)
 	if err != nil {
 		return err
@@ -110,7 +119,79 @@ func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// Update re-indexes only the entities in ids: their rows are deleted and
+// reinserted from the clone at repoDir, in one transaction; an id the clone no
+// longer has is only deleted. It needs an index Rebuild already built (an
+// error otherwise: the caller falls back to Rebuild). syncedAt, when not zero,
+// replaces the recorded sync time. The clone is read whole and filtered
+// (~0.4 s on the hub), the FTS writes are the part that stays proportional to
+// ids — ponytail: load only the touched entities if the read ever matters.
+func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
+	if _, err := os.Stat(dbPath); err != nil {
+		return err
+	}
+	all, err := collectRows(repoDir)
+	if err != nil {
+		return err
+	}
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	var rows []row
+	for _, r := range all {
+		if want[r.entityID] {
+			rows = append(rows, r)
+		}
+	}
+	db, err := openDB(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for id := range want {
+		if _, err := tx.Exec(`DELETE FROM docs WHERE entity_id = ?`, id); err != nil {
+			return err
+		}
+	}
+	if err := insertRows(tx, rows); err != nil {
+		return err
+	}
+	if !syncedAt.IsZero() {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('synced_at', ?)`, syncedAt.UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+// IDsFromPaths maps backend paths (as `git diff --name-only` prints them) to
+// the entity ids they belong to: entities/<kind>/<id>.json,
+// content/features/<id>/<doc>.md and content/<kind>/<id>.md (errata included).
+// Other paths map to nothing; the result is sorted and de-duplicated.
+func IDsFromPaths(paths []string) []string {
+	seen := map[string]bool{}
+	for _, p := range paths {
+		parts := strings.Split(p, "/")
+		stem := func(s string) string { return strings.TrimSuffix(s, filepath.Ext(s)) }
+		switch {
+		case len(parts) == 3 && parts[0] == "entities" && strings.HasSuffix(parts[2], ".json"):
+			seen[stem(parts[2])] = true
+		case len(parts) == 4 && parts[0] == "content" && parts[1] == "features":
+			seen[parts[2]] = true
+		case len(parts) == 3 && parts[0] == "content" && strings.HasSuffix(parts[2], ".md"):
+			seen[stem(parts[2])] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // Search runs an FTS5 MATCH query against the index at dbPath and returns up
