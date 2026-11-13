@@ -671,9 +671,6 @@ const ptBR = {
     epicLabel: 'Épico:',
     deliveryLabel: 'Entrega:',
     supersededBy: (id: string) => `Substituída por ${id}`,
-    convertingToExcalidraw: 'Convertendo para Excalidraw…',
-    convertError: (e: string) =>
-      `Não foi possível converter o diagrama para Excalidraw: ${e}`,
     edit: 'Editar',
     updatedAgo: (when: string) => `Atualizado ${when}`,
     // F-0375: o rodapé do documento — quem o escreveu e a última alteração.
@@ -685,13 +682,11 @@ const ptBR = {
     diagrams: 'Diagramas',
     generateNeedsMode:
       'A geração automática precisa do modo de IA “assinatura” ou “chave própria”. Troque o modo em Gestão.',
+    noEditorNotice: 'Arquivo Excalidraw: o painel não abre mais o editor; baixe para abrir em outra ferramenta.',
     generating: 'Gerando…',
     generateWithAI: 'Gerar com IA',
     generateDisabledTitle:
       'Disponível nos modos de IA “assinatura” ou “chave própria” — troque o modo em Gestão.',
-    diagramNamePlaceholder: 'nome-do-diagrama',
-    create: 'Criar',
-    newDiagram: 'Novo diagrama',
     roast: 'Roast da spec',
     roastRun: 'Rodar roast',
     roastRunning: 'Roast em andamento… (3 críticos em paralelo)',
@@ -1094,12 +1089,7 @@ const ptBR = {
     none: 'Nenhum evento registrado.',
   },
   diagram: {
-    loadError: (e: string) => `Erro ao carregar o diagrama: ${e}`,
-    saved: 'Diagrama salvo.',
-    save: 'Salvar diagrama',
-    loading: 'Carregando diagrama…',
     rendering: 'Renderizando diagrama…',
-    editAsExcalidraw: 'Editar como Excalidraw',
     mermaidError: (e: string) => `Não foi possível renderizar o Mermaid: ${e}`,
     close: 'Fechar',
   },
@@ -1860,9 +1850,6 @@ const en: Messages = {
     epicLabel: 'Epic:',
     deliveryLabel: 'Delivery:',
     supersededBy: (id: string) => `Superseded by ${id}`,
-    convertingToExcalidraw: 'Converting to Excalidraw…',
-    convertError: (e: string) =>
-      `Could not convert the diagram to Excalidraw: ${e}`,
     edit: 'Edit',
     updatedAgo: (when: string) => `Updated ${when}`,
     writtenBy: (who: string, date: string) => `Written by ${who} on ${date}`,
@@ -1873,13 +1860,11 @@ const en: Messages = {
     diagrams: 'Diagrams',
     generateNeedsMode:
       'Automatic generation needs the “subscription” or “own key” AI mode. Switch the mode in Manage.',
+    noEditorNotice: 'Excalidraw file: the panel no longer opens the editor; download it to open elsewhere.',
     generating: 'Generating…',
     generateWithAI: 'Generate with AI',
     generateDisabledTitle:
       'Available in the “subscription” or “own key” AI modes — switch the mode in Manage.',
-    diagramNamePlaceholder: 'diagram-name',
-    create: 'Create',
-    newDiagram: 'New diagram',
     roast: 'Spec roast',
     roastRun: 'Run roast',
     roastRunning: 'Roast running… (3 critics in parallel)',
@@ -2280,12 +2265,7 @@ const en: Messages = {
     none: 'No event recorded.',
   },
   diagram: {
-    loadError: (e: string) => `Failed to load the diagram: ${e}`,
-    saved: 'Diagram saved.',
-    save: 'Save diagram',
-    loading: 'Loading diagram…',
     rendering: 'Rendering diagram…',
-    editAsExcalidraw: 'Edit as Excalidraw',
     mermaidError: (e: string) => `Could not render the Mermaid diagram: ${e}`,
     close: 'Close',
   },

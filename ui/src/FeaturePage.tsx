@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import Markdown from './Markdown'
 import { lineDiff } from './lineDiff'
 import { correctMarker, countOpen, resolveMarker } from './clarify'
@@ -7,12 +7,12 @@ import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
 import { DeliveryPendings } from './Pendings'
 import Tag from './Tag'
-import type { ExcalidrawInitialDataState } from '@excalidraw/excalidraw/types'
 import {
   fetchArtifactText,
   fetchFeature,
   fetchLLMMode,
   fetchState,
+  artifactUrl,
   generateDiagram,
   postTransition,
   transitionBody,
@@ -35,9 +35,8 @@ import {
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT, type Lang } from './i18n'
 
-// Carregados sob demanda: os bundles do Excalidraw e do mermaid só chegam ao
+// Carregados sob demanda: o bundle do mermaid só chega ao
 // navegador quando o usuário abre um diagrama (cada um no seu chunk lazy).
-const DiagramPanel = lazy(() => import('./DiagramPanel'))
 const MermaidView = lazy(() => import('./MermaidView'))
 
 // titleEditable espelha domain.TitleEditable: o título é dado mutável só
@@ -168,53 +167,8 @@ function DocAuthors({ writes }: { writes: DocWrite[] }) {
   return <p className="doc-authors doc-updated muted">{line}</p>
 }
 
-// diagramFilename normaliza o nome digitado para slug + sufixo .excalidraw.
-function diagramFilename(input: string): string {
-  const slug = input
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/\.excalidraw$/, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug === '' ? '' : `${slug}.excalidraw`
-}
-
-// excalidrawSiblingName troca o sufixo .mmd por .excalidraw (o diagrama
-// editável é um irmão do .mmd gerado).
-function excalidrawSiblingName(mmdName: string): string {
-  return mmdName.replace(/\.mmd$/, '') + '.excalidraw'
-}
-
-// OpenDiagram é o diagrama aberto em tela cheia: 'mermaid' renderiza um .mmd;
-// 'excalidraw' abre o editor (artefato existente, novo vazio, ou cena já
-// convertida de Mermaid).
-type OpenDiagram =
-  | { mode: 'mermaid'; name: string }
-  | {
-      mode: 'excalidraw'
-      name: string
-      isNew: boolean
-      initialScene?: ExcalidrawInitialDataState
-    }
-
-// convertMermaidToScene converte o texto Mermaid numa cena do Excalidraw.
-// Importa as duas libs dinamicamente (ficam em chunks lazy) e usa a API
-// oficial: parseMermaidToExcalidraw → convertToExcalidrawElements.
-async function convertMermaidToScene(
-  mermaidText: string,
-): Promise<ExcalidrawInitialDataState> {
-  const [{ parseMermaidToExcalidraw }, { convertToExcalidrawElements }] =
-    await Promise.all([
-      import('@excalidraw/mermaid-to-excalidraw'),
-      import('@excalidraw/excalidraw'),
-    ])
-  const { elements, files } = await parseMermaidToExcalidraw(mermaidText)
-  return {
-    elements: convertToExcalidrawElements(elements, { regenerateIds: true }),
-    files,
-  }
-}
+// OpenDiagram é o diagrama .mmd aberto em tela cheia (só leitura).
+type OpenDiagram = { name: string }
 
 // DeliveryLinks (F-0179): clickable commit/MR links of the delivery, shown in
 // the feature header; hidden when the feature carries none. Exported for the
@@ -248,9 +202,6 @@ export default function FeaturePage({ id }: { id: string }) {
   const [tab, setTab] = useState<DocTab>('spec')
   const [notice, setNotice] = useState<string | null>(null)
   const [diagram, setDiagram] = useState<OpenDiagram | null>(null)
-  // Conversão Mermaid→Excalidraw em andamento (texto bruto) / falha.
-  const [converting, setConverting] = useState(false)
-  const [convertError, setConvertError] = useState<string | null>(null)
   // Modo de IA do projeto (case 0019): habilita/desabilita "Gerar com IA".
   const [llmMode, setLlmMode] = useState<LLMMode | null>(null)
   const { t } = useT()
@@ -259,32 +210,6 @@ export default function FeaturePage({ id }: { id: string }) {
   const load = () => {
     void live.reload()
   }
-
-  // editAsExcalidraw converte um diagrama Mermaid (já aberto no MermaidView) e
-  // abre o editor com a cena resultante, salvando como <base>.excalidraw.
-  const editAsExcalidraw = useCallback(
-    (mermaidName: string, mermaidText: string) => {
-      setConverting(true)
-      setConvertError(null)
-      convertMermaidToScene(mermaidText)
-        .then((scene) => {
-          setConverting(false)
-          setDiagram({
-            mode: 'excalidraw',
-            name: excalidrawSiblingName(mermaidName),
-            isNew: true,
-            initialScene: scene,
-          })
-        })
-        .catch((e: unknown) => {
-          setConverting(false)
-          setConvertError(
-            t.feature.convertError(e instanceof Error ? e.message : String(e)),
-          )
-        })
-    },
-    [t],
-  )
 
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {
@@ -356,35 +281,11 @@ export default function FeaturePage({ id }: { id: string }) {
       <DeliveryPendings id={id} />
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
-          {diagram.mode === 'mermaid' ? (
-            <>
-              {convertError && <p className="form-error">{convertError}</p>}
-              {converting && (
-                <p className="status">{t.feature.convertingToExcalidraw}</p>
-              )}
-              <MermaidView
-                featureId={f.id}
-                name={diagram.name}
-                onClose={() => {
-                  setDiagram(null)
-                  setConvertError(null)
-                }}
-                onEdit={(text) => editAsExcalidraw(diagram.name, text)}
-              />
-            </>
-          ) : (
-            <DiagramPanel
-              featureId={f.id}
-              name={diagram.name}
-              isNew={diagram.isNew}
-              initialScene={diagram.initialScene}
-              onClose={() => {
-                setDiagram(null)
-                load()
-              }}
-              onSaved={load}
-            />
-          )}
+          <MermaidView
+            featureId={f.id}
+            name={diagram.name}
+            onClose={() => setDiagram(null)}
+          />
         </Suspense>
       ) : (
         <div className="feature-body">
@@ -622,28 +523,17 @@ function DiagramsSection({
   onRefresh: () => void
 }) {
   const { t } = useT()
-  const [naming, setNaming] = useState(false)
-  const [newName, setNewName] = useState('')
   // Geração por IA em andamento / falha (ou dica de modo em delegação).
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
 
-  const create = () => {
-    const filename = diagramFilename(newName)
-    if (filename === '') return
-    setNaming(false)
-    setNewName('')
-    onOpen({ mode: 'excalidraw', name: filename, isNew: true })
-  }
-
-  // generate pede o diagrama à IA, converte o Mermaid devolvido em cena
-  // Excalidraw e abre o editor já preenchido (salvando um <base>.excalidraw).
-  // O .mmd gerado fica como fonte no backend; onRefresh o traz para a lista.
+  // generate pede o diagrama à IA; o servidor já salvou o .mmd, então basta
+  // atualizar a lista e abri-lo renderizado.
   const generate = () => {
     setGenerating(true)
     setGenError(null)
     generateDiagram(featureId)
-      .then(async (res) => {
+      .then((res) => {
         if (!res.ok) {
           setGenError(res.error)
           return
@@ -652,29 +542,13 @@ function DiagramsSection({
           setGenError(t.feature.generateNeedsMode)
           return
         }
-        const scene = await convertMermaidToScene(res.mermaid)
         onRefresh()
-        onOpen({
-          mode: 'excalidraw',
-          name: excalidrawSiblingName(res.name),
-          isNew: true,
-          initialScene: scene,
-        })
+        onOpen({ name: res.name })
       })
       .catch((e: unknown) =>
         setGenError(e instanceof Error ? e.message : String(e)),
       )
       .finally(() => setGenerating(false))
-  }
-
-  // openArtifact ramifica por extensão: .mmd abre o MermaidView (render);
-  // qualquer outro (.excalidraw) abre o editor existente.
-  const openArtifact = (name: string) => {
-    if (name.endsWith('.mmd')) {
-      onOpen({ mode: 'mermaid', name })
-    } else {
-      onOpen({ mode: 'excalidraw', name, isNew: false })
-    }
   }
 
   const delegated = llmMode === 'delegation'
@@ -684,26 +558,30 @@ function DiagramsSection({
       <h2>{t.feature.diagrams}</h2>
       {artifacts.length > 0 && (
         <ul>
-          {artifacts.map((a) => {
-            const isMermaid = a.name.endsWith('.mmd')
-            return (
+          {artifacts.map((a) =>
+            a.name.endsWith('.mmd') ? (
               <li key={a.path}>
                 <button
                   className="diagram-link"
-                  onClick={() => openArtifact(a.name)}
+                  onClick={() => onOpen({ name: a.name })}
                 >
                   {a.name}
                 </button>
-                <span
-                  className={`diagram-tag diagram-tag-${
-                    isMermaid ? 'mermaid' : 'excalidraw'
-                  }`}
-                >
-                  {isMermaid ? 'mermaid' : 'excalidraw'}
-                </span>
+                <span className="diagram-tag diagram-tag-mermaid">mermaid</span>
               </li>
-            )
-          })}
+            ) : (
+              <li key={a.path}>
+                <a
+                  className="diagram-link"
+                  href={artifactUrl(featureId, a.name)}
+                  download={a.name}
+                >
+                  {a.name}
+                </a>
+                <span className="muted"> {t.feature.noEditorNotice}</span>
+              </li>
+            ),
+          )}
         </ul>
       )}
       {genError && <p className="form-error">{genError}</p>}
@@ -715,27 +593,6 @@ function DiagramsSection({
         >
           {generating ? t.feature.generating : t.feature.generateWithAI}
         </button>
-        {naming ? (
-          <form
-            className="diagram-name-form"
-            onSubmit={(e) => {
-              e.preventDefault()
-              create()
-            }}
-          >
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t.feature.diagramNamePlaceholder}
-              autoFocus
-            />
-            <button type="submit" disabled={diagramFilename(newName) === ''}>
-              {t.feature.create}
-            </button>
-          </form>
-        ) : (
-          <button onClick={() => setNaming(true)}>{t.feature.newDiagram}</button>
-        )}
       </div>
     </section>
   )

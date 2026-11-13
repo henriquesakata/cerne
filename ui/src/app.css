@@ -42,7 +42,7 @@
   --green-border: #bcd4b4;
   --green-border-2: #cfe3cf;
 
-  /* roxos (implementado, excalidraw) */
+  /* roxos (implementado) */
   --purple: #5b3d8a;
   --purple-bg: #ece4f5;
   --purple-border: #d2c2e8;
@@ -1387,7 +1387,7 @@ h2 {
 .approve-readiness .approve-advice { margin: 0 0 0.35rem; padding: 0.35rem 0.5rem; border-left: 2px solid var(--border); }
 .approve-readiness .bar-forms { margin: 0 0 0.35rem; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* ---- diagramas (Excalidraw) ---- */
+/* ---- diagramas ---- */
 
 .artifacts li { margin: 0.15rem 0; }
 
@@ -1517,7 +1517,6 @@ h2 {
 }
 
 .diagram-tag-mermaid { background: var(--green-bg-2); border-color: var(--green-border); color: var(--green); }
-.diagram-tag-excalidraw { background: var(--purple-bg); border-color: var(--purple-border); color: var(--purple); }
 
 /* ---- shell de navegação ---- */
 
