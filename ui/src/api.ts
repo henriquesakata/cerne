@@ -417,8 +417,9 @@ export async function fetchWork(): Promise<Work[]> {
   return ((await r.json()) as { works: Work[] }).works ?? []
 }
 
-// Passagens de bastão (F-0386): os HO- da F-0368, somente leitura. A lista
-// já vem na ordem do `cerne handoff list` — a tela não reordena.
+// Passagens de bastão (F-0386): os HO- da F-0368, somente leitura. A lista já
+// vem ordenada pelo servidor — pendentes primeiro (a mais antiga primeiro),
+// depois as fechadas pelo momento do fechamento (a mais recente primeiro).
 export type HandoffState = 'pending' | 'taken' | 'superseded' | 'cancelled'
 
 export type Handoff = {

@@ -5,8 +5,9 @@ import { useT } from './i18n'
 
 // Área Passagens (F-0386): os HO- da F-0368, somente leitura — passar e
 // assumir o bastão são atos do agente pela CLI. O filtro vive no hash
-// (#/handoffs?f=open|closed|all, padrão open) e a ordem é a do servidor, a
-// mesma do `cerne handoff list`: a tela só recorta, não reordena.
+// (#/handoffs?f=open|closed|all, padrão open) e a ordem é a do servidor:
+// pendentes primeiro (a mais antiga primeiro), depois as fechadas pelo momento
+// do fechamento (a mais recente primeiro). A tela só recorta, não reordena.
 
 const FILTERS = ['open', 'closed', 'all'] as const
 type Filter = (typeof FILTERS)[number]
