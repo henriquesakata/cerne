@@ -93,3 +93,13 @@ func TestCerneAuthoringDocumentsPlanOlderThanSpec(t *testing.T) {
 		}
 	}
 }
+
+// F-0380: the skill tells the agent to record rounds with the verb, not by hand.
+func TestCerneAuthoringDocumentsGauntletRecord(t *testing.T) {
+	c := All()[0].Content
+	for _, sub := range []string{"cerne gauntlet record F-NNNN --verdict", "--ours A|B", "--critic"} {
+		if !strings.Contains(c, sub) {
+			t.Errorf("skill missing %q", sub)
+		}
+	}
+}

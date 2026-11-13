@@ -107,9 +107,10 @@ const (
 
 // Positions, in their templates, of the sections a reader looks for by role.
 const (
-	specProblem  = 0 // where feature new seeds the context
-	specCriteria = 1 // its numbered items are the acceptance contract
-	resultDebts  = 3 // what the delivery left open
+	specProblem    = 0 // where feature new seeds the context
+	specCriteria   = 1 // its numbered items are the acceptance contract
+	resultDebts    = 3 // what the delivery left open
+	resultGauntlet = 5 // the loop's record
 )
 
 // ProblemHeadings returns the heading of the spec's problem section in every
@@ -125,6 +126,10 @@ func ProblemHeadings() []string {
 // IsDebtsSection reports whether heading opens the result section that lists
 // what the delivery left open, in any language.
 func IsDebtsSection(heading string) bool { return IsSection(Result, resultDebts, heading) }
+
+// IsGauntletSection reports whether heading opens the result's Gauntlet
+// section, in any language.
+func IsGauntletSection(heading string) bool { return IsSection(Result, resultGauntlet, heading) }
 
 // IsCriteriaSection reports whether heading opens the spec section whose
 // numbered items are the acceptance contract, in any language.
@@ -266,11 +271,11 @@ var terms = map[Term]map[Lang]form{
 	WaivedOpen:     {PT: {re: `dispensada`}, EN: {re: `waived\s+by\b`}},
 	MethodLabel:    {PT: {re: `M(?:é|e\x{0301}|e)todo`}, EN: {re: `Method`}},
 	ExitLabel:      {PT: {re: `Sa(?:í|i\x{0301}|i)da`}, EN: {re: `Exit`}},
-	Round:          {PT: {re: `Rodada`}, EN: {re: `Round`}},
-	CriticFindings: {PT: {re: `Achados? do cr(?:í|i\x{0301}|i)tico`}, EN: {re: `Critic(?:['’]s)? findings?`}},
-	Win:            {PT: {re: `vit(?:ó|o\x{0301}|o)ria`}, EN: {re: `win`}},
-	Loss:           {PT: {re: `derrota`}, EN: {re: `loss`}},
-	Tie:            {PT: {re: `empate`}, EN: {re: `tie`}},
+	Round:          {PT: {`Rodada`, "Rodada"}, EN: {`Round`, "Round"}},
+	CriticFindings: {PT: {`Achados? do cr(?:í|i\x{0301}|i)tico`, "Achados do crítico"}, EN: {`Critic(?:['’]s)? findings?`, "Critic findings"}},
+	Win:            {PT: {`vit(?:ó|o\x{0301}|o)ria`, "vitória"}, EN: {`win`, "win"}},
+	Loss:           {PT: {`derrota`, "derrota"}, EN: {`loss`, "loss"}},
+	Tie:            {PT: {`empate`, "empate"}, EN: {`tie`, "tie"}},
 	VerdictLabel:   {PT: {re: `veredito`}, EN: {re: `verdict`}},
 	TieLetter:      {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
 	OutcomeLabel:   {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},

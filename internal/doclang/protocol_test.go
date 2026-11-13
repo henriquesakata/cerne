@@ -223,3 +223,43 @@ func TestUnmetCriterion(t *testing.T) {
 		t.Error("role sections misread")
 	}
 }
+
+func TestJudgeVerdict(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"VEREDITO: A", "A", true},
+		{"veredito: b", "B", true},
+		{"**VEREDITO: EMPATE**", "TIE", true},
+		{"VERDICT: TIE.", "TIE", true},
+		{"Verdict: a", "A", true},
+		{"VEREDITO: A é melhor", "", false},
+		{"VEREDITO: C", "", false},
+		{"o veredito: A foi claro", "", false},
+	} {
+		got, ok := JudgeVerdict(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("JudgeVerdict(%q) = %q,%v want %q,%v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestDisplayOfRoundWords(t *testing.T) {
+	for _, c := range []struct {
+		t    Term
+		l    Lang
+		want string
+	}{
+		{Win, PT, "vitória"}, {Loss, PT, "derrota"}, {Tie, PT, "empate"}, {Round, PT, "Rodada"}, {CriticFindings, PT, "Achados do crítico"},
+		{Win, EN, "win"}, {Loss, EN, "loss"}, {Tie, EN, "tie"}, {Round, EN, "Round"}, {CriticFindings, EN, "Critic findings"},
+	} {
+		if got := Display(c.t, c.l); got != c.want {
+			t.Errorf("Display(%d,%s) = %q want %q", c.t, c.l, got, c.want)
+		}
+	}
+	if !IsGauntletSection(" gauntlet ") || !IsGauntletSection("Gauntlet") || IsGauntletSection("Resultado") {
+		t.Error("IsGauntletSection")
+	}
+}
