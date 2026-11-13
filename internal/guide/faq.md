@@ -33,3 +33,6 @@ A `cerne ui` process started before `go install` keeps serving the embedded UI a
 
 ## Q: Where do the learnings from a result go? How do I reuse what a past agent learned?
 A result's learnings are history and do not reach the next agent by themselves. `cerne feature complete` lists them. A durable one becomes a note with `cerne note new "<title>" --informs <F-id> --component <topic>`; first find a note that already covers it (`cerne note list --path <file>` or `cerne search "<terms>"`): complement it with `cerne note errata <N-old> ...`, or if it contradicts, replace it with `cerne note substituir <N-old> --by <N-new> --reason "..."`; none durable: `cerne feature learnings --skip <F-id>`. `cerne feature learnings` lists, read-only, the past features nobody triaged yet.
+
+## Q: What can cerne do? Which features exist?
+Run `cerne guide` with no question: it prints the catalog of every command, grouped by area, straight from the command tree, so it is never stale. Then `cerne guide "<feature>"` (for example `cerne guide "gauntlet"` or `cerne guide "room"`) returns how to use it: the reference file of that area and the command help. `cerne guide --topics` lists the topics; a command name alone (`cerne guide "room"`) brings its help. The skill's `reference/` folder holds the same detail for agents that read files.

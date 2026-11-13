@@ -108,3 +108,15 @@ func TestGuideRefusesLimitBelowOne(t *testing.T) {
 		}
 	}
 }
+
+// TestGuideWhatCanCerneDoPointsToTheCatalog: the question an agent asks first
+// is answered by the FAQ, which names the no-question call (F-0399).
+func TestGuideWhatCanCerneDoPointsToTheCatalog(t *testing.T) {
+	out, err := execGuide(t, "--limit", "1", "what can cerne do")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "(faq)") || !strings.Contains(out, "`cerne guide`") || !strings.Contains(out, "--topics") {
+		t.Fatalf("first section is not the catalog answer:\n%s", out)
+	}
+}
