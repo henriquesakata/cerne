@@ -74,7 +74,7 @@ func ApproveAdvices(repoDir, projDir, id string) ([]ApproveAdvice, error) {
 			took = "it took " + p + " cost here"
 		}
 		return []ApproveAdvice{{AdviceStandardWithoutBar, fmt.Sprintf(
-			`level %s with "%s": a behaviour or contract change usually goes through the Gauntlet (N-0056) — %s; approving accepts the declared justification: "%s"`,
+			`level %s with "%s": a behaviour or contract change usually goes through the Gauntlet — %s; approving accepts the declared justification: "%s"`,
 			levelEN[level], notApplicableForm, took, justification)}}, nil
 	}
 	out := []ApproveAdvice{{AdviceGauntletCost, gauntletCostMessage(st)}}
@@ -88,7 +88,7 @@ func ApproveAdvices(repoDir, projDir, id string) ([]ApproveAdvice, error) {
 			took = "the Gauntlet took " + p + " cost here"
 		}
 		out = append(out, ApproveAdvice{AdviceLightWithBar, fmt.Sprintf(
-			`level light with a named bar: when the tests suffice, a light change can use "%s (%s)" — %s (N-0056)`, notApplicableForm, slot, took)})
+			`level light with a named bar: when the tests suffice, a light change can use "%s (%s)" — %s`, notApplicableForm, slot, took)})
 	}
 	return out, nil
 }
@@ -96,7 +96,7 @@ func ApproveAdvices(repoDir, projDir, id string) ([]ApproveAdvice, error) {
 // gauntletCostMessage is the measured cost overall, then per level with
 // enough features; no number below the minimum sample.
 func gauntletCostMessage(st cost.GauntletStats) string {
-	const head = "Gauntlet cost measured in this project (critic + judge, N-0056): "
+	const head = "Gauntlet cost measured in this project (critic + judge): "
 	if !st.Enough {
 		return head + fmt.Sprintf("not enough measured features yet (%d of %d needed)", st.Features, cost.MinGauntletSample)
 	}

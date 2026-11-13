@@ -28,7 +28,7 @@ func TestApproveCheckAdvice(t *testing.T) {
 	}
 	head := "Advice (it never blocks the approve):\n"
 	for _, want := range []string{
-		head + "  - gauntlet-cost: Gauntlet cost measured in this project (critic + judge, N-0056): not enough measured features yet (0 of 3 needed)\n",
+		head + "  - gauntlet-cost: Gauntlet cost measured in this project (critic + judge): not enough measured features yet (0 of 3 needed)\n",
 		`  - light-with-bar: level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)"`,
 		"is approvable",
 	} {

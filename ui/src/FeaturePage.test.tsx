@@ -268,7 +268,7 @@ describe('FeaturePage approve readiness (F-0308)', () => {
       ...detail('candidate'),
       bar: 'Barra: cerne push --dry-run — ensaio com gate',
       approve_advice: [
-        { code: 'gauntlet-cost', message: 'Gauntlet cost measured in this project (critic + judge, N-0056): median 252.7k weighted tokens per feature, 10% of its cost, over 12 delivered features' },
+        { code: 'gauntlet-cost', message: 'Gauntlet cost measured in this project (critic + judge): median 252.7k weighted tokens per feature, 10% of its cost, over 12 delivered features' },
         { code: 'light-with-bar', message: 'level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)"' },
       ],
     }

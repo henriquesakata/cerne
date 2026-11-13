@@ -55,21 +55,22 @@ func adviceCodes(as []ApproveAdvice) string {
 }
 
 // TestApproveAdvices (F-0390 crit. 1-3, 6): the measured cost on a named bar,
-// the light-with-bar and standard-without-bar advice, each citing N-0056 and
-// the measured share — never an impediment, never a refused approve.
+// the light-with-bar and standard-without-bar advice, each citing the
+// project's own measured share and no note of another project — never an
+// impediment, never a refused approve.
 func TestApproveAdvices(t *testing.T) {
 	for _, tc := range []struct {
 		name, level, bar, codes string
 		wants               []string
 	}{
 		{"light named bar", "leve", namedBar, "gauntlet-cost,light-with-bar", []string{
-			"Gauntlet cost measured in this project (critic + judge, N-0056): median 250 weighted tokens per feature, 25% of its cost, over 4 delivered features; light: 200 tokens, 20% (3 features)",
-			`level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)" — the Gauntlet took 20% of a light feature's cost here (N-0056)`,
+			"Gauntlet cost measured in this project (critic + judge): median 250 weighted tokens per feature, 25% of its cost, over 4 delivered features; light: 200 tokens, 20% (3 features)",
+			`level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)" — the Gauntlet took 20% of a light feature's cost here`,
 		}},
 		{"standard named bar", "padrão", namedBar, "gauntlet-cost", nil},
 		{"no level, named bar", "", namedBar, "gauntlet-cost", nil},
 		{"standard not applicable", "padrão", notApplBar, "standard-without-bar", []string{
-			`level standard with "Barra: não aplicável": a behaviour or contract change usually goes through the Gauntlet (N-0056) — it took 25% of a feature's cost here; approving accepts the declared justification: "efeito local, coberto por TestX"`,
+			`level standard with "Barra: não aplicável": a behaviour or contract change usually goes through the Gauntlet — it took 25% of a feature's cost here; approving accepts the declared justification: "efeito local, coberto por TestX"`,
 		}},
 		{"advanced not applicable", "avançado", notApplBar, "standard-without-bar", nil},
 		{"light not applicable", "leve", notApplBar, "", nil},
@@ -90,6 +91,11 @@ func TestApproveAdvices(t *testing.T) {
 			}
 			if c := adviceCodes(got); c != tc.codes {
 				t.Fatalf("codes = %q, want %q (%+v)", c, tc.codes, got)
+			}
+			for _, a := range got {
+				if strings.Contains(a.Message, "N-0056") {
+					t.Errorf("%s cites a note of another project (crit. 2): %q", a.Code, a.Message)
+				}
 			}
 			for i, want := range tc.wants {
 				if got[i].Message != want {
@@ -121,8 +127,8 @@ func TestApproveAdvicesNotEnough(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ApproveAdvice{
-		{AdviceGauntletCost, "Gauntlet cost measured in this project (critic + judge, N-0056): not enough measured features yet (1 of 3 needed)"},
-		{AdviceLightWithBar, `level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)" — not enough measured features yet to show the Gauntlet's cost here (N-0056)`},
+		{AdviceGauntletCost, "Gauntlet cost measured in this project (critic + judge): not enough measured features yet (1 of 3 needed)"},
+		{AdviceLightWithBar, `level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)" — not enough measured features yet to show the Gauntlet's cost here`},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("advice = %+v, want %+v", got, want)
