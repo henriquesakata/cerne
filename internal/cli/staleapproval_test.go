@@ -131,7 +131,7 @@ func TestNextStaleApproval(t *testing.T) {
 // how it is renewed.
 func TestFeatureSpecStalesApproval(t *testing.T) {
 	projDir := staleFixture(t)
-	pipeStdinBody(t, "## Problema\n\nReescrita depois da aprovação.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	pipeStdinBody(t, "## Problema\n\nReescrita depois da aprovação.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 	out, err := execCerne(t, "feature", "spec", "F-0002", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("feature spec on approved: %v\n%s", err, out)

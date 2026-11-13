@@ -64,7 +64,7 @@ func TestApproveReadinessGoldenPath(t *testing.T) {
 	}
 
 	t.Log("stage 3: rewrite the spec with a bar — approvable")
-	out = mustCerne(t, "feature", "spec", "F-0001", "--file", specFile(problem+"\n## Verificação\n\n"+bar+"\n"), "--dir", proj)
+	out = mustCerne(t, "feature", "spec", "F-0001", "--file", specFile(problem+"\n## Verificação\n\n"+bar+"\nPergunta ao juiz: qual ensaio é mais claro?\n"), "--dir", proj)
 	if !strings.Contains(out, "Approve readiness: approvable") {
 		t.Fatalf("feature spec output lacks the approvable readiness:\n%s", out)
 	}

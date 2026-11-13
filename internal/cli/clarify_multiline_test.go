@@ -14,7 +14,7 @@ import (
 // touched" is checkable.
 const (
 	mlPre  = "# Feature\n\n## Problema\n\nContexto real.\n\nAntes "
-	mlPost = " depois.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+	mlPost = " depois.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n"
 )
 
 func multiLineSpec(marker string) string { return mlPre + marker + mlPost }

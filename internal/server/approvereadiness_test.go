@@ -17,7 +17,7 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 	seedFeature(t, repoDir, "F-0001", "Sem barra", domain.StateCandidate)
 	writeDoc(t, repoDir, "F-0001", "spec.md", "# t\n\nProblema real. [ESCLARECER: qual o limite?]\n")
 	seedFeature(t, repoDir, "F-0002", "Com barra", domain.StateCandidate)
-	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\nBarra: cerne push --dry-run — ensaio com gate\n")
+	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
 	// Complete cards (F-0336): only the spec impediments show.
 	for _, id := range []string{"F-0001", "F-0002"} {
 		f, err := store.LoadFeature(repoDir, id)
@@ -64,7 +64,7 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 	// F-0336: an untagged card with a valid spec carries the soft untagged
 	// impediment the UI lists (it does not block the UI approve).
 	seedFeature(t, repoDir, "F-0004", "Sem tag", domain.StateCandidate)
-	writeDoc(t, repoDir, "F-0004", "spec.md", "# t\n\nProblema real.\n\nBarra: cerne push --dry-run — ensaio com gate\n")
+	writeDoc(t, repoDir, "F-0004", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
 	if imps, _, _ := get("F-0004"); len(imps) != 1 || imps[0].Code != "untagged" || imps[0].Hard {
 		t.Fatalf("F-0004 readiness = %+v, want one soft untagged", imps)
 	}

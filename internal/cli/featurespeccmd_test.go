@@ -13,7 +13,7 @@ import (
 )
 
 // specBody is the revised spec used across the feature-spec tests.
-const specBody = "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão revisada pelo agente.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+const specBody = "---\ncerne_id: F-0001\n---\n\n## Problema\n\nVersão revisada pelo agente.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n"
 
 // pipeStdinBody feeds body to readOptionalBody as if it had been piped in —
 // the path the Backlog agent actually uses (it has no Write tool, so the spec

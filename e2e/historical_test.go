@@ -33,7 +33,7 @@ func TestRetireThenLintFlagsAlias(t *testing.T) {
 	}
 	realSpec := "---\ncerne_id: F-0001\n---\n\n# Relatórios financeiros\n\n" +
 		"O relatório consolida o módulo de boletos com o restante.\n\n" +
-		"## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+		"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n"
 	if err := os.WriteFile(matches[0], []byte(realSpec), 0o644); err != nil {
 		t.Fatalf("write real spec: %v", err)
 	}

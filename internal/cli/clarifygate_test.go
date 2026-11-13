@@ -36,7 +36,7 @@ func TestApproveRefusesOpenClarifications(t *testing.T) {
 	newFeatureWithSpec(t, projDir, "Com pergunta aberta",
 		"# Com pergunta aberta\n\n## Problema\n\nContexto real.\n\n"+
 			"[ESCLARECER: qual formato usar?]\n\n[ESCLARECER: onde persistir? | doc | sidecar]\n\n"+
-			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 
 	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
 	if err == nil {
@@ -82,7 +82,7 @@ func TestApproveRefusesOpenClarificationsEnglish(t *testing.T) {
 	newFeatureWithSpec(t, projDir, "English spec",
 		"# English spec\n\n## Problema\n\nReal context in English.\n\n"+
 			"[CLARIFY: which storage backend?]\n\n"+
-			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 
 	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
 	if err == nil {
@@ -111,7 +111,7 @@ func TestApprovePassesResolvedClarifications(t *testing.T) {
 	newFeatureWithSpec(t, projDir, "Só resolvidas",
 		"# Só resolvidas\n\n## Problema\n\nContexto real.\n\n"+
 			"[ESCLARECIDO: qual formato usar? → pipe inline]\n\n"+
-			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 
 	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestApproveClarifyRefusalNumbersMatchAnswer(t *testing.T) {
 	newFeatureWithSpec(t, projDir, "Tres perguntas",
 		"# Tres perguntas\n\n## Problema\n\nContexto real.\n\n"+
 			"[ESCLARECER: qual formato usar?]\n\n[ESCLARECER: a barra cobre a CLI e a UI? | só CLI | as duas]\n\n[ESCLARECER: qual o prazo?]\n\n"+
-			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 	writeDoc(t, repoDir, "F-0001", "plan.md", "---\ncerne_id: F-0001\n---\n\n[ESCLARECER: do plano?]\n")
 	commitBackend(t, repoDir)
 
@@ -192,7 +192,7 @@ func TestApproveClarifyRefusalNumbersMatchAnswer(t *testing.T) {
 func TestApproveClarifyGateLowercaseID(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	newFeatureWithSpec(t, projDir, "Minuscula",
-		"# Minuscula\n\n## Problema\n\nContexto real. [ESCLARECER: qual o prazo?]\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+		"# Minuscula\n\n## Problema\n\nContexto real. [ESCLARECER: qual o prazo?]\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 	_, err := execCerne(t, "feature", "approve", "f-0001", "--dir", projDir)
 	if !errors.Is(err, app.ErrOpenClarifications) {
 		t.Fatalf("approve f-0001: %v, want ErrOpenClarifications", err)
@@ -218,7 +218,7 @@ func TestClarifyAnswerExpectNaturalOrder(t *testing.T) {
 	newFeatureWithSpec(t, projDir, "Ordem natural",
 		"# Ordem natural\n\n## Problema\n\nContexto real.\n\n"+
 			"[ESCLARECER: pergunta A?]\n\n[ESCLARECER: pergunta B? | sim | não]\n\n[ESCLARECER: pergunta C?]\n\n"+
-			"## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+			"## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 	writeDoc(t, repoDir, "F-0001", "plan.md", "---\ncerne_id: F-0001\n---\n\n[ESCLARECER: pergunta do plano?]\n")
 	commitBackend(t, repoDir)
 

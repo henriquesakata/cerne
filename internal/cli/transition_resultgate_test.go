@@ -33,7 +33,7 @@ func startedFeature(t *testing.T) (projDir, repoDir, id string) {
 // not cross it.
 func TestCompleteRefusalMessageAndNoForce(t *testing.T) {
 	projDir, repoDir, id := startedFeature(t)
-	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\n## Objetivo e critérios de aceitação\n\n1. um\n2. dois\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n")
+	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\n## Objetivo e critérios de aceitação\n\n1. um\n2. dois\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n")
 	writeDoc(t, repoDir, id, "result.md", "---\ncerne_id: "+id+"\n---\n\n# Título\n\nEntregue; critério 1 provado.\n")
 	commitBackend(t, repoDir)
 

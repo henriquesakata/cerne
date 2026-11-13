@@ -94,7 +94,7 @@ func realDoc(id, body string) string {
 	// The Verificação/Barra tail satisfies the approve bar gate, which the
 	// transition core enforces for the UI path too (F-0295).
 	// The Gauntlet tail satisfies the complete result gate (F-0303).
-	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
 }
 
 // writeContentDoc writes a decision/reference content doc at
@@ -788,7 +788,7 @@ func TestLintEndpointClean(t *testing.T) {
 		}
 	}
 	writeDoc(t, repoDir, "F-0001", "spec.md",
-		"---\ncerne_id: F-0001\n---\n\n# Feature A\n\n## Problema\n\nReal.\n\n## Objetivo e critérios de aceitação\n\n1. Critério.\n\n## Decisões do design\n\nN/A\n\n## Desenho\n\nReal.\n\n## Verificação\n\nBarra: referência nomeada — acesso\n\n## Execução recomendada (agente)\n\nReal.\n\n## Fora de escopo\n\nN/A\n")
+		"---\ncerne_id: F-0001\n---\n\n# Feature A\n\n## Problema\n\nReal.\n\n## Objetivo e critérios de aceitação\n\n1. Critério.\n\n## Decisões do design\n\nN/A\n\n## Desenho\n\nReal.\n\n## Verificação\n\nBarra: referência nomeada — acesso\nPergunta ao juiz: qual é mais claro?\n\n## Execução recomendada (agente)\n\nReal.\n\n## Fora de escopo\n\nN/A\n")
 
 	var got struct {
 		Findings []struct {
