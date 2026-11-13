@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,10 +86,7 @@ func TestApproveAdvices(t *testing.T) {
 			}
 			measuredFeature(t, repoDir, "F-0005", "padrão", 400)
 
-			got, err := ApproveAdvices(repoDir, projDir, "F-0001")
-			if err != nil {
-				t.Fatal(err)
-			}
+			got := ApproveAdvices(repoDir, projDir, "F-0001")
 			if c := adviceCodes(got); c != tc.codes {
 				t.Fatalf("codes = %q, want %q (%+v)", c, tc.codes, got)
 			}
@@ -122,10 +120,7 @@ func TestApproveAdvicesNotEnough(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedCandidateSpec(t, repoDir, "F-0001", adviceSpec("leve", namedBar))
 	measuredFeature(t, repoDir, "F-0002", "leve", 200)
-	got, err := ApproveAdvices(repoDir, projDir, "F-0001")
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := ApproveAdvices(repoDir, projDir, "F-0001")
 	want := []ApproveAdvice{
 		{AdviceGauntletCost, "Gauntlet cost measured in this project (critic + judge): not enough measured features yet (1 of 3 needed)"},
 		{AdviceLightWithBar, `level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)" — not enough measured features yet to show the Gauntlet's cost here`},
@@ -147,14 +142,65 @@ func TestApproveAdvicesLightModeAndApprove(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedCandidateSpec(t, repoDir, "F-0001", adviceSpec("leve", namedBar))
 	saveGauntlet(t, projDir, "off")
-	if got, err := ApproveAdvices(repoDir, projDir, "F-0001"); err != nil || len(got) != 0 {
-		t.Fatalf("light mode: advice = %+v, %v; want none", got, err)
+	if got := ApproveAdvices(repoDir, projDir, "F-0001"); len(got) != 0 {
+		t.Fatalf("light mode: advice = %+v; want none", got)
 	}
 	saveGauntlet(t, projDir, "on")
-	if got, _ := ApproveAdvices(repoDir, projDir, "F-0001"); len(got) == 0 {
+	if got := ApproveAdvices(repoDir, projDir, "F-0001"); len(got) == 0 {
 		t.Fatal("gauntlet on: want advice before the approve")
 	}
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
 		t.Fatalf("approve with advice: %v", err)
+	}
+}
+
+// breakMeasurement corrupts what GauntletCostStats reads, one way per name: a
+// feature JSON that does not parse (LoadAllFeatures fails) or a measured
+// feature's spec.md that cannot be read.
+var breakMeasurement = map[string]func(t *testing.T, repoDir string){
+	"corrupt feature JSON": func(t *testing.T, repoDir string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repoDir, "entities", "features", "F-0099.json"), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	},
+	"unreadable spec": func(t *testing.T, repoDir string) {
+		t.Helper()
+		measuredFeature(t, repoDir, "F-0002", "leve", 200)
+		p := FeatureDocPath(repoDir, "F-0002", "spec.md")
+		if err := os.Chmod(p, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(p, 0o644) })
+		if _, err := os.ReadFile(p); err == nil {
+			t.Skip("the spec stays readable (running as root)")
+		}
+	},
+}
+
+// TestApproveAdvicesFailOpen (F-0390, critic round): advice never breaks a
+// surface. When the measurement fails, the cost advice is skipped, the level
+// advice still runs with no number, and the impediments are the same as
+// before.
+func TestApproveAdvicesFailOpen(t *testing.T) {
+	for name, breakIt := range breakMeasurement {
+		t.Run(name, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			seedCandidateSpec(t, repoDir, "F-0001", adviceSpec("leve", namedBar))
+			before, err := ApproveReadiness(repoDir, projDir, "F-0001")
+			if err != nil {
+				t.Fatal(err)
+			}
+			breakIt(t, repoDir)
+			got := ApproveAdvices(repoDir, projDir, "F-0001")
+			want := []ApproveAdvice{{AdviceLightWithBar, `level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)" — not enough measured features yet to show the Gauntlet's cost here`}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("advice = %+v, want %+v", got, want)
+			}
+			after, err := ApproveReadiness(repoDir, projDir, "F-0001")
+			if err != nil || !reflect.DeepEqual(after, before) {
+				t.Fatalf("impediments changed: %+v (%v), want %+v", after, err, before)
+			}
+		})
 	}
 }

@@ -455,10 +455,8 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	var advice []app.ApproveAdvice
 	var bar, judgeQuestion string
 	if f.State == domain.StateCandidate || specChanged {
+		advice = app.ApproveAdvices(repoDir, projDir, id)
 		if readiness, err = app.ApproveReadiness(repoDir, projDir, id); err == nil {
-			advice, err = app.ApproveAdvices(repoDir, projDir, id)
-		}
-		if err == nil {
 			if bar, err = app.AcceptedBar(repoDir, id); err == nil && bar != "" {
 				judgeQuestion, _, err = app.AcceptedJudgeQuestion(repoDir, id)
 			}

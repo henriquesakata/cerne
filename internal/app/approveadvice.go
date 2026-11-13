@@ -1,9 +1,7 @@
 package app
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
 
@@ -40,31 +38,34 @@ var levelEN = map[string]string{"leve": "light", "padrão": "standard", "avança
 // standard or advanced spec with "não aplicável", the justification the human
 // accepts. A project in light mode (F-0364) runs no Gauntlet and gets none, as
 // does a spec with no valid bar (the bar gate speaks) or a waived one.
-func ApproveAdvices(repoDir, projDir, id string) ([]ApproveAdvice, error) {
+//
+// Advice never breaks a surface, so it returns no error: an unreadable spec
+// gives none, and a failed measurement (a corrupt feature JSON, an unreadable
+// measured spec) skips the cost advice while the level advice runs with no
+// number. The check and the page then read the same as without advice.
+func ApproveAdvices(repoDir, projDir, id string) []ApproveAdvice {
 	if !projectGates(projDir).GauntletEnabled() {
-		return nil, nil
+		return nil
 	}
 	spec, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	if _, err := doccheck.SpecBar(spec); err != nil {
-		return nil, nil
+		return nil
 	}
 	justification, notApplicable := doccheck.BarNotApplicable(spec)
 	if !notApplicable && doccheck.BarExempt(spec) {
-		return nil, nil
+		return nil
 	}
 	level, _ := doccheck.SpecLevel(spec)
 	if notApplicable && level != "padrão" && level != "avançado" {
-		return nil, nil
+		return nil
 	}
 	st, err := cost.GauntletCostStats(repoDir)
-	if err != nil {
-		return nil, err
+	measured := err == nil
+	if !measured {
+		st = cost.GauntletStats{} // no number from a failed read
 	}
 	l := store.DocsLanguage(repoDir)
 	notApplicableForm := doclang.Display(doclang.BarLabel, l) + ": " + doclang.Display(doclang.NotApplicable, l)
@@ -75,9 +76,12 @@ func ApproveAdvices(repoDir, projDir, id string) ([]ApproveAdvice, error) {
 		}
 		return []ApproveAdvice{{AdviceStandardWithoutBar, fmt.Sprintf(
 			`level %s with "%s": a behaviour or contract change usually goes through the Gauntlet — %s; approving accepts the declared justification: "%s"`,
-			levelEN[level], notApplicableForm, took, justification)}}, nil
+			levelEN[level], notApplicableForm, took, justification)}}
 	}
-	out := []ApproveAdvice{{AdviceGauntletCost, gauntletCostMessage(st)}}
+	var out []ApproveAdvice
+	if measured {
+		out = append(out, ApproveAdvice{AdviceGauntletCost, gauntletCostMessage(st)})
+	}
 	if level == "leve" {
 		slot := "<por que os testes bastam>"
 		if l == doclang.EN {
@@ -90,7 +94,7 @@ func ApproveAdvices(repoDir, projDir, id string) ([]ApproveAdvice, error) {
 		out = append(out, ApproveAdvice{AdviceLightWithBar, fmt.Sprintf(
 			`level light with a named bar: when the tests suffice, a light change can use "%s (%s)" — %s`, notApplicableForm, slot, took)})
 	}
-	return out, nil
+	return out
 }
 
 // gauntletCostMessage is the measured cost overall, then per level with

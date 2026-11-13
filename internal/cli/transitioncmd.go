@@ -355,11 +355,7 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		}
 	}
 	// Advice never refuses either (F-0390): the exit code ignores it.
-	advice, err := app.ApproveAdvices(ctx.repoDir, ctx.projDir, id)
-	if err != nil {
-		return err
-	}
-	if len(advice) > 0 {
+	if advice := app.ApproveAdvices(ctx.repoDir, ctx.projDir, id); len(advice) > 0 {
 		fmt.Fprintln(w, "Advice (it never blocks the approve):")
 		for _, a := range advice {
 			fmt.Fprintf(w, "  - %s: %s\n", a.Code, a.Message)
