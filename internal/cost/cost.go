@@ -36,6 +36,10 @@ func (c Counters) add(o Counters) Counters {
 	return Counters{c.Input + o.Input, c.CacheCreation + o.CacheCreation, c.CacheRead + o.CacheRead, c.Output + o.Output}
 }
 
+func (c Counters) sub(o Counters) Counters {
+	return Counters{c.Input - o.Input, c.CacheCreation - o.CacheCreation, c.CacheRead - o.CacheRead, c.Output - o.Output}
+}
+
 func (c Counters) max(o Counters) Counters {
 	return Counters{max(c.Input, o.Input), max(c.CacheCreation, o.CacheCreation), max(c.CacheRead, o.CacheRead), max(c.Output, o.Output)}
 }
@@ -330,6 +334,7 @@ func own(in Inputs, id string) (Report, error) {
 				r.Source, r.Sessions, r.Unattributed = "stamp", s.Sessions, s.Unattributed
 			}
 		}
+		r.unknownRole()
 		return r, nil
 	}
 	for e, s := range byEntity {
@@ -343,7 +348,25 @@ func own(in Inputs, id string) (Report, error) {
 		}
 	}
 	sort.Strings(r.FromStamp)
+	r.unknownRole()
 	return r, nil
+}
+
+// unknownRole names the share of the counters no role covers — buckets
+// harvested, or anchors stamped, before F-0384 — as the "unknown" role, so a
+// breakdown never reads as complete when it is not. A cost with no role at
+// all has no breakdown to complete.
+func (r *Report) unknownRole() {
+	if len(r.ByRole) == 0 {
+		return
+	}
+	var sum Counters
+	for _, c := range r.ByRole {
+		sum = sum.add(c)
+	}
+	if gap := r.Counters.sub(sum); gap != (Counters{}) {
+		r.ByRole["unknown"] = gap
+	}
 }
 
 // readAnchor reads the anchor of id's result in the backend clone.

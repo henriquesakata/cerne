@@ -322,3 +322,41 @@ func TestStampBreaksDownByRole(t *testing.T) {
 		t.Errorf("pre-F-0384 anchor = %+v (ok %v), want it read, without by_role", a, ok)
 	}
 }
+
+// TestByRoleNamesTheUnknownGap (F-0384 critic I1): when part of the cost comes
+// from snapshot buckets with no role (harvested before F-0384), the gap is the
+// explicit "unknown" role — in ByRole, the --json and the stamp line — so the
+// breakdown never reads as complete when it is not.
+func TestByRoleNamesTheUnknownGap(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	a, x := cc(1, 2, 3, 4), cc(10, 20, 30, 40)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "a", req: "r", c: a},
+		tmsg{ts: at(3), id: "b", req: "r", agent: "x", c: x})
+	bindAt(t, in.CacheDir, "s", "", "F-0002", at(1))
+	harvest(t, in, "s", "", time.Now())
+	s := readSnap(t, in.CacheDir, "F-0002")
+	for rel, f := range s.Sessions["s"].Files {
+		if strings.Contains(rel, "/subagents/") {
+			for i := range f.Buckets {
+				f.Buckets[i].Role = "" // as a pre-F-0384 harvest wrote it
+			}
+		}
+	}
+	if err := s.save(in.CacheDir); err != nil {
+		t.Fatal(err)
+	}
+	prune(t, in, "s")
+
+	r := compute(t, in, "F-0002")
+	if want := map[string]Counters{"main": a, "unknown": x}; !reflect.DeepEqual(r.ByRole, want) || r.Counters != a.add(x) {
+		t.Fatalf("ByRole = %+v (counters %+v), want %+v", r.ByRole, r.Counters, want)
+	}
+	if raw, _ := json.Marshal(r); !strings.Contains(string(raw), `"unknown":{"input":10,`) {
+		t.Errorf("--json lacks the unknown role: %s", raw)
+	}
+	if got := mustStamp(t, resultDoc("F-0002"), r); !strings.Contains(got, "Por papel: main (input 1 · cache_creation 2 · cache_read 3 · output 4); unknown (input 10 · cache_creation 20 · cache_read 30 · output 40).") {
+		t.Errorf("stamp lacks the unknown role:\n%s", got)
+	}
+}
