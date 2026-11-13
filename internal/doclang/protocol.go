@@ -328,3 +328,20 @@ var unmetRe = func() *regexp.Regexp {
 
 // UnmetCriterion reports an acceptance line that marks a criterion unmet.
 func UnmetCriterion(line string) bool { return unmetRe.MatchString(line) }
+
+// judgeLineRe is the judge's fixed last line alone: "VEREDITO: A", "VERDICT: TIE".
+var judgeLineRe = regexp.MustCompile(`(?i)^[\s*_]*` + alt(VerdictLabel) + `[*_]*[ \t]*:[ \t]*[*_]*[ \t]*(A|B|` + alt(TieLetter) + `)[*_\s.]*$`)
+
+// JudgeVerdict reads line as the judge's verdict line, in any language: the
+// winner "A" or "B", or "TIE" for a tie. Anything after the letter but
+// emphasis and a full stop is not a verdict line.
+func JudgeVerdict(line string) (string, bool) {
+	m := judgeLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	if Is(TieLetter, m[1]) {
+		return "TIE", true
+	}
+	return strings.ToUpper(m[1]), true
+}
