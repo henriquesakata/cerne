@@ -558,7 +558,8 @@ export function CostDetailPage({ id }: { id: string }) {
   const load = useLiveLoad(() => fetchCostDetail(id), [id])
   const d = load.data
   if (!d) return <LoadPending load={load} message={t.costs.loadOneError} />
-  const num = (v: number) => v.toLocaleString(lang)
+  // Weighted values carry the 0.1 of a cache read: whole tokens are enough.
+  const num = (v: number) => v.toLocaleString(lang, { maximumFractionDigits: 0 })
   const breakdown = (
     title: string,
     raw: Record<string, CostCounters> | null,
@@ -633,7 +634,7 @@ export function CostDetailPage({ id }: { id: string }) {
             d.report.messages,
           )}
           {' · '}
-          {d.level ? (t.costs.levels[d.level] ?? d.level) : `${t.costs.filterNames.level}: ${t.costs.unknownValue}`}
+          {`${t.costs.filterNames.level}: ${d.level ? (t.costs.levels[d.level] ?? d.level) : t.costs.unknownValue}`}
           {' · '}
           {d.effort_source === 'declared' ? t.costs.effortDeclared(d.effort) : t.costs.effortUnknown}
           {' · '}

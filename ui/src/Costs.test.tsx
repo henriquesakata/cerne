@@ -358,6 +358,7 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
       expect.arrayContaining(['Rodada 1 — derrota', 'Rodada 2 — vitória']),
     )
     expect(screen.getByText(/esforço high \(declarado\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Nível: leve · esforço high/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '← Custos' })).toHaveAttribute('href', '#/costs')
   })
 
