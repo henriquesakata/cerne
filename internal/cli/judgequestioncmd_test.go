@@ -68,6 +68,15 @@ func TestApproveSaysWhyNoJudgeQuestion(t *testing.T) {
 			t.Fatalf("approve: %v\n%s", err, out)
 		}
 	})
+	// Light mode says it even when the spec happens to carry a bar.
+	t.Run("light mode, spec with a bar", func(t *testing.T) {
+		projDir, id := judgeProject(t, "Barra: fixture de teste — referência nomeada\n")
+		setGauntlet(t, projDir, "off")
+		out, err := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+		if err != nil || !strings.Contains(out, "light mode: no Gauntlet bar or judge question is charged") || strings.Contains(out, "Approving accepts its bar") {
+			t.Fatalf("check: %v\n%s", err, out)
+		}
+	})
 	t.Run("light mode", func(t *testing.T) {
 		projDir, id := judgeProject(t, "Só testes.\n")
 		setGauntlet(t, projDir, "off")

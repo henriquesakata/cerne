@@ -327,7 +327,7 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 		if err != nil {
 			return err
 		}
-		if bar == "" { // light mode (F-0364): no bar is charged
+		if bar == "" || !ctx.cfg.Gates.GauntletEnabled() { // light mode (F-0364): no bar is charged
 			fmt.Fprintln(w, lightModeApprove)
 		} else {
 			fmt.Fprintf(w, "Approving accepts its bar:\n  %s\n", bar)
