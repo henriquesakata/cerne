@@ -136,3 +136,51 @@ func TestStartWarnsPlanBehindSpec(t *testing.T) {
 		}
 	}
 }
+
+// TestPlanBehindNeverRefuses (F-0377, critic round 1, item 1): a plan behind
+// its spec is a warning everywhere — the re-approval's readiness lists no
+// impediment for it, and an in-development feature with the plan still behind
+// completes; the lint keeps it as an advisory finding.
+func TestPlanBehindNeverRefuses(t *testing.T) {
+	authorEnv(t)
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f := seedApproved(t, repoDir, projDir, "Plano velho", "")
+	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "spec", realDoc(f.ID)+"\nMais um critério.\n"); err != nil {
+		t.Fatal(err)
+	}
+	imps, err := ApproveReadiness(repoDir, projDir, f.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, im := range imps {
+		if strings.Contains(im.Code+im.Message, "plan") {
+			t.Fatalf("approve --check impediment for the plan: %+v", im)
+		}
+	}
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("re-approve: %v", err)
+	}
+	mustStart(t, repoDir, projDir, f.ID)
+	findings, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, fd := range findings {
+		if fd.Rule == lint.RulePlanOlderThanSpec && fd.Entity == f.ID {
+			found = true
+			if lint.Blocking(fd) {
+				t.Fatalf("plan-older-than-spec blocks: %+v", fd)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("in development with the plan behind: no plan-older-than-spec finding")
+	}
+	if err := SaveFeatureDoc(repoDir, projDir, f.ID, "result", "# Resultado\n\nEntregue.\n"+testGauntletTail); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatalf("complete refused with the plan behind: %v", err)
+	}
+}

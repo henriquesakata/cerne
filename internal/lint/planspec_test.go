@@ -74,7 +74,8 @@ func TestPlanBehindSpec(t *testing.T) {
 // TestPlanOlderThanSpecFindings (F-0377 crit. 2): the lint flags a plan
 // behind its spec only while the plan is the live contract (approved, in
 // development), names the feature and the two writes in English — "unknown"
-// when no spec write is recorded — and fails the lint.
+// when no spec write is recorded — and only warns: advisory, like the start
+// (critic round 1, item 1).
 func TestPlanOlderThanSpecFindings(t *testing.T) {
 	repoDir := t.TempDir()
 	states := map[string]domain.FeatureState{
@@ -116,8 +117,8 @@ func TestPlanOlderThanSpecFindings(t *testing.T) {
 	}
 	for id, detail := range want {
 		f := got[id]
-		if f.Detail != detail || f.File != "content/features/"+id+"/plan.md" || !Blocking(f) {
-			t.Errorf("%s: finding %+v, want detail %q on its plan.md, blocking", id, f, detail)
+		if f.Detail != detail || f.File != "content/features/"+id+"/plan.md" || Blocking(f) {
+			t.Errorf("%s: finding %+v, want detail %q on its plan.md, advisory", id, f, detail)
 		}
 	}
 	if _, ok := ruleRank[RulePlanOlderThanSpec]; !ok {

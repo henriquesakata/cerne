@@ -8,7 +8,7 @@ import (
 )
 
 // TestFeatureStartWarnsPlanBehindSpec (F-0377 crit. 2, 3, 4): the plan pushed,
-// then the spec rewritten and re-approved — 'cerne lint' fails on
+// then the spec rewritten and re-approved — 'cerne lint' warns
 // plan-older-than-spec, 'cerne feature start' prints the warning on stderr and
 // still moves the feature, and the plan pushed again clears the finding.
 func TestFeatureStartWarnsPlanBehindSpec(t *testing.T) {
@@ -30,8 +30,8 @@ func TestFeatureStartWarnsPlanBehindSpec(t *testing.T) {
 	}
 
 	out, err := execCerne(t, "lint", "--dir", projDir)
-	if err == nil || !strings.Contains(out, "PLAN-OLDER-THAN-SPEC") || !strings.Contains(out, id+" plan was written on ") {
-		t.Fatalf("lint: err %v, output:\n%s\nwant a failing plan-older-than-spec on %s", err, out, id)
+	if !strings.Contains(out, "PLAN-OLDER-THAN-SPEC (1) (warning)") || !strings.Contains(out, id+" plan was written on ") {
+		t.Fatalf("lint: err %v, output:\n%s\nwant an advisory plan-older-than-spec on %s", err, out, id)
 	}
 
 	stdout, stderr, err := execCerneSplit(t, "feature", "start", id, "--dir", projDir)

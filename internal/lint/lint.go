@@ -98,7 +98,8 @@ const (
 
 	// RulePlanOlderThanSpec flags the plan of an approved or in-development
 	// feature last written against an older spec (F-0377, PlanBehindSpec).
-	// Ranked before hook-cites-missing-rule, which stays last.
+	// Advisory, like the start's warning. Ranked before
+	// hook-cites-missing-rule, which stays last.
 	RulePlanOlderThanSpec = "plan-older-than-spec"
 )
 
@@ -109,7 +110,7 @@ const StalePendingAfter = 30 * 24 * time.Hour
 
 // advisoryRules are the warning-severity rules: printed like any other, but
 // they never fail 'cerne lint' on their own.
-var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true}
+var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true, RulePlanOlderThanSpec: true}
 
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
