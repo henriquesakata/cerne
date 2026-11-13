@@ -121,6 +121,10 @@ type askArgs struct {
 	Question string `json:"question" jsonschema:"natural-language question; returns the retrieved sources, no LLM call"`
 }
 
+type guideArgs struct {
+	Query string `json:"query" jsonschema:"what you want to do or know about cerne, in English; returns the matching skill, help and FAQ sections"`
+}
+
 // NewServer registers the tools on an MCP server named cerne.
 func NewServer(version string, exec Exec) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "cerne", Version: version}, nil)
@@ -170,6 +174,14 @@ func NewServer(version string, exec Exec) *sdk.Server {
 				return nil, err
 			}
 			return []string{"ask", in.Question, "--json"}, nil
+		})
+	add(s, g, exec, "guide", "Ask how to use cerne itself: returns up to 3 sections (title, source, text) from the skill, the command help and a FAQ, with the exact command. Offline, no LLM call.",
+		func(p map[string]*jsonschema.Schema) { p["query"].MinLength = jsonschema.Ptr(1) },
+		func(in guideArgs) ([]string, error) {
+			if err := plainText("query", in.Query); err != nil {
+				return nil, err
+			}
+			return []string{"guide", "--json", in.Query}, nil
 		})
 	return s
 }
