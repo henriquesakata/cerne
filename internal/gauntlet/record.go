@@ -23,6 +23,8 @@ var (
 	innerQuoteRe = regexp.MustCompile(`["“”«»]`)
 	headingRe    = regexp.MustCompile(`^##[ \t]+(.*?)[ \t]*$`)
 	markersRe    = regexp.MustCompile(`^` + doclang.LineMarkers)
+	commentRe    = regexp.MustCompile("(?s)(^|[^`])(<!--.*?-->)")
+	continuedRe  = regexp.MustCompile(`^(?:[ \t]+\S|[-*+][ \t]|\d+[.)][ \t]|\()`)
 )
 
 // AddRound records the next round in result's Gauntlet section from the
@@ -75,7 +77,9 @@ func cleanQuote(s string) string {
 func chooseQuote(body []string) string {
 	for i := len(body) - 1; i >= 0; i-- {
 		if m := quotedLineRe.FindStringSubmatch(strings.TrimSpace(body[i])); m != nil {
-			return cleanQuote(m[1])
+			if q := cleanQuote(m[1]); q != "" {
+				return q
+			}
 		}
 	}
 	text := strings.Join(strings.Fields(strings.Join(body, " ")), " ")
@@ -85,9 +89,24 @@ func chooseQuote(body []string) string {
 	return cleanQuote(text)
 }
 
-// gauntletSpan locates the Gauntlet section: the index of its heading line
-// and the end (the next level-2 heading or the end of the file), skipping
-// fenced code. start is -1 when the section is absent.
+// maskComments blanks every HTML comment (the lint's own notion: template
+// guides are never record) keeping the line structure, so line i of the
+// result is line i of s.
+func maskComments(s string) string {
+	return commentRe.ReplaceAllStringFunc(s, func(m string) string {
+		c := commentRe.FindStringSubmatch(m)
+		return c[1] + strings.Map(func(r rune) rune {
+			if r == '\n' {
+				return r
+			}
+			return ' '
+		}, c[2])
+	})
+}
+
+// gauntletSpan locates the Gauntlet section in the comment-masked lines: the
+// index of its heading line and the end (the next level-2 heading or the end
+// of the file), skipping fenced code. start is -1 when the section is absent.
 func gauntletSpan(lines []string) (start, end int) {
 	start, end = -1, len(lines)
 	inCode := false
@@ -121,7 +140,7 @@ func isRecordLine(ln string) bool {
 }
 
 func lastRound(result string) int {
-	lines := strings.Split(result, "\n")
+	lines := strings.Split(maskComments(strings.ReplaceAll(result, "\r\n", "\n")), "\n")
 	start, end := gauntletSpan(lines)
 	if start < 0 {
 		return 0
@@ -136,26 +155,38 @@ func lastRound(result string) int {
 }
 
 // insert puts line after the section's last round, critic, header or bar
-// line (after the heading when there is none), or opens the section at the
-// end of the file.
+// line and the continuation lines that belong to it (indented, list items,
+// parentheticals); after the heading when there is none, or it opens the
+// section at the end of the file. The file's line ending is kept.
 func insert(result string, l doclang.Lang, line string) string {
+	crlf := strings.Contains(result, "\r\n")
+	result = strings.ReplaceAll(result, "\r\n", "\n")
 	lines := strings.Split(result, "\n")
-	start, end := gauntletSpan(lines)
-	if start < 0 {
+	masked := strings.Split(maskComments(result), "\n")
+	var out string
+	if start, end := gauntletSpan(masked); start < 0 {
 		heading := "## " + doclang.Sections(doclang.Result, l)[5]
-		return strings.TrimRight(result, "\n") + "\n\n" + heading + "\n\n" + line + "\n"
-	}
-	at := start
-	for i := start + 1; i < end; i++ {
-		if isRecordLine(lines[i]) {
-			at = i
+		out = strings.TrimRight(result, "\n") + "\n\n" + heading + "\n\n" + line + "\n"
+	} else {
+		at := start
+		for i := start + 1; i < end; i++ {
+			if isRecordLine(masked[i]) {
+				at = i
+			}
 		}
+		if at != start {
+			for at+1 < end && continuedRe.MatchString(masked[at+1]) {
+				at++
+			}
+		}
+		ins := []string{line}
+		if at == start {
+			ins = []string{"", line}
+		}
+		out = strings.Join(append(append(append([]string{}, lines[:at+1]...), ins...), lines[at+1:]...), "\n")
 	}
-	out := append([]string{}, lines[:at+1]...)
-	if at == start {
-		out = append(out, "")
+	if crlf {
+		out = strings.ReplaceAll(out, "\n", "\r\n")
 	}
-	out = append(out, line)
-	out = append(out, lines[at+1:]...)
-	return strings.Join(out, "\n")
+	return out
 }

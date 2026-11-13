@@ -161,3 +161,76 @@ func TestRecordedLinesAreReadByTheLint(t *testing.T) {
 		t.Fatalf("after win: has=%v derrotas=%d\n%s", has, derrotas, r)
 	}
 }
+
+func TestHTMLCommentsAreNeverRecord(t *testing.T) {
+	r := "## Resultado\n\nok\n\n<!--\n## Gauntlet\nBarra: exemplo\n-->\n\n## Gauntlet\n\n<!--\nBarra: <ref>\nRodada 7 — vitória: \"exemplo\"\nAchados do crítico: exemplo\n-->\nBarra: real\n\n## Z\n"
+	out, n, _, err := AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v (a commented Rodada 7 was counted)", n, err)
+	}
+	if !strings.Contains(out, "Barra: real\nRodada 1 — vitória: \"F.\"\n\n## Z") {
+		t.Errorf("wrote in the wrong place:\n%s", out)
+	}
+	// only a commented heading: the section does not exist yet
+	r = "## Resultado\n\nok\n\n<!--\n## Gauntlet\nBarra: exemplo\n-->\n"
+	out, _, _, _ = AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.HasSuffix(out, "-->\n\n## Gauntlet\n\nRodada 1 — vitória: \"F.\"\n") {
+		t.Errorf("commented heading taken as the section:\n%s", out)
+	}
+	// a comment trailing the last record line
+	r = "## Gauntlet\n\nBarra: x\n<!-- nota\nRodada 3 — derrota: \"a\"\n-->\n"
+	_, n, _, _ = AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if n != 1 {
+		t.Errorf("n=%d", n)
+	}
+}
+
+func TestContinuationLinesStayWithTheirRecord(t *testing.T) {
+	r := "## Gauntlet\n\nBarra: x\nAchados do crítico: 2\n- (a) um\n  continua\n- (b) dois\n\n## Z\n"
+	out, _, _, _ := AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.Contains(out, "- (b) dois\nRodada 1 — vitória: \"F.\"\n\n## Z") {
+		t.Errorf("after bullets:\n%s", out)
+	}
+	r = "## Gauntlet\n\nBarra: x\nRodada 1 — derrota: \"a\"\n(juiz cego, contexto novo)\n\n## Z\n"
+	out, _, _, _ = AddRound(r, doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if !strings.Contains(out, "(juiz cego, contexto novo)\nRodada 2 — vitória: \"F.\"\n\n## Z") {
+		t.Errorf("after parenthetical:\n%s", out)
+	}
+	has, derrotas := lint.GauntletRounds([]byte(out))
+	if !has || derrotas != 1 {
+		t.Errorf("attribution: has=%v derrotas=%d\n%s", has, derrotas, out)
+	}
+	// a record line at the very end still gets its new line
+	out, _ = AddCritic("## Gauntlet\n\nRodada 1 — derrota: \"a\"\n(nota)", doclang.PT, "x")
+	if !strings.HasSuffix(out, "(nota)\nAchados do crítico: x") {
+		t.Errorf("eof:\n%q", out)
+	}
+}
+
+func TestEmptyQuoteMatchIsSkipped(t *testing.T) {
+	// a quoted line that is only blank inside is not a citation: keep looking
+	out, _, _, err := AddRound(resultBarOnly, doclang.PT, "Primeira frase.\n\"Boa.\"\n\" \"\nVEREDITO: A\n", "A", "")
+	if err != nil || !strings.Contains(out, ": \"Boa.\"\n") {
+		t.Errorf("%v\n%s", err, out)
+	}
+	out, _, _, err = AddRound(resultBarOnly, doclang.PT, "Primeira frase.\n\" \"\nVEREDITO: A\n", "A", "")
+	if err != nil || !strings.Contains(out, ": \"Primeira frase.\"\n") {
+		t.Errorf("must fall back to the first sentence: %v\n%s", err, out)
+	}
+	out, _, _, _ = AddRound(resultBarOnly, doclang.PT, "X.\n\"a\" e \"b\"\nVEREDITO: A\n", "A", "")
+	if !strings.Contains(out, ": \"a' e 'b\"\n") {
+		t.Errorf("two quotes in one line:\n%s", out)
+	}
+}
+
+func TestCRLFKept(t *testing.T) {
+	r := strings.ReplaceAll(resultBarOnly, "\n", "\r\n")
+	out, _, _, _ := AddRound(r, doclang.PT, "F.\r\nVEREDITO: A\r\n", "A", "")
+	if strings.Count(out, "\r\n") != strings.Count(out, "\n") || !strings.Contains(out, "Rodada 1 — vitória: \"F.\"\r\n") {
+		t.Errorf("mixed endings: %q", out)
+	}
+	out, _, _, _ = AddRound("# R\r\n", doclang.PT, "F.\nVEREDITO: A\n", "A", "")
+	if strings.Count(out, "\r\n") != strings.Count(out, "\n") {
+		t.Errorf("created section: %q", out)
+	}
+}
