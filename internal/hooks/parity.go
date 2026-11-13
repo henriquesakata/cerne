@@ -132,6 +132,13 @@ var parityTable = []ParityRow{
 		Gemini:     ".gemini/.env",
 	},
 	{
+		Capability: "Document author (CERNE_PROVIDER, F-0375)",
+		Claude:     "no declaration — the model is read from the session transcript",
+		Cursor:     degraded + ": no per-project session env surface — recorded as unknown",
+		Codex:      "CERNE_PROVIDER=openai in shell_environment_policy.set; no model exposed",
+		Gemini:     "CERNE_PROVIDER=google in .gemini/.env; no model exposed",
+	},
+	{
 		Capability: "Subagents with live board",
 		Claude:     "SubagentStart hook (cerne-subagent-context.sh)",
 		Cursor:     degraded + ": subagentStart has no additional_context",

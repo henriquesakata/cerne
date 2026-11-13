@@ -162,6 +162,7 @@ func installCursor(projDir string) []Result {
 	results = append(results,
 		Result{Asset: "cursor: work-gate", Status: StatusSkipped, Note: "native preToolUse lacks a documented session key for binding — enable Cursor's \"Include third-party Plugins, Skills, and other configs\" setting to reuse the installed .claude hooks (identical envelope) for the full gate"},
 		Result{Asset: "cursor: CERNE_ACTOR", Status: StatusSkipped, Note: "no documented per-project session env — cerne's human gates cannot distinguish agent sessions on Cursor"},
+		Result{Asset: "cursor: CERNE_PROVIDER", Status: StatusSkipped, Note: "no documented per-project session env — documents written from Cursor record their author as unknown unless CERNE_PROVIDER/CERNE_MODEL are exported in its shell"},
 		Result{Asset: "cursor: subagent-context", Status: StatusSkipped, Note: "subagentStart output has no additional_context — subagents start without the live board"},
 	)
 	return results
@@ -176,10 +177,12 @@ func flatCursorEntry(invocation string) map[string]any {
 // ─────────────────────────── Codex (R-0035) ───────────────────────────
 
 // codexEnvFragment opts the project's Codex sessions into CERNE_ACTOR=agent
-// so cerne's human gates recognize them (shell_environment_policy, R-0035).
-const codexEnvFragment = `# cerne (F-0174): human gates recognize agent sessions.
+// so cerne's human gates recognize them (shell_environment_policy, R-0035),
+// and declares CERNE_PROVIDER for the documents they write (F-0375): openai is
+// Codex's default provider; no CERNE_MODEL, which Codex does not expose.
+const codexEnvFragment = `# cerne (F-0174): human gates recognize agent sessions; F-0375: documents record their provider.
 [shell_environment_policy]
-set = { CERNE_ACTOR = "agent" }
+set = { CERNE_ACTOR = "agent", CERNE_PROVIDER = "openai" }
 `
 
 func installCodex(projDir string) []Result {
@@ -205,7 +208,7 @@ func installCodex(projDir string) []Result {
 	results = append(results, r)
 
 	envDst := filepath.Join(projDir, ".codex", "config.toml")
-	results = append(results, ensureLineFile(envDst, "codex: config.toml (CERNE_ACTOR)", "CERNE_ACTOR", codexEnvFragment, false))
+	results = append(results, ensureLineFile(envDst, "codex: config.toml (CERNE_ACTOR, CERNE_PROVIDER)", "CERNE_PROVIDER", codexEnvFragment, false))
 
 	results = append(results, Result{Asset: "codex: subagent-context", Status: StatusSkipped, Note: "SubagentStart wiring pending live validation of its context envelope"})
 	return results
@@ -229,6 +232,10 @@ func installGemini(projDir string) []Result {
 	envDst := filepath.Join(projDir, ".gemini", ".env")
 	results = append(results, ensureLineFile(envDst, "gemini: .env (CERNE_ACTOR)", "CERNE_ACTOR",
 		"# cerne (F-0174): human gates recognize agent sessions.\nCERNE_ACTOR=agent\n", true))
+	// F-0375: the provider of the documents Gemini writes; Gemini CLI exposes
+	// no model to the shell, so no CERNE_MODEL.
+	results = append(results, ensureLineFile(envDst, "gemini: .env (CERNE_PROVIDER)", "CERNE_PROVIDER",
+		"# cerne (F-0375): documents record their provider.\nCERNE_PROVIDER=google\n", true))
 
 	results = append(results,
 		Result{Asset: "gemini: stop-closeout", Status: StatusSkipped, Note: "AfterAgent deny+reason forces a retry (stronger than advisory) — deferred pending live validation"},
