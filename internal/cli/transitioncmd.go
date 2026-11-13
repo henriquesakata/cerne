@@ -83,6 +83,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if err := app.ValidateTransitionFlags(action, by, reason); err != nil {
 		return err
 	}
+	id = domain.CanonicalID(id) // before anything loads the entity: Linux file names are case-sensitive
 	if (commit != "" || mr != "") && action != domain.ActionComplete {
 		return fmt.Errorf("--commit/--mr are only allowed for complete, not %s", action)
 	}

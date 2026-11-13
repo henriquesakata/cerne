@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
-	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -140,7 +139,6 @@ func learningsTail(id string) string {
 // printCompleteLearnings is the read-only prompt after a complete (F-0401):
 // silent without items, and silent on any failure — it never decides the exit.
 func printCompleteLearnings(w io.Writer, repoDir, id string) {
-	id = domain.CanonicalID(id)
 	rep, err := app.Learnings(repoDir, app.LearningsOpts{Feature: id, All: true})
 	if err != nil || len(rep.Features) == 0 {
 		return

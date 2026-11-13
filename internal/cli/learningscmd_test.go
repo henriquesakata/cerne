@@ -165,3 +165,39 @@ func TestCompletePromptsForLearningsWithALowercaseID(t *testing.T) {
 		t.Fatalf("complete f-0001: %v\n%s", err, out)
 	}
 }
+
+// A lowercase id must be canonicalised before anything loads or records the
+// entity: macOS resolves f-0001.json to F-0001.json, Linux does not, so the
+// test asserts on what was recorded, not on the filesystem (F-0401, CI).
+func TestTransitionCanonicalisesTheID(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	writeDoc(t, repoDir, "F-0001", "result.md", realDoc("F-0001", learnBody))
+	commitBackend(t, repoDir)
+	out, err := execCerne(t, "feature", "complete", "f-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001: in_development → implemented") {
+		t.Fatalf("complete f-0001: %v\n%s", err, out)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		if strings.EqualFold(e.EntityID, "F-0001") && e.EntityID != "F-0001" {
+			t.Errorf("event %s recorded for %q, want F-0001", e.Type, e.EntityID)
+		}
+	}
+}
+
+func TestAcceptAndErrataCanonicaliseTheID(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented, domain.StateDone)
+	out, err := execCerne(t, "feature", "accept", "f-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001: implemented → done") {
+		t.Fatalf("accept f-0001: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "feature", "errata", "f-0002", "fix", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "appended to F-0002 ") {
+		t.Fatalf("errata f-0002: %v\n%s", err, out)
+	}
+}

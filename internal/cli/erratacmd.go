@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // newErrataCmd builds the shared `errata` subcommand wired under each entity
@@ -49,7 +50,7 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file, altera strin
 		return err
 	}
 	var steps []string
-	if strings.HasPrefix(args[0], "RB-") {
+	if strings.HasPrefix(domain.CanonicalID(args[0]), "RB-") {
 		for _, st := range strings.Split(altera, ",") {
 			if st = strings.TrimSpace(st); st != "" {
 				steps = append(steps, st)
@@ -61,7 +62,7 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file, altera strin
 	} else if strings.TrimSpace(altera) != "" {
 		steps = []string{altera}
 	}
-	id := args[0]
+	id := domain.CanonicalID(args[0])
 	ids, err := app.AddErrataSteps(ctx.repoDir, ctx.projDir, id, text, app.EventActor(), steps, semPasso)
 	if err != nil {
 		return err
