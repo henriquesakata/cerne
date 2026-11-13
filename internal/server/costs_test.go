@@ -369,3 +369,20 @@ func TestCostsVendorIsTheCostsModel(t *testing.T) {
 		t.Errorf("F-0002 vendors = %v, write providers = %v; want anthropic, openai", d.Vendors, d.WriteProviders)
 	}
 }
+
+// An anchor with no model breakdown is all of it "unknown" by model, as by
+// role — never a 0 weighted row (critic, PR #68).
+func TestCostsUnknownModel(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedCosts(t, repoDir, []costSeed{{id: "F-0001", completed: costDay(10, 1),
+		report: &cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 10}, Messages: 1, Sessions: 1, ByModel: map[string]cost.Counters{}}}})
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	var d app.CostDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode: %v (%s)", err, rec.Body.String())
+	}
+	if !mapsEqual(d.WeightedByModel, map[string]float64{"unknown": 10}) || !mapsEqual(d.WeightedByRole, map[string]float64{"unknown": 10}) {
+		t.Errorf("weighted by model %v, by role %v; want all of it unknown", d.WeightedByModel, d.WeightedByRole)
+	}
+}

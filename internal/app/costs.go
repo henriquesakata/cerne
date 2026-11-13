@@ -42,9 +42,9 @@ type CostFeature struct {
 	Tokens          cost.Counters            `json:"tokens"`
 	ByRole          map[string]cost.Counters `json:"by_role"`
 	ByModel         map[string]cost.Counters `json:"by_model"`
-	WeightedByRole  map[string]float64       `json:"weighted_by_role"` // no role breakdown: all of it "unknown"
-	WeightedByModel map[string]float64       `json:"weighted_by_model"`
-	GauntletShare   *float64                 `json:"gauntlet_share"` // critic + judge over the whole; null with no role breakdown
+	WeightedByRole  map[string]float64       `json:"weighted_by_role"`  // no role breakdown: all of it "unknown"
+	WeightedByModel map[string]float64       `json:"weighted_by_model"` // no model breakdown: all of it "unknown"
+	GauntletShare   *float64                 `json:"gauntlet_share"`    // critic + judge over the whole; null with no role breakdown
 	HasGauntlet     bool                     `json:"has_gauntlet"`
 	Rounds          int                      `json:"rounds"`
 	Defeats         int                      `json:"defeats"`
@@ -274,6 +274,9 @@ func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, 
 		vendors[modelVendor(m)] = true
 	}
 	delete(vendors, "")
+	if len(r.ByModel) == 0 {
+		d.WeightedByModel["unknown"] = d.Weighted
+	}
 	d.Vendors = slices.Sorted(maps.Keys(vendors))
 	return d, true, nil
 }
