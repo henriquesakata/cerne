@@ -66,6 +66,10 @@ vi.mock('./api', async (importOriginal) => ({
 
 // Versão ao vivo controlável (F-0300): a página re-busca quando ela muda.
 const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./MermaidView', () => ({
+  default: ({ name }: { name: string }) => <div data-testid="mermaid-view">{name}</div>,
+}))
+
 vi.mock('./live', () => ({
   useLiveVersion: () => live.version,
 }))
@@ -568,6 +572,52 @@ describe('FeaturePage diagrams section', () => {
     )
     // O erro devolvido pelo mock aparece; nada abre sem diagrama gerado.
     await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
+  })
+
+  const withArtifacts = () => {
+    payload = {
+      ...detail('candidate'),
+      artifacts: [
+        { name: 'fluxo.mmd', path: 'content/artifacts/F-0221/fluxo.mmd' },
+        { name: 'velho.excalidraw', path: 'content/artifacts/F-0221/velho.excalidraw' },
+      ],
+    }
+  }
+
+  it('F-0400: .mmd abre renderizado; não há Novo diagrama', async () => {
+    withArtifacts()
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'fluxo.mmd' }))
+    expect(await screen.findByTestId('mermaid-view')).toHaveTextContent('fluxo.mmd')
+    cleanup()
+    payload = detail('candidate')
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Gerar com IA')
+    expect(screen.queryByText('Novo diagrama')).toBeNull()
+    expect(screen.queryByText(/Excalidraw/)).toBeNull()
+  })
+
+  it('F-0400: .excalidraw existente vira link de download com aviso, sem editor', async () => {
+    withArtifacts()
+    render(<FeaturePage id="F-0221" />)
+    const link = await screen.findByRole('link', { name: 'velho.excalidraw' })
+    expect(link.getAttribute('href')).toMatch(/\/artifacts\/F-0221\/velho\.excalidraw$/)
+    expect(link).toHaveAttribute('download', 'velho.excalidraw')
+    expect(screen.getByText(/não abre mais o editor/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'velho.excalidraw' })).toBeNull()
+  })
+
+  it('F-0400: diagrama gerado com IA abre renderizado em Mermaid', async () => {
+    vi.mocked(generateDiagram).mockResolvedValueOnce({
+      ok: true,
+      generated: true,
+      name: 'novo.mmd',
+      mermaid: 'graph TD\n  A-->B',
+    })
+    payload = detail('candidate')
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByText('Gerar com IA'))
+    expect(await screen.findByTestId('mermaid-view')).toHaveTextContent('novo.mmd')
   })
 
   it('delegação desabilita o botão de gerar', async () => {

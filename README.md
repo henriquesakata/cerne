@@ -198,7 +198,6 @@ cerne has no hosted service. There is no account to create and nothing phones ho
 | Prompts for `cerne ask`, drafts and the dashboard chat | By default, nowhere: cerne hands the prompt to the agent you already run. With `[llm]` configured, to the model provider you set, using your key | Only if you configure it |
 | Traces | An OTLP endpoint you set | Off by default. Metrics stay on the machine |
 | Webhook notifications | A URL you set | Off by default |
-| Fonts for the diagram editor | A public CDN (esm.sh), fetched by your browser | When you open a diagram. Nothing about your project is sent |
 
 Two things cerne does not change. Your AI agent still sends what it reads to its model provider, and a backend hosted on GitHub or GitLab lives on GitHub or GitLab. If nothing may leave your network, point cerne at a git server you host and use an agent whose model runs where you allow: cerne itself adds no third party.
 

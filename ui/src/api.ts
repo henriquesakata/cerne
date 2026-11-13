@@ -559,45 +559,24 @@ export async function fetchFeature(id: string): Promise<FeatureDetail> {
   return (await r.json()) as FeatureDetail
 }
 
-// fetchArtifactJSON devolve o conteúdo bruto (texto) de um artefato .excalidraw.
-export async function fetchArtifactJSON(
+// artifactUrl é o endereço do arquivo bruto de um artefato (download direto).
+export function artifactUrl(featureId: string, name: string): string {
+  return `${base()}/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`
+}
+
+// fetchArtifactText devolve o conteúdo bruto (texto) de um artefato .mmd.
+export async function fetchArtifactText(
   featureId: string,
   name: string,
 ): Promise<string> {
-  const r = await fetch(
-    `${base()}/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
-  )
+  const r = await fetch(artifactUrl(featureId, name))
   if (!r.ok) throw new Error(await errorMessage(r))
   return await r.text()
 }
 
-// fetchArtifactText é um alias para .mmd (texto Mermaid): o endpoint serve
-// o arquivo bruto, então o mesmo fetch atende JSON e texto plano.
-export const fetchArtifactText = fetchArtifactJSON
-
 export type SaveOutcome = { ok: true } | { ok: false; error: string }
 
-// putArtifact cria ou atualiza um artefato .excalidraw no backend
-// (o servidor faz commit+push e atualiza o snapshot do docs.lock).
-export async function putArtifact(
-  featureId: string,
-  name: string,
-  json: string,
-): Promise<SaveOutcome> {
-  const r = await fetch(
-    `${base()}/artifacts/${encodeURIComponent(featureId)}/${encodeURIComponent(name)}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: json,
-    },
-  )
-  if (!r.ok) return { ok: false, error: await errorMessage(r) }
-  return { ok: true }
-}
-
-// GenerateDiagramResult: no sucesso traz o Mermaid gerado (para a UI converter
-// e abrir como Excalidraw editável); generated=false sinaliza modo delegação
+// GenerateDiagramResult: no sucesso traz o Mermaid gerado (a UI o abre renderizado); generated=false sinaliza modo delegação
 // (sem provider para gerar) — a UI orienta a trocar o modo de IA.
 export type GenerateDiagramResult =
   | { ok: false; error: string }

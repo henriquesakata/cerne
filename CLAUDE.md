@@ -68,7 +68,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 | `internal/server` | Local web API + embedded UI (`internal/cli/uicmd.go` serves it). |
 | `internal/cli` | cobra commands: init, feature, status, next, pull, push, import, lint, search, ui, lock (`lock merge` = the docs.lock git merge driver). |
 | `internal/doccheck`, `internal/slug` | Shared helpers (stub detection, slugify with diacritics). |
-| `ui/` | Vite + React 19 + TS: kanban, feature page, Excalidraw (lazy). `dist/` committed + embedded. |
+| `ui/` | Vite + React 19 + TS: kanban, feature page, Mermaid diagrams (lazy, read-only). `dist/` committed + embedded. |
 | `e2e/` | Black-box golden-path test through `cli.Root()`. |
 
 ## Conventions

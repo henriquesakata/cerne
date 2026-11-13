@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -53,16 +52,19 @@ func handleArtifactGet(w http.ResponseWriter, repoDir, featureID, name string) {
 	_, _ = w.Write(data)
 }
 
-// handleArtifactPut creates or updates an artifact: .excalidraw scene JSON or
-// .mmd Mermaid text. It validates the name and the per-type body, writes the
-// file into the backend clone and syncs it (commit + push + docs.lock
-// snapshot) via app.SaveArtifact.
+// handleArtifactPut creates or updates a .mmd Mermaid artifact. It validates
+// the name and body, writes the file into the backend clone and syncs it
+// (commit + push + docs.lock snapshot) via app.SaveArtifact. .excalidraw is
+// refused: the panel no longer edits it (F-0400), though GET still serves it.
 func handleArtifactPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, featureID, name string) {
-	isExcalidraw := strings.HasSuffix(name, ".excalidraw")
-	isMmd := strings.HasSuffix(name, ".mmd")
-	if !safeSegment(featureID) || !safeSegment(name) || (!isExcalidraw && !isMmd) {
+	if strings.HasSuffix(name, ".excalidraw") {
 		writeJSON(w, http.StatusBadRequest,
-			errorBody("invalid artifact name (expected a single segment ending in .excalidraw or .mmd)"))
+			errorBody("excalidraw artifacts are no longer editable; only .mmd can be saved"))
+		return
+	}
+	if !safeSegment(featureID) || !safeSegment(name) || !strings.HasSuffix(name, ".mmd") {
+		writeJSON(w, http.StatusBadRequest,
+			errorBody("invalid artifact name (expected a single segment ending in .mmd)"))
 		return
 	}
 	if _, err := store.LoadFeature(repoDir, featureID); errors.Is(err, store.ErrNotFound) {
@@ -77,12 +79,7 @@ func handleArtifactPut(w http.ResponseWriter, r *http.Request, repoDir, projDir,
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if isExcalidraw {
-		if !json.Valid(body) {
-			writeJSON(w, http.StatusBadRequest, errorBody("request body is not valid JSON"))
-			return
-		}
-	} else if len(body) == 0 {
+	if len(body) == 0 {
 		writeJSON(w, http.StatusBadRequest, errorBody(".mmd artifact body cannot be empty"))
 		return
 	}

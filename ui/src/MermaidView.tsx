@@ -18,13 +18,10 @@ export default function MermaidView({
   featureId,
   name,
   onClose,
-  onEdit,
 }: {
   featureId: string
   name: string
   onClose: () => void
-  // onEdit recebe o texto Mermaid bruto para a conversão em Excalidraw.
-  onEdit: (mermaidText: string) => void
 }) {
   const [view, setView] = useState<View>({ kind: 'loading' })
   const renderId = useRef(`mermaid-${renderSeq++}`)
@@ -62,20 +59,11 @@ export default function MermaidView({
     }
   }, [featureId, name])
 
-  const source =
-    view.kind === 'ok' || view.kind === 'error' ? view.source : ''
-
   return (
     <section className="diagram-panel">
       <header className="diagram-toolbar">
         <h2>{name}</h2>
         <div className="diagram-controls">
-          <button
-            onClick={() => onEdit(source)}
-            disabled={view.kind === 'loading' || source.trim() === ''}
-          >
-            {t.diagram.editAsExcalidraw}
-          </button>
           <button onClick={onClose}>{t.diagram.close}</button>
         </div>
       </header>

@@ -832,7 +832,7 @@ type generateDiagramResponse struct {
 // delegation — the agent's mode, with no provider to synthesize here —
 // degrades to needs_provider instead of inventing a diagram. On success it
 // saves <name>.mmd to the backend (commit + push) and returns the Mermaid text
-// so the UI can convert it to an editable Excalidraw scene without a round-trip.
+// so the UI can render it without a round-trip.
 func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
 	var req generateDiagramRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {

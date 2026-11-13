@@ -34,7 +34,7 @@ import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
 import './app.css'
 
-// Grafo e Mindmap carregam React Flow (pesado) sob demanda, como o Excalidraw.
+// Grafo e Mindmap carregam React Flow (pesado) sob demanda.
 const Graph = lazy(() => import('./Graph'))
 const Mindmap = lazy(() => import('./Mindmap'))
 
