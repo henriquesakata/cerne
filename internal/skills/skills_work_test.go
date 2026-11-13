@@ -11,7 +11,7 @@ import (
 // `cerne work list` before delegating an error investigation to another agent
 // (so duplicated work is visible before it happens).
 func TestCerneAuthoringDocumentsWorkRegistry(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 
 	contains := func(crit, sub string) {
 		t.Helper()

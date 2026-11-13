@@ -122,7 +122,7 @@ func TestSkillSectionCountMatchesHeadings(t *testing.T) {
 	if got := len(skillSections("cerne-authoring/SKILL.md", content)); got != want {
 		t.Fatalf("%d sections for %d headings", got, want)
 	}
-	if intro := bySource(skillSections("x", content), "skill: Cerne-Native Authoring"); len(intro) != 1 || !strings.Contains(intro[0].Text, "cerne guide") {
+	if intro := bySource(skillSections("x/SKILL.md", content), "skill: Cerne-Native Authoring"); len(intro) != 1 || !strings.Contains(intro[0].Text, "cerne guide") {
 		t.Errorf("the opening line is not findable: %+v", intro)
 	}
 }

@@ -11,7 +11,7 @@ import (
 // never blocks the lifecycle — plus F-0885's grouping, link/unlink and the
 // cycle a promoted pending follows with its feature.
 func TestCerneAuthoringDocumentsPendings(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, sub := range []string{
 		"cerne pending new",
 		"cerne pending list",

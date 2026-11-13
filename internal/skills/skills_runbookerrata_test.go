@@ -9,7 +9,7 @@ import (
 // runbook section teaches --altera (with a two-step example), --sem-passo,
 // show --consolidado and runbook merge.
 func TestSkillRunbookSectionTeachesDeclaredStepErrata(t *testing.T) {
-	_, sec, ok := strings.Cut(All()[0].Content, "## Runbooks (operational procedures)")
+	_, sec, ok := strings.Cut(fullAuthoring(t), "## Runbooks (operational procedures)")
 	if !ok {
 		t.Fatal("skill has no Runbooks section")
 	}

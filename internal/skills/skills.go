@@ -12,13 +12,22 @@ import (
 	"github.com/henriquesakata/cerne/internal/hooks"
 )
 
-//go:embed cerne-authoring/SKILL.md cerne-self-learning/SKILL.md
+//go:embed cerne-authoring/SKILL.md cerne-authoring/reference/*.md cerne-self-learning/SKILL.md
 var files embed.FS
 
 // Skill is one embedded skill: Name is its directory, RelPath its location
-// relative to .claude/skills/, Content the canonical markdown.
+// relative to .claude/skills/, Content the canonical markdown, References the
+// files installed beside it (F-0399).
 type Skill struct {
-	Name    string
+	Name       string
+	RelPath    string
+	Content    string
+	References []Reference
+}
+
+// Reference is one file under a skill's reference/ folder: RelPath is relative
+// to the skill's directory (e.g. "reference/gauntlet.md").
+type Reference struct {
 	RelPath string
 	Content string
 }
@@ -26,7 +35,7 @@ type Skill struct {
 // All returns every canonical skill cerne ships.
 func All() []Skill {
 	return []Skill{
-		{Name: "cerne-authoring", RelPath: "cerne-authoring/SKILL.md", Content: mustRead("cerne-authoring/SKILL.md")},
+		{Name: "cerne-authoring", RelPath: "cerne-authoring/SKILL.md", Content: mustRead("cerne-authoring/SKILL.md"), References: embeddedReferences("cerne-authoring")},
 		{Name: "cerne-self-learning", RelPath: "cerne-self-learning/SKILL.md", Content: mustRead("cerne-self-learning/SKILL.md")},
 	}
 }
@@ -36,6 +45,19 @@ func All() []Skill {
 func Read(rel string) (content string, ok bool) {
 	b, err := files.ReadFile(rel)
 	return string(b), err == nil
+}
+
+// embeddedReferences returns the embedded reference/*.md files of a skill, by name.
+func embeddedReferences(skill string) []Reference {
+	entries, err := files.ReadDir(skill + "/reference")
+	if err != nil {
+		return nil
+	}
+	out := make([]Reference, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, Reference{RelPath: "reference/" + e.Name(), Content: mustRead(skill + "/reference/" + e.Name())})
+	}
+	return out
 }
 
 // mustRead returns the embedded file or panics — a missing embed is a build-time
@@ -82,8 +104,7 @@ func Install(projDir string, providers ...hooks.Provider) ([]Result, error) {
 	all := All()
 	results := make([]Result, 0, len(all))
 	for _, s := range all {
-		dst := filepath.Join(projDir, ".claude", "skills", filepath.FromSlash(s.RelPath))
-		status, err := writeSkill(dst, s.Content)
+		status, err := writeSkillFiles(filepath.Join(projDir, ".claude", "skills", filepath.FromSlash(s.RelPath)), s)
 		if err != nil {
 			return nil, err
 		}
@@ -93,6 +114,53 @@ func Install(projDir string, providers ...hooks.Provider) ([]Result, error) {
 		results = append(results, installProvider(projDir, p)...)
 	}
 	return results, nil
+}
+
+// writeSkillFiles writes SKILL.md at dst and the skill's reference files in
+// the reference/ folder beside it. The status is SKILL.md's, except that an
+// unchanged SKILL.md with a reference created or repaired reads as updated.
+func writeSkillFiles(dst string, s Skill) (Status, error) {
+	status, err := writeSkill(dst, s.Content)
+	if err != nil {
+		return "", err
+	}
+	if len(s.References) > 0 && pruneStale(filepath.Join(filepath.Dir(dst), "reference"), s.References) && status == StatusUnchanged {
+		status = StatusUpdated
+	}
+	for _, r := range s.References {
+		st, err := writeSkill(filepath.Join(filepath.Dir(dst), filepath.FromSlash(r.RelPath)), r.Content)
+		if err != nil {
+			return "", err
+		}
+		if status == StatusUnchanged && st != StatusUnchanged {
+			status = StatusUpdated
+		}
+	}
+	return status, nil
+}
+
+// pruneStale removes the *.md files of dir the skill no longer ships, so a
+// renamed or dropped reference cannot contradict the guide. It reports whether
+// it removed any; files of other kinds are left alone.
+func pruneStale(dir string, keep []Reference) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	shipped := map[string]bool{}
+	for _, r := range keep {
+		shipped["reference/"+filepath.Base(r.RelPath)] = true
+	}
+	pruned := false
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" || shipped["reference/"+e.Name()] {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, e.Name())) == nil {
+			pruned = true
+		}
+	}
+	return pruned
 }
 
 // writeSkill writes content to dst (creating parent dirs), reporting whether the

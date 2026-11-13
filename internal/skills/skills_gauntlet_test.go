@@ -12,7 +12,7 @@ import (
 // Only contractual terms and the literal Verificação forms are pinned; the
 // surrounding prose is free to be rewritten.
 func TestCerneAuthoringDocumentsGauntlet(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 
 	contains := func(crit, sub string) {
 		t.Helper()
@@ -67,7 +67,7 @@ func TestCerneAuthoringDocumentsGauntlet(t *testing.T) {
 // critic's prompt (the W-0181 lesson: instructions leaking into the artifact),
 // a new judge each round, and a defeat produces corrections and another round.
 func TestCerneAuthoringDocumentsGauntletFieldRules(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 
 	contains := func(crit, sub string) {
 		t.Helper()
@@ -86,7 +86,7 @@ func TestCerneAuthoringDocumentsGauntletFieldRules(t *testing.T) {
 // the author that a rewritten spec wants the plan updated and pushed — an
 // unchanged plan's push sends nothing — and names the lint rule that warns.
 func TestCerneAuthoringDocumentsPlanOlderThanSpec(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, sub := range []string{"plan-older-than-spec", "update the plan (a line recording the re-check is enough) and push it", "an unchanged plan sends nothing"} {
 		if !strings.Contains(c, sub) {
 			t.Errorf("skill missing %q", sub)
@@ -96,7 +96,7 @@ func TestCerneAuthoringDocumentsPlanOlderThanSpec(t *testing.T) {
 
 // F-0380: the skill tells the agent to record rounds with the verb, not by hand.
 func TestCerneAuthoringDocumentsGauntletRecord(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, sub := range []string{"cerne gauntlet record F-NNNN --verdict", "--ours A|B", "--critic"} {
 		if !strings.Contains(c, sub) {
 			t.Errorf("skill missing %q", sub)

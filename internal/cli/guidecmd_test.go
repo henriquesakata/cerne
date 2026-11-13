@@ -65,13 +65,28 @@ func TestGuideNoMatchListsTopics(t *testing.T) {
 	}
 }
 
-func TestGuideNoQuestionListsTopics(t *testing.T) {
+// TestGuideNoQuestionPrintsTheCatalog pins F-0399 adjustment 3: with no
+// question the guide prints what cerne can do, grouped, from the command tree;
+// the topics stay one flag away.
+func TestGuideNoQuestionPrintsTheCatalog(t *testing.T) {
 	out, err := execGuide(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, "No guide section") || !strings.Contains(out, "Topics") || !strings.Contains(out, "Feature loop") {
-		t.Fatalf("output:\n%s", out)
+	for _, want := range []string{"\nfeature  Create and manage features", "  cerne feature approve  ", "\nroom  "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("catalog lacks %q", want)
+		}
+	}
+	if strings.Contains(out, "No guide section") || strings.Contains(out, "Topics (") {
+		t.Errorf("catalog printed the topics:\n%s", out)
+	}
+	if !strings.HasSuffix(out, "ask: cerne guide \"<feature>\" for how to use it\n") {
+		t.Errorf("catalog does not end with the ask line:\n%s", out[max(0, len(out)-200):])
+	}
+	topics, err := execGuide(t, "--topics")
+	if err != nil || !strings.Contains(topics, "Topics (") || !strings.Contains(topics, "Feature loop") {
+		t.Fatalf("--topics: %v\n%s", err, topics)
 	}
 	j, err := execGuide(t, "--json")
 	if err != nil || !strings.Contains(j, `"sections": []`) {
@@ -91,5 +106,17 @@ func TestGuideRefusesLimitBelowOne(t *testing.T) {
 		if _, err := execGuide(t, "--limit", l, "settings"); err == nil || !strings.Contains(err.Error(), "--limit") {
 			t.Errorf("--limit %s: err = %v, want a refusal naming --limit", l, err)
 		}
+	}
+}
+
+// TestGuideWhatCanCerneDoPointsToTheCatalog: the question an agent asks first
+// is answered by the FAQ, which names the no-question call (F-0399).
+func TestGuideWhatCanCerneDoPointsToTheCatalog(t *testing.T) {
+	out, err := execGuide(t, "--limit", "1", "what can cerne do")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "(faq)") || !strings.Contains(out, "`cerne guide`") || !strings.Contains(out, "--topics") {
+		t.Fatalf("first section is not the catalog answer:\n%s", out)
 	}
 }

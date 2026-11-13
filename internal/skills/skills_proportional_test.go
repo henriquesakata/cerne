@@ -11,7 +11,7 @@ import (
 // the project's own measured cost, and keeps cerne's batch numbers only as a
 // labelled example: the skill ships to every project, so no note of cerne's.
 func TestCerneAuthoringDocumentsWhenTestsSuffice(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, want := range []string{
 		"of behaviour, of contract, of persisted format, or of UI with a design choice",
 		"a single, local effect, or a fix with a regression test",

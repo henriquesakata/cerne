@@ -5,6 +5,7 @@ package guide
 
 import (
 	_ "embed"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,24 +16,28 @@ import (
 // Section is one answerable unit of the corpus.
 type Section struct {
 	Title  string `json:"title"`
-	Source string `json:"source"` // "skill: <section>", "help: cerne <path>" or "faq"
+	Source string `json:"source"` // "skill: <section>", "reference: <file>", "help: cerne <path>" or "faq"
 	Text   string `json:"text"`
 }
 
 //go:embed faq.md
 var faq string
 
-// skillFiles are the embedded skill files the corpus reads; F-0399 adds its
-// reference files here.
-var skillFiles = []string{"cerne-authoring/SKILL.md"}
+// authoring is the embedded skill the corpus reads: its SKILL.md and, since
+// F-0399, the reference files beside it.
+const authoring = "cerne-authoring"
 
 // Corpus joins the skill sections, one section per visible command of root
 // and the FAQ entries.
 func Corpus(root *cobra.Command) []Section {
 	var out []Section
-	for _, f := range skillFiles {
-		if content, ok := skills.Read(f); ok {
-			out = append(out, skillSections(f, content)...)
+	for _, sk := range skills.All() {
+		if sk.Name != authoring {
+			continue
+		}
+		out = append(out, skillSections(sk.RelPath, sk.Content)...)
+		for _, r := range sk.References {
+			out = append(out, skillSections(sk.Name+"/"+r.RelPath, r.Content)...)
 		}
 	}
 	out = append(out, commandSections(root)...)
@@ -45,9 +50,16 @@ const emptyText = "(no text of its own: see the sections below it)"
 
 // skillSections splits a markdown file at its # title and every ## and ###
 // heading (outside code fences); a section runs to the next heading. The text
-// before the first ## is the intro section, titled by the # heading.
-func skillSections(_, content string) []Section {
-	return splitHeadings(content, []string{"### ", "## ", "# "}, func(title string) (string, string) { return title, "skill: " + title })
+// before the first ## is the intro section, titled by the # heading. A section
+// of SKILL.md has the source "skill: <title>", one of a reference file
+// "reference: <file>".
+func skillSections(path, content string) []Section {
+	return splitHeadings(content, []string{"### ", "## ", "# "}, func(title string) (string, string) {
+		if base := filepath.Base(path); base != "SKILL.md" {
+			return title, "reference: " + base
+		}
+		return title, "skill: " + title
+	})
 }
 
 // faqSections reads "## Q: <question>" entries.

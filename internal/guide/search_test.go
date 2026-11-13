@@ -91,3 +91,21 @@ func TestSearchTieBreaksFAQThenSkillThenHelp(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// TestNamedCommandHelpTakesTheLastSlotOnlyBeyondOne: asking for a command by
+// name brings its help into the limit (F-0399), but with --limit 1 the single
+// best hit is never replaced.
+func TestNamedCommandHelpTakesTheLastSlotOnlyBeyondOne(t *testing.T) {
+	secs := []Section{
+		{Title: "Show everything", Source: "faq", Text: strings.Repeat("show ", 30)},
+		{Title: "Showing it", Source: "faq", Text: strings.Repeat("show ", 20)},
+		{Title: "Show off", Source: "skill: Show off", Text: strings.Repeat("show ", 10)},
+		{Title: "cerne show", Source: "help: cerne show", Text: "show"},
+	}
+	if got := titles(Search(secs, "show", 1)); strings.Contains(got, "cerne show") {
+		t.Errorf("limit 1 replaced the best hit: %q", got)
+	}
+	if got := titles(Search(secs, "show", 2)); !strings.Contains(got, "cerne show") {
+		t.Errorf("limit 2 lost the named command: %q", got)
+	}
+}

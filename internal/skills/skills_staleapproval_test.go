@@ -10,7 +10,7 @@ import (
 // start is refused until a human re-approves with `cerne feature approve` on
 // the approved feature itself, and show/next say so.
 func TestCerneAuthoringDocumentsStaleApproval(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, sub := range []string{
 		"stales the approval",
 		"`cerne feature start` refuses",
