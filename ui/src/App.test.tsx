@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
-import { fetchIdeas, fetchPendings, fetchState, promoteIdea, search } from './api'
+import { fetchHandoff, fetchHandoffs, fetchIdeas, fetchPendings, fetchState, promoteIdea, search } from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
@@ -23,6 +23,8 @@ vi.mock('./api', async (importOriginal) => ({
   fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
   fetchPendings: vi.fn(async () => []),
   fetchIdeas: vi.fn(async () => []),
+  fetchHandoffs: vi.fn(async () => []),
+  fetchHandoff: vi.fn(async () => { throw new Error('handoff not found') }),
   promoteIdea: vi.fn(),
 }))
 
@@ -199,5 +201,29 @@ describe('App — #/ideas anuncia a promoção (F-0334, crítica C5)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Promover I-0001' }))
     await waitFor(() => expect(status).toHaveTextContent('Ideia promovida — a candidata está no Backlog.'))
     expect(within(status).getByRole('link', { name: 'Abrir o Backlog' })).toHaveAttribute('href', '#/backlog')
+  })
+})
+
+// F-0386 crit. 2–4: a área de passagens, a lista com o filtro na URL e o
+// detalhe por id; o resto do prefixo cai no Dashboard, como na nav.
+describe('App — passagens (F-0386)', () => {
+  it.each(['#/handoffs', '#/handoffs?f=closed'])('%s monta a área de passagens', async (hash) => {
+    window.location.hash = hash
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Passagens' })).toBeInTheDocument()
+    await waitFor(() => expect(fetchHandoffs).toHaveBeenCalled())
+  })
+
+  it('#/handoffs/HO-0001 monta o detalhe daquela passagem', async () => {
+    window.location.hash = '#/handoffs/HO-0001'
+    render(<App />)
+    expect(await screen.findByText('Erro ao carregar a passagem: handoff not found')).toBeInTheDocument()
+    expect(fetchHandoff).toHaveBeenCalledWith('HO-0001')
+  })
+
+  it('#/handoffsfoo não monta a área', async () => {
+    window.location.hash = '#/handoffsfoo'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
   })
 })
