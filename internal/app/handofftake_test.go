@@ -2,11 +2,13 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -266,5 +268,43 @@ func TestTakeSupersededFollowsChain(t *testing.T) {
 	_, err = TakeHandoff(repoDir, projDir, cache, "", "HO-0001", "", "")
 	if !errors.Is(err, ErrHandoffNotPending) || !strings.Contains(err.Error(), "the chain ended in HO-0003, which is cancelled") || strings.Contains(err.Error(), "take that one") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// F-0368 critic round 1: two takes of the same HO at once — exactly one wins,
+// the other is refused as taken, and one commit lands.
+func TestTakeHandoffConcurrent(t *testing.T) {
+	repoDir, projDir := passBaton(t)
+	before, _ := gitback.HeadSHA(repoDir)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = TakeHandoff(repoDir, projDir, filepath.Dir(repoDir), fmt.Sprintf("sess-%d", i), "HO-0001", "", "")
+		}()
+	}
+	wg.Wait()
+	var won, refused int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			won++
+		case errors.Is(err, ErrHandoffNotPending) && strings.Contains(err.Error(), "taken by"):
+			refused++
+		default:
+			t.Fatalf("unexpected err: %v", err)
+		}
+	}
+	if won != 1 || refused != 1 {
+		t.Fatalf("won %d refused %d, want 1 and 1", won, refused)
+	}
+	out, err := exec.Command("git", "-C", repoDir, "rev-list", "--count", before+"..HEAD").Output()
+	if err != nil || strings.TrimSpace(string(out)) != "1" {
+		t.Fatalf("commits = %q, %v; want 1", out, err)
+	}
+	if ws, _ := store.LoadAllWorks(repoDir); len(ws) != 2 {
+		t.Fatalf("works = %d, want origin + one new", len(ws))
 	}
 }
