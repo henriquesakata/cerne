@@ -140,14 +140,20 @@ func CreateFeature(repoDir, projDir, title, module, parent string, facets, compo
 // duplicate-registration guard (F-0147) for a consciously distinct problem —
 // the exact-title guard (F-0121) is never bypassed.
 func CreateFeatureWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, "")
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, "", DocAuthor{})
+}
+
+// CreateFeatureWithSpecBy is the chat's CreateFeatureWithSpec (F-0375): the
+// spec's writer is the [llm] config the chat called, named by the caller.
+func CreateFeatureWithSpecBy(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, by DocAuthor) (store.Feature, error) {
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, false, "", "", "", by)
 }
 
 // CreateFeatureFixes is CreateFeatureWithSpec with the correction link (F-0321):
 // fixes names the delivered feature whose defect this one corrects, validated to
 // exist before anything is written (ErrFixesNotFound, wrapped).
 func CreateFeatureFixes(repoDir, projDir, title, module, parent, fixes string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, strings.TrimSpace(fixes))
+	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, strings.TrimSpace(fixes), DocAuthor{})
 }
 
 // CreateEpicWithSpec creates a declared epic (E-, F-0203): a full feature
@@ -155,7 +161,7 @@ func CreateFeatureFixes(repoDir, projDir, title, module, parent, fixes string, f
 // that is known to decompose. Epic behavior itself stays structural (children),
 // never derived from the prefix.
 func CreateEpicWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force, owner, priority, "")
+	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force, owner, priority, "", DocAuthor{})
 }
 
 // CreateTaskWithSpec creates a task (T-, F-0203): an execution unit of a
@@ -166,18 +172,25 @@ func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, 
 	if strings.TrimSpace(parent) == "" {
 		return store.Feature{}, ErrParentRequired
 	}
-	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force, owner, priority, "")
+	return createFeatureCore(repoDir, projDir, "T", title, module, parent, facets, components, specBody, force, owner, priority, "", DocAuthor{})
 }
 
 // createFeatureCore is the shared creation flow behind F-/E-/T- (F-0203). The
 // prefix decides only the id sequence and the two task rules: born approved and
 // committed-parent required. Everything else — guards, stub, event, sync — is
-// identical across the three.
-func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string) (store.Feature, error) {
+// identical across the three. A spec body is recorded as written by by — the
+// zero DocAuthor resolves this process's (F-0375); cerne's stub by nobody.
+func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string, by DocAuthor) (store.Feature, error) {
 	n, err := prepareFeature(prefix, title, module, parent, facets, components, specBody, force, owner, priority)
 	n.fixes = fixes
 	if err != nil {
 		return store.Feature{}, err
+	}
+	if strings.TrimSpace(specBody) != "" {
+		if by == (DocAuthor{}) {
+			by = docAuthor(projDir)
+		}
+		n.author = by
 	}
 	n.light = !projectGates(projDir).GauntletEnabled()
 	// The whole creation — duplicate guard, id mint, entity+spec+event writes —
@@ -203,9 +216,10 @@ type newFeature struct {
 	prefix, title, module, parent, specBody, owner, priority string
 	facets, components                                       []string
 	force                                                    bool
-	fromIdea                                                 string // F-0312: the idea a promote mints it from
-	fixes                                                    string // F-0321: the feature this one corrects
-	light                                                    bool   // F-0364: light mode — scaffold without the bar guide
+	fromIdea                                                 string    // F-0312: the idea a promote mints it from
+	fixes                                                    string    // F-0321: the feature this one corrects
+	light                                                    bool      // F-0364: light mode — scaffold without the bar guide
+	author                                                   DocAuthor // F-0375: the spec body's writer; zero for a stub
 }
 
 func prepareFeature(prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority string) (newFeature, error) {
@@ -331,7 +345,13 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 			payload["guard"] = "forced"
 		}
 		ev := domain.NewEvent(id, "feature.created", payload, EventActor())
-		return store.AppendEvent(repoDir, ev)
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return err
+		}
+		if n.author == (DocAuthor{}) {
+			return nil
+		}
+		return store.AppendEvent(repoDir, n.author.docEdited(id, "spec", f.State, nil))
 	}()
 	if err != nil {
 		return store.Feature{}, "", err
@@ -647,8 +667,15 @@ func SetFeature(repoDir, projDir, id, owner, priority, fixes string, setOwner, s
 // store.ErrNotFound (wrapped) when the feature does not exist; ErrFeatureFrozen
 // (wrapped, naming the state's path) past the live states — F-0072's boundary,
 // moved by F-0305: the result of an implemented feature changes only through
-// AmendFeatureResult, which carries a reason; later, only errata.
+// AmendFeatureResult, which carries a reason; later, only errata. The writer
+// is this process's (docAuthor, F-0375).
 func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
+	return SaveFeatureDocBy(repoDir, projDir, id, doc, content, docAuthor(projDir))
+}
+
+// SaveFeatureDocBy is SaveFeatureDoc with the writer named by the caller
+// (F-0375): the UI editor is a human, whatever the server's environment says.
+func SaveFeatureDocBy(repoDir, projDir, id, doc, content string, by DocAuthor) error {
 	filename, ok := featureDocFilenames[doc]
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
@@ -673,12 +700,8 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 		// The audit trail of the write (F-0262): the backend commit is not
 		// queryable by lint or stats. state is the state at write time. Whether an
 		// approval went stale is decided by content since F-0318, not by this
-		// event (lint.SpecChangedAfterApproval).
-		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
-			"doc":   doc,
-			"state": string(f.State),
-		}, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
+		// event (lint.SpecChangedAfterApproval). F-0375: and who wrote it.
+		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, nil)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/%s", id, filename), nil
@@ -702,7 +725,14 @@ func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
 // no-op (changed false: no write, no event, no commit — F-0328), like
 // SaveFeatureDoc's byte-identical write — judged against origin, not a clone
 // that may trail it (mutateAndSnapshotLatest). Returns the feature as stored.
+// The writer is this process's (docAuthor, F-0375).
 func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (f store.Feature, changed bool, err error) {
+	return UpdateCandidateSpecBy(repoDir, projDir, id, specBody, docAuthor(projDir))
+}
+
+// UpdateCandidateSpecBy is UpdateCandidateSpec with the writer named by the
+// caller (F-0375): the chat confirmation is the [llm] config it called.
+func UpdateCandidateSpecBy(repoDir, projDir, id, specBody string, by DocAuthor) (f store.Feature, changed bool, err error) {
 	if f, err = loadCandidate(repoDir, id); err != nil {
 		return store.Feature{}, false, err
 	}
@@ -724,11 +754,7 @@ func UpdateCandidateSpec(repoDir, projDir, id, specBody string) (f store.Feature
 		// queryable by lint or by the entity history, so the write announces itself.
 		// It matters more here since F-0265 — the writer can be the agent, and the
 		// actor is what tells a spec the agent rewrote from one the human did.
-		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
-			"doc":   "spec",
-			"state": string(f.State),
-		}, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
+		if err := store.AppendEvent(repoDir, by.docEdited(id, "spec", f.State, nil)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/spec.md", id), nil
@@ -769,6 +795,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 	if err != nil {
 		return store.Feature{}, false, err
 	}
+	by := docAuthor(projDir)
 	err = mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
 		var err error
 		if f, err = store.LoadFeature(repoDir, id); err != nil {
@@ -788,12 +815,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		if err := CheckResultRecord(repoDir, f, projectGates(projDir)); err != nil {
 			return "", err // an amend does not trade one debt for another
 		}
-		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
-			"doc":    "result",
-			"state":  string(f.State),
-			"reason": reason,
-		}, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
+		if err := store.AppendEvent(repoDir, by.docEdited(id, "result", f.State, map[string]string{"reason": reason})); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: amend %s/result.md", id), nil
@@ -859,6 +881,7 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		return store.Feature{}, 0, false, emptyBody // frontmatter or a stub only
 	}
 	filename := doc + ".md"
+	by := docAuthor(projDir)
 	err = mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
 		var err error
 		if f, err = store.LoadFeature(repoDir, id); err != nil {
@@ -892,13 +915,7 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
-		ev := domain.NewEvent(id, "feature.doc_edited", map[string]string{
-			"doc":    doc,
-			"state":  string(f.State),
-			"reason": reason,
-			"rev":    strconv.Itoa(rev),
-		}, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
+		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, map[string]string{"reason": reason, "rev": strconv.Itoa(rev)})); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: amend %s/%s", id, filename), nil

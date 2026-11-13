@@ -1,12 +1,17 @@
 package app
 
 import (
+	"bytes"
+	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // DocAuthor is who wrote a feature document (F-0375): the provider and model,
@@ -60,7 +65,7 @@ func docAuthor(projDir string) DocAuthor {
 		return HumanAuthor()
 	}
 	if sess := os.Getenv("CERNE_SESSION"); sess != "" {
-		if model, found := cost.AuthorModel(cost.ClaudeRoots(), sess, invocation(os.Args)); found {
+		if model, found := cost.AuthorModel(CostRoots(), sess, invocation(os.Args)); found {
 			if model == "" {
 				return unknown
 			}
@@ -72,6 +77,58 @@ func docAuthor(projDir string) DocAuthor {
 		return DocAuthor{Provider: p, Model: m, Source: "declared"}
 	}
 	return unknown
+}
+
+// docEdited is the feature.doc_edited event of a write of doc by a: the
+// document, the feature's state at write time, the author, plus extra (an
+// amend's reason and rev).
+func (a DocAuthor) docEdited(id, doc string, state domain.FeatureState, extra map[string]string) domain.Event {
+	p := map[string]string{"doc": doc, "state": string(state), "provider": a.Provider, "model": a.Model, "source": a.Source}
+	maps.Copy(p, extra)
+	return domain.NewEvent(id, "feature.doc_edited", p, EventActor())
+}
+
+// RecordDocWrite appends the feature.doc_edited event of a write of feature
+// id's doc (spec|plan|result) by a, inside the caller's critical section: the
+// record of a write that does not go through SaveFeatureDoc (a draft).
+func RecordDocWrite(repoDir, id, doc string, a DocAuthor) error {
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		return err
+	}
+	return store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, nil))
+}
+
+// RecordPushedDocs appends, inside the push's critical section (the mutate of
+// ReconcileCommitPushMutate), one feature.doc_edited per feature lifecycle
+// document among changes, by the process's author — with no rev, so it never
+// reads as an amend. A document equal to the tree the mutate runs on, or of a
+// feature the backend does not have, records nothing.
+func RecordPushedDocs(repoDir, projDir string, changes []FileChange) error {
+	var a *DocAuthor
+	for _, ch := range changes {
+		rest, ok := strings.CutPrefix(ch.Path, "content/features/")
+		id, file, _ := strings.Cut(rest, "/")
+		doc := strings.TrimSuffix(file, ".md")
+		if !ok || ch.Deleted || featureDocFilenames[doc] != file {
+			continue
+		}
+		if cur, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(ch.Path))); err == nil && bytes.Equal(cur, ch.Content) {
+			continue
+		}
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			continue
+		}
+		if a == nil {
+			v := docAuthor(projDir)
+			a = &v
+		}
+		if err := store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, nil)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // invocation is the command words this process was called with: the leading
