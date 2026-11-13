@@ -52,6 +52,9 @@ func newLintCmd() *cobra.Command {
 	return cmd
 }
 
+// projectLint is a variable so a test can prove the no-edits path never lints (F-0393).
+var projectLint = app.ProjectLint
+
 func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool, feature, parent string) error {
 	repoDir, cfg, cleanup, driftCtx, edits, err := lintRoot(dir, staged)
 	if err != nil {
@@ -60,7 +63,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 	if cleanup != nil {
 		defer cleanup()
 	}
-	findings, err := app.ProjectLint(repoDir, dir, cfg)
+	findings, err := projectLint(repoDir, dir, cfg)
 	if err != nil {
 		return err
 	}
@@ -121,7 +124,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 				return nil
 			}
 		}
-		base, err := app.ProjectLint(edits.base, dir, cfg)
+		base, err := projectLint(edits.base, dir, cfg)
 		if err != nil {
 			return err
 		}
@@ -257,7 +260,7 @@ func lintRoot(dir string, staged bool) (repoDir string, cfg project.Config, clea
 		if err != nil {
 			return "", project.Config{}, nil, nil, stagedEdits{}, err
 		}
-		root, edits, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
+		root, edits, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir, false)
 		return root, ctx.cfg, cleanup, nil, edits, err
 	}
 	ctx, err := resolveProject(dir)
