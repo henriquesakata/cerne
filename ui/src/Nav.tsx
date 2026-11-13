@@ -52,6 +52,7 @@ const GROUPS: { key: keyof Messages['nav']; items: NavItem[] }[] = [
       { href: '#/harness', key: 'harness' },
       { href: '#/history', key: 'history' },
       { href: '#/stats', key: 'stats' },
+      { href: '#/costs', key: 'costs' },
     ],
   },
 ]
@@ -84,6 +85,8 @@ function activeHref(hash: string): string {
   // The same rule App routes them by (F-0386): list, filtered list, detail.
   if (/^#\/handoffs($|[?/])/.test(hash)) return '#/handoffs'
   if (hash.startsWith('#/stats')) return '#/stats'
+  // The same rule App routes them by (F-0391): area, filtered area, detail.
+  if (/^#\/costs($|[?/])/.test(hash)) return '#/costs'
   if (hash.startsWith('#/settings')) return '#/settings' // engrenagem, fora dos grupos
   return '#/' // dashboard (tela inicial, F-0132)
 }

@@ -84,7 +84,7 @@ describe('Nav agrupada (F-0332)', () => {
     ['Trabalho', ['Kanban', 'Backlog', 'Pendências', 'Ideias', 'Gestão', 'War Room', 'Atividade', 'Passagens']],
     ['Conhecimento', ['Decisões', 'Referências', 'Runbooks', 'Notas', 'Convenções']],
     ['Explorar', ['Wiki', 'Perguntar', 'Busca', 'Grafo', 'Mapa mental']],
-    ['Saúde', ['Lint', 'Harness', 'Histórico', 'Economia']],
+    ['Saúde', ['Lint', 'Harness', 'Histórico', 'Economia', 'Custos']],
   ])('critério 2: o grupo %s contém exatamente seus itens, na ordem', (group, want) => {
     render(<Nav hash="#/" />)
     expect(itemsOf(group)).toEqual(want)
@@ -214,6 +214,9 @@ describe('Nav agrupada (F-0332)', () => {
     ['#/harness', 'Saúde', 'Harness'],
     ['#/history', 'Saúde', 'Histórico'],
     ['#/stats', 'Saúde', 'Economia'],
+    ['#/costs', 'Saúde', 'Custos'],
+    ['#/costs?vendor=anthropic', 'Saúde', 'Custos'],
+    ['#/costs/F-0001', 'Saúde', 'Custos'],
   ])('critério 6: rota %s ativa o grupo %s e o item %s', (hash, group, item) => {
     render(<Nav hash={hash} />)
     const buttons = screen
@@ -237,7 +240,7 @@ describe('Nav agrupada (F-0332)', () => {
 
   // F-0334 (crítica C6): a nav marca Pendências e Ideias pela mesma regra
   // que o App usa para montá-las; o que o App não monta cai no Dashboard.
-  it.each(['#/ideas?x=1', '#/pendingsfoo', '#/ideasfoo', '#/handoffsfoo'])('F-0334: %s não marca grupo nenhum', (hash) => {
+  it.each(['#/ideas?x=1', '#/pendingsfoo', '#/ideasfoo', '#/handoffsfoo', '#/costsfoo'])('F-0334: %s não marca grupo nenhum', (hash) => {
     const { container } = render(<Nav hash={hash} />)
     expect(container.querySelector('.nav-group-btn.active')).toBeNull()
     expect(screen.getByText('Dashboard')).toHaveClass('active')

@@ -229,4 +229,11 @@ describe('ProcessPerfCard (F-0321)', () => {
     expect(container.querySelector('svg')).toBeNull()
     expect(screen.getByText('D-0062')).toBeInTheDocument()
   })
+
+  // F-0391: o cartão continua o resumo e leva à área Custos para o detalhe.
+  it('F-0391: leva à área Custos', async () => {
+    payload.current = report([])
+    render(<ProcessPerfCard />)
+    expect(await screen.findByRole('link', { name: /Abrir a área Custos/ })).toHaveAttribute('href', '#/costs')
+  })
 })

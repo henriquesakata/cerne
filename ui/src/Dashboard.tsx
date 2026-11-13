@@ -744,6 +744,9 @@ export function ProcessPerfCard() {
           <p className="muted">
             {t.dashboard.processExcluded(data.excluded_no_cost, data.excluded_epic, data.excluded_no_gauntlet)}
           </p>
+          <p>
+            <a href="#/costs">{t.dashboard.processCostsLink}</a>
+          </p>
         </>
       )}
     </Card>
