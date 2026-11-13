@@ -72,3 +72,22 @@ func TestFeatureDetailApproveReadiness(t *testing.T) {
 		t.Fatalf("F-0003 (approved) readiness = %+v bar %q, want neither field", imps, bar)
 	}
 }
+
+// F-0381 round 2: the detail carries the judge question the approve would
+// accept beside the bar, and none for an exempt bar.
+func TestFeatureDetailJudgeQuestion(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Com pergunta", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
+	seedFeature(t, repoDir, "F-0002", "Barra n/a", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: não aplicável (texto puro) — padrão alternativo: teste\n")
+	for id, want := range map[string]string{"F-0001": "qual é mais claro?", "F-0002": ""} {
+		var got struct {
+			JudgeQuestion string `json:"judge_question"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/"+id, "", &got)
+		if rec.Code != http.StatusOK || got.JudgeQuestion != want {
+			t.Fatalf("%s: status %d judge_question %q, want %q", id, rec.Code, got.JudgeQuestion, want)
+		}
+	}
+}
