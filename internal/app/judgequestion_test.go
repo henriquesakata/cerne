@@ -2,11 +2,15 @@ package app
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 const (
@@ -98,4 +102,39 @@ func TestReapproveNeedsJudgeQuestion(t *testing.T) {
 	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); !errors.Is(err, ErrSpecMissingJudgeQuestion) {
 		t.Fatalf("re-approve without question err = %v, want ErrSpecMissingJudgeQuestion", err)
 	}
+}
+
+// F-0381 crit. 6: start and complete never look at the question — a feature
+// approved before the gate existed moves on without it.
+func TestStartAndCompleteIgnoreJudgeQuestion(t *testing.T) {
+	t.Run("start", func(t *testing.T) {
+		repoDir, projDir, _ := newFeatureBackend(t)
+		if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateApproved}); err != nil {
+			t.Fatal(err)
+		}
+		writeSpecFixture(t, repoDir, "F-0001", specBarOnly)
+		copyPath := store.ApprovedSpecPath(repoDir, "F-0001")
+		if err := os.MkdirAll(filepath.Dir(copyPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(copyPath, []byte(specBarOnly), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(FeatureDocPath(repoDir, "F-0001", "plan.md"), []byte("# p\n\nPlano real.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := gitback.CommitAndPush(repoDir, "seed"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionStart, "", "", nil); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+	})
+	t.Run("complete", func(t *testing.T) {
+		repoDir, projDir, _ := newFeatureBackend(t)
+		seedCompletable(t, repoDir, specNoBar+"\n## Verificação\n\nBarra: ref — acesso\n", resultBody(gateCite1234, testGauntletTail))
+		if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+			t.Fatalf("complete: %v", err)
+		}
+	})
 }
