@@ -237,7 +237,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	for _, d := range docs {
 		fmt.Fprintf(out, "  %s\n", d.backendRel)
 	}
-	root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
+	root, _, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
 	if err != nil {
 		return err
 	}
