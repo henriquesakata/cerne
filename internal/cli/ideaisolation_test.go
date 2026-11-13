@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -38,6 +39,8 @@ func TestIdeasLeaveFunnelOutputsUnchanged(t *testing.T) {
 			{"search", "zebra", "--json"}, {"search", "conciliação", "--json"}, {"graph"},
 		} {
 			out, err := execCerne(t, append(args, "--dir", projDir)...)
+			// index_synced_at moves with every write, ideas included, by design (F-0394).
+			out = syncedAtLine.ReplaceAllString(out, "")
 			got[strings.Join(args, " ")] = fmt.Sprintf("%s\nerr=%v", out, err)
 		}
 		if out, err := execCerne(t, "pull", "--okf", "--dir", projDir); err != nil {
@@ -108,3 +111,6 @@ func TestIdeasLeaveFunnelOutputsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// syncedAtLine matches the index_synced_at member of a search/ask JSON payload.
+var syncedAtLine = regexp.MustCompile(`,\n\s*"index_synced_at": [^\n]*`)

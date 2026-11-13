@@ -78,6 +78,11 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 		return err
 	}
 
+	synced := indexSyncedAt(dbPath)
+	if !asJSON {
+		noteIndexAge(cmd.ErrOrStderr(), ctx.cfg.Backend, synced)
+	}
+
 	var results []index.EntityResult
 	var broadened bool
 	if perDoc {
@@ -115,9 +120,10 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Results   any  `json:"results"`
-			Broadened bool `json:"broadened,omitempty"`
-		}{payload, broadened})
+			Results       any     `json:"results"`
+			Broadened     bool    `json:"broadened,omitempty"`
+			IndexSyncedAt *string `json:"index_synced_at"`
+		}{payload, broadened, syncedAtJSON(synced)})
 	}
 
 	if len(results) == 0 {

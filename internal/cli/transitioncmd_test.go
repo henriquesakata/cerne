@@ -38,6 +38,9 @@ func writeDoc(t *testing.T, repoDir, id, filename, content string) {
 	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile %s: %v", filename, err)
 	}
+	// An edit made behind cerne's back: the index is stale, so drop it and let
+	// the next search rebuild it lazily (every cerne write refreshes it, F-0394).
+	_ = os.Remove(filepath.Join(filepath.Dir(repoDir), "index.db"))
 }
 
 // commitBackend commits (and pushes) state a test staged directly in the

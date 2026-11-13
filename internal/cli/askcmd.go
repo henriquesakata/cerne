@@ -79,6 +79,10 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 	} else if err != nil {
 		return err
 	}
+	synced := indexSyncedAt(dbPath)
+	if !opts.asJSON {
+		noteIndexAge(cmd.ErrOrStderr(), ctx.cfg.Backend, synced)
+	}
 	snippets, err := ask.Retrieve(ctx.repoDir, dbPath, query, opts.history, 10)
 	if err != nil {
 		return err
@@ -91,8 +95,9 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Sources []ask.Snippet `json:"sources"`
-		}{snippets})
+			Sources       []ask.Snippet `json:"sources"`
+			IndexSyncedAt *string       `json:"index_synced_at"`
+		}{snippets, syncedAtJSON(synced)})
 	}
 
 	prompt := ask.BuildAskPrompt(query, snippets, !opts.noPreamble)
