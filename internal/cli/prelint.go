@@ -10,6 +10,9 @@ import (
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
+// copyTree is a variable so a test can prove the no-edits path never copies (F-0393).
+var copyTree = copyTreeFiles
+
 // stagedLintRoot assembles a backend-shaped tree for linting local edits without
 // touching the backend: it copies the cache clone's entities/ and content/ (the
 // pulled snapshot — entity STATE plus markdown) into a temp dir, then overlays
@@ -18,7 +21,21 @@ import (
 // UNCHANGED, so the validation modes share the backend's single source of rules.
 // The returned cleanup removes the temp tree. No .git, no git calls, no writes to
 // the cache clone — the validation never mutates the backend.
-func stagedLintRoot(repoDir, projDir string) (string, stagedEdits, func(), error) {
+func stagedLintRoot(repoDir, projDir string, skipEmpty bool) (string, stagedEdits, func(), error) {
+	docsDir := filepath.Join(projDir, ".docs")
+	manifest, err := project.LoadManifest(projDir)
+	if err != nil {
+		return "", stagedEdits{}, nil, err
+	}
+	docs, err := collectChangedDocs(repoDir, docsDir, manifest)
+	if err != nil {
+		return "", stagedEdits{}, nil, err
+	}
+	// Nothing edited: no tree to build (F-0393). Frozen documents already
+	// refused inside collectChangedDocs.
+	if skipEmpty && len(docs) == 0 {
+		return "", stagedEdits{base: repoDir}, func() {}, nil
+	}
 	root, err := os.MkdirTemp("", "cerne-stagedlint-")
 	if err != nil {
 		return "", stagedEdits{}, nil, err
@@ -29,17 +46,6 @@ func stagedLintRoot(repoDir, projDir string) (string, stagedEdits, func(), error
 			cleanup()
 			return "", stagedEdits{}, nil, err
 		}
-	}
-	docsDir := filepath.Join(projDir, ".docs")
-	manifest, err := project.LoadManifest(projDir)
-	if err != nil {
-		cleanup()
-		return "", stagedEdits{}, nil, err
-	}
-	docs, err := collectChangedDocs(repoDir, docsDir, manifest)
-	if err != nil {
-		cleanup()
-		return "", stagedEdits{}, nil, err
 	}
 	// project.json carries the docs language: without it the staged tree reads
 	// as pt-BR whatever the project is.
@@ -100,9 +106,9 @@ func diffFindings(staged, base []lint.Finding) (added, kept []lint.Finding, fixe
 	return added, kept, fixed
 }
 
-// copyTree recursively copies the directory src into dst. A missing src is a
+// copyTreeFiles recursively copies the directory src into dst. A missing src is a
 // no-op (a snapshot may lack a subdir, e.g. no content/ yet).
-func copyTree(src, dst string) error {
+func copyTreeFiles(src, dst string) error {
 	info, err := os.Stat(src)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil

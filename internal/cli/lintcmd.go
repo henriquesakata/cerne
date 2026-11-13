@@ -52,15 +52,27 @@ func newLintCmd() *cobra.Command {
 	return cmd
 }
 
+// projectLint is a variable so a test can prove the no-edits path never lints (F-0393).
+var projectLint = app.ProjectLint
+
 func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool, feature, parent string) error {
-	repoDir, cfg, cleanup, driftCtx, edits, err := lintRoot(dir, staged)
+	repoDir, cfg, cleanup, driftCtx, edits, err := lintRoot(dir, staged, staged && !all && !scoped)
 	if err != nil {
 		return err
 	}
 	if cleanup != nil {
 		defer cleanup()
 	}
-	findings, err := app.ProjectLint(repoDir, dir, cfg)
+	editOnly := staged && !all && !scoped
+	if editOnly && edits.count == 0 {
+		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+			fmt.Fprintln(cmd.OutOrStdout(), `{"findings": [], "edits": 0}`)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "cerne: no local edits to lint")
+		}
+		return nil
+	}
+	findings, err := projectLint(repoDir, dir, cfg)
 	if err != nil {
 		return err
 	}
@@ -112,16 +124,9 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 	// Staged without --all (and without an explicit scope): only the findings
 	// the edits introduced fail; what the snapshot already had is a count
 	// (F-0382, the before x after of golangci-lint's new-from-rev).
-	editOnly := staged && !all && !scoped
 	var otherCount, fixedCount int
 	if editOnly {
-		if edits.count == 0 {
-			if asJSON, _ := cmd.Flags().GetBool("json"); !asJSON {
-				fmt.Fprintln(out, "cerne: no local edits to lint")
-				return nil
-			}
-		}
-		base, err := app.ProjectLint(edits.base, dir, cfg)
+		base, err := projectLint(edits.base, dir, cfg)
 		if err != nil {
 			return err
 		}
@@ -150,7 +155,8 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 				Findings   []nextFinding `json:"findings"`
 				OtherCount int           `json:"other_count"`
 				FixedCount int           `json:"fixed_count"`
-			}{rows, otherCount, fixedCount}
+				Edits      int           `json:"edits"`
+			}{rows, otherCount, fixedCount, edits.count}
 		}
 		if err := enc.Encode(payload); err != nil {
 			return err
@@ -251,13 +257,13 @@ func lintScope(repoDir, feature, parent string) (ids map[string]bool, label stri
 // The returned driftCtx is non-nil only in the default mode: it carries the
 // resolved project so runLint can compute drift-suspect findings (F-0113). In
 // staged mode it is nil — staged validates local .docs/ edits, not a code diff.
-func lintRoot(dir string, staged bool) (repoDir string, cfg project.Config, cleanup func(), driftCtx *projCtx, edits stagedEdits, err error) {
+func lintRoot(dir string, staged, skipEmpty bool) (repoDir string, cfg project.Config, cleanup func(), driftCtx *projCtx, edits stagedEdits, err error) {
 	if staged {
 		ctx, err := resolvePaths(dir)
 		if err != nil {
 			return "", project.Config{}, nil, nil, stagedEdits{}, err
 		}
-		root, edits, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
+		root, edits, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir, skipEmpty)
 		return root, ctx.cfg, cleanup, nil, edits, err
 	}
 	ctx, err := resolveProject(dir)

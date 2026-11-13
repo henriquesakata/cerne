@@ -12,7 +12,7 @@ func TestStagedLintRootOverlaysStagedDocs(t *testing.T) {
 	edited := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nEDITADO localmente.\n"
 	mustWrite(t, specPath, edited)
 
-	root, _, cleanup, err := stagedLintRoot(repoDir, projDir)
+	root, _, cleanup, err := stagedLintRoot(repoDir, projDir, false)
 	if err != nil {
 		t.Fatalf("stagedLintRoot: %v", err)
 	}

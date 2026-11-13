@@ -12,6 +12,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -212,21 +213,6 @@ func TestLintAllNeedsStaged(t *testing.T) {
 	}
 }
 
-func TestLintStagedJSONNoEdits(t *testing.T) {
-	projDir, _ := stagedDebtProject(t)
-	out, err := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
-	if err != nil {
-		t.Fatalf("no edits must pass: %v\n%s", err, out)
-	}
-	var got struct {
-		Findings   []any `json:"findings"`
-		OtherCount int   `json:"other_count"`
-	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Findings == nil || len(got.Findings) != 0 || got.OtherCount == 0 {
-		t.Fatalf("want {findings: [], other_count: N>0}, err=%v got=%+v\n%s", err, got, out)
-	}
-}
-
 // Round 2 crit. 1 and 5: the diff of findings. A finding absent from the base is the
 // edit's wherever it lands (a plan-older-than-spec on the plan after a spec edit);
 // the line is not part of the identity; a base finding that vanished is fixed.
@@ -239,5 +225,83 @@ func TestDiffFindings(t *testing.T) {
 	added, kept, fixed := diffFindings([]lint.Finding{moved, plan}, []lint.Finding{old, gone})
 	if len(added) != 1 || added[0].Rule != lint.RulePlanOlderThanSpec || len(kept) != 1 || fixed != 1 {
 		t.Fatalf("added=%v kept=%v fixed=%d", added, kept, fixed)
+	}
+}
+
+// noLintOrCopy makes the project lint and the tree copy fail the test if called.
+func noLintOrCopy(t *testing.T) {
+	t.Helper()
+	oldLint, oldCopy := projectLint, copyTree
+	projectLint = func(string, string, project.Config) ([]lint.Finding, error) {
+		t.Fatalf("project lint ran with no local edits")
+		return nil, nil
+	}
+	copyTree = func(string, string) error {
+		t.Fatalf("clone copied with no local edits")
+		return nil
+	}
+	t.Cleanup(func() { projectLint, copyTree = oldLint, oldCopy })
+}
+
+// F-0393 crit. 1: no edits answers at once, without the copy or the project lint.
+func TestLintStagedNoEditsSkipsLintAndCopy(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	noLintOrCopy(t)
+	out, err := execCerne(t, "lint", "--staged", "--dir", projDir)
+	if err != nil || strings.TrimSpace(out) != "cerne: no local edits to lint" {
+		t.Fatalf("want exit 0 and only the no-edits line, err=%v:\n%s", err, out)
+	}
+}
+
+// F-0393 crit. 2: --json with no edits is the fixed payload.
+func TestLintStagedNoEditsJSONSkipsLint(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	noLintOrCopy(t)
+	out, err := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("no edits must pass: %v\n%s", err, out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got) != 2 || got["edits"] != float64(0) {
+		t.Fatalf("want {findings: [], edits: 0}, err=%v got=%v", err, got)
+	}
+	if f, ok := got["findings"].([]any); !ok || len(f) != 0 {
+		t.Fatalf("findings must be an empty array: %s", out)
+	}
+}
+
+// F-0393 crit. 4: an edit to a frozen document is refused as before, not short-circuited.
+func TestLintStagedFrozenEditRefused(t *testing.T) {
+	projDir, specPath := stagedDebtProject(t)
+	ctx, err := resolvePaths(projDir)
+	if err != nil {
+		t.Fatalf("resolvePaths: %v", err)
+	}
+	repoDir := ctx.repoDir
+	mustWrite(t, specPath, cleanSpec("\n\nmais"))
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatalf("LoadFeature: %v", err)
+	}
+	f.State = domain.StateImplemented
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	out, err := execCerne(t, "lint", "--staged", "--dir", projDir)
+	if err == nil || strings.Contains(out, "no local edits") {
+		t.Fatalf("want the frozen refusal, err=%v:\n%s", err, out)
+	}
+}
+
+// F-0393 crit. 2: --json with edits carries the number of edited documents.
+func TestLintStagedJSONEditsCount(t *testing.T) {
+	projDir, specPath := stagedDebtProject(t)
+	mustWrite(t, specPath, cleanSpec(""))
+	out, _ := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
+	var got struct {
+		Edits *int `json:"edits"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Edits == nil || *got.Edits != 1 {
+		t.Fatalf("want edits 1, err=%v:\n%s", err, out)
 	}
 }
