@@ -68,7 +68,7 @@ func docAuthor(projDir string) DocAuthor {
 		return HumanAuthor()
 	}
 	if sess := os.Getenv("CERNE_SESSION"); sess != "" {
-		if model, found := cost.AuthorModel(CostRoots(), sess, invocation(os.Args)); found {
+		if model, found := cost.AuthorModel(CostRoots(), sess, os.Args[min(1, len(os.Args)):]); found {
 			if model == "" {
 				return unknown
 			}
@@ -173,17 +173,4 @@ func DocWrites(repoDir, id string) ([]DocWrite, error) {
 	}
 	slices.SortStableFunc(out, func(a, b DocWrite) int { return a.At.Compare(b.At) })
 	return out, nil
-}
-
-// invocation is the command words this process was called with: the leading
-// arguments before the first flag, at most two ("push", "feature spec").
-func invocation(args []string) []string {
-	var words []string
-	for _, a := range args[min(1, len(args)):] {
-		if strings.HasPrefix(a, "-") || len(words) == 2 {
-			break
-		}
-		words = append(words, a)
-	}
-	return words
 }

@@ -107,6 +107,29 @@ func TestAuthorModel(t *testing.T) {
 			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
 		}, push, "claude-opus-5-5", true},
 		{"no transcript for the session", nil, push, "", false},
+		// Critic round 1, item 2: the verb words skip cerne's flags and their
+		// values on both sides; only a call that starts a command segment
+		// counts; no verb words match nothing.
+		{"global flags and their values are skipped", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cerne --dir /q push --dry-run"},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, []string{"--dir", "/p", "push"}, "claude-sonnet-5", true},
+		{"a quoted mention is not a call", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: `git commit -m "fix: cerne push now records"`},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, push, "claude-opus-5-5", true},
+		{"an argument of another command is not a call", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "echo cerne push"},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, push, "claude-opus-5-5", true},
+		{"env and VAR= prefixes still start the call", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cd /w && (FOO=1 env BAR=2 ./bin/cerne push)"},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, push, "claude-sonnet-5", true},
+		{"no verb words match nothing", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cerne push"},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, []string{"--verbose"}, "claude-opus-5-5", true},
 	}
 	// A request blob repeats the running call with no model and another type:
 	// neither a pending call nor the last message.
