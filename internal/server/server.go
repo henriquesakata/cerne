@@ -318,6 +318,10 @@ type featureDetailResponse struct {
 	// JudgeQuestion is the judge question the approve would accept beside the
 	// bar (F-0381); omitted when empty (exempt bar, light mode, none yet).
 	JudgeQuestion string `json:"judge_question,omitempty"`
+	// ApproveAdvice is the approve check's advice (F-0390): the measured
+	// Gauntlet cost and the level hints, shown beside the bar; never an
+	// impediment. Same states as ApproveReadiness; omitted when empty.
+	ApproveAdvice []app.ApproveAdvice `json:"approve_advice,omitempty"`
 	// Writes are the recorded writes of the feature's documents, oldest first
 	// (F-0375): the page footers name the first writer and the last edit.
 	Writes []app.DocWrite `json:"writes"`
@@ -448,9 +452,13 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 		return
 	}
 	var readiness []app.ApproveImpediment
+	var advice []app.ApproveAdvice
 	var bar, judgeQuestion string
 	if f.State == domain.StateCandidate || specChanged {
 		if readiness, err = app.ApproveReadiness(repoDir, projDir, id); err == nil {
+			advice, err = app.ApproveAdvices(repoDir, projDir, id)
+		}
+		if err == nil {
 			if bar, err = app.AcceptedBar(repoDir, id); err == nil && bar != "" {
 				judgeQuestion, _, err = app.AcceptedJudgeQuestion(repoDir, id)
 			}
@@ -468,7 +476,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, Writes: writes})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

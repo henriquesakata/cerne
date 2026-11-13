@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -89,5 +90,44 @@ func TestFeatureDetailJudgeQuestion(t *testing.T) {
 		if rec.Code != http.StatusOK || got.JudgeQuestion != want {
 			t.Fatalf("%s: status %d judge_question %q, want %q", id, rec.Code, got.JudgeQuestion, want)
 		}
+	}
+}
+
+// TestFeatureDetailApproveAdvice (F-0390, server side): a candidate's detail
+// carries the approve advice beside the bar, apart from the impediments; a
+// spec with no advice, or past candidacy, omits the field.
+func TestFeatureDetailApproveAdvice(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedFeature(t, repoDir, "F-0001", "Leve com barra", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0001", "spec.md", "# t\n\n**Nível:** leve\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
+	seedFeature(t, repoDir, "F-0002", "Sem barra", domain.StateCandidate)
+	writeDoc(t, repoDir, "F-0002", "spec.md", "# t\n\n**Nível:** leve\n\nProblema real.\n")
+	seedFeature(t, repoDir, "F-0003", "Aprovada", domain.StateApproved)
+	writeDoc(t, repoDir, "F-0003", "spec.md", "# t\n\n**Nível:** leve\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\n")
+
+	type advice struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	get := func(id string) *[]advice {
+		t.Helper()
+		var got struct {
+			Advice *[]advice `json:"approve_advice"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/"+id, "", &got)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", id, rec.Code, rec.Body.String())
+		}
+		return got.Advice
+	}
+	if a := get("F-0001"); a == nil || len(*a) != 2 || (*a)[0].Code != "gauntlet-cost" || (*a)[1].Code != "light-with-bar" ||
+		!strings.Contains((*a)[0].Message, "not enough measured features yet") {
+		t.Fatalf("F-0001 approve_advice = %+v, want gauntlet-cost (not enough) + light-with-bar", a)
+	}
+	if a := get("F-0002"); a != nil {
+		t.Fatalf("F-0002 (no bar) approve_advice = %+v, want omitted", *a)
+	}
+	if a := get("F-0003"); a != nil {
+		t.Fatalf("F-0003 (approved) approve_advice = %+v, want omitted", *a)
 	}
 }
