@@ -446,3 +446,81 @@ func TestCostStampKeepsHigherAnchorDropsSnapshot(t *testing.T) {
 		t.Fatalf("snapshot kept: %v", err)
 	}
 }
+
+// ledgerLines counts the cost ledger's lines.
+func ledgerLines(t *testing.T, repoDir string) int {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "costbind.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Count(string(raw), "\n")
+}
+
+// attributeX gives costProject an F-0002 and records, with the session from
+// $CERNE_SESSION, that subagent x of sess-1 — which inherited F-0001's
+// binding — worked for F-0002 as critic.
+func attributeX(t *testing.T) (projDir, repoDir string) {
+	t.Helper()
+	projDir, repoDir = costProject(t, domain.StateInDevelopment)
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0002", Title: "Feature F-0002", State: domain.StateInDevelopment, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	t.Setenv("CERNE_SESSION", "sess-1")
+	out, err := execCerne(t, "cost", "attribute", "x", "F-0002", "--role", "critic", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "attributed to F-0002 as critic") {
+		t.Fatalf("attribute: %v\n%s", err, out)
+	}
+	return projDir, repoDir
+}
+
+// TestCostAttributeMovesSubagent (F-0384 crit. 1, 4, 6): the retro bind moves
+// every message of x, sent before the record, from F-0001 to F-0002 as
+// critic; --json carries the per-role view.
+func TestCostAttributeMovesSubagent(t *testing.T) {
+	projDir, _ := attributeX(t)
+	out, err := execCerne(t, "cost", "F-0002", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("cost --json: %v\n%s", err, out)
+	}
+	var r cost.Report
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatal(err)
+	}
+	if critic := (cost.Counters{Input: 2, CacheCreation: 20, CacheRead: 200, Output: 2000}); r.ByRole["critic"] != critic || r.Counters != critic {
+		t.Fatalf("F-0002 = %+v, by_role %+v, want x's message as critic", r.Counters, r.ByRole)
+	}
+	out, err = execCerne(t, "cost", "F-0001", "--dir", projDir)
+	if err != nil || strings.Contains(out, "claude-sonnet-5") {
+		t.Fatalf("cost F-0001 still counts x: %v\n%s", err, out)
+	}
+}
+
+// TestCostAttributeRefusals (F-0384 crit. 2): an agent with no transcript in
+// the session (naming where it looked), a role outside the vocabulary, no
+// session and a non-feature id are refused, and the ledger is untouched.
+func TestCostAttributeRefusals(t *testing.T) {
+	projDir, repoDir := costProject(t, domain.StateInDevelopment)
+	t.Setenv("CERNE_SESSION", "")
+	before := ledgerLines(t, repoDir)
+	for _, c := range []struct {
+		args []string
+		is   error
+		want string
+	}{
+		{[]string{"nobody", "F-0001", "--session", "sess-1"}, cost.ErrAgentNotFound, filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "*", "sess-1", "subagents")},
+		{[]string{"x", "F-0001", "--session", "sess-1", "--role", "reviewer"}, cost.ErrUnknownRole, "critic, judge, builder, other"},
+		{[]string{"x", "F-0001"}, nil, "no session: pass --session or set CERNE_SESSION"},
+		{[]string{"x", "W-0001", "--session", "sess-1"}, nil, "takes a feature, epic or task id"},
+	} {
+		out, err := execCerne(t, append(append([]string{"cost", "attribute"}, c.args...), "--dir", projDir)...)
+		if err == nil || (c.is != nil && !errors.Is(err, c.is)) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v: err = %v, want %v containing %q\n%s", c.args, err, c.is, c.want, out)
+		}
+	}
+	if after := ledgerLines(t, repoDir); after != before {
+		t.Fatalf("ledger went from %d to %d lines on refusals", before, after)
+	}
+}

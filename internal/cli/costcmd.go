@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -57,7 +58,58 @@ func newCostCmd() *cobra.Command {
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().BoolVar(&stamp, "stamp", false, "write the cost into the implemented feature's result (## Custo)")
+	cmd.AddCommand(newCostAttributeCmd())
 	return cmd
+}
+
+func newCostAttributeCmd() *cobra.Command {
+	var dir, role, session string
+	cmd := &cobra.Command{
+		Use:   "attribute <agent-id> <id>",
+		Short: "Count a subagent's whole cost on a feature, under a role (F-0384)",
+		Long: "Records in the cost ledger that subagent <agent-id> of the session worked for <id> (F-/E-/T-): " +
+			"every message of that subagent, before the record too, counts on <id> instead of the binding it " +
+			"inherited, so nothing is counted twice. For agents that run no cerne command — the Gauntlet's " +
+			"critic and judge: run it after launching them. --role names what it did (critic, judge, builder, " +
+			"other); without it, the subagent's agentType decides (dev is builder, code-reviewer is critic). " +
+			"Refused, writing nothing, when the session's transcripts hold no subagents/agent-<agent-id>.jsonl.",
+		Example: "  cerne cost attribute a1b2c3d4e5f6a7b8c F-0042 --role critic",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCostAttribute(cmd, dir, msgSession(session), args[0], args[1], role)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().StringVar(&role, "role", "", "critic, judge, builder or other (default: from the subagent's agentType)")
+	cmd.Flags().StringVar(&session, "session", "", "Claude Code session id (defaults to $CERNE_SESSION, exported by the SessionStart hook)")
+	return cmd
+}
+
+func runCostAttribute(cmd *cobra.Command, dir, sess, agent, id, role string) error {
+	if sess == "" {
+		return errors.New("no session: pass --session or set CERNE_SESSION (the SessionStart hook exports it — re-run `cerne hook install` if it is missing)")
+	}
+	if !domain.IsFeatureID(id) {
+		return fmt.Errorf("cost attribute takes a feature, epic or task id (F-/E-/T-), got %q", id)
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	if _, err := store.LoadFeature(ctx.repoDir, id); err != nil {
+		return err
+	}
+	in := cost.Inputs{CacheDir: filepath.Dir(ctx.repoDir), RepoDir: ctx.repoDir, Roots: claudeRoots()}
+	if err := cost.Attribute(in, sess, agent, id, role, time.Now().UTC()); err != nil {
+		return err
+	}
+	as := " as " + role
+	if role == "" {
+		as = ", role from its agentType"
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ subagent %s of session %s attributed to %s%s — all its messages count there (cerne cost %s).\n", agent, sess, id, as, id)
+	return nil
 }
 
 // runCostStamp writes id's cost into its result through the amend path of an

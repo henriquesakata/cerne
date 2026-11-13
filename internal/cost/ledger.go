@@ -9,9 +9,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -82,4 +86,46 @@ func readLedger(cacheDir string) (binds []Bind, exists bool, err error) {
 		binds = append(binds, b)
 	}
 	return binds, true, nil
+}
+
+var (
+	// ErrAgentNotFound: `cerne cost attribute` names a subagent with no
+	// transcript in the session — the bind would attribute nothing.
+	ErrAgentNotFound = errors.New("no transcript of that subagent in the session")
+	// ErrUnknownRole: a role outside the closed vocabulary (bindRoles).
+	ErrUnknownRole = errors.New("unknown role")
+)
+
+// bindRoles is the closed vocabulary of a bind's role; "main" is the main
+// thread's, never bound.
+var bindRoles = []string{"critic", "judge", "builder", "other"}
+
+// Attribute records that subagent agent of session sess worked under entity
+// id as role ("" lets its agentType decide): a retro bind, covering all its
+// messages (F-0384). Refused, writing nothing, on an unknown role or when the
+// session's transcripts hold no file of the agent. The session is then
+// re-harvested, so a snapshot of the entity it leaves drops it at once.
+func Attribute(in Inputs, sess, agent, id, role string, now time.Time) error {
+	if role != "" && !slices.Contains(bindRoles, role) {
+		return fmt.Errorf("%w %q: want one of %s", ErrUnknownRole, role, strings.Join(bindRoles, ", "))
+	}
+	files, err := sessionFiles(in.Roots, []string{sess})
+	if err != nil {
+		return err
+	}
+	name := "agent-" + agent + ".jsonl"
+	if !slices.ContainsFunc(files[sess], func(f tfile) bool { return path.Base(f.rel) == name }) {
+		dirs := make([]string, len(in.Roots))
+		for i, root := range in.Roots {
+			dirs[i] = filepath.Join(root, "projects", "*", sess, "subagents")
+		}
+		return fmt.Errorf("%w: no %s under %s", ErrAgentNotFound, name, strings.Join(dirs, ", "))
+	}
+	// The transcript was found, so the session is Claude Code's whatever the
+	// harness this command runs under.
+	if err := AppendBind(in.CacheDir, Bind{Session: sess, Agent: agent, Entity: id, Harness: HarnessClaudeCode, Role: role, Retro: true, TS: now}); err != nil {
+		return err
+	}
+	_ = Harvest(in, sess, "", now) // fails open like the Stop hook, which harvests again
+	return nil
 }
