@@ -88,6 +88,7 @@ func Root() *cobra.Command {
 	root.AddCommand(verbs.MarkLocal(newSpecCmd()))
 	root.AddCommand(verbs.MarkLocal(newPlanCmd()))
 	root.AddCommand(verbs.MarkLocal(newResultCmd()))
+	root.AddCommand(verbs.MarkLocal(newGauntletCmd()))
 	root.AddCommand(verbs.MarkLocal(newUICmd()))
 	root.AddCommand(verbs.MarkLocal(newServeCmd()))
 	root.AddCommand(verbs.MarkLocal(newMCPCmd()))
