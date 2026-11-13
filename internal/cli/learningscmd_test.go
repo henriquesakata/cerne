@@ -135,7 +135,7 @@ func TestFeatureLearningsSkip(t *testing.T) {
 	writeDoc(t, repoDir, "F-0002", "result.md", realDoc("F-0002", "## Aprendizados e desvios\n\nNone.\n"))
 	commitBackend(t, repoDir)
 
-	if out, err := execCerne(t, "feature", "learnings", "--skip", "F-0001", "--reason", "only provenance", "--dir", projDir); err != nil || !strings.Contains(out, "F-0001") {
+	if out, err := execCerne(t, "feature", "learnings", "--skip", "F-0001", "--reason", "only provenance", "--dir", projDir); err != nil || !strings.Contains(out, "F-0001 learnings marked as triaged (recorded in the backend)") {
 		t.Fatalf("skip: %v\n%s", err, out)
 	}
 	out, _ := execCerne(t, "feature", "learnings", "--dir", projDir)
@@ -152,5 +152,16 @@ func TestFeatureLearningsSkip(t *testing.T) {
 	}
 	if _, err := execCerne(t, "feature", "learnings", "--reason", "x", "--dir", projDir); err == nil {
 		t.Error("--reason without --skip must be refused")
+	}
+}
+
+func TestCompletePromptsForLearningsWithALowercaseID(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	writeDoc(t, repoDir, "F-0001", "result.md", realDoc("F-0001", learnBody))
+	commitBackend(t, repoDir)
+	out, err := execCerne(t, "feature", "complete", "f-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "second learning") || !strings.Contains(out, "--informs F-0001") {
+		t.Fatalf("complete f-0001: %v\n%s", err, out)
 	}
 }

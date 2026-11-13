@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -80,7 +81,7 @@ func runFeatureLearnings(cmd *cobra.Command, dir, featureID, since, skip, reason
 		if err := app.SkipLearnings(ctx.repoDir, ctx.projDir, id, reason, time.Now()); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s: learnings marked as triaged, nothing durable.\n", id)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s learnings marked as triaged (recorded in the backend)\n", id)
 		return nil
 	}
 	rep, err := app.Learnings(ctx.repoDir, opts)
@@ -139,6 +140,7 @@ func learningsTail(id string) string {
 // printCompleteLearnings is the read-only prompt after a complete (F-0401):
 // silent without items, and silent on any failure — it never decides the exit.
 func printCompleteLearnings(w io.Writer, repoDir, id string) {
+	id = domain.CanonicalID(id)
 	rep, err := app.Learnings(repoDir, app.LearningsOpts{Feature: id, All: true})
 	if err != nil || len(rep.Features) == 0 {
 		return
