@@ -263,26 +263,10 @@ func parseGauntlet(section string) gauntletRecord {
 // hasGauntlet is false — out of the guard, never zero returns — with no round
 // or a lone round whose outcome cannot be read (C6).
 func GauntletRounds(result []byte) (hasGauntlet bool, derrotas int) {
-	anchored := map[int]int8{}
-	implicit, hasImplicit := int8(0), false
-	for _, section := range gauntletSections(StripHTMLComments(result)) {
-		rec := parseGauntlet(section)
-		for _, r := range rec.rounds {
-			switch {
-			case r.n != 0:
-				anchored[r.n] = max(anchored[r.n], r.outcome)
-			case !rec.exempt:
-				implicit, hasImplicit = max(implicit, r.outcome), true
-			}
-		}
-	}
-	rounds := slices.Collect(maps.Values(anchored))
-	if len(rounds) == 0 && hasImplicit {
-		rounds = []int8{implicit}
-	}
+	rounds := readRounds(result)
 	unread := 0
-	for _, o := range rounds {
-		switch o {
+	for _, r := range rounds {
+		switch r.outcome {
 		case 2:
 			derrotas++
 		case 0:
@@ -378,4 +362,59 @@ func GauntletVerdict(result []byte) (verdict string, ok bool) {
 		verdict = "dispensada"
 	}
 	return verdict, verdict != ""
+}
+
+// RoundOutcome is one round of a result's Gauntlet record (F-0391): its
+// number (0 for the implicit round) and the outcome read — win, loss, tie, or
+// "" when none can be read.
+type RoundOutcome struct {
+	N       int    `json:"n"`
+	Outcome string `json:"outcome"`
+}
+
+// GauntletRoundList lists the rounds GauntletRounds counts, in number order —
+// all but an unread implicit round, which is a section nobody judged.
+func GauntletRoundList(result []byte) []RoundOutcome {
+	var out []RoundOutcome
+	for _, r := range readRounds(result) {
+		o := ""
+		switch {
+		case r.n == 0 && r.outcome == 0:
+			continue
+		case r.outcome == 2:
+			o = "loss"
+		case r.outcome == 1 && doclang.Is(doclang.Tie, r.word):
+			o = "tie"
+		case r.outcome == 1:
+			o = "win"
+		}
+		out = append(out, RoundOutcome{N: r.n, Outcome: o})
+	}
+	return out
+}
+
+// readRounds is the rounds of every "## Gauntlet" section, in number order:
+// the distinct "Rodada N" (an exempt bar's included), each with its worst
+// outcome, or — with none — the sections' implicit round (never an
+// exemption's own prose).
+func readRounds(result []byte) []gauntletRound {
+	anchored := map[int]gauntletRound{}
+	var implicit *gauntletRound
+	for _, section := range gauntletSections(StripHTMLComments(result)) {
+		rec := parseGauntlet(section)
+		for _, r := range rec.rounds {
+			switch {
+			case r.n != 0:
+				if cur, ok := anchored[r.n]; !ok || r.outcome > cur.outcome {
+					anchored[r.n] = r
+				}
+			case !rec.exempt && (implicit == nil || r.outcome > implicit.outcome):
+				implicit = &r
+			}
+		}
+	}
+	if len(anchored) == 0 && implicit != nil {
+		return []gauntletRound{*implicit}
+	}
+	return slices.SortedFunc(maps.Values(anchored), func(a, b gauntletRound) int { return a.n - b.n })
 }
