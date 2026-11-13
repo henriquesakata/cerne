@@ -94,7 +94,11 @@ export function gateCounts(
 export function LightModeNotice({ gauntlet }: { gauntlet?: string }) {
   const { t } = useT()
   if (gauntlet !== 'off') return null
-  return <p className="dash-light-mode">{t.dashboard.lightMode}</p>
+  return (
+    <p className="dash-light-mode">
+      {t.dashboard.lightMode} <a href="#/settings">{t.dashboard.lightModeLink}</a>.
+    </p>
+  )
 }
 
 // AttentionBand (F-0233): a única coisa nesta tela que a CLI não faz sozinha.

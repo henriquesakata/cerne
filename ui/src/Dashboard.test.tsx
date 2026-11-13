@@ -54,6 +54,12 @@ describe('LightModeNotice', () => {
     expect(screen.getByText(/Modo leve: sem Gauntlet/)).toBeInTheDocument()
   })
 
+  it('aponta para a tela de Configurações, não para o .cernerc (F-0392)', () => {
+    render(<LightModeNotice gauntlet="off" />)
+    expect(screen.getByRole('link', { name: 'Configurações' })).toHaveAttribute('href', '#/settings')
+    expect(screen.queryByText(/\.cernerc/)).toBeNull()
+  })
+
   it('não aparece com o Gauntlet ligado nem sem o campo', () => {
     const { container, rerender } = render(<LightModeNotice gauntlet="on" />)
     expect(container).toBeEmptyDOMElement()
