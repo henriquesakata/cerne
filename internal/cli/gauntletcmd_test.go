@@ -297,3 +297,38 @@ func TestGauntletRecordEnglishPassesTheCompleteGate(t *testing.T) {
 		t.Errorf("gate refused the English result: %v", err)
 	}
 }
+
+func TestGauntletArtifactEvidence(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	tmp := t.TempDir()
+	ev := filepath.Join(tmp, "runtime.txt")
+	os.WriteFile(ev, []byte("saida real\n"), 0o644)
+	dest := filepath.Join(tmp, "a.txt")
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--evidence", ev, "--out", dest, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("artifact: %v\n%s", err, stderr)
+	}
+	data, _ := os.ReadFile(dest)
+	for _, want := range []string{"=== EVIDÊNCIA: runtime.txt (início) ===", "saida real", "=== EVIDÊNCIA: runtime.txt (fim) ==="} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("bundle missing %q", want)
+		}
+	}
+	if !strings.Contains(stderr, "evidence: runtime.txt 11 bytes") {
+		t.Errorf("stderr lacks the evidence size: %s", stderr)
+	}
+}
+
+// critério 2: a missing evidence file refuses, names the file, writes nothing.
+func TestGauntletArtifactEvidenceMissing(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	dest := filepath.Join(t.TempDir(), "a.txt")
+	missing := filepath.Join(t.TempDir(), "ghost.txt")
+	out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--evidence", missing, "--out", dest, "--dir", projDir)
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), missing) {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest); err == nil {
+		t.Error("--out written despite the missing evidence")
+	}
+}

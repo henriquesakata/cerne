@@ -101,3 +101,30 @@ func TestConstraintsIndexPinned(t *testing.T) {
 		}
 	}
 }
+
+func TestAssembleEvidence(t *testing.T) {
+	ev := []Evidence{{Name: "a.txt", Body: "out A\nline2\n"}, {Name: "b.log", Body: "out B"}}
+	cases := []struct {
+		lang    doclang.Lang
+		ordered []string
+	}{
+		{doclang.PT, []string{"=== CRITÉRIOS (fim) ===", "=== EVIDÊNCIA: a.txt (início) ===", "out A\nline2", "=== EVIDÊNCIA: a.txt (fim) ===",
+			"=== EVIDÊNCIA: b.log (início) ===", "out B", "=== EVIDÊNCIA: b.log (fim) ===", "=== DIFF (início) ==="}},
+		{doclang.EN, []string{"=== CRITERIA (end) ===", "=== EVIDENCE: a.txt (start) ===", "out A\nline2", "=== EVIDENCE: a.txt (end) ===",
+			"=== EVIDENCE: b.log (start) ===", "out B", "=== EVIDENCE: b.log (end) ===", "=== DIFF (start) ==="}},
+	}
+	for _, tc := range cases {
+		got, err := Assemble(Input{Lang: tc.lang, Spec: specPT, Diff: "d", Evidence: ev})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pos := 0
+		for _, s := range tc.ordered {
+			i := strings.Index(got[pos:], s)
+			if i < 0 {
+				t.Fatalf("%s: %q out of order/missing in:\n%s", tc.lang, s, got)
+			}
+			pos += i + len(s)
+		}
+	}
+}
