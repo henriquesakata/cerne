@@ -39,46 +39,48 @@ func Corpus(root *cobra.Command) []Section {
 	return append(out, faqSections(faq)...)
 }
 
-// skillSections splits a markdown file at every ## and ### heading (outside
-// code fences); a section runs to the next such heading.
+// emptyText stands in for a section with no body of its own (a ## that only
+// introduces its ### children), so its title still reaches the topics list.
+const emptyText = "(no text of its own: see the sections below it)"
+
+// skillSections splits a markdown file at its # title and every ## and ###
+// heading (outside code fences); a section runs to the next heading. The text
+// before the first ## is the intro section, titled by the # heading.
 func skillSections(_, content string) []Section {
-	return splitHeadings(content, "## ", "### ", func(title string) (string, string) { return title, "skill: " + title })
+	return splitHeadings(content, []string{"### ", "## ", "# "}, func(title string) (string, string) { return title, "skill: " + title })
 }
 
 // faqSections reads "## Q: <question>" entries.
 func faqSections(content string) []Section {
-	return splitHeadings(content, "## Q: ", "", func(title string) (string, string) { return title, "faq" })
+	return splitHeadings(content, []string{"## Q: "}, func(title string) (string, string) { return title, "faq" })
 }
 
-func splitHeadings(content, h2, h3 string, name func(string) (string, string)) []Section {
+func splitHeadings(content string, prefixes []string, name func(string) (string, string)) []Section {
 	var out []Section
 	var cur *Section
 	var body []string
 	flush := func() {
 		if cur != nil {
 			cur.Text = strings.TrimSpace(strings.Join(body, "\n"))
-			if cur.Text != "" {
-				out = append(out, *cur)
+			if cur.Text == "" {
+				cur.Text = emptyText
 			}
+			out = append(out, *cur)
 		}
 		cur, body = nil, nil
 	}
-	fence := false
+	fence := "" // the marker (``` or ~~~) of the open code fence
 	for _, line := range strings.Split(content, "\n") {
-		if strings.HasPrefix(line, "```") {
-			fence = !fence
-		}
-		if !fence {
-			var title string
-			switch {
-			case strings.HasPrefix(line, h2):
-				title = strings.TrimPrefix(line, h2)
-			case h3 != "" && strings.HasPrefix(line, h3):
-				title = strings.TrimPrefix(line, h3)
+		if m := strings.TrimLeft(line, " "); strings.HasPrefix(m, "```") || strings.HasPrefix(m, "~~~") {
+			if fence == "" {
+				fence = m[:3]
+			} else if strings.HasPrefix(m, fence) {
+				fence = ""
 			}
-			if title != "" {
+		} else if fence == "" {
+			if title, ok := headingTitle(line, prefixes); ok {
 				flush()
-				t, src := name(strings.TrimSpace(title))
+				t, src := name(title)
 				cur = &Section{Title: t, Source: src}
 				continue
 			}
@@ -87,6 +89,15 @@ func splitHeadings(content, h2, h3 string, name func(string) (string, string)) [
 	}
 	flush()
 	return out
+}
+
+func headingTitle(line string, prefixes []string) (string, bool) {
+	for _, p := range prefixes {
+		if strings.HasPrefix(line, p) {
+			return strings.TrimSpace(strings.TrimPrefix(line, p)), true
+		}
+	}
+	return "", false
 }
 
 // commandSections is one section per visible command below root.
