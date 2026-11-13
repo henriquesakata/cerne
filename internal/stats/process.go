@@ -517,3 +517,14 @@ func quantile(v []float64, p float64) float64 {
 	i := int(math.Ceil(p*float64(len(s)))) - 1
 	return s[max(0, min(i, len(s)-1))]
 }
+
+// Tokens renders a weighted token count compactly: 4.4M, 12.3k, 950.
+func Tokens(v float64) string {
+	switch {
+	case v >= 1e6:
+		return fmt.Sprintf("%.1fM", v/1e6)
+	case v >= 1e3:
+		return fmt.Sprintf("%.1fk", v/1e3)
+	}
+	return fmt.Sprintf("%.0f", v)
+}
