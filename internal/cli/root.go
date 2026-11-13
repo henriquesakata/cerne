@@ -22,6 +22,8 @@ func Root() *cobra.Command {
 		Version:       version.Short(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
+		Args:          cobra.ArbitraryArgs, // non-nil: cobra's own legacy check would answer first, without the guide hint
+		RunE:          rootRunE,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			startWriteNotice()
 			app.RemintNotice = func(oldID, newID string) { // F-0356
@@ -73,6 +75,7 @@ func Root() *cobra.Command {
 	root.AddCommand(verbs.MarkChat(newStatusCmd()))
 	root.AddCommand(verbs.MarkChat(newNextCmd()))
 	root.AddCommand(verbs.MarkChat(newBriefCmd()))
+	root.AddCommand(verbs.MarkChat(newGuideCmd()))
 	root.AddCommand(verbs.MarkChat(newSavingsCmd()))
 	root.AddCommand(verbs.MarkChat(newStatsCmd()))
 	root.AddCommand(verbs.MarkLocal(newCostCmd()))
@@ -129,6 +132,22 @@ func guardGroups(c *cobra.Command) {
 	}
 }
 
+// guideHint is the last line of every unknown-command refusal (F-0398).
+const guideHint = "\n" + `or ask: cerne guide "<what you want to do>"`
+
+// rootRunE keeps bare `cerne` printing help and gives an unknown first word
+// cobra's own message and suggestions, plus the guide hint (F-0398).
+func rootRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if sug := cmd.SuggestionsFor(args[0]); len(sug) > 0 {
+		msg += "\n\nDid you mean this?\n\t" + strings.Join(sug, "\n\t")
+	}
+	return fmt.Errorf("%s%s", msg, guideHint)
+}
+
 func groupRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
@@ -136,16 +155,16 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
 	if args[0] == "help" { // root help takes the group path: `feature help approve` -> `help feature approve`
 		path := strings.TrimPrefix(cmd.CommandPath(), "cerne ")
-		return fmt.Errorf("%s\n\nDid you mean: cerne help %s?", msg, strings.Join(append([]string{path}, args[1:]...), " "))
+		return fmt.Errorf("%s\n\nDid you mean: cerne help %s?%s", msg, strings.Join(append([]string{path}, args[1:]...), " "), guideHint)
 	}
 	for _, rc := range cmd.Root().Commands() {
 		if (rc.Name() == args[0] || rc.HasAlias(args[0])) && rc != cmd {
-			return fmt.Errorf("%s\n\nDid you mean: cerne %s?", msg, strings.Join(args, " "))
+			return fmt.Errorf("%s\n\nDid you mean: cerne %s?%s", msg, strings.Join(args, " "), guideHint)
 		}
 	}
 	cmd.SuggestionsMinimumDistance = 2 // cobra only defaults this on the root
 	if sug := cmd.SuggestionsFor(args[0]); len(sug) > 0 {
 		msg += "\n\nDid you mean this?\n\t" + strings.Join(sug, "\n\t")
 	}
-	return fmt.Errorf("%s", msg)
+	return fmt.Errorf("%s%s", msg, guideHint)
 }

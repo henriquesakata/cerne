@@ -53,7 +53,7 @@ func TestMCP_ListsTools(t *testing.T) {
 			t.Errorf("tool %s is not annotated read-only", tool.Name)
 		}
 	}
-	for _, want := range []string{"status", "brief", "next", "search", "show", "ask"} {
+	for _, want := range []string{"status", "brief", "next", "search", "show", "ask", "guide"} {
 		if !got[want] {
 			t.Errorf("tools/list lacks %q; got %v", want, got)
 		}
@@ -93,6 +93,7 @@ func TestMCP_ToolArgv(t *testing.T) {
 		{"show", map[string]any{"id": "F-0363"}, []string{"show", "F-0363", "--json"}},
 		{"show", map[string]any{"id": "RB-0001"}, []string{"show", "RB-0001", "--json"}},
 		{"ask", map[string]any{"question": "why sqlite?"}, []string{"ask", "why sqlite?", "--json"}},
+		{"guide", map[string]any{"query": "change a setting"}, []string{"guide", "--json", "change a setting"}},
 	}
 	for _, c := range cases {
 		fe := &fakeExec{}
@@ -129,6 +130,8 @@ func TestMCP_RejectsFlagLikeArgs(t *testing.T) {
 		{"search", map[string]any{"query": "x", "limit": 0}},
 		{"search", map[string]any{"query": "x", "limit": 51}},
 		{"ask", map[string]any{"question": "-h"}},
+		{"guide", map[string]any{"query": "-h"}},
+		{"guide", map[string]any{"query": "  "}},
 		{"ask", map[string]any{"question": "   "}},
 		{"status", map[string]any{"all": true}},
 	}
@@ -171,6 +174,7 @@ func TestMCP_InputSchemasCarryLimits(t *testing.T) {
 		"search.query": {"minLength": 1.0},
 		"show.id":      {"pattern": `^[A-Z]+-\d{4,}$`},
 		"ask.question": {"minLength": 1.0},
+		"guide.query":  {"minLength": 1.0},
 	} {
 		for k, v := range want {
 			if prop[key][k] != v {

@@ -89,3 +89,28 @@ func TestEveryGroupRejectsUnknownSubcommand(t *testing.T) { // criterion 5
 		t.Fatal("no groups found")
 	}
 }
+
+func TestGroupUnknownPointsAtGuide(t *testing.T) { // F-0398 criterion 7
+	const hint = `or ask: cerne guide "<what you want to do>"`
+	for _, args := range [][]string{{"work", "bogus"}, {"feature", "show", "F-1"}, {"feature", "help", "approve"}, {"feature", "aprove"}} {
+		_, err := execCerne(t, args...)
+		if err == nil || !strings.HasSuffix(err.Error(), "\n"+hint) {
+			t.Errorf("%v: err = %v, want a last line %q", args, err, hint)
+		}
+	}
+}
+
+func TestRootUnknownPointsAtGuide(t *testing.T) { // F-0398 criterion 7, root path
+	_, err := execCerne(t, "bogus")
+	if err == nil || !strings.Contains(err.Error(), `unknown command "bogus" for "cerne"`) || !strings.HasSuffix(err.Error(), "\n"+`or ask: cerne guide "<what you want to do>"`) {
+		t.Fatalf("err = %v", err)
+	}
+	_, err = execCerne(t, "statuss")
+	if err == nil || !strings.Contains(err.Error(), "status") {
+		t.Fatalf("a near miss keeps cobra's suggestion: err = %v", err)
+	}
+	out, err := execCerne(t)
+	if err != nil || !strings.Contains(out, "Available Commands") {
+		t.Fatalf("bare cerne still prints help: err=%v", err)
+	}
+}
