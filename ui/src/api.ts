@@ -472,6 +472,7 @@ export type CostDetail = CostFeature & {
     unattributed: CostCounters
   }
   round_list: { n: number; outcome: '' | 'win' | 'loss' | 'tie' }[] | null
+  write_providers: string[] // who drafted the documents (F-0375), never a vendor of the cost
 }
 
 // fetchCosts recebe a query já montada (since, until e os filtros).

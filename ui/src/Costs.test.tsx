@@ -89,7 +89,7 @@ const report = (extra: Partial<CostsReport> = {}): CostsReport => ({
       effort_source: 'declared',
       weighted_by_role: { builder: 50, critic: 30, judge: 20 },
     }),
-    feat('F-0002', 200, { weighted_by_role: { main: 100, builder: 100 }, vendors: ['anthropic', 'openai'] }),
+    feat('F-0002', 200, { weighted_by_role: { main: 100, builder: 100 } }),
     feat('F-0003', 600, {
       level: 'avançado',
       completed_at: '2026-10-07T12:00:00Z',
@@ -254,7 +254,7 @@ describe('Custos — filtros (crit. 7)', () => {
       'high (1)',
       'desconhecido (3)',
     ])
-    expect(screen.getByText(/vendor conhecido em 3 de 4/)).toBeInTheDocument()
+    expect(screen.getByText('vendor conhecido em 3 de 4, pelos modelos do custo (claude-* → Anthropic)')).toBeInTheDocument()
     expect(screen.getByText(/declarado em 2 de 4; o resto é desconhecido/)).toBeInTheDocument()
     expect(screen.getByText(/nível na spec em 3 de 4/)).toBeInTheDocument()
     expect(screen.getByText(/modelo registrado em 4 de 4/)).toBeInTheDocument()
@@ -340,6 +340,7 @@ const detail: CostDetail = {
     { n: 1, outcome: 'loss' },
     { n: 2, outcome: 'win' },
   ],
+  write_providers: ['openai'],
 }
 
 describe('Custos — detalhe da feature (crit. 5)', () => {
@@ -359,6 +360,9 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     )
     expect(screen.getByText(/esforço high \(declarado\)/)).toBeInTheDocument()
     expect(screen.getByText(/Nível: leve · esforço high/)).toBeInTheDocument()
+    // The drafting LLM is not a vendor of the cost: its own labelled line.
+    expect(screen.getByText(/Vendor: Anthropic/)).toBeInTheDocument()
+    expect(screen.getByText('Provedor das escritas').parentElement).toHaveTextContent('openai')
     expect(screen.getByRole('link', { name: '← Custos' })).toHaveAttribute('href', '#/costs')
   })
 

@@ -665,6 +665,13 @@ export function CostDetailPage({ id }: { id: string }) {
           <dt>{t.costs.unattributed}</dt>
           <dd>{line(d.report.unattributed)}</dd>
         </div>
+        <div>
+          <dt>{t.costs.writeProviders}</dt>
+          <dd>
+            {(d.write_providers ?? []).length ? d.write_providers.join(', ') : '—'}{' '}
+            <span className="muted">({t.costs.writeProvidersNote})</span>
+          </dd>
+        </div>
       </dl>
       <section>
         <h2>{t.costs.rounds}</h2>
