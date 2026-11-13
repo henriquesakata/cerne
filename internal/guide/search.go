@@ -78,7 +78,7 @@ func Search(sections []Section, query string, limit int) []Section {
 		return sourceRank(sections[a].Source) < sourceRank(sections[b].Source) // equal coverage: bm25 order (stable) decides within a source
 	})
 	if limit > 0 && len(order) > limit {
-		order = order[:limit]
+		order = keepNamedCommand(sections, order, query, limit)
 	}
 	out := make([]Section, len(order))
 	for i, id := range order {
@@ -119,6 +119,33 @@ func fallbackTerms(query string) []index.Term {
 	return out
 }
 
+// keepNamedCommand cuts order to limit but, when the query is exactly the name
+// of a command ("show" for "cerne show") whose help the cut would drop, gives
+// that help the last slot: asking for a command by its name must bring its help
+// even when other sections mention the word more (F-0399).
+func keepNamedCommand(sections []Section, order []int, query string, limit int) []int {
+	top := order[:limit]
+	for _, id := range order[limit:] {
+		if namesCommand(sections[id], query) {
+			for _, t := range top {
+				if namesCommand(sections[t], query) {
+					return top
+				}
+			}
+			out := append([]int(nil), top...)
+			out[limit-1] = id
+			return out
+		}
+	}
+	return top
+}
+
+// namesCommand reports whether the query is exactly the name of the command a
+// help section describes.
+func namesCommand(s Section, query string) bool {
+	return strings.HasPrefix(s.Source, "help: ") && slug.Fold(strings.TrimSpace(query)) == slug.Fold(strings.TrimPrefix(s.Title, "cerne "))
+}
+
 // titleHits counts the terms whose word, or stem as a prefix, is a word of title.
 func titleHits(title string, terms []index.Term) int {
 	words := strings.FieldsFunc(slug.Fold(title), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
@@ -140,7 +167,7 @@ func sourceRank(source string) int {
 	switch {
 	case source == "faq":
 		return 0
-	case strings.HasPrefix(source, "skill: "):
+	case strings.HasPrefix(source, "skill: "), strings.HasPrefix(source, "reference: "):
 		return 1
 	}
 	return 2

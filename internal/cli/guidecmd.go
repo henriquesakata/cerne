@@ -89,7 +89,7 @@ func newGuideCmd() *cobra.Command {
 func printTopics(out io.Writer, corpus []guide.Section) {
 	fmt.Fprintln(out, "Topics (ask with: cerne guide \"<topic>\"; any command: cerne guide \"<command name>\"):")
 	for _, s := range corpus {
-		if strings.HasPrefix(s.Source, "skill: ") || s.Source == "faq" {
+		if strings.HasPrefix(s.Source, "skill: ") || strings.HasPrefix(s.Source, "reference: ") || s.Source == "faq" {
 			fmt.Fprintf(out, "  %s  (%s)\n", s.Title, s.Source)
 		}
 	}
