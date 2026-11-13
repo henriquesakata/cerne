@@ -161,7 +161,7 @@ func staleDecisionFindings(repoDir string, features []store.Feature, decisions [
 		by := "D-…"
 		if len(newer) > 0 {
 			by = newer[0]
-			reasons = append(reasons, fmt.Sprintf("every component (%s) is also on the newer active %s — a possible successor", strings.Join(d.Components, ", "), strings.Join(newer, ", ")))
+			reasons = append(reasons, fmt.Sprintf("every component (%s) is also on the newer active %s, a possible successor", strings.Join(d.Components, ", "), strings.Join(newer, ", ")))
 		}
 		if len(reasons) == 0 {
 			continue
