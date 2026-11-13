@@ -106,3 +106,23 @@ func TestGauntletSettingInvalid(t *testing.T) {
 		t.Errorf("gate for \"of\": err=%v enabled=%v, want on", err, cfg.Gates.GauntletEnabled())
 	}
 }
+
+// TestGauntletUnsetLastGatesKey: removing the only [gates] key leaves a valid
+// .cernerc with the top-level keys intact and the Gauntlet back on.
+func TestGauntletUnsetLastGatesKey(t *testing.T) {
+	projDir, _ := settingsFixture(t, "[gates]\ngauntlet = \"off\"\n", "", false)
+	if err := UnsetSetting(projDir, "gates.gauntlet", ScopeProject); err != nil {
+		t.Fatal(err)
+	}
+	got := gauntletCernerc(t, projDir)
+	if strings.Contains(got, "gauntlet") || !strings.Contains(got, "project_id = \"p\"") || !strings.Contains(got, "backend = \"b\"") {
+		t.Errorf("after unset of the last key: %q", got)
+	}
+	cfg, _, err := LoadConfig(projDir)
+	if err != nil || !cfg.Gates.GauntletEnabled() {
+		t.Errorf("file must stay valid TOML with the Gauntlet on: err=%v", err)
+	}
+	if v := findSetting(t, ResolveSettings(projDir), "gates.gauntlet"); v.Value != "on" || v.Origin != OriginDefault {
+		t.Errorf("gates.gauntlet = %v from %s, want on from default", v.Value, v.Origin)
+	}
+}
