@@ -148,8 +148,9 @@ function dateTooltip(iso: string, lang: Lang): string {
 }
 
 // DocAuthors (F-0375): o rodapé do documento — quem o escreveu primeiro e,
-// quando houve outra escrita, a última alteração. Sem escrita gravada (um
-// documento anterior à F-0375), nada: nenhum autor é inventado.
+// quando a última escrita é de outro autor, a última alteração. Datas em UTC,
+// as mesmas do `cerne show`. Sem escrita gravada (um documento anterior à
+// F-0375), nada: nenhum autor é inventado.
 function DocAuthors({ writes }: { writes: DocWrite[] }) {
   const { t, lang } = useT()
   if (writes.length === 0) return null
@@ -157,11 +158,11 @@ function DocAuthors({ writes }: { writes: DocWrite[] }) {
     w.model && w.provider
       ? `${w.provider}/${w.model}`
       : w.model || w.provider || (w.source === 'human' ? t.feature.writerHuman : t.feature.writerUnknown)
-  const when = (w: DocWrite) => new Date(w.at).toLocaleDateString(lang)
+  const when = (w: DocWrite) => new Date(w.at).toLocaleDateString(lang, { timeZone: 'UTC' })
   const first = writes[0]
   const last = writes[writes.length - 1]
   let line = t.feature.writtenBy(who(first), when(first))
-  if (writes.length > 1) line += ' · ' + t.feature.lastEdit(who(last), when(last))
+  if (who(last) !== who(first)) line += ' · ' + t.feature.lastEdit(who(last), when(last))
   return <p className="doc-authors doc-updated muted">{line}</p>
 }
 

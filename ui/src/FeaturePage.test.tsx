@@ -613,3 +613,29 @@ describe('FeaturePage doc authors (F-0375)', () => {
     expect(document.querySelector('.doc-authors')).not.toBeInTheDocument()
   })
 })
+
+// Critic round 1, item 5: "última alteração" só quando outro autor escreveu
+// (critério 8: "quando mais de um modelo escreveu"), e a data em UTC — a
+// mesma que o `cerne show` imprime, em qualquer fuso do navegador.
+describe('FeaturePage doc authors: mesmo autor e UTC (F-0375)', () => {
+  it('a mesma autoria de novo não vira última alteração; a data é a de UTC', async () => {
+    const tz = process.env.TZ
+    process.env.TZ = 'America/Sao_Paulo'
+    try {
+      payload = {
+        ...detail('candidate'),
+        docs: { spec: '# Spec\n\nCorpo.', plan: '', result: '' },
+        docs_real: { spec: true, plan: false, result: false },
+        writes: [
+          { doc: 'spec', provider: 'anthropic', model: 'claude-opus-5-5', source: 'transcript', at: '2026-11-03T01:00:00Z' },
+          { doc: 'spec', provider: 'anthropic', model: 'claude-opus-5-5', source: 'transcript', at: '2026-11-05T12:00:00Z' },
+        ],
+      }
+      render(<FeaturePage id="F-0221" />)
+      expect(await screen.findByText('Escrito por anthropic/claude-opus-5-5 em 03/11/2026')).toBeInTheDocument()
+    } finally {
+      if (tz === undefined) delete process.env.TZ
+      else process.env.TZ = tz
+    }
+  })
+})
