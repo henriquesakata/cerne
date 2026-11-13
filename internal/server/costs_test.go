@@ -170,7 +170,7 @@ func TestCostsAggregates(t *testing.T) {
 	if want := map[string]float64{"builder": 850, "critic": 30, "judge": 20, "main": 100, "other": 200, "unknown": 700}; !mapsEqual(r.Roles, want) {
 		t.Errorf("roles = %v, want %v", r.Roles, want)
 	}
-	want := app.CostCoverage{Delivered: 6, Stamped: 4, Epics: 1, Level: 3, Effort: 2, Vendor: 3, Roles: 3, Matched: 4}
+	want := app.CostCoverage{Delivered: 6, Stamped: 4, Epics: 1, Level: 3, Model: 4, Effort: 2, Vendor: 3, Roles: 3, Matched: 4}
 	if r.Coverage != want {
 		t.Errorf("coverage = %+v, want %+v", r.Coverage, want)
 	}

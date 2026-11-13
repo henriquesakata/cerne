@@ -71,6 +71,7 @@ type CostCoverage struct {
 	Stamped   int `json:"stamped"`
 	Epics     int `json:"epics"`
 	Level     int `json:"level"`
+	Model     int `json:"model"`
 	Effort    int `json:"effort"`
 	Vendor    int `json:"vendor"`
 	Roles     int `json:"roles"`
@@ -173,6 +174,7 @@ func Costs(repoDir string, q CostsQuery, now time.Time) (CostsReport, error) {
 	rep.Coverage.Stamped, rep.Options = len(all), costOptions(all)
 	for _, f := range all {
 		rep.Coverage.Level += count(f.Level != "")
+		rep.Coverage.Model += count(len(f.ByModel) > 0)
 		rep.Coverage.Effort += count(f.EffortSource == "declared")
 		rep.Coverage.Vendor += count(len(f.Vendors) > 0)
 		rep.Coverage.Roles += count(len(f.ByRole) > 0)
