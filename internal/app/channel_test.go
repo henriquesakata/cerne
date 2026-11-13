@@ -1041,3 +1041,22 @@ func TestSessionWorkIgnoresOtherAgents(t *testing.T) {
 		t.Fatalf("resolved another agent's work: %+v", got)
 	}
 }
+
+// TestChannelSendSkipsSubagentBindings (F-0376 critic round 1, item 4): a
+// subagent answers on the channel as its session's main thread, so its own
+// <session>.<agent> binding is never a recipient — neither the sender's
+// subagent nor another session's.
+func TestChannelSendSkipsSubagentBindings(t *testing.T) {
+	f := newChanFixture(t)
+	saveChanWork(t, f.repoDir, "W-0004", nil, nil)
+	saveChanWork(t, f.repoDir, "W-0005", nil, nil)
+	if err := BindSessionAgent(f.cacheDir, "s1", "dev", "", "W-0004"); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindSessionAgent(f.cacheDir, "s2", "dev", "", "W-0005"); err != nil {
+		t.Fatal(err)
+	}
+	if _, to := f.send("s1", "oi"); !slices.Equal(to, []string{"W-0002", "W-0003"}) {
+		t.Fatalf("recipients = %v, want [W-0002 W-0003]: subagent bindings are not recipients", to)
+	}
+}
