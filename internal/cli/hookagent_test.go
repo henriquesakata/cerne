@@ -134,3 +134,22 @@ func TestHookBindWorkBindsHandoffTake(t *testing.T) {
 		})
 	}
 }
+
+// TestHookCompactionReadsMainOnly (F-0376 contract): PreCompact and the
+// post-compaction SessionStart block read the main thread's binding only — a
+// subagent's W- is not the session's to keep across compaction.
+func TestHookCompactionReadsMainOnly(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	mustCerne(t, "work", "start", "Do dev", "--dir", projDir)
+	if err := app.BindSessionAgent(filepath.Dir(repoDir), "sess-tl", "a0dev", "", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"session_id":"sess-tl","cwd":` + jsonString(projDir) + `,"hook_event_name":"PreCompact","trigger":"auto"}`
+	if out, err := execCerneStdin(t, payload, "hook", "precompact"); err != nil || out != "" {
+		t.Fatalf("precompact = %v %q, want silence", err, out)
+	}
+	out, err := execCerneStdin(t, sessionPayload("sess-tl", projDir, "compact"), "hook", "session-context")
+	if err != nil || strings.Contains(out, "AFTER COMPACTION") {
+		t.Fatalf("session-context compact = %v\n%s, want no compaction block", err, out)
+	}
+}
