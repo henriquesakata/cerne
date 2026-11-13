@@ -133,7 +133,7 @@ var ErrJudgeQuestionMissing = errors.New(`no "Pergunta ao juiz:" line`)
 // ErrJudgeQuestionMisplaced is a spec whose judge-question line sits outside
 // the Verificação section (F-0381): reported apart from a missing one, with
 // its line, because the fix is to move it.
-var ErrJudgeQuestionMisplaced = errors.New("judge question outside the Verificação section")
+var ErrJudgeQuestionMisplaced = errors.New("judge question outside the verification section")
 
 // MisplacedJudgeQuestion is the ErrJudgeQuestionMisplaced a spec yields: Line
 // is the question's 1-based line in the body.

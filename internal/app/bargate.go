@@ -49,7 +49,7 @@ func CheckSpecBar(repoDir, id string) error {
 // they live in the shared transition core and --force does not cross them.
 var (
 	ErrSpecMissingJudgeQuestion   = errors.New("spec has a bar but no judge question")
-	ErrSpecMisplacedJudgeQuestion = errors.New("judge question found outside the Verificação section")
+	ErrSpecMisplacedJudgeQuestion = errors.New("judge question found outside the verification section")
 )
 
 // judgeQuestionError carries a sentinel behind a message written for the
