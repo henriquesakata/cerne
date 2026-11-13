@@ -85,6 +85,7 @@ type Env struct {
 	Conversation string        // provenance stamped on every event the call writes
 	Turn         int           // index of the confirmed card message
 	Timeout      time.Duration // per call; 0 → defaultTimeout
+	Model        string        // the chat call's model: who a document the call writes is recorded as (F-0375)
 }
 
 // Error is the named failure of a Result.
@@ -225,6 +226,7 @@ func execute(ctx context.Context, argv []string, stdin string, env Env) Result {
 		"CERNE_CONVERSATION="+env.Conversation,
 		"CERNE_TURN="+strconv.Itoa(env.Turn),
 		"CERNE_TOOL_CALL="+call,
+		"CERNE_MODEL="+env.Model, // F-0375: empty falls back to the project's [llm] model
 	)
 	if stdin != "" {
 		c.Stdin = strings.NewReader(stdin)

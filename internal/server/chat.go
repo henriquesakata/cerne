@@ -241,7 +241,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		var runs []chatRun
 		// C3: the confirmation covers the card's commands, nothing else.
 		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true,
-			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn}
+			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn, Model: cfg.LLM.Model}
 		reply, err := tc.CompleteTools(ctx, prompt, chatTools(CommandTree), toolRun(env, &runs))
 		truncated := errors.Is(err, llm.ErrTruncated)
 		if err != nil && !truncated {
@@ -355,6 +355,23 @@ type chatRegisterRequest struct {
 	// new one. Tags/capability/parent are not re-applied — refining edits the
 	// document, nothing else.
 	FeatureID string `json:"feature_id,omitempty"`
+	// Model (F-0375) is the conversation's model selection, the same override
+	// chatRequest carries: the spec's writer is recorded with it.
+	Model string `json:"model,omitempty"`
+}
+
+// chatAuthor is who wrote a spec the chat proposed (F-0375): the project's
+// [llm] config with the conversation's model; unknown when the config is
+// unreadable — never a default it did not call.
+func chatAuthor(projDir, model string) app.DocAuthor {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		return app.DocAuthor{Source: "unknown"}
+	}
+	if model != "" {
+		cfg.LLM.Model = model
+	}
+	return app.LLMAuthor(cfg.LLM)
 }
 
 // writeRefineError maps the refine path's refusals (F-0256) to a status and
@@ -439,7 +456,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	// candidate. Same gate as the creation (an explicit click got here), same
 	// backend write path, but nothing is minted and no state moves.
 	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
-		f, changed, err := app.UpdateCandidateSpec(repoDir, projDir, fid, req.SpecBody)
+		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model))
 		if !writeRefineError(w, err) {
 			return
 		}
@@ -457,13 +474,14 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	parent := strings.TrimSpace(req.Parent)
 	module := strings.TrimSpace(req.Module)
 	warning := ""
-	f, err := app.CreateFeatureWithSpec(repoDir, projDir, req.Title, module, parent, req.Facets, req.Components, req.SpecBody, false, "", "")
+	author := chatAuthor(projDir, req.Model)
+	f, err := app.CreateFeatureWithSpecBy(repoDir, projDir, req.Title, module, parent, req.Facets, req.Components, req.SpecBody, author)
 	// F-0254: a bad parent degrades to no parent instead of failing the
 	// registration — the refusal happens before anything is written, so the
 	// retry is clean. Only the parent errors qualify; everything else is fatal.
 	if parent != "" && (errors.Is(err, app.ErrParentNotFound) || errors.Is(err, app.ErrParentTerminal)) {
 		warning = fmt.Sprintf("registered without parent %s: %v", parent, err)
-		f, err = app.CreateFeatureWithSpec(repoDir, projDir, req.Title, module, "", req.Facets, req.Components, req.SpecBody, false, "", "")
+		f, err = app.CreateFeatureWithSpecBy(repoDir, projDir, req.Title, module, "", req.Facets, req.Components, req.SpecBody, author)
 	}
 	if errors.Is(err, app.ErrSimilarExists) {
 		writeJSON(w, http.StatusConflict, dupConflictBody(err))

@@ -1318,7 +1318,8 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	switch err := app.SaveFeatureDoc(repoDir, projDir, id, doc, string(body)); {
+	// F-0375: the page's editor is a human's, whoever started the server.
+	switch err := app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), app.HumanAuthor()); {
 	case errors.Is(err, app.ErrUnknownDoc):
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
 	case errors.Is(err, store.ErrNotFound):
