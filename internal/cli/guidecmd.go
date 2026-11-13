@@ -12,7 +12,7 @@ import (
 )
 
 func newGuideCmd() *cobra.Command {
-	var asJSON bool
+	var asJSON, topics bool
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "guide [question]",
@@ -20,8 +20,9 @@ func newGuideCmd() *cobra.Command {
 		Long: "Answers a question about cerne itself from the binary's own corpus: the embedded " +
 			"cerne-authoring skill, the help of every command and a FAQ. Offline and deterministic: it " +
 			"reads no backend and calls no model. Prints up to --limit sections (default 3), each with " +
-			"its title, source and text. With no question, or no match, it lists the topics. --json for " +
-			"structured output.",
+			"its title, source and text. With no question it prints the catalog of what cerne can do, " +
+			"grouped by area and built from the command tree; with no match, or --topics, it lists the topics. " +
+			"--json for structured output.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if limit < 1 {
@@ -32,6 +33,14 @@ func newGuideCmd() *cobra.Command {
 				q = strings.TrimSpace(args[0])
 			}
 			corpus := guide.Corpus(cmd.Root())
+			if topics {
+				printTopics(cmd.OutOrStdout(), corpus)
+				return nil
+			}
+			if q == "" && !asJSON {
+				fmt.Fprint(cmd.OutOrStdout(), guide.Catalog(cmd.Root()))
+				return nil
+			}
 			found := guide.Search(corpus, q, limit)
 			out := cmd.OutOrStdout()
 			if asJSON {
@@ -65,6 +74,7 @@ func newGuideCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	cmd.Flags().BoolVar(&topics, "topics", false, "list the topics instead of the catalog")
 	cmd.Flags().IntVar(&limit, "limit", 3, "maximum number of sections")
 	// cerne mcp appends --dir <project> to every command it runs; the guide
 	// reads only the binary, so the flag is accepted and ignored.

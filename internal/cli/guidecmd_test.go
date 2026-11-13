@@ -65,13 +65,28 @@ func TestGuideNoMatchListsTopics(t *testing.T) {
 	}
 }
 
-func TestGuideNoQuestionListsTopics(t *testing.T) {
+// TestGuideNoQuestionPrintsTheCatalog pins F-0399 adjustment 3: with no
+// question the guide prints what cerne can do, grouped, from the command tree;
+// the topics stay one flag away.
+func TestGuideNoQuestionPrintsTheCatalog(t *testing.T) {
 	out, err := execGuide(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, "No guide section") || !strings.Contains(out, "Topics") || !strings.Contains(out, "Feature loop") {
-		t.Fatalf("output:\n%s", out)
+	for _, want := range []string{"\nfeature  Create and manage features", "  cerne feature approve  ", "\nroom  "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("catalog lacks %q", want)
+		}
+	}
+	if strings.Contains(out, "No guide section") || strings.Contains(out, "Topics (") {
+		t.Errorf("catalog printed the topics:\n%s", out)
+	}
+	if !strings.HasSuffix(out, "ask: cerne guide \"<feature>\" for how to use it\n") {
+		t.Errorf("catalog does not end with the ask line:\n%s", out[max(0, len(out)-200):])
+	}
+	topics, err := execGuide(t, "--topics")
+	if err != nil || !strings.Contains(topics, "Topics (") || !strings.Contains(topics, "Feature loop") {
+		t.Fatalf("--topics: %v\n%s", err, topics)
 	}
 	j, err := execGuide(t, "--json")
 	if err != nil || !strings.Contains(j, `"sections": []`) {
