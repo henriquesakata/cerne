@@ -90,3 +90,49 @@ func TestPlanWriteRecordsSpecDigest(t *testing.T) {
 		})
 	}
 }
+
+// TestStartWarnsPlanBehindSpec (F-0377 crit. 3): the F-0371 case — the plan
+// written, then the spec rewritten and re-approved. NextStep still sends the
+// agent to the start, with the warning; the start warns and proceeds. A plan
+// pushed again after the spec (crit. 4), or a feature planned once, gets no
+// warning.
+func TestStartWarnsPlanBehindSpec(t *testing.T) {
+	authorEnv(t)
+	repoDir, projDir, _ := newFeatureBackend(t)
+	behind := seedApproved(t, repoDir, projDir, "Plano velho", "")
+	fresh := seedApproved(t, repoDir, projDir, "Plano em dia", "")
+	if err := SaveFeatureDoc(repoDir, projDir, behind.ID, "spec", realDoc(behind.ID)+"\n## Novo critério\n\nQuinze critérios agora.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, behind.ID, domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("re-approve: %v", err)
+	}
+	const head, tail = "warning: F-0001 plan predates the current spec (plan written ", ") — re-read the spec and push the plan again"
+
+	step, err := NextStep(repoDir, projDir, behind.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step.Command != "cerne feature start "+behind.ID || !strings.Contains(step.Step, head) || !strings.Contains(step.Step, tail) {
+		t.Fatalf("NextStep = %+v, want the start with the plan warning", step)
+	}
+	out := mustStart(t, repoDir, projDir, behind.ID)
+	var warned string
+	for _, w := range out.Warnings {
+		if strings.HasPrefix(w, head) {
+			warned = w
+		}
+	}
+	if out.To != domain.StateInDevelopment || !strings.HasSuffix(warned, tail) || !strings.Contains(warned, ", spec changed ") {
+		t.Fatalf("start = %s, warnings %q — want in_development with the plan warning", out.To, out.Warnings)
+	}
+
+	if step, _ := NextStep(repoDir, projDir, fresh.ID); strings.Contains(step.Step, "warning") {
+		t.Fatalf("fresh plan: NextStep = %+v, want no warning", step)
+	}
+	for _, w := range mustStart(t, repoDir, projDir, fresh.ID).Warnings {
+		if strings.Contains(w, "plan predates") {
+			t.Fatalf("fresh plan warned: %q", w)
+		}
+	}
+}

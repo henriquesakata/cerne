@@ -193,6 +193,9 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err != nil {
 				return "", err
 			}
+			if w := planBehindWarning(repoDir, f); w != "" {
+				warnings = append(warnings, w)
+			}
 		}
 
 		newState, err := domain.Transition(f.State, action)
@@ -637,6 +640,18 @@ func CheckStartNotStale(repoDir string, f store.Feature) error {
 		return fmt.Errorf("%w: %s — a human re-approves it with 'cerne feature approve %s' (or 'cerne feature revert %s' sends it back to the Backlog)", ErrApprovalStale, f.ID, f.ID, f.ID)
 	}
 	return nil
+}
+
+// planBehindWarning is the start's advisory when feature f's plan was written
+// against an older spec (F-0377, lint.PlanBehindSpec): the start proceeds and
+// the lint keeps the debt. "" when the plan is not behind. The transition and
+// NextStep both print it.
+func planBehindWarning(repoDir string, f store.Feature) string {
+	behind, planAt, specAt := lint.PlanBehindSpec(repoDir, f)
+	if !behind {
+		return ""
+	}
+	return fmt.Sprintf("warning: %s plan predates the current spec (plan written %s, spec changed %s) — re-read the spec and push the plan again", f.ID, lint.WriteTime(planAt), lint.WriteTime(specAt))
 }
 
 // checkActionDocs is the document gate of an action (a real plan to start, a
