@@ -69,6 +69,11 @@ function Routed({ hash }: { hash: string }) {
   // graph.enabled / mindmap.enabled = false: a rota também morre — cai no
   // dashboard (F-0315, F-0187).
   const info = projects.find((p) => p.pid === activePid)
+  // Tab title follows the active project's name (F-0387); route-independent.
+  const name = info?.name?.trim()
+  useEffect(() => {
+    document.title = name ? `cerne - ${name}` : 'cerne'
+  }, [name])
   const graphOn = info?.graph !== false
   const mindmapOn = info?.mindmap !== false
   // A deep link to a tab turned off lands on the dashboard: the hash says so
