@@ -165,6 +165,9 @@ describe('Custos — topo e pesos (crit. 1)', () => {
     expect(screen.getByText(/4 de 6 entregue\(s\) no período com custo carimbado · 1 épico\(s\) fora/)).toBeInTheDocument()
     expect(screen.getByText(/entrada 1 · escrita de cache 1,25 · leitura de cache 0,1 · saída 5/)).toBeInTheDocument()
     expect(api.fetchCosts).toHaveBeenCalledWith('')
+    // No markdown "##" in prose: it wrapped mid-heading (TL, PR #68).
+    expect(screen.getByText(/lido das seções Custo dos results; somente leitura\.$/)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/##/)
   })
 })
 
@@ -323,6 +326,7 @@ describe('Custos — inglês (crit. 9)', () => {
       </I18nProvider>,
     )
     expect(await screen.findByRole('heading', { level: 1, name: 'Costs' })).toBeInTheDocument()
+    expect(screen.getByText(/read from the Custo sections of the results; read-only\.$/)).toBeInTheDocument()
     expect(screen.getByText(/4 of 6 delivered in the period with a stamped cost/)).toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'Features in the period' })).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Composition by role' })).toHaveTextContent('builder 45% · 850')
@@ -392,6 +396,12 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     render(<CostDetailPage id="F-0001" />)
     const models = await screen.findByRole('table', { name: 'Por modelo' })
     expect(within(models).getByRole('row', { name: /^desconhecido/ })).toHaveTextContent(/desconhecido.*50.*0.*0.*10.*100.*100%/)
+  })
+
+  it('sem rodada, diz isso sem markdown', async () => {
+    api.fetchCostDetail.mockResolvedValue({ ...detail, round_list: [] })
+    render(<CostDetailPage id="F-0001" />)
+    expect(await screen.findByText('Sem rodada registrada na seção Gauntlet.')).toBeInTheDocument()
   })
 
   it('sem data de conclusão, mostra — em vez de uma data', async () => {

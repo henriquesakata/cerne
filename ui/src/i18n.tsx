@@ -225,7 +225,7 @@ const ptBR = {
   costs: {
     title: 'Custos',
     subtitle:
-      'Quanto o projeto gasta por feature entregue, como isso muda com o tempo e se uma mudança ajudou — lido dos carimbos ## Custo; somente leitura.',
+      'Quanto o projeto gasta por feature entregue, como isso muda com o tempo e se uma mudança ajudou — lido das seções Custo dos results; somente leitura.',
     loadError: (e: string) => `Erro ao carregar os custos: ${e}`,
     loadOneError: (e: string) => `Erro ao carregar o custo: ${e}`,
     weights: (w: string) => `Tokens ponderados com os pesos do cerne stats --process: ${w}. Sem preço em dinheiro.`,
@@ -298,7 +298,7 @@ const ptBR = {
     writeProviders: 'Provedor das escritas',
     writeProvidersNote: 'quem redigiu os documentos (F-0375), não quem gastou estes tokens',
     rounds: 'Rodadas do Gauntlet',
-    noRounds: 'Sem rodada registrada no ## Gauntlet.',
+    noRounds: 'Sem rodada registrada na seção Gauntlet.',
     round: (n: number) => (n === 0 ? 'Rodada única' : `Rodada ${n}`),
     outcomes: { win: 'vitória', loss: 'derrota', tie: 'empate', '': 'resultado ilegível' },
     effortDeclared: (e: string) => `esforço ${e} (declarado)`,
@@ -1419,7 +1419,7 @@ const en: Messages = {
   costs: {
     title: 'Costs',
     subtitle:
-      'How much the project spends per delivered feature, how that moves over time and whether a change helped — read from the ## Custo stamps; read-only.',
+      'How much the project spends per delivered feature, how that moves over time and whether a change helped — read from the Custo sections of the results; read-only.',
     loadError: (e: string) => `Failed to load the costs: ${e}`,
     loadOneError: (e: string) => `Failed to load the cost: ${e}`,
     weights: (w: string) => `Weighted tokens with the cerne stats --process weights: ${w}. No money price.`,
@@ -1492,7 +1492,7 @@ const en: Messages = {
     writeProviders: "Writes' provider",
     writeProvidersNote: 'who drafted the documents (F-0375), not who spent these tokens',
     rounds: 'Gauntlet rounds',
-    noRounds: 'No round recorded in the ## Gauntlet.',
+    noRounds: 'No round recorded in the Gauntlet section.',
     round: (n: number) => (n === 0 ? 'Single round' : `Round ${n}`),
     outcomes: { win: 'win', loss: 'loss', tie: 'tie', '': 'unreadable outcome' },
     effortDeclared: (e: string) => `effort ${e} (declared)`,
