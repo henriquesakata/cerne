@@ -124,6 +124,9 @@ func fallbackTerms(query string) []index.Term {
 // that help the last slot: asking for a command by its name must bring its help
 // even when other sections mention the word more (F-0399).
 func keepNamedCommand(sections []Section, order []int, query string, limit int) []int {
+	if limit < 2 { // the single best hit is never replaced
+		return order[:limit]
+	}
 	top := order[:limit]
 	for _, id := range order[limit:] {
 		if namesCommand(sections[id], query) {
