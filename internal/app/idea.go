@@ -192,6 +192,9 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 		if err := markIdea(repoDir, &i, domain.IdeaPromoted, "", f.ID); err != nil {
 			return "", err
 		}
+		if err := carryReferenceLinks(repoDir, i.ID, f.ID); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("cerne: promote %s to %s (%s)", id, f.ID, f.Title), nil
 	})
 	if err != nil {
@@ -241,4 +244,27 @@ func notActive(i store.Idea) error {
 		return fmt.Errorf("%w: %s is %s (reason: %s)", ErrIdeaNotActive, i.ID, i.State, i.Reason)
 	}
 	return fmt.Errorf("%w: %s is %s", ErrIdeaNotActive, i.ID, i.State)
+}
+
+// carryReferenceLinks adds feature fID to every live reference informing the
+// idea, keeping the idea (F-0389): the source stays tied to where it went.
+func carryReferenceLinks(repoDir, ideaID, fID string) error {
+	refs, err := ReferencesInforming(repoDir, ideaID)
+	if err != nil {
+		return err
+	}
+	for _, r := range refs {
+		if r.State != domain.ReferenceCurrent || slices.Contains(r.Informs, fID) {
+			continue
+		}
+		r.Informs = append(r.Informs, fID)
+		r.UpdatedAt = time.Now().UTC()
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return err
+		}
+		if err := appendLinkEvents(repoDir, r.ID, []string{fID}, nil, "promote"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
