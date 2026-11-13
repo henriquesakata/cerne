@@ -89,3 +89,13 @@ func TestEveryGroupRejectsUnknownSubcommand(t *testing.T) { // criterion 5
 		t.Fatal("no groups found")
 	}
 }
+
+func TestGroupUnknownPointsAtGuide(t *testing.T) { // F-0398 criterion 7
+	const hint = `or ask: cerne guide "<what you want to do>"`
+	for _, args := range [][]string{{"work", "bogus"}, {"feature", "show", "F-1"}, {"feature", "help", "approve"}, {"feature", "aprove"}} {
+		_, err := execCerne(t, args...)
+		if err == nil || !strings.HasSuffix(err.Error(), "\n"+hint) {
+			t.Errorf("%v: err = %v, want a last line %q", args, err, hint)
+		}
+	}
+}
