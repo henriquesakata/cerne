@@ -2,6 +2,8 @@ package store
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -10,11 +12,15 @@ func TestWorkLogAppendReadInOrder(t *testing.T) {
 	if got, err := LoadLog(dir, "W-0001"); err != nil || len(got) != 0 {
 		t.Fatalf("empty log = %v, %v; want none", got, err)
 	}
-	if n := NextLogSeq(dir, "W-0001"); n != 1 {
+	if n, err := NextLogSeq(dir, "W-0001"); err != nil || n != 1 {
 		t.Fatalf("first NextLogSeq = %d, want 1", n)
 	}
 	for i := 1; i <= 11; i++ {
-		e := LogEntry{Seq: NextLogSeq(dir, "W-0001"), UTC: "2026-11-13T15:33:00Z", Actor: "owner", RecordedBy: "a@h", Text: "t"}
+		seq, err := NextLogSeq(dir, "W-0001")
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := LogEntry{Seq: seq, UTC: "2026-11-13T15:33:00Z", Actor: "owner", RecordedBy: "a@h", Text: "t"}
 		if e.Seq != i {
 			t.Fatalf("NextLogSeq = %d, want %d", e.Seq, i)
 		}
@@ -55,5 +61,20 @@ func TestSaveLogEntryRefusesOverwrite(t *testing.T) {
 	got, _ := LoadLog(dir, "W-0001")
 	if len(got) != 1 || got[0].Text != "um" {
 		t.Fatalf("entry changed: %+v", got)
+	}
+}
+
+// A corrupt entry is a read error, not a free number that SaveLogEntry would
+// then refuse as "already exists".
+func TestNextLogSeqSurfacesCorruptEntry(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveLogEntry(dir, "W-0001", LogEntry{Seq: 1, UTC: "2026-11-13T15:33:00Z", Text: "um"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "content", "worklogs", "W-0001", "2.json"), []byte("{nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NextLogSeq(dir, "W-0001"); err == nil {
+		t.Fatal("NextLogSeq swallowed a corrupt entry")
 	}
 }

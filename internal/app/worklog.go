@@ -53,7 +53,10 @@ func AppendWorkLog(repoDir, projDir, work, actor, text string, corrects int, now
 		if w.State != domain.WorkActive {
 			return "", fmt.Errorf("%w: %s is %s", ErrLogWorkClosed, work, w.State)
 		}
-		seq := store.NextLogSeq(repoDir, work)
+		seq, err := store.NextLogSeq(repoDir, work)
+		if err != nil {
+			return "", err
+		}
 		if corrects > 0 {
 			if corrects >= seq {
 				return "", fmt.Errorf("%w: %s has no #%d", ErrLogNoSuchEntry, work, corrects)

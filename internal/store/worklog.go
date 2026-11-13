@@ -34,13 +34,17 @@ func logDir(repoDir, work string) string {
 	return filepath.Join(repoDir, "content", "worklogs", work)
 }
 
-// NextLogSeq is the first free entry number of work (1 when it has no log).
-func NextLogSeq(repoDir, work string) int {
-	es, _ := LoadLog(repoDir, work)
-	if n := len(es); n > 0 {
-		return es[n-1].Seq + 1
+// NextLogSeq is the first free entry number of work (1 when it has no log);
+// an unreadable entry is an error, not a free number.
+func NextLogSeq(repoDir, work string) (int, error) {
+	es, err := LoadLog(repoDir, work)
+	if err != nil {
+		return 0, err
 	}
-	return 1
+	if n := len(es); n > 0 {
+		return es[n-1].Seq + 1, nil
+	}
+	return 1, nil
 }
 
 // SaveLogEntry writes e; ErrLogEntryExists when its number is taken.
