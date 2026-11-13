@@ -37,8 +37,10 @@ func seedCosts(t *testing.T, repoDir string, seeds []costSeed) {
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			t.Fatalf("SaveFeature: %v", err)
 		}
-		if err := store.AppendEvent(repoDir, domain.Event{ID: "c" + s.id, EntityID: s.id, Type: "feature.completed", At: s.completed}); err != nil {
-			t.Fatalf("AppendEvent: %v", err)
+		if !s.completed.IsZero() { // a zero completion seeds no feature.completed
+			if err := store.AppendEvent(repoDir, domain.Event{ID: "c" + s.id, EntityID: s.id, Type: "feature.completed", At: s.completed}); err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
 		}
 		if s.provider != "" {
 			ev := domain.Event{ID: "w" + s.id, EntityID: s.id, Type: "feature.doc_edited", At: s.completed,
@@ -422,5 +424,19 @@ func TestCostDetailReportIsTheStamp(t *testing.T) {
 		if compact.String() != string(want) {
 			t.Errorf("%s: report =\n%s\nwant the stamp\n%s", id, compact.String(), want)
 		}
+	}
+}
+
+// A stamped feature with no feature.completed (a hand-stamped or migrated
+// result) has no completion date to show: the field is omitted, never
+// 0001-01-01 (critic, PR #68).
+func TestCostDetailWithoutCompletion(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedCosts(t, repoDir, []costSeed{{id: "F-0001",
+		report: &cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 10}, Messages: 1, Sessions: 1, ByModel: map[string]cost.Counters{}}}})
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "completed_at") {
+		t.Errorf("status %d, body %s; want 200 without completed_at", rec.Code, rec.Body.String())
 	}
 }

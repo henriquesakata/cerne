@@ -37,7 +37,7 @@ type CostFeature struct {
 	Title           string                   `json:"title"`
 	Level           string                   `json:"level"` // leve | padrão | avançado; "" with no level line
 	State           domain.FeatureState      `json:"state"`
-	CompletedAt     time.Time                `json:"completed_at"` // the first feature.completed
+	CompletedAt     time.Time                `json:"completed_at,omitzero"` // the first feature.completed; omitted with none
 	Weighted        float64                  `json:"weighted"`
 	Tokens          cost.Counters            `json:"tokens"`
 	ByRole          map[string]cost.Counters `json:"by_role"`
