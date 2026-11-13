@@ -15,7 +15,7 @@ import (
 
 // gateBarTail gives a fixture spec a valid bar, so the refusal has no hard
 // impediment behind it.
-const gateBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\n"
+const gateBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n"
 
 // clarifyGateFixture seeds candidate F-0007 with spec plus a valid bar (and an
 // open marker in the plan, which the gate must not list) and returns the

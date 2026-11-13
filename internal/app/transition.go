@@ -220,6 +220,9 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err := CheckSpecBar(repoDir, id); err != nil {
 				return "", err
 			}
+			if err := CheckSpecJudgeQuestion(repoDir, id); err != nil {
+				return "", err
+			}
 		}
 
 		// Result record gate (F-0303): the lint's result rules, charged while the

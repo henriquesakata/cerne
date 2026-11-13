@@ -16,10 +16,12 @@ import (
 
 // Approve impediment codes (F-0308).
 const (
-	ImpedimentSpecMissing       = "spec-missing"
-	ImpedimentBarMissing        = "bar-missing"
-	ImpedimentBarMalformed      = "bar-malformed"
-	ImpedimentOpenClarification = "open-clarification"
+	ImpedimentSpecMissing  = "spec-missing"
+	ImpedimentBarMissing   = "bar-missing"
+	ImpedimentBarMalformed = "bar-malformed"
+	// The bar names a reference but the spec has no judge question (F-0381).
+	ImpedimentJudgeQuestionMissing = "judge-question-missing"
+	ImpedimentOpenClarification    = "open-clarification"
 	// The card impediments (F-0336): soft, like an open clarification, but
 	// the agent's to fix — one command each — not a question for the human.
 	ImpedimentUntagged          = "untagged"
@@ -76,6 +78,10 @@ func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment,
 			code = ImpedimentBarMalformed
 		}
 		out = append(out, ApproveImpediment{code, err.Error(), true})
+	} else if gauntletOn {
+		if _, err := doccheck.SpecJudgeQuestion(spec); err != nil {
+			out = append(out, ApproveImpediment{ImpedimentJudgeQuestionMissing, ErrSpecMissingJudgeQuestion.Error(), true})
+		}
 	}
 	for _, c := range clarify.Open(string(spec)) {
 		q := c.Question

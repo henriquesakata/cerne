@@ -46,9 +46,10 @@ var readinessCases = []struct {
 	{"stub spec", "---\ncerne_id: F-0001\n---\n\n" + spectmpl.Stub("t"), []string{ImpedimentSpecMissing}, []bool{true}},
 	{"no bar", "# t\n\n## Problema\n\nProblema real.\n\n## Verificação\n\nSó testes.\n", []string{ImpedimentBarMissing}, []bool{true}},
 	{"nao aplicavel without justification", "# t\n\nProblema real.\n\nBarra: não aplicável\n", []string{ImpedimentBarMalformed}, []bool{true}},
-	{"open marker over a valid bar", "# t\n\nProblema real. [ESCLARECER: qual o limite?]\n\nBarra: referência nomeada — acesso\n", []string{ImpedimentOpenClarification}, []bool{false}},
+	{"open marker over a valid bar", "# t\n\nProblema real. [ESCLARECER: qual o limite?]\n\n## Verificação\n\nBarra: referência nomeada — acesso\nPergunta ao juiz: qual é mais claro?\n", []string{ImpedimentOpenClarification}, []bool{false}},
 	{"no bar and open marker", "# t\n\nProblema real. [ESCLARECER: qual o limite?]\n", []string{ImpedimentBarMissing, ImpedimentOpenClarification}, []bool{true, false}},
-	{"valid", "# t\n\nProblema real.\n\nBarra: referência nomeada — acesso\n", nil, nil},
+	{"bar without judge question", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: referência nomeada — acesso\n", []string{ImpedimentJudgeQuestionMissing}, []bool{true}},
+	{"valid", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: referência nomeada — acesso\nPergunta ao juiz: qual é mais claro?\n", nil, nil},
 }
 
 // TestApproveReadinessCodes (F-0308 crit. 1): one call returns every
@@ -89,7 +90,7 @@ func TestApproveReadinessClarificationMessageIsTheQuestion(t *testing.T) {
 	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate, Components: []string{"cli"}}); err != nil {
 		t.Fatal(err)
 	}
-	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nReal. [ESCLARECER: qual o limite?]\n\nBarra: x — y\n")
+	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nReal. [ESCLARECER: qual o limite?]\n\n## Verificação\n\nBarra: x — y\nPergunta ao juiz: qual é mais claro?\n")
 	got, err := approveReadiness(repoDir, "F-0001", true)
 	if err != nil || len(got) != 1 || got[0].Message != "qual o limite?" {
 		t.Fatalf("got %+v, %v; want one impediment whose message is the question", got, err)
@@ -185,7 +186,7 @@ func TestSpecMissingBarMessageOneLine(t *testing.T) {
 // human's acceptance becomes data with an actor, not a sentence in a chat.
 func TestApproveEventCarriesBar(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	seedCandidateSpec(t, repoDir, "F-0001", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nMétodo: comparação cega\n")
+	seedCandidateSpec(t, repoDir, "F-0001", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: cerne push --dry-run — ensaio com gate\nPergunta ao juiz: qual é mais claro?\nMétodo: comparação cega\n")
 	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
 	if err != nil {
 		t.Fatalf("approve: %v", err)
@@ -246,7 +247,7 @@ func seedCard(t *testing.T, facets, components, caps []string, taxonomy []domain
 	if err := store.SaveFeature(repoDir, f); err != nil {
 		t.Fatal(err)
 	}
-	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nProblema real.\n\nBarra: referência nomeada — acesso\n")
+	writeSpecFixture(t, repoDir, "F-0001", "# t\n\nProblema real.\n\n## Verificação\n\nBarra: referência nomeada — acesso\nPergunta ao juiz: qual é mais claro?\n")
 	return repoDir
 }
 

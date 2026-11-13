@@ -40,3 +40,30 @@ func CheckSpecBar(repoDir, id string) error {
 	}
 	return nil
 }
+
+// ErrSpecMissingJudgeQuestion is the sentinel for an approve over a spec that
+// names a bar but no "Pergunta ao juiz:" line (F-0381). Like ErrSpecMissingBar
+// it lives in the shared transition core and --force does not cross it.
+var ErrSpecMissingJudgeQuestion = errors.New(`spec has a bar but no judge question — add a "Pergunta ao juiz:" line under the bar`)
+
+// CheckSpecJudgeQuestion refuses when the feature's spec names a bar that is
+// not exempt and holds no written judge question (F-0381). Missing and stub
+// specs pass, as in CheckSpecBar; a spec with no valid bar passes too — that is
+// the bar gate's refusal. The predicate is doccheck.SpecJudgeQuestion, shared
+// with the approve readiness.
+func CheckSpecJudgeQuestion(repoDir, id string) error {
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !doccheck.HasRealContent(data) {
+		return nil
+	}
+	if _, err := doccheck.SpecJudgeQuestion(data); err != nil {
+		return ErrSpecMissingJudgeQuestion
+	}
+	return nil
+}
