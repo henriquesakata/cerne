@@ -1215,6 +1215,8 @@ const ptBR = {
       'Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.':
         'Desligado, o gancho work-gate deixa de mostrar as notas que citam um arquivo quando o agente vai editá-lo.',
     } as Record<string, string>,
+    // Rótulos dos valores de uma chave de texto com valores declarados.
+    options: { on: 'ligado', off: 'desligado' } as Record<string, string>,
   },
 }
 
@@ -2369,6 +2371,7 @@ const en: Messages = {
       failed: (e: string) => `Could not save the name: ${e}`,
     },
     text: {},
+    options: {},
   },
 }
 

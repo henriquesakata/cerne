@@ -1291,6 +1291,8 @@ export type ResolvedSetting = {
   default: unknown
   scopes: SettingScope[]
   description: string
+  // Values a string key may hold (F-0353); absent = free text.
+  enum?: string[]
   value: unknown
   origin: SettingScope | 'default'
   stored?: Partial<Record<SettingScope, unknown>>

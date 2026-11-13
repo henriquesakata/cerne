@@ -913,3 +913,83 @@ describe('Settings — nome do projeto (F-0331)', () => {
     expect(within(r).getByRole('alert')).toHaveTextContent('The project name cannot be empty.')
   })
 })
+
+// F-0392: a string key with declared values is a choice, not free text.
+describe('Settings: chave de texto com valores declarados', () => {
+  const gauntletDesc =
+    "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision."
+  const gauntlet = (over: Partial<ResolvedSetting> = {}) =>
+    key({
+      id: 'gates.gauntlet',
+      title: 'Gauntlet',
+      type: 'string',
+      default: 'on',
+      enum: ['on', 'off'],
+      scopes: ['project'],
+      description: gauntletDesc,
+      value: 'off',
+      origin: 'project',
+      stored: { project: 'off' },
+      ...over,
+    })
+  const withGauntlet = (g = gauntlet()) => fixture({ settings: [...fixture().settings, g] })
+
+  beforeEach(() => {
+    cleanup()
+    fetchSettings.mockReset()
+    putSetting.mockReset()
+  })
+
+  it('mostra um select com os valores declarados e o efetivo selecionado, em pt-BR', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const select = within(r).getByRole('combobox', { name: 'Gauntlet' }) as HTMLSelectElement
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['ligado', 'desligado'])
+    expect(select.value).toBe('off')
+    expect(within(r).queryByRole('textbox')).toBeNull()
+    expect(within(r).getByText(/Liga ou desliga o Gauntlet/)).toBeInTheDocument()
+  })
+
+  it('trocar a opção grava a string escolhida no escopo editado', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet())
+    putSetting.mockResolvedValue(withGauntlet(gauntlet({ value: 'on', stored: { project: 'on' } })))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.change(within(r).getByRole('combobox', { name: 'Gauntlet' }), { target: { value: 'on' } })
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'on'))
+  })
+
+  it('no I18nProvider (en) os rótulos são os valores', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet())
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const select = within(r).getByRole('combobox', { name: 'Gauntlet' })
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['on', 'off'])
+  })
+
+  it('lint.cli_output_language também é um select: o padrão vazio e en', async () => {
+    const lang = key({
+      id: 'lint.cli_output_language',
+      title: 'CLI output language',
+      type: 'string',
+      default: '',
+      enum: ['en'],
+      scopes: ['project'],
+      description: 'x',
+      value: '',
+    })
+    fetchSettings.mockResolvedValue(fixture({ settings: [...fixture().settings, lang] }))
+    putSetting.mockResolvedValue(fixture())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Idioma da saída da CLI' })
+    const select = within(r).getByRole('combobox') as HTMLSelectElement
+    expect(select.value).toBe('')
+    fireEvent.change(select, { target: { value: 'en' } })
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('lint.cli_output_language', 'project', 'en'))
+  })
+})
