@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -95,6 +96,7 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 
 var (
 	errGauntletRecordMode      = errors.New("pass either --verdict <file> --ours A|B, or --critic \"<line>\" (not both)")
+	errGauntletBadID           = errors.New("not a feature id (want F-NNNN)")
 	errGauntletNotMaterialized = errors.New("the feature's result is not in .docs/ (only active features are materialized)")
 )
 
@@ -122,7 +124,12 @@ func newGauntletRecordCmd() *cobra.Command {
 	return cmd
 }
 
+var gauntletIDRe = regexp.MustCompile(`^F-\d+$`)
+
 func runGauntletRecord(cmd *cobra.Command, dir, id, verdictPath, ours, quote, critic string) error {
+	if !gauntletIDRe.MatchString(id) {
+		return fmt.Errorf("%q: %w", id, errGauntletBadID)
+	}
 	round := verdictPath != ""
 	if round == (critic != "") || (round && ours == "") || (!round && (ours != "" || quote != "")) {
 		return errGauntletRecordMode
