@@ -1,6 +1,7 @@
 package cost
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -373,13 +374,39 @@ func (r *Report) unknownRole() {
 	}
 }
 
-// readAnchor reads the anchor of id's result in the backend clone.
+// readAnchor reads the newest anchor of id (newestCusto).
 func readAnchor(repoDir, id string) (share, bool) {
+	_, a, _, ok := newestCusto(repoDir, id)
+	return a, ok
+}
+
+// newestCusto is the newest "## Custo" section of id with a parseable anchor:
+// the last erratum entry carrying one, else the result's own (F-0396 — the
+// result of a done feature is immutable, so a backfill lands in its errata).
+// section is the block as written; inResult tells where it lives.
+func newestCusto(repoDir, id string) (section string, a share, inResult, ok bool) {
+	read := func(doc string) (string, share, bool) {
+		start, end, raw, found := custoSection(doc)
+		var a share
+		if !found || raw == "" || json.Unmarshal([]byte(raw), &a) != nil {
+			return "", share{}, false
+		}
+		return doc[start:end], a, true
+	}
+	if errata, err := store.LoadErrata(repoDir, id); err == nil {
+		items := store.ParseErrataItems(errata)
+		for i := len(items) - 1; i >= 0; i-- {
+			if section, a, ok := read(items[i].Text); ok {
+				return section, a, false, true
+			}
+		}
+	}
 	raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
 	if err != nil {
-		return share{}, false
+		return "", share{}, false, false
 	}
-	return anchor(string(raw))
+	section, a, ok = read(string(raw))
+	return section, a, true, ok
 }
 
 // fuseSnapshots folds the harvested snapshots into the live shares, per
