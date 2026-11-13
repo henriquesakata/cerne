@@ -72,8 +72,10 @@ func TestTakeHandoff(t *testing.T) {
 	if n := countEvents(t, repoDir, "W-0002", "work.started"); n != 1 {
 		t.Fatalf("work.started events = %d", n)
 	}
-	if id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-recv", ""); err != nil || !ok || id != "W-0002" {
-		t.Fatalf("binding = %q %v %v, want W-0002", id, ok, err)
+	// F-0376: the take binds through the bind-work hook, which knows the
+	// subagent; a direct bind here would overwrite the main thread's.
+	if _, err := os.Stat(filepath.Join(cacheDir, "sessions", "sess-recv")); !os.IsNotExist(err) {
+		t.Fatalf("TakeHandoff wrote a session binding (%v); binding is the hook's job", err)
 	}
 }
 

@@ -70,6 +70,7 @@ func newHookBindWorkCmd() *cobra.Command {
 var (
 	workStartRe    = regexp.MustCompile(`\bwork\s+start\b`)
 	featureStartRe = regexp.MustCompile(`\bfeature\s+start\b`)
+	handoffTakeRe  = regexp.MustCompile(`\bhandoff\s+take\b`)
 	// workCreatedRe is the line `work start` prints for the work it minted
 	// ("W-1755 created (active) — ..."). A chain that also lists works prints
 	// other W- ids first, so the created one is told apart by its "(active)".
@@ -116,9 +117,10 @@ func warnUnbound(cmd *cobra.Command) {
 }
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
-// `cerne work start` / `cerne feature start`, the minted (or started) id is
-// bound to the session so the work gate recognizes it. Silent no-op on
-// anything else.
+// `cerne work start` / `cerne feature start` / `cerne handoff take`, the
+// minted (or started) id is bound to the session — to the (session, agent)
+// key inside a subagent (F-0376) — so the work gate recognizes it. Silent
+// no-op on anything else.
 func runHookBindWork(cmd *cobra.Command, format string) {
 	in, err := decodeHookInput(cmd.InOrStdin())
 	if err != nil {
@@ -169,6 +171,12 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			if runsWorkStart(ti.Command) && !strings.Contains(string(in.ToolResponse), "Error") {
 				warnUnbound(cmd)
 			}
+		}
+	case handoffTakeRe.MatchString(ti.Command):
+		// The take prints "HO-… taken by … — W-… created (active) — …"; a
+		// refused take prints no "(active)" and binds nothing (F-0376).
+		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
+			id = m[1]
 		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the

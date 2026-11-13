@@ -37,7 +37,7 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 		Use:   "take <HO-id> [--title <description>] [--note <text>]",
 		Short: "Take a pending handoff: open your own work, close the origin, read the brief",
 		Long: "Takes a pending handoff in one commit: opens a new active work with the origin's title (or --title) and " +
-			"refs, bound to this session ($CERNE_SESSION), marks the handoff taken (by, when, which work, --note), and " +
+			"refs, bound to this session (or subagent) by the bind hook, marks the handoff taken (by, when, which work, --note), and " +
 			"closes the origin as done ('handed off to <new> via <HO>') — an origin no longer active is left as it is. " +
 			"Then prints the brief and the next step. A handoff already taken, superseded or cancelled is refused, " +
 			"saying why, and nothing is written.",

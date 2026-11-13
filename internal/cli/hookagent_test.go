@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,5 +91,46 @@ func TestHookWorkGateSubagentFallback(t *testing.T) {
 	}
 	if out := edit("a0other"); strings.Contains(out, `"deny"`) {
 		t.Fatalf("subagent under the main thread's binding denied:\n%s", out)
+	}
+}
+
+// TestHookBindWorkBindsHandoffTake (F-0376 task 1: Claude Code exposes no
+// subagent id to Bash, so the take binds through the hook, like work start):
+// the real `cerne handoff take` output binds the main thread's key from the
+// main thread (F-0368 crit. 3 stays green) and the subagent's own key from a
+// subagent, leaving the main thread's binding alone.
+func TestHookBindWorkBindsHandoffTake(t *testing.T) {
+	for _, agent := range []string{"", "a0dev"} {
+		t.Run("agent="+agent, func(t *testing.T) {
+			projDir, repoDir := handoffProject(t)
+			cacheDir := filepath.Dir(repoDir)
+			mustCerne(t, "work", "start", "Coordenar o lote", "--dir", projDir) // W-0002, the TL's
+			if err := app.BindSession(cacheDir, "sess-tl", "W-0002"); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CERNE_SESSION", "sess-tl")
+			out := mustCerne(t, "handoff", "take", "HO-0001", "--note", "li", "--dir", projDir) // W-0003
+			if _, err := os.Stat(filepath.Join(cacheDir, "sessions", "sess-tl."+agent)); agent != "" && !os.IsNotExist(err) {
+				t.Fatalf("the take bound before the hook: %v", err)
+			}
+			payload := hookJSON(t, "sess-tl", projDir, "Bash",
+				map[string]any{"command": "cerne handoff take HO-0001 --note li"}, map[string]any{"stdout": out})
+			if agent != "" {
+				payload = withAgent(payload, agent)
+			}
+			if o, err := execCerneStdin(t, payload, "hook", "bind-work"); err != nil {
+				t.Fatalf("bind-work: %v\n%s", err, o)
+			}
+			mainWant := "W-0003"
+			if agent != "" {
+				mainWant = "W-0002"
+				if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-tl", agent); err != nil || !ok || id != "W-0003" {
+					t.Fatalf("subagent binding = (%q, %v, %v), want W-0003", id, ok, err)
+				}
+			}
+			if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-tl", ""); err != nil || !ok || id != mainWant {
+				t.Fatalf("main binding = (%q, %v, %v), want %s", id, ok, err, mainWant)
+			}
+		})
 	}
 }

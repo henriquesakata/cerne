@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -34,7 +33,8 @@ func canonicalHandoffID(id string) (string, error) {
 // TakeResult is what TakeHandoff did: the new work (with the taken handoff in
 // Taken), the brief to read first, and whether the origin was closed — false
 // when it was no longer active and was left as it is (crit. 5). Warning is a
-// local session-binding failure after the commit; the take itself stands.
+// failure clearing the origin's local session bindings after the commit; the
+// take itself stands.
 type TakeResult struct {
 	StartedWork
 	Brief         string
@@ -48,9 +48,10 @@ type TakeResult struct {
 // TakeHandoff (F-0368 crit. 3) takes pending handoff id in one commit: opens
 // a new work with the origin's title (or title) and refs, marks the HO taken
 // (by, work, session sess, at, note), closes the origin as done "handed off to
-// <new> via <HO>" when it is still active, and appends the events. After the
-// commit, the new work is bound to session sess (when set) in cacheDir. A
-// handoff that is not pending is refused, writing nothing (crit. 4).
+// <new> via <HO>" when it is still active, and appends the events. The new
+// work is bound to the session by the bind-work hook reading the take's
+// output, like `work start` (F-0376): only the hook knows whether a subagent
+// ran it. A handoff that is not pending is refused, writing nothing (crit. 4).
 func TakeHandoff(repoDir, projDir, cacheDir, sess, id, title, note string) (TakeResult, error) {
 	id, err := canonicalHandoffID(id)
 	if err != nil {
@@ -103,11 +104,6 @@ func TakeHandoff(repoDir, projDir, cacheDir, sess, id, title, note string) (Take
 	if out.OriginClosed {
 		if err := ClearBindings(cacheDir, out.From); err != nil {
 			out.Warning = "clearing the origin's session bindings: " + err.Error()
-		}
-	}
-	if sess != "" {
-		if err := BindSessionAgent(cacheDir, sess, "", cost.CurrentHarness(), out.ID); err != nil {
-			out.Warning = "binding the session to " + out.ID + ": " + err.Error()
 		}
 	}
 	return out, nil
